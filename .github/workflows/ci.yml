@@ -1,0 +1,47 @@
+name: CI
+
+# Tests run wherever work lands: nightly is the fast-moving working branch,
+# master changes rarely (releases). PRs gate both.
+on:
+  push:
+    branches: [master, nightly]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push supersedes a queued/running build of the same branch.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: swift test
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      # SPM build products (libghostty, SwiftTerm, all targets). Keyed on the
+      # dependency pins + Swift version; a push that only changes sources
+      # restores the previous cache and rebuilds incrementally.
+      - name: Swift version
+        id: swift
+        run: echo "version=$(swift --version 2>/dev/null | head -1 | shasum -a 256 | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - name: Cache SPM build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-
+
+      - name: Run tests
+        run: |
+          # SwiftPM copies binary frameworks (Sparkle) to Products/<config>,
+          # but test-bundle rpaths expect PackageFrameworks; bridge the two.
+          swift build --build-tests
+          for d in .build/*/debug .build/out/Products/Debug; do
+            [ -d "$d" ] || continue
+            mkdir -p "$d/PackageFrameworks"
+            [ -d "$d/Sparkle.framework" ] && ln -sf "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework" || true
+          done
+          swift test

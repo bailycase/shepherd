@@ -1,0 +1,167 @@
+import SwiftUI
+import AppKit
+import ShepherdCore
+import ShepherdProtocol
+
+/// The Settings window (⌘,): a category list beside grouped setting rows.
+///
+/// Everything here is wired — a row exists only if changing it changes the
+/// app. Chrome follows the same rules as the main window: theme tokens, no
+/// saturated fills, mono metadata, hairline separators.
+struct SettingsView: View {
+    @ObservedObject var vm: ShepherdViewModel
+    @ObservedObject private var themes = ThemeManager.shared
+    @State private var section: SettingsSection = .appearance
+
+    var body: some View {
+        // Same shell as the main window: the sidebar material runs
+        // continuously behind the traffic-light strip, and the right column
+        // carries its own header over the window background.
+        HStack(spacing: 0) {
+            categoryList
+            VStack(spacing: 0) {
+                header
+                detail
+            }
+            .background(Tokens.workspaceBg)
+        }
+        .frame(
+            minWidth: Metrics.settingsMinWidth,
+            minHeight: Metrics.settingsMinHeight
+        )
+        .background(Tokens.workspaceBg)
+        .background(WindowChrome())
+        .preferredColorScheme(themes.mode.colorScheme)
+        .ignoresSafeArea()
+        .id(themes.current.id)
+    }
+
+    /// Names the pane the user is looking at. The window has no system title,
+    /// so this is the only label the window carries.
+    private var header: some View {
+        HStack(spacing: 0) {
+            Text(section.title.lowercased())
+                .font(Fonts.mono(12.5, .semibold))
+                .foregroundStyle(Tokens.textPrimary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .frame(height: Metrics.headerHeight)
+        .frame(maxWidth: .infinity)
+        .background(Tokens.workspaceBg)
+        .contentShape(Rectangle())
+        .gesture(WindowDragGesture())
+    }
+
+    private var categoryList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Traffic-light strip: draggable, and the reason the section
+            // heading starts below 38pt rather than at the window edge.
+            Color.clear
+                .frame(height: Metrics.trafficLightHeight)
+                .contentShape(Rectangle())
+                .gesture(WindowDragGesture())
+            Text("SETTINGS")
+                .font(Fonts.mono(10.5, .semibold))
+                .tracking(0.74)
+                .foregroundStyle(Tokens.textTertiary)
+                .padding(EdgeInsets(top: 2, leading: 14, bottom: 6, trailing: 14))
+            VStack(spacing: 1) {
+                ForEach(SettingsSection.allCases) { item in
+                    SettingsCategoryRow(section: item, selected: section == item) {
+                        section = item
+                    }
+                }
+            }
+            .padding(.horizontal, 6)
+            Spacer(minLength: 0)
+        }
+        .frame(width: Metrics.settingsSidebarWidth)
+        // Flat sidebar surface, exactly like the main window's.
+        .background(Tokens.sidebarBg.ignoresSafeArea())
+    }
+
+    private var detail: some View {
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 18) {
+                switch section {
+                case .appearance: AppearanceSettings(vm: vm)
+                case .terminal: TerminalSettings(vm: vm)
+                case .agents: AgentSettings()
+                case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
+                case .keyboard: KeyboardSettings(vm: vm)
+                case .advanced: AdvancedSettings(vm: vm)
+                }
+            }
+            .padding(EdgeInsets(top: 16, leading: 20, bottom: 24, trailing: 20))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollContentBackground(.hidden)
+        .background(Tokens.workspaceBg)
+        // System controls default to the OS accent (blue), which is the one
+        // saturated color DESIGN.md rules out. One tint here covers every
+        // slider, switch, and segmented selection in the pane.
+        .tint(Tokens.accentButton)
+    }
+}
+
+enum SettingsSection: String, CaseIterable, Identifiable {
+    case appearance, terminal, agents, remote, keyboard, advanced
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .appearance: return "Appearance"
+        case .terminal: return "Terminal"
+        case .agents: return "Agents"
+        case .remote: return "Remote"
+        case .keyboard: return "Keyboard"
+        case .advanced: return "Advanced"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .appearance: return "paintpalette"
+        case .terminal: return "terminal"
+        case .agents: return "person.2"
+        case .remote: return "antenna.radiowaves.left.and.right"
+        case .keyboard: return "keyboard"
+        case .advanced: return "gearshape"
+        }
+    }
+}
+
+/// A real `Button` (not a tap gesture) so the list is keyboard- and
+/// VoiceOver-navigable like the main window's menu commands.
+private struct SettingsCategoryRow: View {
+    let section: SettingsSection
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: section.symbol)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(selected ? Tokens.focusAccent : Tokens.textTertiary)
+                    .frame(width: 14)
+                Text(section.title.lowercased())
+                    .font(Fonts.mono(12, selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? Tokens.textPrimary : Tokens.textSecondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 5)
+            .padding(.horizontal, 8)
+            .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(section.title)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+}
+

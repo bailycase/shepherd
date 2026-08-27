@@ -1,0 +1,7 @@
+.build/
+.DS_Store
+.claude/
+# Xcode per-user state (window layout, breakpoints, last-open files).
+xcuserdata/
+dist/
+.swiftpm/

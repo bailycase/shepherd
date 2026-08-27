@@ -1,0 +1,255 @@
+name: Release
+
+# Tag vX.Y.Z → build the Prod app, sign, notarize, package a DMG, publish a
+# GitHub Release, and regenerate the Sparkle appcast on gh-pages. Signing is
+# Developer ID + notarization when the secrets exist, ad-hoc otherwise.
+#
+# Nightlies: every push to nightly runs the same pipeline with channel
+# "nightly", publishing a prerelease and appcast-nightly.xml.
+#
+# Secrets (all optional until Developer ID exists):
+#   SPARKLE_PRIVATE_KEY   EdDSA private key from `generate_keys -x`
+#   DEVELOPER_ID_P12      base64 .p12 of the Developer ID Application cert
+#   DEVELOPER_ID_P12_PASSWORD
+#   NOTARY_KEY_ID / NOTARY_ISSUER_ID / NOTARY_KEY  App Store Connect API key
+#
+# No test step: CI already ran `swift test` on the commit being tagged.
+on:
+  push:
+    tags: ["v*"]
+    branches: [nightly]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# A newer nightly push supersedes a queued/running one; tags never cancel.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  release:
+    name: build and publish
+    runs-on: macos-26
+    # Tags release; nightly pushes go nightly. Skip nightly for pushes that
+    # only touch docs/workflows.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Channel and version
+        id: meta
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          else
+            echo "channel=nightly" >> "$GITHUB_OUTPUT"
+            echo "version=0.0.0-nightly.$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+            echo "tag=nightly-$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Xcode version
+        id: xcode
+        run: echo "version=$(xcodebuild -version | shasum -a 256 | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: build
+          key: xcode-${{ runner.os }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            xcode-${{ runner.os }}-${{ steps.xcode.outputs.version }}-
+
+      - name: Import Developer ID certificate
+        id: cert
+        env:
+          P12: ${{ secrets.DEVELOPER_ID_P12 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          if [[ -z "$P12" ]]; then
+            echo "identity=-" >> "$GITHUB_OUTPUT"
+            echo "No Developer ID cert; ad-hoc signing."
+            exit 0
+          fi
+          KEYCHAIN=$RUNNER_TEMP/build.keychain
+          security create-keychain -p ci "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p ci "$KEYCHAIN"
+          echo "$P12" | base64 -d > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k ci "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
+
+      - name: Build Release app
+        run: |
+          xcodebuild \
+            -project Shepherd.xcodeproj \
+            -scheme 'Shepherd (Prod)' \
+            -configuration Release \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION='${{ steps.meta.outputs.version }}' \
+            CURRENT_PROJECT_VERSION='${{ github.run_number }}' \
+            build
+
+      - name: Sign
+        run: |
+          APP=build/Build/Products/Release/Shepherd.app
+          IDENTITY='${{ steps.cert.outputs.identity }}'
+          # Sparkle's XPC services and framework must be signed inside-out;
+          # --deep handles the nesting for both ad-hoc and Developer ID.
+          codesign --force --deep --options runtime --sign "$IDENTITY" "$APP"
+          codesign --verify --deep --strict "$APP"
+
+      - name: Notarize
+        if: steps.cert.outputs.identity != '-'
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+        run: |
+          APP=build/Build/Products/Release/Shepherd.app
+          echo "$NOTARY_KEY" > "$RUNNER_TEMP/notary.p8"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" notarize.zip
+          xcrun notarytool submit notarize.zip \
+            --key "$RUNNER_TEMP/notary.p8" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$APP"
+
+      - name: Package DMG
+        run: |
+          APP=build/Build/Products/Release/Shepherd.app
+          STAGE=$RUNNER_TEMP/dmg
+          mkdir -p "$STAGE"
+          cp -R "$APP" "$STAGE/"
+          ln -s /Applications "$STAGE/Applications"
+          hdiutil create -volname Shepherd -srcfolder "$STAGE" -ov -format UDZO Shepherd.dmg
+          # The stapled app is inside; stapling the DMG too lets Gatekeeper
+          # verify offline at mount time. Ad-hoc builds skip it.
+          if [[ '${{ steps.cert.outputs.identity }}' != '-' ]]; then
+            codesign --force --sign '${{ steps.cert.outputs.identity }}' Shepherd.dmg
+            xcrun stapler staple Shepherd.dmg || true
+          fi
+          shasum -a 256 Shepherd.dmg
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          NOTES="Download the DMG and drag Shepherd to Applications. Updates arrive automatically via Sparkle."
+          ARGS=(--title "Shepherd $TAG" --notes "$NOTES")
+          if [[ "$CHANNEL" == "nightly" ]]; then
+            ARGS+=(--prerelease)
+            # Keep only the latest few nightlies.
+            for old in $(gh release list --limit 100 --json tagName,isPrerelease \
+              --jq '.[] | select(.isPrerelease) | .tagName' | tail -n +4); do
+              gh release delete "$old" --cleanup-tag --yes || true
+            done
+            git tag "$TAG" && git push origin "$TAG"
+          fi
+          gh release create "$TAG" Shepherd.dmg "${ARGS[@]}"
+
+      - name: Update appcast
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+        run: |
+          if [[ -z "$SPARKLE_PRIVATE_KEY" ]]; then
+            echo "No SPARKLE_PRIVATE_KEY secret; skipping appcast." && exit 0
+          fi
+          BIN=$(find ~/Library/Developer/Xcode/DerivedData build .build \
+            -path '*artifacts*Sparkle/bin' -type d 2>/dev/null | head -1)
+          if [[ -z "$BIN" ]]; then
+            # Resolve tools straight from the package if the build cache moved.
+            swift package resolve
+            BIN=$(find .build -path '*artifacts*Sparkle/bin' -type d | head -1)
+          fi
+          echo "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle_key"
+
+          # The appcast is rebuilt from every published release asset so it
+          # always reflects the full history, split by channel.
+          mkdir -p casts/stable casts/nightly
+          gh release list --limit 100 --json tagName,isPrerelease \
+            --jq '.[] | [.tagName, (.isPrerelease|tostring)] | @tsv' \
+          | while IFS=$'\t' read -r tag pre; do
+            dir=casts/stable; [[ "$pre" == "true" ]] && dir=casts/nightly
+            gh release download "$tag" -p Shepherd.dmg -O "$dir/Shepherd-$tag.dmg" \
+              || gh release download "$tag" -p Shepherd.zip -O "$dir/Shepherd-$tag.zip" \
+              || true
+          done
+
+          # generate_appcast errors on an empty directory (e.g. no stable
+          # releases yet); an empty channel keeps an empty feed instead.
+          empty_feed() {
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Shepherd</title></channel></rss>\n' > "$1"
+          }
+          if ls casts/stable/*.zip casts/stable/*.dmg >/dev/null 2>&1; then
+            "$BIN/generate_appcast" --ed-key-file "$RUNNER_TEMP/sparkle_key" \
+              --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/" \
+              --link "https://github.com/${{ github.repository }}" \
+              casts/stable
+          else
+            empty_feed casts/stable/appcast.xml
+          fi
+          if ls casts/nightly/*.zip casts/nightly/*.dmg >/dev/null 2>&1; then
+            "$BIN/generate_appcast" --ed-key-file "$RUNNER_TEMP/sparkle_key" \
+              --channel nightly \
+              --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/" \
+              --link "https://github.com/${{ github.repository }}" \
+              casts/nightly
+          else
+            empty_feed casts/nightly/appcast.xml
+          fi
+
+          # generate_appcast writes URLs as prefix + filename; rewrite full
+          # archives to their per-tag asset path (download/<tag>/Shepherd.<ext>).
+          fix_urls() {
+            perl -pi -e 's{download/Shepherd-([^"/]+)\.(zip|dmg)}{download/$1/Shepherd.$2}g' "$1"
+          }
+          fix_urls casts/stable/appcast.xml
+          fix_urls casts/nightly/appcast.xml
+
+          # Deltas (small binary patches to the newest version) also come out
+          # of generate_appcast. Upload each channel's deltas to that
+          # channel's latest release and point the feed at them; Sparkle then
+          # updates with a ~KB patch instead of the full DMG.
+          upload_deltas() {
+            local dir=$1 latest=$2
+            [[ -z "$latest" ]] && return 0
+            local deltas=("$dir"/*.delta)
+            [[ -e "${deltas[0]}" ]] || return 0
+            gh release upload "$latest" "${deltas[@]}" --clobber
+            perl -pi -e 's{download/([^"/]+\.delta)}{download/'"$latest"'/$1}g' "$dir/appcast.xml"
+          }
+          stable_latest=$(gh release list --limit 100 --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease | not)][0].tagName // empty')
+          nightly_latest=$(gh release list --limit 100 --json tagName,isPrerelease \
+            --jq '[.[] | select(.isPrerelease)][0].tagName // empty')
+          upload_deltas casts/stable "$stable_latest"
+          upload_deltas casts/nightly "$nightly_latest"
+
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git fetch origin gh-pages || true
+          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+            git worktree add pages origin/gh-pages
+          else
+            git worktree add --orphan -b gh-pages pages
+          fi
+          cp casts/stable/appcast.xml pages/appcast.xml
+          cp casts/nightly/appcast.xml pages/appcast-nightly.xml
+          cd pages
+          git add appcast.xml appcast-nightly.xml
+          git commit -m "appcast: ${{ steps.meta.outputs.tag }}" || exit 0
+          git push origin HEAD:gh-pages
