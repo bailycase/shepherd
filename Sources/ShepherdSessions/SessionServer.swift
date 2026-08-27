@@ -1716,6 +1716,11 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.sessions[sessionID]?.foregroundProcessName }
     }
 
+    /// Current working directory of the foreground process in a session's PTY.
+    public func foregroundWorkingDirectory(sessionID: SessionID) async -> String? {
+        await enqueueValue { self.sessions[sessionID]?.foregroundWorkingDirectory }
+    }
+
     /// Foreground command line of a session's PTY ("pi --model x"), for
     /// shell restore. Nil at a bare prompt.
     public func foregroundCommandLine(sessionID: SessionID) async -> String? {
