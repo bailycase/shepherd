@@ -1,10 +1,11 @@
 name: CI
 
-# Tests run wherever work lands: nightly is the fast-moving working branch,
-# master changes rarely (releases). PRs gate both.
+# Tests gate master (the release branch) and PRs. Nightly pushes skip CI:
+# the Release workflow already builds every nightly, and the timing-sensitive
+# server tests flake on slow shared runners — run `swift test` locally.
 on:
   push:
-    branches: [master, nightly]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
