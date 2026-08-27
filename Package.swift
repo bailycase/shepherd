@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "ShepherdSessions", targets: ["ShepherdSessions"]),
         .library(name: "TerminalSurfaceKit", targets: ["TerminalSurfaceKit"]),
         .library(name: "ShepherdApp", targets: ["ShepherdApp"]),
+        .executable(name: "shepherd-cli", targets: ["shepherd-cli"]),
     ],
     dependencies: [
         .package(path: "Vendor/libghostty-spm"),
@@ -50,6 +51,11 @@ let package = Package(
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .executableTarget(
+            name: "shepherd-cli",
+            dependencies: ["ShepherdCore", "ShepherdProtocol"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .testTarget(name: "ShepherdCoreTests", dependencies: ["ShepherdCore"]),
         .testTarget(name: "ShepherdProtocolTests", dependencies: ["ShepherdProtocol"]),
         .testTarget(
@@ -59,5 +65,6 @@ let package = Package(
         .testTarget(name: "ShepherdSessionsTests", dependencies: ["ShepherdSessions"]),
         .testTarget(name: "TerminalSurfaceKitTests", dependencies: ["TerminalSurfaceKit"]),
         .testTarget(name: "ShepherdAppTests", dependencies: ["ShepherdApp"]),
+        .testTarget(name: "ShepherdCLITests", dependencies: ["shepherd-cli"]),
     ]
 )
