@@ -187,7 +187,11 @@ struct OutputCoalescingTests {
 
         #expect(try await waitUntil(timeout: .seconds(30)) { received.current.count >= expected.count })
         let actual = received.current
-        #expect(actual == expected)
+        // Never hand multi-MiB blobs to #expect(a == b): on failure Swift
+        // Testing runs a Myers diff over them, which spins for hours.
+        let firstMismatch = zip(actual, expected).enumerated().first { $1.0 != $1.1 }?.offset
+        #expect(actual.count == expected.count && firstMismatch == nil,
+                "payload mismatch: counts \(actual.count)/\(expected.count), first divergence at \(firstMismatch.map(String.init) ?? "none")")
     }
 
     /// Output buffered for a pane that detaches must not be delivered later.
