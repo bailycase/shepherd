@@ -87,11 +87,13 @@ final class PTYSession: @unchecked Sendable {
     /// This lets the app keep shell titles in sync as the user runs `cd`.
     var foregroundWorkingDirectory: String? {
         guard isAlive else { return nil }
-        let pgid = tcgetpgrp(masterFD)
-        guard pgid > 0 else { return nil }
+        // The login shell owns the persisted workspace cwd. The foreground
+        // job may temporarily `cd` in a subshell without changing it.
+        let pid = childPID
+        guard pid > 0 else { return nil }
         var info = proc_vnodepathinfo()
         let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
-        guard proc_pidinfo(pgid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
         return withUnsafePointer(to: &info.pvi_cdir.vip_path) { pointer in
             pointer.withMemoryRebound(to: CChar.self, capacity: Int(MAXPATHLEN)) {
                 String(cString: $0)
