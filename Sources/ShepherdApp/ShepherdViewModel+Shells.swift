@@ -31,7 +31,8 @@ extension ShepherdViewModel {
             spaceID: nil,
             order: order,
             layout: .leaf(LeafPane(cwd: home)),
-            name: nil
+            name: nil,
+            nameIsFinal: false
         )
         state.tabs.append(tab)
         sessions.stateDidChange(state)
@@ -45,6 +46,7 @@ extension ShepherdViewModel {
         guard !trimmed.isEmpty,
               let index = state.tabs.firstIndex(where: { $0.id == id && $0.isShell }) else { return }
         state.tabs[index].name = trimmed
+        state.tabs[index].nameIsFinal = true
         sessions.stateDidChange(state)
         let tab = state.tabs[index]
         enqueuePersistence("rename shell") { try await $0.updateTab(tab) }
@@ -211,7 +213,7 @@ extension ShepherdViewModel {
         state.tabs[index].layout = tab.layout.updatingLeaf(tab.layout.firstLeaf.id) { $0.cwd = cwd }
         // nil is the automatic-title marker. Keep explicit user renames intact;
         // also migrate the old default "~" marker to automatic behavior.
-        if tab.name == "~" { state.tabs[index].name = nil }
+        if !tab.nameIsFinal { state.tabs[index].name = nil }
         let updated = state.tabs[index]
         sessions.stateDidChange(state)
         enqueuePersistence("shell cwd") { try await $0.updateTab(updated) }
