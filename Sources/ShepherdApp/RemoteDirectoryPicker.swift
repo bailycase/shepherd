@@ -3,6 +3,20 @@ import ShepherdCore
 import ShepherdSessions
 import ShepherdRemote
 
+enum DirectoryCompletion {
+    static func component(for query: String, matches: [String]) -> String {
+        guard let first = matches.first else { return query }
+        guard matches.count > 1 else { return first }
+
+        let candidates = matches.map { Array($0.lowercased()) }
+        let sharedCount = (0..<(candidates.map(\.count).min() ?? 0)).prefix { index in
+            candidates.dropFirst().allSatisfy { $0[index] == candidates[0][index] }
+        }.count
+        let sharedPrefix = String(first.prefix(sharedCount))
+        return sharedPrefix.count > query.count ? sharedPrefix : query
+    }
+}
+
 /// The same directory listing the host serves remotely, for this Mac — so
 /// local and remote space pickers are one UI with two listing sources.
 enum LocalDirectoryLister {
@@ -52,8 +66,6 @@ struct RemoteDirectoryPicker: View {
     /// Partial last path component typed so far, used as a listing filter.
     @State private var filter = ""
     @FocusState private var pathFocused: Bool
-    @State private var completionIndex = 0
-    @State private var completing = false
 
     /// Hidden dirs shown only on request (or when the typed filter asks for
     /// them), narrowed with shell-like fuzzy matching. Prefix matches sort
@@ -153,11 +165,6 @@ struct RemoteDirectoryPicker: View {
     /// Live-sync the listing with the field: everything before the last "/"
     /// is the directory to list, everything after filters its entries.
     private func draftChanged() {
-        if completing {
-            completing = false
-        } else {
-            completionIndex = 0
-        }
         let draft = pathDraft.trimmingCharacters(in: .whitespaces)
         if draft == path { filter = ""; return }  // programmatic update from load
         guard let slash = draft.lastIndex(of: "/") else {
@@ -169,16 +176,13 @@ struct RemoteDirectoryPicker: View {
         if base != path { load(base, keepDraft: true) }
     }
 
-    /// Tab completes the next fuzzy directory match, preserving the typed
-    /// parent path. Repeated Tab cycles through matches.
+    /// Tab completes a unique match fully. Ambiguous matches advance only to
+    /// their shared prefix, keeping every remaining option visible.
     private func completePath() {
         guard !loading, !filter.isEmpty, !visibleDirs.isEmpty else { return }
-        let match = visibleDirs[completionIndex % visibleDirs.count]
-        completionIndex = (completionIndex + 1) % visibleDirs.count
-        // Complete the field without descending yet, so another Tab cycles
-        // through the remaining matches and Enter chooses the highlighted path.
-        completing = true
-        pathDraft = (path as NSString).appendingPathComponent(match)
+        let component = DirectoryCompletion.component(for: filter, matches: visibleDirs)
+        guard component != filter else { return }
+        pathDraft = (path as NSString).appendingPathComponent(component)
     }
 
     private func fuzzyMatches(_ query: String, in candidate: String) -> Bool {
