@@ -1,2 +1,16 @@
-<?xml version="1.0" encoding="utf-8"?>
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Shepherd</title></channel></rss>
+<?xml version="1.0" standalone="yes"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Shepherd</title>
+        <item>
+            <title>0.1.0-rc.1</title>
+            <pubDate>Fri, 28 Aug 2026 21:11:22 +0000</pubDate>
+            <link>https://github.com/bailycase/shepherd</link>
+            <sparkle:channel>rc</sparkle:channel>
+            <sparkle:version>24</sparkle:version>
+            <sparkle:shortVersionString>0.1.0-rc.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-rc.1/Shepherd.dmg" length="18576790" type="application/octet-stream" sparkle:edSignature="tNWCFk7JiqLnZjO5Y5PMalE2b4+4WgKdASEKOabEeoe0CB4lWVSmKzlbp3FpblBWs+EBMz6nxAurOp3DqUijCw=="/>
+        </item>
+    </channel>
+</rss>
