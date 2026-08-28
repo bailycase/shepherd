@@ -6,6 +6,9 @@ Shepherd organizes work around agents, not chat threads. Each agent is a real `p
 
 > Screenshot coming soon.
 
+## Philosophy
+Shepherd is opinionated software. It's built around my workflow and preferences and it favors staying small and coherent over covering everyone's use case.
+
 ## What it does
 
 - Spaces group agents by project checkout; agents, shells, and split panes live inside them.
