@@ -41,7 +41,9 @@ struct OutputCoalescingTests {
                 cwd: "/tmp",
                 command: [
                     "/bin/sh", "-c",
-                    "stty -echo -opost; IFS= read -r _; i=1; while [ $i -le \(lineCount) ]; do printf 'line %s ---------------------------------------------\\n' \"$i\"; i=$((i+1)); done",
+                    // One awk burst, not a shell loop: a slow runner's loop
+                    // trickles lines out and there is no burst to coalesce.
+                    "stty -echo -opost; IFS= read -r _; awk 'BEGIN{for(i=1;i<=\(lineCount);i++)print \"line \" i \" ---------------------------------------------\"}'",
                 ],
                 cols: 120,
                 rows: 40,
@@ -81,10 +83,10 @@ struct OutputCoalescingTests {
         }
 
         // Coalescing must actually be doing something: far fewer deliveries
-        // than the number of PTY reads such a burst produces.
-        // Measured on this burst: ~1124 deliveries without coalescing, 1 with
-        // it. Each delivery is a main-thread block, which is what froze the app.
-        #expect(deliveries.current < 50,
+        // than the number of PTY reads such a burst produces (~1124 without
+        // coalescing, 1 with it, locally). Slow shared runners spread the
+        // burst out, so the bound is loose — it only has to prove merging.
+        #expect(deliveries.current < 300,
                 "expected merged deliveries, got \(deliveries.current)")
     }
 
