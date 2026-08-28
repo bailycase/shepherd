@@ -76,21 +76,6 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
         self.restoreCommand = restoreCommand
     }
 
-    /// Compatibility initializer for callers that do not specify naming state.
-    public init(
-        id: TabID = TabID(),
-        spaceID: SpaceID?,
-        order: Int,
-        layout: PaneNode,
-        inspectorFor: AgentID? = nil,
-        name: String? = nil,
-        restoreCommand: String? = nil
-    ) {
-        self.init(id: id, spaceID: spaceID, order: order, layout: layout,
-                  inspectorFor: inspectorFor, name: name, nameIsFinal: true,
-                  restoreCommand: restoreCommand)
-    }
-
     /// A global shell: no space, no agents, just a terminal workspace.
     public var isShell: Bool { spaceID == nil }
 
