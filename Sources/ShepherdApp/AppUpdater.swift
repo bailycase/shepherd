@@ -26,6 +26,14 @@ final class AppUpdater: ObservableObject {
     private init() {
         let info = Bundle.main.infoDictionary
         available = info?["SUFeedURL"] != nil && info?["SUPublicEDKey"] != nil
+        // A nightly build defaults to the nightly channel — otherwise it
+        // reads the stable feed and reports itself newest forever. Persisted
+        // so ChannelDelegate (which reads UserDefaults directly) agrees; an
+        // explicit user choice is never overwritten.
+        if UserDefaults.standard.object(forKey: Self.nightlyKey) == nil,
+           (info?["CFBundleShortVersionString"] as? String)?.contains("-nightly.") == true {
+            UserDefaults.standard.set(true, forKey: Self.nightlyKey)
+        }
         nightly = UserDefaults.standard.bool(forKey: Self.nightlyKey)
         controller = SPUStandardUpdaterController(
             startingUpdater: available,
