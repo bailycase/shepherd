@@ -56,4 +56,12 @@ private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
               let feed = Bundle.main.infoDictionary?["SUFeedURL"] as? String else { return nil }
         return feed.replacingOccurrences(of: "appcast.xml", with: "appcast-nightly.xml")
     }
+
+    /// generate_appcast tags nightly items with <sparkle:channel>nightly</>.
+    /// Sparkle hides channel-tagged items unless the channel is explicitly
+    /// allowed — without this, the nightly feed parses but every entry is
+    /// filtered out and the app reports itself newest.
+    func allowedChannels(for updater: SPUUpdater) -> Set<String> {
+        UserDefaults.standard.bool(forKey: AppUpdater.nightlyKey) ? ["nightly"] : []
+    }
 }
