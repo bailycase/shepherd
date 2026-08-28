@@ -190,8 +190,14 @@ struct OutputCoalescingTests {
         // Never hand multi-MiB blobs to #expect(a == b): on failure Swift
         // Testing runs a Myers diff over them, which spins for hours.
         let firstMismatch = zip(actual, expected).enumerated().first { $1.0 != $1.1 }?.offset
-        #expect(actual.count == expected.count && firstMismatch == nil,
-                "payload mismatch: counts \(actual.count)/\(expected.count), first divergence at \(firstMismatch.map(String.init) ?? "none")")
+        var detail = "payload mismatch: counts \(actual.count)/\(expected.count)"
+        if let at = firstMismatch {
+            let lo = max(0, at - 40), hi = min(min(actual.count, expected.count), at + 40)
+            let a = String(decoding: actual[lo..<hi], as: UTF8.self)
+            let e = String(decoding: expected[lo..<hi], as: UTF8.self)
+            detail += ", first divergence at \(at):\n  actual: \(a.debugDescription)\nexpected: \(e.debugDescription)"
+        }
+        #expect(actual.count == expected.count && firstMismatch == nil, Comment(rawValue: detail))
     }
 
     /// Output buffered for a pane that detaches must not be delivered later.
