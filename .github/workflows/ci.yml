@@ -18,6 +18,8 @@ jobs:
   test:
     name: swift test
     runs-on: macos-26
+    # The suite finishes in seconds; anything longer is a hang, not work.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -45,4 +47,7 @@ jobs:
             mkdir -p "$d/PackageFrameworks"
             [ -d "$d/Sparkle.framework" ] && ln -sf "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework" || true
           done
-          swift test
+          # --no-parallel: OutputCoalescingTests deliberately blocks the
+          # main queue (backpressure test); concurrent suites on a slow
+          # shared runner deadlock behind it. Serial is still fast.
+          swift test --no-parallel
