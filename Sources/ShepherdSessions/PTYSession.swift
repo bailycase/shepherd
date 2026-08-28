@@ -325,8 +325,23 @@ final class PTYSession: @unchecked Sendable {
         pendingInputOffset = 0
         cancelSources()
         if !reaped {
+            // Bounded reap. A SIGKILLed child reaps in milliseconds, but the
+            // kill can silently fail (EPERM on a root-owned group member) or
+            // the child can sit in uninterruptible sleep — and this runs on
+            // the quit path with the main thread blocked behind it. Never
+            // hang the app for a child the OS will reparent and reap anyway.
+            let deadline = DispatchTime.now() + .seconds(2)
             var status: Int32 = 0
-            while waitpid(childPID, &status, 0) < 0, errno == EINTR {}
+            while true {
+                let r = waitpid(childPID, &status, WNOHANG)
+                if r == childPID { break }
+                if r < 0, errno != EINTR { break }  // ECHILD: nothing to reap
+                if DispatchTime.now() >= deadline {
+                    ShepherdLog.warning("session \(id) child \(childPID) survived shutdown; abandoning to the OS")
+                    break
+                }
+                usleep(10_000)
+            }
             reaped = true
         }
     }
