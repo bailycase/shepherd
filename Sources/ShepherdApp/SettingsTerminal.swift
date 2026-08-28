@@ -18,6 +18,8 @@ struct TerminalSettings: View {
                 isFirst: true
             ) {
                 Picker("", selection: $settings.terminalFontFamily) {
+                    Text("System Font").tag(AppSettings.systemFontFamily)
+                    Divider()
                     ForEach(families, id: \.self) { family in
                         Text(family).tag(family)
                     }
