@@ -3,8 +3,21 @@
     <channel>
         <title>Shepherd</title>
         <item>
+            <title>0.1.0</title>
+            <pubDate>Fri, 28 Aug 2026 21:28:12 +0000</pubDate>
+            <link>https://github.com/bailycase/shepherd</link>
+            <sparkle:channel>rc</sparkle:channel>
+            <sparkle:version>25</sparkle:version>
+            <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0/Shepherd.dmg" length="18577023" type="application/octet-stream" sparkle:edSignature="S03DmiA36Ftw2k/mRynR8tYjRmMkcgYn1MnenOrPE1aDTAs4C/23c35jHEv5jR5AuCqYPiulcg/Q+f6/QczeDQ=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0/Shepherd25-24.delta" sparkle:deltaFrom="24" length="25054" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="ip7GFemG7uz+9ILCjWHh54t1enALZ1vXXcmvpv5P0pzaBItZWPKonP3RrHOBvE8XfnTVZC5eCqCfr/rz2KpxDQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.1.0-rc.1</title>
-            <pubDate>Fri, 28 Aug 2026 21:11:22 +0000</pubDate>
+            <pubDate>Fri, 28 Aug 2026 21:28:13 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>rc</sparkle:channel>
             <sparkle:version>24</sparkle:version>
