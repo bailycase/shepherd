@@ -38,8 +38,12 @@ struct RootView: View {
         }
         .coordinateSpace(name: "root-layout")
         .overlay {
+            if vm.showSettings {
+                SettingsView(vm: vm)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(10)
             // ⌘K palette floats over everything; the dimmer click-dismisses.
-            if vm.showCommandPalette {
+            } else if vm.showCommandPalette {
                 ZStack(alignment: .top) {
                     Color.black.opacity(0.25)
                         .ignoresSafeArea()
