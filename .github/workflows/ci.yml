@@ -50,4 +50,26 @@ jobs:
           # --no-parallel: OutputCoalescingTests deliberately blocks the
           # main queue (backpressure test); concurrent suites on a slow
           # shared runner deadlock behind it. Serial is still fast.
-          swift test --no-parallel
+          # Watchdog: the suite finishes in seconds; if it stalls for 5
+          # minutes, dump thread stacks of the hung test host, then fail.
+          swift test --no-parallel &
+          TEST_PID=$!
+          (
+            sleep 300
+            if kill -0 "$TEST_PID" 2>/dev/null; then
+              echo '::group::watchdog: test run stalled, sampling processes'
+              ps auxww | grep -iE 'swift|shepherd' | grep -v grep
+              for pid in $(pgrep -f swiftpm-testing); do
+                sample "$pid" 3 -file /tmp/sample-$pid.txt || true
+                cat /tmp/sample-$pid.txt || true
+              done
+              echo '::endgroup::'
+              kill -9 "$TEST_PID" 2>/dev/null || true
+              pkill -9 -f swiftpm-testing 2>/dev/null || true
+            fi
+          ) &
+          WATCHDOG_PID=$!
+          wait "$TEST_PID"
+          STATUS=$?
+          kill "$WATCHDOG_PID" 2>/dev/null || true
+          exit "$STATUS"
