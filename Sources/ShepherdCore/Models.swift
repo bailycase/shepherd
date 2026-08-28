@@ -135,6 +135,15 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// extension reports the change so relaunching reopens what the user was
     /// last working in rather than the original conversation.
     public var piSessionID: String?
+    /// Set when the agent was created on a git worktree Shepherd made for it
+    /// (the branch name, e.g. "worktree/calm-stone-3831"). Display-only
+    /// identity — the sidebar renders such agents as worktrees of their
+    /// space. Decodes nil from older state files.
+    public var worktreeBranch: String?
+    /// The base the worktree branched from ("origin/main", "feat/x") —
+    /// recorded at creation so Finalize can target the PR at the branch the
+    /// work actually started from. Decodes nil from older state files.
+    public var worktreeBase: String?
 
     public init(
         id: AgentID = AgentID(),
@@ -146,7 +155,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         model: String? = nil,
         thinkingLevel: ThinkingLevel? = nil,
         nameIsFinal: Bool = false,
-        piSessionID: String? = nil
+        piSessionID: String? = nil,
+        worktreeBranch: String? = nil,
+        worktreeBase: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -158,6 +169,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.thinkingLevel = thinkingLevel
         self.nameIsFinal = nameIsFinal
         self.piSessionID = piSessionID
+        self.worktreeBranch = worktreeBranch
+        self.worktreeBase = worktreeBase
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -168,7 +181,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID
+        case piSessionID, worktreeBranch, worktreeBase
     }
 
     public init(from decoder: Decoder) throws {
@@ -187,6 +200,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before session tracking; those agents are still in the
         // session named after their own id.
         piSessionID = try c.decodeIfPresent(String.self, forKey: .piSessionID)
+        // Absent before worktree agents existed.
+        worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
+        worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
     }
 }
 

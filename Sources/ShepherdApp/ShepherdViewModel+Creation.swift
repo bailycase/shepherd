@@ -214,7 +214,7 @@ extension ShepherdViewModel {
             throw AgentStartFailure(message: "space no longer exists")
         }
         let cwd = (config.workingDirectory as NSString).expandingTildeInPath
-        let name = Self.provisionalName(for: config.initialPrompt)
+        let name = config.initialName ?? Self.provisionalName(for: config.initialPrompt)
         let agentID = AgentID()
         // A new agent is exactly its pi pane. Extra panes are the agent's to
         // open (see the panes extension) or the user's via ⌘D — starting
@@ -239,7 +239,9 @@ extension ShepherdViewModel {
             // agent's opening prompt, whether that prompt came from the sheet
             // or was typed into the TUI afterwards (⌘N). With auto-naming off
             // the provisional name is what the agent keeps, so it is final.
-            nameIsFinal: !settings.autoNameAgents
+            nameIsFinal: !settings.autoNameAgents,
+            worktreeBranch: config.worktreeBranch,
+            worktreeBase: config.worktreeBase
         )
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new
