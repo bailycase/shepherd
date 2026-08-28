@@ -164,7 +164,7 @@ struct NewAgentSheet: View {
 
             VStack(spacing: 0) {
                 if !connectedHosts.isEmpty {
-                    sheetRow("host") {
+                    SheetRow("host") {
                         Picker("", selection: $targetHostID) {
                             Text("this mac").tag(UUID?.none)
                             ForEach(connectedHosts) { connection in
@@ -176,7 +176,7 @@ struct NewAgentSheet: View {
                     }
                 }
 
-                sheetRow("space") {
+                SheetRow("space") {
                     HStack(spacing: 8) {
                         if targetSpaces.isEmpty {
                             Text("no spaces yet")
@@ -196,7 +196,7 @@ struct NewAgentSheet: View {
                     }
                 }
 
-                sheetRow("directory") {
+                SheetRow("directory") {
                     HStack(spacing: 8) {
                         TextField("", text: $workingDirectory)
                             .textFieldStyle(.plain)
@@ -211,7 +211,7 @@ struct NewAgentSheet: View {
                 // of the shared checkout. Remote hosts: not supported (git
                 // runs on this Mac).
                 if targetHostID == nil, GitWorktree.isRepo(workingDirectory) {
-                    sheetRow("worktree") {
+                    SheetRow("worktree") {
                         HStack(spacing: 8) {
                             Toggle("", isOn: $worktree)
                                 .toggleStyle(.checkbox)
@@ -231,11 +231,11 @@ struct NewAgentSheet: View {
                     }
                 }
 
-                sheetRow("model") {
+                SheetRow("model") {
                     ModelField(model: $model, options: modelOptions)
                 }
 
-                sheetRow("thinking") {
+                SheetRow("thinking") {
                     Picker("", selection: $thinking) {
                         ForEach(ThinkingLevel.allCases, id: \.self) { level in
                             Text(level.rawValue).tag(level)
@@ -390,47 +390,36 @@ struct NewAgentSheet: View {
         }
     }
 
-    /// One flat labeled row: dim mono label column, control on the right,
-    /// hairline separator — the palette/settings look instead of Form chrome.
-    private func sheetRow(_ label: String, @ViewBuilder control: () -> some View) -> some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text(label)
-                    .font(Fonts.mono(10.5, .semibold))
-                    .tracking(0.74)
-                    .foregroundStyle(Tokens.textDim)
-                    .frame(width: 84, alignment: .leading)
-                control()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, 20)
-            .frame(minHeight: 38)
-            Rectangle().fill(Tokens.separator).frame(height: 1)
-                .padding(.leading, 20)
-        }
-    }
-
     private func start() {
         guard canStart, let spaceID else { return }
         starting = true
         errorText = nil
         let trimmedModel = model.trimmingCharacters(in: .whitespaces)
         let prompt = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        var cwd = workingDirectory.isEmpty ? (selectedSpace?.path ?? "~") : workingDirectory
+        let cwd = workingDirectory.isEmpty ? (selectedSpace?.path ?? "~") : workingDirectory
 
-        // Worktree first, synchronously: a failure (branch exists, dirty
-        // repo state) must surface in the sheet before any agent exists.
+        // Worktree first: resolve the base per Settings ▸ Worktrees (may
+        // fetch — off-main) and branch from it explicitly. A failure (branch
+        // exists, bad base) surfaces in the sheet before any agent exists.
         if targetHostID == nil, worktree {
-            do {
-                cwd = try GitWorktree.add(
-                    repo: cwd,
-                    branch: worktreeBranch.trimmingCharacters(in: .whitespaces)
-                )
-            } catch {
-                errorText = error.localizedDescription
-                starting = false
-                return
+            let repo = cwd
+            let branchName = worktreeBranch.trimmingCharacters(in: .whitespaces)
+            let mode = AppSettings.shared.worktreeBaseMode
+            let fetchFirst = AppSettings.shared.worktreeFetchBeforeCreate
+            Task {
+                do {
+                    let (path, baseUsed) = try await Task.detached(priority: .userInitiated) { () -> (String, String) in
+                        let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst)
+                        let path = try GitWorktree.add(repo: repo, branch: branchName, from: resolution.startPoint)
+                        return (path, resolution.display)
+                    }.value
+                    startLocalAgent(cwd: path, worktreeBranch: branchName, worktreeBase: baseUsed)
+                } catch {
+                    errorText = error.localizedDescription
+                    starting = false
+                }
             }
+            return
         }
 
         if let connection = remoteConnection {
@@ -453,12 +442,21 @@ struct NewAgentSheet: View {
             return
         }
 
+        startLocalAgent(cwd: cwd, worktreeBranch: nil, worktreeBase: nil)
+    }
+
+    private func startLocalAgent(cwd: String, worktreeBranch: String?, worktreeBase: String?) {
+        guard let spaceID else { return }
+        let trimmedModel = model.trimmingCharacters(in: .whitespaces)
+        let prompt = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let config = NewAgentConfig(
             spaceID: spaceID,
             workingDirectory: cwd,
             model: trimmedModel.isEmpty ? nil : trimmedModel,
             thinking: thinking,
-            initialPrompt: prompt.isEmpty ? nil : prompt
+            initialPrompt: prompt.isEmpty ? nil : prompt,
+            worktreeBranch: worktreeBranch,
+            worktreeBase: worktreeBase
         )
         Task {
             do {

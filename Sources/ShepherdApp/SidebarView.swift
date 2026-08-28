@@ -124,6 +124,7 @@ struct SpaceSection: View {
                 active: isActive,
                 blockedCount: blockedHere,
                 agentCount: agents.count,
+                worktreeCount: agents.count { $0.worktreeBranch != nil },
                 depth: depth,
                 onToggle: { vm.toggleSpaceCollapsed(space.id) },
                 onNewAgent: { vm.quickCreateAgent(in: space.id) }
@@ -132,6 +133,9 @@ struct SpaceSection: View {
             .sidebarDropTarget { payload in vm.dropSpace(payload: payload, on: space.id) }
             .contextMenu {
                 Button("Rename…") { vm.spaceRenameTarget = space.id }
+                if GitWorktree.isRepo(space.path) {
+                    Button("New Worktree…") { vm.worktreeSheetTarget = space.id }
+                }
                 Divider()
                 Button(role: .destructive) {
                     vm.spaceDeleteTarget = space.id
@@ -182,10 +186,21 @@ struct SpaceSection: View {
                     .contextMenu {
                         Button("Rename…") { vm.agentRenameTarget = agent.id }
                         Divider()
-                        Button(role: .destructive) {
-                            vm.deleteAgent(agent.id)
-                        } label: {
-                            Text("Delete Agent").foregroundStyle(Tokens.destructive)
+                        if agent.worktreeBranch != nil {
+                            Button("Finalize Worktree…") { vm.beginFinalizeWorktree(agent.id) }
+                            Divider()
+                            // Confirms: deleting can also remove the checkout.
+                            Button(role: .destructive) {
+                                vm.worktreeDeleteTarget = agent.id
+                            } label: {
+                                Text("Delete Worktree Agent…").foregroundStyle(Tokens.destructive)
+                            }
+                        } else {
+                            Button(role: .destructive) {
+                                vm.deleteAgent(agent.id)
+                            } label: {
+                                Text("Delete Agent").foregroundStyle(Tokens.destructive)
+                            }
                         }
                     }
                     // Live pi-subagents child runs nest under their agent.
@@ -217,6 +232,9 @@ struct SpaceHeaderRow: View {
     let active: Bool
     let blockedCount: Int
     let agentCount: Int
+    /// Agents in this space running on their own git worktree — shown as a
+    /// dim `⎇n` beside the count so the space advertises them even collapsed.
+    var worktreeCount: Int = 0
     var depth: Int = 0
     let onToggle: () -> Void
     let onNewAgent: () -> Void
@@ -244,6 +262,12 @@ struct SpaceHeaderRow: View {
                 Text("\(agentCount)")
                     .font(Fonts.mono(10.5))
                     .foregroundStyle(Tokens.textMetadata)
+            }
+            if worktreeCount > 0 {
+                Text("⎇\(worktreeCount)")
+                    .font(Fonts.mono(10.5))
+                    .foregroundStyle(Tokens.textMetadata)
+                    .help("\(worktreeCount) worktree agent\(worktreeCount == 1 ? "" : "s")")
             }
             if active || hovering {
                 Text("+")
@@ -320,7 +344,20 @@ struct AgentRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // A worktree agent reads as a sub-checkout of its space: a tree
+            // connector (with the extra indent below) into the status marker,
+            // then the branch glyph in front of its name.
+            if agent.worktreeBranch != nil {
+                Text("└─")
+                    .font(Fonts.mono(10))
+                    .foregroundStyle(Tokens.textDim)
+            }
             StatusMarker(status: agent.status)
+            if agent.worktreeBranch != nil {
+                Text("⎇")
+                    .font(Fonts.mono(11))
+                    .foregroundStyle(Tokens.textTertiary)
+            }
             // Titles are generated, so they can run long (and a provisional
             // name is a truncated prompt): keep rows one line.
             Text(agent.name)
@@ -328,7 +365,7 @@ struct AgentRow: View {
                 .foregroundStyle(nameColor)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .help(agent.name)
+                .help(agent.worktreeBranch.map { "worktree \($0)" } ?? agent.name)
             Spacer(minLength: 0)
             switch trailingAccessory {
             case .status(let status):
@@ -364,7 +401,7 @@ struct AgentRow: View {
                 : .easeOut(duration: 0.12),
             value: badge
         )
-        .padding(.leading, 16 + CGFloat(depth) * 12)
+        .padding(.leading, 16 + CGFloat(depth) * 12 + (agent.worktreeBranch != nil ? 12 : 0))
         .padding(.trailing, 10)
         .frame(height: Metrics.rowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -380,7 +417,9 @@ struct AgentRow: View {
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
         .accessibilityElement(children: containsSubagentButton ? .contain : .ignore)
-        .accessibilityLabel("\(agent.name), \(agent.status.rawValue), pi")
+        .accessibilityLabel(
+            "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(agent.status.rawValue), pi"
+        )
     }
 }
 

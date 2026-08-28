@@ -453,6 +453,22 @@ struct ShepherdViewModelTests {
         #expect(themeManager.current.id == "basalt-light")
     }
 
+    /// Worktree agents lead their space's list (stable within each group) so
+    /// they read as part of the checkout tree, not standard agents.
+    @Test func worktreeAgentsSortFirstInTheirSpace() {
+        let space = SpaceID(rawValue: "s")
+        let tab = TabID(rawValue: "t")
+        let agents = [
+            Agent(name: "one", spaceID: space, tabID: tab),
+            Agent(name: "wt-1", spaceID: space, tabID: tab, worktreeBranch: "worktree/wt-1"),
+            Agent(name: "two", spaceID: space, tabID: tab),
+            Agent(name: "wt-2", spaceID: space, tabID: tab, worktreeBranch: "worktree/wt-2"),
+            Agent(name: "elsewhere", spaceID: SpaceID(rawValue: "x"), tabID: tab),
+        ]
+        let ordered = ShepherdViewModel.sidebarAgents(of: space, in: agents)
+        #expect(ordered.map(\.name) == ["wt-1", "wt-2", "one", "two"])
+    }
+
     @Test func orderedAgentsOmitsDescendantsOfCollapsedSpace() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }

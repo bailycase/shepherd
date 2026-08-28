@@ -51,8 +51,19 @@ extension ShepherdViewModel {
 
     var spaceTree: [(space: Space, agents: [Agent], depth: Int)] {
         Self.visibleSpaceForest(visibleSpaces, collapsed: collapsedSpaces).map { entry in
-            (entry.space, state.agents.filter { $0.spaceID == entry.space.id }, entry.depth)
+            (entry.space, Self.sidebarAgents(of: entry.space.id, in: state.agents), entry.depth)
         }
+    }
+
+    /// A space's agents in sidebar order: worktree agents first — they read
+    /// as part of the space's checkout tree, directly under its header —
+    /// then standard agents; declaration order within each group. Every
+    /// order producer (tree, ⌘1–9, palette) must use this so badges and
+    /// rows never disagree.
+    static func sidebarAgents(of space: SpaceID, in agents: [Agent]) -> [Agent] {
+        let inSpace = agents.filter { $0.spaceID == space }
+        return inSpace.filter { $0.worktreeBranch != nil }
+            + inSpace.filter { $0.worktreeBranch == nil }
     }
 
     /// Flattened depth-first forest of spaces by path containment: children
@@ -99,7 +110,7 @@ extension ShepherdViewModel {
             : Self.spaceForest(visibleSpaces)
         return entries.flatMap { entry -> [Agent] in
             guard !visibleOnly || !collapsedSpaces.contains(entry.space.id) else { return [] }
-            return state.agents.filter { $0.spaceID == entry.space.id }
+            return Self.sidebarAgents(of: entry.space.id, in: state.agents)
         }
     }
 
@@ -130,7 +141,7 @@ extension ShepherdViewModel {
     ) -> [Agent] {
         visibleSpaceForest(state.spaces.filter { !$0.hidden }, collapsed: collapsed).flatMap { entry -> [Agent] in
             guard !collapsed.contains(entry.space.id) else { return [] }
-            return state.agents.filter { $0.spaceID == entry.space.id }
+            return sidebarAgents(of: entry.space.id, in: state.agents)
         }
     }
 
