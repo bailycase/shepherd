@@ -194,7 +194,9 @@ jobs:
           empty_feed() {
             printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Shepherd</title></channel></rss>\n' > "$1"
           }
-          if ls casts/stable/*.zip casts/stable/*.dmg >/dev/null 2>&1; then
+          # compgen, not ls: `ls *.zip *.dmg` fails when either glob is
+          # unmatched, which wrote an empty feed despite existing dmg's.
+          if compgen -G 'casts/stable/*.zip' >/dev/null || compgen -G 'casts/stable/*.dmg' >/dev/null; then
             "$BIN/generate_appcast" --ed-key-file "$RUNNER_TEMP/sparkle_key" \
               --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/" \
               --link "https://github.com/${{ github.repository }}" \
@@ -202,7 +204,7 @@ jobs:
           else
             empty_feed casts/stable/appcast.xml
           fi
-          if ls casts/nightly/*.zip casts/nightly/*.dmg >/dev/null 2>&1; then
+          if compgen -G 'casts/nightly/*.zip' >/dev/null || compgen -G 'casts/nightly/*.dmg' >/dev/null; then
             "$BIN/generate_appcast" --ed-key-file "$RUNNER_TEMP/sparkle_key" \
               --channel nightly \
               --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/" \
