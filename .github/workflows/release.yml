@@ -57,9 +57,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build
-          key: xcode-${{ runner.os }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            xcode-${{ runner.os }}-${{ steps.xcode.outputs.version }}-
+          # Exact-match only. A prefix-restored cache from before a model
+          # change poisons incremental builds (stale ShepherdCore objects vs
+          # new ShepherdApp sources — nightly 0217 shipped a build break that
+          # `swift test` had already passed). Release builds are rare enough
+          # that a clean rebuild beats a wrong binary.
+          key: xcode-${{ runner.os }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved', 'Sources/**/*.swift', 'App/**/*.swift') }}
 
       - name: Import Developer ID certificate
         id: cert
