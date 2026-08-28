@@ -276,10 +276,9 @@ struct StateManagementTests {
         h.stateChanged.withValue { $0.removeAll() }
 
         try await h.server.renameAgent(agentID, to: "  final title  \n")
-        try await waitUntil {
-            h.server.state.agents.first?.name == "final title"
-                && h.server.state.agents.first?.nameIsFinal == true
-        }
+        // Wait on the main-queue push, not just server state: the callback
+        // hops queues and lands after the state mutation.
+        try await waitUntil { h.stateChanged.current.count == 1 }
 
         let committed = h.server.state
         #expect(committed.agents.first?.name == "final title")
