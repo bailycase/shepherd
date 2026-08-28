@@ -232,6 +232,26 @@ extension ShepherdViewModel {
         enqueuePersistence("agent rename") { try await $0.renameAgent(id, to: trimmed) }
     }
 
+    /// Confirmed Delete Worktree Agent: retire the agent, and optionally tear
+    /// down the worktree checkout + branch that Shepherd created for it. The
+    /// removal runs off-main after a short grace so the agent's processes
+    /// (whose cwd is inside the worktree) are gone first.
+    func deleteWorktreeAgent(_ id: AgentID, removeWorktree: Bool) {
+        guard let agent = state.agents.first(where: { $0.id == id }) else { return }
+        let branch = agent.worktreeBranch
+        let repo = state.spaces.first { $0.id == agent.spaceID }?.path
+        deleteAgent(id)
+        guard removeWorktree, let branch, let repo else { return }
+        Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(500))
+            do {
+                try GitWorktree.remove(repo: repo, branch: branch)
+            } catch {
+                NSLog("Shepherd: worktree removal failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func deleteAgent(_ id: AgentID) {
         guard let agent = state.agents.first(where: { $0.id == id }),
               let tabIndex = state.tabs.firstIndex(where: { $0.id == agent.tabID }) else { return }
