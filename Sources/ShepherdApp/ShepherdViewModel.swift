@@ -166,6 +166,8 @@ final class ShepherdViewModel: ObservableObject {
         }
     }
     @Published var showNewAgentSheet = false
+    /// Whether the in-window settings surface is visible.
+    @Published var showSettings = false
     /// ⌘K command palette visibility.
     @Published var showCommandPalette = false {
         didSet { if !showCommandPalette { paletteModifierHeld = false } }

@@ -32,7 +32,7 @@ public struct ShepherdMacApp: App {
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appSettings) {
-                SettingsCommandButton()
+                SettingsCommandButton(vm: vm)
                 if AppUpdater.shared.available {
                     Button("Check for Updates…") {
                         AppUpdater.shared.checkForUpdates()
@@ -209,15 +209,6 @@ public struct ShepherdMacApp: App {
             }
         }
 
-        // A plain window, not SwiftUI's `Settings` scene: that scene forces
-        // its own titlebar material and content inset, so its header can
-        // never take a theme color. This one wears the app's own chrome.
-        Window("Settings", id: SettingsWindow.sceneID) {
-            SettingsView(vm: vm)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: Metrics.settingsMinWidth, height: Metrics.settingsDefaultHeight)
     }
 }
 
