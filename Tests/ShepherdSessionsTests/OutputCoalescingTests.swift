@@ -136,13 +136,14 @@ struct OutputCoalescingTests {
 
         let payloadCount = 8 * 1024 * 1024
         // Keep the producer raw so PTY output processing cannot rewrite the
-        // bytes under test. seq/head emit a deterministic numbered stream.
+        // bytes under test. awk emits a deterministic numbered stream (BSD
+        // seq prints "1e+06" past a million; awk always prints integers).
         let info = try await h.server.createSession(
             params: CreateSessionParams(
                 cwd: "/tmp",
                 command: [
                     "/bin/sh", "-c",
-                    "stty raw -echo -opost; sleep 0.1; printf READY; sleep 0.2; seq 1 2000000 | head -c \(payloadCount); printf END; sleep 1",
+                    "stty raw -echo -opost; sleep 0.1; printf READY; sleep 0.2; awk 'BEGIN{for(i=1;i<=2000000;i++)print i}' | head -c \(payloadCount); printf END; sleep 1",
                 ],
                 cols: 80,
                 rows: 24,
