@@ -288,7 +288,7 @@ final class RemoteHostStore: ObservableObject {
         for pane in connections.flatMap({ $0.panes.values }) {
             pane.terminal.updateConfiguration(
                 fontSize: AppSettings.shared.terminalFontSize,
-                fontFamily: AppSettings.shared.terminalFontFamily,
+                fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
                 extraUnbinds: KeybindingsStore.shared.customGhosttyUnbinds
             )
         }
@@ -377,7 +377,7 @@ final class RemotePaneSession: ObservableObject {
         self.client = client
         self.terminal = AppTerminalModel(
             fontSize: AppSettings.shared.terminalFontSize,
-            fontFamily: AppSettings.shared.terminalFontFamily,
+            fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
             terminal: ThemeManager.shared.current.terminal,
             extraUnbinds: KeybindingsStore.shared.customGhosttyUnbinds,
             acceptsFileDrops: false
