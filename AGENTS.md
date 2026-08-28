@@ -263,8 +263,10 @@ fire-and-forget (the model retries; see TerminalSurfaceKit/NOTES.md).
 **Sessions/views separation.** Closing panes detaches views only; a process exiting on its own
 closes its pane (and retires its agent). Delete Agent is the explicit lifecycle action that
 terminates an agent and its auxiliary processes while the app runs; quitting the app terminates
-everything. Shepherd does not manage Git worktrees or branches — agents run in their space's
-checkout and nothing in the app mutates repository state.
+everything. Shepherd does not manage Git worktrees or branches, with one explicit exception: the New
+Agent sheet's worktree option runs `git worktree add -b` (GitWorktree.swift) when the user
+asks for an isolated agent. Nothing else in the app mutates repository state, and Shepherd
+never removes or prunes worktrees — cleanup is the user's.
 
 **Agent names are generated, and settle once.** A new agent wears its opening prompt (truncated
 by `ShepherdViewModel.provisionalName`) with `nameIsFinal == false`. Only such agents launch pi

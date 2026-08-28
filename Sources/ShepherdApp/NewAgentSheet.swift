@@ -109,6 +109,8 @@ struct NewAgentSheet: View {
     @State private var modelOptions: [String] = []
     @State private var thinking: ThinkingLevel = AppSettings.shared.defaultThinking
     @State private var initialPrompt = ""
+    @State private var worktree = false
+    @State private var worktreeBranch = ""
     @State private var sessionCaption = "…"
     @State private var errorText: String?
     @State private var starting = false
@@ -136,6 +138,7 @@ struct NewAgentSheet: View {
 
     private var canStart: Bool {
         !starting && spaceID != nil
+            && (!worktree || !worktreeBranch.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     /// Connected hosts only — an unreachable host cannot create anything.
@@ -200,6 +203,31 @@ struct NewAgentSheet: View {
                             .font(Fonts.mono(11.5))
                             .foregroundStyle(Tokens.textSecondary)
                         SheetLinkButton(label: "choose…") { remotePicking = .cwd }
+                    }
+                }
+
+                // Local git checkouts offer an isolated worktree: the agent
+                // then works on its own branch in a sibling directory instead
+                // of the shared checkout. Remote hosts: not supported (git
+                // runs on this Mac).
+                if targetHostID == nil, GitWorktree.isRepo(workingDirectory) {
+                    sheetRow("worktree") {
+                        HStack(spacing: 8) {
+                            Toggle("", isOn: $worktree)
+                                .toggleStyle(.checkbox)
+                                .labelsHidden()
+                            if worktree {
+                                TextField("", text: $worktreeBranch,
+                                          prompt: Text("branch name").foregroundStyle(Tokens.textDim))
+                                    .textFieldStyle(.plain)
+                                    .font(Fonts.mono(11.5))
+                                    .foregroundStyle(Tokens.textSecondary)
+                            } else {
+                                Text("isolate the agent on its own branch")
+                                    .font(Fonts.mono(11))
+                                    .foregroundStyle(Tokens.textDim)
+                            }
+                        }
                     }
                 }
 
@@ -388,7 +416,22 @@ struct NewAgentSheet: View {
         errorText = nil
         let trimmedModel = model.trimmingCharacters(in: .whitespaces)
         let prompt = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cwd = workingDirectory.isEmpty ? (selectedSpace?.path ?? "~") : workingDirectory
+        var cwd = workingDirectory.isEmpty ? (selectedSpace?.path ?? "~") : workingDirectory
+
+        // Worktree first, synchronously: a failure (branch exists, dirty
+        // repo state) must surface in the sheet before any agent exists.
+        if targetHostID == nil, worktree {
+            do {
+                cwd = try GitWorktree.add(
+                    repo: cwd,
+                    branch: worktreeBranch.trimmingCharacters(in: .whitespaces)
+                )
+            } catch {
+                errorText = error.localizedDescription
+                starting = false
+                return
+            }
+        }
 
         if let connection = remoteConnection {
             Task {
