@@ -94,7 +94,7 @@ enum Metrics {
     static let windowMinHeight: CGFloat = 640
     static let windowDefaultWidth: CGFloat = 1440
     static let windowDefaultHeight: CGFloat = 900
-    static let settingsSidebarWidth: CGFloat = 190
+    static let settingsSidebarWidth: CGFloat = 230
     static let settingsDefaultHeight: CGFloat = 620
     static let settingsMinWidth: CGFloat = 720
     static let settingsMinHeight: CGFloat = 480

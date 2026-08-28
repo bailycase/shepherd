@@ -185,15 +185,31 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    /// Sentinel picker value meaning "use the system monospaced font".
+    static let systemFontFamily = "System Font"
+
+    /// The family name terminals should actually load. The true system mono
+    /// font is hidden (dot-prefixed) and breaks ghostty's cell metrics, so
+    /// the sentinel resolves to the closest publicly visible system family:
+    /// SF Mono where installed, else Menlo (always shipped).
+    var resolvedTerminalFontFamily: String {
+        guard terminalFontFamily == Self.systemFontFamily else { return terminalFontFamily }
+        let visible = NSFontManager.shared.availableFontFamilies
+        return ["SF Mono", "Menlo"].first(where: visible.contains) ?? "Menlo"
+    }
+
     /// Fixed-pitch families installed on this machine, with the configured one
     /// always present so a missing font is still shown (ghostty falls back
     /// silently, so the name must remain visible and correctable).
     static func monospacedFamilies(including current: String) -> [String] {
         var families = NSFontManager.shared.availableFontFamilies.filter { family in
             guard let font = NSFont(name: family, size: 12) else { return false }
-            return font.isFixedPitch
+            // Symbols-only families (Nerd Font glyph packs) are fixed-pitch
+            // but carry no Latin letters; a terminal set to one renders
+            // fallback glyphs on a broken double-wide grid.
+            return font.isFixedPitch && font.coveredCharacterSet.contains("a")
         }
-        if !families.contains(current) {
+        if !families.contains(current), current != systemFontFamily {
             families.append(current)
         }
         return families.sorted()

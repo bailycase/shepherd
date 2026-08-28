@@ -66,7 +66,7 @@ final class TerminalSessionStore: ObservableObject {
             self.paneID = paneID
             self.terminal = AppTerminalModel(
                 fontSize: AppSettings.shared.terminalFontSize,
-                fontFamily: AppSettings.shared.terminalFontFamily,
+                fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
                 terminal: ThemeManager.shared.current.terminal,
                 // Rebound app shortcuts must fall through a focused terminal
                 // exactly like the built-in ones.
@@ -310,7 +310,7 @@ final class TerminalSessionStore: ObservableObject {
         for session in sessions.values {
             session.terminal.updateConfiguration(
                 fontSize: AppSettings.shared.terminalFontSize,
-                fontFamily: AppSettings.shared.terminalFontFamily,
+                fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
                 extraUnbinds: KeybindingsStore.shared.customGhosttyUnbinds
             )
         }

@@ -8,20 +8,14 @@ import SwiftUI
 /// its header can never take a theme color — which is the whole point here.
 /// The cost is that ⌘, and the app-menu item must be wired by hand, which the
 /// command below does.
-@MainActor
-enum SettingsWindow {
-    static let sceneID = "shepherd-settings"
-
-}
-
-/// The app-menu Settings item. Lives in a view so it can use `openWindow`,
-/// which is the supported way to show a `Window` scene.
+/// The app-menu Settings item. Settings is an in-window surface, so the
+/// command toggles view state rather than opening a second scene.
 struct SettingsCommandButton: View {
-    @Environment(\.openWindow) private var openWindow
+    @ObservedObject var vm: ShepherdViewModel
 
     var body: some View {
-        Button("Settings…") {
-            openWindow(id: SettingsWindow.sceneID)
+        Button(vm.showSettings ? "Back to App" : "Settings…") {
+            vm.showSettings.toggle()
         }
         .keyboardShortcut(",", modifiers: .command)
     }
