@@ -219,6 +219,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return ["Theme", "UI Density", "UI Text Scale", "Sidebar Width"]
         case .terminal: return ["Terminal Font", "Font Size", "Shell"]
         case .agents: return ["Default Model", "Default Thinking Level", "Auto-name Agents"]
+        case .pi: return ["Automatically Update Pi", "Installed Version", "Status", "Check Now", "Update Now"]
         case .remote: return ["Hosts", "Serve This Mac"]
         case .keyboard: return ["New Agent", "Settings", "Pane Shortcuts"]
         case .advanced: return ["Files", "Reset Settings", "Updates", "About"]
