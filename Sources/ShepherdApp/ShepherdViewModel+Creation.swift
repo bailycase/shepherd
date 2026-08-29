@@ -13,6 +13,20 @@ extension ShepherdViewModel {
         spacePickerTarget = .local
     }
 
+    func importExistingCheckoutFromPanel() {
+        spacePickerTarget = .importLocal
+    }
+
+    @discardableResult
+    func importExistingCheckout(at url: URL) async -> SpaceID? {
+        let path = url.standardizedFileURL.path
+        if let existing = state.spaces.first(where: { $0.path == path }) {
+            selectSpace(existing.id)
+            return existing.id
+        }
+        return await addSpace(at: URL(fileURLWithPath: path), createInitialAgent: false)
+    }
+
     @discardableResult
     func addSpace(at url: URL, createInitialAgent: Bool = true) async -> SpaceID? {
         let path = url.path

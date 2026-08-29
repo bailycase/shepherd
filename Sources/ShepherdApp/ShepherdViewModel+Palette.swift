@@ -37,6 +37,12 @@ extension ShepherdViewModel {
             shortcut: keys.display(.newSpace)
         ))
         items.append(PaletteItem(
+            id: "action.importCheckout",
+            kind: .action("importCheckout"),
+            section: .commands,
+            title: "import existing checkout…"
+        ))
+        items.append(PaletteItem(
             id: "action.newShell",
             kind: .action("newShell"),
             section: .commands,
@@ -179,6 +185,7 @@ extension ShepherdViewModel {
             case "newAgent": quickCreateAgent()
             case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
+            case "importCheckout": importExistingCheckoutFromPanel()
             case "newShell": addShell()
             case "rename": agentRenameTarget = selectedAgentID
             default: break

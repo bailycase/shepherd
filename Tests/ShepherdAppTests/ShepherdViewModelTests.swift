@@ -191,6 +191,27 @@ struct ShepherdViewModelTests {
         #expect(vm.selectedSpaceID == id)
     }
 
+    @Test func importingExistingCheckoutAddsSpaceWithoutAgent() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+        let path = fixture.dir.appendingPathComponent("imported-worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+
+        let id = await vm.importExistingCheckout(at: path)
+
+        #expect(id != nil)
+        #expect(fixture.server.state.spaces.first?.path == path.path)
+        #expect(fixture.server.state.tabs.count == 1)
+        #expect(fixture.server.state.agents.isEmpty)
+        #expect(vm.selectedSpaceID == id)
+
+        let duplicate = await vm.importExistingCheckout(at: path)
+        #expect(duplicate == id)
+        #expect(fixture.server.state.spaces.count == 1)
+        #expect(fixture.server.state.tabs.count == 1)
+    }
+
     @Test func queuedLayoutWritesStayOrderedAndReconcileRejectedOptimisticState() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
