@@ -26,12 +26,13 @@ final class AppSettings: ObservableObject {
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
         static let remoteListenerEnabled = "shepherd.remote.listener"
         static let remoteListenerPort = "shepherd.remote.listenerPort"
+        static let autoUpdatePi = "shepherd.pi.autoUpdate"
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, shellPath,
             uiDensity, uiTextScale, sidebarWidth,
-            remoteListenerEnabled, remoteListenerPort,
+            remoteListenerEnabled, remoteListenerPort, autoUpdatePi,
         ]
     }
 
@@ -40,6 +41,7 @@ final class AppSettings: ObservableObject {
         static let terminalFontSize: Double = 12.5
         static let thinking: ThinkingLevel = .medium
         static let autoNameAgents = true
+        static let autoUpdatePi = false
         /// The user's login shell when it is a real executable, else zsh.
         static var shellPath: String {
             let env = ProcessInfo.processInfo.environment["SHELL"] ?? ""
@@ -70,6 +72,10 @@ final class AppSettings: ObservableObject {
     /// prompt) and the namer extension is never passed to pi.
     @Published var autoNameAgents: Bool {
         didSet { store.set(autoNameAgents, forKey: Key.autoNameAgents) }
+    }
+
+    @Published var autoUpdatePi: Bool {
+        didSet { store.set(autoUpdatePi, forKey: Key.autoUpdatePi) }
     }
 
     /// Shell for panes that are not an agent's pi process (⌘D splits, space
@@ -116,6 +122,7 @@ final class AppSettings: ObservableObject {
         defaultThinking = store.string(forKey: Key.defaultThinking)
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
+        autoUpdatePi = store.object(forKey: Key.autoUpdatePi) as? Bool ?? Defaults.autoUpdatePi
         shellPath = store.string(forKey: Key.shellPath) ?? Defaults.shellPath
         let density = store.double(forKey: Key.uiDensity)
         uiDensity = min(max(density == 0 ? 1 : density, Self.uiDensityRange.lowerBound), Self.uiDensityRange.upperBound)
@@ -177,6 +184,7 @@ final class AppSettings: ObservableObject {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
+        autoUpdatePi = Defaults.autoUpdatePi
         shellPath = Defaults.shellPath
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.
