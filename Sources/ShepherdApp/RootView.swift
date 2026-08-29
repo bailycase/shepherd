@@ -91,7 +91,7 @@ struct RootView: View {
                 )
             case .importLocal:
                 RemoteDirectoryPicker(
-                    title: "Import Existing Checkout",
+                    title: "Import Existing Worktree",
                     actionTitle: "Import",
                     hostName: "this mac",
                     list: { path in try LocalDirectoryLister.list(path: path) },
