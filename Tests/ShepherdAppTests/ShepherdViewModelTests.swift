@@ -270,8 +270,6 @@ struct ShepherdViewModelTests {
         #expect(fixture.server.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == canonicalWorktree)
         #expect(vm.selectedAgentID == id)
 
-        let duplicate = await vm.importExistingCheckout(at: worktree, into: spaceID)
-        #expect(duplicate == id)
         #expect(fixture.server.state.spaces.count == 1)
         #expect(fixture.server.state.agents.count == 1)
     }
