@@ -77,6 +77,63 @@ struct GitWorktreeTests {
         #expect(try GitWorktree.add(repo: repo, branch: "agent/fix-thing") == path)
     }
 
+    @Test func importDirectoryUsesTheReposRegisteredWorktreeFolder() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shepherd-browse-\(UUID().uuidString)", isDirectory: true)
+        let repo = base.appendingPathComponent("repo").path
+        let worktrees = base.appendingPathComponent("linked", isDirectory: true)
+        let linked = worktrees.appendingPathComponent("feature").path
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktrees, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        func git(_ args: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo] + args
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        try git(["init", "-q"])
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"])
+        try git(["worktree", "add", "-q", "-b", "worktree/feature", linked])
+
+        #expect(GitWorktree.importDirectory(repo: repo) == worktrees.resolvingSymlinksInPath().path)
+    }
+
+    @Test func identifiesAnExistingLinkedWorktree() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shepherd-import-\(UUID().uuidString)", isDirectory: true)
+        let repo = base.appendingPathComponent("repo").path
+        let imported = base.appendingPathComponent("migrated-any-name").path
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        func git(_ args: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo] + args
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+
+        try git(["init", "-q"])
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"])
+        try git(["worktree", "add", "-q", "-b", "worktree/imported", imported])
+
+        let identity = try GitWorktree.identity(at: imported)
+        #expect(identity.repo == URL(fileURLWithPath: repo).resolvingSymlinksInPath().path)
+        #expect(identity.path == URL(fileURLWithPath: imported).resolvingSymlinksInPath().path)
+        #expect(identity.branch == "worktree/imported")
+        #expect(throws: (any Error).self) { try GitWorktree.identity(at: repo) }
+    }
+
     /// The incident class this exists to prevent: the primary checkout sits
     /// on a feature branch, but a worktree created from an explicit
     /// `origin/<default>` base carries none of that work — and gets no

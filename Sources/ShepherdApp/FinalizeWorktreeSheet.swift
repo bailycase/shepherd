@@ -37,7 +37,9 @@ struct FinalizeWorktreeSheet: View {
     }
 
     private var branch: String { agent.worktreeBranch ?? "" }
-    private var worktreePath: String { GitWorktree.destination(repo: space.path, branch: branch) }
+    private var worktreePath: String {
+        agent.worktreePath ?? GitWorktree.destination(repo: space.path, branch: branch)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

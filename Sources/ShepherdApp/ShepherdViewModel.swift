@@ -25,6 +25,9 @@ struct NewAgentConfig {
     var worktreeBranch: String?
     /// The base the worktree branched from; Finalize targets the PR at it.
     var worktreeBase: String?
+    /// Actual checkout path for imported worktrees whose directory name does
+    /// not follow Shepherd's generated repo-branch convention.
+    var worktreePath: String?
     /// An automation's watch agent: spawned with SHEPHERD_AUTOMATION=1 so
     /// the panes extension withholds the automation_* tools (a watcher must
     /// never create watchers).
@@ -83,12 +86,20 @@ final class ShepherdViewModel: ObservableObject {
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
+    struct WorktreeImportTarget: Equatable {
+        let id = UUID()
+        let spaceID: SpaceID
+        let startPath: String
+    }
+
     enum SpacePickerTarget: Identifiable, Equatable {
         case local
+        case importWorktree(WorktreeImportTarget)
         case host(UUID)
         var id: String {
             switch self {
             case .local: return "local"
+            case .importWorktree(let target): return target.id.uuidString
             case .host(let id): return id.uuidString
             }
         }
@@ -206,6 +217,9 @@ final class ShepherdViewModel: ObservableObject {
     @Published var showNewAgentSheet = false
     /// Whether the in-window settings surface is visible.
     @Published var showSettings = false
+    /// Last Settings category visited. View-model state survives closing the
+    /// overlay but naturally resets when Shepherd restarts.
+    @Published var settingsSection: SettingsSection = .appearance
     /// ⌘K command palette visibility.
     @Published var showCommandPalette = false {
         didSet { if !showCommandPalette { paletteModifierHeld = false } }

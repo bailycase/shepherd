@@ -46,6 +46,8 @@ enum LocalDirectoryLister {
 /// over the wire. Editable path field (⏎ jumps), hidden-dirs toggle,
 /// click to descend, `..` to go up.
 struct RemoteDirectoryPicker: View {
+    var title = "Choose Directory"
+    var actionTitle = "Choose"
     let hostName: String
     /// Where browsing begins; empty = the machine's home directory. A cwd
     /// picker starts at the current value, not home.
@@ -89,7 +91,7 @@ struct RemoteDirectoryPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Choose Directory on \(hostName)")
+                Text("\(title) on \(hostName)")
                     .font(Fonts.mono(13.5, .semibold))
                     .foregroundStyle(Tokens.textPrimary)
                 // The path is editable: typing filters the listing to what's
@@ -145,7 +147,7 @@ struct RemoteDirectoryPicker: View {
                     .foregroundStyle(Tokens.textTertiary)
                 Button("Cancel", action: cancel)
                     .keyboardShortcut(.cancelAction)
-                Button("Choose") { submit() }
+                Button(actionTitle) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(Tokens.accentButton)

@@ -13,6 +13,75 @@ extension ShepherdViewModel {
         spacePickerTarget = .local
     }
 
+    func importExistingWorktreeFromPanel(in spaceID: SpaceID) {
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return }
+        spacePickerTarget = .importWorktree(WorktreeImportTarget(
+            spaceID: spaceID,
+            startPath: GitWorktree.importDirectory(repo: space.path)
+        ))
+    }
+
+    @discardableResult
+    func importExistingCheckout(at url: URL, into spaceID: SpaceID? = nil) async -> AgentID? {
+        let identity: GitWorktree.Identity
+        do {
+            identity = try await Task.detached(priority: .userInitiated) {
+                try GitWorktree.identity(at: url.path)
+            }.value
+        } catch {
+            NSLog("Shepherd: worktree import failed: \(error.localizedDescription)")
+            NSSound.beep()
+            return nil
+        }
+
+        let space: Space
+        if let spaceID {
+            guard let selected = state.spaces.first(where: { $0.id == spaceID }),
+                  (try? GitWorktree.primaryCheckout(at: selected.path)) == identity.repo else {
+                NSLog("Shepherd: imported worktree does not belong to the selected space")
+                NSSound.beep()
+                return nil
+            }
+            space = selected
+        } else if let existing = state.spaces.first(where: {
+            URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().standardized.path == identity.repo
+        }) {
+            space = existing
+        } else {
+            guard let id = await addSpace(
+                at: URL(fileURLWithPath: identity.repo),
+                createInitialAgent: false
+            ), let added = state.spaces.first(where: { $0.id == id }) else { return nil }
+            space = added
+        }
+
+        if let existing = state.agents.first(where: { $0.worktreePath == identity.path }) {
+            selectAgent(existing.id)
+            return existing.id
+        }
+
+        let config = NewAgentConfig(
+            spaceID: space.id,
+            workingDirectory: identity.path,
+            model: settings.agentDefaults.model,
+            thinking: settings.agentDefaults.thinking,
+            initialPrompt: nil,
+            initialName: (identity.branch as NSString).lastPathComponent,
+            worktreeBranch: identity.branch,
+            worktreeBase: identity.base,
+            worktreePath: identity.path
+        )
+        do {
+            let id = try await startAgent(config, selectAfter: false)
+            selectAgent(id)
+            return id
+        } catch {
+            NSLog("Shepherd: imported worktree agent failed: \(error)")
+            NSSound.beep()
+            return nil
+        }
+    }
+
     @discardableResult
     func addSpace(at url: URL, createInitialAgent: Bool = true) async -> SpaceID? {
         let path = url.path
@@ -241,7 +310,8 @@ extension ShepherdViewModel {
             // the provisional name is what the agent keeps, so it is final.
             nameIsFinal: !settings.autoNameAgents,
             worktreeBranch: config.worktreeBranch,
-            worktreeBase: config.worktreeBase
+            worktreeBase: config.worktreeBase,
+            worktreePath: config.worktreePath
         )
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new

@@ -89,6 +89,24 @@ struct RootView: View {
                     },
                     cancel: { vm.spacePickerTarget = nil }
                 )
+            case .importWorktree(let target):
+                RemoteDirectoryPicker(
+                    title: "Import Existing Worktree",
+                    actionTitle: "Import",
+                    hostName: "this mac",
+                    startPath: target.startPath,
+                    list: { path in try LocalDirectoryLister.list(path: path) },
+                    choose: { path in
+                        vm.spacePickerTarget = nil
+                        Task {
+                            await vm.importExistingCheckout(
+                                at: URL(fileURLWithPath: path),
+                                into: target.spaceID
+                            )
+                        }
+                    },
+                    cancel: { vm.spacePickerTarget = nil }
+                )
             case .host(let hostID):
                 if let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID }) {
                     RemoteDirectoryPicker(
@@ -190,7 +208,7 @@ struct RootView: View {
                   let branch = agent.worktreeBranch,
                   let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) else { return }
             worktreeDeleteWarning = GitWorktree.unreconciledWork(
-                worktree: GitWorktree.destination(repo: space.path, branch: branch),
+                worktree: agent.worktreePath ?? GitWorktree.destination(repo: space.path, branch: branch),
                 branch: branch
             )
         }
@@ -202,7 +220,7 @@ struct RootView: View {
         ) {
             let agent = vm.agent(id: vm.worktreeDeleteTarget)
             let branch = agent?.worktreeBranch ?? ""
-            let path = vm.state.spaces.first { $0.id == agent?.spaceID }
+            let path = agent?.worktreePath ?? vm.state.spaces.first { $0.id == agent?.spaceID }
                 .map { GitWorktree.destination(repo: $0.path, branch: branch) } ?? ""
             DialogSheet(
                 title: "Delete Worktree Agent",
