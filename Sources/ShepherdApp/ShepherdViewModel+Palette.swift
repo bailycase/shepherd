@@ -40,7 +40,7 @@ extension ShepherdViewModel {
             id: "action.importCheckout",
             kind: .action("importCheckout"),
             section: .commands,
-            title: "import existing checkout…"
+            title: "import existing worktree…"
         ))
         items.append(PaletteItem(
             id: "action.newShell",
