@@ -33,9 +33,9 @@ Shepherd is opinionated software. It's built around my workflow and preferences 
 
 Download `Shepherd.dmg` from the [latest release](../../releases/latest), open it, and drag
 Shepherd to Applications. Builds are signed and notarized; updates arrive automatically
-via Sparkle. Nightly builds from every push are available as
-[pre-releases](../../releases) — opt in via Settings ▸ Advanced to receive them
-through auto-update.
+via Sparkle on the channel you choose in Settings ▸ Advanced: **Stable** (tagged releases),
+**Release Candidate** and **Beta** (pre-releases — both also receive newer stable builds, so
+you are never stranded behind a hotfix), or **Nightly** (every push, least tested).
 
 ## Build from source
 
