@@ -55,6 +55,26 @@ enum GitWorktree {
         var base: String?
     }
 
+    /// Folder containing this repository's registered linked worktrees. Git
+    /// is authoritative because worktrees may live somewhere other than the
+    /// primary checkout's parent. Falls back to that parent before the first
+    /// linked worktree exists.
+    static func importDirectory(repo: String) -> String {
+        let canonicalRepo = URL(fileURLWithPath: (repo as NSString).expandingTildeInPath)
+            .resolvingSymlinksInPath().standardized.path
+        if let output = try? run(["-C", canonicalRepo, "worktree", "list", "--porcelain", "-z"]),
+           let linked = output.components(separatedBy: "\0")
+            .compactMap({ field -> String? in
+                guard field.hasPrefix("worktree ") else { return nil }
+                return String(field.dropFirst("worktree ".count))
+            })
+            .map({ URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardized.path })
+            .first(where: { $0 != canonicalRepo }) {
+            return URL(fileURLWithPath: linked).deletingLastPathComponent().path
+        }
+        return URL(fileURLWithPath: canonicalRepo).deletingLastPathComponent().path
+    }
+
     /// Read an existing linked worktree's primary checkout, branch, and best
     /// local base. A primary checkout is rejected because it belongs as a
     /// Space, not as a worktree Agent beneath itself.

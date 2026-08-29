@@ -191,6 +191,50 @@ struct ShepherdViewModelTests {
         #expect(vm.selectedSpaceID == id)
     }
 
+    @Test func worktreeImportPickerCapturesTheRegisteredWorktreeDirectory() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let repo = fixture.dir.appendingPathComponent("repo", isDirectory: true)
+        let worktreeFolder = fixture.dir.appendingPathComponent("linked", isDirectory: true)
+        let worktree = worktreeFolder.appendingPathComponent("feature", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktreeFolder, withIntermediateDirectories: true)
+
+        func git(_ arguments: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo.path] + arguments
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        try git(["init", "-q"])
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"])
+        try git(["worktree", "add", "-q", "-b", "worktree/feature", worktree.path])
+
+        let vm = ShepherdViewModel(server: fixture.server)
+        let spaceID = try #require(await vm.addSpace(at: repo, createInitialAgent: false))
+        vm.importExistingWorktreeFromPanel(in: spaceID)
+
+        guard case .importWorktree(let target) = vm.spacePickerTarget else {
+            Issue.record("expected worktree import picker")
+            return
+        }
+        #expect(target.spaceID == spaceID)
+        #expect(target.startPath == worktreeFolder.resolvingSymlinksInPath().path)
+
+        let firstRequest = target.id
+        vm.spacePickerTarget = nil
+        vm.importExistingWorktreeFromPanel(in: spaceID)
+        guard case .importWorktree(let reopened) = vm.spacePickerTarget else {
+            Issue.record("expected reopened worktree import picker")
+            return
+        }
+        #expect(reopened.id != firstRequest)
+    }
+
     @Test func importingExistingCheckoutRestoresWorktreeIdentity() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
