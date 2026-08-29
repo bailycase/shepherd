@@ -308,6 +308,20 @@ struct ShepherdViewModelTests {
         #expect(fixture.server.state.spaces.count == 1)
     }
 
+    @Test func settingsSectionSurvivesClosingUntilViewModelRestarts() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+
+        #expect(vm.settingsSection == .appearance)
+        vm.showSettings = true
+        vm.settingsSection = .pi
+        vm.showSettings = false
+        vm.showSettings = true
+
+        #expect(vm.settingsSection == .pi)
+    }
+
     @Test func queuedLayoutWritesStayOrderedAndReconcileRejectedOptimisticState() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
