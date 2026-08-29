@@ -135,6 +135,9 @@ struct SpaceSection: View {
                 Button("Rename…") { vm.spaceRenameTarget = space.id }
                 if GitWorktree.isRepo(space.path) {
                     Button("New Worktree…") { vm.worktreeSheetTarget = space.id }
+                    Button("Import Existing Worktree…") {
+                        vm.importExistingWorktreeFromPanel(in: space.id)
+                    }
                 }
                 Divider()
                 Button(role: .destructive) {

@@ -13,12 +13,12 @@ extension ShepherdViewModel {
         spacePickerTarget = .local
     }
 
-    func importExistingCheckoutFromPanel() {
-        spacePickerTarget = .importLocal
+    func importExistingWorktreeFromPanel(in spaceID: SpaceID) {
+        spacePickerTarget = .importWorktree(spaceID)
     }
 
     @discardableResult
-    func importExistingCheckout(at url: URL) async -> AgentID? {
+    func importExistingCheckout(at url: URL, into spaceID: SpaceID? = nil) async -> AgentID? {
         let identity: GitWorktree.Identity
         do {
             identity = try await Task.detached(priority: .userInitiated) {
@@ -30,13 +30,16 @@ extension ShepherdViewModel {
             return nil
         }
 
-        if let existing = state.agents.first(where: { $0.worktreePath == identity.path }) {
-            selectAgent(existing.id)
-            return existing.id
-        }
-
         let space: Space
-        if let existing = state.spaces.first(where: {
+        if let spaceID {
+            guard let selected = state.spaces.first(where: { $0.id == spaceID }),
+                  URL(fileURLWithPath: selected.path).resolvingSymlinksInPath().standardized.path == identity.repo else {
+                NSLog("Shepherd: imported worktree does not belong to the selected space")
+                NSSound.beep()
+                return nil
+            }
+            space = selected
+        } else if let existing = state.spaces.first(where: {
             URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().standardized.path == identity.repo
         }) {
             space = existing
@@ -46,6 +49,11 @@ extension ShepherdViewModel {
                 createInitialAgent: false
             ), let added = state.spaces.first(where: { $0.id == id }) else { return nil }
             space = added
+        }
+
+        if let existing = state.agents.first(where: { $0.worktreePath == identity.path }) {
+            selectAgent(existing.id)
+            return existing.id
         }
 
         let config = NewAgentConfig(
