@@ -73,6 +73,18 @@ struct RootView: View {
                     },
                     cancel: { vm.spacePickerTarget = nil }
                 )
+            case .importLocal:
+                RemoteDirectoryPicker(
+                    title: "Import Existing Checkout",
+                    actionTitle: "Import",
+                    hostName: "this mac",
+                    list: { path in try LocalDirectoryLister.list(path: path) },
+                    choose: { path in
+                        vm.spacePickerTarget = nil
+                        Task { await vm.importExistingCheckout(at: URL(fileURLWithPath: path)) }
+                    },
+                    cancel: { vm.spacePickerTarget = nil }
+                )
             case .host(let hostID):
                 if let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID }) {
                     RemoteDirectoryPicker(

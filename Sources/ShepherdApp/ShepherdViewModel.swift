@@ -75,10 +75,12 @@ final class ShepherdViewModel: ObservableObject {
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
     enum SpacePickerTarget: Identifiable, Equatable {
         case local
+        case importLocal
         case host(UUID)
         var id: String {
             switch self {
             case .local: return "local"
+            case .importLocal: return "import-local"
             case .host(let id): return id.uuidString
             }
         }
