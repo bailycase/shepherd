@@ -25,6 +25,7 @@ struct AppSettingsTests {
         #expect(settings.defaultThinking == AppSettings.Defaults.thinking)
         #expect(settings.autoNameAgents)
         #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
+        #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
     }
 
     @Test func valuesPersistAndReload() {
@@ -37,6 +38,7 @@ struct AppSettingsTests {
         settings.defaultThinking = .high
         settings.autoNameAgents = false
         settings.autoUpdatePi = true
+        settings.autoUpdateExtensions = true
         settings.shellPath = "/bin/bash"
         settings.sidebarWidth = 275
 
@@ -47,6 +49,7 @@ struct AppSettingsTests {
         #expect(reloaded.defaultThinking == .high)
         #expect(reloaded.autoNameAgents == false)
         #expect(reloaded.autoUpdatePi)
+        #expect(reloaded.autoUpdateExtensions)
         #expect(reloaded.shellPath == "/bin/bash")
         #expect(reloaded.sidebarWidth == 275)
     }
@@ -75,6 +78,7 @@ struct AppSettingsTests {
         settings.defaultModel = "openai/gpt-5"
         settings.autoNameAgents = false
         settings.autoUpdatePi = true
+        settings.autoUpdateExtensions = true
 
         settings.resetToDefaults()
 
@@ -82,6 +86,7 @@ struct AppSettingsTests {
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.autoNameAgents)
         #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
+        #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
         for key in AppSettings.Key.all {
             #expect(store.object(forKey: key) == nil)
         }
@@ -96,6 +101,22 @@ struct AppSettingsTests {
 
         settings.defaultModel = " openai/gpt-5 "
         #expect(settings.agentDefaults.model == "openai/gpt-5")
+    }
+
+    @Test func legacyCombinedPiSettingMigratesToExtensionUpdates() {
+        let store = scratchDefaults()
+        store.set(true, forKey: AppSettings.Key.autoUpdatePi)
+
+        #expect(AppSettings(store: store).autoUpdateExtensions)
+    }
+
+    @Test func automaticPiCommandsRespectIndependentSettings() {
+        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: false, updateExtensions: false).isEmpty)
+        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: true, updateExtensions: false) == [["update"]])
+        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: false, updateExtensions: true) == [["update", "--extensions"]])
+        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: true, updateExtensions: true) == [
+            ["update"], ["update", "--extensions"],
+        ])
     }
 
     @Test func piVersionComparisonHandlesPrefixesAndMissingComponents() {

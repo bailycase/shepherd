@@ -38,10 +38,11 @@ final class PiUpdateManager: ObservableObject {
         }
     }
 
-    /// Called after the Settings toggle changes. Checks continue while off,
-    /// but only an enabled setting may trigger an update.
+    /// Called after either Settings toggle changes. Checks continue while
+    /// both are off, but only enabled update commands run automatically.
     func applyAutoUpdateSetting() {
-        guard AppSettings.shared.autoUpdatePi else { return }
+        let settings = AppSettings.shared
+        guard settings.autoUpdatePi || settings.autoUpdateExtensions else { return }
         checkNow()
     }
 
@@ -56,11 +57,13 @@ final class PiUpdateManager: ObservableObject {
                 isOutdated = Self.isVersion(result.current, olderThan: result.latest)
                 lastChecked = Date()
                 lastError = nil
-                // The extension command has no read-only check, so an enabled
-                // schedule runs both update commands. Pi itself exits quickly
-                // when current, while extensions are refreshed in the same pass.
-                if AppSettings.shared.autoUpdatePi {
-                    updateNow()
+                let settings = AppSettings.shared
+                let arguments = Self.automaticUpdateArguments(
+                    updatePi: settings.autoUpdatePi,
+                    updateExtensions: settings.autoUpdateExtensions
+                )
+                if !arguments.isEmpty {
+                    runUpdates(arguments)
                 }
             } catch {
                 lastError = error.localizedDescription
@@ -69,15 +72,34 @@ final class PiUpdateManager: ObservableObject {
         }
     }
 
-    func updateNow() {
-        guard !isUpdating else { return }
+    func updatePiNow() {
+        runUpdates([["update"]])
+    }
+
+    func updateExtensionsNow() {
+        runUpdates([["update", "--extensions"]])
+    }
+
+    static func automaticUpdateArguments(
+        updatePi: Bool,
+        updateExtensions: Bool
+    ) -> [[String]] {
+        var commands: [[String]] = []
+        if updatePi { commands.append(["update"]) }
+        if updateExtensions { commands.append(["update", "--extensions"]) }
+        return commands
+    }
+
+    private func runUpdates(_ commands: [[String]]) {
+        guard !isUpdating, !commands.isEmpty else { return }
         isUpdating = true
         lastError = nil
         Task { [weak self] in
             guard let self else { return }
             do {
-                _ = try await Self.runPiCommand(["update"], discardOutput: true)
-                _ = try await Self.runPiCommand(["update", "--extensions"], discardOutput: true)
+                for arguments in commands {
+                    _ = try await Self.runPiCommand(arguments, discardOutput: true)
+                }
                 let result = try await Self.checkVersions()
                 currentVersion = result.current
                 latestVersion = result.latest
