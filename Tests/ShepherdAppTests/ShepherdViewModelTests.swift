@@ -191,25 +191,44 @@ struct ShepherdViewModelTests {
         #expect(vm.selectedSpaceID == id)
     }
 
-    @Test func importingExistingCheckoutAddsSpaceWithoutAgent() async throws {
+    @Test func importingExistingCheckoutRestoresWorktreeIdentity() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
         let vm = ShepherdViewModel(server: fixture.server)
-        let path = fixture.dir.appendingPathComponent("imported-worktree", isDirectory: true)
-        try FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
+        let repo = fixture.dir.appendingPathComponent("repo", isDirectory: true)
+        let worktree = fixture.dir.appendingPathComponent("migrated-worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
 
-        let id = await vm.importExistingCheckout(at: path)
+        func git(_ arguments: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo.path] + arguments
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        try git(["init", "-q"])
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"])
+        try git(["worktree", "add", "-q", "-b", "worktree/imported", worktree.path])
 
-        #expect(id != nil)
-        #expect(fixture.server.state.spaces.first?.path == path.path)
-        #expect(fixture.server.state.tabs.count == 1)
-        #expect(fixture.server.state.agents.isEmpty)
-        #expect(vm.selectedSpaceID == id)
+        let id = await vm.importExistingCheckout(at: worktree)
+        let agent = try #require(fixture.server.state.agents.first)
 
-        let duplicate = await vm.importExistingCheckout(at: path)
+        #expect(id == agent.id)
+        let canonicalRepo = repo.resolvingSymlinksInPath().path
+        let canonicalWorktree = worktree.resolvingSymlinksInPath().path
+        #expect(fixture.server.state.spaces.first?.path == canonicalRepo)
+        #expect(agent.worktreeBranch == "worktree/imported")
+        #expect(agent.worktreePath == canonicalWorktree)
+        #expect(fixture.server.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == canonicalWorktree)
+        #expect(vm.selectedAgentID == id)
+
+        let duplicate = await vm.importExistingCheckout(at: worktree)
         #expect(duplicate == id)
         #expect(fixture.server.state.spaces.count == 1)
-        #expect(fixture.server.state.tabs.count == 1)
+        #expect(fixture.server.state.agents.count == 1)
     }
 
     @Test func queuedLayoutWritesStayOrderedAndReconcileRejectedOptimisticState() async throws {
@@ -472,6 +491,22 @@ struct ShepherdViewModelTests {
         #expect(settings.autoNameAgents == false)
         #expect(keys.overrides[.newAgent] == KeyChord(key: "p", command: true))
         #expect(themeManager.current.id == "basalt-light")
+    }
+
+    /// Worktree agents lead their space's list (stable within each group) so
+    /// they read as part of the checkout tree, not standard agents.
+    @Test func worktreeAgentsSortFirstInTheirSpace() {
+        let space = SpaceID(rawValue: "s")
+        let tab = TabID(rawValue: "t")
+        let agents = [
+            Agent(name: "one", spaceID: space, tabID: tab),
+            Agent(name: "wt-1", spaceID: space, tabID: tab, worktreeBranch: "worktree/wt-1"),
+            Agent(name: "two", spaceID: space, tabID: tab),
+            Agent(name: "wt-2", spaceID: space, tabID: tab, worktreeBranch: "worktree/wt-2"),
+            Agent(name: "elsewhere", spaceID: SpaceID(rawValue: "x"), tabID: tab),
+        ]
+        let ordered = ShepherdViewModel.sidebarAgents(of: space, in: agents)
+        #expect(ordered.map(\.name) == ["wt-1", "wt-2", "one", "two"])
     }
 
     @Test func orderedAgentsOmitsDescendantsOfCollapsedSpace() async throws {

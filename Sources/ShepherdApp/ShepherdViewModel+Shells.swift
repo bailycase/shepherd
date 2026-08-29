@@ -23,16 +23,20 @@ extension ShepherdViewModel {
     }
 
     /// The `+` in the SHELLS header: a new shell in the home directory,
-    /// selected immediately. Named after its cwd until renamed.
-    func addShell() {
+    /// selected immediately. Named after its cwd until renamed. `running`
+    /// rides the restore-command path: the command is typed into the fresh
+    /// shell — visible and cancelable, not a hidden exec (the worktree setup
+    /// wizard uses this for `gh auth login`).
+    func addShell(named name: String? = nil, running command: String? = nil) {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let order = (shellTabs.map(\.order).max() ?? -1) + 1
         let tab = Tab(
             spaceID: nil,
             order: order,
             layout: .leaf(LeafPane(cwd: home)),
-            name: nil,
-            nameIsFinal: false
+            name: name,
+            nameIsFinal: name != nil,
+            restoreCommand: command
         )
         state.tabs.append(tab)
         sessions.stateDidChange(state)

@@ -152,6 +152,7 @@ struct SettingsView: View {
                 case .terminal: TerminalSettings(vm: vm)
                 case .agents: AgentSettings()
                 case .pi: PiSettings()
+                case .worktrees: WorktreeSettings()
                 case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
                 case .keyboard: KeyboardSettings(vm: vm)
                 case .advanced: AdvancedSettings(vm: vm)
@@ -171,6 +172,7 @@ struct SettingsView: View {
 
 private struct SettingsSearchField: View {
     @Binding var text: String
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -180,6 +182,15 @@ private struct SettingsSearchField: View {
             TextField("search settings…", text: $text)
                 .textFieldStyle(.plain)
                 .font(Fonts.mono(11.5))
+                .focused($focused)
+                // Settings just opened (this view mounts with the surface):
+                // typing should filter immediately, no click first. Delayed a
+                // beat — focusing while SwiftUI is still installing the
+                // overlay's key-view loop silently loses the request.
+                .task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    focused = true
+                }
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -198,7 +209,7 @@ private struct SettingsSearchField: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, pi, remote, keyboard, advanced
+    case appearance, terminal, agents, worktrees, pi, remote, keyboard, advanced
 
     var id: String { rawValue }
 
@@ -207,6 +218,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .terminal: return "Terminal"
         case .agents: return "Agents"
+        case .worktrees: return "Worktrees"
         case .pi: return "Pi"
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
@@ -219,6 +231,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return ["Theme", "UI Density", "UI Text Scale", "Sidebar Width"]
         case .terminal: return ["Terminal Font", "Font Size", "Shell"]
         case .agents: return ["Default Model", "Default Thinking Level", "Auto-name Agents"]
+        case .worktrees: return ["Base Branch", "Fetch Before Creating", "Commit Remaining Work", "Delete Local Branch", "Merge PR Automatically"]
         case .pi: return ["Automatically Update Pi", "Installed Version", "Status", "Check Now", "Update Now"]
         case .remote: return ["Hosts", "Serve This Mac"]
         case .keyboard: return ["New Agent", "Settings", "Pane Shortcuts"]
@@ -238,6 +251,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "paintpalette"
         case .terminal: return "terminal"
         case .agents: return "person.2"
+        case .worktrees: return "arrow.triangle.branch"
         case .pi: return "arrow.triangle.2.circlepath"
         case .remote: return "antenna.radiowaves.left.and.right"
         case .keyboard: return "keyboard"

@@ -3,6 +3,20 @@ import AppKit
 import SwiftUI
 import ShepherdCore
 
+/// What a new worktree branches from (Settings ▸ Worktrees).
+enum WorktreeBaseMode: String, CaseIterable {
+    /// The remote default branch (origin/<default>), fetched first when
+    /// enabled — a clean start matching the remote.
+    case fresh
+    /// The primary checkout's current branch — stacks on in-progress work.
+    case head
+}
+
+/// How an auto-merged finalize PR is merged (Settings ▸ Worktrees).
+enum WorktreeMergeMethod: String, CaseIterable {
+    case merge, squash, rebase
+}
+
 /// User preferences that are not part of the workspace.
 ///
 /// `state.json` (owned by the session server) is the workspace: spaces,
@@ -27,12 +41,21 @@ final class AppSettings: ObservableObject {
         static let remoteListenerEnabled = "shepherd.remote.listener"
         static let remoteListenerPort = "shepherd.remote.listenerPort"
         static let autoUpdatePi = "shepherd.pi.autoUpdate"
+        static let worktreeBaseMode = "shepherd.worktree.baseMode"
+        static let worktreeFetchBeforeCreate = "shepherd.worktree.fetchBeforeCreate"
+        static let worktreeAutoCommit = "shepherd.worktree.autoCommit"
+        static let worktreeDeleteLocalBranch = "shepherd.worktree.deleteLocalBranch"
+        static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
+        static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, shellPath,
             uiDensity, uiTextScale, sidebarWidth,
             remoteListenerEnabled, remoteListenerPort, autoUpdatePi,
+            worktreeBaseMode, worktreeFetchBeforeCreate,
+            worktreeAutoCommit, worktreeDeleteLocalBranch,
+            worktreeAutoMergePR, worktreeMergeMethod,
         ]
     }
 
@@ -111,6 +134,48 @@ final class AppSettings: ObservableObject {
         didSet { store.set(remoteListenerPort, forKey: Key.remoteListenerPort) }
     }
 
+    /// What a new worktree branches from. `fresh` = the remote default branch
+    /// (fetched first when enabled) — the converged industry default; `head`
+    /// = the primary checkout's current branch, for deliberately stacking on
+    /// in-progress work. The New Worktree sheet shows and lets the user
+    /// override the resolved base either way.
+    @Published var worktreeBaseMode: WorktreeBaseMode {
+        didSet { store.set(worktreeBaseMode.rawValue, forKey: Key.worktreeBaseMode) }
+    }
+
+    /// Fetch the base branch from origin before creating a worktree, so
+    /// "fresh" means the remote's latest, not a stale local snapshot. Off =
+    /// no network at creation; the cached ref is used.
+    @Published var worktreeFetchBeforeCreate: Bool {
+        didSet { store.set(worktreeFetchBeforeCreate, forKey: Key.worktreeFetchBeforeCreate) }
+    }
+
+    /// Finalize commits remaining work automatically. Off = finalize stops
+    /// on a dirty worktree and asks the user to commit themselves.
+    @Published var worktreeAutoCommit: Bool {
+        didSet { store.set(worktreeAutoCommit, forKey: Key.worktreeAutoCommit) }
+    }
+
+    /// Finalize deletes the local branch after the worktree is removed. Off
+    /// keeps it (the remote branch is never touched either way).
+    @Published var worktreeDeleteLocalBranch: Bool {
+        didSet { store.set(worktreeDeleteLocalBranch, forKey: Key.worktreeDeleteLocalBranch) }
+    }
+
+    /// Finalize merges the PR it just created. **Off by default** — merging
+    /// is the one finalize step that changes the shared branch, so it is
+    /// strictly opt-in. On: GitHub auto-merge first (respects branch
+    /// protection and checks), immediate merge as fallback; failure leaves
+    /// the PR open and never blocks cleanup.
+    @Published var worktreeAutoMergePR: Bool {
+        didSet { store.set(worktreeAutoMergePR, forKey: Key.worktreeAutoMergePR) }
+    }
+
+    /// Merge method for auto-merged finalize PRs.
+    @Published var worktreeMergeMethod: WorktreeMergeMethod {
+        didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
+    }
+
     private let store: UserDefaults
 
     init(store: UserDefaults = .standard) {
@@ -133,6 +198,14 @@ final class AppSettings: ObservableObject {
         remoteListenerEnabled = store.bool(forKey: Key.remoteListenerEnabled)
         let port = store.integer(forKey: Key.remoteListenerPort)
         remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(RemoteSettingsDefaults.port)
+        worktreeBaseMode = store.string(forKey: Key.worktreeBaseMode)
+            .flatMap(WorktreeBaseMode.init(rawValue:)) ?? .fresh
+        worktreeFetchBeforeCreate = store.object(forKey: Key.worktreeFetchBeforeCreate) as? Bool ?? true
+        worktreeAutoCommit = store.object(forKey: Key.worktreeAutoCommit) as? Bool ?? true
+        worktreeDeleteLocalBranch = store.object(forKey: Key.worktreeDeleteLocalBranch) as? Bool ?? true
+        worktreeAutoMergePR = store.bool(forKey: Key.worktreeAutoMergePR)
+        worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
+            .flatMap(WorktreeMergeMethod.init(rawValue:)) ?? .squash
     }
 
     static let uiDensityRange: ClosedRange<Double> = 0.8...1.5
@@ -186,6 +259,12 @@ final class AppSettings: ObservableObject {
         autoNameAgents = Defaults.autoNameAgents
         autoUpdatePi = Defaults.autoUpdatePi
         shellPath = Defaults.shellPath
+        worktreeBaseMode = .fresh
+        worktreeFetchBeforeCreate = true
+        worktreeAutoCommit = true
+        worktreeDeleteLocalBranch = true
+        worktreeAutoMergePR = false
+        worktreeMergeMethod = .squash
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.
         for key in Key.all {
