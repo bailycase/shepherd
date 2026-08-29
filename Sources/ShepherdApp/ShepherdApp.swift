@@ -55,9 +55,6 @@ public struct ShepherdMacApp: App {
                     Task { @MainActor in vm.addSpaceFromPanel() }
                 }
                 .keyboardShortcut(keys.shortcut(.newSpace))
-                Button("Import Existing Worktree…") {
-                    Task { @MainActor in vm.importExistingCheckoutFromPanel() }
-                }
                 Button("New Shell") {
                     Task { @MainActor in vm.addShell() }
                 }

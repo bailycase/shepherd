@@ -213,7 +213,8 @@ struct ShepherdViewModelTests {
         try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"])
         try git(["worktree", "add", "-q", "-b", "worktree/imported", worktree.path])
 
-        let id = await vm.importExistingCheckout(at: worktree)
+        let spaceID = await vm.addSpace(at: repo, createInitialAgent: false)
+        let id = await vm.importExistingCheckout(at: worktree, into: spaceID)
         let agent = try #require(fixture.server.state.agents.first)
 
         #expect(id == agent.id)
@@ -225,10 +226,42 @@ struct ShepherdViewModelTests {
         #expect(fixture.server.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == canonicalWorktree)
         #expect(vm.selectedAgentID == id)
 
-        let duplicate = await vm.importExistingCheckout(at: worktree)
+        let duplicate = await vm.importExistingCheckout(at: worktree, into: spaceID)
         #expect(duplicate == id)
         #expect(fixture.server.state.spaces.count == 1)
         #expect(fixture.server.state.agents.count == 1)
+    }
+
+    @Test func importingWorktreeRejectsAnotherSpacesRepository() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+        let firstRepo = fixture.dir.appendingPathComponent("first", isDirectory: true)
+        let secondRepo = fixture.dir.appendingPathComponent("second", isDirectory: true)
+        let worktree = fixture.dir.appendingPathComponent("second-worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: firstRepo, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondRepo, withIntermediateDirectories: true)
+
+        func git(_ arguments: [String], in repo: URL) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo.path] + arguments
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        for repo in [firstRepo, secondRepo] {
+            try git(["init", "-q"], in: repo)
+            try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], in: repo)
+        }
+        try git(["worktree", "add", "-q", "-b", "worktree/wrong-space", worktree.path], in: secondRepo)
+        let firstSpaceID = await vm.addSpace(at: firstRepo, createInitialAgent: false)
+
+        #expect(await vm.importExistingCheckout(at: worktree, into: firstSpaceID) == nil)
+        #expect(fixture.server.state.agents.isEmpty)
+        #expect(fixture.server.state.spaces.count == 1)
     }
 
     @Test func queuedLayoutWritesStayOrderedAndReconcileRejectedOptimisticState() async throws {
