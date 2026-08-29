@@ -65,8 +65,9 @@ struct LegacyJSONTests {
         )])
         #expect(state.agents.first?.nameIsFinal == true)
         #expect(state.agents.first?.effectivePiSessionID == "conversation-1")
-        // Pre-worktree files carry no branch; the agent is not a worktree.
+        // Pre-worktree files carry no branch or path; the agent is not a worktree.
         #expect(state.agents.first?.worktreeBranch == nil)
+        #expect(state.agents.first?.worktreePath == nil)
 
         let encodedObject = try #require(
             JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any]
@@ -94,10 +95,12 @@ struct LegacyJSONTests {
             spaceID: SpaceID(rawValue: "space-1"),
             tabID: TabID(rawValue: "tab-1"),
             nameIsFinal: true,
-            worktreeBranch: "worktree/calm-stone-3831"
+            worktreeBranch: "worktree/calm-stone-3831",
+            worktreePath: "/tmp/calm-stone-3831"
         )
         let decoded = try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(agent))
         #expect(decoded == agent)
         #expect(decoded.worktreeBranch == "worktree/calm-stone-3831")
+        #expect(decoded.worktreePath == "/tmp/calm-stone-3831")
     }
 }

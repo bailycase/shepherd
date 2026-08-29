@@ -25,7 +25,10 @@ public struct ShepherdMacApp: App {
                 // sessions (the toggle persists; a host stays a host). The
                 // TCP listener is independent of the extension socket, so
                 // ordering against server.start() does not matter.
-                .task { vm.applyRemoteListenerSetting() }
+                .task {
+                    vm.applyRemoteListenerSetting()
+                    PiUpdateManager.shared.start()
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: Metrics.windowDefaultWidth, height: Metrics.windowDefaultHeight)
