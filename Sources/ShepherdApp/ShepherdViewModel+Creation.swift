@@ -37,7 +37,7 @@ extension ShepherdViewModel {
         let space: Space
         if let spaceID {
             guard let selected = state.spaces.first(where: { $0.id == spaceID }),
-                  URL(fileURLWithPath: selected.path).resolvingSymlinksInPath().standardized.path == identity.repo else {
+                  (try? GitWorktree.primaryCheckout(at: selected.path)) == identity.repo else {
                 NSLog("Shepherd: imported worktree does not belong to the selected space")
                 NSSound.beep()
                 return nil
