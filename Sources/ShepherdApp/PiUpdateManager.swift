@@ -13,10 +13,27 @@ final class PiUpdateManager: ObservableObject {
 
     @Published private(set) var currentVersion: String?
     @Published private(set) var latestVersion: String?
+    enum UpdateTarget {
+        case pi, extensions, both
+    }
+
     @Published private(set) var isOutdated = false
-    @Published private(set) var isUpdating = false
+    @Published private(set) var isChecking = false
+    @Published private(set) var activeUpdate: UpdateTarget?
+    @Published private(set) var extensionsUpdatedAt: Date?
     @Published private(set) var lastError: String?
     @Published private(set) var lastChecked: Date?
+
+    var isUpdating: Bool { activeUpdate != nil }
+    var isBusy: Bool { isChecking || isUpdating }
+    var canUpdatePi: Bool {
+        Self.canUpdatePi(lastChecked: lastChecked, isOutdated: isOutdated, isBusy: isBusy)
+    }
+    var canUpdateExtensions: Bool { !isBusy && extensionsUpdatedAt == nil }
+
+    static func canUpdatePi(lastChecked: Date?, isOutdated: Bool, isBusy: Bool) -> Bool {
+        !isBusy && (lastChecked == nil || isOutdated)
+    }
 
     private var timerTask: Task<Void, Never>?
 
@@ -28,12 +45,12 @@ final class PiUpdateManager: ObservableObject {
 
     func start() {
         guard timerTask == nil else { return }
-        checkNow()
+        checkNow(applyAutomaticUpdates: true)
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.checkInterval)
                 guard !Task.isCancelled else { return }
-                self?.checkNow()
+                self?.checkNow(applyAutomaticUpdates: true)
             }
         }
     }
@@ -43,11 +60,12 @@ final class PiUpdateManager: ObservableObject {
     func applyAutoUpdateSetting() {
         let settings = AppSettings.shared
         guard settings.autoUpdatePi || settings.autoUpdateExtensions else { return }
-        checkNow()
+        checkNow(applyAutomaticUpdates: true)
     }
 
-    func checkNow() {
-        guard !isUpdating else { return }
+    func checkNow(applyAutomaticUpdates: Bool = false) {
+        guard !isBusy else { return }
+        isChecking = true
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -62,22 +80,24 @@ final class PiUpdateManager: ObservableObject {
                     updatePi: settings.autoUpdatePi,
                     updateExtensions: settings.autoUpdateExtensions
                 )
-                if !arguments.isEmpty {
-                    runUpdates(arguments)
+                isChecking = false
+                if applyAutomaticUpdates, !arguments.isEmpty {
+                    runUpdates(arguments, target: Self.target(for: arguments))
                 }
             } catch {
                 lastError = error.localizedDescription
                 lastChecked = Date()
+                isChecking = false
             }
         }
     }
 
     func updatePiNow() {
-        runUpdates([["update"]])
+        runUpdates([["update"]], target: .pi)
     }
 
     func updateExtensionsNow() {
-        runUpdates([["update", "--extensions"]])
+        runUpdates([["update", "--extensions"]], target: .extensions)
     }
 
     static func automaticUpdateArguments(
@@ -90,15 +110,29 @@ final class PiUpdateManager: ObservableObject {
         return commands
     }
 
-    private func runUpdates(_ commands: [[String]]) {
-        guard !isUpdating, !commands.isEmpty else { return }
-        isUpdating = true
+    private static func target(for commands: [[String]]) -> UpdateTarget {
+        commands.count > 1 ? .both : commands[0].contains("--extensions") ? .extensions : .pi
+    }
+
+    private func runUpdates(_ commands: [[String]], target: UpdateTarget) {
+        guard !isBusy, !commands.isEmpty else { return }
+        activeUpdate = target
         lastError = nil
         Task { [weak self] in
             guard let self else { return }
             do {
                 for arguments in commands {
                     _ = try await Self.runPiCommand(arguments, discardOutput: true)
+                    if !arguments.contains("--extensions") {
+                        // Publish the installed version as soon as Pi finishes.
+                        // The npm latest-version request below may take longer.
+                        currentVersion = try await Self.readCurrentVersion()
+                        if let latestVersion {
+                            isOutdated = Self.isVersion(currentVersion ?? "", olderThan: latestVersion)
+                        }
+                    } else {
+                        extensionsUpdatedAt = Date()
+                    }
                 }
                 let result = try await Self.checkVersions()
                 currentVersion = result.current
@@ -108,7 +142,7 @@ final class PiUpdateManager: ObservableObject {
             } catch {
                 lastError = error.localizedDescription
             }
-            isUpdating = false
+            activeUpdate = nil
         }
     }
 
@@ -152,14 +186,22 @@ final class PiUpdateManager: ObservableObject {
         }
     }
 
+    private static func readCurrentVersion() async throws -> String {
+        let current = try await runPiCommand(["--version"]).stdout
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !current.isEmpty else {
+            throw CommandError.failed("could not determine pi version")
+        }
+        return current
+    }
+
     private static func checkVersions() async throws -> VersionResult {
-        async let currentOutput = runPiCommand(["--version"])
+        async let currentOutput = readCurrentVersion()
         async let latestOutput = runCommand(
             executable: "/bin/zsh",
             arguments: ["-l", "-c", "exec npm view \(shellQuote(packageName)) version --json"]
         )
-        let current = try await currentOutput.stdout
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let current = try await currentOutput
         let latest = try await latestOutput.stdout
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\""))

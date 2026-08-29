@@ -33,18 +33,18 @@ struct PiSettings: View {
                     .foregroundStyle(updates.isOutdated ? Tokens.destructive : Tokens.textMetadata)
             }
             SettingsRow(title: "Check Now") {
-                Button(updates.isUpdating ? "Updating…" : "Check") {
+                Button(updates.isChecking ? "Checking…" : "Check") {
                     updates.checkNow()
                 }
-                .disabled(updates.isUpdating)
+                .disabled(updates.isBusy)
             }
             SettingsRow(title: "Update Pi Now") {
-                Button("Update") { updates.updatePiNow() }
-                    .disabled(updates.isUpdating)
+                Button(piUpdateButtonTitle) { updates.updatePiNow() }
+                    .disabled(!updates.canUpdatePi)
             }
             SettingsRow(title: "Update Extensions Now") {
-                Button("Update") { updates.updateExtensionsNow() }
-                    .disabled(updates.isUpdating)
+                Button(extensionUpdateButtonTitle) { updates.updateExtensionsNow() }
+                    .disabled(!updates.canUpdateExtensions)
             }
         }
         SettingsNote(text: "updates use the pi installation resolved from your login shell · running agents are not restarted")
@@ -63,10 +63,31 @@ struct PiSettings: View {
         .controlSize(.small)
     }
 
+    private var piUpdateButtonTitle: String {
+        switch updates.activeUpdate {
+        case .pi, .both: return "Updating…"
+        default: return updates.lastChecked != nil && !updates.isOutdated ? "Up to Date" : "Update"
+        }
+    }
+
+    private var extensionUpdateButtonTitle: String {
+        switch updates.activeUpdate {
+        case .extensions, .both: return "Updating…"
+        default: return updates.extensionsUpdatedAt == nil ? "Update" : "Updated"
+        }
+    }
+
     private var statusText: String {
-        if updates.isUpdating { return "updating…" }
+        if updates.isChecking { return "checking…" }
+        if let target = updates.activeUpdate {
+            switch target {
+            case .pi: return "updating Pi…"
+            case .extensions: return "updating extensions…"
+            case .both: return "updating Pi and extensions…"
+            }
+        }
         if updates.isOutdated { return "pi outdated · latest \(updates.latestVersion ?? "unknown")" }
         if let error = updates.lastError { return "error · \(error)" }
-        return updates.lastChecked == nil ? "not checked" : "up to date"
+        return updates.lastChecked == nil ? "not checked" : "Pi up to date"
     }
 }

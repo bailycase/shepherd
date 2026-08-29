@@ -119,6 +119,13 @@ struct AppSettingsTests {
         ])
     }
 
+    @Test func piUpdateButtonDisablesWhenCurrentOrBusy() {
+        #expect(PiUpdateManager.canUpdatePi(lastChecked: nil, isOutdated: false, isBusy: false))
+        #expect(PiUpdateManager.canUpdatePi(lastChecked: Date(), isOutdated: true, isBusy: false))
+        #expect(!PiUpdateManager.canUpdatePi(lastChecked: Date(), isOutdated: false, isBusy: false))
+        #expect(!PiUpdateManager.canUpdatePi(lastChecked: nil, isOutdated: true, isBusy: true))
+    }
+
     @Test func piVersionComparisonHandlesPrefixesAndMissingComponents() {
         #expect(PiUpdateManager.isVersion("1.2.3", olderThan: "1.2.4"))
         #expect(PiUpdateManager.isVersion("v1.2", olderThan: "1.2.0" ) == false)
