@@ -217,6 +217,9 @@ final class ShepherdViewModel: ObservableObject {
     @Published var showNewAgentSheet = false
     /// Whether the in-window settings surface is visible.
     @Published var showSettings = false
+    /// Last Settings category visited. View-model state survives closing the
+    /// overlay but naturally resets when Shepherd restarts.
+    @Published var settingsSection: SettingsSection = .appearance
     /// ⌘K command palette visibility.
     @Published var showCommandPalette = false {
         didSet { if !showCommandPalette { paletteModifierHeld = false } }

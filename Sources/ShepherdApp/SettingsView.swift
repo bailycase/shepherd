@@ -11,7 +11,6 @@ import ShepherdProtocol
 struct SettingsView: View {
     @ObservedObject var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
-    @State private var section: SettingsSection = .appearance
     @State private var searchText = ""
 
     private var matchingSections: [SettingsSection] {
@@ -45,8 +44,8 @@ struct SettingsView: View {
         .ignoresSafeArea()
         .id(themes.current.id)
         .onChange(of: searchText) {
-            if let first = matchingSections.first, !matchingSections.contains(section) {
-                section = first
+            if let first = matchingSections.first, !matchingSections.contains(vm.settingsSection) {
+                vm.settingsSection = first
             }
         }
     }
@@ -55,7 +54,7 @@ struct SettingsView: View {
     /// so this is the only label the window carries.
     private var header: some View {
         HStack(spacing: 0) {
-            Text(section.title.lowercased())
+            Text(vm.settingsSection.title.lowercased())
                 .font(Fonts.mono(12.5, .semibold))
                 .foregroundStyle(Tokens.textPrimary)
             Spacer(minLength: 0)
@@ -107,15 +106,15 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(matchingSections) { item in
-                    SettingsCategoryRow(section: item, selected: section == item) {
-                        section = item
+                    SettingsCategoryRow(section: item, selected: vm.settingsSection == item) {
+                        vm.settingsSection = item
                     }
                     if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         // Matching rows within the section, indented to the
                         // category title's text column and clickable.
                         ForEach(item.sidebarItems(for: searchText), id: \.self) { child in
                             Button {
-                                section = item
+                                vm.settingsSection = item
                             } label: {
                                 Text(child.lowercased())
                                     .font(Fonts.mono(10.5))
@@ -147,7 +146,7 @@ struct SettingsView: View {
     private var detail: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 18) {
-                switch section {
+                switch vm.settingsSection {
                 case .appearance: AppearanceSettings(vm: vm)
                 case .terminal: TerminalSettings(vm: vm)
                 case .agents: AgentSettings()
