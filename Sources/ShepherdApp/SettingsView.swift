@@ -151,6 +151,7 @@ struct SettingsView: View {
                 case .appearance: AppearanceSettings(vm: vm)
                 case .terminal: TerminalSettings(vm: vm)
                 case .agents: AgentSettings()
+                case .pi: PiSettings()
                 case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
                 case .keyboard: KeyboardSettings(vm: vm)
                 case .advanced: AdvancedSettings(vm: vm)
@@ -197,7 +198,7 @@ private struct SettingsSearchField: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, remote, keyboard, advanced
+    case appearance, terminal, agents, pi, remote, keyboard, advanced
 
     var id: String { rawValue }
 
@@ -206,6 +207,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .terminal: return "Terminal"
         case .agents: return "Agents"
+        case .pi: return "Pi"
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
@@ -235,6 +237,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "paintpalette"
         case .terminal: return "terminal"
         case .agents: return "person.2"
+        case .pi: return "arrow.triangle.2.circlepath"
         case .remote: return "antenna.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"

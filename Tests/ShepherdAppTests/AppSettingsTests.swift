@@ -24,6 +24,7 @@ struct AppSettingsTests {
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.defaultThinking == AppSettings.Defaults.thinking)
         #expect(settings.autoNameAgents)
+        #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
     }
 
     @Test func valuesPersistAndReload() {
@@ -35,6 +36,7 @@ struct AppSettingsTests {
         settings.defaultModel = "anthropic/claude-sonnet-4"
         settings.defaultThinking = .high
         settings.autoNameAgents = false
+        settings.autoUpdatePi = true
         settings.shellPath = "/bin/bash"
         settings.sidebarWidth = 275
 
@@ -44,6 +46,7 @@ struct AppSettingsTests {
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4")
         #expect(reloaded.defaultThinking == .high)
         #expect(reloaded.autoNameAgents == false)
+        #expect(reloaded.autoUpdatePi)
         #expect(reloaded.shellPath == "/bin/bash")
         #expect(reloaded.sidebarWidth == 275)
     }
@@ -71,12 +74,14 @@ struct AppSettingsTests {
         settings.terminalFontSize = 20
         settings.defaultModel = "openai/gpt-5"
         settings.autoNameAgents = false
+        settings.autoUpdatePi = true
 
         settings.resetToDefaults()
 
         #expect(settings.terminalFontSize == AppSettings.Defaults.terminalFontSize)
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.autoNameAgents)
+        #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
         for key in AppSettings.Key.all {
             #expect(store.object(forKey: key) == nil)
         }
@@ -91,6 +96,13 @@ struct AppSettingsTests {
 
         settings.defaultModel = " openai/gpt-5 "
         #expect(settings.agentDefaults.model == "openai/gpt-5")
+    }
+
+    @Test func piVersionComparisonHandlesPrefixesAndMissingComponents() {
+        #expect(PiUpdateManager.isVersion("1.2.3", olderThan: "1.2.4"))
+        #expect(PiUpdateManager.isVersion("v1.2", olderThan: "1.2.0" ) == false)
+        #expect(!PiUpdateManager.isVersion("1.3.0", olderThan: "1.2.9"))
+        #expect(!PiUpdateManager.isVersion("not-a-version", olderThan: "1.2.0"))
     }
 
     @Test func shellCommandFallsBackWhenThePathIsNotExecutable() {
