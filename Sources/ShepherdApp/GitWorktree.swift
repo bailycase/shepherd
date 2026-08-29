@@ -75,6 +75,19 @@ enum GitWorktree {
         return URL(fileURLWithPath: canonicalRepo).deletingLastPathComponent().path
     }
 
+    /// Canonical primary checkout for any checkout in a repository. Git's
+    /// common directory is more reliable than filesystem spelling alone on
+    /// macOS runners where temporary paths may have aliases.
+    static func primaryCheckout(at path: String) throws -> String {
+        let checkout = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            .resolvingSymlinksInPath().standardized.path
+        let commonDir = try run([
+            "-C", checkout, "rev-parse", "--path-format=absolute", "--git-common-dir",
+        ]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return URL(fileURLWithPath: commonDir).deletingLastPathComponent()
+            .resolvingSymlinksInPath().standardized.path
+    }
+
     /// Read an existing linked worktree's primary checkout, branch, and best
     /// local base. A primary checkout is rejected because it belongs as a
     /// Space, not as a worktree Agent beneath itself.
@@ -93,8 +106,7 @@ enum GitWorktree {
         guard !branch.isEmpty else {
             throw Failure(message: "Detached worktrees cannot be imported")
         }
-        let repo = URL(fileURLWithPath: commonDir).deletingLastPathComponent()
-            .resolvingSymlinksInPath().standardized.path
+        let repo = try primaryCheckout(at: checkout)
         let base = (try? run([
             "-C", checkout, "symbolic-ref", "--short", "refs/remotes/origin/HEAD",
         ]))?.trimmingCharacters(in: .whitespacesAndNewlines)
