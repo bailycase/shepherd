@@ -89,26 +89,24 @@ struct RootView: View {
                     },
                     cancel: { vm.spacePickerTarget = nil }
                 )
-            case .importWorktree(let spaceID):
-                if let space = vm.state.spaces.first(where: { $0.id == spaceID }) {
-                    RemoteDirectoryPicker(
-                        title: "Import Existing Worktree",
-                        actionTitle: "Import",
-                        hostName: "this mac",
-                        startPath: (space.path as NSString).deletingLastPathComponent,
-                        list: { path in try LocalDirectoryLister.list(path: path) },
-                        choose: { path in
-                            vm.spacePickerTarget = nil
-                            Task {
-                                await vm.importExistingCheckout(
-                                    at: URL(fileURLWithPath: path),
-                                    into: spaceID
-                                )
-                            }
-                        },
-                        cancel: { vm.spacePickerTarget = nil }
-                    )
-                }
+            case .importWorktree(let target):
+                RemoteDirectoryPicker(
+                    title: "Import Existing Worktree",
+                    actionTitle: "Import",
+                    hostName: "this mac",
+                    startPath: target.startPath,
+                    list: { path in try LocalDirectoryLister.list(path: path) },
+                    choose: { path in
+                        vm.spacePickerTarget = nil
+                        Task {
+                            await vm.importExistingCheckout(
+                                at: URL(fileURLWithPath: path),
+                                into: target.spaceID
+                            )
+                        }
+                    },
+                    cancel: { vm.spacePickerTarget = nil }
+                )
             case .host(let hostID):
                 if let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID }) {
                     RemoteDirectoryPicker(

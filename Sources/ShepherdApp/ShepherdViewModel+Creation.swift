@@ -14,7 +14,11 @@ extension ShepherdViewModel {
     }
 
     func importExistingWorktreeFromPanel(in spaceID: SpaceID) {
-        spacePickerTarget = .importWorktree(spaceID)
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return }
+        spacePickerTarget = .importWorktree(WorktreeImportTarget(
+            spaceID: spaceID,
+            startPath: GitWorktree.importDirectory(repo: space.path)
+        ))
     }
 
     @discardableResult

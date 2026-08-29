@@ -86,14 +86,20 @@ final class ShepherdViewModel: ObservableObject {
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
+    struct WorktreeImportTarget: Equatable {
+        let id = UUID()
+        let spaceID: SpaceID
+        let startPath: String
+    }
+
     enum SpacePickerTarget: Identifiable, Equatable {
         case local
-        case importWorktree(SpaceID)
+        case importWorktree(WorktreeImportTarget)
         case host(UUID)
         var id: String {
             switch self {
             case .local: return "local"
-            case .importWorktree(let id): return "import-worktree-\(id.rawValue)"
+            case .importWorktree(let target): return target.id.uuidString
             case .host(let id): return id.uuidString
             }
         }

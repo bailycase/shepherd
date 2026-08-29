@@ -77,6 +77,33 @@ struct GitWorktreeTests {
         #expect(try GitWorktree.add(repo: repo, branch: "agent/fix-thing") == path)
     }
 
+    @Test func importDirectoryUsesTheReposRegisteredWorktreeFolder() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shepherd-browse-\(UUID().uuidString)", isDirectory: true)
+        let repo = base.appendingPathComponent("repo").path
+        let worktrees = base.appendingPathComponent("linked", isDirectory: true)
+        let linked = worktrees.appendingPathComponent("feature").path
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktrees, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        func git(_ args: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo] + args
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        try git(["init", "-q"])
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"])
+        try git(["worktree", "add", "-q", "-b", "worktree/feature", linked])
+
+        #expect(GitWorktree.importDirectory(repo: repo) == worktrees.resolvingSymlinksInPath().path)
+    }
+
     @Test func identifiesAnExistingLinkedWorktree() throws {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("shepherd-import-\(UUID().uuidString)", isDirectory: true)
