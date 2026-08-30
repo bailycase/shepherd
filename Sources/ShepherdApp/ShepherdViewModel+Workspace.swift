@@ -260,12 +260,13 @@ extension ShepherdViewModel {
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
         let branch = agent.worktreeBranch
         let repo = state.spaces.first { $0.id == agent.spaceID }?.path
+        let worktree = agent.worktreePath
         deleteAgent(id)
         guard removeWorktree, let branch, let repo else { return }
         Task.detached(priority: .utility) {
             try? await Task.sleep(for: .milliseconds(500))
             do {
-                try GitWorktree.remove(repo: repo, branch: branch)
+                try GitWorktree.remove(repo: repo, branch: branch, worktree: worktree)
             } catch {
                 NSLog("Shepherd: worktree removal failed: \(error.localizedDescription)")
             }

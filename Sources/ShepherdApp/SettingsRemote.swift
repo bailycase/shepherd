@@ -7,7 +7,7 @@ import ShepherdProtocol
 /// Settings → Remote: configured remote Shepherd hosts, plus this Mac's own
 /// listener token path for setting up the other side.
 struct RemoteSettings: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject var store: RemoteHostStore
 
     @State private var draftName = ""

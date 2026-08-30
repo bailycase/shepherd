@@ -2,9 +2,9 @@ import SwiftUI
 import ShepherdCore
 
 struct DiffReviewPane: View {
-    @ObservedObject var session: ReviewSession
+    @Bindable var session: ReviewSession
     let isFocused: Bool
-    @EnvironmentObject private var vm: ShepherdViewModel
+    @Environment(ShepherdViewModel.self) private var vm
     @ObservedObject private var themes = ThemeManager.shared
     @State private var editingTarget: CommentTarget?
     @State private var draft = ""
@@ -87,6 +87,22 @@ struct DiffReviewPane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Highlight every hunk up front (yielding between files) so
+            // scrolling never parses mid-frame; LazyVStack row creation then
+            // only does dictionary lookups.
+            .task(id: themes.current.id) {
+                let style = highlightStyle
+                for file in session.files {
+                    for hunk in file.hunks {
+                        let key = HunkKey(fileID: file.id, hunkID: hunk.id)
+                        guard highlightedHunks[key] == nil else { continue }
+                        highlightedHunks[key] = CodeHighlight.highlightLines(
+                            hunk.lines.map(\.text), path: file.displayPath, style: style
+                        )
+                    }
+                    await Task.yield()
+                }
+            }
         }
     }
 
@@ -116,7 +132,7 @@ struct DiffReviewPane: View {
     }
 
     private func fileHeader(_ file: DiffFile, collapsed: Bool) -> some View {
-        let commentCount = session.comments.filter { $0.fileID == file.id }.count
+        let commentCount = session.commentCountByFile[file.id] ?? 0
         return Button {
             if collapsed {
                 collapsedFiles.remove(file.id)
@@ -191,19 +207,11 @@ struct DiffReviewPane: View {
                 lineView(file: file, line: line, highlighted: highlighted)
             }
         }
-        .task(id: themes.current.id) {
-            guard highlightedHunks[key] == nil else { return }
-            highlightedHunks[key] = CodeHighlight.highlightLines(
-                hunk.lines.map(\.text), path: file.displayPath, style: highlightStyle
-            )
-        }
     }
 
     private func lineView(file: DiffFile, line: DiffLine, highlighted: AttributedString) -> some View {
         let target = CommentTarget(fileID: file.id, lineID: line.id)
-        let comment = session.comments.first {
-            $0.fileID == target.fileID && $0.lineID == target.lineID
-        }
+        let comment = session.commentsByLine[.init(fileID: target.fileID, lineID: target.lineID)]
         return VStack(alignment: .leading, spacing: 0) {
             Button {
                 beginComment(file: file, line: line)
@@ -333,9 +341,7 @@ struct DiffReviewPane: View {
 
     private func beginComment(file: DiffFile, line: DiffLine) {
         editingTarget = CommentTarget(fileID: file.id, lineID: line.id)
-        draft = session.comments.first {
-            $0.fileID == file.id && $0.lineID == line.id
-        }?.text ?? ""
+        draft = session.commentsByLine[.init(fileID: file.id, lineID: line.id)]?.text ?? ""
     }
 
     private func saveComment(_ target: CommentTarget) {

@@ -8,7 +8,7 @@ import ShepherdCore
 /// Cleanup is the confirmed Delete Worktree Agent dialog — or the user's own
 /// `git worktree remove`; nothing else touches the checkout.
 struct NewWorktreeSheet: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     let space: Space
 
     @State private var branch = GitWorktree.generatedBranch()
