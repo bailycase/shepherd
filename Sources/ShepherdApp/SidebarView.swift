@@ -63,16 +63,18 @@ struct SidebarView: View {
                     }
                     .padding(.top, 2)
                 }
-                // Keyboard navigation (⌘1–9, ⌘↑/↓, ⌃⇧1 back to local) can land
-                // on a row scrolled out of view. Reveal it with a minimal
-                // animated scroll; mouse and palette selections arrive here too
-                // and are no-ops when the row is already visible.
+                // Keyboard navigation (⌘1–9, ⌘↑/↓, ⌃⇧digits) can land on a
+                // row scrolled out of view. Reveal it with a minimal animated
+                // scroll; mouse and palette selections arrive here too and are
+                // no-ops when the row is already visible. The trigger is a
+                // counter, not the target value, so re-selecting the same row
+                // still scrolls back to it.
                 // The same selection may have just opened a disclosure (the
-                // local machine root, an ancestor space), so the row can be
-                // absent from the tree at this instant — scroll on the next
-                // runloop turn, once it exists.
-                .onChange(of: vm.sidebarRevealTarget) { _, target in
-                    guard let target else { return }
+                // local machine root, an ancestor space, a host), so the row
+                // can be absent from the tree at this instant — scroll on the
+                // next runloop turn, once it exists.
+                .onChange(of: vm.sidebarRevealRequest) {
+                    guard let target = vm.sidebarRevealTarget else { return }
                     DispatchQueue.main.async {
                         withAnimation(
                             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion

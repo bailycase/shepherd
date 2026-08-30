@@ -230,6 +230,9 @@ extension ShepherdViewModel {
     /// visible, and that is what `sidebarRevealTarget` falls back to.
     func revealLocalSpace(_ id: SpaceID?) {
         if localMachineCollapsed { localMachineCollapsed = false }
+        // Every local selection also asks the sidebar to scroll to the
+        // selected row, even when the selection itself didn't change.
+        sidebarRevealRequest += 1
         guard let id else { return }
         let ancestors = Set(Self.ancestorSpaceIDs(of: id, in: visibleSpaces))
         if !ancestors.isDisjoint(with: collapsedSpaces) {
@@ -258,11 +261,15 @@ extension ShepherdViewModel {
         return AnyHashable(spaceID)
     }
 
-    /// Scroll id of the row the sidebar should keep visible for the current
-    /// selection; the sidebar scrolls to it whenever it changes, which is
-    /// what makes ⌘1–9, ⌘↑/↓ and ⌃⇧1 reveal a row that scrolled off.
+    /// Scroll id of the row the sidebar should reveal for the current
+    /// selection; the sidebar scrolls to it on every `sidebarRevealRequest`
+    /// bump, which is what makes ⌘1–9, ⌘↑/↓ and ⌃⇧digits reveal a row that
+    /// scrolled off. A remote selection targets its row in the unified tree
+    /// (`RemoteAgentRef` is its own type, so it can never collide with a
+    /// local agent or space id).
     var sidebarRevealTarget: AnyHashable? {
-        Self.sidebarRevealTarget(
+        if let remote = selectedRemoteAgent { return AnyHashable(remote) }
+        return Self.sidebarRevealTarget(
             selectedAgentID: selectedAgentID,
             selectedSpaceID: selectedSpaceID,
             shellSelected: selectedShellID != nil,
@@ -291,6 +298,7 @@ extension ShepherdViewModel {
         } else {
             remoteFocusedPaneID = nil
         }
+        sidebarRevealRequest += 1
     }
 
     // MARK: Machine jumps (⌃⇧1…⌃⇧9)

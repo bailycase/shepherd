@@ -179,4 +179,27 @@ struct LocalSelectionRevealTests {
         #expect(fixture.vm.collapsedSpaces.isEmpty)
         #expect(fixture.vm.sidebarRevealTarget == AnyHashable(fixture.agent.id))
     }
+
+    /// The scroll trigger is a counter: re-selecting the same row (⌘3 twice
+    /// after scrolling the sidebar away by hand) must still scroll back.
+    @Test func reselectingTheSameRowStillRequestsAReveal() {
+        let fixture = Fixture()
+        defer { fixture.tearDown() }
+        fixture.vm.selectAgent(fixture.agent.id)
+        let before = fixture.vm.sidebarRevealRequest
+        fixture.vm.selectAgent(fixture.agent.id)
+        #expect(fixture.vm.sidebarRevealRequest > before)
+        #expect(fixture.vm.sidebarRevealTarget == AnyHashable(fixture.agent.id))
+    }
+
+    /// A remote selection targets its own row in the unified tree; the ref
+    /// type can never collide with a local agent or space id.
+    @Test func remoteSelectionTargetsItsRow() {
+        let fixture = Fixture()
+        defer { fixture.tearDown() }
+        let ref = RemoteAgentRef(hostID: UUID(), agentID: AgentID())
+        fixture.vm.selectedRemoteAgent = ref
+        #expect(fixture.vm.sidebarRevealTarget == AnyHashable(ref))
+        #expect(fixture.vm.sidebarRevealTarget != AnyHashable(ref.agentID))
+    }
 }
