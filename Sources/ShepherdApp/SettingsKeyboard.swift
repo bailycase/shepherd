@@ -123,6 +123,7 @@ private struct ShortcutRecorder: View {
 
     private func startMonitor() {
         guard monitor == nil else { return }
+        KeybindingsStore.shared.isRecording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             MainActor.assumeIsolated {
                 if event.keyCode == 53 { // ⎋
@@ -138,6 +139,7 @@ private struct ShortcutRecorder: View {
     }
 
     private func stopMonitor() {
+        KeybindingsStore.shared.isRecording = false
         if let monitor {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
