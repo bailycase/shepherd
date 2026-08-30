@@ -11,7 +11,6 @@ import ShepherdProtocol
 struct SettingsView: View {
     var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
-    @State private var section: SettingsSection = .appearance
     @State private var searchText = ""
 
     private var matchingSections: [SettingsSection] {
@@ -45,8 +44,8 @@ struct SettingsView: View {
         .ignoresSafeArea()
         .id(themes.current.id)
         .onChange(of: searchText) {
-            if let first = matchingSections.first, !matchingSections.contains(section) {
-                section = first
+            if let first = matchingSections.first, !matchingSections.contains(vm.settingsSection) {
+                vm.settingsSection = first
             }
         }
     }
@@ -55,7 +54,7 @@ struct SettingsView: View {
     /// so this is the only label the window carries.
     private var header: some View {
         HStack(spacing: 0) {
-            Text(section.title.lowercased())
+            Text(vm.settingsSection.title.lowercased())
                 .font(Fonts.mono(12.5, .semibold))
                 .foregroundStyle(Tokens.textPrimary)
             Spacer(minLength: 0)
@@ -107,15 +106,15 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 ForEach(matchingSections) { item in
-                    SettingsCategoryRow(section: item, selected: section == item) {
-                        section = item
+                    SettingsCategoryRow(section: item, selected: vm.settingsSection == item) {
+                        vm.settingsSection = item
                     }
                     if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         // Matching rows within the section, indented to the
                         // category title's text column and clickable.
                         ForEach(item.sidebarItems(for: searchText), id: \.self) { child in
                             Button {
-                                section = item
+                                vm.settingsSection = item
                             } label: {
                                 Text(child.lowercased())
                                     .font(Fonts.mono(10.5))
@@ -147,10 +146,12 @@ struct SettingsView: View {
     private var detail: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 18) {
-                switch section {
+                switch vm.settingsSection {
                 case .appearance: AppearanceSettings(vm: vm)
                 case .terminal: TerminalSettings(vm: vm)
                 case .agents: AgentSettings()
+                case .pi: PiSettings()
+                case .worktrees: WorktreeSettings()
                 case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
                 case .keyboard: KeyboardSettings(vm: vm)
                 case .advanced: AdvancedSettings(vm: vm)
@@ -170,6 +171,7 @@ struct SettingsView: View {
 
 private struct SettingsSearchField: View {
     @Binding var text: String
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 6) {
@@ -179,6 +181,15 @@ private struct SettingsSearchField: View {
             TextField("search settings…", text: $text)
                 .textFieldStyle(.plain)
                 .font(Fonts.mono(11.5))
+                .focused($focused)
+                // Settings just opened (this view mounts with the surface):
+                // typing should filter immediately, no click first. Delayed a
+                // beat — focusing while SwiftUI is still installing the
+                // overlay's key-view loop silently loses the request.
+                .task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    focused = true
+                }
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -197,7 +208,7 @@ private struct SettingsSearchField: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, remote, keyboard, advanced
+    case appearance, terminal, agents, worktrees, pi, remote, keyboard, advanced
 
     var id: String { rawValue }
 
@@ -206,6 +217,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .terminal: return "Terminal"
         case .agents: return "Agents"
+        case .worktrees: return "Worktrees"
+        case .pi: return "Pi"
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
@@ -217,6 +230,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return ["Theme", "UI Density", "UI Text Scale", "Sidebar Width"]
         case .terminal: return ["Terminal Font", "Font Size", "Shell"]
         case .agents: return ["Default Model", "Default Thinking Level", "Auto-name Agents"]
+        case .worktrees: return ["Base Branch", "Fetch Before Creating", "Commit Remaining Work", "Delete Local Branch", "Merge PR Automatically"]
+        case .pi: return ["Update Pi", "Update Extensions", "Installed Version", "Status", "Check Now"]
         case .remote: return ["Hosts", "Serve This Mac"]
         case .keyboard: return ["New Agent", "Settings", "Pane Shortcuts"]
         case .advanced: return ["Files", "Reset Settings", "Updates", "About"]
@@ -235,6 +250,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "paintpalette"
         case .terminal: return "terminal"
         case .agents: return "person.2"
+        case .worktrees: return "arrow.triangle.branch"
+        case .pi: return "arrow.triangle.2.circlepath"
         case .remote: return "antenna.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"

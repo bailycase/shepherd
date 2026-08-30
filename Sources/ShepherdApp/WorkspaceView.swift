@@ -211,6 +211,7 @@ struct PaneLeafView: View {
 
         LiveTerminalPane(
             session: vm.sessions.session(for: pane, in: tab),
+            agentID: pane.agentID,
             isFocused: focused,
             isRendering: visible
         )
@@ -223,7 +224,9 @@ struct PaneLeafView: View {
 
 struct LiveTerminalPane: View {
     @ObservedObject var session: TerminalSessionStore.PaneSession
+    let agentID: AgentID?
     let isFocused: Bool
+    @ObservedObject private var piUpdates = PiUpdateManager.shared
     /// False for a mounted-but-hidden pane, which keeps its surface but must
     /// stop running a render loop.
     var isRendering: Bool = true
@@ -237,6 +240,10 @@ struct LiveTerminalPane: View {
                 AppTerminalView(model: session.terminal, isFocused: isFocused, isRendering: isRendering)
                 if case .connecting = session.phase {
                     PanePlaceholder(text: "starting session…")
+                        .allowsHitTesting(false)
+                }
+                if agentID != nil, piUpdates.isOutdated {
+                    PiOutdatedOverlay()
                         .allowsHitTesting(false)
                 }
             }
