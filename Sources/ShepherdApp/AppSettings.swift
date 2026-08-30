@@ -45,6 +45,7 @@ final class AppSettings: ObservableObject {
         static let worktreeBaseMode = "shepherd.worktree.baseMode"
         static let worktreeFetchBeforeCreate = "shepherd.worktree.fetchBeforeCreate"
         static let worktreeAutoCommit = "shepherd.worktree.autoCommit"
+        static let worktreeGeneratePRDescription = "shepherd.worktree.generatePRDescription"
         static let worktreeDeleteLocalBranch = "shepherd.worktree.deleteLocalBranch"
         static let worktreeAutoMergePR = "shepherd.worktree.autoMergePR"
         static let worktreeMergeMethod = "shepherd.worktree.mergeMethod"
@@ -56,8 +57,9 @@ final class AppSettings: ObservableObject {
             remoteListenerEnabled, remoteListenerPort,
             autoUpdatePi, autoUpdateExtensions,
             worktreeBaseMode, worktreeFetchBeforeCreate,
-            worktreeAutoCommit, worktreeDeleteLocalBranch,
-            worktreeAutoMergePR, worktreeMergeMethod,
+            worktreeAutoCommit, worktreeGeneratePRDescription,
+            worktreeDeleteLocalBranch, worktreeAutoMergePR,
+            worktreeMergeMethod,
         ]
     }
 
@@ -163,6 +165,12 @@ final class AppSettings: ObservableObject {
         didSet { store.set(worktreeAutoCommit, forKey: Key.worktreeAutoCommit) }
     }
 
+    /// Generate an editable pull-request description when Finalize opens.
+    /// Failure falls back to the branch's commit subjects.
+    @Published var worktreeGeneratePRDescription: Bool {
+        didSet { store.set(worktreeGeneratePRDescription, forKey: Key.worktreeGeneratePRDescription) }
+    }
+
     /// Finalize deletes the local branch after the worktree is removed. Off
     /// keeps it (the remote branch is never touched either way).
     @Published var worktreeDeleteLocalBranch: Bool {
@@ -213,6 +221,7 @@ final class AppSettings: ObservableObject {
             .flatMap(WorktreeBaseMode.init(rawValue:)) ?? .fresh
         worktreeFetchBeforeCreate = store.object(forKey: Key.worktreeFetchBeforeCreate) as? Bool ?? true
         worktreeAutoCommit = store.object(forKey: Key.worktreeAutoCommit) as? Bool ?? true
+        worktreeGeneratePRDescription = store.object(forKey: Key.worktreeGeneratePRDescription) as? Bool ?? true
         worktreeDeleteLocalBranch = store.object(forKey: Key.worktreeDeleteLocalBranch) as? Bool ?? true
         worktreeAutoMergePR = store.bool(forKey: Key.worktreeAutoMergePR)
         worktreeMergeMethod = store.string(forKey: Key.worktreeMergeMethod)
@@ -274,6 +283,7 @@ final class AppSettings: ObservableObject {
         worktreeBaseMode = .fresh
         worktreeFetchBeforeCreate = true
         worktreeAutoCommit = true
+        worktreeGeneratePRDescription = true
         worktreeDeleteLocalBranch = true
         worktreeAutoMergePR = false
         worktreeMergeMethod = .squash
