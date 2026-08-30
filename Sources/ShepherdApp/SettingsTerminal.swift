@@ -42,6 +42,12 @@ struct TerminalSettings: View {
                         .frame(width: 30, alignment: .trailing)
                 }
             }
+            SettingsRow(title: "Preview", subtitle: "Updates live as you change the family and size above.") {
+                FontPreview(
+                    family: settings.resolvedTerminalFontFamily,
+                    size: settings.terminalFontSize
+                )
+            }
         }
 
         SettingsGroup(title: "Shell") {
@@ -59,6 +65,43 @@ struct TerminalSettings: View {
             }
         }
         SettingsNote(text: "font changes rebuild every terminal surface · running processes are untouched · a new shell applies to panes opened afterwards")
+    }
+}
+
+/// A mock pi transcript rendered in the configured terminal font, so font
+/// changes are judged without leaving Settings. Reads live theme tokens and
+/// the exact family ghostty will load (`resolvedTerminalFontFamily`).
+private struct FontPreview: View {
+    let family: String
+    let size: Double
+
+    private var font: Font { .custom(family, size: size) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 0) {
+                Text("❯ ").foregroundStyle(Tokens.focusAccent)
+                Text("summarize the failing tests")
+            }
+            Text("⏺ Two failures in PaneNodeTests — both from")
+                .foregroundStyle(Tokens.textSecondary)
+            Text("  the split-ratio clamp. `0123456789 -> {}")
+                .foregroundStyle(Tokens.textSecondary)
+            Text("  ILil1| O0o — the quick brown fox")
+                .foregroundStyle(Tokens.textMetadata)
+        }
+        .font(font)
+        .foregroundStyle(Tokens.textPrimary)
+        .lineLimit(1)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Tokens.terminalBg)
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .overlay(
+            RoundedRectangle(cornerRadius: 5)
+                .strokeBorder(Tokens.paneBorder, lineWidth: 1)
+        )
+        .frame(maxWidth: 340)
     }
 }
 

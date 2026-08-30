@@ -15,6 +15,24 @@ struct SettingsCommandButton: View {
 
     var body: some View {
         Button(vm.showSettings ? "Back to App" : "Settings…") {
+            // Diagnostic: settings has been observed opening without a
+            // deliberate ⌘, — record exactly which event fired this action
+            // (key repeat, synthetic re-dispatch, layout oddity, menu click).
+            if let event = NSApp.currentEvent {
+                NSLog(
+                    "Shepherd: settings toggled by event type=%ld keyCode=%d chars=%@ charsIgnoringMods=%@ mods=0x%lx repeat=%d ts=%f responder=%@",
+                    event.type.rawValue,
+                    event.type == .keyDown || event.type == .keyUp ? event.keyCode : -1,
+                    event.type == .keyDown ? (event.characters ?? "") : "-",
+                    event.type == .keyDown ? (event.charactersIgnoringModifiers ?? "") : "-",
+                    event.modifierFlags.rawValue,
+                    event.type == .keyDown && event.isARepeat ? 1 : 0,
+                    event.timestamp,
+                    String(describing: NSApp.keyWindow?.firstResponder.map { type(of: $0) })
+                )
+            } else {
+                NSLog("Shepherd: settings toggled with no current event")
+            }
             vm.showSettings.toggle()
         }
         .keyboardShortcut(",", modifiers: .command)
@@ -43,12 +61,19 @@ struct WindowChrome: NSViewRepresentable {
     /// Same contract as the main window: the title bar paints nothing and the
     /// content runs edge to edge beneath the traffic lights, so the strip
     /// above the categories belongs to the theme.
+    ///
+    /// Since Settings moved in-window, the hosting window here IS the main
+    /// window. Never set `isMovableByWindowBackground` on it: the ghostty
+    /// surface reports `mouseDownCanMoveWindow`, so background-dragging turns
+    /// every text-selection drag inside a terminal into a window move.
+    /// Dragging belongs exclusively to the explicit WindowDragGesture strips
+    /// (traffic lights, headers); `false` pins that contract.
     private func apply(to window: NSWindow?) {
         guard let window else { return }
         window.styleMask.insert(.fullSizeContentView)
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         window.backgroundColor = NSColor(ThemeManager.shared.current.workspaceBg)
         window.toolbar = nil
     }

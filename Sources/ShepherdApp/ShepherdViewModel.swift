@@ -15,6 +15,19 @@ struct NewAgentConfig {
     var model: String?
     var thinking: ThinkingLevel
     var initialPrompt: String?
+    /// A caller-chosen starting name (worktree agents wear their branch
+    /// leaf). Provisional like a prompt-derived name: pi's namer retitles it
+    /// from the agent's first prompt when auto-naming is on.
+    var initialName: String?
+    /// The branch of the git worktree this agent was created on, when
+    /// Shepherd made one for it. Persisted on the agent so the sidebar can
+    /// render it as a worktree of its space.
+    var worktreeBranch: String?
+    /// The base the worktree branched from; Finalize targets the PR at it.
+    var worktreeBase: String?
+    /// Actual checkout path for imported worktrees whose directory name does
+    /// not follow Shepherd's generated repo-branch convention.
+    var worktreePath: String?
     /// An automation's watch agent: spawned with SHEPHERD_AUTOMATION=1 so
     /// the panes extension withholds the automation_* tools (a watcher must
     /// never create watchers).
@@ -74,12 +87,20 @@ final class ShepherdViewModel {
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
+    struct WorktreeImportTarget: Equatable {
+        let id = UUID()
+        let spaceID: SpaceID
+        let startPath: String
+    }
+
     enum SpacePickerTarget: Identifiable, Equatable {
         case local
+        case importWorktree(WorktreeImportTarget)
         case host(UUID)
         var id: String {
             switch self {
             case .local: return "local"
+            case .importWorktree(let target): return target.id.uuidString
             case .host(let id): return id.uuidString
             }
         }
@@ -149,6 +170,34 @@ final class ShepherdViewModel {
     /// Rename target for a space (alert in RootView). Display-only rename;
     /// the checkout path never changes.
     var spaceRenameTarget: SpaceID?
+    /// Space whose New Worktree sheet is open (sheet in RootView).
+    var worktreeSheetTarget: SpaceID?
+    /// Worktree agent pending delete confirmation (alert in RootView) —
+    /// deleting may also remove the checkout, so it always confirms.
+    var worktreeDeleteTarget: AgentID?
+    /// A snapshot of the agent + space whose Finalize Worktree sheet is
+    /// open. Copies, not IDs: the pipeline's last act retires the agent, and
+    /// a live lookup would blank the sheet mid-success.
+    struct FinalizeRequest: Identifiable {
+        let id = UUID()
+        let agent: Agent
+        let space: Space
+    }
+    var finalizeRequest: FinalizeRequest?
+
+    /// "Finalize Worktree…" on a worktree agent's context menu.
+    func beginFinalizeWorktree(_ agentID: AgentID) {
+        guard let agent = state.agents.first(where: { $0.id == agentID }),
+              agent.worktreeBranch != nil,
+              let space = state.spaces.first(where: { $0.id == agent.spaceID }) else { return }
+        finalizeRequest = FinalizeRequest(agent: agent, space: space)
+    }
+
+    /// The setup wizard's gh-authentication step: a real terminal running
+    /// `gh auth login`, because the login flow is interactive by design.
+    func openGhLoginShell() {
+        addShell(named: "gh login", running: "gh auth login")
+    }
     /// Agents whose subagent rows are hidden (clicking the selected agent
     /// row toggles this); the row shows an `n sub` chip instead. Ephemeral,
     /// like all child-run display state.
@@ -169,6 +218,9 @@ final class ShepherdViewModel {
     var showNewAgentSheet = false
     /// Whether the in-window settings surface is visible.
     var showSettings = false
+    /// Last Settings category visited. View-model state survives closing the
+    /// overlay but naturally resets when Shepherd restarts.
+    var settingsSection: SettingsSection = .appearance
     /// ⌘K command palette visibility.
     var showCommandPalette = false {
         didSet { if !showCommandPalette { paletteModifierHeld = false } }
