@@ -10,7 +10,7 @@ import ShepherdCore
 /// in-app remedy, and re-running the checks is the visual verification that
 /// everything is green before the feature unlocks.
 struct FinalizeWorktreeSheet: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     let agent: Agent
     let space: Space
 

@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdCore
 
 struct RootView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    @Bindable var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
     @ObservedObject private var appearance = AppSettings.shared
     @Environment(\.colorScheme) private var systemColorScheme
@@ -337,7 +337,7 @@ struct RootView: View {
 /// trailing `status ⟨age⟩` in the status color. This is the selected agent's
 /// identity line — the window has no other title.
 struct WorkspaceHeaderView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     /// Re-render on density/text-scale changes; never `.id`-keyed — that
     /// would remount, which is harmless here but banned near terminal panes.
     @ObservedObject private var appearance = AppSettings.shared

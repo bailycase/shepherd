@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// them, then the `+ new space` footer and the fleet dot-count strip.
 /// Everything is mono, flat, and full-bleed — no chips, no vibrancy.
 struct SidebarView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     /// Density/text-scale live in AppSettings; observing re-renders the tree
     /// when a slider moves (rows read Fonts/Metrics inside body, so parent
     /// re-render is what re-evaluates them — rows carry closures, which
@@ -74,7 +74,7 @@ struct SidebarView: View {
 /// `● 3 waiting` block under the traffic lights — attention lives at the top
 /// of the sidebar, where scanning starts. Hidden at zero (see SidebarView).
 struct WaitingSummary: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -100,7 +100,7 @@ struct WaitingSummary: View {
 /// One space: header row (disclosure, uppercase name, count / `+`) and its
 /// agent rows nested under it. Collapsed spaces show only the header, dimmer.
 struct SpaceSection: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     let space: Space
     let agents: [Agent]
     /// 0 for a root space; deeper spaces are projects nested by path
@@ -558,7 +558,7 @@ struct StatusMarker: View {
 /// running row selects that agent. Hidden entirely while empty — automations
 /// are created by pi (the skill) or a running agent, not a sidebar `+`.
 struct AutomationsSection: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
 
     var body: some View {
         let automations = vm.state.automations
@@ -647,7 +647,7 @@ struct AutomationRow: View {
 /// SHELLS: global terminal workspaces outside every space, for one-off work
 /// (logs, htop, scratch dirs). Pinned above the footer, like the mock.
 struct ShellsSection: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @State private var hoveringHeader = false
 
     var body: some View {
