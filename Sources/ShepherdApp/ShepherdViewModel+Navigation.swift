@@ -168,6 +168,7 @@ extension ShepherdViewModel {
         selectionHistory.append(id)
         selectedAgentID = id
         selectedSpaceID = agent.spaceID
+        revealLocalSpace(agent.spaceID)
         focusedPaneID = restoredFocus(forTab: agent.tabID, fallback: agent.paneID)
     }
 
@@ -199,7 +200,76 @@ extension ShepherdViewModel {
         selectedRemoteAgent = nil
         selectedSpaceID = id
         selectedAgentID = nil
+        revealLocalSpace(id)
         syncFocus()
+    }
+
+    // MARK: Sidebar reveal
+
+    /// Ancestors of `space` in the sidebar's containment forest, nearest
+    /// first. A collapsed ancestor hides the space's row entirely, so these
+    /// are exactly the disclosures a selection has to open. Pure, for tests.
+    static func ancestorSpaceIDs(of space: SpaceID, in spaces: [Space]) -> [SpaceID] {
+        let forest = spaceForest(spaces)
+        guard let index = forest.firstIndex(where: { $0.space.id == space }) else { return [] }
+        var depth = forest[index].depth
+        var ancestors: [SpaceID] = []
+        for entry in forest[..<index].reversed() where entry.depth < depth {
+            ancestors.append(entry.space.id)
+            depth = entry.depth
+            if depth == 0 { break }
+        }
+        return ancestors
+    }
+
+    /// Every local selection funnels through here. A row hidden by a closed
+    /// disclosure cannot be scrolled into view, so open what hides it: the
+    /// THIS MAC root (unified tree, where a collapsed local machine hides the
+    /// whole local tree) and the selected space's ancestors. The space's own
+    /// disclosure stays as the user left it — its header row is still
+    /// visible, and that is what `sidebarRevealTarget` falls back to.
+    func revealLocalSpace(_ id: SpaceID?) {
+        if localMachineCollapsed { localMachineCollapsed = false }
+        guard let id else { return }
+        let ancestors = Set(Self.ancestorSpaceIDs(of: id, in: visibleSpaces))
+        if !ancestors.isDisjoint(with: collapsedSpaces) {
+            collapsedSpaces.subtract(ancestors)
+        }
+    }
+
+    /// The sidebar row a selection change should scroll into view: the
+    /// selected local agent's row, or its space's header row when the space
+    /// is collapsed (the agent has no row then). Nil when nothing local is
+    /// on screen to reveal — a shell or remote agent owns the workspace, or
+    /// the space has no visible row (hidden, or under a collapsed parent).
+    /// Pure, separated for tests.
+    static func sidebarRevealTarget(
+        selectedAgentID: AgentID?,
+        selectedSpaceID: SpaceID?,
+        shellSelected: Bool,
+        remoteSelected: Bool,
+        spaces: [Space],
+        collapsed: Set<SpaceID>
+    ) -> AnyHashable? {
+        guard !shellSelected, !remoteSelected, let spaceID = selectedSpaceID else { return nil }
+        let visible = visibleSpaceForest(spaces.filter { !$0.hidden }, collapsed: collapsed)
+        guard visible.contains(where: { $0.space.id == spaceID }) else { return nil }
+        if let selectedAgentID, !collapsed.contains(spaceID) { return AnyHashable(selectedAgentID) }
+        return AnyHashable(spaceID)
+    }
+
+    /// Scroll id of the row the sidebar should keep visible for the current
+    /// selection; the sidebar scrolls to it whenever it changes, which is
+    /// what makes ⌘1–9, ⌘↑/↓ and ⌃⇧1 reveal a row that scrolled off.
+    var sidebarRevealTarget: AnyHashable? {
+        Self.sidebarRevealTarget(
+            selectedAgentID: selectedAgentID,
+            selectedSpaceID: selectedSpaceID,
+            shellSelected: selectedShellID != nil,
+            remoteSelected: selectedRemoteAgent != nil,
+            spaces: state.spaces,
+            collapsed: collapsedSpaces
+        )
     }
 
     /// A REMOTE row shows that agent's terminal, streamed from its host.
@@ -208,9 +278,15 @@ extension ShepherdViewModel {
         selectedShellID = nil
         selectedRemoteAgent = RemoteAgentRef(hostID: hostID, agentID: agentID)
         lastRemoteAgentByHost[hostID] = agentID
+        // Same rule as the local tree: a selected row must not stay hidden
+        // behind a closed host or remote-space disclosure.
+        collapsedHosts.remove(hostID)
         if let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
            let agent = connection.state.agents.first(where: { $0.id == agentID }),
            let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) {
+            if isRemoteSpaceCollapsed(hostID: hostID, spaceID: agent.spaceID) {
+                toggleRemoteSpaceCollapsed(hostID: hostID, spaceID: agent.spaceID)
+            }
             remoteFocusedPaneID = agent.paneID ?? tab.layout.firstLeaf.id
         } else {
             remoteFocusedPaneID = nil
@@ -237,6 +313,7 @@ extension ShepherdViewModel {
             if selectedAgentID == nil {
                 selectedAgentID = state.agents.first { $0.spaceID == selectedSpaceID }?.id
             }
+            revealLocalSpace(selectedSpaceID)
             syncFocus()
             return
         }
