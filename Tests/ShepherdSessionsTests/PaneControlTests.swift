@@ -126,6 +126,42 @@ struct PaneControlTests {
         #expect(code == "unsupported")
     }
 
+    @Test func routesReviewRequestsAndReturnsTheSubmittedText() async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+
+        let agentID = AgentID()
+        let received = Locked<[ReviewRequest]>([])
+        h.server.onReviewRequest = { request, respond in
+            received.withValue { $0.append(request) }
+            respond(.submitted(text: "Summary: ready to merge."))
+        }
+
+        let client = try ExtensionClient(path: h.socketPath)
+        defer { client.closeConnection() }
+        try client.send(.requestReview(id: 51, agentID: agentID, cwd: "/tmp/repo", reference: "HEAD~2"))
+        #expect(try client.readReply() == .reviewResult(id: 51, text: "Summary: ready to merge."))
+
+        try await waitUntil { received.current.count == 1 }
+        guard case .start(let requestAgent, let cwd, let reference) = received.current.first else {
+            Issue.record("expected a review request")
+            return
+        }
+        #expect(requestAgent == agentID)
+        #expect(cwd == "/tmp/repo")
+        #expect(reference == "HEAD~2")
+    }
+
+    @Test func reviewRequestsWithoutAHandlerReturnAnError() throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+
+        let client = try ExtensionClient(path: h.socketPath)
+        defer { client.closeConnection() }
+        try client.send(.requestReview(id: 52, agentID: AgentID(), cwd: nil, reference: nil))
+        #expect(try client.readReply() == .error(id: 52, code: "unsupported", message: "no review handler"))
+    }
+
     @Test func oversizedReplyFallsBackToCorrelatedError() throws {
         let h = try Harness()
         defer { h.tearDown() }

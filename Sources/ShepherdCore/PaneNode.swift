@@ -9,12 +9,22 @@ public struct LeafPane: Codable, Hashable, Sendable {
     public var sessionID: SessionID?
     public var cwd: String
     public var agentID: AgentID?
+    /// Marks a native diff-review pane. Review panes are session-scoped UI and
+    /// are purged at startup; old state files decode nil.
+    public var isReview: Bool?
 
-    public init(id: PaneID = PaneID(), sessionID: SessionID? = nil, cwd: String, agentID: AgentID? = nil) {
+    public init(
+        id: PaneID = PaneID(),
+        sessionID: SessionID? = nil,
+        cwd: String,
+        agentID: AgentID? = nil,
+        isReview: Bool? = nil
+    ) {
         self.id = id
         self.sessionID = sessionID
         self.cwd = cwd
         self.agentID = agentID
+        self.isReview = isReview
     }
 }
 

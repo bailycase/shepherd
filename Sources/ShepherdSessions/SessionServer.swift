@@ -200,6 +200,9 @@ public final class SessionServer: @unchecked Sendable {
     /// the reply comes back through the completion. Delivered on the main
     /// actor; the completion may be called from any thread.
     public var onPaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
+    /// An agent asked to open a native diff-review pane. The GUI owns the
+    /// review layout and user interaction; the completion carries the result.
+    public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
     public var onRemotePaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
     /// A remote client asked to create an agent. Spawning pi (extension
     /// flags, session-file seeding, pane binding) is the GUI's flow, so the
@@ -262,8 +265,11 @@ public final class SessionServer: @unchecked Sendable {
     private func startOnQueue() throws {
         let stale = store.state.agents.filter { $0.status != .idle }.map(\.id)
         let deadInspectors = store.state.tabs.contains { $0.inspectorFor != nil }
+        let deadReviews = store.state.tabs.contains { tab in
+            tab.layout.leaves.contains { $0.isReview == true }
+        }
         let staleRuns = store.state.automations.contains { $0.agentID != nil }
-        if !stale.isEmpty || deadInspectors || staleRuns {
+        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns {
             do {
                 try store.update { state in
                     for id in stale {
@@ -275,6 +281,21 @@ public final class SessionServer: @unchecked Sendable {
                     // processes died with the previous run, so restoring
                     // them would show empty shells.
                     state.tabs.removeAll { $0.inspectorFor != nil }
+                    // Review panes are session-scoped UI: their native viewer
+                    // died with the previous run, so remove them from each
+                    // layout. A lone review leaf keeps the tab usable.
+                    for i in state.tabs.indices {
+                        var layout = state.tabs[i].layout
+                        let reviewIDs = layout.leaves.filter { $0.isReview == true }.map(\.id)
+                        for paneID in reviewIDs {
+                            if let closed = layout.closing(pane: paneID) {
+                                layout = closed
+                            } else {
+                                layout = layout.updatingLeaf(paneID) { $0.isReview = nil }
+                            }
+                        }
+                        state.tabs[i].layout = layout
+                    }
                     // Automation runs died with the previous app run; enabled
                     // ones restart through the GUI after adoption.
                     for i in state.automations.indices {
@@ -1027,6 +1048,8 @@ public final class SessionServer: @unchecked Sendable {
             )
         case .readPane(let id, let agentID, let paneID):
             routePaneRequest(.read(agentID: agentID, paneID: paneID), requestID: id, client: client)
+        case .requestReview(let id, let agentID, let cwd, let reference):
+            routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
         }
     }
 
@@ -1090,6 +1113,20 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Hand a review request to the GUI and write its reply back to the client.
+    private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
+        guard let handler = onReviewRequest else {
+            reply(.error(id: requestID, code: "unsupported", message: "no review handler"), to: client)
+            return
+        }
+        hopToMain { [weak self, weak client] in
+            handler(request) { outcome in
+                guard let self, let client else { return }
+                self.queue.async { self.reply(outcome.withID(requestID), to: client) }
+            }
+        }
+    }
+
     private func reply(_ message: ExtensionReply, to client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
 
@@ -1144,6 +1181,7 @@ public final class SessionServer: @unchecked Sendable {
              .panes(let id, _),
              .paneOpened(let id, _),
              .paneContent(let id, _, _),
+             .reviewResult(let id, _),
              .automations(let id, _),
              .agents(let id, _),
              .message(let id, _):
