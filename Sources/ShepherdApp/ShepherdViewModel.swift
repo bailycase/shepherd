@@ -407,33 +407,84 @@ final class ShepherdViewModel {
         }
     }
 
-    /// Fast path for next/previous agent: act directly on the chord instead
-    /// of letting it reach the main menu. Stands down while the Settings
-    /// shortcut recorder is capturing so rebinding these chords still works.
+    /// Chord→intent classification for the navigation fast path. Pure and
+    /// separated from NSEvent so the matching — the part that could swallow
+    /// a keystroke it shouldn't — is directly testable.
+    enum NavigationKeyAction: Equatable {
+        case agentDigit(Int)
+        case shellDigit(Int)
+        case machineJump(Int)
+        case adjacentAgent(Int)
+    }
+
+    /// `modifiers` must be pre-masked to the four app modifiers. Digit
+    /// families match by exact modifier set; validation already guarantees
+    /// the three sets are mutually exclusive.
+    static func navigationKeyAction(
+        digit: Int?,
+        chord: KeyChord?,
+        modifiers: NSEvent.ModifierFlags,
+        shellModifiers: NSEvent.ModifierFlags,
+        next: KeyChord,
+        previous: KeyChord
+    ) -> NavigationKeyAction? {
+        if let digit {
+            if modifiers == .command { return .agentDigit(digit) }
+            if modifiers == [.control, .shift] { return .machineJump(digit) }
+            if !shellModifiers.isEmpty, modifiers == shellModifiers { return .shellDigit(digit) }
+        }
+        guard let chord else { return nil }
+        if chord == next { return .adjacentAgent(1) }
+        if chord == previous { return .adjacentAgent(-1) }
+        return nil
+    }
+
+    /// Fast path for the navigation chords (⌘↑/↓, ⌘1–9, shell digits,
+    /// ⌃⇧1–9 machine jumps): act directly instead of letting the event
+    /// reach the main menu. Consumes an event only when the menu's
+    /// equivalent item would be live, so a dead chord falls through
+    /// unchanged. Stands down while the Settings shortcut recorder is
+    /// capturing so rebinding these chords still works.
     private func handleNavigationKeyDown(_ event: NSEvent) -> Bool {
-        guard !keybindings.isRecording, let chord = KeyChord(event: event) else { return false }
-        // ⌘1–9: direct agent jump, mirroring the Agent menu's digit rows —
-        // live only for an existing sidebar index, and routed to the
-        // palette's quick-pick while it is open.
-        if chord.command, !chord.shift, !chord.option, !chord.control,
-           let digit = Int(chord.key), (1...9).contains(digit),
-           orderedAgents.indices.contains(digit - 1) {
+        guard !keybindings.isRecording else { return false }
+        let action = Self.navigationKeyAction(
+            digit: KeyChord.digit(keyCode: event.keyCode),
+            chord: KeyChord(event: event),
+            modifiers: event.modifierFlags.intersection([.command, .shift, .option, .control]),
+            shellModifiers: keybindings.chord(for: .shellDigits).modifierFlags,
+            next: keybindings.chord(for: .nextAgent),
+            previous: keybindings.chord(for: .previousAgent)
+        )
+        switch action {
+        case .agentDigit(let digit):
+            // Mirrors the Agent menu's digit rows: live only for an existing
+            // sidebar index, routed to the palette's quick-pick while open.
+            guard orderedAgents.indices.contains(digit - 1) else { return false }
             if showCommandPalette {
                 runPaletteQuickPick(digit)
             } else {
                 selectAgent(orderedAgents[digit - 1].id)
             }
             return true
-        }
-        if chord == keybindings.chord(for: .nextAgent) {
-            selectAdjacentAgent(1)
+        case .shellDigit(let digit):
+            guard shellTabs.indices.contains(digit - 1) else { return false }
+            selectShell(shellTabs[digit - 1].id)
             return true
-        }
-        if chord == keybindings.chord(for: .previousAgent) {
-            selectAdjacentAgent(-1)
+        case .machineJump(let digit):
+            // ⌃⇧1 (local) is always live; host rows only while connected,
+            // matching the Machines menu's disabled states.
+            if digit > 1 {
+                guard remoteHosts.connections.indices.contains(digit - 2),
+                      remoteHosts.connections[digit - 2].phase == .connected else { return false }
+            }
+            jumpToMachine(digit)
             return true
+        case .adjacentAgent(let delta):
+            selectAdjacentAgent(delta)
+            return true
+        case nil:
+            return false
         }
-        return false
     }
 
     /// Delayed reveal so ordinary chords don't flash the badges. Agent rows
@@ -452,12 +503,7 @@ final class ShepherdViewModel {
         }
         paletteModifierHeld = false
         let held = flags.intersection([.command, .shift, .option, .control])
-        let shellChord = KeybindingsStore.shared.chord(for: .shellDigits)
-        var shellModifiers: NSEvent.ModifierFlags = []
-        if shellChord.command { shellModifiers.insert(.command) }
-        if shellChord.shift { shellModifiers.insert(.shift) }
-        if shellChord.option { shellModifiers.insert(.option) }
-        if shellChord.control { shellModifiers.insert(.control) }
+        let shellModifiers = KeybindingsStore.shared.chord(for: .shellDigits).modifierFlags
 
         let wantAgents = held == [.command]
         let wantShells = !shellModifiers.isEmpty && held == shellModifiers
