@@ -249,6 +249,7 @@ final class ShepherdViewModel {
     let installPiTheme: (ShepherdTheme) throws -> Void
     @ObservationIgnored private var commandHoldTask: Task<Void, Never>?
     @ObservationIgnored private var flagsMonitor: Any?
+    @ObservationIgnored private var keyDownMonitor: Any?
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     /// Last pane focused in each layout (see `PaneFocusMemory`).
     var focusMemory = PaneFocusMemory()
@@ -372,6 +373,17 @@ final class ShepherdViewModel {
             }
             return event
         }
+        // Agent navigation chords bypass the menu bar: dispatching a SwiftUI
+        // CommandMenu key equivalent revalidates the whole main menu
+        // (including the dynamic agent list) and showed up as 200–500ms of
+        // keypress→switch latency. The menu items stay for discoverability;
+        // this monitor consumes the event first so they never double-fire.
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let handled = MainActor.assumeIsolated {
+                self?.handleNavigationKeyDown(event) ?? false
+            }
+            return handled ? nil : event
+        }
         resignActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -387,9 +399,28 @@ final class ShepherdViewModel {
         if let flagsMonitor {
             NSEvent.removeMonitor(flagsMonitor)
         }
+        if let keyDownMonitor {
+            NSEvent.removeMonitor(keyDownMonitor)
+        }
         if let resignActiveObserver {
             NotificationCenter.default.removeObserver(resignActiveObserver)
         }
+    }
+
+    /// Fast path for next/previous agent: act directly on the chord instead
+    /// of letting it reach the main menu. Stands down while the Settings
+    /// shortcut recorder is capturing so rebinding these chords still works.
+    private func handleNavigationKeyDown(_ event: NSEvent) -> Bool {
+        guard !keybindings.isRecording, let chord = KeyChord(event: event) else { return false }
+        if chord == keybindings.chord(for: .nextAgent) {
+            selectAdjacentAgent(1)
+            return true
+        }
+        if chord == keybindings.chord(for: .previousAgent) {
+            selectAdjacentAgent(-1)
+            return true
+        }
+        return false
     }
 
     /// Delayed reveal so ordinary chords don't flash the badges. Agent rows

@@ -198,6 +198,11 @@ final class KeybindingsStore: ObservableObject {
 
     @Published private(set) var overrides: [ShortcutAction: KeyChord]
 
+    /// True while the Settings shortcut recorder is capturing. The view
+    /// model's navigation keyDown fast path checks this and stands down so
+    /// the recorder can capture chords that would otherwise be consumed.
+    var isRecording = false
+
     private let store: UserDefaults
 
     init(store: UserDefaults = .standard) {
