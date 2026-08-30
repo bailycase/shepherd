@@ -1,0 +1,55 @@
+name: Request a feature
+description: Propose a change that helps people supervise agents
+labels: ["enhancement"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Shepherd is intentionally narrow. It organizes work around live agents
+        and favors a small, coherent product over covering every workflow.
+
+        Describe the problem before proposing a solution.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues for a similar request.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the current workflow and where it breaks down.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What behavior would you like?
+      description: Describe the user-visible result rather than an internal implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: supervision
+    attributes:
+      label: How does this help someone supervise multiple agents?
+      description: Explain how it improves attention, navigation, agent control, or terminal work.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What alternatives or workarounds have you tried?
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add mockups, screenshots, examples, or related projects here.
