@@ -99,7 +99,7 @@ struct SheetLinkButton: View {
 }
 
 struct NewAgentSheet: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
 
     /// nil = this Mac; a host id = create on that remote host.
     @State private var targetHostID: UUID?

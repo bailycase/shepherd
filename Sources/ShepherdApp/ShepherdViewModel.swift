@@ -31,43 +31,44 @@ struct AgentStartFailure: Error, CustomStringConvertible {
 /// space row shows the space's shell workspace. Tabs exist only in persisted state as
 /// per-agent (and per-space-main) layout containers — there is no tab UI.
 @MainActor
-final class ShepherdViewModel: ObservableObject {
-    @Published var state: ShepherdState
-    @Published var selectedSpaceID: SpaceID?
-    @Published var selectedAgentID: AgentID?
+@Observable
+final class ShepherdViewModel {
+    var state: ShepherdState
+    var selectedSpaceID: SpaceID?
+    var selectedAgentID: AgentID?
     /// Collapsed space sections in the sidebar tree. A collapsed space shows
     /// only its header; its agents leave the ⌘1–9 order too. Persisted —
     /// collapse choices survive relaunch, unlike selection.
-    @Published var collapsedSpaces: Set<SpaceID> = [] {
+    var collapsedSpaces: Set<SpaceID> = [] {
         didSet {
             sidebarDefaults.set(collapsedSpaces.map(\.rawValue).sorted(), forKey: "shepherd.collapsedSpaces")
         }
     }
     /// When each agent last changed status, for the header's `blocked 4m`
     /// age. Ephemeral — ages reset with the app, exactly like sessions.
-    @Published private(set) var statusChangedAt: [AgentID: Date] = [:]
+    private(set) var statusChangedAt: [AgentID: Date] = [:]
     /// Live pi-subagents child runs per agent (sidebar subagent rows).
     /// Ephemeral display state; see `ChildRuns` for the lifecycle rules.
-    @Published var childRuns = ChildRuns()
+    var childRuns = ChildRuns()
     /// The agent whose subagent-inspector layout the workspace is showing
     /// (a subagent row is selected). Ordinary sidebar selection clears it.
-    @Published var inspectingAgentID: AgentID?
+    var inspectingAgentID: AgentID?
     /// Which child each agent's inspector pane is currently viewing, so a
     /// re-click navigates instead of relaunching the viewer and the sidebar
     /// can highlight the inspected row. Ephemeral.
-    @Published var inspectedChild: [AgentID: String] = [:]
+    var inspectedChild: [AgentID: String] = [:]
     /// Foreground process name per shell tab ("pi", "htop"), for row labels.
-    @Published var shellProcesses: [TabID: String] = [:]
-    var shellProcessTimer: Timer?
+    var shellProcesses: [TabID: String] = [:]
+    @ObservationIgnored var shellProcessTimer: Timer?
     /// The global shell the workspace is showing (a SHELLS row is selected);
     /// wins over space/agent selection, cleared by ordinary selection.
-    @Published var selectedShellID: TabID?
+    var selectedShellID: TabID?
     /// The remote agent the workspace is showing (a REMOTE row is selected):
     /// host connection id + agent id on that host. Wins over every local
     /// selection; cleared by ordinary selection. Ephemeral, like all
     /// selection state.
-    @Published var selectedRemoteAgent: RemoteAgentRef?
-    @Published var remoteFocusedPaneID: PaneID?
+    var selectedRemoteAgent: RemoteAgentRef?
+    var remoteFocusedPaneID: PaneID?
     /// Configured remote Shepherd hosts and their live connections.
     let remoteHosts: RemoteHostStore
     /// Where the open space-directory browser creates its space: this Mac
@@ -84,7 +85,7 @@ final class ShepherdViewModel: ObservableObject {
         }
     }
 
-    @Published var spacePickerTarget: SpacePickerTarget?
+    var spacePickerTarget: SpacePickerTarget?
     /// Compatibility spelling used by remote call sites.
     var remoteSpacePickerHostID: UUID? {
         get {
@@ -98,17 +99,17 @@ final class ShepherdViewModel: ObservableObject {
     var newAgentPreselect: (hostID: UUID, spaceID: SpaceID)?
     /// Collapsed machine roots in the unified tree (hosts by id; local has
     /// its own flag). Persisted, like collapsedSpaces.
-    @Published var collapsedHosts: Set<UUID> = [] {
+    var collapsedHosts: Set<UUID> = [] {
         didSet {
             sidebarDefaults.set(collapsedHosts.map(\.uuidString).sorted(), forKey: "shepherd.collapsedHosts")
         }
     }
-    @Published var localMachineCollapsed = false {
+    var localMachineCollapsed = false {
         didSet { sidebarDefaults.set(localMachineCollapsed, forKey: "shepherd.localMachineCollapsed") }
     }
     /// Remote space disclosure state, keyed by host + space so equal space IDs
     /// on different machines cannot collide. Persisted across relaunches.
-    @Published private(set) var collapsedRemoteSpaces: Set<String> = [] {
+    private(set) var collapsedRemoteSpaces: Set<String> = [] {
         didSet {
             sidebarDefaults.set(collapsedRemoteSpaces.sorted(), forKey: "shepherd.collapsedRemoteSpaces")
         }
@@ -141,21 +142,21 @@ final class ShepherdViewModel: ObservableObject {
         showNewAgentSheet = true
     }
     /// Rename target for a global shell (sheet in RootView).
-    @Published var shellRenameTarget: TabID?
+    var shellRenameTarget: TabID?
     /// Space pending removal confirmation (alert in RootView) — removal
     /// kills the space's agents, so it always confirms.
-    @Published var spaceDeleteTarget: SpaceID?
+    var spaceDeleteTarget: SpaceID?
     /// Rename target for a space (alert in RootView). Display-only rename;
     /// the checkout path never changes.
-    @Published var spaceRenameTarget: SpaceID?
+    var spaceRenameTarget: SpaceID?
     /// Agents whose subagent rows are hidden (clicking the selected agent
     /// row toggles this); the row shows an `n sub` chip instead. Ephemeral,
     /// like all child-run display state.
-    @Published var collapsedChildren: Set<AgentID> = []
-    private var childSweepTimer: Timer?
+    var collapsedChildren: Set<AgentID> = []
+    @ObservationIgnored private var childSweepTimer: Timer?
     /// Focus is recorded per layout on every change (clicks, ⌥⌘←/→, splits),
     /// so returning to an agent restores the pane you were last working in.
-    @Published var focusedPaneID: PaneID? {
+    var focusedPaneID: PaneID? {
         didSet {
             guard let paneID = focusedPaneID, paneID != oldValue else { return }
             // Attribute focus to the layout that actually owns the pane, not
@@ -165,26 +166,26 @@ final class ShepherdViewModel: ObservableObject {
             }
         }
     }
-    @Published var showNewAgentSheet = false
+    var showNewAgentSheet = false
     /// Whether the in-window settings surface is visible.
-    @Published var showSettings = false
+    var showSettings = false
     /// ⌘K command palette visibility.
-    @Published var showCommandPalette = false {
+    var showCommandPalette = false {
         didSet { if !showCommandPalette { paletteModifierHeld = false } }
     }
     /// ⌘ held while the palette is open — rows show ⌘1–9 pick hints.
-    @Published var paletteModifierHeld = false
+    var paletteModifierHeld = false
     /// The palette's currently visible (filtered) rows, kept fresh by the
     /// view so ⌘digit quick-pick targets what the user actually sees.
     var paletteVisibleRows: [PaletteItem] = []
-    @Published var agentRenameTarget: AgentID?
+    var agentRenameTarget: AgentID?
     /// True while ⌘ has been held ~250ms — sidebar rows show their ⌘1–9 keycaps.
-    @Published var showAgentShortcutBadges = false
+    var showAgentShortcutBadges = false
     /// True while the shell-digit chord's modifiers are held — shell rows
     /// show their jump keycaps. Follows the user's configured binding
     /// (⌥⌘ by default, ⌃ if rebound), so the hint can never advertise a
     /// chord that isn't wired.
-    @Published var showShellShortcutBadges = false
+    var showShellShortcutBadges = false
 
     let sessions: TerminalSessionStore
     /// System notifications when an unwatched agent finishes or blocks.
@@ -194,9 +195,9 @@ final class ShepherdViewModel: ObservableObject {
     let keybindings: KeybindingsStore
     let themeManager: ThemeManager
     let installPiTheme: (ShepherdTheme) throws -> Void
-    private var commandHoldTask: Task<Void, Never>?
-    private var flagsMonitor: Any?
-    private var resignActiveObserver: NSObjectProtocol?
+    @ObservationIgnored private var commandHoldTask: Task<Void, Never>?
+    @ObservationIgnored private var flagsMonitor: Any?
+    @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     /// Last pane focused in each layout (see `PaneFocusMemory`).
     var focusMemory = PaneFocusMemory()
     /// One-shot launch guard for autoStartAutomations.
@@ -208,7 +209,7 @@ final class ShepherdViewModel: ObservableObject {
     /// Workspace mutations are optimistic so the UI stays responsive, but the
     /// server remains authoritative. This tail makes their persistence order
     /// explicit and gives failures one reconciliation path.
-    var persistenceTail: Task<Void, Never>?
+    @ObservationIgnored var persistenceTail: Task<Void, Never>?
 
     let server: SessionServer
 
@@ -482,8 +483,8 @@ final class ShepherdViewModel: ObservableObject {
 
     /// The bound port while serving, nil otherwise. Distinct from the
     /// setting: binding can fail (port in use), and the UI must say so.
-    @Published private(set) var remoteListenerBoundPort: UInt16?
-    @Published private(set) var remoteListenerError: String?
+    private(set) var remoteListenerBoundPort: UInt16?
+    private(set) var remoteListenerError: String?
 
     var remoteListenerEnabled: Bool { settings.remoteListenerEnabled }
 
