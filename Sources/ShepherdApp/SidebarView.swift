@@ -21,44 +21,70 @@ struct SidebarView: View {
                 WaitingSummary(vm: vm)
             }
 
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Machine roots: THIS MAC, then each host — one unified
-                    // tree, so remote fleets are the same species as local.
-                    // The local root only appears once a second machine
-                    // exists; a purely local setup keeps today's flat tree.
-                    if vm.remoteHosts.connections.isEmpty {
-                        ForEach(vm.spaceTree, id: \.space.id) { group in
-                            SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth)
-                        }
-                    } else {
-                        MachineHeaderRow(
-                            marker: nil,
-                            name: "this mac",
-                            collapsed: vm.localMachineCollapsed,
-                            detail: .count(vm.state.agents.count),
-                            keycap: vm.machineKeycap(forHost: nil),
-                            onToggle: { vm.localMachineCollapsed.toggle() }
-                        )
-                        if !vm.localMachineCollapsed {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Machine roots: THIS MAC, then each host — one unified
+                        // tree, so remote fleets are the same species as local.
+                        // The local root only appears once a second machine
+                        // exists; a purely local setup keeps today's flat tree.
+                        if vm.remoteHosts.connections.isEmpty {
                             ForEach(vm.spaceTree, id: \.space.id) { group in
-                                SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth + 1)
+                                SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth)
+                                    .id(group.space.id)
+                            }
+                        } else {
+                            MachineHeaderRow(
+                                marker: nil,
+                                name: "this mac",
+                                collapsed: vm.localMachineCollapsed,
+                                detail: .count(vm.state.agents.count),
+                                keycap: vm.machineKeycap(forHost: nil),
+                                onToggle: { vm.localMachineCollapsed.toggle() }
+                            )
+                            if !vm.localMachineCollapsed {
+                                ForEach(vm.spaceTree, id: \.space.id) { group in
+                                    SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth + 1)
+                                        .id(group.space.id)
+                                }
+                            }
+                            ForEach(vm.remoteHosts.connections) { connection in
+                                Rectangle().fill(Tokens.separator).frame(height: 1)
+                                    .padding(.vertical, 3)
+                                RemoteHostBlock(vm: vm, connection: connection)
                             }
                         }
-                        ForEach(vm.remoteHosts.connections) { connection in
-                            Rectangle().fill(Tokens.separator).frame(height: 1)
-                                .padding(.vertical, 3)
-                            RemoteHostBlock(vm: vm, connection: connection)
+                        if let hint = vm.agentsHintText {
+                            Text(hint)
+                                .font(Fonts.mono(10.5))
+                                .foregroundStyle(Tokens.textDim)
+                                .padding(EdgeInsets(top: 10, leading: 14, bottom: 3, trailing: 8))
                         }
                     }
-                    if let hint = vm.agentsHintText {
-                        Text(hint)
-                            .font(Fonts.mono(10.5))
-                            .foregroundStyle(Tokens.textDim)
-                            .padding(EdgeInsets(top: 10, leading: 14, bottom: 3, trailing: 8))
+                    .padding(.top, 2)
+                }
+                // Keyboard navigation (⌘1–9, ⌘↑/↓, ⌃⇧digits) can land on a
+                // row scrolled out of view. Reveal it with a minimal animated
+                // scroll; mouse and palette selections arrive here too and are
+                // no-ops when the row is already visible. The trigger is a
+                // counter, not the target value, so re-selecting the same row
+                // still scrolls back to it.
+                // The same selection may have just opened a disclosure (the
+                // local machine root, an ancestor space, a host), so the row
+                // can be absent from the tree at this instant — scroll on the
+                // next runloop turn, once it exists.
+                .onChange(of: vm.sidebarRevealRequest) {
+                    guard let target = vm.sidebarRevealTarget else { return }
+                    DispatchQueue.main.async {
+                        withAnimation(
+                            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                                ? nil
+                                : .easeOut(duration: 0.12) // DESIGN.md: ≤120ms
+                        ) {
+                            proxy.scrollTo(target)
+                        }
                     }
                 }
-                .padding(.top, 2)
             }
 
             Spacer(minLength: 0)
@@ -206,6 +232,8 @@ struct SpaceSection: View {
                             }
                         }
                     }
+                    // Scroll target for keyboard selection (see SidebarView).
+                    .id(agent.id)
                     // Live pi-subagents child runs nest under their agent.
                     // Clicking opens the run's inspector dashboard in a pane
                     // beside the agent (steer/stop at its prompt; closing the
