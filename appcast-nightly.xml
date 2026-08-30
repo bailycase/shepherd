@@ -4,7 +4,7 @@
         <title>Shepherd</title>
         <item>
             <title>0.0.0-nightly.202608302045</title>
-            <pubDate>Sun, 30 Aug 2026 20:49:57 +0000</pubDate>
+            <pubDate>Sun, 30 Aug 2026 20:54:19 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>nightly</sparkle:channel>
             <sparkle:version>32</sparkle:version>
@@ -19,7 +19,7 @@
         </item>
         <item>
             <title>0.0.0-nightly.202608301802</title>
-            <pubDate>Sun, 30 Aug 2026 20:49:59 +0000</pubDate>
+            <pubDate>Sun, 30 Aug 2026 20:54:21 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>nightly</sparkle:channel>
             <sparkle:version>30</sparkle:version>
@@ -29,7 +29,7 @@
         </item>
         <item>
             <title>0.0.0-nightly.202608301556</title>
-            <pubDate>Sun, 30 Aug 2026 20:50:01 +0000</pubDate>
+            <pubDate>Sun, 30 Aug 2026 20:54:22 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>nightly</sparkle:channel>
             <sparkle:version>28</sparkle:version>
