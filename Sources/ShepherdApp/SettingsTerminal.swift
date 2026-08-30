@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: Terminal
 
 struct TerminalSettings: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject private var settings = AppSettings.shared
 
     private var families: [String] {

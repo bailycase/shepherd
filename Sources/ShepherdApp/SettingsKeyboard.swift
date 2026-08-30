@@ -7,7 +7,7 @@ import AppKit
 /// recorder: click, press the new chord, ⎋ cancels. Fixed chords are listed
 /// separately and cannot be recorded over.
 struct KeyboardSettings: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject private var keys = KeybindingsStore.shared
     /// The action currently recording, if any — one recorder at a time.
     @State private var recording: ShortcutAction?

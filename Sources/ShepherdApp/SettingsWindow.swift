@@ -11,7 +11,7 @@ import SwiftUI
 /// The app-menu Settings item. Settings is an in-window surface, so the
 /// command toggles view state rather than opening a second scene.
 struct SettingsCommandButton: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
 
     var body: some View {
         Button(vm.showSettings ? "Back to App" : "Settings…") {
