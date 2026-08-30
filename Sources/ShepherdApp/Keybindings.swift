@@ -171,6 +171,37 @@ struct KeyChord: Codable, Hashable {
         )
     }
 
+    /// The four app-relevant modifiers as NSEvent flags. Shared by badge
+    /// reveal and the navigation keyDown fast path so the two can never
+    /// disagree about what a chord's modifiers mean.
+    var modifierFlags: NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if command { flags.insert(.command) }
+        if shift { flags.insert(.shift) }
+        if option { flags.insert(.option) }
+        if control { flags.insert(.control) }
+        return flags
+    }
+
+    /// Digit-row value for a key code, layout-independent — the digit
+    /// families (⌘1–9, shell digits, ⌃⇧1–9) must match by physical key
+    /// because `charactersIgnoringModifiers` does not ignore shift (⇧1
+    /// reads "!"), mirroring ghostty's `physical:` unbind spellings.
+    static func digit(keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case 18: return 1
+        case 19: return 2
+        case 20: return 3
+        case 21: return 4
+        case 23: return 5
+        case 22: return 6
+        case 26: return 7
+        case 28: return 8
+        case 25: return 9
+        default: return nil
+        }
+    }
+
     /// Pure token mapping, separated from NSEvent for testability.
     static func token(keyCode: UInt16, characters: String?) -> String? {
         switch keyCode {
@@ -197,6 +228,11 @@ final class KeybindingsStore: ObservableObject {
     static let defaultsKey = "shepherd.keybindings"
 
     @Published private(set) var overrides: [ShortcutAction: KeyChord]
+
+    /// True while the Settings shortcut recorder is capturing. The view
+    /// model's navigation keyDown fast path checks this and stands down so
+    /// the recorder can capture chords that would otherwise be consumed.
+    var isRecording = false
 
     private let store: UserDefaults
 

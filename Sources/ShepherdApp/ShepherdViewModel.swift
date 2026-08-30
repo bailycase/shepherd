@@ -249,6 +249,7 @@ final class ShepherdViewModel {
     let installPiTheme: (ShepherdTheme) throws -> Void
     @ObservationIgnored private var commandHoldTask: Task<Void, Never>?
     @ObservationIgnored private var flagsMonitor: Any?
+    @ObservationIgnored private var keyDownMonitor: Any?
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     /// Last pane focused in each layout (see `PaneFocusMemory`).
     var focusMemory = PaneFocusMemory()
@@ -372,6 +373,17 @@ final class ShepherdViewModel {
             }
             return event
         }
+        // Agent navigation chords bypass the menu bar: dispatching a SwiftUI
+        // CommandMenu key equivalent revalidates the whole main menu
+        // (including the dynamic agent list) and showed up as 200–500ms of
+        // keypress→switch latency. The menu items stay for discoverability;
+        // this monitor consumes the event first so they never double-fire.
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let handled = MainActor.assumeIsolated {
+                self?.handleNavigationKeyDown(event) ?? false
+            }
+            return handled ? nil : event
+        }
         resignActiveObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -387,8 +399,91 @@ final class ShepherdViewModel {
         if let flagsMonitor {
             NSEvent.removeMonitor(flagsMonitor)
         }
+        if let keyDownMonitor {
+            NSEvent.removeMonitor(keyDownMonitor)
+        }
         if let resignActiveObserver {
             NotificationCenter.default.removeObserver(resignActiveObserver)
+        }
+    }
+
+    /// Chord→intent classification for the navigation fast path. Pure and
+    /// separated from NSEvent so the matching — the part that could swallow
+    /// a keystroke it shouldn't — is directly testable.
+    enum NavigationKeyAction: Equatable {
+        case agentDigit(Int)
+        case shellDigit(Int)
+        case machineJump(Int)
+        case adjacentAgent(Int)
+    }
+
+    /// `modifiers` must be pre-masked to the four app modifiers. Digit
+    /// families match by exact modifier set; validation already guarantees
+    /// the three sets are mutually exclusive.
+    static func navigationKeyAction(
+        digit: Int?,
+        chord: KeyChord?,
+        modifiers: NSEvent.ModifierFlags,
+        shellModifiers: NSEvent.ModifierFlags,
+        next: KeyChord,
+        previous: KeyChord
+    ) -> NavigationKeyAction? {
+        if let digit {
+            if modifiers == .command { return .agentDigit(digit) }
+            if modifiers == [.control, .shift] { return .machineJump(digit) }
+            if !shellModifiers.isEmpty, modifiers == shellModifiers { return .shellDigit(digit) }
+        }
+        guard let chord else { return nil }
+        if chord == next { return .adjacentAgent(1) }
+        if chord == previous { return .adjacentAgent(-1) }
+        return nil
+    }
+
+    /// Fast path for the navigation chords (⌘↑/↓, ⌘1–9, shell digits,
+    /// ⌃⇧1–9 machine jumps): act directly instead of letting the event
+    /// reach the main menu. Consumes an event only when the menu's
+    /// equivalent item would be live, so a dead chord falls through
+    /// unchanged. Stands down while the Settings shortcut recorder is
+    /// capturing so rebinding these chords still works.
+    private func handleNavigationKeyDown(_ event: NSEvent) -> Bool {
+        guard !keybindings.isRecording else { return false }
+        let action = Self.navigationKeyAction(
+            digit: KeyChord.digit(keyCode: event.keyCode),
+            chord: KeyChord(event: event),
+            modifiers: event.modifierFlags.intersection([.command, .shift, .option, .control]),
+            shellModifiers: keybindings.chord(for: .shellDigits).modifierFlags,
+            next: keybindings.chord(for: .nextAgent),
+            previous: keybindings.chord(for: .previousAgent)
+        )
+        switch action {
+        case .agentDigit(let digit):
+            // Mirrors the Agent menu's digit rows: live only for an existing
+            // sidebar index, routed to the palette's quick-pick while open.
+            guard orderedAgents.indices.contains(digit - 1) else { return false }
+            if showCommandPalette {
+                runPaletteQuickPick(digit)
+            } else {
+                selectAgent(orderedAgents[digit - 1].id)
+            }
+            return true
+        case .shellDigit(let digit):
+            guard shellTabs.indices.contains(digit - 1) else { return false }
+            selectShell(shellTabs[digit - 1].id)
+            return true
+        case .machineJump(let digit):
+            // ⌃⇧1 (local) is always live; host rows only while connected,
+            // matching the Machines menu's disabled states.
+            if digit > 1 {
+                guard remoteHosts.connections.indices.contains(digit - 2),
+                      remoteHosts.connections[digit - 2].phase == .connected else { return false }
+            }
+            jumpToMachine(digit)
+            return true
+        case .adjacentAgent(let delta):
+            selectAdjacentAgent(delta)
+            return true
+        case nil:
+            return false
         }
     }
 
@@ -408,12 +503,7 @@ final class ShepherdViewModel {
         }
         paletteModifierHeld = false
         let held = flags.intersection([.command, .shift, .option, .control])
-        let shellChord = KeybindingsStore.shared.chord(for: .shellDigits)
-        var shellModifiers: NSEvent.ModifierFlags = []
-        if shellChord.command { shellModifiers.insert(.command) }
-        if shellChord.shift { shellModifiers.insert(.shift) }
-        if shellChord.option { shellModifiers.insert(.option) }
-        if shellChord.control { shellModifiers.insert(.control) }
+        let shellModifiers = KeybindingsStore.shared.chord(for: .shellDigits).modifierFlags
 
         let wantAgents = held == [.command]
         let wantShells = !shellModifiers.isEmpty && held == shellModifiers
