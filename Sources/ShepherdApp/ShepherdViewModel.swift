@@ -138,6 +138,11 @@ final class ShepherdViewModel {
     /// Last agent selected on each host, so a machine jump returns to where
     /// you were, not the top. Ephemeral.
     var lastRemoteAgentByHost: [UUID: AgentID] = [:]
+    /// Bumped by every selection that should scroll the sidebar to the
+    /// selected row (`sidebarRevealTarget`). A counter, not the target value:
+    /// re-selecting the same row (⌘3 twice after scrolling away) must scroll
+    /// back, and a value-diff would see no change. Ephemeral.
+    var sidebarRevealRequest = 0
 
     private func remoteSpaceCollapseKey(hostID: UUID, spaceID: SpaceID) -> String {
         "\(hostID.uuidString)/\(spaceID.rawValue)"
