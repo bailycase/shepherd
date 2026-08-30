@@ -9,7 +9,7 @@ import ShepherdProtocol
 /// app. Chrome follows the same rules as the main window: theme tokens, no
 /// saturated fills, mono metadata, hairline separators.
 struct SettingsView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
     @State private var section: SettingsSection = .appearance
     @State private var searchText = ""

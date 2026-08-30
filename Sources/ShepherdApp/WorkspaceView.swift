@@ -3,7 +3,7 @@ import AppKit
 import ShepherdCore
 
 struct WorkspaceView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
 
     /// The frame is the app's one attention surface: neutral hairline
     /// normally, the status color when the focused agent is blocked.
@@ -91,7 +91,7 @@ struct EmptyWorkspaceHint: View {
 /// vertical divider (side-by-side columns), matching the ⌘D-vertical reference
 /// split; `.horizontal` stacks rows.
 struct PaneTreeView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     let tab: Tab
     let node: PaneNode
 
@@ -113,7 +113,7 @@ struct PaneTreeView: View {
 /// never translation: the separator moves during the drag, so translation
 /// measured in its own space compounds error and drifts off the cursor.
 struct PaneSplitView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     let tab: Tab
     let node: PaneNode
     @State private var liveRatio: Double?
@@ -198,7 +198,7 @@ struct PaneSplitView: View {
 // MARK: Panes
 
 struct PaneLeafView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     let tab: Tab
     let pane: LeafPane
 
@@ -252,7 +252,7 @@ struct LiveTerminalPane: View {
 /// connection. One pane, no splits: remote agents render their pi terminal
 /// only — auxiliary panes stay a host-side concern.
 struct RemoteAgentPane: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     let ref: RemoteAgentRef
 
     var body: some View {
@@ -267,7 +267,7 @@ struct RemoteAgentPane: View {
 }
 
 private struct RemoteAgentPaneContent: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject var connection: RemoteHostStore.Connection
     let agentID: AgentID
 
@@ -307,7 +307,7 @@ private struct RemoteAgentPaneContent: View {
 }
 
 private struct RemotePaneTreeView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject var connection: RemoteHostStore.Connection
     let ref: RemoteAgentRef
     let tab: Tab
@@ -324,7 +324,7 @@ private struct RemotePaneTreeView: View {
 }
 
 private struct RemotePaneLeafView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject var connection: RemoteHostStore.Connection
     let leaf: LeafPane
 
@@ -343,7 +343,7 @@ private struct RemotePaneLeafView: View {
 }
 
 private struct RemotePaneSplitView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject var connection: RemoteHostStore.Connection
     let ref: RemoteAgentRef
     let tab: Tab
@@ -440,7 +440,7 @@ struct PanePlaceholder: View {
 // MARK: Status line
 
 struct StatusLineView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject private var keys = KeybindingsStore.shared
     @ObservedObject private var appearance = AppSettings.shared
     @State private var hoveringNewSpace = false
