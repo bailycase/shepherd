@@ -3,39 +3,40 @@
     <channel>
         <title>Shepherd</title>
         <item>
+            <title>0.1.0-beta.3</title>
+            <pubDate>Sun, 30 Aug 2026 16:01:16 +0000</pubDate>
+            <link>https://github.com/bailycase/shepherd</link>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>29</sparkle:version>
+            <sparkle:shortVersionString>0.1.0-beta.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd.dmg" length="18701149" type="application/octet-stream" sparkle:edSignature="zzWqm8cmh+qRxbWEPQFZ1RY1h7M+RenYmDyeCXjhq5XzBS5O5a+0KNndoPUULrksikrSyGZfCP2OW9HtPmWNAg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd29-27.delta" sparkle:deltaFrom="27" length="1464198" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="DCyuRi+RP89W7g+Jno63xxfj2x1MGjNLIeLDY5VH1N9dZGXwGR9S3VJdoLiwpiw++1M+A+OjpTTJ7z1UqpfuCw=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd29-25.delta" sparkle:deltaFrom="25" length="1782494" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="vwLxljzm4Q+xxh6qCyVumCz/38kqGkpggMHbsPBvTGQQ/DHu86rGu+Fd2i4rvVSZmS6+q+jhoznCI5+xkoqcAg=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd29-24.delta" sparkle:deltaFrom="24" length="1784878" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Qb46G43TFjpP7WSZLR6BLz1Z7+C0TvmC0curzwoparCQKp9KogAkWkziI1+sDGwxYrM+qPjOURDxDmUgYZ4hDg=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd29-23.delta" sparkle:deltaFrom="23" length="1782614" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="rOvDB5acH8F0zWGEmlG1HfoDVWJ1LfGr8JBgg9DISafA6Tklx56hlTqlXWHJWNkjBBevN3M7/MRAkxTiCDqpDw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.1.0-beta.2</title>
-            <pubDate>Sun, 30 Aug 2026 16:00:56 +0000</pubDate>
+            <pubDate>Sun, 30 Aug 2026 16:01:18 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>27</sparkle:version>
             <sparkle:shortVersionString>0.1.0-beta.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.2/Shepherd.dmg" length="18678091" type="application/octet-stream" sparkle:edSignature="7aj725rMfgo9tX6cvzJhyzgPjhz7kqTVzhE6s01XzgoLg1GTQpyB6a6J4dFBvkSkrDIkJN98Eq5Prl0uD9rsCQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd27-25.delta" sparkle:deltaFrom="25" length="1503882" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="1dmSzqKW929k4kGdwekPA55rsbOwmnVnIWSyIydWqxt4WfeTHQVyAg17FNqlK4toIrIXWAJxEjLSuxRC+h/jBA=="/>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd27-24.delta" sparkle:deltaFrom="24" length="1500926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="/bsi5RXgIkNb3OU0AAyc9WtIp/4zWVVNDnXhPN7llYbQd6nbaGvhWO0pJjfqFfOIuUwm65WQvFNhXnQl5lQVAg=="/>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd27-23.delta" sparkle:deltaFrom="23" length="1504078" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="NWiS6TTnJZWrCiRMP9uKIMWWSb0+jH27MeTyRb/2plXU6qNY4MLpmcrtxa2wXCHejEaF9QQTiBwmCubFVlzUDA=="/>
-            </sparkle:deltas>
         </item>
         <item>
             <title>0.1.0</title>
-            <pubDate>Sun, 30 Aug 2026 16:00:58 +0000</pubDate>
+            <pubDate>Sun, 30 Aug 2026 16:01:20 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>25</sparkle:version>
             <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0/Shepherd.dmg" length="18577023" type="application/octet-stream" sparkle:edSignature="S03DmiA36Ftw2k/mRynR8tYjRmMkcgYn1MnenOrPE1aDTAs4C/23c35jHEv5jR5AuCqYPiulcg/Q+f6/QczeDQ=="/>
-        </item>
-        <item>
-            <title>0.1.0-rc.1</title>
-            <pubDate>Sun, 30 Aug 2026 16:00:59 +0000</pubDate>
-            <link>https://github.com/bailycase/shepherd</link>
-            <sparkle:channel>beta</sparkle:channel>
-            <sparkle:version>24</sparkle:version>
-            <sparkle:shortVersionString>0.1.0-rc.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-rc.1/Shepherd.dmg" length="18576790" type="application/octet-stream" sparkle:edSignature="tNWCFk7JiqLnZjO5Y5PMalE2b4+4WgKdASEKOabEeoe0CB4lWVSmKzlbp3FpblBWs+EBMz6nxAurOp3DqUijCw=="/>
         </item>
     </channel>
 </rss>
