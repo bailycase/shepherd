@@ -34,11 +34,32 @@ struct DiffFile: Hashable, Identifiable {
     let hunks: [DiffHunk]
 
     var id: String { displayPath }
-    var addedCount: Int {
-        hunks.flatMap(\.lines).filter { $0.kind == .added }.count
-    }
-    var removedCount: Int {
-        hunks.flatMap(\.lines).filter { $0.kind == .removed }.count
+    // Stored, not computed: headers render on every scroll tick and a
+    // flatMap over all lines per render was measurable on large diffs.
+    let addedCount: Int
+    let removedCount: Int
+
+    init(
+        oldPath: String?,
+        newPath: String?,
+        displayPath: String,
+        isNew: Bool,
+        isDeleted: Bool,
+        isRenamed: Bool,
+        isBinary: Bool,
+        hunks: [DiffHunk]
+    ) {
+        self.oldPath = oldPath
+        self.newPath = newPath
+        self.displayPath = displayPath
+        self.isNew = isNew
+        self.isDeleted = isDeleted
+        self.isRenamed = isRenamed
+        self.isBinary = isBinary
+        self.hunks = hunks
+        let lines = hunks.flatMap(\.lines)
+        self.addedCount = lines.filter { $0.kind == .added }.count
+        self.removedCount = lines.filter { $0.kind == .removed }.count
     }
 }
 

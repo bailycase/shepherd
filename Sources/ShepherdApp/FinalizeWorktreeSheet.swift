@@ -10,7 +10,7 @@ import ShepherdCore
 /// in-app remedy, and re-running the checks is the visual verification that
 /// everything is green before the feature unlocks.
 struct FinalizeWorktreeSheet: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     let agent: Agent
     let space: Space
 
@@ -37,7 +37,9 @@ struct FinalizeWorktreeSheet: View {
     }
 
     private var branch: String { agent.worktreeBranch ?? "" }
-    private var worktreePath: String { GitWorktree.destination(repo: space.path, branch: branch) }
+    private var worktreePath: String {
+        agent.worktreePath ?? GitWorktree.destination(repo: space.path, branch: branch)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

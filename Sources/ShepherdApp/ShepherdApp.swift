@@ -8,14 +8,14 @@ import ShepherdSessions
 @MainActor
 public struct ShepherdMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var vm: ShepherdViewModel
+    @State private var vm: ShepherdViewModel
     /// Menus rebuild when a shortcut is rebound — the App body observes the
     /// store so every `.keyboardShortcut` below re-resolves.
     @ObservedObject private var keys = KeybindingsStore.shared
     @ObservedObject private var themes = ThemeManager.shared
 
     public init() {
-        _vm = StateObject(wrappedValue: ShepherdViewModel(server: .shared))
+        _vm = State(initialValue: ShepherdViewModel(server: .shared))
     }
 
     public var body: some Scene {
@@ -25,7 +25,10 @@ public struct ShepherdMacApp: App {
                 // sessions (the toggle persists; a host stays a host). The
                 // TCP listener is independent of the extension socket, so
                 // ordering against server.start() does not matter.
-                .task { vm.applyRemoteListenerSetting() }
+                .task {
+                    vm.applyRemoteListenerSetting()
+                    PiUpdateManager.shared.start()
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: Metrics.windowDefaultWidth, height: Metrics.windowDefaultHeight)

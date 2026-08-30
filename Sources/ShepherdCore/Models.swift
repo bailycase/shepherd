@@ -144,6 +144,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// recorded at creation so Finalize can target the PR at the branch the
     /// work actually started from. Decodes nil from older state files.
     public var worktreeBase: String?
+    /// The actual checkout path. Shepherd-created worktrees can derive it
+    /// from repo + branch; imported worktrees may use any directory name.
+    public var worktreePath: String?
 
     public init(
         id: AgentID = AgentID(),
@@ -157,7 +160,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         nameIsFinal: Bool = false,
         piSessionID: String? = nil,
         worktreeBranch: String? = nil,
-        worktreeBase: String? = nil
+        worktreeBase: String? = nil,
+        worktreePath: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -171,6 +175,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.piSessionID = piSessionID
         self.worktreeBranch = worktreeBranch
         self.worktreeBase = worktreeBase
+        self.worktreePath = worktreePath
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -181,7 +186,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath
     }
 
     public init(from decoder: Decoder) throws {
@@ -203,6 +208,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before worktree agents existed.
         worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
+        worktreePath = try c.decodeIfPresent(String.self, forKey: .worktreePath)
     }
 }
 

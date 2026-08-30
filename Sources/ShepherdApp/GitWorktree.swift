@@ -48,6 +48,71 @@ enum GitWorktree {
         return "worktree/\(adjectives.randomElement()!)-\(nouns.randomElement()!)-\(number)"
     }
 
+    struct Identity: Equatable {
+        var repo: String
+        var path: String
+        var branch: String
+        var base: String?
+    }
+
+    /// Folder containing this repository's registered linked worktrees. Git
+    /// is authoritative because worktrees may live somewhere other than the
+    /// primary checkout's parent. Falls back to that parent before the first
+    /// linked worktree exists.
+    static func importDirectory(repo: String) -> String {
+        let canonicalRepo = URL(fileURLWithPath: (repo as NSString).expandingTildeInPath)
+            .resolvingSymlinksInPath().standardized.path
+        if let output = try? run(["-C", canonicalRepo, "worktree", "list", "--porcelain", "-z"]),
+           let linked = output.components(separatedBy: "\0")
+            .compactMap({ field -> String? in
+                guard field.hasPrefix("worktree ") else { return nil }
+                return String(field.dropFirst("worktree ".count))
+            })
+            .map({ URL(fileURLWithPath: $0).resolvingSymlinksInPath().standardized.path })
+            .first(where: { $0 != canonicalRepo }) {
+            return URL(fileURLWithPath: linked).deletingLastPathComponent().path
+        }
+        return URL(fileURLWithPath: canonicalRepo).deletingLastPathComponent().path
+    }
+
+    /// Canonical primary checkout for any checkout in a repository. Git's
+    /// common directory is more reliable than filesystem spelling alone on
+    /// macOS runners where temporary paths may have aliases.
+    static func primaryCheckout(at path: String) throws -> String {
+        let checkout = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            .resolvingSymlinksInPath().standardized.path
+        let commonDir = try run([
+            "-C", checkout, "rev-parse", "--path-format=absolute", "--git-common-dir",
+        ]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return URL(fileURLWithPath: commonDir).deletingLastPathComponent()
+            .resolvingSymlinksInPath().standardized.path
+    }
+
+    /// Read an existing linked worktree's primary checkout, branch, and best
+    /// local base. A primary checkout is rejected because it belongs as a
+    /// Space, not as a worktree Agent beneath itself.
+    static func identity(at path: String) throws -> Identity {
+        let checkout = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            .resolvingSymlinksInPath().standardized.path
+        let commonDir = try run(["-C", checkout, "rev-parse", "--path-format=absolute", "--git-common-dir"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let gitDir = try run(["-C", checkout, "rev-parse", "--path-format=absolute", "--git-dir"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard commonDir != gitDir else {
+            throw Failure(message: "Choose a linked git worktree, not the primary checkout")
+        }
+        let branch = try run(["-C", checkout, "branch", "--show-current"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !branch.isEmpty else {
+            throw Failure(message: "Detached worktrees cannot be imported")
+        }
+        let repo = try primaryCheckout(at: checkout)
+        let base = (try? run([
+            "-C", checkout, "symbolic-ref", "--short", "refs/remotes/origin/HEAD",
+        ]))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Identity(repo: repo, path: checkout, branch: branch, base: base?.isEmpty == false ? base : nil)
+    }
+
     /// `git worktree add [--no-track] -b <branch> <repo>-<branch> [<start>]`
     /// — see `destination`. With no `from`, git branches from HEAD (the
     /// primary checkout's current commit); an explicit start point also gets
@@ -169,9 +234,12 @@ enum GitWorktree {
     /// Tear down what `add` created: `git worktree remove --force` on the
     /// derived destination, then delete the branch. Only the confirmed
     /// Delete Worktree Agent dialog calls this.
-    static func remove(repo: String, branch: String) throws {
+    static func remove(repo: String, branch: String, worktree: String? = nil) throws {
         let repoPath = (repo as NSString).expandingTildeInPath
-        try run(["-C", repoPath, "worktree", "remove", "--force", destination(repo: repo, branch: branch)])
+        try run([
+            "-C", repoPath, "worktree", "remove", "--force",
+            worktree ?? destination(repo: repo, branch: branch),
+        ])
         try run(["-C", repoPath, "branch", "-D", branch])
     }
 

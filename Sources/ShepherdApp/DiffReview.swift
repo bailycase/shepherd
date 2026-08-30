@@ -35,16 +35,37 @@ struct ReviewComment: Identifiable, Hashable {
 }
 
 @MainActor
-final class ReviewSession: ObservableObject, Identifiable {
+@Observable
+final class ReviewSession: Identifiable {
     let id = UUID()
     let agentID: AgentID
     let paneID: PaneID
     let cwd: String
     let reference: String?
-    @Published var files: [DiffFile]
-    @Published var loadError: String?
-    @Published var comments: [ReviewComment]
-    @Published var summary: String
+    var files: [DiffFile]
+    var loadError: String?
+    var comments: [ReviewComment] {
+        didSet { rebuildCommentIndex() }
+    }
+    var summary: String
+
+    /// Comment lookups so row and header rendering are O(1) instead of a
+    /// linear scan per visible row.
+    private(set) var commentsByLine: [CommentKey: ReviewComment] = [:]
+    private(set) var commentCountByFile: [String: Int] = [:]
+
+    struct CommentKey: Hashable {
+        let fileID: String
+        let lineID: Int
+    }
+
+    private func rebuildCommentIndex() {
+        commentsByLine = Dictionary(
+            comments.map { (CommentKey(fileID: $0.fileID, lineID: $0.lineID), $0) },
+            uniquingKeysWith: { _, last in last }
+        )
+        commentCountByFile = comments.reduce(into: [:]) { $0[$1.fileID, default: 0] += 1 }
+    }
 
     init(
         agentID: AgentID,
@@ -64,6 +85,7 @@ final class ReviewSession: ObservableObject, Identifiable {
         self.loadError = loadError
         self.comments = comments
         self.summary = summary
+        rebuildCommentIndex()
     }
 }
 

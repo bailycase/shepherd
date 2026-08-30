@@ -85,7 +85,7 @@ struct MachineHeaderRow: View {
 /// A remote host's block in the unified tree: machine root row, then the
 /// host's spaces and agents at the same depths the local tree uses.
 struct RemoteHostBlock: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject var connection: RemoteHostStore.Connection
 
     private var detail: MachineHeaderRow.Detail {
