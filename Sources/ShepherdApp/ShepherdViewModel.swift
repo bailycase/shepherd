@@ -412,6 +412,19 @@ final class ShepherdViewModel {
     /// shortcut recorder is capturing so rebinding these chords still works.
     private func handleNavigationKeyDown(_ event: NSEvent) -> Bool {
         guard !keybindings.isRecording, let chord = KeyChord(event: event) else { return false }
+        // ⌘1–9: direct agent jump, mirroring the Agent menu's digit rows —
+        // live only for an existing sidebar index, and routed to the
+        // palette's quick-pick while it is open.
+        if chord.command, !chord.shift, !chord.option, !chord.control,
+           let digit = Int(chord.key), (1...9).contains(digit),
+           orderedAgents.indices.contains(digit - 1) {
+            if showCommandPalette {
+                runPaletteQuickPick(digit)
+            } else {
+                selectAgent(orderedAgents[digit - 1].id)
+            }
+            return true
+        }
         if chord == keybindings.chord(for: .nextAgent) {
             selectAdjacentAgent(1)
             return true
