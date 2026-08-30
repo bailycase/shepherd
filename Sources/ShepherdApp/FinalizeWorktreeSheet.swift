@@ -16,10 +16,13 @@ struct FinalizeWorktreeSheet: View {
 
     @StateObject private var setup: WorktreeSetupModel
     @StateObject private var finalizer = WorktreeFinalizer()
+    @State private var descriptionGenerator = WorktreePRDescriptionGenerator()
     @State private var phase: Phase = .checking
     @State private var base = ""
     @State private var title = ""
     @State private var prBody = ""
+    @State private var descriptionPrepared = false
+    @State private var generatingDescription = false
     /// `rev-list --count <base>..HEAD` — the last-chance tripwire for a
     /// wrong base: an inflated count means the PR would include work that
     /// is not this worktree's.
@@ -125,6 +128,7 @@ struct FinalizeWorktreeSheet: View {
         if setup.allPassed {
             await prepareInputDefaults()
             phase = .input
+            await generateDescriptionIfNeeded()
         } else {
             phase = .setup
         }
@@ -150,6 +154,7 @@ struct FinalizeWorktreeSheet: View {
                 Task {
                     await prepareInputDefaults()
                     phase = .input
+                    await generateDescriptionIfNeeded()
                 }
             }
             .keyboardShortcut(.defaultAction)
@@ -201,6 +206,32 @@ struct FinalizeWorktreeSheet: View {
         includedCommits = Int(count.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
+    private func generateDescriptionIfNeeded(force: Bool = false) async {
+        guard WorktreePRDescriptionGenerator.shouldGenerate(
+            enabled: vm.settings.worktreeGeneratePRDescription,
+            prepared: descriptionPrepared,
+            force: force
+        ) else { return }
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBase = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty, !trimmedBase.isEmpty else { return }
+
+        let original = prBody
+        generatingDescription = true
+        let result = await descriptionGenerator.generate(
+            base: trimmedBase,
+            title: trimmedTitle,
+            worktree: worktreePath
+        )
+        prBody = WorktreePRDescriptionGenerator.applying(
+            result.body,
+            replacing: original,
+            current: prBody
+        )
+        descriptionPrepared = true
+        generatingDescription = false
+    }
+
     private var inputBody: some View {
         VStack(alignment: .leading, spacing: 0) {
             SheetRow("worktree") {
@@ -243,10 +274,22 @@ struct FinalizeWorktreeSheet: View {
                     .foregroundStyle(Tokens.textSecondary)
             }
             VStack(alignment: .leading, spacing: 6) {
-                Text("description")
-                    .font(Fonts.mono(10.5, .semibold))
-                    .tracking(0.74)
-                    .foregroundStyle(Tokens.textDim)
+                HStack(spacing: 8) {
+                    Text("description")
+                        .font(Fonts.mono(10.5, .semibold))
+                        .tracking(0.74)
+                        .foregroundStyle(Tokens.textDim)
+                    Spacer(minLength: 8)
+                    if generatingDescription {
+                        Text("generating…")
+                            .font(Fonts.mono(10.5))
+                            .foregroundStyle(Tokens.textTertiary)
+                    } else if vm.settings.worktreeGeneratePRDescription {
+                        SheetLinkButton(label: descriptionPrepared ? "regenerate…" : "generate…") {
+                            Task { await generateDescriptionIfNeeded(force: true) }
+                        }
+                    }
+                }
                 TextEditor(text: $prBody)
                     .font(Fonts.mono(11.5))
                     .foregroundStyle(Tokens.textPrimary)
@@ -273,7 +316,8 @@ struct FinalizeWorktreeSheet: View {
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(Tokens.accentButton)
-                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty
+                    .disabled(generatingDescription
+                        || title.trimmingCharacters(in: .whitespaces).isEmpty
                         || base.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(EdgeInsets(top: 14, leading: 20, bottom: 16, trailing: 20))
