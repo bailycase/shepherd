@@ -36,6 +36,7 @@ enum StatusExtension {
         extensionPath: String,
         themeExtensionPath: String,
         panesExtensionPath: String,
+        reviewExtensionPath: String,
         subagentsExtensionPath: String,
         /// nil when auto-naming is off in Settings.
         namerExtensionPath: String? = nil,
@@ -68,6 +69,7 @@ enum StatusExtension {
         cmd += " -e \(shellQuoted(extensionPath))"
         cmd += " -e \(shellQuoted(themeExtensionPath))"
         cmd += " -e \(shellQuoted(panesExtensionPath))"
+        cmd += " -e \(shellQuoted(reviewExtensionPath))"
         cmd += " -e \(shellQuoted(subagentsExtensionPath))"
         if let namerExtensionPath {
             cmd += " -e \(shellQuoted(namerExtensionPath))"

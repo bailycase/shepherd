@@ -45,6 +45,9 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case sendPaneInput(id: Int, agentID: AgentID, paneID: PaneID, text: String, submit: Bool)
     /// Current visible screen of a pane, as plain text rows.
     case readPane(id: Int, agentID: AgentID, paneID: PaneID)
+    /// Blocking request/reply: opens a native diff review pane; the reply
+    /// carries the user's formatted review text.
+    case requestReview(id: Int, agentID: AgentID, cwd: String?, reference: String?)
 
     // MARK: Agent peers (request/reply)
 
@@ -75,14 +78,14 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, children
-        case paneID, axis, cwd, relativeTo, command, text, submit
+        case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
         case prompt, enabled, start, automationID, targetAgentID
     }
 
     private enum Kind: String, Codable {
         case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent
-        case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane
+        case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent
@@ -158,6 +161,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
                 paneID: try c.decode(PaneID.self, forKey: .paneID)
+            )
+        case .requestReview:
+            self = .requestReview(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                cwd: try c.decodeIfPresent(String.self, forKey: .cwd),
+                reference: try c.decodeIfPresent(String.self, forKey: .reference)
             )
         case .listAgents:
             self = .listAgents(
@@ -277,6 +287,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(paneID, forKey: .paneID)
+        case .requestReview(let id, let agentID, let cwd, let reference):
+            try c.encode(Kind.requestReview, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encodeIfPresent(cwd, forKey: .cwd)
+            try c.encodeIfPresent(reference, forKey: .reference)
         case .listAgents(let id, let agentID):
             try c.encode(Kind.listAgents, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -452,6 +468,8 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case paneOpened(id: Int, pane: PaneInfo)
     /// Visible rows of a pane's screen, trailing blank lines trimmed.
     case paneContent(id: Int, paneID: PaneID, lines: [String])
+    /// The user's formatted review text from a native diff-review pane.
+    case reviewResult(id: Int, text: String)
     /// Saved automations with their live run state.
     case automations(id: Int, automations: [AutomationInfo])
     /// The fleet, for agent_list / agent_spawn replies.
@@ -465,7 +483,7 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
-        case ok, error, panes, paneOpened, paneContent, automations, agents, message
+        case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
     }
 
     public init(from decoder: Decoder) throws {
@@ -494,6 +512,11 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 paneID: try c.decode(PaneID.self, forKey: .paneID),
                 lines: try c.decode([String].self, forKey: .lines)
+            )
+        case .reviewResult:
+            self = .reviewResult(
+                id: try c.decode(Int.self, forKey: .id),
+                text: try c.decode(String.self, forKey: .text)
             )
         case .automations:
             self = .automations(
@@ -537,6 +560,10 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(paneID, forKey: .paneID)
             try c.encode(lines, forKey: .lines)
+        case .reviewResult(let id, let text):
+            try c.encode(Kind.reviewResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(text, forKey: .text)
         case .automations(let id, let automations):
             try c.encode(Kind.automations, forKey: .type)
             try c.encode(id, forKey: .id)
