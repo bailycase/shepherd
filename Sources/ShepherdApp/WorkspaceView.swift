@@ -209,12 +209,23 @@ struct PaneLeafView: View {
         let visible = vm.isVisibleTab(tab)
         let focused = vm.focusedPaneID == pane.id && visible
 
-        LiveTerminalPane(
-            session: vm.sessions.session(for: pane, in: tab),
-            isFocused: focused,
-            isRendering: visible
-        )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Group {
+            if pane.isReview == true {
+                if let session = vm.reviewSessions[pane.id] {
+                    DiffReviewPane(session: session, isFocused: focused)
+                        .environmentObject(vm)
+                } else {
+                    PanePlaceholder(text: "review unavailable")
+                }
+            } else {
+                LiveTerminalPane(
+                    session: vm.sessions.session(for: pane, in: tab),
+                    isFocused: focused,
+                    isRendering: visible
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Tokens.terminalBg)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.focusedPaneID = pane.id })
