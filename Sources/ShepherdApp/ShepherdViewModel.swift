@@ -63,6 +63,13 @@ final class ShepherdViewModel {
     /// Live pi-subagents child runs per agent (sidebar subagent rows).
     /// Ephemeral display state; see `ChildRuns` for the lifecycle rules.
     var childRuns = ChildRuns()
+    /// Agents created this run whose pi is still booting. Creation selects
+    /// the agent optimistically — its pane shows before the process spawns —
+    /// and the pane wears an opaque launch overlay until pi's status
+    /// extension first reports, the spawn fails, or a timeout expires
+    /// (see `beginAgentLaunch`). Ephemeral, like all launch state.
+    var launchingAgents: Set<AgentID> = []
+    @ObservationIgnored var launchTimeouts: [AgentID: Task<Void, Never>] = [:]
     /// The agent whose subagent-inspector layout the workspace is showing
     /// (a subagent row is selected). Ordinary sidebar selection clears it.
     var inspectingAgentID: AgentID?
@@ -397,6 +404,7 @@ final class ShepherdViewModel {
     deinit {
         commandHoldTask?.cancel()
         persistenceTail?.cancel()
+        for task in launchTimeouts.values { task.cancel() }
         childSweepTimer?.invalidate()
         shellProcessTimer?.invalidate()
         if let flagsMonitor {
@@ -483,6 +491,9 @@ final class ShepherdViewModel {
     }
 
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus) {
+        // Any report means pi is up and painting its own TUI: the launch
+        // overlay's job is done.
+        endAgentLaunch(id)
         if let index = state.agents.firstIndex(where: { $0.id == id }) {
             let old = state.agents[index].status
             if old != status {
