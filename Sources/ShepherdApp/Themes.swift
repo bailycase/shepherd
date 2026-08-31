@@ -123,13 +123,6 @@ struct ShepherdTheme: Identifiable {
     let accentButton: Color
     let destructive: Color
 
-    // Launch glow — the amorphous gradient mass behind the crook while a
-    // new agent's pi boots (AgentLaunchOverlay). Warm core, gold blend,
-    // violet halo; muted enough to stay in Basalt's register.
-    let launchGlowCore: Color
-    let launchGlowGold: Color
-    let launchGlowHalo: Color
-
     let pi: PiColors
     let terminal: Terminal
 }
@@ -157,9 +150,6 @@ extension ShepherdTheme {
         focusAccent: Color(hex: "#C18065"),
         accentButton: Color(hex: "#8892B5"),
         destructive: Color(hex: "#B87D6E"),
-        launchGlowCore: Color(hex: "#CC8A57"),
-        launchGlowGold: Color(hex: "#DCC48A"),
-        launchGlowHalo: Color(hex: "#B8A6C9"),
         pi: PiColors(
             accent: "#C18065",
             border: "#323337",
@@ -253,9 +243,6 @@ extension ShepherdTheme {
         focusAccent: Color(hex: "#8F4E37"),
         accentButton: Color(hex: "#526184"),
         destructive: Color(hex: "#94493F"),
-        launchGlowCore: Color(hex: "#C46A33"),
-        launchGlowGold: Color(hex: "#B08D45"),
-        launchGlowHalo: Color(hex: "#9B7BB0"),
         pi: PiColors(
             accent: "#8F4E37",
             border: "#B8B2A8",
