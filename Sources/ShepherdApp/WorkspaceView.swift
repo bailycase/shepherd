@@ -14,11 +14,13 @@ struct WorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                // Every layout stays mounted; switching agents only changes
-                // which one is visible. Unmounting would destroy the Ghostty
-                // views and force a re-attach + full replay on every switch,
-                // which is what made switching flash. Hidden panes keep their
-                // surfaces, scrollback, and their process's real grid.
+                // Every mounted layout stays mounted; switching agents only
+                // changes which one is visible. Unmounting would destroy the
+                // Ghostty views and force a re-attach + full replay on every
+                // switch, which is what made switching flash. Hidden panes
+                // keep their surfaces, scrollback, and their process's real
+                // grid. Space shell layouts join the mounted set on first
+                // visit (see WorkspaceSelection).
                 let mounted = vm.mountedTabs
                 let visibleTabID = vm.activeTabID
                 ForEach(mounted) { tab in
@@ -59,6 +61,9 @@ struct WorkspaceView: View {
 
             StatusLineView(vm: vm)
         }
+        // A lazily mounted space shell must stay mounted once shown;
+        // recording here catches every path that changes the active tab.
+        .onChange(of: vm.activeTabID, initial: true) { vm.noteActiveTabVisited() }
         .background(Tokens.workspaceBg)
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden

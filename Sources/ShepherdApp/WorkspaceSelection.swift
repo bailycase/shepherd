@@ -3,8 +3,13 @@ import ShepherdCore
 
 /// Which pane layouts the workspace mounts, and which single one is visible.
 ///
-/// The workspace keeps **every layout in every space** mounted and toggles
+/// The workspace keeps every *mounted* layout in the view tree and toggles
 /// visibility, rather than swapping layouts in and out of the view tree.
+/// Agent layouts, global shells, and inspector tabs are always mounted —
+/// their processes must run (or were created on demand). A space's shell
+/// workspace mounts on first visit: mounting spawns a login shell and a
+/// Ghostty surface, and a large space tree must not pay that for spaces
+/// never opened. Once mounted, a layout stays mounted for the app's run.
 /// Unmounting destroys the pane's Ghostty surface, so returning to an agent
 /// has to rebuild it, wait for it to become ready, and replay the whole
 /// screen — seconds of flash and reflow. Hidden layouts keep their surfaces,
@@ -28,6 +33,11 @@ struct WorkspaceSelection {
     /// True while a remote agent is selected: no local layout is visible (the
     /// remote pane renders instead), but everything stays mounted.
     var remoteSelectionActive: Bool = false
+    /// Space shell tabs shown at least once this run. Grows only (the view
+    /// model records every active tab): a mounted layout must never unmount
+    /// while it exists, or switching back would destroy and replay its
+    /// surface.
+    var visitedTabIDs: Set<TabID> = []
 
     /// Layouts kept in the view tree, ordered stably by (space, tab order) —
     /// never by selection. Reordering would change the ForEach identity order
@@ -37,8 +47,19 @@ struct WorkspaceSelection {
         let spaceOrder = Dictionary(
             uniqueKeysWithValues: state.spaces.enumerated().map { ($0.element.id, $0.offset) }
         )
+        let agentTabIDs = Set(state.agents.map(\.tabID))
+        let active = activeTabID
         // Global shells sort after every space, in their own order.
-        return state.tabs.sorted { a, b in
+        return state.tabs.filter { tab in
+            // Only space shell (space-main) tabs mount lazily; see the type
+            // comment. The active tab is always mounted so a first visit
+            // renders immediately — the view model marks it visited so it
+            // stays mounted after selection moves on.
+            let isSpaceShell = tab.spaceID != nil
+                && tab.inspectorFor == nil
+                && !agentTabIDs.contains(tab.id)
+            return !isSpaceShell || tab.id == active || visitedTabIDs.contains(tab.id)
+        }.sorted { a, b in
             let sa = a.spaceID.flatMap { spaceOrder[$0] } ?? Int.max
             let sb = b.spaceID.flatMap { spaceOrder[$0] } ?? Int.max
             return sa == sb ? a.order < b.order : sa < sb

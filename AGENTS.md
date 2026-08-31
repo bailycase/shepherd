@@ -253,7 +253,10 @@ rows via `shepherd-subagents.ts`, the read-mostly inspector via `shepherd-inspec
 runs are ephemeral display state, never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps
-every local layout in the view tree; selection only changes which one is visible
+every *mounted* local layout in the view tree — agent layouts, global shells, and inspector
+tabs always; a space's shell workspace joins on first visit (mounting spawns its login shell
+and surface, so a large space tree must not pay that per space at launch) and then never
+leaves; selection only changes which one is visible
 (`opacity`, hit-testing, and `isRendering` — ghostty occlusion stops hidden panes' render
 loops). Three things silently reintroduce the full-repaint lag if touched: reordering
 `mountedTabs` (ForEach identity), using a conditional-branch `.hidden()` instead of
