@@ -14,11 +14,13 @@ struct WorkspaceView: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                // Every layout stays mounted; switching agents only changes
-                // which one is visible. Unmounting would destroy the Ghostty
-                // views and force a re-attach + full replay on every switch,
-                // which is what made switching flash. Hidden panes keep their
-                // surfaces, scrollback, and their process's real grid.
+                // Every mounted layout stays mounted; switching agents only
+                // changes which one is visible. Unmounting would destroy the
+                // Ghostty views and force a re-attach + full replay on every
+                // switch, which is what made switching flash. Hidden panes
+                // keep their surfaces, scrollback, and their process's real
+                // grid. Space shell layouts join the mounted set on first
+                // visit (see WorkspaceSelection).
                 let mounted = vm.mountedTabs
                 let visibleTabID = vm.activeTabID
                 ForEach(mounted) { tab in
@@ -59,6 +61,9 @@ struct WorkspaceView: View {
 
             StatusLineView(vm: vm)
         }
+        // A lazily mounted space shell must stay mounted once shown;
+        // recording here catches every path that changes the active tab.
+        .onChange(of: vm.activeTabID, initial: true) { vm.noteActiveTabVisited() }
         .background(Tokens.workspaceBg)
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
@@ -208,19 +213,40 @@ struct PaneLeafView: View {
         // agent's terminal would swallow typing.
         let visible = vm.isVisibleTab(tab)
         let focused = vm.focusedPaneID == pane.id && visible
+        let launching = pane.agentID.map { vm.launchingAgents.contains($0) } ?? false
 
-        LiveTerminalPane(
-            session: vm.sessions.session(for: pane, in: tab),
-            agentID: pane.agentID,
-            isFocused: focused,
-            isRendering: visible
+        ZStack {
+            LiveTerminalPane(
+                session: vm.sessions.session(for: pane, in: tab),
+                agentID: pane.agentID,
+                isFocused: focused,
+                isRendering: visible
+            )
+            // A just-created agent's terminal boots behind an opaque cover:
+            // login-shell echo and pi's first paint are noise, not content.
+            // Visual only — hit testing passes through, and the surface
+            // keeps keyboard focus, so typing lands in pi's prompt.
+            if launching {
+                AgentLaunchOverlay()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                ? nil
+                : .easeOut(duration: 0.12),
+            value: launching
         )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Tokens.terminalBg)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.focusedPaneID = pane.id })
     }
 }
+
+// AgentLaunchOverlay (the ASCII crook boot screen) lives in
+// AgentLaunchOverlay.swift.
 
 struct LiveTerminalPane: View {
     @ObservedObject var session: TerminalSessionStore.PaneSession
