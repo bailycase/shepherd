@@ -57,11 +57,6 @@ enum Tokens {
     static var statusIdle: Color { theme.statusIdle }
     static var statusDone: Color { theme.statusDone }
 
-    // Launch glow (AgentLaunchOverlay)
-    static var launchGlowCore: Color { theme.launchGlowCore }
-    static var launchGlowGold: Color { theme.launchGlowGold }
-    static var launchGlowHalo: Color { theme.launchGlowHalo }
-
     // Accents
     static var focusAccent: Color { theme.focusAccent }
     static var accentButton: Color { theme.accentButton }
