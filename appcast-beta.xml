@@ -3,41 +3,41 @@
     <channel>
         <title>Shepherd</title>
         <item>
+            <title>0.1.0-beta.6</title>
+            <pubDate>Mon, 31 Aug 2026 00:34:19 +0000</pubDate>
+            <link>https://github.com/bailycase/shepherd</link>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>35</sparkle:version>
+            <sparkle:shortVersionString>0.1.0-beta.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd.dmg" length="18749293" type="application/octet-stream" sparkle:edSignature="NQEVwSKBpEx3uvWe9xpEObgNdnUhmINz6UC6pp+Yaquh1g4w6ssrnZx/CYzIsK1u/bCLCOL0q8OoiyE+1IiRAA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd35-33.delta" sparkle:deltaFrom="33" length="1146822" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="2sThLfsr6OYxj4PqP1UIPWnb5uE+mzGXmBc61ZUhO4icO60slTXCSva12ob/liYsBN/C+fKHC+L5EcSRoo6OBA=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd35-31.delta" sparkle:deltaFrom="31" length="1254106" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Iu81w3QOk9IMY+ttuO0N8LAE4dudhM09+vS96fwAuRFx09TtQ9qDDKK39UreqYtmfQmEyXyMLq+MxSltM01KAw=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd35-29.delta" sparkle:deltaFrom="29" length="1278134" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="bFKgGqtJQIPiN8/Y4AloKKZjZPR4tkQFxupSpJt5PFghI5+kTz7Uvb4xLElIKqqiMtU1Zjh3QlYjvj9rcVL6Ag=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd35-27.delta" sparkle:deltaFrom="27" length="1609946" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="SUdnWxheDx9vs1ozjNsTcXTTvTlWECLY1FPHuroHp6TGDMN45ITbGGKO1lYKFQM01IPQ1owDJ4rTiMTHlAIaCQ=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd35-25.delta" sparkle:deltaFrom="25" length="1883622" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="W58Tk4Cnuj5FHWvSmiiqr1EbgBlpPahkBFP2YUETTucqqgrI9+OK7VhEbXRUyk71EA+9WhritdjbI0q5K6euDA=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.1.0-beta.5</title>
-            <pubDate>Mon, 31 Aug 2026 00:33:56 +0000</pubDate>
+            <pubDate>Mon, 31 Aug 2026 00:34:21 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>33</sparkle:version>
             <sparkle:shortVersionString>0.1.0-beta.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.5/Shepherd.dmg" length="18723494" type="application/octet-stream" sparkle:edSignature="C69hq2iZh7RDenFtyXXkdaioywL+jNBIfnMMeFSTSR3T8/LajC2Q7bdEPg5//Zaul2pFO+fa2UF395L86khUBA=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd33-31.delta" sparkle:deltaFrom="31" length="986626" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Xe9D9WS2Ki8YbaUdZsDQnIfOcmCqtr2JH2VtJxDvxmRmNMLhOd+yVGqAkdWdEnjgfg3kZY5YSl8oASKNpr8wDg=="/>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd33-29.delta" sparkle:deltaFrom="29" length="978206" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Xth2tEgXVV72uQApOLqqZ4XZIWyyke70slkuZz0tyE/MRvbzGyhlEAV/cU43TyL6xs8Gu7pfXOxE/IlQbzRmCQ=="/>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd33-27.delta" sparkle:deltaFrom="27" length="1507154" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="EZgYGtvkNOsNdcGmyvv98L+7AvjHABPQFWQJhWXT1woy7HL7koBr01eagSgbvCtC24hWY/nsTDrhiiuTjBHVCg=="/>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd33-25.delta" sparkle:deltaFrom="25" length="1813170" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="WT7yjO2qAOWtY8uMiS7tl8k7Kg+5W+bY1JG2V2gsosVs9/iCIfg757sEaGPXiYC9fNBfDthrsH9nIo6ADX8sDQ=="/>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.6/Shepherd33-24.delta" sparkle:deltaFrom="24" length="1814082" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="yeVQKOUm6SKOfyUNuV637sHnL1WZ9FvQ9nBOltAPGu5oV5GBIC5WMx6cuj5d3qbcO0CAPqG4VyS76Z0KT9xZDw=="/>
-            </sparkle:deltas>
         </item>
         <item>
             <title>0.1.0-beta.4</title>
-            <pubDate>Mon, 31 Aug 2026 00:33:58 +0000</pubDate>
+            <pubDate>Mon, 31 Aug 2026 00:34:23 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>beta</sparkle:channel>
             <sparkle:version>31</sparkle:version>
             <sparkle:shortVersionString>0.1.0-beta.4</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.4/Shepherd.dmg" length="18706171" type="application/octet-stream" sparkle:edSignature="D3XAAgLPTb4hBCkNntKET2HoqhjC18hFClT1uWcjGEZjr76uT76LR+zxEvUtfqZ74xKE22e6EICvRayrvHH9AQ=="/>
-        </item>
-        <item>
-            <title>0.1.0-beta.3</title>
-            <pubDate>Mon, 31 Aug 2026 00:34:00 +0000</pubDate>
-            <link>https://github.com/bailycase/shepherd</link>
-            <sparkle:channel>beta</sparkle:channel>
-            <sparkle:version>29</sparkle:version>
-            <sparkle:shortVersionString>0.1.0-beta.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/bailycase/shepherd/releases/download/v0.1.0-beta.3/Shepherd.dmg" length="18701149" type="application/octet-stream" sparkle:edSignature="zzWqm8cmh+qRxbWEPQFZ1RY1h7M+RenYmDyeCXjhq5XzBS5O5a+0KNndoPUULrksikrSyGZfCP2OW9HtPmWNAg=="/>
         </item>
     </channel>
 </rss>
