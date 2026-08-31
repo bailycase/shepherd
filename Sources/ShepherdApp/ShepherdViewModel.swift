@@ -252,6 +252,21 @@ final class ShepherdViewModel {
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     /// Last pane focused in each layout (see `PaneFocusMemory`).
     var focusMemory = PaneFocusMemory()
+    /// Memoized sidebar projections (`SidebarDerivations`). `spaceForest`
+    /// is quadratic in spaces, and the sidebar reads these on every render —
+    /// including once per row for the ⌘1–9 badges — so uncached they
+    /// dominate every click once the space count grows. @ObservationIgnored:
+    /// the cache fills inside getters during view updates and must never
+    /// invalidate the views reading it; the inputs (`state`,
+    /// `collapsedSpaces`) are themselves observed.
+    @ObservationIgnored var sidebarDerivations = SidebarDerivations()
+    /// Space shell (space-main) tabs shown at least once this run. They
+    /// mount lazily — mounting spawns a login shell and a Ghostty surface,
+    /// and a large space tree must not pay that for spaces never opened —
+    /// and once mounted they stay mounted (see `WorkspaceSelection`).
+    /// @ObservationIgnored: it grows only in lockstep with observable
+    /// selection changes, so it never needs to invalidate views itself.
+    @ObservationIgnored var visitedSpaceShellTabs: Set<TabID> = []
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
     /// Recently selected agents, most recent last, no duplicates. When the
