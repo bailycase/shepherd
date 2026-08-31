@@ -366,10 +366,10 @@ final class RemotePaneSession: ObservableObject {
     private var lastRows = 24
     private var hasReportedGrid = false
     private var attachStarted = false
-    /// Debounce: forward a settled grid, never per-drag-frame sizes.
+    /// Debounce the initial attach and later resizes to a settled grid.
     /// Per-frame reports SIGWINCH-spam the child and fill scrollback with
     /// duplicated prompts.
-    private var resizeDebounce: Task<Void, Never>?
+    private var viewportDebounce: Task<Void, Never>?
     private static let resizeSettleMs = 120
 
     init(sessionID: SessionID, client: RemoteHostClient) {
@@ -387,22 +387,7 @@ final class RemotePaneSession: ObservableObject {
             client.write(sessionID: self.sessionID, data: data)
         }
         terminal.onResize = { [weak self] cols, rows in
-            guard let self else { return }
-            self.lastCols = cols
-            self.lastRows = rows
-            self.hasReportedGrid = true
-            if !self.attachStarted {
-                // First layout before attach: attach at the real grid.
-                self.attachIfNeeded()
-                return
-            }
-            // Attach already in flight or done — sync the PTY (debounced).
-            // This must run for the FIRST report too: the grace-period
-            // fallback attaches at 80×24, and without this resize the host
-            // PTY stayed 80×24 under a full-size surface — pi's absolute
-            // cursor addressing scattered across the bigger grid (the
-            // garbled-overlap bug).
-            self.scheduleResize()
+            self?.noteGrid(cols: cols, rows: rows)
         }
         // Selecting a local thread unmounts this pane's view (remote panes
         // are conditional, unlike the permanently mounted local layouts);
@@ -420,7 +405,7 @@ final class RemotePaneSession: ObservableObject {
                     // detach and attach are queued in order on the client's
                     // serial queue, so the host re-registers and snapshots
                     // after dropping the old attachment.
-                    try? await client.attach(
+                    _ = try? await client.attach(
                         sessionID: self.sessionID,
                         cols: self.lastCols,
                         rows: self.lastRows
@@ -430,12 +415,27 @@ final class RemotePaneSession: ObservableObject {
         }
     }
 
-    private func scheduleResize() {
-        resizeDebounce?.cancel()
-        resizeDebounce = Task { [weak self] in
+    /// Record a surface grid. Internal so the attach debounce can be tested
+    /// without relying on AppKit callback timing.
+    func noteGrid(cols: Int, rows: Int) {
+        lastCols = cols
+        lastRows = rows
+        hasReportedGrid = true
+        // Ghostty can report once before the configured font metrics settle.
+        // Wait for the final grid before attaching and requesting its replay.
+        scheduleViewportSync()
+    }
+
+    private func scheduleViewportSync() {
+        viewportDebounce?.cancel()
+        viewportDebounce = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(Self.resizeSettleMs))
             guard !Task.isCancelled, let self, let client = self.client else { return }
-            client.resize(sessionID: self.sessionID, cols: self.lastCols, rows: self.lastRows)
+            if self.attachStarted {
+                client.resize(sessionID: self.sessionID, cols: self.lastCols, rows: self.lastRows)
+            } else {
+                self.attachIfNeeded()
+            }
         }
     }
 
@@ -444,26 +444,22 @@ final class RemotePaneSession: ObservableObject {
     func start() {
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: TerminalSessionStore.gridWaitNanoseconds)
-            self?.attachIfNeeded()
+            guard let self, !self.attachStarted, !self.hasReportedGrid else { return }
+            self.attachIfNeeded()
         }
     }
 
     private func attachIfNeeded() {
-        guard !attachStarted, let client else { return }
+        guard !attachStarted, client != nil else { return }
         attachStarted = true
         let attachCols = lastCols
         let attachRows = lastRows
         Task { [weak self] in
             guard let self, let client = self.client else { return }
             do {
-                try await client.attach(sessionID: self.sessionID, cols: attachCols, rows: attachRows)
+                _ = try await client.attach(sessionID: self.sessionID, cols: attachCols, rows: attachRows)
                 if case .connecting = self.phase {
                     self.phase = .live
-                }
-                // The surface may have laid out (or grown) while the attach
-                // round-tripped; converge the PTY on the real grid.
-                if self.lastCols != attachCols || self.lastRows != attachRows {
-                    self.scheduleResize()
                 }
             } catch {
                 self.phase = .failed(String(describing: error))
@@ -476,7 +472,7 @@ final class RemotePaneSession: ObservableObject {
     }
 
     func detach() {
-        resizeDebounce?.cancel()
+        viewportDebounce?.cancel()
         client?.detach(sessionID: sessionID)
     }
 }
