@@ -333,21 +333,55 @@ extension ShepherdViewModel {
         sessions.stateDidChange(canonical)
         state = canonical
 
+        // Optimistic switch: the agent's pane appears immediately, wearing
+        // the launch overlay, and the spawn continues behind it. Selection
+        // must not wait on the grid wait + spawn + attach below.
+        beginAgentLaunch(agentID)
+        if selectAfter {
+            selectAgent(agentID)
+            // A new agent is something you immediately talk to, so put the
+            // keyboard in its terminal — input typed during boot lands in
+            // pi's prompt once it draws. Selecting the agent focuses its
+            // pane in our own model; this makes sure the window is actually
+            // key, which it may not be when the New Agent sheet was just
+            // dismissed.
+            NSApp.activate(ignoringOtherApps: false)
+            window?.makeKeyAndOrderFront(nil)
+        }
+
         do {
             try await sessions.createAgentSession(pane: primary, tab: tab, agent: agent, initialPrompt: config.initialPrompt, isAutomation: config.isAutomation)
         } catch {
-            if selectAfter { selectAgent(agentID) }
+            // Lift the overlay so the pane's failure placeholder is visible.
+            endAgentLaunch(agentID)
             throw AgentStartFailure(message: "session failed: \(error)")
         }
-        guard selectAfter else { return agentID }
-        selectAgent(agentID)
-        // A new agent is something you immediately talk to, so put the
-        // keyboard in its terminal. Selecting the agent focuses its pane in
-        // our own model; this makes sure the window is actually key, which it
-        // may not be when the New Agent sheet was just dismissed.
-        NSApp.activate(ignoringOtherApps: false)
-        window?.makeKeyAndOrderFront(nil)
         return agentID
+    }
+
+    // MARK: Launch overlay
+
+    /// How long the launch overlay may cover a pane whose pi never reports
+    /// (missing binary, broken shell init, outdated pi): after this the
+    /// terminal's real output must win over a tidy boot.
+    static let launchOverlayTimeout: Duration = .seconds(15)
+
+    /// Cover `id`'s pane with `AgentLaunchOverlay` until pi's status
+    /// extension first reports (`applyAgentStatus`), the spawn fails, or
+    /// `launchOverlayTimeout` expires.
+    func beginAgentLaunch(_ id: AgentID) {
+        launchingAgents.insert(id)
+        launchTimeouts[id]?.cancel()
+        launchTimeouts[id] = Task { [weak self] in
+            try? await Task.sleep(for: Self.launchOverlayTimeout)
+            guard !Task.isCancelled else { return }
+            self?.endAgentLaunch(id)
+        }
+    }
+
+    func endAgentLaunch(_ id: AgentID) {
+        launchTimeouts.removeValue(forKey: id)?.cancel()
+        launchingAgents.remove(id)
     }
 
     /// The app's main window, for focus handling.

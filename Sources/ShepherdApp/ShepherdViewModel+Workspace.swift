@@ -202,6 +202,7 @@ extension ShepherdViewModel {
         }
 
         if let agentID = exitedAgentID {
+            endAgentLaunch(agentID)
             childRuns.clear(agent: agentID)
             state.agents.removeAll { $0.id == agentID }
             if selectedAgentID == agentID {
@@ -273,6 +274,7 @@ extension ShepherdViewModel {
             sessions.detachPane(leaf.id)
         }
 
+        endAgentLaunch(id)
         childRuns.clear(agent: id)
         state.agents.removeAll { $0.id == id }
         state.tabs.remove(at: tabIndex)

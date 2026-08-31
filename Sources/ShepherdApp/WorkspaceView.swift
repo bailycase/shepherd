@@ -213,17 +213,54 @@ struct PaneLeafView: View {
         // agent's terminal would swallow typing.
         let visible = vm.isVisibleTab(tab)
         let focused = vm.focusedPaneID == pane.id && visible
+        let launching = pane.agentID.map { vm.launchingAgents.contains($0) } ?? false
 
-        LiveTerminalPane(
-            session: vm.sessions.session(for: pane, in: tab),
-            agentID: pane.agentID,
-            isFocused: focused,
-            isRendering: visible
+        ZStack {
+            LiveTerminalPane(
+                session: vm.sessions.session(for: pane, in: tab),
+                agentID: pane.agentID,
+                isFocused: focused,
+                isRendering: visible
+            )
+            // A just-created agent's terminal boots behind an opaque cover:
+            // login-shell echo and pi's first paint are noise, not content.
+            // Visual only — hit testing passes through, and the surface
+            // keeps keyboard focus, so typing lands in pi's prompt.
+            if launching {
+                AgentLaunchOverlay()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                ? nil
+                : .easeOut(duration: 0.12),
+            value: launching
         )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Tokens.terminalBg)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.focusedPaneID = pane.id })
+    }
+}
+
+/// Opaque cover over a just-created agent's pane while its pi process boots
+/// (see `ShepherdViewModel.beginAgentLaunch` for when it lifts). Quiet by
+/// design: the sidebar's working-dot pulse and small mono text — no
+/// spinners, no progress (DESIGN.md).
+struct AgentLaunchOverlay: View {
+    var body: some View {
+        Rectangle()
+            .fill(Tokens.terminalBg)
+            .overlay {
+                HStack(spacing: 7) {
+                    StatusMarker(status: .working)
+                    Text("starting pi…")
+                        .font(Fonts.mono(11))
+                        .foregroundStyle(Tokens.textDim)
+                }
+            }
     }
 }
 

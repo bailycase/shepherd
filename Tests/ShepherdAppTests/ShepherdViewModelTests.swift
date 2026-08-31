@@ -51,6 +51,28 @@ struct ShepherdViewModelTests {
         return (space, tab)
     }
 
+    /// A just-created agent wears the launch overlay until pi's status
+    /// extension first reports — delivered over the same wiring a real
+    /// report takes (session store callback → view model).
+    @Test func launchOverlayLiftsOnFirstStatusReport() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+        let agentID = AgentID()
+
+        vm.beginAgentLaunch(agentID)
+        #expect(vm.launchingAgents.contains(agentID))
+
+        vm.sessions.onAgentStatus?(agentID, .idle)
+        #expect(vm.launchingAgents.isEmpty)
+
+        // Explicit end (spawn failure, deletion) is idempotent.
+        vm.beginAgentLaunch(agentID)
+        vm.endAgentLaunch(agentID)
+        vm.endAgentLaunch(agentID)
+        #expect(vm.launchingAgents.isEmpty)
+    }
+
     @Test func newChildBatchesStartCollapsed() throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
