@@ -5,3 +5,4 @@
 xcuserdata/
 dist/
 .swiftpm/
+.build-xcode/
