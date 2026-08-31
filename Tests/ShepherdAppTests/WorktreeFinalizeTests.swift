@@ -252,6 +252,82 @@ struct WorktreeFinalizeTests {
         #expect(scripts.contains { $0.hasPrefix("git worktree remove") })
     }
 
+    @Test func descriptionGenerationHonorsOptOutAndExplicitRegeneration() {
+        #expect(!WorktreePRDescriptionGenerator.shouldGenerate(enabled: false, prepared: false, force: false))
+        #expect(WorktreePRDescriptionGenerator.shouldGenerate(enabled: true, prepared: false, force: false))
+        #expect(!WorktreePRDescriptionGenerator.shouldGenerate(enabled: true, prepared: true, force: false))
+        #expect(WorktreePRDescriptionGenerator.shouldGenerate(enabled: true, prepared: true, force: true))
+    }
+
+    @Test func descriptionGenerationUsesPiOutput() async {
+        var generator = WorktreePRDescriptionGenerator()
+        var scripts: [String] = []
+        generator.runner = { script, _, _ in
+            scripts.append(script)
+            if script.contains("git log --format='- %s'") {
+                return .init(status: 0, stdout: "- Add descriptions\n", stderr: "")
+            }
+            if script.contains("WORKTREE STATUS") {
+                return .init(status: 0, stdout: "COMMITS\nAdd descriptions\n\nDIFF STAT\n 2 files changed", stderr: "")
+            }
+            return .init(status: 0, stdout: "## Summary\n\nAdds generated PR descriptions.", stderr: "")
+        }
+
+        let result = await generator.generate(base: "main", title: "Add descriptions", worktree: "/tmp/worktree")
+
+        #expect(result == .init(body: "## Summary\n\nAdds generated PR descriptions.", generated: true))
+        #expect(scripts.count == 3)
+        #expect(scripts[2].contains("pi --print"))
+        #expect(scripts[2].contains("--model 'anthropic/claude-haiku-4-5'"))
+    }
+
+    @Test func descriptionGenerationFallsBackWhenPiFails() async {
+        var generator = WorktreePRDescriptionGenerator()
+        var piCalls = 0
+        generator.runner = { script, _, timeout in
+            if script.contains("git log --format='- %s'") {
+                return .init(status: 0, stdout: "- First change\n- Second change\n", stderr: "")
+            }
+            if script.contains("WORKTREE STATUS") {
+                return .init(status: 0, stdout: "context", stderr: "")
+            }
+            piCalls += 1
+            #expect(timeout == 30)
+            return .init(status: 124, stdout: "", stderr: "timed out")
+        }
+
+        let result = await generator.generate(base: "main", title: "Fallback", worktree: "/tmp/worktree")
+
+        #expect(result == .init(body: "- First change\n- Second change", generated: false))
+        #expect(piCalls == 1)
+    }
+
+    @Test func descriptionGenerationDoesNotOverwriteUserEdits() {
+        #expect(WorktreePRDescriptionGenerator.applying(
+            "generated", replacing: "", current: "user edit"
+        ) == "user edit")
+        #expect(WorktreePRDescriptionGenerator.applying(
+            "generated", replacing: "old generated", current: "old generated"
+        ) == "generated")
+    }
+
+    @Test func emptyDescriptionLetsGitHubUseTheRepositoryTemplate() async {
+        let finalizer = WorktreeFinalizer()
+        var createScript = ""
+        finalizer.cleanCheck = { _, _ in nil }
+        finalizer.runner = { script, _ in
+            if script.hasPrefix("gh pr create") {
+                createScript = script
+                return .init(status: 0, stdout: "https://github.com/o/r/pull/15\n", stderr: "")
+            }
+            return .init(status: 0, stdout: "", stderr: "")
+        }
+
+        await finalizer.run(Self.context())
+
+        #expect(!createScript.contains("--body"))
+    }
+
     /// Titles with quotes must not break (or worse, escape) the shell script.
     @Test func shellQuotingSurvivesSingleQuotes() {
         #expect(shellQuoted("fix 'the' thing") == "'fix '\\''the'\\'' thing'")
