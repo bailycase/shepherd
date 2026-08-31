@@ -11,38 +11,103 @@ enum LoginShell {
         var stderr: String
     }
 
-    static func run(_ script: String, cwd: String? = nil) async -> Output {
+    private final class CompletionState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var finished = false
+
+        func claim() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !finished else { return false }
+            finished = true
+            return true
+        }
+    }
+
+    private final class CapturedData: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stdout = Data()
+        private var stderr = Data()
+
+        func set(stdout: Data) {
+            lock.lock()
+            self.stdout = stdout
+            lock.unlock()
+        }
+
+        func set(stderr: Data) {
+            lock.lock()
+            self.stderr = stderr
+            lock.unlock()
+        }
+
+        func output(status: Int32) -> Output {
+            lock.lock()
+            defer { lock.unlock() }
+            return Output(
+                status: status,
+                stdout: String(decoding: stdout, as: UTF8.self),
+                stderr: String(decoding: stderr, as: UTF8.self)
+            )
+        }
+    }
+
+    static func run(
+        _ script: String,
+        cwd: String? = nil,
+        timeout: TimeInterval? = nil
+    ) async -> Output {
         await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-l", "-c", script]
+            if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
+            var env = ProcessInfo.processInfo.environment
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            env["GH_PROMPT_DISABLED"] = "1"
+            process.environment = env
+            let out = Pipe()
+            let err = Pipe()
+            process.standardOutput = out
+            process.standardError = err
+            let state = CompletionState()
+            let captured = CapturedData()
+            let reads = DispatchGroup()
+
+            @Sendable func finish(_ output: Output) {
+                guard state.claim() else { return }
+                continuation.resume(returning: output)
+            }
+
+            do {
+                try process.run()
+            } catch {
+                finish(Output(status: 127, stdout: "", stderr: error.localizedDescription))
+                return
+            }
+
+            reads.enter()
+            DispatchQueue.global().async {
+                captured.set(stdout: out.fileHandleForReading.readDataToEndOfFile())
+                reads.leave()
+            }
+            reads.enter()
+            DispatchQueue.global().async {
+                captured.set(stderr: err.fileHandleForReading.readDataToEndOfFile())
+                reads.leave()
+            }
             DispatchQueue.global(qos: .userInitiated).async {
-                let process = Process()
-                process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-                process.arguments = ["-l", "-c", script]
-                if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
-                var env = ProcessInfo.processInfo.environment
-                env["GIT_TERMINAL_PROMPT"] = "0"
-                env["GH_PROMPT_DISABLED"] = "1"
-                process.environment = env
-                let out = Pipe()
-                let err = Pipe()
-                process.standardOutput = out
-                process.standardError = err
-                do {
-                    try process.run()
-                } catch {
-                    continuation.resume(returning: Output(status: 127, stdout: "", stderr: error.localizedDescription))
-                    return
-                }
-                // ponytail: sequential pipe drains can deadlock past 64KB of
-                // stderr; git/gh diagnostics are far smaller. Stream if that
-                // ever changes.
-                let outData = out.fileHandleForReading.readDataToEndOfFile()
-                let errData = err.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
-                continuation.resume(returning: Output(
-                    status: process.terminationStatus,
-                    stdout: String(decoding: outData, as: UTF8.self),
-                    stderr: String(decoding: errData, as: UTF8.self)
-                ))
+                reads.wait()
+                finish(captured.output(status: process.terminationStatus))
+            }
+
+            if let timeout {
+                DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                    guard state.claim() else { return }
+                    process.terminate()
+                    continuation.resume(returning: Output(status: 124, stdout: "", stderr: "timed out"))
+                }
             }
         }
     }
@@ -276,6 +341,92 @@ final class WorktreeSetupModel: ObservableObject {
     }
 }
 
+// MARK: - Pull-request descriptions
+
+struct WorktreePRDescriptionGenerator {
+    struct Result: Equatable {
+        var body: String
+        var generated: Bool
+    }
+
+    private static let defaultModels = [
+        "anthropic/claude-haiku-4-5",
+        "openai/gpt-5.1-codex-mini",
+        "google/gemini-2.5-flash",
+    ]
+
+    var runner: (String, String?, TimeInterval?) async -> LoginShell.Output = {
+        await LoginShell.run($0, cwd: $1, timeout: $2)
+    }
+
+    static func shouldGenerate(enabled: Bool, prepared: Bool, force: Bool) -> Bool {
+        enabled && (force || !prepared)
+    }
+
+    func generate(base: String, title: String, worktree: String) async -> Result {
+        let localBase = shellQuoted(base)
+        let remoteBase = shellQuoted("origin/" + base)
+        let resolveBase = "base=\(remoteBase); git rev-parse --verify \"$base\" >/dev/null 2>&1 || base=\(localBase)"
+        let commits = await runner(
+            "\(resolveBase); git log --format='- %s' \"$base\"..HEAD | head -c 8000",
+            worktree,
+            nil
+        )
+        let fallback = commits.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackBody = fallback.isEmpty ? "- \(title)" : fallback
+
+        let context = await runner(
+            """
+            \(resolveBase)
+            printf 'COMMITS\\n'
+            git log --format='%s%n%b' "$base"..HEAD | head -c 8000
+            printf '\\n\\nWORKTREE STATUS\\n'
+            git status --short | head -c 4000
+            printf '\\n\\nDIFF STAT\\n'
+            git diff --stat "$base" | head -c 4000
+            printf '\\n\\nPATCH EXCERPT\\n'
+            git diff --no-ext-diff --unified=2 "$base" | head -c 16000
+            """,
+            worktree,
+            nil
+        )
+        guard context.status == 0 else { return Result(body: fallbackBody, generated: false) }
+
+        let prompt = """
+            Write a concise Markdown pull request description from the repository context below.
+            Return only the description. Use these headings when they add useful information:
+            ## Summary
+            ## Behavior
+            ## Implementation
+            ## Testing
+            Omit empty sections. State only facts supported by the context. Do not include a title.
+
+            PR title: \(title)
+
+            \(context.stdout.prefix(32_000))
+            """
+        let model = ProcessInfo.processInfo.environment["SHEPHERD_PR_DESCRIPTION_MODEL"]
+            .flatMap { $0.split(separator: ",").first.map(String.init) }
+            ?? Self.defaultModels[0]
+        let output = await runner(
+            "exec pi --print --no-session --no-tools --no-extensions --no-skills "
+                + "--no-prompt-templates --no-themes --no-context-files --no-approve --thinking low "
+                + "--model \(shellQuoted(model)) -- \(shellQuoted(prompt))",
+            worktree,
+            30
+        )
+        let body = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard output.status == 0, !body.isEmpty else {
+            return Result(body: fallbackBody, generated: false)
+        }
+        return Result(body: String(body.prefix(12_000)), generated: true)
+    }
+
+    static func applying(_ generated: String, replacing original: String, current: String) -> String {
+        current == original ? generated : current
+    }
+}
+
 // MARK: - Finalize pipeline
 
 /// The verified finalize pipeline: commit → push → PR (gh) → clean gate →
@@ -388,11 +539,10 @@ final class WorktreeFinalizer: ObservableObject {
             return push.status == 0 ? .done("pushed") : .failed(detail(push))
         case .pullRequest:
             let body = ctx.body.trimmingCharacters(in: .whitespacesAndNewlines)
-            let create = await runner(
-                "gh pr create --head \(shellQuoted(ctx.branch)) --base \(shellQuoted(ctx.base)) "
-                + "--title \(shellQuoted(ctx.title)) --body \(shellQuoted(body.isEmpty ? ctx.title : body))",
-                ctx.worktree
-            )
+            var command = "gh pr create --head \(shellQuoted(ctx.branch)) --base \(shellQuoted(ctx.base)) "
+                + "--title \(shellQuoted(ctx.title))"
+            if !body.isEmpty { command += " --body \(shellQuoted(body))" }
+            let create = await runner(command, ctx.worktree)
             guard create.status == 0 else { return .failed(detail(create)) }
             let url = create.stdout.split(separator: "\n")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
