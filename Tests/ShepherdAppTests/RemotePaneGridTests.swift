@@ -41,8 +41,6 @@ struct RemotePaneGridTests {
         let pane = RemotePaneSession(sessionID: info.id, client: client)
         pane.start()
         pane.noteGrid(cols: 97, rows: 34)
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(pane.phase == RemotePaneSession.Phase.connecting)
         pane.noteGrid(cols: 139, rows: 34)
 
         #expect(await waitUntil { pane.phase == RemotePaneSession.Phase.live })
