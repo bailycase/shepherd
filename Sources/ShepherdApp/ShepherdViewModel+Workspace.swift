@@ -16,8 +16,17 @@ extension ShepherdViewModel {
             selectedAgentID: selectedAgentID,
             inspectingAgentID: inspectingAgentID,
             selectedShellID: selectedShellID,
-            remoteSelectionActive: selectedRemoteAgent != nil
+            remoteSelectionActive: selectedRemoteAgent != nil,
+            visitedTabIDs: visitedSpaceShellTabs
         )
+    }
+
+    /// Record the currently visible layout so it stays mounted after
+    /// selection moves on (space shell tabs mount lazily — see
+    /// `WorkspaceSelection`). Called by the workspace view on every
+    /// active-tab change, which covers all selection paths.
+    func noteActiveTabVisited() {
+        if let id = activeTabID { visitedSpaceShellTabs.insert(id) }
     }
 
     /// Every layout the workspace keeps mounted (see `WorkspaceSelection`).
@@ -193,6 +202,7 @@ extension ShepherdViewModel {
         }
 
         if let agentID = exitedAgentID {
+            endAgentLaunch(agentID)
             childRuns.clear(agent: agentID)
             state.agents.removeAll { $0.id == agentID }
             if selectedAgentID == agentID {
@@ -264,6 +274,7 @@ extension ShepherdViewModel {
             sessions.detachPane(leaf.id)
         }
 
+        endAgentLaunch(id)
         childRuns.clear(agent: id)
         state.agents.removeAll { $0.id == id }
         state.tabs.remove(at: tabIndex)
