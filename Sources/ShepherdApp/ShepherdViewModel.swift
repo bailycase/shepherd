@@ -57,12 +57,13 @@ final class ShepherdViewModel {
             sidebarDefaults.set(collapsedSpaces.map(\.rawValue).sorted(), forKey: "shepherd.collapsedSpaces")
         }
     }
-    /// When each agent last changed status, for the header's `blocked 4m`
-    /// age. Ephemeral — ages reset with the app, exactly like sessions.
-    private(set) var statusChangedAt: [AgentID: Date] = [:]
     /// Live pi-subagents child runs per agent (sidebar subagent rows).
     /// Ephemeral display state; see `ChildRuns` for the lifecycle rules.
     var childRuns = ChildRuns()
+    /// Native diff-review panes keyed by their review leaf. Ephemeral: review
+    /// leaves are persisted long enough for layout writes, then purged on the
+    /// next app start by the session server.
+    var reviewSessions: [PaneID: ReviewSession] = [:]
     /// Agents created this run whose pi is still booting. Creation selects
     /// the agent optimistically — its pane shows before the process spawns —
     /// and the pane wears an opaque launch overlay until pi's status
@@ -365,6 +366,7 @@ final class ShepherdViewModel {
         }
         // Agents drive their own panes through the server's extension socket.
         installPaneControl()
+        installReviewHandler()
         // Any pi session can create automations through the same socket.
         installAutomationControl()
         // Agents can see, message, and spawn peer threads.
@@ -562,6 +564,7 @@ final class ShepherdViewModel {
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         state = serverState
+        pruneReviewSessions()
         syncShellProcessTimer()
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run).
@@ -600,9 +603,6 @@ final class ShepherdViewModel {
         endAgentLaunch(id)
         if let index = state.agents.firstIndex(where: { $0.id == id }) {
             let old = state.agents[index].status
-            if old != status {
-                statusChangedAt[id] = Date()
-            }
             state.agents[index].status = status
             // Visible means the workspace is actually showing this agent's
             // layout — not a shell, remote agent, or subagent inspector.
@@ -705,17 +705,6 @@ final class ShepherdViewModel {
         } else if remoteListenerBoundPort != nil {
             server.stopRemoteListener()
             remoteListenerBoundPort = nil
-        }
-    }
-
-    /// `blocked 4m`-style age for the header; nil before any transition.
-    func statusAge(for id: AgentID) -> String? {
-        guard let since = statusChangedAt[id] else { return nil }
-        let seconds = Int(Date().timeIntervalSince(since))
-        switch seconds {
-        case ..<60: return "\(max(seconds, 0))s"
-        case ..<3600: return "\(seconds / 60)m"
-        default: return "\(seconds / 3600)h"
         }
     }
 

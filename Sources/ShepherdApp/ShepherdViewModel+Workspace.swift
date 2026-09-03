@@ -190,10 +190,8 @@ extension ShepherdViewModel {
             NSSound.beep()
             return
         }
-        if let newLayout = tab.layout.closing(pane: focus) {
-            sessions.detachPane(focus)
-            setLayout(newLayout, forTab: tab.id)
-            focusedPaneID = newLayout.firstLeaf.id
+        if closeLocalPane(focus) {
+            return
         } else if tab.isShell {
             // ⌘W on a shell's last pane closes the shell — that is what
             // closing "the shell" means; there is no process worth guarding.
@@ -202,6 +200,27 @@ extension ShepherdViewModel {
             // A layout always keeps its last pane; exit the process instead.
             NSSound.beep()
         }
+    }
+
+    /// Close a local leaf using the same layout mutation as ⌘W. Review panes
+    /// have no terminal session, but using this path keeps their persisted
+    /// split and focus behavior identical to ordinary panes.
+    @discardableResult
+    func closeLocalPane(_ paneID: PaneID) -> Bool {
+        guard let tabIndex = state.tabs.firstIndex(where: { $0.layout.contains(paneID) }),
+              let pane = state.tabs[tabIndex].layout.leaf(withID: paneID),
+              pane.agentID == nil,
+              let newLayout = state.tabs[tabIndex].layout.closing(pane: paneID) else {
+            return false
+        }
+        let tabID = state.tabs[tabIndex].id
+        sessions.detachPane(paneID)
+        setLayout(newLayout, forTab: tabID)
+        discardReviewSession(paneID)
+        if focusedPaneID == paneID {
+            focusedPaneID = newLayout.firstLeaf.id
+        }
+        return true
     }
 
     func commitSplitRatio(tabID: TabID, split: PaneNode, ratio: Double) {
@@ -254,6 +273,7 @@ extension ShepherdViewModel {
         }
 
         if let agentID = exitedAgentID {
+            cancelReviews(for: agentID)
             endAgentLaunch(agentID)
             childRuns.clear(agent: agentID)
             state.agents.removeAll { $0.id == agentID }
@@ -326,6 +346,7 @@ extension ShepherdViewModel {
             sessions.detachPane(leaf.id)
         }
 
+        cancelReviews(for: id)
         endAgentLaunch(id)
         childRuns.clear(agent: id)
         state.agents.removeAll { $0.id == id }

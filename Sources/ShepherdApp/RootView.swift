@@ -349,9 +349,6 @@ struct WorkspaceHeaderView: View {
                 let agent = connection.state.agents.first { $0.id == remote.agentID }
                 breadcrumb(space: "⌁ \(connection.config.name)", leaf: agent?.name ?? "agent")
                 Spacer(minLength: 0)
-                if let agent {
-                    statusLabel(agent)
-                }
             } else if let shellID = vm.selectedShellID,
                let shell = vm.state.tabs.first(where: { $0.id == shellID }) {
                 breadcrumb(space: "shells", leaf: ShepherdViewModel.shellLabel(shell))
@@ -363,7 +360,7 @@ struct WorkspaceHeaderView: View {
                     leaf: vm.inspectingAgentID == agent.id ? "\(agent.name) / subagents" : agent.name
                 )
                 Spacer(minLength: 0)
-                statusLabel(agent)
+                reviewButton
             } else if let space = vm.selectedSpace {
                 breadcrumb(space: space.name, leaf: "shell")
                 Spacer(minLength: 0)
@@ -377,6 +374,26 @@ struct WorkspaceHeaderView: View {
         .background(Tokens.workspaceBg)
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
+    }
+
+    /// Toggles the native diff-review pane for the selected agent.
+    private var reviewButton: some View {
+        let open = vm.selectedAgentID.map { id in
+            vm.reviewSessions.values.contains { $0.agentID == id }
+        } ?? false
+        return Button {
+            vm.openUserReview()
+        } label: {
+            Image(systemName: "plus.forwardslash.minus")
+                .font(.system(size: 11))
+                .foregroundStyle(open ? Tokens.focusAccent : Tokens.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .help(open ? "Close the diff review" : "Review the working-tree diff and send comments to this agent")
+        .contextMenu {
+            Button("Review Uncommitted Changes") { vm.openUserReview() }
+            Button("Review PR Changes") { vm.openUserPRReview() }
+        }
     }
 
     private func breadcrumb(space: String, leaf: String) -> some View {
@@ -394,17 +411,4 @@ struct WorkspaceHeaderView: View {
         .lineLimit(1)
     }
 
-    private func statusLabel(_ agent: Agent) -> some View {
-        // The idle dot color is deliberately near-invisible; text needs the
-        // metadata ramp to stay readable.
-        let color = agent.status == .idle ? Tokens.textMetadata : Tokens.statusColor(agent.status)
-        // TimelineView drives the once-a-second re-render; without it the age
-        // only updates when some unrelated state change repaints the header.
-        return TimelineView(.periodic(from: .now, by: 1)) { _ in
-            let age = vm.statusAge(for: agent.id).map { " \($0)" } ?? ""
-            Text(agent.status.rawValue + age)
-                .font(Fonts.mono(11))
-                .foregroundStyle(color)
-        }
-    }
 }

@@ -89,6 +89,33 @@ public enum PaneOutcome: Hashable, Sendable {
     }
 }
 
+/// A native diff-review request from an agent's review extension.
+public enum ReviewRequest: Hashable, Sendable {
+    case start(agentID: AgentID, cwd: String?, reference: String?)
+
+    public var agentID: AgentID {
+        switch self {
+        case .start(let agentID, _, _):
+            return agentID
+        }
+    }
+}
+
+/// A handler's answer, before the server stamps it with the request id.
+public enum ReviewOutcome: Hashable, Sendable {
+    case submitted(text: String)
+    case failed(code: String, message: String)
+
+    public func withID(_ id: Int) -> ExtensionReply {
+        switch self {
+        case .submitted(let text):
+            return .reviewResult(id: id, text: text)
+        case .failed(let code, let message):
+            return .error(id: id, code: code, message: message)
+        }
+    }
+}
+
 /// An automation-management request from any pi session (the automation
 /// skill), forwarded to the GUI like pane requests — the GUI owns the run
 /// lifecycle (space resolution, agent spawn/kill).

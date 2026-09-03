@@ -888,6 +888,7 @@ final class TerminalSessionStore: ObservableObject {
             extensionPath: try StatusExtension.installedPath(),
             themeExtensionPath: try ThemeExtension.installedPath(),
             panesExtensionPath: try PanesExtension.installedPath(),
+            reviewExtensionPath: try ReviewExtension.installedPath(),
             subagentsExtensionPath: try SubagentsExtension.installedPath(),
             // The namer loads whenever auto-naming is on: besides titling a
             // provisional agent from its opening prompt, it retitles on

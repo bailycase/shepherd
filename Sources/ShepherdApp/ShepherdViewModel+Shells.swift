@@ -186,6 +186,7 @@ extension ShepherdViewModel {
         state.agents.removeAll { doomedAgents.contains($0.id) }
         state.tabs.removeAll { doomedTabIDs.contains($0.id) }
         for agentID in doomedAgents {
+            cancelReviews(for: agentID)
             childRuns.clear(agent: agentID)
             selectionHistory.removeAll { $0 == agentID }
             collapsedChildren.remove(agentID)
