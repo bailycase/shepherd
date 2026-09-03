@@ -288,6 +288,41 @@ struct RemoteSessionStreamTests {
         h.server.killSession(info.id)
     }
 
+    /// Viewport reports that leave the effective grid unchanged must not
+    /// reach the child: every SIGWINCH is a full TUI repaint.
+    @Test func unchangedViewportReportsDoNotSignalTheChild() async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+
+        let info = try await h.server.createSession(params: CreateSessionParams(
+            cwd: "/tmp",
+            command: ["/bin/sh", "-c", "n=0; trap 'n=$((n+1)); echo WINCH$n' WINCH; while :; do sleep 0.1; done"],
+            cols: 80,
+            rows: 24
+        ))
+        let (client, _) = try await h.connect()
+        defer { client.disconnect() }
+        let received = Locked(Data())
+        client.onOutput = { [received] sessionID, data in
+            guard sessionID == info.id else { return }
+            received.withValue { $0.append(data) }
+        }
+        try await Task.sleep(for: .milliseconds(300))
+
+        // Attach at a new size: exactly one real resize.
+        try await client.attach(sessionID: info.id, cols: 100, rows: 30)
+        try await waitUntil { [received] in
+            String(decoding: received.current, as: UTF8.self).contains("WINCH1")
+        }
+        // Same-size reports from the viewer and the host: no more signals.
+        client.resize(sessionID: info.id, cols: 100, rows: 30)
+        h.server.reportLocalViewport(sessionID: info.id, cols: 100, rows: 30)
+        try await Task.sleep(for: .milliseconds(500))
+        #expect(!String(decoding: received.current, as: UTF8.self).contains("WINCH2"))
+
+        h.server.killSession(info.id)
+    }
+
     @Test func hostPaneDoesNotClampRemoteViewer() async throws {
         let h = try Harness()
         defer { h.tearDown() }
