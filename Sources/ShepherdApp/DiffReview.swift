@@ -44,6 +44,9 @@ final class ReviewSession: Identifiable {
     /// Mutable because PR mode resolves the base branch asynchronously after
     /// the pane is already open.
     var reference: String?
+    /// True while showing the PR diff (reference started as "pr"); drives the
+    /// header mode toggle after the concrete ref resolves.
+    var isPRMode: Bool = false
     var files: [DiffFile]
     var loadError: String?
     /// True until GitDiff.load finishes; the pane opens immediately and
