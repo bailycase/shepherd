@@ -134,6 +134,25 @@ enum GitDiff {
         return files
     }
 
+    /// Resolve the ref spec for "the changes sitting in this branch's PR":
+    /// merge-base diff against the PR base branch (gh), falling back to the
+    /// remote default branch when gh is missing or there is no PR.
+    static func pullRequestReference(cwd: String) -> String {
+        // gh lives on the user's PATH, not the GUI app's — resolve through a
+        // login shell like the worktree-finalize prerequisites do.
+        if let base = try? runLoginShell("gh pr view --json baseRefName -q .baseRefName", cwd: cwd),
+           base.status == 0 {
+            let name = base.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { return "origin/\(name)...HEAD" }
+        }
+        if let head = try? runGit(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"], cwd: cwd),
+           head.status == 0 {
+            let name = head.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { return "\(name)...HEAD" }
+        }
+        return "origin/HEAD...HEAD"
+    }
+
     static func load(cwd: String, reference: String?) throws -> [DiffFile] {
         let diffArguments = ["-c", "core.quotepath=off", "diff", "--no-color", reference ?? "HEAD"]
         let tracked = try runGit(diffArguments, cwd: cwd)
@@ -279,6 +298,31 @@ enum GitDiff {
         let status: Int32
         let stdout: String
         let stderr: String
+    }
+
+    private static func runLoginShell(_ command: String, cwd: String) throws -> GitResult {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-l", "-c", command]
+        process.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        do {
+            try process.run()
+        } catch {
+            throw GitDiffError.couldNotStart("could not start shell in \(cwd): \(error.localizedDescription)")
+        }
+        let output = stdout.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let errorOutput = stderr.fileHandleForReading.readDataToEndOfFile()
+        return GitResult(
+            status: process.terminationStatus,
+            stdout: String(decoding: output, as: UTF8.self),
+            stderr: String(decoding: errorOutput, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
     }
 
     private static func runGit(_ arguments: [String], cwd: String) throws -> GitResult {

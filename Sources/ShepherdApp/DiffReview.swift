@@ -41,7 +41,9 @@ final class ReviewSession: Identifiable {
     let agentID: AgentID
     let paneID: PaneID
     let cwd: String
-    let reference: String?
+    /// Mutable because PR mode resolves the base branch asynchronously after
+    /// the pane is already open.
+    var reference: String?
     var files: [DiffFile]
     var loadError: String?
     /// True until GitDiff.load finishes; the pane opens immediately and

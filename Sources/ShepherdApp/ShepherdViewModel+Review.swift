@@ -35,6 +35,20 @@ extension ShepherdViewModel {
         beginReview(agentID: agent.id, cwd: nil, reference: nil, respond: nil)
     }
 
+    /// Review the changes sitting in this branch's PR (merge-base diff
+    /// against the PR base, falling back to the remote default branch).
+    /// Replaces an open review for the agent.
+    func openUserPRReview() {
+        guard let agent = selectedAgent else {
+            NSSound.beep()
+            return
+        }
+        if let existing = reviewSessions.values.first(where: { $0.agentID == agent.id }) {
+            cancelReview(existing)
+        }
+        beginReview(agentID: agent.id, cwd: nil, reference: "pr", respond: nil)
+    }
+
     func submitReview(_ session: ReviewSession) {
         guard reviewSessions[session.paneID] === session else { return }
         let text = formatReview(
@@ -129,11 +143,15 @@ extension ShepherdViewModel {
         ))
 
         Task.detached(priority: .userInitiated) {
-            let result = Result { try GitDiff.load(cwd: cwdPath, reference: reference) }
+            // "pr" is a mode, not a git ref: resolve it to a merge-base spec
+            // against the PR base (or the remote default branch) first.
+            let resolved = reference == "pr" ? GitDiff.pullRequestReference(cwd: cwdPath) : reference
+            let result = Result { try GitDiff.load(cwd: cwdPath, reference: resolved) }
             await MainActor.run {
                 // The user may have closed the pane before git finished.
                 guard self.reviewSessions[reviewPane.id] === session else { return }
                 session.isLoading = false
+                session.reference = resolved
                 switch result {
                 case .success(let files): session.files = files
                 case .failure(let error): session.loadError = String(describing: error)

@@ -390,6 +390,10 @@ struct WorkspaceHeaderView: View {
         }
         .buttonStyle(.plain)
         .help(open ? "Close the diff review" : "Review the working-tree diff and send comments to this agent")
+        .contextMenu {
+            Button("Review Uncommitted Changes") { vm.openUserReview() }
+            Button("Review PR Changes") { vm.openUserPRReview() }
+        }
     }
 
     private func breadcrumb(space: String, leaf: String) -> some View {
