@@ -92,73 +92,160 @@ struct EmptyWorkspaceHint: View {
 
 // MARK: Pane tree
 
-/// Generic walk of the tab's PaneNode. `SplitAxis.vertical` is read as a
-/// vertical divider (side-by-side columns), matching the ⌘D-vertical reference
-/// split; `.horizontal` stacks rows.
+struct PaneSplitPath: Hashable {
+    let components: [Bool]
+}
+
+struct PaneTreeGeometry {
+    struct Leaf {
+        let pane: LeafPane
+        let rect: CGRect
+    }
+
+    struct Separator: Identifiable {
+        let id: PaneSplitPath
+        let node: PaneNode
+        let axis: SplitAxis
+        let rect: CGRect
+        let containerRect: CGRect
+    }
+
+    let leaves: [Leaf]
+    let separators: [Separator]
+}
+
+/// Flattens the binary split tree into leaf and divider rectangles. A vertical
+/// split makes columns; a horizontal split makes rows. The 1 px divider comes
+/// out of the first child's fractional span, matching the old stack layout.
+func paneTreeGeometry(
+    for node: PaneNode,
+    in size: CGSize,
+    liveRatios: [PaneSplitPath: Double] = [:]
+) -> PaneTreeGeometry {
+    let bounds = CGRect(
+        origin: .zero,
+        size: CGSize(width: max(0, size.width), height: max(0, size.height))
+    )
+    var leaves: [PaneTreeGeometry.Leaf] = []
+    var separators: [PaneTreeGeometry.Separator] = []
+
+    func walk(_ node: PaneNode, in rect: CGRect, path: PaneSplitPath) {
+        switch node {
+        case .leaf(let pane):
+            leaves.append(.init(pane: pane, rect: rect))
+        case .split(let axis, let ratio, let first, let second):
+            let shownRatio = liveRatios[path] ?? ratio
+            let span = axis == .vertical ? rect.width : rect.height
+            let separatorSpan = span > 0 ? 1.0 : 0.0
+            let firstSpan = max(0, (span - separatorSpan) * shownRatio)
+            let secondSpan = max(0, span - separatorSpan - firstSpan)
+            let firstRect: CGRect
+            let separatorRect: CGRect
+            let secondRect: CGRect
+
+            if axis == .vertical {
+                firstRect = CGRect(x: rect.minX, y: rect.minY, width: firstSpan, height: rect.height)
+                separatorRect = CGRect(
+                    x: firstRect.maxX, y: rect.minY,
+                    width: separatorSpan, height: rect.height
+                )
+                secondRect = CGRect(
+                    x: separatorRect.maxX, y: rect.minY,
+                    width: secondSpan, height: rect.height
+                )
+            } else {
+                firstRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: firstSpan)
+                separatorRect = CGRect(
+                    x: rect.minX, y: firstRect.maxY,
+                    width: rect.width, height: separatorSpan
+                )
+                secondRect = CGRect(
+                    x: rect.minX, y: separatorRect.maxY,
+                    width: rect.width, height: secondSpan
+                )
+            }
+
+            separators.append(.init(
+                id: path,
+                node: node,
+                axis: axis,
+                rect: separatorRect,
+                containerRect: rect
+            ))
+            walk(first, in: firstRect, path: .init(components: path.components + [false]))
+            walk(second, in: secondRect, path: .init(components: path.components + [true]))
+        }
+    }
+
+    walk(node, in: bounds, path: .init(components: []))
+    return PaneTreeGeometry(leaves: leaves, separators: separators)
+}
+
+/// Every leaf is always a direct child of this ZStack, keyed by pane ID.
+/// Changing the split tree moves and resizes leaves without remounting their
+/// terminal surfaces.
 struct PaneTreeView: View {
     var vm: ShepherdViewModel
     let tab: Tab
     let node: PaneNode
+    @State private var liveRatios: [PaneSplitPath: Double] = [:]
 
-    var body: some View {
-        switch node {
-        case .leaf(let pane):
-            PaneLeafView(vm: vm, tab: tab, pane: pane)
-        case .split:
-            PaneSplitView(vm: vm, tab: tab, node: node)
-        }
-    }
-}
-
-/// One binary split: renders children around a 1 px separator whose slightly
-/// widened hit area supports drag-to-resize (live locally, persisted on end).
-///
-/// The drag is live — panes track the divider every tick. The gesture reads
-/// the cursor's absolute position in the split's fixed coordinate space,
-/// never translation: the separator moves during the drag, so translation
-/// measured in its own space compounds error and drifts off the cursor.
-struct PaneSplitView: View {
-    var vm: ShepherdViewModel
-    let tab: Tab
-    let node: PaneNode
-    @State private var liveRatio: Double?
-
-    /// Container-space name for the drag gesture. The separator moves as the
-    /// split re-lays-out, so a gesture measured in the separator's own space
-    /// reads corrupted translations — the divider drifts off the cursor.
-    /// Reading `location` in this fixed space keeps divider and cursor glued.
     private var containerSpace: String { "split-\(tab.id)" }
 
     var body: some View {
-        if case .split(let axis, let ratio, let first, let second) = node {
-            let shownRatio = liveRatio ?? ratio
-            let separatorColor = separatorColor(first: first, second: second)
-            GeometryReader { geo in
-                if axis == .vertical {
-                    HStack(spacing: 0) {
-                        PaneTreeView(vm: vm, tab: tab, node: first)
-                            .frame(width: max(0, (geo.size.width - 1) * shownRatio))
-                        separator(separatorColor, axis: axis, ratio: ratio, size: geo.size)
-                        PaneTreeView(vm: vm, tab: tab, node: second)
-                            .frame(maxWidth: .infinity)
-                    }
-                } else {
-                    VStack(spacing: 0) {
-                        PaneTreeView(vm: vm, tab: tab, node: first)
-                            .frame(height: max(0, (geo.size.height - 1) * shownRatio))
-                        separator(separatorColor, axis: axis, ratio: ratio, size: geo.size)
-                        PaneTreeView(vm: vm, tab: tab, node: second)
-                            .frame(maxHeight: .infinity)
-                    }
+        GeometryReader { geo in
+            let geometry = paneTreeGeometry(for: node, in: geo.size, liveRatios: liveRatios)
+            ZStack(alignment: .topLeading) {
+                ForEach(geometry.leaves, id: \.pane.id) { leaf in
+                    PaneLeafView(vm: vm, tab: tab, pane: leaf.pane)
+                        .frame(width: leaf.rect.width, height: leaf.rect.height)
+                        .offset(x: leaf.rect.minX, y: leaf.rect.minY)
+                }
+
+                ForEach(geometry.separators) { separator in
+                    PaneSeparatorView(
+                        axis: separator.axis,
+                        rect: separator.rect,
+                        containerRect: separator.containerRect,
+                        color: separatorColor(for: separator.node),
+                        coordinateSpace: containerSpace,
+                        liveRatio: Binding(
+                            get: { liveRatios[separator.id] },
+                            set: { liveRatios[separator.id] = $0 }
+                        ),
+                        onCommit: {
+                            vm.commitSplitRatio(tabID: tab.id, split: separator.node, ratio: $0)
+                        }
+                    )
                 }
             }
-            .coordinateSpace(name: containerSpace)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
+        .coordinateSpace(name: containerSpace)
     }
 
-    private func separator(_ color: Color, axis: SplitAxis, ratio: Double, size: CGSize) -> some View {
+    private func separatorColor(for split: PaneNode) -> Color {
+        guard let focused = vm.focusedPaneID,
+              case .split(_, _, let first, let second) = split else {
+            return Tokens.paneBorder
+        }
+        let bordersFocused = first.contains(focused) || second.contains(focused)
+        return bordersFocused ? Tokens.focusAccent.opacity(0.34) : Tokens.paneBorder
+    }
+}
+
+private struct PaneSeparatorView: View {
+    let axis: SplitAxis
+    let rect: CGRect
+    let containerRect: CGRect
+    let color: Color
+    let coordinateSpace: String
+    @Binding var liveRatio: Double?
+    let onCommit: (Double) -> Void
+
+    var body: some View {
         color
-            .frame(width: axis == .vertical ? 1 : nil, height: axis == .horizontal ? 1 : nil)
+            .frame(width: rect.width, height: rect.height)
             .overlay {
                 Color.clear
                     .frame(width: axis == .vertical ? 9 : nil, height: axis == .horizontal ? 9 : nil)
@@ -170,33 +257,29 @@ struct PaneSplitView: View {
                             NSCursor.pop()
                         }
                     }
-                    .gesture(dragGesture(axis: axis, ratio: ratio, size: size))
+                    .gesture(dragGesture)
             }
+            .offset(x: rect.minX, y: rect.minY)
             .zIndex(1)
     }
 
-    private func dragGesture(axis: SplitAxis, ratio: Double, size: CGSize) -> some Gesture {
-        // Absolute cursor position in the fixed container space — never
-        // translation. Translation is measured relative to the separator,
-        // which itself moves every tick during a live resize.
-        DragGesture(minimumDistance: 1, coordinateSpace: .named(containerSpace))
+    private var dragGesture: some Gesture {
+        // The root coordinate space does not move with the divider. Subtract
+        // this split's origin to recover the same local position the nested
+        // split view used, without corrupted moving-view translations.
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(coordinateSpace))
             .onChanged { value in
-                let span = axis == .vertical ? max(1, size.width) : max(1, size.height)
-                let position = axis == .vertical ? value.location.x : value.location.y
+                let span = axis == .vertical ? max(1, containerRect.width) : max(1, containerRect.height)
+                let origin = axis == .vertical ? containerRect.minX : containerRect.minY
+                let position = (axis == .vertical ? value.location.x : value.location.y) - origin
                 liveRatio = min(0.85, max(0.15, position / span))
             }
             .onEnded { _ in
                 if let final = liveRatio {
-                    vm.commitSplitRatio(tabID: tab.id, split: node, ratio: final)
+                    onCommit(final)
                 }
                 liveRatio = nil
             }
-    }
-
-    private func separatorColor(first: PaneNode, second: PaneNode) -> Color {
-        guard let focused = vm.focusedPaneID else { return Tokens.paneBorder }
-        let bordersFocused = first.contains(focused) || second.contains(focused)
-        return bordersFocused ? Tokens.focusAccent.opacity(0.34) : Tokens.paneBorder
     }
 }
 
