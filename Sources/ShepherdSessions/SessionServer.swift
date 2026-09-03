@@ -748,6 +748,10 @@ public final class SessionServer: @unchecked Sendable {
         let grids = remote.isEmpty ? localViewports[sessionID].map { [$0] } ?? [] : remote
         guard let minCols = grids.map(\.cols).min(),
               let minRows = grids.map(\.rows).min() else { return }
+        // Viewport reports arrive on every surface layout, attach, and detach.
+        // A same-size resize would SIGWINCH the child into a full repaint for
+        // nothing; attach paths get their redraw from the snapshot instead.
+        guard session.cols != minCols || session.rows != minRows else { return }
         session.resize(cols: minCols, rows: minRows)
     }
 
@@ -1212,6 +1216,13 @@ public final class SessionServer: @unchecked Sendable {
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
         if let index = store.state.agents.firstIndex(where: { $0.id == agentID }) {
             let current = store.state.agents[index].status
+            if current == status {
+                // Nothing to persist or broadcast (extension reconnects re-send
+                // the current status); the callback still fires so launch UI
+                // learns pi is up.
+                hopToMain { [weak self] in self?.onAgentStatus?(agentID, status) }
+                return
+            }
             if !current.canTransition(to: status) {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }

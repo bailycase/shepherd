@@ -280,6 +280,14 @@ final class ShepherdViewModel {
     /// @ObservationIgnored: it grows only in lockstep with observable
     /// selection changes, so it never needs to invalidate views itself.
     @ObservationIgnored var visitedSpaceShellTabs: Set<TabID> = []
+    /// When each layout last stopped being the visible one; drives cold
+    /// parking (see `WorkspaceSelection`). @ObservationIgnored like
+    /// `visitedSpaceShellTabs`: it only changes alongside the active tab.
+    @ObservationIgnored var tabHiddenSince: [TabID: Date] = [:]
+    /// Layouts currently unmounted by cold parking. Observed: parking and
+    /// unparking must re-evaluate `mountedTabs`.
+    var parkedTabIDs: Set<TabID> = []
+    @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
     /// Recently selected agents, most recent last, no duplicates. When the
@@ -424,6 +432,7 @@ final class ShepherdViewModel {
         for task in launchTimeouts.values { task.cancel() }
         childSweepTimer?.invalidate()
         shellProcessTimer?.invalidate()
+        parkSweepTimer?.invalidate()
         if let flagsMonitor {
             NSEvent.removeMonitor(flagsMonitor)
         }
