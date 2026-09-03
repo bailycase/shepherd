@@ -184,6 +184,8 @@ struct DiffReviewTests {
         #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.count == 2)
         #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaf(withID: session.paneID)?.isReview == true)
 
+        // The pane opens instantly; the diff fills in asynchronously.
+        #expect(await waitUntil { !session.isLoading })
         let line = try #require(session.files.first?.hunks.first?.lines.first)
         let file = try #require(session.files.first)
         session.comments = [ReviewComment(
