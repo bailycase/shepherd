@@ -174,6 +174,19 @@ struct DiffReviewTests {
 
         #expect(await waitUntil { vm.reviewSessions.count == 1 })
         let session = try #require(vm.reviewSessions.values.first)
+
+        // A second agent request must not split another pane — it reloads
+        // the open one.
+        var secondOutcome: ReviewOutcome?
+        fixture.server.onReviewRequest?(.start(agentID: backgroundID, cwd: repo.path, reference: nil)) {
+            secondOutcome = $0
+        }
+        #expect(vm.reviewSessions.count == 1)
+        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.count == 2)
+        if case .submitted = try #require(secondOutcome) {} else {
+            Issue.record("expected the duplicate request to be acknowledged, got \(String(describing: secondOutcome))")
+        }
+
         // The tool is acknowledged immediately; the review text arrives later
         // as a typed prompt message.
         if case .submitted = try #require(outcome) {} else {

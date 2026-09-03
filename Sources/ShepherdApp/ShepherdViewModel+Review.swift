@@ -147,6 +147,18 @@ extension ShepherdViewModel {
             respond?(.failed(code: "no_such_agent", message: "unknown agent \(agentID)"))
             return
         }
+
+        // One review pane per agent, regardless of entry point: an agent
+        // re-requesting a review reloads the open pane instead of splitting
+        // a second one.
+        if let existing = reviewSessions.values.first(where: { $0.agentID == agentID }) {
+            reloadReview(existing, reference: reference)
+            respond?(.submitted(
+                text: "Review pane already open; reloaded. The user's review will arrive as a message when they submit."
+            ))
+            return
+        }
+
         let cwdPath = ((requestedCwd ?? piPane.cwd) as NSString).expandingTildeInPath
 
         let reviewPane = LeafPane(cwd: cwdPath, isReview: true)
