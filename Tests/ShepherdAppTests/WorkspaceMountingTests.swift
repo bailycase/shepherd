@@ -154,6 +154,45 @@ struct WorkspaceMountingTests {
         #expect(bothVisited.mountedTabs.map(\.id) == [first.id, second.id])
     }
 
+    /// A parked layout leaves the mounted set; the active one never parks,
+    /// even if it is in `parkedTabIDs` (a selection that beat the sweep).
+    @Test func parkedLayoutsUnmountExceptTheActiveOne() {
+        let f = Fixture()
+        var selection = f.selection(agent: f.agentA)
+        selection.parkedTabIDs = [f.tabB.id]
+        #expect(selection.mountedTabs.map(\.id) == [f.tabA.id])
+
+        selection.parkedTabIDs = [f.tabA.id, f.tabB.id]
+        #expect(selection.mountedTabs.map(\.id) == [f.tabA.id])
+        #expect(selection.isVisible(f.tabA))
+    }
+
+    /// Candidates: hidden past the delay and outside the hot set of the
+    /// most recently hidden layouts. The active layout is never a candidate.
+    @Test func coldParkCandidatesRespectDelayAndHotSet() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let old = now.addingTimeInterval(-120)
+        let recent = now.addingTimeInterval(-5)
+        let ids = (0..<8).map { _ in TabID() }
+        var hidden: [TabID: Date] = [:]
+        // Six hidden long ago, staggered so the hot set is deterministic.
+        for (i, id) in ids.prefix(6).enumerated() {
+            hidden[id] = old.addingTimeInterval(Double(i))
+        }
+        hidden[ids[6]] = recent
+        hidden[ids[7]] = old  // the active tab: stale entry must be ignored
+
+        let candidates = WorkspaceSelection.coldParkCandidates(
+            hiddenSince: hidden, activeTabID: ids[7], now: now
+        )
+        // Hot set (4 most recent, excluding active): ids[6], ids[5], ids[4], ids[3].
+        #expect(candidates == Set([ids[0], ids[1], ids[2]]))
+
+        // Within the delay nothing parks, hot or not.
+        let fresh = Dictionary(uniqueKeysWithValues: ids.map { ($0, recent) })
+        #expect(WorkspaceSelection.coldParkCandidates(hiddenSince: fresh, activeTabID: nil, now: now).isEmpty)
+    }
+
     /// Exactly one layout is ever visible, across every mounted space.
     @Test func exactlyOneLayoutIsVisible() {
         let f = Fixture()
