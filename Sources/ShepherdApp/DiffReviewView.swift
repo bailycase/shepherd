@@ -81,9 +81,11 @@ struct DiffReviewPane: View {
             reviewMessage("no changes")
         } else {
             ScrollView(.vertical, showsIndicators: true) {
-                LazyVStack(alignment: .leading, spacing: 0) {
+                // pinnedViews keeps the current file's header at the top
+                // while its hunks scroll under it.
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(session.files) { file in
-                        fileView(file)
+                        fileSection(file)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,16 +124,17 @@ struct DiffReviewPane: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func fileView(_ file: DiffFile) -> some View {
+    private func fileSection(_ file: DiffFile) -> some View {
         let collapsed = collapsedFiles.contains(file.id)
-        return VStack(alignment: .leading, spacing: 0) {
-            fileHeader(file, collapsed: collapsed)
+        return Section {
             if !collapsed {
                 ForEach(file.hunks) { hunk in
                     hunkView(file: file, hunk: hunk)
                 }
                 Spacer().frame(height: Metrics.spacing12)
             }
+        } header: {
+            fileHeader(file, collapsed: collapsed)
         }
     }
 
