@@ -7,7 +7,7 @@ import AppKit
 /// recorder: click, press the new chord, ⎋ cancels. Fixed chords are listed
 /// separately and cannot be recorded over.
 struct KeyboardSettings: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject private var keys = KeybindingsStore.shared
     /// The action currently recording, if any — one recorder at a time.
     @State private var recording: ShortcutAction?
@@ -123,6 +123,7 @@ private struct ShortcutRecorder: View {
 
     private func startMonitor() {
         guard monitor == nil else { return }
+        KeybindingsStore.shared.isRecording = true
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             MainActor.assumeIsolated {
                 if event.keyCode == 53 { // ⎋
@@ -138,6 +139,7 @@ private struct ShortcutRecorder: View {
     }
 
     private func stopMonitor() {
+        KeybindingsStore.shared.isRecording = false
         if let monitor {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil

@@ -51,6 +51,28 @@ struct ShepherdViewModelTests {
         return (space, tab)
     }
 
+    /// A just-created agent wears the launch overlay until pi's status
+    /// extension first reports — delivered over the same wiring a real
+    /// report takes (session store callback → view model).
+    @Test func launchOverlayLiftsOnFirstStatusReport() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+        let agentID = AgentID()
+
+        vm.beginAgentLaunch(agentID)
+        #expect(vm.launchingAgents.contains(agentID))
+
+        vm.sessions.onAgentStatus?(agentID, .idle)
+        #expect(vm.launchingAgents.isEmpty)
+
+        // Explicit end (spawn failure, deletion) is idempotent.
+        vm.beginAgentLaunch(agentID)
+        vm.endAgentLaunch(agentID)
+        vm.endAgentLaunch(agentID)
+        #expect(vm.launchingAgents.isEmpty)
+    }
+
     @Test func newChildBatchesStartCollapsed() throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
@@ -79,6 +101,57 @@ struct ShepherdViewModelTests {
         #expect(await waitUntil { vm.state.spaces == [space] && vm.state.tabs == [tab] })
         #expect(vm.selectedSpaceID == space.id)
         #expect(vm.activeTabID == tab.id)
+    }
+
+    /// Cold parking end to end at the view-model seam: a layout hidden past
+    /// the delay and outside the hot set unmounts and its pane session is
+    /// dropped from the store; selecting it again unparks it immediately.
+    @Test func hiddenLayoutsParkAndUnparkOnSelection() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let space = Space(name: "s", path: "/tmp/s")
+        var tabs: [Tab] = []
+        var agents: [Agent] = []
+        for i in 0..<6 {
+            let agentID = AgentID()
+            let pane = LeafPane(cwd: "/tmp/s", agentID: agentID)
+            let tab = Tab(spaceID: space.id, order: i, layout: .leaf(pane))
+            tabs.append(tab)
+            agents.append(Agent(id: agentID, name: "a\(i)", spaceID: space.id, tabID: tab.id, paneID: pane.id))
+        }
+        try await fixture.server.putState(ShepherdState(spaces: [space], tabs: tabs, agents: agents))
+        let vm = ShepherdViewModel(server: fixture.server)
+        #expect(await waitUntil { vm.state.agents.count == 6 })
+
+        // Visit every agent in order (what the workspace view does on each
+        // active-tab change), ending on the last one.
+        for agent in agents {
+            vm.selectAgent(agent.id)
+            vm.noteActiveTabVisited()
+        }
+        // Pane views would normally mount sessions; simulate for the first.
+        let firstPane = tabs[0].layout.firstLeaf
+        let paneSession = vm.sessions.session(for: firstPane, in: tabs[0])
+        #expect(vm.sessions.session(for: firstPane, in: tabs[0]) === paneSession)
+        #expect(vm.mountedTabs.count == 6)
+
+        // Nothing parks inside the delay.
+        vm.sweepColdPanes()
+        #expect(vm.parkedTabIDs.isEmpty)
+
+        // Past the delay: the five hidden layouts minus the four hottest
+        // leaves exactly the first-visited one parked.
+        vm.sweepColdPanes(now: Date().addingTimeInterval(60))
+        #expect(vm.parkedTabIDs == [tabs[0].id])
+        #expect(!vm.mountedTabs.contains { $0.id == tabs[0].id })
+        // The store dropped the pane session: a remount gets a fresh one.
+        #expect(vm.sessions.session(for: firstPane, in: tabs[0]) !== paneSession)
+
+        // Selecting it unparks it and it re-enters the mounted set.
+        vm.selectAgent(agents[0].id)
+        vm.noteActiveTabVisited()
+        #expect(vm.parkedTabIDs.isEmpty)
+        #expect(vm.mountedTabs.contains { $0.id == tabs[0].id })
     }
 
     @Test func remoteSpaceCollapseSurvivesViewModelRestart() throws {
@@ -189,6 +262,135 @@ struct ShepherdViewModelTests {
         #expect(fixture.server.state.agents.isEmpty)
         #expect(fixture.server.state.tabs.first?.spaceID == id)
         #expect(vm.selectedSpaceID == id)
+    }
+
+    @Test func worktreeImportPickerCapturesTheRegisteredWorktreeDirectory() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let repo = fixture.dir.appendingPathComponent("repo", isDirectory: true)
+        let worktreeFolder = fixture.dir.appendingPathComponent("linked", isDirectory: true)
+        let worktree = worktreeFolder.appendingPathComponent("feature", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: worktreeFolder, withIntermediateDirectories: true)
+
+        func git(_ arguments: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo.path] + arguments
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        try git(["init", "-q"])
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"])
+        try git(["worktree", "add", "-q", "-b", "worktree/feature", worktree.path])
+
+        let vm = ShepherdViewModel(server: fixture.server)
+        let spaceID = try #require(await vm.addSpace(at: repo, createInitialAgent: false))
+        vm.importExistingWorktreeFromPanel(in: spaceID)
+
+        guard case .importWorktree(let target) = vm.spacePickerTarget else {
+            Issue.record("expected worktree import picker")
+            return
+        }
+        #expect(target.spaceID == spaceID)
+        #expect(target.startPath == worktreeFolder.resolvingSymlinksInPath().path)
+
+        let firstRequest = target.id
+        vm.spacePickerTarget = nil
+        vm.importExistingWorktreeFromPanel(in: spaceID)
+        guard case .importWorktree(let reopened) = vm.spacePickerTarget else {
+            Issue.record("expected reopened worktree import picker")
+            return
+        }
+        #expect(reopened.id != firstRequest)
+    }
+
+    @Test func importingExistingCheckoutRestoresWorktreeIdentity() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+        let repo = fixture.dir.appendingPathComponent("repo", isDirectory: true)
+        let worktree = fixture.dir.appendingPathComponent("migrated-worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+
+        func git(_ arguments: [String]) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo.path] + arguments
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        try git(["init", "-q"])
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"])
+        try git(["worktree", "add", "-q", "-b", "worktree/imported", worktree.path])
+
+        let spaceID = await vm.addSpace(at: repo, createInitialAgent: false)
+        let id = await vm.importExistingCheckout(at: worktree, into: spaceID)
+        let agent = try #require(fixture.server.state.agents.first)
+
+        #expect(id == agent.id)
+        let canonicalRepo = repo.resolvingSymlinksInPath().path
+        let canonicalWorktree = worktree.resolvingSymlinksInPath().path
+        #expect(fixture.server.state.spaces.first?.path == canonicalRepo)
+        #expect(agent.worktreeBranch == "worktree/imported")
+        #expect(agent.worktreePath == canonicalWorktree)
+        #expect(fixture.server.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == canonicalWorktree)
+        #expect(vm.selectedAgentID == id)
+
+        #expect(fixture.server.state.spaces.count == 1)
+        #expect(fixture.server.state.agents.count == 1)
+    }
+
+    @Test func importingWorktreeRejectsAnotherSpacesRepository() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+        let firstRepo = fixture.dir.appendingPathComponent("first", isDirectory: true)
+        let secondRepo = fixture.dir.appendingPathComponent("second", isDirectory: true)
+        let worktree = fixture.dir.appendingPathComponent("second-worktree", isDirectory: true)
+        try FileManager.default.createDirectory(at: firstRepo, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: secondRepo, withIntermediateDirectories: true)
+
+        func git(_ arguments: [String], in repo: URL) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repo.path] + arguments
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        for repo in [firstRepo, secondRepo] {
+            try git(["init", "-q"], in: repo)
+            try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], in: repo)
+        }
+        try git(["worktree", "add", "-q", "-b", "worktree/wrong-space", worktree.path], in: secondRepo)
+        let firstSpaceID = await vm.addSpace(at: firstRepo, createInitialAgent: false)
+
+        #expect(await vm.importExistingCheckout(at: worktree, into: firstSpaceID) == nil)
+        #expect(fixture.server.state.agents.isEmpty)
+        #expect(fixture.server.state.spaces.count == 1)
+    }
+
+    @Test func settingsSectionSurvivesClosingUntilViewModelRestarts() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+
+        #expect(vm.settingsSection == .appearance)
+        vm.showSettings = true
+        vm.settingsSection = .pi
+        vm.showSettings = false
+        vm.showSettings = true
+
+        #expect(vm.settingsSection == .pi)
     }
 
     @Test func queuedLayoutWritesStayOrderedAndReconcileRejectedOptimisticState() async throws {
@@ -451,6 +653,22 @@ struct ShepherdViewModelTests {
         #expect(settings.autoNameAgents == false)
         #expect(keys.overrides[.newAgent] == KeyChord(key: "p", command: true))
         #expect(themeManager.current.id == "basalt-light")
+    }
+
+    /// Worktree agents lead their space's list (stable within each group) so
+    /// they read as part of the checkout tree, not standard agents.
+    @Test func worktreeAgentsSortFirstInTheirSpace() {
+        let space = SpaceID(rawValue: "s")
+        let tab = TabID(rawValue: "t")
+        let agents = [
+            Agent(name: "one", spaceID: space, tabID: tab),
+            Agent(name: "wt-1", spaceID: space, tabID: tab, worktreeBranch: "worktree/wt-1"),
+            Agent(name: "two", spaceID: space, tabID: tab),
+            Agent(name: "wt-2", spaceID: space, tabID: tab, worktreeBranch: "worktree/wt-2"),
+            Agent(name: "elsewhere", spaceID: SpaceID(rawValue: "x"), tabID: tab),
+        ]
+        let ordered = ShepherdViewModel.sidebarAgents(of: space, in: agents)
+        #expect(ordered.map(\.name) == ["wt-1", "wt-2", "one", "two"])
     }
 
     @Test func orderedAgentsOmitsDescendantsOfCollapsedSpace() async throws {

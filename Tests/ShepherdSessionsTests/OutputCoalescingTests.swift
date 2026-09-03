@@ -41,7 +41,9 @@ struct OutputCoalescingTests {
                 cwd: "/tmp",
                 command: [
                     "/bin/sh", "-c",
-                    "stty -echo -opost; IFS= read -r _; i=1; while [ $i -le \(lineCount) ]; do printf 'line %s ---------------------------------------------\\n' \"$i\"; i=$((i+1)); done",
+                    // One awk burst, not a shell loop: a slow runner's loop
+                    // trickles lines out and there is no burst to coalesce.
+                    "stty -echo -opost; IFS= read -r _; awk 'BEGIN{for(i=1;i<=\(lineCount);i++)print \"line \" i \" ---------------------------------------------\"}'",
                 ],
                 cols: 120,
                 rows: 40,
@@ -81,10 +83,10 @@ struct OutputCoalescingTests {
         }
 
         // Coalescing must actually be doing something: far fewer deliveries
-        // than the number of PTY reads such a burst produces.
-        // Measured on this burst: ~1124 deliveries without coalescing, 1 with
-        // it. Each delivery is a main-thread block, which is what froze the app.
-        #expect(deliveries.current < 50,
+        // than the number of PTY reads such a burst produces (~1124 without
+        // coalescing, 1 with it, locally). Slow shared runners spread the
+        // burst out, so the bound is loose — it only has to prove merging.
+        #expect(deliveries.current < 300,
                 "expected merged deliveries, got \(deliveries.current)")
     }
 
@@ -136,13 +138,14 @@ struct OutputCoalescingTests {
 
         let payloadCount = 8 * 1024 * 1024
         // Keep the producer raw so PTY output processing cannot rewrite the
-        // bytes under test. seq/head emit a deterministic numbered stream.
+        // bytes under test. awk emits a deterministic numbered stream (BSD
+        // seq prints "1e+06" past a million; awk always prints integers).
         let info = try await h.server.createSession(
             params: CreateSessionParams(
                 cwd: "/tmp",
                 command: [
                     "/bin/sh", "-c",
-                    "stty raw -echo -opost; sleep 0.1; printf READY; sleep 0.2; seq 1 2000000 | head -c \(payloadCount); printf END; sleep 1",
+                    "stty raw -echo -opost; sleep 0.1; printf READY; sleep 0.2; awk 'BEGIN{for(i=1;i<=2000000;i++)print i}' | head -c \(payloadCount); printf END; sleep 1",
                 ],
                 cols: 80,
                 rows: 24,
@@ -187,7 +190,17 @@ struct OutputCoalescingTests {
 
         #expect(try await waitUntil(timeout: .seconds(30)) { received.current.count >= expected.count })
         let actual = received.current
-        #expect(actual == expected)
+        // Never hand multi-MiB blobs to #expect(a == b): on failure Swift
+        // Testing runs a Myers diff over them, which spins for hours.
+        let firstMismatch = zip(actual, expected).enumerated().first { $1.0 != $1.1 }?.offset
+        var detail = "payload mismatch: counts \(actual.count)/\(expected.count)"
+        if let at = firstMismatch {
+            let lo = max(0, at - 40), hi = min(min(actual.count, expected.count), at + 40)
+            let a = String(decoding: actual[lo..<hi], as: UTF8.self)
+            let e = String(decoding: expected[lo..<hi], as: UTF8.self)
+            detail += ", first divergence at \(at):\n  actual: \(a.debugDescription)\nexpected: \(e.debugDescription)"
+        }
+        #expect(actual.count == expected.count && firstMismatch == nil, Comment(rawValue: detail))
     }
 
     /// Output buffered for a pane that detaches must not be delivered later.

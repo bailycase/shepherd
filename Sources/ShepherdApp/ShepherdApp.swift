@@ -8,14 +8,14 @@ import ShepherdSessions
 @MainActor
 public struct ShepherdMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    @StateObject private var vm: ShepherdViewModel
+    @State private var vm: ShepherdViewModel
     /// Menus rebuild when a shortcut is rebound — the App body observes the
     /// store so every `.keyboardShortcut` below re-resolves.
     @ObservedObject private var keys = KeybindingsStore.shared
     @ObservedObject private var themes = ThemeManager.shared
 
     public init() {
-        _vm = StateObject(wrappedValue: ShepherdViewModel(server: .shared))
+        _vm = State(initialValue: ShepherdViewModel(server: .shared))
     }
 
     public var body: some Scene {
@@ -25,14 +25,17 @@ public struct ShepherdMacApp: App {
                 // sessions (the toggle persists; a host stays a host). The
                 // TCP listener is independent of the extension socket, so
                 // ordering against server.start() does not matter.
-                .task { vm.applyRemoteListenerSetting() }
+                .task {
+                    vm.applyRemoteListenerSetting()
+                    PiUpdateManager.shared.start()
+                }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: Metrics.windowDefaultWidth, height: Metrics.windowDefaultHeight)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appSettings) {
-                SettingsCommandButton()
+                SettingsCommandButton(vm: vm)
                 if AppUpdater.shared.available {
                     Button("Check for Updates…") {
                         AppUpdater.shared.checkForUpdates()
@@ -209,15 +212,6 @@ public struct ShepherdMacApp: App {
             }
         }
 
-        // A plain window, not SwiftUI's `Settings` scene: that scene forces
-        // its own titlebar material and content inset, so its header can
-        // never take a theme color. This one wears the app's own chrome.
-        Window("Settings", id: SettingsWindow.sceneID) {
-            SettingsView(vm: vm)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentMinSize)
-        .defaultSize(width: Metrics.settingsMinWidth, height: Metrics.settingsDefaultHeight)
     }
 }
 

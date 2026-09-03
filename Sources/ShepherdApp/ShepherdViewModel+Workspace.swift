@@ -16,8 +16,69 @@ extension ShepherdViewModel {
             selectedAgentID: selectedAgentID,
             inspectingAgentID: inspectingAgentID,
             selectedShellID: selectedShellID,
-            remoteSelectionActive: selectedRemoteAgent != nil
+            remoteSelectionActive: selectedRemoteAgent != nil,
+            visitedTabIDs: visitedSpaceShellTabs,
+            parkedTabIDs: parkedTabIDs
         )
+    }
+
+    /// Cold parking bookkeeping, driven from `noteActiveTabVisited` so every
+    /// selection path is covered: the newly visible layout is unparked and
+    /// forgotten as hidden; every other mounted layout that has no hidden
+    /// timestamp yet gets one now.
+    private func noteActiveTabForParking() {
+        let active = activeTabID
+        if let active {
+            parkedTabIDs.remove(active)
+            tabHiddenSince.removeValue(forKey: active)
+        }
+        let liveTabIDs = Set(state.tabs.map(\.id))
+        for tab in mountedTabs where tab.id != active && tabHiddenSince[tab.id] == nil {
+            tabHiddenSince[tab.id] = Date()
+        }
+        tabHiddenSince = tabHiddenSince.filter { liveTabIDs.contains($0.key) }
+        parkedTabIDs = parkedTabIDs.filter { liveTabIDs.contains($0) }
+        syncParkSweepTimer()
+    }
+
+    /// Park layouts that have been hidden past the delay. Runs only while
+    /// something is hidden and unparked, so a one-agent workspace pays
+    /// nothing.
+    private func syncParkSweepTimer() {
+        let pending = tabHiddenSince.keys.contains { !parkedTabIDs.contains($0) }
+        guard pending else {
+            parkSweepTimer?.invalidate()
+            parkSweepTimer = nil
+            return
+        }
+        guard parkSweepTimer == nil else { return }
+        parkSweepTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sweepColdPanes() }
+        }
+    }
+
+    func sweepColdPanes(now: Date = Date()) {
+        let candidates = WorkspaceSelection.coldParkCandidates(
+            hiddenSince: tabHiddenSince, activeTabID: activeTabID, now: now
+        ).subtracting(parkedTabIDs)
+        guard !candidates.isEmpty else {
+            syncParkSweepTimer()
+            return
+        }
+        for tab in state.tabs where candidates.contains(tab.id) {
+            for leaf in tab.layout.leaves { sessions.parkPane(leaf.id) }
+        }
+        parkedTabIDs.formUnion(candidates)
+        syncParkSweepTimer()
+    }
+
+    /// Record the currently visible layout so it stays mounted after
+    /// selection moves on (space shell tabs mount lazily — see
+    /// `WorkspaceSelection`). Called by the workspace view on every
+    /// active-tab change, which covers all selection paths.
+    func noteActiveTabVisited() {
+        if let id = activeTabID { visitedSpaceShellTabs.insert(id) }
+        noteActiveTabForParking()
     }
 
     /// Every layout the workspace keeps mounted (see `WorkspaceSelection`).
@@ -129,10 +190,8 @@ extension ShepherdViewModel {
             NSSound.beep()
             return
         }
-        if let newLayout = tab.layout.closing(pane: focus) {
-            sessions.detachPane(focus)
-            setLayout(newLayout, forTab: tab.id)
-            focusedPaneID = newLayout.firstLeaf.id
+        if closeLocalPane(focus) {
+            return
         } else if tab.isShell {
             // ⌘W on a shell's last pane closes the shell — that is what
             // closing "the shell" means; there is no process worth guarding.
@@ -141,6 +200,27 @@ extension ShepherdViewModel {
             // A layout always keeps its last pane; exit the process instead.
             NSSound.beep()
         }
+    }
+
+    /// Close a local leaf using the same layout mutation as ⌘W. Review panes
+    /// have no terminal session, but using this path keeps their persisted
+    /// split and focus behavior identical to ordinary panes.
+    @discardableResult
+    func closeLocalPane(_ paneID: PaneID) -> Bool {
+        guard let tabIndex = state.tabs.firstIndex(where: { $0.layout.contains(paneID) }),
+              let pane = state.tabs[tabIndex].layout.leaf(withID: paneID),
+              pane.agentID == nil,
+              let newLayout = state.tabs[tabIndex].layout.closing(pane: paneID) else {
+            return false
+        }
+        let tabID = state.tabs[tabIndex].id
+        sessions.detachPane(paneID)
+        setLayout(newLayout, forTab: tabID)
+        discardReviewSession(paneID)
+        if focusedPaneID == paneID {
+            focusedPaneID = newLayout.firstLeaf.id
+        }
+        return true
     }
 
     func commitSplitRatio(tabID: TabID, split: PaneNode, ratio: Double) {
@@ -193,6 +273,8 @@ extension ShepherdViewModel {
         }
 
         if let agentID = exitedAgentID {
+            cancelReviews(for: agentID)
+            endAgentLaunch(agentID)
             childRuns.clear(agent: agentID)
             state.agents.removeAll { $0.id == agentID }
             if selectedAgentID == agentID {
@@ -232,6 +314,27 @@ extension ShepherdViewModel {
         enqueuePersistence("agent rename") { try await $0.renameAgent(id, to: trimmed) }
     }
 
+    /// Confirmed Delete Worktree Agent: retire the agent, and optionally tear
+    /// down the worktree checkout + branch that Shepherd created for it. The
+    /// removal runs off-main after a short grace so the agent's processes
+    /// (whose cwd is inside the worktree) are gone first.
+    func deleteWorktreeAgent(_ id: AgentID, removeWorktree: Bool) {
+        guard let agent = state.agents.first(where: { $0.id == id }) else { return }
+        let branch = agent.worktreeBranch
+        let repo = state.spaces.first { $0.id == agent.spaceID }?.path
+        let worktree = agent.worktreePath
+        deleteAgent(id)
+        guard removeWorktree, let branch, let repo else { return }
+        Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(500))
+            do {
+                try GitWorktree.remove(repo: repo, branch: branch, worktree: worktree)
+            } catch {
+                NSLog("Shepherd: worktree removal failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
     func deleteAgent(_ id: AgentID) {
         guard let agent = state.agents.first(where: { $0.id == id }),
               let tabIndex = state.tabs.firstIndex(where: { $0.id == agent.tabID }) else { return }
@@ -243,6 +346,8 @@ extension ShepherdViewModel {
             sessions.detachPane(leaf.id)
         }
 
+        cancelReviews(for: id)
+        endAgentLaunch(id)
         childRuns.clear(agent: id)
         state.agents.removeAll { $0.id == id }
         state.tabs.remove(at: tabIndex)

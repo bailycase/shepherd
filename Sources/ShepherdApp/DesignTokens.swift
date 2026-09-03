@@ -62,6 +62,12 @@ enum Tokens {
     static var accentButton: Color { theme.accentButton }
     static var destructive: Color { theme.destructive }
 
+    /// Diff-review syntax colors, derived from the theme's ANSI palette so
+    /// highlighted code matches the terminal panes.
+    static var codeHighlightStyle: CodeHighlight.Style {
+        CodeHighlight.Style(palette: theme.terminal.palette)
+    }
+
     static func statusColor(_ status: AgentStatus) -> Color {
         switch status {
         case .working: return statusWorking
@@ -90,11 +96,17 @@ enum Metrics {
     static let paneFrameInset: CGFloat = 2
     /// Rows are full-bleed and square.
     static let rowRadius: CGFloat = 0
+    static let spacing2: CGFloat = 2
+    static let spacing5: CGFloat = 5
+    static let spacing8: CGFloat = 8
+    static let spacing12: CGFloat = 12
+    static let spacing14: CGFloat = 14
+    static let spacing20: CGFloat = 20
     static let windowMinWidth: CGFloat = 1040
     static let windowMinHeight: CGFloat = 640
     static let windowDefaultWidth: CGFloat = 1440
     static let windowDefaultHeight: CGFloat = 900
-    static let settingsSidebarWidth: CGFloat = 190
+    static let settingsSidebarWidth: CGFloat = 230
     static let settingsDefaultHeight: CGFloat = 620
     static let settingsMinWidth: CGFloat = 720
     static let settingsMinHeight: CGFloat = 480

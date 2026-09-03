@@ -100,4 +100,10 @@ struct PaneNodeTests {
         let decoded = try JSONDecoder().decode(PaneNode.self, from: data)
         #expect(decoded == nested)
     }
+
+    @Test func oldLeafJSONDecodesWithoutReviewFlag() throws {
+        let data = Data(#"{"type":"leaf","pane":{"id":"p1","cwd":"/tmp"}}"#.utf8)
+        let decoded = try JSONDecoder().decode(PaneNode.self, from: data)
+        #expect(decoded == .leaf(LeafPane(id: PaneID(rawValue: "p1"), cwd: "/tmp")))
+    }
 }
