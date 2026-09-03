@@ -30,15 +30,24 @@ SHEPHERD_BENCH=1 swift test -c release -Xswiftc -enable-testing \
 
 **A4 (cold-park hidden surfaces).** The host model is 6.7 MiB per session and a snapshot restore is under 10 ms, so parking a Ghostty surface and restoring from the host snapshot is cheap on the host side. The gain depends on the Ghostty surface cost, which this harness cannot measure.
 
-## In-app measurement still needed for A4
+## In-app (measured, Release build of `Shepherd (Dev)`)
 
-`swift test` has no AppKit window, so the Ghostty surface, its scrollback, and hidden-pane parsing are measured in the running app:
+`swift test` has no AppKit window, so Ghostty cost was measured by launching the app with `SHEPHERD_SUPPORT_DIR` pointed at a seeded `state.json` of N global shells whose `restoreCommand` prints 2,100 styled lines. Global shells are always mounted, so all N panes have live Ghostty surfaces with one visible. Footprint read with `footprint -p <pid>` 30 s after launch, two runs each.
 
-1. Build `Shepherd (Dev)`, create N agents (10 and 30), let each print 2,000 lines.
-2. Record footprint: `footprint -p <pid>` or Xcode Memory gauge, before and after. Divide the delta by N and subtract 6.7 MiB to get Ghostty cost per pane.
-3. With one agent visible and the rest hidden, run `yes | head -c 50M` in a hidden pane and read `sample <pid> 5` for time in libghostty parsing.
+| Mounted panes | Footprint | Per pane (from slope) |
+| --- | --- | --- |
+| 1 | 278 MB | |
+| 10 | 389 MB | |
+| 30 | 670 MB | 15.6 MB (10 to 30) |
+| 60 | 1,146 MB | 15.9 MB (30 to 60) |
 
-Record results here before starting A4. If Ghostty is under about 10 MiB per pane and hidden parsing is under a few percent CPU, A4 is not worth its mounting-rule risk.
+One run at N=10 read 168 MB, likely a window-size race at launch; discarded. Steady cost is about 16 MB per mounted pane, of which 6.7 MB is the host model. So a parked Ghostty surface frees about 9 MB per pane.
+
+Hidden-pane CPU: 30 shells, one visible, `yes` flooding a hidden pane. Process CPU 158 to 166 percent. `ps -M` shows two hot threads: one at 97 percent (`shepherd.pty`, SwiftTerm `Terminal.feed`, dominated by `scroll`) and one at 57 percent (libghostty `in-memory-output`, `terminal.Terminal.print`). Idle 30-pane CPU is 0.3 to 0.5 percent.
+
+## Decision on A4
+
+Hidden Ghostty parsing costs about 0.6 cores per flooding hidden pane, and each mounted pane holds about 9 MB of surface memory. Cold-parking hidden surfaces removes both, at the cost of a sub-10 ms snapshot restore on reveal. That is worth doing once agent counts reach 10 or more, so A4 proceeds. SwiftTerm on the host is the larger CPU share and cannot be parked; it is the F2 concern and a separate item.
 
 ## Queue fairness (F2)
 
