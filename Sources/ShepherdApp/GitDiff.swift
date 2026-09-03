@@ -154,15 +154,21 @@ enum GitDiff {
     }
 
     static func load(cwd: String, reference: String?) throws -> [DiffFile] {
-        let diffArguments = ["-c", "core.quotepath=off", "diff", "--no-color", reference ?? "HEAD"]
-        let tracked = try runGit(diffArguments, cwd: cwd)
-        guard tracked.status == 0 else {
-            throw GitDiffError.commandFailed(
-                command: commandDescription(diffArguments), status: tracked.status, stderr: tracked.stderr
-            )
+        // A fresh repo with no commits has an unborn HEAD; `git diff HEAD`
+        // exits 128 there. In local mode everything is untracked, so skip
+        // the tracked diff instead of failing.
+        let headExists = (try? runGit(["rev-parse", "--verify", "-q", "HEAD"], cwd: cwd))?.status == 0
+        var files: [DiffFile] = []
+        if headExists || reference != nil {
+            let diffArguments = ["-c", "core.quotepath=off", "diff", "--no-color", reference ?? "HEAD"]
+            let tracked = try runGit(diffArguments, cwd: cwd)
+            guard tracked.status == 0 else {
+                throw GitDiffError.commandFailed(
+                    command: commandDescription(diffArguments), status: tracked.status, stderr: tracked.stderr
+                )
+            }
+            files = parse(tracked.stdout)
         }
-
-        var files = parse(tracked.stdout)
         guard reference == nil else { return files }
 
         let listArguments = ["-c", "core.quotepath=off", "ls-files", "--others", "--exclude-standard"]

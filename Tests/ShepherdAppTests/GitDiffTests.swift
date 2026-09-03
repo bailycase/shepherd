@@ -166,6 +166,21 @@ struct GitDiffTests {
         #expect(files.last?.addedCount == 1)
     }
 
+    @Test func loadsUntrackedFilesInARepoWithNoCommits() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shepherd-git-diff-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        try runGit(["init", "-q"], in: directory)
+        try "hello\n".write(to: directory.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
+
+        // Unborn HEAD: the tracked diff is skipped, untracked files still load.
+        let files = try GitDiff.load(cwd: directory.path, reference: nil)
+        #expect(files.map(\.displayPath) == ["new.txt"])
+        #expect(files.first?.isNew == true)
+    }
+
     @Test func skipsNoNewlineMarkers() throws {
         let file = try #require(GitDiff.parse("""
         diff --git a/file.txt b/file.txt
