@@ -18,6 +18,13 @@ import ShepherdCore
 /// hidden pane costs surface memory but no GPU time. Switching — within a
 /// space or across spaces — is only ever a visibility flip, never a remount.
 ///
+/// The exception is cold parking: a hidden pane still parses every byte in
+/// Ghostty and holds its surface (~9 MB and up to 0.6 cores under flood,
+/// see docs/benchmarks). Layouts hidden longer than `parkDelay` and outside
+/// the `hotRetainLimit` most recently visible ones unmount; their processes
+/// and the host-side screen keep running, so returning re-mounts from a
+/// snapshot (single-digit ms) instead of a blank surface.
+///
 /// Pure value type so this (the part that is easy to get subtly wrong) is
 /// testable without constructing a view model, which owns the session server.
 struct WorkspaceSelection {
@@ -38,6 +45,34 @@ struct WorkspaceSelection {
     /// while it exists, or switching back would destroy and replay its
     /// surface.
     var visitedTabIDs: Set<TabID> = []
+    /// Layouts to keep unmounted (decided by `coldParkCandidates`, applied
+    /// by the view model). Never contains the active tab.
+    var parkedTabIDs: Set<TabID> = []
+
+    /// Hidden this long before a layout is eligible to park. Long enough
+    /// that flipping between two agents never parks either.
+    static let parkDelay: Duration = .seconds(30)
+    /// Most recently visible layouts that never park, however long hidden.
+    static let hotRetainLimit = 4
+
+    /// Layouts hidden since before `now - parkDelay` that are not among the
+    /// `hotRetainLimit` most recently shown. `hiddenSince` holds the moment
+    /// each layout stopped being the active one.
+    static func coldParkCandidates(
+        hiddenSince: [TabID: Date],
+        activeTabID: TabID?,
+        now: Date = Date()
+    ) -> Set<TabID> {
+        let hot = hiddenSince
+            .filter { $0.key != activeTabID }
+            .sorted { $0.value > $1.value }
+            .prefix(hotRetainLimit)
+            .map(\.key)
+        let cutoff = now.addingTimeInterval(-Double(parkDelay.components.seconds))
+        return Set(hiddenSince.filter { id, since in
+            id != activeTabID && since <= cutoff && !hot.contains(id)
+        }.map(\.key))
+    }
 
     /// Layouts kept in the view tree, ordered stably by (space, tab order) —
     /// never by selection. Reordering would change the ForEach identity order
@@ -58,6 +93,7 @@ struct WorkspaceSelection {
             let isSpaceShell = tab.spaceID != nil
                 && tab.inspectorFor == nil
                 && !agentTabIDs.contains(tab.id)
+            guard tab.id == active || !parkedTabIDs.contains(tab.id) else { return false }
             return !isSpaceShell || tab.id == active || visitedTabIDs.contains(tab.id)
         }.sorted { a, b in
             let sa = a.spaceID.flatMap { spaceOrder[$0] } ?? Int.max

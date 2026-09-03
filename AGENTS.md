@@ -261,7 +261,11 @@ leaves; selection only changes which one is visible
 loops). Three things silently reintroduce the full-repaint lag if touched: reordering
 `mountedTabs` (ForEach identity), using a conditional-branch `.hidden()` instead of
 `opacity(0)` (ConditionalContent destroys the subtree), and applying `setRenderingActive`
-fire-and-forget (the model retries; see TerminalSurfaceKit/NOTES.md).
+fire-and-forget (the model retries; see TerminalSurfaceKit/NOTES.md). The one deliberate
+unmount is cold parking: a layout hidden for 30s and outside the four most recently shown
+(`WorkspaceSelection.coldParkCandidates`) drops its Ghostty surfaces via
+`TerminalSessionStore.parkPane` while its processes and host-side screens keep running;
+reselecting it remounts from the server snapshot. Measured in docs/benchmarks.
 
 **Sessions/views separation.** Closing panes detaches views only; a process exiting on its own
 closes its pane (and retires its agent). Delete Agent is the explicit lifecycle action that
