@@ -46,6 +46,14 @@ struct WorktreeSettings: View {
                     .toggleStyle(.switch)
             }
             SettingsRow(
+                title: "Generate PR Descriptions",
+                subtitle: "Generate an editable pull request description from the branch's commits and diff. If generation fails, Finalize uses the commit subjects instead."
+            ) {
+                Toggle("", isOn: $settings.worktreeGeneratePRDescription)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            SettingsRow(
                 title: "Delete Local Branch",
                 subtitle: "After the worktree is removed, delete its local branch too (everything is on the remote by then — finalize verifies that first). Off keeps the local branch around."
             ) {

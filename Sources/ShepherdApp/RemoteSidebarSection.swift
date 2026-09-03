@@ -142,6 +142,10 @@ struct RemoteHostBlock: View {
                         ) {
                             vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id)
                         }
+                        // Scroll target for machine jumps and palette picks
+                        // (see SidebarView); the ref type keeps remote rows
+                        // distinct from local agent ids.
+                        .id(RemoteAgentRef(hostID: connection.id, agentID: agent.id))
                     }
                 }
             }

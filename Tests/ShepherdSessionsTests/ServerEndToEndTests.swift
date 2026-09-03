@@ -288,6 +288,17 @@ struct ServerEndToEndTests {
         try client2.send(.setAgentStatus(agentID: agent.id, status: .done))
         try await waitUntil { reported.current == .done }
         #expect(server.state.agents.first?.status == .done)
+
+        // An unchanged report (what a reconnecting extension re-sends) still
+        // reaches the app but does not rewrite state.json.
+        let stateURL = dir.appendingPathComponent("state.json")
+        let modifiedBefore = try FileManager.default.attributesOfItem(atPath: stateURL.path)[.modificationDate] as? Date
+        try await Task.sleep(for: .milliseconds(20))
+        reported.withValue { $0 = nil }
+        try client2.send(.setAgentStatus(agentID: agent.id, status: .done))
+        try await waitUntil { reported.current == .done }
+        let modifiedAfter = try FileManager.default.attributesOfItem(atPath: stateURL.path)[.modificationDate] as? Date
+        #expect(modifiedBefore == modifiedAfter)
     }
 
     /// The notify tool: fire-and-forget over the same socket; the app learns

@@ -60,6 +60,20 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var pendingReplies: [Int: CheckedContinuation<RemoteReply, Error>] = [:]
     private var disconnectNotified = false
 
+    /// Pushed events wait here for the main queue. One hop is in flight at a
+    /// time and consecutive output for one session merges into one callback,
+    /// so a flooding host cannot queue a closure per frame behind UI work
+    /// (the host side has the same one-delivery rule). Kept as one FIFO for
+    /// every event kind so `sessionExited` still follows that session's
+    /// last bytes. Client queue only.
+    private enum PushedEvent {
+        case state(ShepherdState)
+        case output(SessionID, Data)
+        case exited(SessionID, Int32?)
+    }
+    private var pendingEvents: [PushedEvent] = []
+    private var deliveryInFlight = false
+
     private static let requestTimeout: TimeInterval = 10
     private static let maxQueuedWriteBytes = 8 * 1024 * 1024
 
@@ -492,11 +506,44 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
         case .stateChanged(let state):
-            hopToMain { [weak self] in self?.onStateChanged?(state) }
+            push(.state(state))
         case .output(let sessionID, let data):
-            hopToMain { [weak self] in self?.onOutput?(sessionID, data) }
+            if case .output(let last, var merged)? = pendingEvents.last, last == sessionID {
+                merged.append(data)
+                pendingEvents[pendingEvents.count - 1] = .output(sessionID, merged)
+            } else {
+                push(.output(sessionID, data))
+            }
         case .sessionExited(let sessionID, let code):
-            hopToMain { [weak self] in self?.onSessionExited?(sessionID, code) }
+            push(.exited(sessionID, code))
+        }
+    }
+
+    private func push(_ event: PushedEvent) {
+        pendingEvents.append(event)
+        scheduleDelivery()
+    }
+
+    /// Client queue. Hands the whole backlog to the main queue in one hop;
+    /// events that arrive meanwhile wait for the next hop.
+    private func scheduleDelivery() {
+        guard !deliveryInFlight, !pendingEvents.isEmpty else { return }
+        deliveryInFlight = true
+        let batch = pendingEvents
+        pendingEvents.removeAll(keepingCapacity: true)
+        hopToMain { [weak self] in
+            guard let self else { return }
+            for event in batch {
+                switch event {
+                case .state(let state): self.onStateChanged?(state)
+                case .output(let sessionID, let data): self.onOutput?(sessionID, data)
+                case .exited(let sessionID, let code): self.onSessionExited?(sessionID, code)
+                }
+            }
+            self.queue.async { [weak self] in
+                self?.deliveryInFlight = false
+                self?.scheduleDelivery()
+            }
         }
     }
 
@@ -518,6 +565,9 @@ public final class RemoteHostClient: @unchecked Sendable {
         fd = -1
         pendingWrites.removeAll()
         pendingWriteOffset = 0
+        // Undelivered pushes die with the connection; the owner drops its
+        // view state on disconnect and re-snapshots on reconnect.
+        pendingEvents.removeAll()
         for continuation in pendingReplies.values {
             continuation.resume(throwing: RemoteHostClientError.disconnected)
         }

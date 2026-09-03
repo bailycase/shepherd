@@ -26,6 +26,7 @@ struct AppSettingsTests {
         #expect(settings.autoNameAgents)
         #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
         #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
+        #expect(settings.worktreeGeneratePRDescription)
     }
 
     @Test func valuesPersistAndReload() {
@@ -41,6 +42,7 @@ struct AppSettingsTests {
         settings.autoUpdateExtensions = true
         settings.shellPath = "/bin/bash"
         settings.sidebarWidth = 275
+        settings.worktreeGeneratePRDescription = false
 
         let reloaded = AppSettings(store: store)
         #expect(reloaded.terminalFontFamily == "Menlo")
@@ -52,6 +54,7 @@ struct AppSettingsTests {
         #expect(reloaded.autoUpdateExtensions)
         #expect(reloaded.shellPath == "/bin/bash")
         #expect(reloaded.sidebarWidth == 275)
+        #expect(reloaded.worktreeGeneratePRDescription == false)
     }
 
     @Test func sidebarWidthIsClampedToItsDragRange() {
@@ -79,6 +82,7 @@ struct AppSettingsTests {
         settings.autoNameAgents = false
         settings.autoUpdatePi = true
         settings.autoUpdateExtensions = true
+        settings.worktreeGeneratePRDescription = false
 
         settings.resetToDefaults()
 
@@ -87,6 +91,7 @@ struct AppSettingsTests {
         #expect(settings.autoNameAgents)
         #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
         #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
+        #expect(settings.worktreeGeneratePRDescription)
         for key in AppSettings.Key.all {
             #expect(store.object(forKey: key) == nil)
         }

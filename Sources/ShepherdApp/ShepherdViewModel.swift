@@ -64,6 +64,13 @@ final class ShepherdViewModel {
     /// leaves are persisted long enough for layout writes, then purged on the
     /// next app start by the session server.
     var reviewSessions: [PaneID: ReviewSession] = [:]
+    /// Agents created this run whose pi is still booting. Creation selects
+    /// the agent optimistically — its pane shows before the process spawns —
+    /// and the pane wears an opaque launch overlay until pi's status
+    /// extension first reports, the spawn fails, or a timeout expires
+    /// (see `beginAgentLaunch`). Ephemeral, like all launch state.
+    var launchingAgents: Set<AgentID> = []
+    @ObservationIgnored var launchTimeouts: [AgentID: Task<Void, Never>] = [:]
     /// The agent whose subagent-inspector layout the workspace is showing
     /// (a subagent row is selected). Ordinary sidebar selection clears it.
     var inspectingAgentID: AgentID?
@@ -139,6 +146,11 @@ final class ShepherdViewModel {
     /// Last agent selected on each host, so a machine jump returns to where
     /// you were, not the top. Ephemeral.
     var lastRemoteAgentByHost: [UUID: AgentID] = [:]
+    /// Bumped by every selection that should scroll the sidebar to the
+    /// selected row (`sidebarRevealTarget`). A counter, not the target value:
+    /// re-selecting the same row (⌘3 twice after scrolling away) must scroll
+    /// back, and a value-diff would see no change. Ephemeral.
+    var sidebarRevealRequest = 0
 
     private func remoteSpaceCollapseKey(hostID: UUID, spaceID: SpaceID) -> String {
         "\(hostID.uuidString)/\(spaceID.rawValue)"
@@ -254,6 +266,29 @@ final class ShepherdViewModel {
     @ObservationIgnored private var resignActiveObserver: NSObjectProtocol?
     /// Last pane focused in each layout (see `PaneFocusMemory`).
     var focusMemory = PaneFocusMemory()
+    /// Memoized sidebar projections (`SidebarDerivations`). `spaceForest`
+    /// is quadratic in spaces, and the sidebar reads these on every render —
+    /// including once per row for the ⌘1–9 badges — so uncached they
+    /// dominate every click once the space count grows. @ObservationIgnored:
+    /// the cache fills inside getters during view updates and must never
+    /// invalidate the views reading it; the inputs (`state`,
+    /// `collapsedSpaces`) are themselves observed.
+    @ObservationIgnored var sidebarDerivations = SidebarDerivations()
+    /// Space shell (space-main) tabs shown at least once this run. They
+    /// mount lazily — mounting spawns a login shell and a Ghostty surface,
+    /// and a large space tree must not pay that for spaces never opened —
+    /// and once mounted they stay mounted (see `WorkspaceSelection`).
+    /// @ObservationIgnored: it grows only in lockstep with observable
+    /// selection changes, so it never needs to invalidate views itself.
+    @ObservationIgnored var visitedSpaceShellTabs: Set<TabID> = []
+    /// When each layout last stopped being the visible one; drives cold
+    /// parking (see `WorkspaceSelection`). @ObservationIgnored like
+    /// `visitedSpaceShellTabs`: it only changes alongside the active tab.
+    @ObservationIgnored var tabHiddenSince: [TabID: Date] = [:]
+    /// Layouts currently unmounted by cold parking. Observed: parking and
+    /// unparking must re-evaluate `mountedTabs`.
+    var parkedTabIDs: Set<TabID> = []
+    @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
     /// Recently selected agents, most recent last, no duplicates. When the
@@ -396,8 +431,10 @@ final class ShepherdViewModel {
     deinit {
         commandHoldTask?.cancel()
         persistenceTail?.cancel()
+        for task in launchTimeouts.values { task.cancel() }
         childSweepTimer?.invalidate()
         shellProcessTimer?.invalidate()
+        parkSweepTimer?.invalidate()
         if let flagsMonitor {
             NSEvent.removeMonitor(flagsMonitor)
         }
@@ -561,6 +598,9 @@ final class ShepherdViewModel {
     }
 
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus) {
+        // Any report means pi is up and painting its own TUI: the launch
+        // overlay's job is done.
+        endAgentLaunch(id)
         if let index = state.agents.firstIndex(where: { $0.id == id }) {
             let old = state.agents[index].status
             state.agents[index].status = status
