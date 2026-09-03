@@ -82,6 +82,8 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Open the pane immediately (empty, loading), then fill in the parsed
+    /// diff when git finishes — the pane must never wait on a subprocess.
     private func beginReview(
         agentID: AgentID,
         cwd requestedCwd: String?,
@@ -94,80 +96,9 @@ extension ShepherdViewModel {
             respond?(.failed(code: "no_such_agent", message: "unknown agent \(agentID)"))
             return
         }
+        let cwdPath = ((requestedCwd ?? piPane.cwd) as NSString).expandingTildeInPath
 
-        let cwd = (requestedCwd ?? piPane.cwd) as NSString
-        let cwdPath = cwd.expandingTildeInPath
-        let finish: (Result<[DiffFile], Error>) -> Void = { [weak self] result in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    self?.finishReviewLoad(
-                        agentID: agentID,
-                        cwd: cwdPath,
-                        reference: reference,
-                        respond: respond,
-                        result: result
-                    )
-                }
-            }
-        }
-        DispatchQueue.global(qos: .userInitiated).async { [cwdPath, reference] in
-            do {
-                finish(.success(try GitDiff.load(cwd: cwdPath, reference: reference)))
-            } catch {
-                finish(.failure(error))
-            }
-        }
-    }
-
-    private func finishReviewLoad(
-        agentID: AgentID,
-        cwd: String,
-        reference: String?,
-        respond: ((ReviewOutcome) -> Void)?,
-        result: Result<[DiffFile], Error>
-    ) {
-        guard case .success(let files) = result else {
-            guard case .failure(let error) = result else { return }
-            let message = String(describing: error)
-            if respond == nil {
-                createReviewPane(
-                    agentID: agentID,
-                    cwd: cwd,
-                    reference: reference,
-                    files: [],
-                    loadError: message,
-                    respond: nil
-                )
-            } else {
-                respond?(.failed(code: "git", message: message))
-            }
-            return
-        }
-        createReviewPane(
-            agentID: agentID,
-            cwd: cwd,
-            reference: reference,
-            files: files,
-            loadError: nil,
-            respond: respond
-        )
-    }
-
-    private func createReviewPane(
-        agentID: AgentID,
-        cwd: String,
-        reference: String?,
-        files: [DiffFile],
-        loadError: String?,
-        respond: ((ReviewOutcome) -> Void)?
-    ) {
-        guard let agent = state.agents.first(where: { $0.id == agentID }),
-              let tab = state.tabs.first(where: { $0.id == agent.tabID }),
-              let piPane = tab.layout.leaves.first(where: { $0.agentID == agentID }) else {
-            respond?(.failed(code: "cancelled", message: "agent is no longer available"))
-            return
-        }
-        let reviewPane = LeafPane(cwd: cwd, isReview: true)
+        let reviewPane = LeafPane(cwd: cwdPath, isReview: true)
         guard let layout = tab.layout.splitting(
             pane: piPane.id,
             axis: .vertical,
@@ -180,14 +111,14 @@ extension ShepherdViewModel {
 
         let visible = isVisibleTab(tab)
         setLayout(layout, forTab: tab.id)
-        reviewSessions[reviewPane.id] = ReviewSession(
+        let session = ReviewSession(
             agentID: agentID,
             paneID: reviewPane.id,
-            cwd: cwd,
+            cwd: cwdPath,
             reference: reference,
-            files: files,
-            loadError: loadError
+            isLoading: true
         )
+        reviewSessions[reviewPane.id] = session
         if visible {
             focusedPaneID = reviewPane.id
         }
@@ -196,6 +127,19 @@ extension ShepherdViewModel {
         respond?(.submitted(
             text: "Review pane opened. The user's review will arrive as a message when they submit; continue only if you have unrelated work."
         ))
+
+        Task.detached(priority: .userInitiated) {
+            let result = Result { try GitDiff.load(cwd: cwdPath, reference: reference) }
+            await MainActor.run {
+                // The user may have closed the pane before git finished.
+                guard self.reviewSessions[reviewPane.id] === session else { return }
+                session.isLoading = false
+                switch result {
+                case .success(let files): session.files = files
+                case .failure(let error): session.loadError = String(describing: error)
+                }
+            }
+        }
     }
 
     private func piSessionID(for agentID: AgentID) -> SessionID? {

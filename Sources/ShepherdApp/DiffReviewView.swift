@@ -75,6 +75,8 @@ struct DiffReviewPane: View {
     private var content: some View {
         if let loadError = session.loadError {
             reviewMessage(loadError)
+        } else if session.isLoading {
+            Spacer().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if session.files.isEmpty {
             reviewMessage("no changes")
         } else {
@@ -87,10 +89,11 @@ struct DiffReviewPane: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Highlight every hunk up front (yielding between files) so
-            // scrolling never parses mid-frame; LazyVStack row creation then
-            // only does dictionary lookups.
-            .task(id: themes.current.id) {
+            // Highlight every hunk up front (yielding between hunks so the
+            // first frame and scrolling stay responsive); LazyVStack row
+            // creation then only does dictionary lookups. Keyed to the file
+            // list too so the fill-in after the async git load triggers it.
+            .task(id: "\(themes.current.id)-\(session.files.count)") {
                 let style = highlightStyle
                 for file in session.files {
                     for hunk in file.hunks {
@@ -99,8 +102,9 @@ struct DiffReviewPane: View {
                         highlightedHunks[key] = CodeHighlight.highlightLines(
                             hunk.lines.map(\.text), path: file.displayPath, style: style
                         )
+                        await Task.yield()
+                        if Task.isCancelled { return }
                     }
-                    await Task.yield()
                 }
             }
         }

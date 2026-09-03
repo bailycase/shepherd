@@ -44,6 +44,9 @@ final class ReviewSession: Identifiable {
     let reference: String?
     var files: [DiffFile]
     var loadError: String?
+    /// True until GitDiff.load finishes; the pane opens immediately and
+    /// fills in when the diff arrives.
+    var isLoading: Bool
     var comments: [ReviewComment] {
         didSet { rebuildCommentIndex() }
     }
@@ -74,9 +77,11 @@ final class ReviewSession: Identifiable {
         reference: String?,
         files: [DiffFile] = [],
         loadError: String? = nil,
+        isLoading: Bool = false,
         comments: [ReviewComment] = [],
         summary: String = ""
     ) {
+        self.isLoading = isLoading
         self.agentID = agentID
         self.paneID = paneID
         self.cwd = cwd
