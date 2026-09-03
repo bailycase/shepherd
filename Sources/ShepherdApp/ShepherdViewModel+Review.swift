@@ -96,6 +96,43 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Switch an open review between uncommitted (nil) and PR ("pr") mode:
+    /// clear the loaded diff and reload in place. Comments are kept — they
+    /// re-anchor by file/line where the diff still contains them.
+    func reloadReview(_ session: ReviewSession, reference: String?) {
+        guard reviewSessions[session.paneID] === session else { return }
+        session.reference = reference
+        session.isPRMode = reference == "pr"
+        session.isLoading = true
+        session.loadError = nil
+        session.files = []
+        loadReviewDiff(session)
+    }
+
+    /// Resolve and load the session's diff off the main thread, filling the
+    /// session in place when done.
+    private func loadReviewDiff(_ session: ReviewSession) {
+        let cwdPath = session.cwd
+        let reference = session.reference
+        let paneID = session.paneID
+        Task.detached(priority: .userInitiated) {
+            // "pr" is a mode, not a git ref: resolve it to a merge-base spec
+            // against the PR base (or the remote default branch) first.
+            let resolved = reference == "pr" ? GitDiff.pullRequestReference(cwd: cwdPath) : reference
+            let result = Result { try GitDiff.load(cwd: cwdPath, reference: resolved) }
+            await MainActor.run {
+                // The user may have closed the pane before git finished.
+                guard self.reviewSessions[paneID] === session else { return }
+                session.isLoading = false
+                session.reference = resolved
+                switch result {
+                case .success(let files): session.files = files
+                case .failure(let error): session.loadError = String(describing: error)
+                }
+            }
+        }
+    }
+
     /// Open the pane immediately (empty, loading), then fill in the parsed
     /// diff when git finishes — the pane must never wait on a subprocess.
     private func beginReview(
@@ -132,6 +169,7 @@ extension ShepherdViewModel {
             reference: reference,
             isLoading: true
         )
+        session.isPRMode = reference == "pr"
         reviewSessions[reviewPane.id] = session
         if visible {
             focusedPaneID = reviewPane.id
@@ -142,22 +180,7 @@ extension ShepherdViewModel {
             text: "Review pane opened. The user's review will arrive as a message when they submit; continue only if you have unrelated work."
         ))
 
-        Task.detached(priority: .userInitiated) {
-            // "pr" is a mode, not a git ref: resolve it to a merge-base spec
-            // against the PR base (or the remote default branch) first.
-            let resolved = reference == "pr" ? GitDiff.pullRequestReference(cwd: cwdPath) : reference
-            let result = Result { try GitDiff.load(cwd: cwdPath, reference: resolved) }
-            await MainActor.run {
-                // The user may have closed the pane before git finished.
-                guard self.reviewSessions[reviewPane.id] === session else { return }
-                session.isLoading = false
-                session.reference = resolved
-                switch result {
-                case .success(let files): session.files = files
-                case .failure(let error): session.loadError = String(describing: error)
-                }
-            }
-        }
+        loadReviewDiff(session)
     }
 
     private func piSessionID(for agentID: AgentID) -> SessionID? {

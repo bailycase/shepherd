@@ -49,7 +49,7 @@ struct DiffReviewPane: View {
                 Text("review")
                     .font(Fonts.mono(12, .semibold))
                     .foregroundStyle(isFocused ? Tokens.textPrimary : Tokens.textSecondary)
-                Text("\(cwdTail) · \(session.reference == "pr" ? "PR changes" : session.reference ?? "working tree vs HEAD")")
+                Text("\(cwdTail) · \(session.isPRMode ? "PR · \(session.reference ?? "resolving…")" : "working tree vs HEAD")")
                     .font(Fonts.mono(10.5))
                     .foregroundStyle(Tokens.textMetadata)
                     .lineLimit(1)
@@ -59,9 +59,16 @@ struct DiffReviewPane: View {
             Text("\(session.comments.count) comment\(session.comments.count == 1 ? "" : "s")")
                 .font(Fonts.mono(10.5))
                 .foregroundStyle(Tokens.textMetadata)
-            ReviewActionButton("cancel") {
-                vm.cancelReview(session)
+            // Mode toggle: uncommitted working-tree changes vs the branch's PR.
+            HStack(spacing: 0) {
+                ReviewModeButton("local", active: !session.isPRMode) {
+                    if session.isPRMode { vm.reloadReview(session, reference: nil) }
+                }
+                ReviewModeButton("pr", active: session.isPRMode) {
+                    if !session.isPRMode { vm.reloadReview(session, reference: "pr") }
+                }
             }
+            .overlay(Rectangle().stroke(Tokens.paneBorder, lineWidth: 1))
             ReviewActionButton("submit", prominent: true, disabled: session.loadError != nil) {
                 vm.submitReview(session)
             }
@@ -117,7 +124,7 @@ struct DiffReviewPane: View {
             Text(text)
                 .font(Fonts.mono(11))
                 .foregroundStyle(session.loadError == nil ? Tokens.textDim : Tokens.statusBlocked)
-            ReviewActionButton("cancel") {
+            ReviewActionButton("close") {
                 vm.cancelReview(session)
             }
         }
@@ -368,6 +375,30 @@ struct DiffReviewPane: View {
             ))
         }
         editingTarget = nil
+    }
+}
+
+/// One half of the local/pr segmented mode toggle: flat mono text, the
+/// active side filled like a selected row.
+private struct ReviewModeButton: View {
+    let label: String
+    let active: Bool
+    let action: () -> Void
+
+    init(_ label: String, active: Bool, action: @escaping () -> Void) {
+        self.label = label
+        self.active = active
+        self.action = action
+    }
+
+    var body: some View {
+        Button(label, action: action)
+            .buttonStyle(.plain)
+            .font(Fonts.mono(10.5, active ? .medium : .regular))
+            .foregroundStyle(active ? Tokens.textPrimary : Tokens.textDim)
+            .padding(.horizontal, Metrics.spacing8)
+            .frame(height: Metrics.rowHeight)
+            .background(active ? Tokens.rowSelection : Color.clear)
     }
 }
 
