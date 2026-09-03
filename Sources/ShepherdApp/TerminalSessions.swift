@@ -369,6 +369,17 @@ final class TerminalSessionStore: ObservableObject {
         }
     }
 
+    /// Cold-park a hidden pane: release its Ghostty surface and stop the
+    /// server streaming to it, but keep the pane→session mapping so an exit
+    /// while parked still closes the pane. Remounting the pane goes through
+    /// `session(for:in:)` → `start` → `adopt`, which reattaches with the
+    /// server's screen snapshot at the surface's real grid.
+    func parkPane(_ paneID: PaneID) {
+        guard let session = sessions.removeValue(forKey: paneID),
+              let sessionID = session.sessionID else { return }
+        server.detach(sessionID: sessionID)
+    }
+
     private func session(forSessionID id: SessionID) -> PaneSession? {
         if let paneID = paneBySession[id], let session = sessions[paneID] {
             return session

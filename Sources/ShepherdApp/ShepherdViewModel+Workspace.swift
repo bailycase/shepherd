@@ -17,8 +17,59 @@ extension ShepherdViewModel {
             inspectingAgentID: inspectingAgentID,
             selectedShellID: selectedShellID,
             remoteSelectionActive: selectedRemoteAgent != nil,
-            visitedTabIDs: visitedSpaceShellTabs
+            visitedTabIDs: visitedSpaceShellTabs,
+            parkedTabIDs: parkedTabIDs
         )
+    }
+
+    /// Cold parking bookkeeping, driven from `noteActiveTabVisited` so every
+    /// selection path is covered: the newly visible layout is unparked and
+    /// forgotten as hidden; every other mounted layout that has no hidden
+    /// timestamp yet gets one now.
+    private func noteActiveTabForParking() {
+        let active = activeTabID
+        if let active {
+            parkedTabIDs.remove(active)
+            tabHiddenSince.removeValue(forKey: active)
+        }
+        let liveTabIDs = Set(state.tabs.map(\.id))
+        for tab in mountedTabs where tab.id != active && tabHiddenSince[tab.id] == nil {
+            tabHiddenSince[tab.id] = Date()
+        }
+        tabHiddenSince = tabHiddenSince.filter { liveTabIDs.contains($0.key) }
+        parkedTabIDs = parkedTabIDs.filter { liveTabIDs.contains($0) }
+        syncParkSweepTimer()
+    }
+
+    /// Park layouts that have been hidden past the delay. Runs only while
+    /// something is hidden and unparked, so a one-agent workspace pays
+    /// nothing.
+    private func syncParkSweepTimer() {
+        let pending = tabHiddenSince.keys.contains { !parkedTabIDs.contains($0) }
+        guard pending else {
+            parkSweepTimer?.invalidate()
+            parkSweepTimer = nil
+            return
+        }
+        guard parkSweepTimer == nil else { return }
+        parkSweepTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sweepColdPanes() }
+        }
+    }
+
+    func sweepColdPanes(now: Date = Date()) {
+        let candidates = WorkspaceSelection.coldParkCandidates(
+            hiddenSince: tabHiddenSince, activeTabID: activeTabID, now: now
+        ).subtracting(parkedTabIDs)
+        guard !candidates.isEmpty else {
+            syncParkSweepTimer()
+            return
+        }
+        for tab in state.tabs where candidates.contains(tab.id) {
+            for leaf in tab.layout.leaves { sessions.parkPane(leaf.id) }
+        }
+        parkedTabIDs.formUnion(candidates)
+        syncParkSweepTimer()
     }
 
     /// Record the currently visible layout so it stays mounted after
@@ -27,6 +78,7 @@ extension ShepherdViewModel {
     /// active-tab change, which covers all selection paths.
     func noteActiveTabVisited() {
         if let id = activeTabID { visitedSpaceShellTabs.insert(id) }
+        noteActiveTabForParking()
     }
 
     /// Every layout the workspace keeps mounted (see `WorkspaceSelection`).

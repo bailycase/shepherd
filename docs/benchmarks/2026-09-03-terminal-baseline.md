@@ -45,6 +45,15 @@ One run at N=10 read 168 MB, likely a window-size race at launch; discarded. Ste
 
 Hidden-pane CPU: 30 shells, one visible, `yes` flooding a hidden pane. Process CPU 158 to 166 percent. `ps -M` shows two hot threads: one at 97 percent (`shepherd.pty`, SwiftTerm `Terminal.feed`, dominated by `scroll`) and one at 57 percent (libghostty `in-memory-output`, `terminal.Terminal.print`). Idle 30-pane CPU is 0.3 to 0.5 percent.
 
+## After cold parking (same procedure, `parkDelay` 30 s, hot set 4)
+
+| Mounted panes | Before park (25 s) | After park (55 s) |
+| --- | --- | --- |
+| 30 | 979 MB | 691 MB |
+| 60 | 1,754 MB | 912 MB |
+
+Flood in a hidden pane, 30 panes: process CPU 163 percent before parking, 101 percent after. The remaining core is host-side SwiftTerm parsing, which stays live by design.
+
 ## Decision on A4
 
 Hidden Ghostty parsing costs about 0.6 cores per flooding hidden pane, and each mounted pane holds about 9 MB of surface memory. Cold-parking hidden surfaces removes both, at the cost of a sub-10 ms snapshot restore on reveal. That is worth doing once agent counts reach 10 or more, so A4 proceeds. SwiftTerm on the host is the larger CPU share and cannot be parked; it is the F2 concern and a separate item.

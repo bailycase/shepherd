@@ -103,6 +103,57 @@ struct ShepherdViewModelTests {
         #expect(vm.activeTabID == tab.id)
     }
 
+    /// Cold parking end to end at the view-model seam: a layout hidden past
+    /// the delay and outside the hot set unmounts and its pane session is
+    /// dropped from the store; selecting it again unparks it immediately.
+    @Test func hiddenLayoutsParkAndUnparkOnSelection() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let space = Space(name: "s", path: "/tmp/s")
+        var tabs: [Tab] = []
+        var agents: [Agent] = []
+        for i in 0..<6 {
+            let agentID = AgentID()
+            let pane = LeafPane(cwd: "/tmp/s", agentID: agentID)
+            let tab = Tab(spaceID: space.id, order: i, layout: .leaf(pane))
+            tabs.append(tab)
+            agents.append(Agent(id: agentID, name: "a\(i)", spaceID: space.id, tabID: tab.id, paneID: pane.id))
+        }
+        try await fixture.server.putState(ShepherdState(spaces: [space], tabs: tabs, agents: agents))
+        let vm = ShepherdViewModel(server: fixture.server)
+        #expect(await waitUntil { vm.state.agents.count == 6 })
+
+        // Visit every agent in order (what the workspace view does on each
+        // active-tab change), ending on the last one.
+        for agent in agents {
+            vm.selectAgent(agent.id)
+            vm.noteActiveTabVisited()
+        }
+        // Pane views would normally mount sessions; simulate for the first.
+        let firstPane = tabs[0].layout.firstLeaf
+        let paneSession = vm.sessions.session(for: firstPane, in: tabs[0])
+        #expect(vm.sessions.session(for: firstPane, in: tabs[0]) === paneSession)
+        #expect(vm.mountedTabs.count == 6)
+
+        // Nothing parks inside the delay.
+        vm.sweepColdPanes()
+        #expect(vm.parkedTabIDs.isEmpty)
+
+        // Past the delay: the five hidden layouts minus the four hottest
+        // leaves exactly the first-visited one parked.
+        vm.sweepColdPanes(now: Date().addingTimeInterval(60))
+        #expect(vm.parkedTabIDs == [tabs[0].id])
+        #expect(!vm.mountedTabs.contains { $0.id == tabs[0].id })
+        // The store dropped the pane session: a remount gets a fresh one.
+        #expect(vm.sessions.session(for: firstPane, in: tabs[0]) !== paneSession)
+
+        // Selecting it unparks it and it re-enters the mounted set.
+        vm.selectAgent(agents[0].id)
+        vm.noteActiveTabVisited()
+        #expect(vm.parkedTabIDs.isEmpty)
+        #expect(vm.mountedTabs.contains { $0.id == tabs[0].id })
+    }
+
     @Test func remoteSpaceCollapseSurvivesViewModelRestart() throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
