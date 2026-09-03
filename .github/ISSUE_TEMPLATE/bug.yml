@@ -1,0 +1,127 @@
+name: Report a bug
+description: Report a reproducible problem with Shepherd
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem.
+
+        Search existing issues before submitting. If this may be a security
+        vulnerability, do not continue here. Follow the private reporting
+        instructions in our [security policy](https://github.com/bailycase/shepherd/security/policy).
+
+        Remove API keys, remote tokens, credentials, private prompts, repository
+        contents, and other sensitive information from logs and screenshots.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues for this problem.
+          required: true
+        - label: I reviewed the information below and removed secrets and private data.
+          required: true
+
+  - type: input
+    id: shepherd_version
+    attributes:
+      label: Shepherd version
+      description: Enter the release version, build number, commit, or "unknown".
+      placeholder: 0.1.0-beta.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Update channel
+      options:
+        - Stable
+        - Release Candidate
+        - Beta
+        - Nightly
+        - Built from source
+        - Unknown
+    validations:
+      required: true
+
+  - type: input
+    id: macos_version
+    attributes:
+      label: macOS version
+      placeholder: macOS 26.0
+    validations:
+      required: true
+
+  - type: input
+    id: pi_version
+    attributes:
+      label: pi version
+      description: Run `pi --version`, if relevant to the problem.
+      placeholder: Optional
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Agent or session lifecycle
+        - Terminal rendering or input
+        - Spaces, sidebar, or navigation
+        - Automations or subagents
+        - Worktrees or Git integration
+        - Remote access
+        - Settings, appearance, or keybindings
+        - Installation or updates
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Start from a clean launch where possible.
+      placeholder: |
+        1. Open Shepherd
+        2. Create an agent
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened?
+      description: Include exact errors or visible behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: input
+    id: last_working
+    attributes:
+      label: Last known working version
+      description: Leave blank if unknown.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or terminal output
+      description: Paste only the relevant section and redact sensitive information.
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Drag screenshots or recordings into this field if helpful.
