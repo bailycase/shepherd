@@ -288,6 +288,62 @@ struct RemoteSessionStreamTests {
         h.server.killSession(info.id)
     }
 
+    /// A stalled remote UI must not accumulate one main-queue closure per
+    /// output frame: frames merge per session while a delivery is in flight,
+    /// and merging never loses or reorders a byte.
+    @Test func outputCoalescesWhileTheMainQueueIsBusy() async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+
+        let lineCount = 20_000
+        let info = try await h.server.createSession(params: CreateSessionParams(
+            cwd: "/tmp",
+            command: [
+                "/bin/sh", "-c",
+                "stty -echo -opost; IFS= read -r _; awk 'BEGIN{for(i=1;i<=\(lineCount);i++)print \"line \" i \" ---------------------------------------------\"}'; printf END",
+            ],
+            cols: 120,
+            rows: 40
+        ))
+        let (client, _) = try await h.connect()
+        defer { client.disconnect() }
+
+        let received = Locked(Data())
+        let deliveries = Locked(0)
+        let release = DispatchSemaphore(value: 0)
+        client.onOutput = { [received, deliveries] sessionID, data in
+            guard sessionID == info.id else { return }
+            received.withValue { $0.append(data) }
+            let n = deliveries.withValue { $0 += 1; return $0 }
+            // Stall the first live delivery so the flood arrives behind it.
+            if n == 2 { release.wait() }
+        }
+        try await client.attach(sessionID: info.id, cols: 120, rows: 40)
+        try await waitUntil { deliveries.current >= 1 }  // replay
+
+        client.write(sessionID: info.id, data: Data("start\n".utf8))
+        try await Task.sleep(for: .seconds(2))
+        release.signal()
+
+        try await waitUntil(timeout: .seconds(30)) { [received] in
+            received.current.suffix(3) == Data("END".utf8)
+        }
+        let text = String(decoding: received.current, as: UTF8.self)
+        var searchIndex = text.startIndex
+        for i in stride(from: 1, through: lineCount, by: 997) {
+            guard let found = text.range(of: "line \(i) ", range: searchIndex..<text.endIndex) else {
+                Issue.record("line \(i) missing or out of order")
+                return
+            }
+            searchIndex = found.upperBound
+        }
+        // ~1.2 MiB of output crosses the wire as several hundred 256 KiB-or-
+        // smaller frames; with the stall they must collapse to a handful.
+        #expect(deliveries.current < 20, "expected merged deliveries, got \(deliveries.current)")
+
+        h.server.killSession(info.id)
+    }
+
     /// Viewport reports that leave the effective grid unchanged must not
     /// reach the child: every SIGWINCH is a full TUI repaint.
     @Test func unchangedViewportReportsDoNotSignalTheChild() async throws {
