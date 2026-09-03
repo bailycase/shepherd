@@ -65,6 +65,12 @@ extension ShepherdViewModel {
                 section: .commands,
                 title: "review diff"
             ))
+            items.append(PaletteItem(
+                id: "action.reviewPR",
+                kind: .action("reviewPR"),
+                section: .commands,
+                title: "review pr changes"
+            ))
         }
         // Settings is omitted: opening a Window scene needs the SwiftUI
         // environment's openWindow, which a view-model action cannot reach
@@ -188,6 +194,7 @@ extension ShepherdViewModel {
             case "newShell": addShell()
             case "rename": agentRenameTarget = selectedAgentID
             case "reviewDiff": openUserReview()
+            case "reviewPR": openUserPRReview()
             default: break
             }
         }

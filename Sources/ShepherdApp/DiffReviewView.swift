@@ -49,7 +49,7 @@ struct DiffReviewPane: View {
                 Text("review")
                     .font(Fonts.mono(12, .semibold))
                     .foregroundStyle(isFocused ? Tokens.textPrimary : Tokens.textSecondary)
-                Text("\(cwdTail) · \(session.reference ?? "working tree vs HEAD")")
+                Text("\(cwdTail) · \(session.reference == "pr" ? "PR changes" : session.reference ?? "working tree vs HEAD")")
                     .font(Fonts.mono(10.5))
                     .foregroundStyle(Tokens.textMetadata)
                     .lineLimit(1)
