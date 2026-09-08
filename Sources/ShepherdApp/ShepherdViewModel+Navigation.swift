@@ -122,11 +122,11 @@ extension ShepherdViewModel {
 
     /// Flattened depth-first forest of spaces by path containment: children
     /// directly follow their parent, top-level spaces keep declaration order.
-    /// Pure, separated for tests.
     static func spaceForest(_ spaces: [Space]) -> [(space: Space, depth: Int)] {
         func normalized(_ path: String) -> String {
             let expanded = (path as NSString).expandingTildeInPath
-            return expanded.hasSuffix("/") ? String(expanded.dropLast()) : expanded
+            let resolved = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
+            return resolved.hasSuffix("/") ? String(resolved.dropLast()) : resolved
         }
         // Normalize each path once: `expandingTildeInPath` inside the O(n²)
         // parent search made this function dominate sidebar renders.
@@ -219,6 +219,14 @@ extension ShepherdViewModel {
     }
 
     // MARK: Selection
+
+    func focusSelectedAgent() {
+        if let remote = selectedRemoteAgent {
+            selectRemoteAgent(hostID: remote.hostID, agentID: remote.agentID)
+        } else if let id = selectedAgentID {
+            selectAgent(id)
+        }
+    }
 
     func selectAgent(_ id: AgentID) {
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }

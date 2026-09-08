@@ -157,10 +157,13 @@ extension ShepherdViewModel {
     }
 
     func closeFocusedPane() {
-        if let remote = selectedRemoteAgent,
-           let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
-           let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
-           let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) {
+        if let remote = selectedRemoteAgent {
+            guard let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+                  let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
+                  let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else {
+                NSSound.beep()
+                return
+            }
             let focus = remoteFocusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil }
                 ?? agent.paneID ?? tab.layout.firstLeaf.id
             guard tab.layout.leaf(withID: focus)?.agentID == nil else {
@@ -304,6 +307,18 @@ extension ShepherdViewModel {
     }
 
     // MARK: Agents
+
+    // Remote selection retains the last local ID for navigation, not commands.
+    // The remote protocol does not support agent rename or deletion.
+    func renameSelectedAgent() {
+        guard selectedRemoteAgent == nil, let id = selectedAgentID else { return }
+        agentRenameTarget = id
+    }
+
+    func deleteSelectedAgent() {
+        guard selectedRemoteAgent == nil, let id = selectedAgentID else { return }
+        deleteAgent(id)
+    }
 
     /// A hand-typed name is final: pi's namer must never overwrite it.
     func renameAgent(_ id: AgentID, to name: String) {
