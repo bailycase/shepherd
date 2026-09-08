@@ -220,6 +220,14 @@ extension ShepherdViewModel {
 
     // MARK: Selection
 
+    func focusSelectedAgent() {
+        if let remote = selectedRemoteAgent {
+            selectRemoteAgent(hostID: remote.hostID, agentID: remote.agentID)
+        } else if let id = selectedAgentID {
+            selectAgent(id)
+        }
+    }
+
     func selectAgent(_ id: AgentID) {
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
         // Ordinary selection returns the workspace to the agent's terminal;
