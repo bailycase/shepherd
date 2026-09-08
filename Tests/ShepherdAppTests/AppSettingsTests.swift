@@ -24,6 +24,10 @@ struct AppSettingsTests {
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.defaultThinking == AppSettings.Defaults.thinking)
         #expect(settings.autoNameAgents)
+        #expect(settings.piThemeExtension)
+        #expect(settings.piPanesExtension)
+        #expect(settings.piReviewExtension)
+        #expect(settings.piSubagentsExtension)
         #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
         #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
         #expect(settings.worktreeGeneratePRDescription)
@@ -38,6 +42,10 @@ struct AppSettingsTests {
         settings.defaultModel = "anthropic/claude-sonnet-4"
         settings.defaultThinking = .high
         settings.autoNameAgents = false
+        settings.piThemeExtension = false
+        settings.piPanesExtension = false
+        settings.piReviewExtension = false
+        settings.piSubagentsExtension = false
         settings.autoUpdatePi = true
         settings.autoUpdateExtensions = true
         settings.shellPath = "/bin/bash"
@@ -50,6 +58,10 @@ struct AppSettingsTests {
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4")
         #expect(reloaded.defaultThinking == .high)
         #expect(reloaded.autoNameAgents == false)
+        #expect(reloaded.piThemeExtension == false)
+        #expect(reloaded.piPanesExtension == false)
+        #expect(reloaded.piReviewExtension == false)
+        #expect(reloaded.piSubagentsExtension == false)
         #expect(reloaded.autoUpdatePi)
         #expect(reloaded.autoUpdateExtensions)
         #expect(reloaded.shellPath == "/bin/bash")
@@ -80,6 +92,10 @@ struct AppSettingsTests {
         settings.terminalFontSize = 20
         settings.defaultModel = "openai/gpt-5"
         settings.autoNameAgents = false
+        settings.piThemeExtension = false
+        settings.piPanesExtension = false
+        settings.piReviewExtension = false
+        settings.piSubagentsExtension = false
         settings.autoUpdatePi = true
         settings.autoUpdateExtensions = true
         settings.worktreeGeneratePRDescription = false
@@ -89,6 +105,10 @@ struct AppSettingsTests {
         #expect(settings.terminalFontSize == AppSettings.Defaults.terminalFontSize)
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.autoNameAgents)
+        #expect(settings.piThemeExtension)
+        #expect(settings.piPanesExtension)
+        #expect(settings.piReviewExtension)
+        #expect(settings.piSubagentsExtension)
         #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
         #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
         #expect(settings.worktreeGeneratePRDescription)

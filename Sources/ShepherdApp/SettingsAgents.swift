@@ -36,20 +36,6 @@ struct AgentSettings: View {
                 .frame(width: 240)
             }
         }
-
-        SettingsGroup(title: "Naming") {
-            SettingsRow(
-                title: "Name Agents Automatically",
-                subtitle: "Pi titles each new agent from its opening prompt on the first turn, using the cheapest model it is authed for. Off keeps the truncated prompt as the name.",
-                isFirst: true
-            ) {
-                Toggle("", isOn: $settings.autoNameAgents)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-        }
-        SettingsNote(text: "a hand-typed rename is always final · naming never blocks pi's first turn")
-            .task { modelOptions = PiConfig.modelIDs() }
+        .task { modelOptions = PiConfig.modelIDs() }
     }
 }
-
