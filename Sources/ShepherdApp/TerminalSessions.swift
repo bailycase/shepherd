@@ -728,7 +728,13 @@ final class TerminalSessionStore: ObservableObject {
                 // no session file yet, so seed one before pi looks for it.
                 PiSessionFile.seedIfMissing(sessionID: agent.id.rawValue, cwd: cwd)
             } else {
-                command = SessionCommand(argv: AppSettings.shared.shellCommand, env: [:])
+                let settings = AppSettings.shared
+                command = try ShellIntegration.command(
+                    shell: settings.shellCommand,
+                    themeExtensionPath: settings.piThemeExtension ? try ThemeExtension.installedPath() : nil,
+                    themePath: settings.piThemeExtension
+                        ? try ShepherdPiTheme.installedPath(for: ThemeManager.shared.current) : nil
+                )
                 // A global shell that was running something when the app
                 // last quit restarts it: type the recorded command into the
                 // fresh shell (visible and cancelable, not a hidden exec).
