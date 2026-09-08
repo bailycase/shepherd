@@ -57,23 +57,24 @@ extension ShepherdViewModel {
 
     /// Flattened depth-first forest of spaces by path containment: children
     /// directly follow their parent, top-level spaces keep declaration order.
-    /// Pure, separated for tests.
     static func spaceForest(_ spaces: [Space]) -> [(space: Space, depth: Int)] {
-        func normalized(_ path: String) -> String {
-            let expanded = (path as NSString).expandingTildeInPath
-            return expanded.hasSuffix("/") ? String(expanded.dropLast()) : expanded
-        }
+        // Resolve once per space so saved paths use the filesystem's actual casing.
+        let paths = Dictionary(uniqueKeysWithValues: spaces.map { space in
+            let expanded = (space.path as NSString).expandingTildeInPath
+            let path = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
+            return (space.id, path.hasSuffix("/") ? String(path.dropLast()) : path)
+        })
         // Parent = the space with the longest path that properly contains
         // this one's (matching on whole path components).
         func parent(of space: Space) -> Space? {
-            let path = normalized(space.path)
+            let path = paths[space.id]!
             return spaces
                 .filter { candidate in
                     guard candidate.id != space.id else { return false }
-                    let candidatePath = normalized(candidate.path)
+                    let candidatePath = paths[candidate.id]!
                     return path.hasPrefix(candidatePath + "/")
                 }
-                .max { normalized($0.path).count < normalized($1.path).count }
+                .max { paths[$0.id]!.count < paths[$1.id]!.count }
         }
         let childrenByParent = Dictionary(grouping: spaces.compactMap { space in
             parent(of: space).map { (parentID: $0.id, space: space) }
