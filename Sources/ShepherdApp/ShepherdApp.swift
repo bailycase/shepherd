@@ -123,15 +123,13 @@ public struct ShepherdMacApp: App {
                 }
             }
             CommandMenu("Agent") {
-                let selected = vm.selectedAgentID
+                let selected = vm.selectedRemoteAgent == nil ? vm.selectedAgentID : nil
                 Button("Focus") {
-                    Task { @MainActor in
-                        if let id = vm.selectedAgentID { vm.selectAgent(id) }
-                    }
+                    Task { @MainActor in vm.focusSelectedAgent() }
                 }
-                .disabled(selected == nil)
+                .disabled(selected == nil && vm.selectedRemoteAgent == nil)
                 Button("Rename…") {
-                    Task { @MainActor in vm.agentRenameTarget = vm.selectedAgentID }
+                    Task { @MainActor in vm.renameSelectedAgent() }
                 }
                 .keyboardShortcut(keys.shortcut(.renameAgent))
                 .disabled(selected == nil)
@@ -148,9 +146,7 @@ public struct ShepherdMacApp: App {
                 .disabled(vm.orderedAgents.isEmpty)
                 Divider()
                 Button("Delete Agent") {
-                    Task { @MainActor in
-                        if let id = vm.selectedAgentID { vm.deleteAgent(id) }
-                    }
+                    Task { @MainActor in vm.deleteSelectedAgent() }
                 }
                 .keyboardShortcut(keys.shortcut(.deleteAgent))
                 .disabled(selected == nil)
