@@ -34,6 +34,10 @@ final class AppSettings: ObservableObject {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let autoNameAgents = "shepherd.agent.autoName"
+        static let piThemeExtension = "shepherd.pi.extension.theme"
+        static let piPanesExtension = "shepherd.pi.extension.panes"
+        static let piReviewExtension = "shepherd.pi.extension.review"
+        static let piSubagentsExtension = "shepherd.pi.extension.subagents"
         static let shellPath = "shepherd.pane.shell"
         static let uiDensity = "shepherd.ui.density"
         static let uiTextScale = "shepherd.ui.textScale"
@@ -53,6 +57,7 @@ final class AppSettings: ObservableObject {
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, shellPath,
+            piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension,
             uiDensity, uiTextScale, sidebarWidth,
             remoteListenerEnabled, remoteListenerPort,
             autoUpdatePi, autoUpdateExtensions,
@@ -100,6 +105,22 @@ final class AppSettings: ObservableObject {
     /// prompt) and the namer extension is never passed to pi.
     @Published var autoNameAgents: Bool {
         didSet { store.set(autoNameAgents, forKey: Key.autoNameAgents) }
+    }
+
+    @Published var piThemeExtension: Bool {
+        didSet { store.set(piThemeExtension, forKey: Key.piThemeExtension) }
+    }
+
+    @Published var piPanesExtension: Bool {
+        didSet { store.set(piPanesExtension, forKey: Key.piPanesExtension) }
+    }
+
+    @Published var piReviewExtension: Bool {
+        didSet { store.set(piReviewExtension, forKey: Key.piReviewExtension) }
+    }
+
+    @Published var piSubagentsExtension: Bool {
+        didSet { store.set(piSubagentsExtension, forKey: Key.piSubagentsExtension) }
     }
 
     @Published var autoUpdatePi: Bool {
@@ -202,6 +223,10 @@ final class AppSettings: ObservableObject {
         defaultThinking = store.string(forKey: Key.defaultThinking)
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
+        piThemeExtension = store.object(forKey: Key.piThemeExtension) as? Bool ?? true
+        piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
+        piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
+        piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
         autoUpdatePi = store.object(forKey: Key.autoUpdatePi) as? Bool ?? Defaults.autoUpdatePi
         // The former combined toggle ran both commands. Preserve that intent
         // when the new extension-specific preference has not been written.
@@ -277,6 +302,10 @@ final class AppSettings: ObservableObject {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
+        piThemeExtension = true
+        piPanesExtension = true
+        piReviewExtension = true
+        piSubagentsExtension = true
         autoUpdatePi = Defaults.autoUpdatePi
         autoUpdateExtensions = Defaults.autoUpdateExtensions
         shellPath = Defaults.shellPath

@@ -872,6 +872,7 @@ final class TerminalSessionStore: ObservableObject {
     }
 
     private static func agentCommand(for agent: Agent, cwd: String, initialPrompt: String?, isAutomation: Bool = false) throws -> SessionCommand {
+        let settings = AppSettings.shared
         let theme = ThemeManager.shared.current
         // Pass model/thinking only into a session pi has never written to.
         // Once pi owns the session it persists both (model_change /
@@ -886,20 +887,20 @@ final class TerminalSessionStore: ObservableObject {
             piSessionID: agent.effectivePiSessionID,
             socketPath: ShepherdPaths.socketURL().path,
             extensionPath: try StatusExtension.installedPath(),
-            themeExtensionPath: try ThemeExtension.installedPath(),
-            panesExtensionPath: try PanesExtension.installedPath(),
-            reviewExtensionPath: try ReviewExtension.installedPath(),
-            subagentsExtensionPath: try SubagentsExtension.installedPath(),
+            themeExtensionPath: settings.piThemeExtension ? try ThemeExtension.installedPath() : nil,
+            panesExtensionPath: settings.piPanesExtension ? try PanesExtension.installedPath() : nil,
+            reviewExtensionPath: settings.piReviewExtension ? try ReviewExtension.installedPath() : nil,
+            subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
             // The namer loads whenever auto-naming is on: besides titling a
             // provisional agent from its opening prompt, it retitles on
             // /resume (pi session names are free; unnamed resumed sessions
             // cost one cheap-model call).
-            namerExtensionPath: AppSettings.shared.autoNameAgents
+            namerExtensionPath: settings.autoNameAgents
                 ? try NamerExtension.installedPath()
                 : nil,
-            needsName: Self.wantsNamer(for: agent, autoName: AppSettings.shared.autoNameAgents),
+            needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
             isAutomation: isAutomation,
-            piThemePath: try ShepherdPiTheme.installedPath(for: theme),
+            piThemePath: settings.piThemeExtension ? try ShepherdPiTheme.installedPath(for: theme) : nil,
             piThemeName: ShepherdPiTheme.name,
             model: sessionIsFresh ? agent.model : nil,
             thinking: sessionIsFresh ? agent.thinkingLevel : nil,

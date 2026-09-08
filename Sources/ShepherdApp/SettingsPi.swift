@@ -5,6 +5,53 @@ struct PiSettings: View {
     @ObservedObject private var updates = PiUpdateManager.shared
 
     var body: some View {
+        SettingsGroup(title: "Bundled Pi Extensions") {
+            SettingsRow(
+                title: "Name Agents Automatically",
+                subtitle: "Pi titles each new agent from its opening prompt on the first turn, using the cheapest model it is authed for. Off keeps the truncated prompt as the name.",
+                isFirst: true
+            ) {
+                Toggle("Name agents automatically", isOn: $settings.autoNameAgents)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            SettingsRow(
+                title: "sync pi theme",
+                subtitle: "Use Shepherd's palette in pi and follow theme changes. Off uses pi's own theme."
+            ) {
+                Toggle("sync pi theme", isOn: $settings.piThemeExtension)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            SettingsRow(
+                title: "panes and agent tools",
+                subtitle: "Let agents control panes, message or spawn agents, manage automations, and send notifications. Off removes these tools, including notifications from automation runs."
+            ) {
+                Toggle("panes and agent tools", isOn: $settings.piPanesExtension)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            SettingsRow(
+                title: "diff review tool",
+                subtitle: "Let agents open a native diff review with review_diff."
+            ) {
+                Toggle("diff review tool", isOn: $settings.piReviewExtension)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            SettingsRow(
+                title: "subagent display",
+                subtitle: "Show pi subagent runs in the sidebar and open their inspector. Off does not stop subagents from running."
+            ) {
+                Toggle("subagent display", isOn: $settings.piSubagentsExtension)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+        }
+        SettingsNote(text: "applies to agents launched on this Mac, including automations and remotely created agents · running agents keep their extensions until restarted; quit and reopen Shepherd to apply to all · user-installed pi extensions are unchanged")
+        SettingsNote(text: "status and session tracking are always on so lifecycle updates and /new or /resume restoration keep working")
+        SettingsNote(text: "a hand-typed rename is always final · naming never blocks pi's first turn")
+
         SettingsGroup(title: "Automatic Updates") {
             SettingsRow(
                 title: "Update Pi",
