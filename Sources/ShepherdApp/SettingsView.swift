@@ -9,9 +9,18 @@ import ShepherdProtocol
 /// app. Chrome follows the same rules as the main window: theme tokens, no
 /// saturated fills, mono metadata, hairline separators.
 struct SettingsView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
-    @State private var section: SettingsSection = .appearance
+    @State private var searchText = ""
+
+    private var matchingSections: [SettingsSection] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return Array(SettingsSection.allCases) }
+        return SettingsSection.allCases.filter { section in
+            section.title.localizedCaseInsensitiveContains(query)
+                || section.items.contains { $0.localizedCaseInsensitiveContains(query) }
+        }
+    }
 
     var body: some View {
         // Same shell as the main window: the sidebar material runs
@@ -34,13 +43,18 @@ struct SettingsView: View {
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
         .id(themes.current.id)
+        .onChange(of: searchText) {
+            if let first = matchingSections.first, !matchingSections.contains(vm.settingsSection) {
+                vm.settingsSection = first
+            }
+        }
     }
 
     /// Names the pane the user is looking at. The window has no system title,
     /// so this is the only label the window carries.
     private var header: some View {
         HStack(spacing: 0) {
-            Text(section.title.lowercased())
+            Text(vm.settingsSection.title.lowercased())
                 .font(Fonts.mono(12.5, .semibold))
                 .foregroundStyle(Tokens.textPrimary)
             Spacer(minLength: 0)
@@ -55,25 +69,73 @@ struct SettingsView: View {
 
     private var categoryList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Traffic-light strip: draggable, and the reason the section
-            // heading starts below 38pt rather than at the window edge.
+            // Traffic-light strip: draggable, nothing else lives up here.
             Color.clear
                 .frame(height: Metrics.trafficLightHeight)
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
+
+            // Everything below shares one 14pt content edge: the back
+            // chevron, the search field's icon, the SETTINGS heading, and
+            // each category row's icon all start at the same x.
+            Button {
+                vm.showSettings = false
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 10, weight: .medium))
+                    Text("back to app")
+                        .font(Fonts.mono(11.5))
+                }
+                .foregroundStyle(Tokens.textSecondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 4)
+
+            SettingsSearchField(text: $searchText)
+                .padding(.horizontal, 6)
+                .padding(.top, 10)
+
             Text("SETTINGS")
                 .font(Fonts.mono(10.5, .semibold))
                 .tracking(0.74)
                 .foregroundStyle(Tokens.textTertiary)
-                .padding(EdgeInsets(top: 2, leading: 14, bottom: 6, trailing: 14))
-            VStack(spacing: 1) {
-                ForEach(SettingsSection.allCases) { item in
-                    SettingsCategoryRow(section: item, selected: section == item) {
-                        section = item
+                .padding(EdgeInsets(top: 16, leading: 14, bottom: 6, trailing: 14))
+
+            VStack(alignment: .leading, spacing: 1) {
+                ForEach(matchingSections) { item in
+                    SettingsCategoryRow(section: item, selected: vm.settingsSection == item) {
+                        vm.settingsSection = item
+                    }
+                    if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        // Matching rows within the section, indented to the
+                        // category title's text column and clickable.
+                        ForEach(item.sidebarItems(for: searchText), id: \.self) { child in
+                            Button {
+                                vm.settingsSection = item
+                            } label: {
+                                Text(child.lowercased())
+                                    .font(Fonts.mono(10.5))
+                                    .foregroundStyle(Tokens.textTertiary)
+                                    .padding(.leading, 30)
+                                    .padding(.vertical, 3)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
             .padding(.horizontal, 6)
+            if matchingSections.isEmpty {
+                Text("no matching settings")
+                    .font(Fonts.mono(10.5))
+                    .foregroundStyle(Tokens.textTertiary)
+                    .padding(EdgeInsets(top: 4, leading: 14, bottom: 0, trailing: 14))
+            }
             Spacer(minLength: 0)
         }
         .frame(width: Metrics.settingsSidebarWidth)
@@ -84,10 +146,12 @@ struct SettingsView: View {
     private var detail: some View {
         ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 18) {
-                switch section {
+                switch vm.settingsSection {
                 case .appearance: AppearanceSettings(vm: vm)
                 case .terminal: TerminalSettings(vm: vm)
                 case .agents: AgentSettings()
+                case .pi: PiSettings()
+                case .worktrees: WorktreeSettings()
                 case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
                 case .keyboard: KeyboardSettings(vm: vm)
                 case .advanced: AdvancedSettings(vm: vm)
@@ -105,8 +169,46 @@ struct SettingsView: View {
     }
 }
 
+private struct SettingsSearchField: View {
+    @Binding var text: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundStyle(Tokens.textTertiary)
+            TextField("search settings…", text: $text)
+                .textFieldStyle(.plain)
+                .font(Fonts.mono(11.5))
+                .focused($focused)
+                // Settings just opened (this view mounts with the surface):
+                // typing should filter immediately, no click first. Delayed a
+                // beat — focusing while SwiftUI is still installing the
+                // overlay's key-view loop silently loses the request.
+                .task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    focused = true
+                }
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Tokens.textTertiary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 28)
+        .background(Tokens.rowActiveHeader)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Tokens.chipBorder, lineWidth: 1))
+    }
+}
+
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, remote, keyboard, advanced
+    case appearance, terminal, agents, worktrees, pi, remote, keyboard, advanced
 
     var id: String { rawValue }
 
@@ -115,10 +217,32 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "Appearance"
         case .terminal: return "Terminal"
         case .agents: return "Agents"
+        case .worktrees: return "Worktrees"
+        case .pi: return "Pi"
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
         }
+    }
+
+    var items: [String] {
+        switch self {
+        case .appearance: return ["Theme", "UI Density", "UI Text Scale", "Sidebar Width"]
+        case .terminal: return ["Terminal Font", "Font Size", "Shell"]
+        case .agents: return ["Default Model", "Default Thinking Level", "Auto-name Agents"]
+        case .worktrees: return ["Base Branch", "Fetch Before Creating", "Commit Remaining Work", "Delete Local Branch", "Merge PR Automatically"]
+        case .pi: return ["Update Pi", "Update Extensions", "Installed Version", "Status", "Check Now"]
+        case .remote: return ["Hosts", "Serve This Mac"]
+        case .keyboard: return ["New Agent", "Settings", "Pane Shortcuts"]
+        case .advanced: return ["Files", "Reset Settings", "Updates", "About"]
+        }
+    }
+
+    func sidebarItems(for query: String) -> [String] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.localizedCaseInsensitiveContains(query)
+            ? items
+            : items.filter { $0.localizedCaseInsensitiveContains(query) }
     }
 
     var symbol: String {
@@ -126,6 +250,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "paintpalette"
         case .terminal: return "terminal"
         case .agents: return "person.2"
+        case .worktrees: return "arrow.triangle.branch"
+        case .pi: return "arrow.triangle.2.circlepath"
         case .remote: return "antenna.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"

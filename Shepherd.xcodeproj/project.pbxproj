@@ -13,7 +13,22 @@
 		5E000000000000000000B202 /* ShepherdCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5E000000000000000000C002 /* ShepherdCore */; };
 		5E000000000000000000B203 /* ShepherdProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 5E000000000000000000C003 /* ShepherdProtocol */; };
 		5E000000000000000000B204 /* TerminalSurfaceKit in Frameworks */ = {isa = PBXBuildFile; productRef = 5E000000000000000000C004 /* TerminalSurfaceKit */; };
+		5E000000000000000000B205 /* shepherd-cli in Embed CLI */ = {isa = PBXBuildFile; productRef = 5E000000000000000000C005 /* shepherd-cli */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		5E000000000000000000E004 /* Embed CLI */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 6;
+			files = (
+				5E000000000000000000B205 /* shepherd-cli in Embed CLI */,
+			);
+			name = "Embed CLI";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		5E000000000000000000A001 /* ShepherdLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShepherdLauncher.swift; sourceTree = "<group>"; };
@@ -73,6 +88,7 @@
 				5E000000000000000000E001 /* Sources */,
 				5E000000000000000000E002 /* Frameworks */,
 				5E000000000000000000E003 /* Resources */,
+				5E000000000000000000E004 /* Embed CLI */,
 			);
 			buildRules = (
 			);
@@ -84,6 +100,7 @@
 				5E000000000000000000C002 /* ShepherdCore */,
 				5E000000000000000000C003 /* ShepherdProtocol */,
 				5E000000000000000000C004 /* TerminalSurfaceKit */,
+				5E000000000000000000C005 /* shepherd-cli */,
 			);
 			productName = Shepherd;
 			productReference = 5E000000000000000000A201 /* Shepherd.app */;
@@ -315,6 +332,10 @@
 		5E000000000000000000C004 /* TerminalSurfaceKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = TerminalSurfaceKit;
+		};
+		5E000000000000000000C005 /* shepherd-cli */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = "shepherd-cli";
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

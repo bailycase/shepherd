@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: Appearance
 
 struct AppearanceSettings: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
     @ObservedObject private var settings = AppSettings.shared
     @Environment(\.colorScheme) private var systemColorScheme

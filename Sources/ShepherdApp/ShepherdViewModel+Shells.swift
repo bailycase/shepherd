@@ -23,15 +23,20 @@ extension ShepherdViewModel {
     }
 
     /// The `+` in the SHELLS header: a new shell in the home directory,
-    /// selected immediately. Named after its cwd until renamed.
-    func addShell() {
+    /// selected immediately. Named after its cwd until renamed. `running`
+    /// rides the restore-command path: the command is typed into the fresh
+    /// shell — visible and cancelable, not a hidden exec (the worktree setup
+    /// wizard uses this for `gh auth login`).
+    func addShell(named name: String? = nil, running command: String? = nil) {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let order = (shellTabs.map(\.order).max() ?? -1) + 1
         let tab = Tab(
             spaceID: nil,
             order: order,
             layout: .leaf(LeafPane(cwd: home)),
-            name: "~"
+            name: name,
+            nameIsFinal: name != nil,
+            restoreCommand: command
         )
         state.tabs.append(tab)
         sessions.stateDidChange(state)
@@ -45,6 +50,7 @@ extension ShepherdViewModel {
         guard !trimmed.isEmpty,
               let index = state.tabs.firstIndex(where: { $0.id == id && $0.isShell }) else { return }
         state.tabs[index].name = trimmed
+        state.tabs[index].nameIsFinal = true
         sessions.stateDidChange(state)
         let tab = state.tabs[index]
         enqueuePersistence("rename shell") { try await $0.updateTab(tab) }
@@ -97,6 +103,9 @@ extension ShepherdViewModel {
             for (tabID, sessionID) in targets {
                 if let name = await self.server.foregroundProcessName(sessionID: sessionID) {
                     next[tabID] = name
+                }
+                if let cwd = await self.server.foregroundWorkingDirectory(sessionID: sessionID) {
+                    await self.updateShellWorkingDirectory(tabID: tabID, cwd: cwd)
                 }
                 await self.recordShellRestoreCommand(tabID: tabID, sessionID: sessionID)
             }
@@ -177,6 +186,7 @@ extension ShepherdViewModel {
         state.agents.removeAll { doomedAgents.contains($0.id) }
         state.tabs.removeAll { doomedTabIDs.contains($0.id) }
         for agentID in doomedAgents {
+            cancelReviews(for: agentID)
             childRuns.clear(agent: agentID)
             selectionHistory.removeAll { $0 == agentID }
             collapsedChildren.remove(agentID)
@@ -198,11 +208,37 @@ extension ShepherdViewModel {
         enqueuePersistence("space deletion") { try await $0.deleteSpace(id) }
     }
 
-    /// Display label: explicit name, else the first pane's cwd abbreviated.
+    /// Update the shell's tracked cwd. Automatically-derived names are kept
+    /// in sync; explicit renames (nameIsFinal equivalent) are preserved.
+    private func updateShellWorkingDirectory(tabID: TabID, cwd: String) async {
+        guard let index = state.tabs.firstIndex(where: { $0.id == tabID && $0.isShell }) else { return }
+        let tab = state.tabs[index]
+        let oldCwd = tab.layout.firstLeaf.cwd
+        guard oldCwd != cwd else { return }
+        state.tabs[index].layout = tab.layout.updatingLeaf(tab.layout.firstLeaf.id) { $0.cwd = cwd }
+        // nil is the automatic-title marker. Keep explicit user renames intact;
+        // also migrate the old default "~" marker to automatic behavior.
+        if !tab.nameIsFinal { state.tabs[index].name = nil }
+        let updated = state.tabs[index]
+        sessions.stateDidChange(state)
+        enqueuePersistence("shell cwd") { try await $0.updateTab(updated) }
+    }
+
+    /// Display label: explicit name, else the cwd with at most two trailing
+    /// directory components (for example `~/Projects/shepherd`).
     static func shellLabel(_ tab: Tab) -> String {
         if let name = tab.name, !name.isEmpty { return name }
-        let cwd = tab.layout.firstLeaf.cwd
+        return shellLabel(for: tab.layout.firstLeaf.cwd)
+    }
+
+    private static func shellLabel(for cwd: String) -> String {
+        let expanded = (cwd as NSString).expandingTildeInPath
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return cwd.hasPrefix(home) ? "~" + cwd.dropFirst(home.count) : cwd
+        let display = expanded == home ? "~" : (expanded.hasPrefix(home + "/") ? "~" + expanded.dropFirst(home.count) : expanded)
+        if display == "~" { return display }
+        let prefix = display.hasPrefix("~/") ? "~/" : (display.hasPrefix("/") ? "/" : "")
+        let body = display.dropFirst(prefix.count)
+        let parts = body.split(separator: "/")
+        return prefix + parts.suffix(2).joined(separator: "/")
     }
 }

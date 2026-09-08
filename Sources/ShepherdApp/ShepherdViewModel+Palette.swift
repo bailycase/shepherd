@@ -52,12 +52,26 @@ extension ShepherdViewModel {
             ))
         }
         if let agent = selectedAgent {
+            if selectedRemoteAgent == nil {
+                items.append(PaletteItem(
+                    id: "action.rename",
+                    kind: .action("rename"),
+                    section: .commands,
+                    title: "rename \(agent.name)",
+                    shortcut: keys.display(.renameAgent)
+                ))
+            }
             items.append(PaletteItem(
-                id: "action.rename",
-                kind: .action("rename"),
+                id: "action.reviewDiff",
+                kind: .action("reviewDiff"),
                 section: .commands,
-                title: "rename \(agent.name)",
-                shortcut: keys.display(.renameAgent)
+                title: "review diff"
+            ))
+            items.append(PaletteItem(
+                id: "action.reviewPR",
+                kind: .action("reviewPR"),
+                section: .commands,
+                title: "review pr changes"
             ))
         }
         // Settings is omitted: opening a Window scene needs the SwiftUI
@@ -180,7 +194,9 @@ extension ShepherdViewModel {
             case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
             case "newShell": addShell()
-            case "rename": agentRenameTarget = selectedAgentID
+            case "rename": renameSelectedAgent()
+            case "reviewDiff": openUserReview()
+            case "reviewPR": openUserPRReview()
             default: break
             }
         }

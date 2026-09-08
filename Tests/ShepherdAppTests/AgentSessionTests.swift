@@ -40,6 +40,7 @@ struct AgentSessionTests {
             extensionPath: "/tmp/status.ts",
             themeExtensionPath: "/tmp/theme.ts",
             panesExtensionPath: "/tmp/panes.ts",
+            reviewExtensionPath: "/tmp/review.ts",
             subagentsExtensionPath: "/tmp/subagents.ts",
             piThemePath: "/tmp/theme.json",
             piThemeName: "shepherd",

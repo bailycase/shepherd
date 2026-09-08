@@ -48,6 +48,8 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
     /// Display name for global shells ("~/src", "logs"). Space tabs derive
     /// their identity from agents and never need one.
     public var name: String?
+    /// True when a shell name was explicitly assigned by the user.
+    public var nameIsFinal: Bool
     /// The command a shell was running when last observed ("pi", "htop"),
     /// re-typed into the fresh shell on the first spawn after relaunch —
     /// processes die with the app, so this is how a shell "restores".
@@ -61,6 +63,7 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
         layout: PaneNode,
         inspectorFor: AgentID? = nil,
         name: String? = nil,
+        nameIsFinal: Bool = false,
         restoreCommand: String? = nil
     ) {
         self.id = id
@@ -69,6 +72,7 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
         self.layout = layout
         self.inspectorFor = inspectorFor
         self.name = name
+        self.nameIsFinal = nameIsFinal
         self.restoreCommand = restoreCommand
     }
 
@@ -76,7 +80,7 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
     public var isShell: Bool { spaceID == nil }
 
     private enum CodingKeys: String, CodingKey {
-        case id, spaceID, order, layout, inspectorFor, name, restoreCommand
+        case id, spaceID, order, layout, inspectorFor, name, nameIsFinal, restoreCommand
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,6 +94,9 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
         // carried a (now meaningless) title on every space tab; dropping it
         // there keeps those files converging on the next write.
         name = spaceID == nil ? try c.decodeIfPresent(String.self, forKey: .name) : nil
+        // Older shell names were user-assigned; preserve them rather than
+        // guessing whether "~" was automatic or explicit.
+        nameIsFinal = spaceID == nil ? (try c.decodeIfPresent(Bool.self, forKey: .nameIsFinal) ?? true) : false
         restoreCommand = spaceID == nil ? try c.decodeIfPresent(String.self, forKey: .restoreCommand) : nil
     }
 
@@ -102,6 +109,7 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(inspectorFor, forKey: .inspectorFor)
         if isShell {
             try c.encodeIfPresent(name, forKey: .name)
+            try c.encode(nameIsFinal, forKey: .nameIsFinal)
             try c.encodeIfPresent(restoreCommand, forKey: .restoreCommand)
         }
     }
@@ -127,6 +135,18 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// extension reports the change so relaunching reopens what the user was
     /// last working in rather than the original conversation.
     public var piSessionID: String?
+    /// Set when the agent was created on a git worktree Shepherd made for it
+    /// (the branch name, e.g. "worktree/calm-stone-3831"). Display-only
+    /// identity — the sidebar renders such agents as worktrees of their
+    /// space. Decodes nil from older state files.
+    public var worktreeBranch: String?
+    /// The base the worktree branched from ("origin/main", "feat/x") —
+    /// recorded at creation so Finalize can target the PR at the branch the
+    /// work actually started from. Decodes nil from older state files.
+    public var worktreeBase: String?
+    /// The actual checkout path. Shepherd-created worktrees can derive it
+    /// from repo + branch; imported worktrees may use any directory name.
+    public var worktreePath: String?
 
     public init(
         id: AgentID = AgentID(),
@@ -138,7 +158,10 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         model: String? = nil,
         thinkingLevel: ThinkingLevel? = nil,
         nameIsFinal: Bool = false,
-        piSessionID: String? = nil
+        piSessionID: String? = nil,
+        worktreeBranch: String? = nil,
+        worktreeBase: String? = nil,
+        worktreePath: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -150,6 +173,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.thinkingLevel = thinkingLevel
         self.nameIsFinal = nameIsFinal
         self.piSessionID = piSessionID
+        self.worktreeBranch = worktreeBranch
+        self.worktreeBase = worktreeBase
+        self.worktreePath = worktreePath
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -160,7 +186,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath
     }
 
     public init(from decoder: Decoder) throws {
@@ -179,6 +205,10 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         // Absent before session tracking; those agents are still in the
         // session named after their own id.
         piSessionID = try c.decodeIfPresent(String.self, forKey: .piSessionID)
+        // Absent before worktree agents existed.
+        worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
+        worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
+        worktreePath = try c.decodeIfPresent(String.self, forKey: .worktreePath)
     }
 }
 

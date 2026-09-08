@@ -59,7 +59,9 @@ struct PTYSessionTests {
                 cwd: "/",
                 command: [
                     "/bin/sh", "-c",
-                    "(trap '' HUP TERM; sleep 100) & child=$!; echo $child > \(pidURL.path); exit 0",
+                    // Ignore HUP/TERM *before* forking: the disposition is inherited,
+                    // so the kernel's leader-exit SIGHUP cannot race the trap.
+                    "trap '' HUP TERM; sleep 100 & child=$!; echo $child > \(pidURL.path); exit 0",
                 ]
             ),
             queue: queue

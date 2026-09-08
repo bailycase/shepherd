@@ -276,10 +276,9 @@ struct StateManagementTests {
         h.stateChanged.withValue { $0.removeAll() }
 
         try await h.server.renameAgent(agentID, to: "  final title  \n")
-        try await waitUntil {
-            h.server.state.agents.first?.name == "final title"
-                && h.server.state.agents.first?.nameIsFinal == true
-        }
+        // Wait on the main-queue push, not just server state: the callback
+        // hops queues and lands after the state mutation.
+        try await waitUntil { h.stateChanged.current.count == 1 }
 
         let committed = h.server.state
         #expect(committed.agents.first?.name == "final title")
@@ -406,6 +405,43 @@ struct StateManagementTests {
         defer { second.stop() }
         #expect(second.state.automations.first?.agentID == nil)
         #expect(second.state.automations.first?.enabled == true)
+    }
+
+    @Test func startPurgesReviewLeavesButKeepsALoneReviewRootUsable() async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let stateURL = dir.appendingPathComponent("state.json")
+        let socketPath = dir.appendingPathComponent("d.sock").path
+
+        let space = Space(name: "repo", path: "/tmp/repo")
+        let review = LeafPane(cwd: space.path, isReview: true)
+        let split = PaneNode.split(
+            axis: .vertical,
+            ratio: 0.5,
+            first: .leaf(review),
+            second: .leaf(LeafPane(cwd: space.path))
+        )
+        let splitTab = Tab(spaceID: space.id, order: 0, layout: split)
+        let loneTab = Tab(
+            spaceID: space.id,
+            order: 1,
+            layout: .leaf(LeafPane(cwd: space.path, isReview: true))
+        )
+
+        let first = SessionServer(socketPath: socketPath, stateURL: stateURL)
+        try first.start()
+        try await first.putState(ShepherdState(spaces: [space], tabs: [splitTab, loneTab], agents: []))
+        first.stop()
+
+        let second = SessionServer(socketPath: socketPath, stateURL: stateURL)
+        try second.start()
+        defer { second.stop() }
+
+        let final = second.state
+        #expect(final.tabs[0].layout.leaves.count == 1)
+        #expect(final.tabs[0].layout.leaves.first?.isReview == nil)
+        #expect(final.tabs[1].layout.leaves.count == 1)
+        #expect(final.tabs[1].layout.leaves.first?.isReview == nil)
     }
 
     @Test func killSessionTerminatesAndIsIdempotent() async throws {

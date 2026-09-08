@@ -253,18 +253,38 @@ rows via `shepherd-subagents.ts`, the read-mostly inspector via `shepherd-inspec
 runs are ephemeral display state, never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps
-every local layout in the view tree; selection only changes which one is visible
+every *mounted* local layout in the view tree — agent layouts, global shells, and inspector
+tabs always; a space's shell workspace joins on first visit (mounting spawns its login shell
+and surface, so a large space tree must not pay that per space at launch) and then never
+leaves; selection only changes which one is visible
 (`opacity`, hit-testing, and `isRendering` — ghostty occlusion stops hidden panes' render
 loops). Three things silently reintroduce the full-repaint lag if touched: reordering
 `mountedTabs` (ForEach identity), using a conditional-branch `.hidden()` instead of
 `opacity(0)` (ConditionalContent destroys the subtree), and applying `setRenderingActive`
-fire-and-forget (the model retries; see TerminalSurfaceKit/NOTES.md).
+fire-and-forget (the model retries; see TerminalSurfaceKit/NOTES.md). The one deliberate
+unmount is cold parking: a layout hidden for 30s and outside the four most recently shown
+(`WorkspaceSelection.coldParkCandidates`) drops its Ghostty surfaces via
+`TerminalSessionStore.parkPane` while its processes and host-side screens keep running;
+reselecting it remounts from the server snapshot. Measured in docs/benchmarks.
 
 **Sessions/views separation.** Closing panes detaches views only; a process exiting on its own
 closes its pane (and retires its agent). Delete Agent is the explicit lifecycle action that
 terminates an agent and its auxiliary processes while the app runs; quitting the app terminates
-everything. Shepherd does not manage Git worktrees or branches — agents run in their space's
-checkout and nothing in the app mutates repository state.
+everything. Shepherd does not manage Git worktrees or branches, with one explicit exception:
+`git worktree add -b` (GitWorktree.swift) runs when the user asks for an isolated agent — via
+the New Agent sheet's worktree option, or the space context menu's New Worktree… sheet
+(generated branch, agent named after it, opened immediately — branched from the base resolved
+per Settings ▸ Worktrees: origin/<default> after a fetch by default, `--no-track`, visible and
+overridable in the sheet, recorded on the agent as `worktreeBase`; see
+docs/worktree-base-proposal.md). Its confirmed counterparts are
+Delete Worktree Agent (warns about unreconciled work; may remove the worktree and its branch)
+and Finalize Worktree (WorktreeFinalize.swift: commit → push → gh PR → optional opt-in merge
+(auto-merge first, best-effort, never blocks cleanup) → clean-gate → remove worktree → delete
+local branch; every step gates the next, destruction only after the clean
+gate, and the remote branch is never deleted — doing so closes an open PR). The finalize
+sheet's setup wizard probes prerequisites (git, identity, origin, gh, gh auth) through a
+login shell and fixes them in-app. No other path mutates repositories or removes worktrees. Nothing else in the app mutates repository state, and Shepherd
+never removes or prunes worktrees — cleanup is the user's.
 
 **Agent names are generated, and settle once.** A new agent wears its opening prompt (truncated
 by `ShepherdViewModel.provisionalName`) with `nameIsFinal == false`. Only such agents launch pi
@@ -288,8 +308,41 @@ running, not unit tests. Everything must pass via plain `swift test`.
 ## Git
 
 Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`), atomic — one logical
-change per commit. Feature branches off `master` (`feat/...`), merged with `--no-ff`. No
-AI/attribution lines in commit messages.
+change per commit. `nightly` is the integration branch: feature branches (`feat/...`) come
+off it and merge back via PR with a merge commit (`--no-ff`); every push to `nightly` also
+ships a nightly build. No AI/attribution lines in commit messages.
+
+## Releases
+
+One pipeline (`.github/workflows/release.yml`) serves four Sparkle update channels. The
+channel is chosen by **tag name** — releasing is nothing more than tagging `nightly`'s
+tested tip and pushing the tag:
+
+| Channel | Cut by | Feed (gh-pages) | Contains |
+| --- | --- | --- | --- |
+| stable | tag `vX.Y.Z` | `appcast.xml` | stable only |
+| rc | tag `vX.Y.Z-rc.N` | `appcast-rc.xml` | rc + stable |
+| beta | tag `vX.Y.Z-beta.N` | `appcast-beta.xml` | beta + rc + stable |
+| nightly | push to `nightly` | `appcast-nightly.xml` | nightlies (isolated) |
+
+Rules that keep this reliable:
+
+- **Promotion is re-tagging the same commit**: `v0.2.0-beta.1` → `v0.2.0-rc.1` → `v0.2.0`
+  as confidence grows. Never rebuild for a promotion; the commit is the release.
+- **Pre-release feeds are supersets** (stable ⊂ rc ⊂ beta) so riding beta/rc never strands a
+  user behind a stable hotfix. Sparkle picks the newest *build number*
+  (`CURRENT_PROJECT_VERSION` = the workflow run number, monotonic) in the chosen feed — so a
+  hotfix built after an rc supersedes it for rc riders. Cut a fresh rc after hotfixes.
+- **Tags are immutable**: never delete, move, or reuse a version tag. Botched release = new
+  tag with the next number.
+- The client (`AppUpdater.swift`, `UpdateChannel`) defaults each install to its **birth
+  channel** parsed from the marketing version (`-beta.` / `-rc.` / `-nightly.`); a user's
+  explicit channel choice in Settings ▸ Advanced is never overwritten.
+- Channel plumbing changes touch `release.yml`, `UpdateChannel`/`ChannelDelegate`, the
+  Settings ▸ Advanced picker, and `UpdateChannelTests` together — feed names are a contract
+  between CI and the app.
+- Secrets (Sparkle EdDSA key, Developer ID, notary) already live in the repo; the workflow
+  degrades to ad-hoc signing without them. Appcasts publish to the `gh-pages` branch.
 
 ## Gotchas
 

@@ -5,7 +5,7 @@ import ShepherdProtocol
 // MARK: Advanced
 
 struct AdvancedSettings: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @ObservedObject private var updater = AppUpdater.shared
     @State private var confirmingReset = false
 
@@ -56,13 +56,16 @@ struct AdvancedSettings: View {
                     .controlSize(.small)
                 }
                 SettingsRow(
-                    title: "Nightly Builds",
-                    subtitle: "Bleeding-edge updates from every push, less tested than releases."
+                    title: "Update Channel",
+                    subtitle: "Stable: tagged releases only. Release Candidate and Beta also receive newer stable builds — riding a pre-release channel never strands you behind a hotfix. Nightly: every push, least tested."
                 ) {
-                    Toggle("", isOn: $updater.nightly)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
+                    Picker("", selection: $updater.channel) {
+                        ForEach(UpdateChannel.allCases) { channel in
+                            Text(channel.label).tag(channel)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 180)
                 }
                 SettingsRow(title: "Check Now") {
                     Button("Check for Updates…") { updater.checkForUpdates() }
@@ -78,13 +81,18 @@ struct AdvancedSettings: View {
             }
         }
         SettingsNote(text: "sessions live and die with the app · quitting Shepherd stops every agent")
-            .alert("Reset Settings to Defaults?", isPresented: $confirmingReset) {
-                Button("Reset", role: .destructive) {
-                    vm.resetSettings()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Your spaces, agents, and pane layouts are not affected.")
+            .sheet(isPresented: $confirmingReset) {
+                DialogSheet(
+                    title: "Reset Settings to Defaults?",
+                    subtitle: "Your spaces, agents, and pane layouts are not affected.",
+                    actions: [
+                        DialogAction("Cancel", kind: .cancel) { confirmingReset = false },
+                        DialogAction("Reset", kind: .destructive) {
+                            confirmingReset = false
+                            vm.resetSettings()
+                        },
+                    ]
+                )
             }
     }
 }

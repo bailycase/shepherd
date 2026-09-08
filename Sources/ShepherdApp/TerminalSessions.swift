@@ -66,7 +66,7 @@ final class TerminalSessionStore: ObservableObject {
             self.paneID = paneID
             self.terminal = AppTerminalModel(
                 fontSize: AppSettings.shared.terminalFontSize,
-                fontFamily: AppSettings.shared.terminalFontFamily,
+                fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
                 terminal: ThemeManager.shared.current.terminal,
                 // Rebound app shortcuts must fall through a focused terminal
                 // exactly like the built-in ones.
@@ -310,7 +310,7 @@ final class TerminalSessionStore: ObservableObject {
         for session in sessions.values {
             session.terminal.updateConfiguration(
                 fontSize: AppSettings.shared.terminalFontSize,
-                fontFamily: AppSettings.shared.terminalFontFamily,
+                fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
                 extraUnbinds: KeybindingsStore.shared.customGhosttyUnbinds
             )
         }
@@ -367,6 +367,17 @@ final class TerminalSessionStore: ObservableObject {
             detachedSessionIDs.insert(sessionID)
             server.detach(sessionID: sessionID)
         }
+    }
+
+    /// Cold-park a hidden pane: release its Ghostty surface and stop the
+    /// server streaming to it, but keep the pane→session mapping so an exit
+    /// while parked still closes the pane. Remounting the pane goes through
+    /// `session(for:in:)` → `start` → `adopt`, which reattaches with the
+    /// server's screen snapshot at the surface's real grid.
+    func parkPane(_ paneID: PaneID) {
+        guard let session = sessions.removeValue(forKey: paneID),
+              let sessionID = session.sessionID else { return }
+        server.detach(sessionID: sessionID)
     }
 
     private func session(forSessionID id: SessionID) -> PaneSession? {
@@ -481,8 +492,8 @@ final class TerminalSessionStore: ObservableObject {
             guard session.sessionID == nil, liveBinding(forPane: pane.id) == nil else {
                 throw TerminalSessionStoreError.paneUnavailable(pane.id)
             }
-            let command = try Self.agentCommand(for: agent, initialPrompt: initialPrompt, isAutomation: isAutomation)
             let cwd = Self.resolvedCwd(pane.cwd)
+            let command = try Self.agentCommand(for: agent, cwd: cwd, initialPrompt: initialPrompt, isAutomation: isAutomation)
             // Give pi a session to find, so --session-id does not warn.
             PiSessionFile.seedIfMissing(sessionID: agent.id.rawValue, cwd: cwd)
             // Spawn at the surface's real grid: pi paints its TUI once, at the
@@ -712,7 +723,7 @@ final class TerminalSessionStore: ObservableObject {
             let command: SessionCommand
             if let agentID = pane.agentID,
                let agent = serverState?.agents.first(where: { $0.id == agentID }) {
-                command = try Self.agentCommand(for: agent, initialPrompt: nil)
+                command = try Self.agentCommand(for: agent, cwd: cwd, initialPrompt: nil)
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
                 PiSessionFile.seedIfMissing(sessionID: agent.id.rawValue, cwd: cwd)
@@ -860,8 +871,16 @@ final class TerminalSessionStore: ObservableObject {
         }
     }
 
-    private static func agentCommand(for agent: Agent, initialPrompt: String?, isAutomation: Bool = false) throws -> SessionCommand {
+    private static func agentCommand(for agent: Agent, cwd: String, initialPrompt: String?, isAutomation: Bool = false) throws -> SessionCommand {
         let theme = ThemeManager.shared.current
+        // Pass model/thinking only into a session pi has never written to.
+        // Once pi owns the session it persists both (model_change /
+        // thinking_level_change events) and restores them on resume; passing
+        // the flags again would reset in-session changes on every relaunch.
+        let sessionIsFresh = !PiSessionFile.hasRuntimeState(
+            sessionID: agent.effectivePiSessionID,
+            cwd: cwd
+        )
         return StatusExtension.command(
             agentID: agent.id,
             piSessionID: agent.effectivePiSessionID,
@@ -869,6 +888,7 @@ final class TerminalSessionStore: ObservableObject {
             extensionPath: try StatusExtension.installedPath(),
             themeExtensionPath: try ThemeExtension.installedPath(),
             panesExtensionPath: try PanesExtension.installedPath(),
+            reviewExtensionPath: try ReviewExtension.installedPath(),
             subagentsExtensionPath: try SubagentsExtension.installedPath(),
             // The namer loads whenever auto-naming is on: besides titling a
             // provisional agent from its opening prompt, it retitles on
@@ -881,8 +901,8 @@ final class TerminalSessionStore: ObservableObject {
             isAutomation: isAutomation,
             piThemePath: try ShepherdPiTheme.installedPath(for: theme),
             piThemeName: ShepherdPiTheme.name,
-            model: agent.model,
-            thinking: agent.thinkingLevel,
+            model: sessionIsFresh ? agent.model : nil,
+            thinking: sessionIsFresh ? agent.thinkingLevel : nil,
             initialPrompt: initialPrompt
         )
     }
