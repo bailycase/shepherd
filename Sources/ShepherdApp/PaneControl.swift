@@ -77,6 +77,9 @@ extension ShepherdViewModel {
             if let sessionID = pane.sessionID {
                 server.killSession(sessionID)
             }
+            if pane.isReview == true {
+                discardReviewSession(paneID)
+            }
             sessions.detachPane(paneID)
             setLayout(newLayout, forTab: tab.id)
             if focusedPaneID == paneID {

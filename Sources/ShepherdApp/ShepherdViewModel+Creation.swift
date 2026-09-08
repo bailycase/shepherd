@@ -13,6 +13,75 @@ extension ShepherdViewModel {
         spacePickerTarget = .local
     }
 
+    func importExistingWorktreeFromPanel(in spaceID: SpaceID) {
+        guard let space = state.spaces.first(where: { $0.id == spaceID }) else { return }
+        spacePickerTarget = .importWorktree(WorktreeImportTarget(
+            spaceID: spaceID,
+            startPath: GitWorktree.importDirectory(repo: space.path)
+        ))
+    }
+
+    @discardableResult
+    func importExistingCheckout(at url: URL, into spaceID: SpaceID? = nil) async -> AgentID? {
+        let identity: GitWorktree.Identity
+        do {
+            identity = try await Task.detached(priority: .userInitiated) {
+                try GitWorktree.identity(at: url.path)
+            }.value
+        } catch {
+            NSLog("Shepherd: worktree import failed: \(error.localizedDescription)")
+            NSSound.beep()
+            return nil
+        }
+
+        let space: Space
+        if let spaceID {
+            guard let selected = state.spaces.first(where: { $0.id == spaceID }),
+                  (try? GitWorktree.primaryCheckout(at: selected.path)) == identity.repo else {
+                NSLog("Shepherd: imported worktree does not belong to the selected space")
+                NSSound.beep()
+                return nil
+            }
+            space = selected
+        } else if let existing = state.spaces.first(where: {
+            URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().standardized.path == identity.repo
+        }) {
+            space = existing
+        } else {
+            guard let id = await addSpace(
+                at: URL(fileURLWithPath: identity.repo),
+                createInitialAgent: false
+            ), let added = state.spaces.first(where: { $0.id == id }) else { return nil }
+            space = added
+        }
+
+        if let existing = state.agents.first(where: { $0.worktreePath == identity.path }) {
+            selectAgent(existing.id)
+            return existing.id
+        }
+
+        let config = NewAgentConfig(
+            spaceID: space.id,
+            workingDirectory: identity.path,
+            model: settings.agentDefaults.model,
+            thinking: settings.agentDefaults.thinking,
+            initialPrompt: nil,
+            initialName: (identity.branch as NSString).lastPathComponent,
+            worktreeBranch: identity.branch,
+            worktreeBase: identity.base,
+            worktreePath: identity.path
+        )
+        do {
+            let id = try await startAgent(config, selectAfter: false)
+            selectAgent(id)
+            return id
+        } catch {
+            NSLog("Shepherd: imported worktree agent failed: \(error)")
+            NSSound.beep()
+            return nil
+        }
+    }
+
     @discardableResult
     func addSpace(at url: URL, createInitialAgent: Bool = true) async -> SpaceID? {
         let path = url.path
@@ -214,7 +283,7 @@ extension ShepherdViewModel {
             throw AgentStartFailure(message: "space no longer exists")
         }
         let cwd = (config.workingDirectory as NSString).expandingTildeInPath
-        let name = Self.provisionalName(for: config.initialPrompt)
+        let name = config.initialName ?? Self.provisionalName(for: config.initialPrompt)
         let agentID = AgentID()
         // A new agent is exactly its pi pane. Extra panes are the agent's to
         // open (see the panes extension) or the user's via ⌘D — starting
@@ -239,7 +308,10 @@ extension ShepherdViewModel {
             // agent's opening prompt, whether that prompt came from the sheet
             // or was typed into the TUI afterwards (⌘N). With auto-naming off
             // the provisional name is what the agent keeps, so it is final.
-            nameIsFinal: !settings.autoNameAgents
+            nameIsFinal: !settings.autoNameAgents,
+            worktreeBranch: config.worktreeBranch,
+            worktreeBase: config.worktreeBase,
+            worktreePath: config.worktreePath
         )
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new
@@ -261,21 +333,55 @@ extension ShepherdViewModel {
         sessions.stateDidChange(canonical)
         state = canonical
 
+        // Optimistic switch: the agent's pane appears immediately, wearing
+        // the launch overlay, and the spawn continues behind it. Selection
+        // must not wait on the grid wait + spawn + attach below.
+        beginAgentLaunch(agentID)
+        if selectAfter {
+            selectAgent(agentID)
+            // A new agent is something you immediately talk to, so put the
+            // keyboard in its terminal — input typed during boot lands in
+            // pi's prompt once it draws. Selecting the agent focuses its
+            // pane in our own model; this makes sure the window is actually
+            // key, which it may not be when the New Agent sheet was just
+            // dismissed.
+            NSApp.activate(ignoringOtherApps: false)
+            window?.makeKeyAndOrderFront(nil)
+        }
+
         do {
             try await sessions.createAgentSession(pane: primary, tab: tab, agent: agent, initialPrompt: config.initialPrompt, isAutomation: config.isAutomation)
         } catch {
-            if selectAfter { selectAgent(agentID) }
+            // Lift the overlay so the pane's failure placeholder is visible.
+            endAgentLaunch(agentID)
             throw AgentStartFailure(message: "session failed: \(error)")
         }
-        guard selectAfter else { return agentID }
-        selectAgent(agentID)
-        // A new agent is something you immediately talk to, so put the
-        // keyboard in its terminal. Selecting the agent focuses its pane in
-        // our own model; this makes sure the window is actually key, which it
-        // may not be when the New Agent sheet was just dismissed.
-        NSApp.activate(ignoringOtherApps: false)
-        window?.makeKeyAndOrderFront(nil)
         return agentID
+    }
+
+    // MARK: Launch overlay
+
+    /// How long the launch overlay may cover a pane whose pi never reports
+    /// (missing binary, broken shell init, outdated pi): after this the
+    /// terminal's real output must win over a tidy boot.
+    static let launchOverlayTimeout: Duration = .seconds(15)
+
+    /// Cover `id`'s pane with `AgentLaunchOverlay` until pi's status
+    /// extension first reports (`applyAgentStatus`), the spawn fails, or
+    /// `launchOverlayTimeout` expires.
+    func beginAgentLaunch(_ id: AgentID) {
+        launchingAgents.insert(id)
+        launchTimeouts[id]?.cancel()
+        launchTimeouts[id] = Task { [weak self] in
+            try? await Task.sleep(for: Self.launchOverlayTimeout)
+            guard !Task.isCancelled else { return }
+            self?.endAgentLaunch(id)
+        }
+    }
+
+    func endAgentLaunch(_ id: AgentID) {
+        launchTimeouts.removeValue(forKey: id)?.cancel()
+        launchingAgents.remove(id)
     }
 
     /// The app's main window, for focus handling.

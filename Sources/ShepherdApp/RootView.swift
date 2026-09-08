@@ -2,12 +2,15 @@ import SwiftUI
 import ShepherdCore
 
 struct RootView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    @Bindable var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
     @ObservedObject private var appearance = AppSettings.shared
     @Environment(\.colorScheme) private var systemColorScheme
     @State private var renameDraft = ""
     @State private var liveSidebarWidth: Double?
+    /// Unreconciled-work warning for the Delete Worktree Agent alert,
+    /// computed once when the target is set (a couple of quick git probes).
+    @State private var worktreeDeleteWarning: String?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -38,8 +41,12 @@ struct RootView: View {
         }
         .coordinateSpace(name: "root-layout")
         .overlay {
+            if vm.showSettings {
+                SettingsView(vm: vm)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .zIndex(10)
             // ⌘K palette floats over everything; the dimmer click-dismisses.
-            if vm.showCommandPalette {
+            } else if vm.showCommandPalette {
                 ZStack(alignment: .top) {
                     Color.black.opacity(0.25)
                         .ignoresSafeArea()
@@ -57,6 +64,19 @@ struct RootView: View {
         .sheet(isPresented: $vm.showNewAgentSheet) {
             NewAgentSheet(vm: vm)
         }
+        .sheet(
+            isPresented: Binding(
+                get: { vm.worktreeSheetTarget != nil },
+                set: { if !$0 { vm.worktreeSheetTarget = nil } }
+            )
+        ) {
+            if let space = vm.state.spaces.first(where: { $0.id == vm.worktreeSheetTarget }) {
+                NewWorktreeSheet(vm: vm, space: space)
+            }
+        }
+        .sheet(item: $vm.finalizeRequest) { request in
+            FinalizeWorktreeSheet(vm: vm, agent: request.agent, space: request.space)
+        }
         .sheet(item: $vm.spacePickerTarget) { target in
             switch target {
             case .local:
@@ -66,6 +86,24 @@ struct RootView: View {
                     choose: { path in
                         vm.spacePickerTarget = nil
                         Task { await vm.addSpace(at: URL(fileURLWithPath: path)) }
+                    },
+                    cancel: { vm.spacePickerTarget = nil }
+                )
+            case .importWorktree(let target):
+                RemoteDirectoryPicker(
+                    title: "Import Existing Worktree",
+                    actionTitle: "Import",
+                    hostName: "this mac",
+                    startPath: target.startPath,
+                    list: { path in try LocalDirectoryLister.list(path: path) },
+                    choose: { path in
+                        vm.spacePickerTarget = nil
+                        Task {
+                            await vm.importExistingCheckout(
+                                at: URL(fileURLWithPath: path),
+                                into: target.spaceID
+                            )
+                        }
                     },
                     cancel: { vm.spacePickerTarget = nil }
                 )
@@ -103,23 +141,24 @@ struct RootView: View {
                 renameDraft = space.name
             }
         }
-        .alert(
-            "Rename Space",
+        .sheet(
             isPresented: Binding(
                 get: { vm.spaceRenameTarget != nil },
                 set: { if !$0 { vm.spaceRenameTarget = nil } }
             )
         ) {
-            TextField("Name", text: $renameDraft)
-            Button("Rename") {
-                if let id = vm.spaceRenameTarget {
-                    vm.renameSpace(id, to: renameDraft)
-                }
-                vm.spaceRenameTarget = nil
-            }
-            Button("Cancel", role: .cancel) { vm.spaceRenameTarget = nil }
-        } message: {
-            Text("Sidebar label only — the folder on disk is not renamed.")
+            RenameDialog(
+                title: "Rename Space",
+                caption: "Sidebar label only — the folder on disk is not renamed.",
+                text: $renameDraft,
+                onRename: {
+                    if let id = vm.spaceRenameTarget {
+                        vm.renameSpace(id, to: renameDraft)
+                    }
+                    vm.spaceRenameTarget = nil
+                },
+                onCancel: { vm.spaceRenameTarget = nil }
+            )
         }
         .onChange(of: vm.shellRenameTarget) {
             if let id = vm.shellRenameTarget,
@@ -127,67 +166,137 @@ struct RootView: View {
                 renameDraft = ShepherdViewModel.shellLabel(shell)
             }
         }
-        .alert(
-            "Rename Shell",
+        .sheet(
             isPresented: Binding(
                 get: { vm.shellRenameTarget != nil },
                 set: { if !$0 { vm.shellRenameTarget = nil } }
             )
         ) {
-            TextField("Name", text: $renameDraft)
-            Button("Rename") {
-                if let id = vm.shellRenameTarget {
-                    vm.renameShell(id, to: renameDraft)
-                }
-                vm.shellRenameTarget = nil
-            }
-            Button("Cancel", role: .cancel) { vm.shellRenameTarget = nil }
+            RenameDialog(
+                title: "Rename Shell",
+                text: $renameDraft,
+                onRename: {
+                    if let id = vm.shellRenameTarget {
+                        vm.renameShell(id, to: renameDraft)
+                    }
+                    vm.shellRenameTarget = nil
+                },
+                onCancel: { vm.shellRenameTarget = nil }
+            )
         }
-        .alert(
-            "Rename Agent",
+        .sheet(
             isPresented: Binding(
                 get: { vm.agentRenameTarget != nil },
                 set: { if !$0 { vm.agentRenameTarget = nil } }
             )
         ) {
-            TextField("Name", text: $renameDraft)
-            Button("Rename") {
-                if let id = vm.agentRenameTarget {
-                    vm.renameAgent(id, to: renameDraft)
-                }
-                vm.agentRenameTarget = nil
-            }
-            Button("Cancel", role: .cancel) { vm.agentRenameTarget = nil }
+            RenameDialog(
+                title: "Rename Agent",
+                text: $renameDraft,
+                onRename: {
+                    if let id = vm.agentRenameTarget {
+                        vm.renameAgent(id, to: renameDraft)
+                    }
+                    vm.agentRenameTarget = nil
+                },
+                onCancel: { vm.agentRenameTarget = nil }
+            )
         }
-        .alert(
-            "Remove Space",
+        .onChange(of: vm.worktreeDeleteTarget) {
+            worktreeDeleteWarning = nil
+            guard let agent = vm.agent(id: vm.worktreeDeleteTarget),
+                  let branch = agent.worktreeBranch,
+                  let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) else { return }
+            worktreeDeleteWarning = GitWorktree.unreconciledWork(
+                worktree: agent.worktreePath ?? GitWorktree.destination(repo: space.path, branch: branch),
+                branch: branch
+            )
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { vm.worktreeDeleteTarget != nil },
+                set: { if !$0 { vm.worktreeDeleteTarget = nil } }
+            )
+        ) {
+            let agent = vm.agent(id: vm.worktreeDeleteTarget)
+            let branch = agent?.worktreeBranch ?? ""
+            let path = agent?.worktreePath ?? vm.state.spaces.first { $0.id == agent?.spaceID }
+                .map { GitWorktree.destination(repo: $0.path, branch: branch) } ?? ""
+            DialogSheet(
+                title: "Delete Worktree Agent",
+                subtitle: "Stops \(agent?.name ?? "the agent"). “Delete Agent & Worktree” also removes its checkout and branch.",
+                width: 520,
+                actions: [
+                    DialogAction("Cancel", kind: .cancel) { vm.worktreeDeleteTarget = nil },
+                    DialogAction("Delete Agent, Keep Worktree") {
+                        confirmWorktreeDelete(removeWorktree: false)
+                    },
+                    DialogAction("Delete Agent & Worktree", kind: .destructive) {
+                        confirmWorktreeDelete(removeWorktree: true)
+                    },
+                ]
+            ) {
+                SheetRow("worktree") {
+                    Text(path)
+                        .font(Fonts.mono(11))
+                        .foregroundStyle(Tokens.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(path)
+                }
+                SheetRow("branch") {
+                    Text(branch)
+                        .font(Fonts.mono(11))
+                        .foregroundStyle(Tokens.textSecondary)
+                }
+                if let warning = worktreeDeleteWarning {
+                    DialogWarning(text: "\(warning) will be lost with the worktree.")
+                }
+            }
+        }
+        .sheet(
             isPresented: Binding(
                 get: { vm.spaceDeleteTarget != nil },
                 set: { if !$0 { vm.spaceDeleteTarget = nil } }
             )
         ) {
-            Button("Remove", role: .destructive) {
-                let id = vm.spaceDeleteTarget
-                vm.spaceDeleteTarget = nil
-                // Deleting a space tears down mounted terminal layouts — a
-                // huge view-tree change. Let the alert finish dismissing
-                // first; mutating its host mid-dismissal wedges the modal
-                // session and freezes window input.
-                if let id {
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(300))
-                        vm.deleteSpace(id)
-                    }
-                }
-            }
-            Button("Cancel", role: .cancel) { vm.spaceDeleteTarget = nil }
-        } message: {
             let space = vm.state.spaces.first { $0.id == vm.spaceDeleteTarget }
             let count = vm.state.agents.count { $0.spaceID == vm.spaceDeleteTarget }
-            Text(
-                "Removes \(space?.name ?? "this space") from the sidebar and stops its \(count) agent\(count == 1 ? "" : "s"). "
-                + "Conversations stay on disk; the checkout is untouched. Nested project spaces are separate and survive."
+            DialogSheet(
+                title: "Remove Space",
+                subtitle: "Removes \(space?.name ?? "this space") from the sidebar and stops its "
+                    + "\(count) agent\(count == 1 ? "" : "s"). Conversations stay on disk; the checkout "
+                    + "is untouched. Nested project spaces are separate and survive.",
+                actions: [
+                    DialogAction("Cancel", kind: .cancel) { vm.spaceDeleteTarget = nil },
+                    DialogAction("Remove Space", kind: .destructive) {
+                        let id = vm.spaceDeleteTarget
+                        vm.spaceDeleteTarget = nil
+                        // Deleting a space tears down mounted terminal
+                        // layouts — a huge view-tree change. Let the sheet
+                        // finish dismissing first; mutating its host
+                        // mid-dismissal wedges the modal session.
+                        if let id {
+                            Task { @MainActor in
+                                try? await Task.sleep(for: .milliseconds(300))
+                                vm.deleteSpace(id)
+                            }
+                        }
+                    },
+                ]
             )
+        }
+    }
+
+    /// Same dismissal choreography as Remove Space: deleting tears down a
+    /// mounted terminal layout, so let the alert finish dismissing first.
+    private func confirmWorktreeDelete(removeWorktree: Bool) {
+        let id = vm.worktreeDeleteTarget
+        vm.worktreeDeleteTarget = nil
+        guard let id else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree)
         }
     }
 
@@ -228,7 +337,7 @@ struct RootView: View {
 /// trailing `status ⟨age⟩` in the status color. This is the selected agent's
 /// identity line — the window has no other title.
 struct WorkspaceHeaderView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     /// Re-render on density/text-scale changes; never `.id`-keyed — that
     /// would remount, which is harmless here but banned near terminal panes.
     @ObservedObject private var appearance = AppSettings.shared
@@ -240,9 +349,6 @@ struct WorkspaceHeaderView: View {
                 let agent = connection.state.agents.first { $0.id == remote.agentID }
                 breadcrumb(space: "⌁ \(connection.config.name)", leaf: agent?.name ?? "agent")
                 Spacer(minLength: 0)
-                if let agent {
-                    statusLabel(agent)
-                }
             } else if let shellID = vm.selectedShellID,
                let shell = vm.state.tabs.first(where: { $0.id == shellID }) {
                 breadcrumb(space: "shells", leaf: ShepherdViewModel.shellLabel(shell))
@@ -254,7 +360,7 @@ struct WorkspaceHeaderView: View {
                     leaf: vm.inspectingAgentID == agent.id ? "\(agent.name) / subagents" : agent.name
                 )
                 Spacer(minLength: 0)
-                statusLabel(agent)
+                reviewButton
             } else if let space = vm.selectedSpace {
                 breadcrumb(space: space.name, leaf: "shell")
                 Spacer(minLength: 0)
@@ -268,6 +374,26 @@ struct WorkspaceHeaderView: View {
         .background(Tokens.workspaceBg)
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
+    }
+
+    /// Toggles the native diff-review pane for the selected agent.
+    private var reviewButton: some View {
+        let open = vm.selectedAgentID.map { id in
+            vm.reviewSessions.values.contains { $0.agentID == id }
+        } ?? false
+        return Button {
+            vm.openUserReview()
+        } label: {
+            Image(systemName: "plus.forwardslash.minus")
+                .font(.system(size: 11))
+                .foregroundStyle(open ? Tokens.focusAccent : Tokens.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .help(open ? "Close the diff review" : "Review the working-tree diff and send comments to this agent")
+        .contextMenu {
+            Button("Review Uncommitted Changes") { vm.openUserReview() }
+            Button("Review PR Changes") { vm.openUserPRReview() }
+        }
     }
 
     private func breadcrumb(space: String, leaf: String) -> some View {
@@ -285,17 +411,4 @@ struct WorkspaceHeaderView: View {
         .lineLimit(1)
     }
 
-    private func statusLabel(_ agent: Agent) -> some View {
-        // The idle dot color is deliberately near-invisible; text needs the
-        // metadata ramp to stay readable.
-        let color = agent.status == .idle ? Tokens.textMetadata : Tokens.statusColor(agent.status)
-        // TimelineView drives the once-a-second re-render; without it the age
-        // only updates when some unrelated state change repaints the header.
-        return TimelineView(.periodic(from: .now, by: 1)) { _ in
-            let age = vm.statusAge(for: agent.id).map { " \($0)" } ?? ""
-            Text(agent.status.rawValue + age)
-                .font(Fonts.mono(11))
-                .foregroundStyle(color)
-        }
-    }
 }

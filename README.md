@@ -6,6 +6,9 @@ Shepherd organizes work around agents, not chat threads. Each agent is a real `p
 
 > Screenshot coming soon.
 
+## Philosophy
+Shepherd is opinionated software. It's built around my workflow and preferences and it favors staying small and coherent over covering everyone's use case.
+
 ## What it does
 
 - Spaces group agents by project checkout; agents, shells, and split panes live inside them.
@@ -30,7 +33,9 @@ Shepherd organizes work around agents, not chat threads. Each agent is a real `p
 
 Download `Shepherd.dmg` from the [latest release](../../releases/latest), open it, and drag
 Shepherd to Applications. Builds are signed and notarized; updates arrive automatically
-via Sparkle.
+via Sparkle on the channel you choose in Settings ▸ Advanced: **Stable** (tagged releases),
+**Release Candidate** and **Beta** (pre-releases — both also receive newer stable builds, so
+you are never stranded behind a hotfix), or **Nightly** (every push, least tested).
 
 ## Build from source
 

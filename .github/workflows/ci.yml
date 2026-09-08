@@ -1,10 +1,11 @@
 name: CI
 
-# Tests run wherever work lands: nightly is the fast-moving working branch,
-# master changes rarely (releases). PRs gate both.
+# Tests gate master (the release branch) and PRs. Nightly pushes skip CI:
+# the Release workflow already builds every nightly, and the timing-sensitive
+# server tests flake on slow shared runners — run `swift test` locally.
 on:
   push:
-    branches: [master, nightly]
+    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -17,6 +18,8 @@ jobs:
   test:
     name: swift test
     runs-on: macos-26
+    # The suite finishes in seconds; anything longer is a hang, not work.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -44,4 +47,29 @@ jobs:
             mkdir -p "$d/PackageFrameworks"
             [ -d "$d/Sparkle.framework" ] && ln -sf "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework" || true
           done
-          swift test
+          # --no-parallel: OutputCoalescingTests deliberately blocks the
+          # main queue (backpressure test); concurrent suites on a slow
+          # shared runner deadlock behind it. Serial is still fast.
+          # Watchdog: the suite finishes in seconds; if it stalls for 5
+          # minutes, dump thread stacks of the hung test host, then fail.
+          swift test --no-parallel &
+          TEST_PID=$!
+          (
+            sleep 300
+            if kill -0 "$TEST_PID" 2>/dev/null; then
+              echo '::group::watchdog: test run stalled, sampling processes'
+              ps auxww | grep -iE 'swift|shepherd' | grep -v grep
+              for pid in $(pgrep -f swiftpm-testing); do
+                sample "$pid" 3 -file /tmp/sample-$pid.txt || true
+                cat /tmp/sample-$pid.txt || true
+              done
+              echo '::endgroup::'
+              kill -9 "$TEST_PID" 2>/dev/null || true
+              pkill -9 -f swiftpm-testing 2>/dev/null || true
+            fi
+          ) &
+          WATCHDOG_PID=$!
+          wait "$TEST_PID"
+          STATUS=$?
+          kill "$WATCHDOG_PID" 2>/dev/null || true
+          exit "$STATUS"

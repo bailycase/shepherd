@@ -14,7 +14,7 @@ import ShepherdProtocol
 /// background (bounded tail scan, debounced), so a thread is findable by
 /// remembered conversation text; those rows show a dim `…snippet…` line.
 struct CommandPaletteView: View {
-    @ObservedObject var vm: ShepherdViewModel
+    var vm: ShepherdViewModel
     @State private var query = ""
     @State private var selectedIndex = 0
     @FocusState private var fieldFocused: Bool

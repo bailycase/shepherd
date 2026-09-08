@@ -192,6 +192,8 @@ struct ProtocolTests {
             .sendPaneInput(id: 6, agentID: agentID, paneID: paneID, text: "echo hi", submit: true),
             .sendPaneInput(id: 7, agentID: agentID, paneID: paneID, text: "y", submit: false),
             .readPane(id: 8, agentID: agentID, paneID: paneID),
+            .requestReview(id: 9, agentID: agentID, cwd: "/tmp/repo", reference: "master..HEAD"),
+            .requestReview(id: 10, agentID: agentID, cwd: nil, reference: nil),
         ]
         for message in messages {
             let line = try NDJSON.encode(message)
@@ -209,6 +211,7 @@ struct ProtocolTests {
             .paneOpened(id: 4, pane: pane),
             .paneContent(id: 5, paneID: paneID, lines: ["$ npm run dev", "listening on :3000"]),
             .paneContent(id: 6, paneID: paneID, lines: []),
+            .reviewResult(id: 7, text: "Looks good.\n\nSummary: ready to merge."),
         ]
         for reply in replies {
             let line = try NDJSON.encode(reply)
@@ -228,6 +231,19 @@ struct ProtocolTests {
         let inputWire = Data(#"{"type":"sendPaneInput","id":8,"agentID":"a1b2c3","paneID":"p1","text":"ls"}"#.utf8)
         let input = try NDJSON.decode(ExtensionMessage.self, from: inputWire)
         #expect(input == .sendPaneInput(id: 8, agentID: agentID, paneID: PaneID(rawValue: "p1"), text: "ls", submit: true))
+    }
+
+    @Test func reviewRequestDecodesCanonicalExtensionOutput() throws {
+        let agentID = AgentID(rawValue: "a1b2c3")
+        let wire = Data(
+            #"{"type":"requestReview","id":3,"agentID":"a1b2c3","cwd":"/x","reference":"HEAD~2"}"#.utf8
+        )
+        #expect(try NDJSON.decode(ExtensionMessage.self, from: wire)
+            == .requestReview(id: 3, agentID: agentID, cwd: "/x", reference: "HEAD~2"))
+
+        let omitted = Data(#"{"type":"requestReview","id":4,"agentID":"a1b2c3"}"#.utf8)
+        #expect(try NDJSON.decode(ExtensionMessage.self, from: omitted)
+            == .requestReview(id: 4, agentID: agentID, cwd: nil, reference: nil))
     }
 
     @Test func lineBufferSplitsPartialChunks() throws {
