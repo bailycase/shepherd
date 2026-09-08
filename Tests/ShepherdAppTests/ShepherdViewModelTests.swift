@@ -184,6 +184,85 @@ struct ShepherdViewModelTests {
         #expect(!restored.isRemoteSpaceCollapsed(hostID: otherHostID, spaceID: spaceID))
     }
 
+    @Test(arguments: ["available", "missingHost", "missingAgent", "missingTab"])
+    func selectedAgentCommandsPreserveLocalWorkspaceWhileRemoteSelected(remoteState: String) async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let remote = try Fixture()
+        defer { remote.tearDown() }
+
+        let space = Space(name: "workspace", path: "/tmp/workspace")
+        let agentID = AgentID()
+        let pane = LeafPane(cwd: space.path, agentID: agentID)
+        let auxiliary = LeafPane(cwd: space.path)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .split(
+            axis: .vertical, ratio: 0.5, first: .leaf(pane), second: .leaf(auxiliary)
+        ))
+        let agent = Agent(id: agentID, name: "worker", spaceID: space.id, tabID: tab.id, paneID: pane.id)
+        let original = ShepherdState(spaces: [space], tabs: [tab], agents: [agent])
+        try await fixture.server.putState(original)
+        // Matching IDs on different hosts must still remain separate targets.
+        try await remote.server.putState(original)
+        let tokenURL = remote.dir.appendingPathComponent("remote-token")
+        let port = try remote.server.startRemoteListener(port: 0, tokenURL: tokenURL)
+        let token = try String(contentsOf: tokenURL, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let defaultsName = "shepherd.remote.agent-commands.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: defaultsName)!
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        let remoteHosts = RemoteHostStore(defaults: defaults)
+        remoteHosts.addHost(name: "remote", host: "127.0.0.1", port: port, token: token)
+        let connection = try #require(remoteHosts.connections.first)
+        defer { remoteHosts.removeHost(id: connection.id) }
+        let vm = ShepherdViewModel(server: fixture.server, remoteHosts: remoteHosts, sidebarDefaults: defaults)
+        #expect(await waitUntil {
+            vm.state == original && connection.phase == .connected && connection.state == original
+        })
+        vm.selectAgent(agent.id)
+        vm.focusedPaneID = auxiliary.id
+        let renameItem = try #require(vm.paletteItems.first { $0.id == "action.rename" })
+        vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id)
+        let selectedRemote = vm.selectedRemoteAgent
+        switch remoteState {
+        case "missingHost": remoteHosts.removeHost(id: connection.id)
+        case "missingAgent": connection.state.agents = []
+        case "missingTab": connection.state.tabs = []
+        default: break
+        }
+
+        vm.deleteSelectedAgent()
+        vm.renameSelectedAgent()
+        vm.runPaletteItem(renameItem)
+        #expect(vm.agentRenameTarget == nil)
+        #expect(!vm.paletteItems.contains { $0.id == "action.rename" })
+        vm.focusSelectedAgent()
+        #expect(vm.selectedRemoteAgent == selectedRemote)
+        #expect(vm.remoteFocusedPaneID == (remoteState == "available" ? pane.id : nil))
+        vm.closeFocusedPane()
+        await vm.persistenceTail?.value
+        #expect(vm.state == original)
+        #expect(fixture.server.state == original)
+        #expect(remote.server.state == original)
+        #expect(vm.selectedAgentID == agent.id)
+        #expect(vm.selectedRemoteAgent == selectedRemote)
+        #expect(vm.focusedPaneID == auxiliary.id)
+
+        // Returning locally restores the existing menu behavior.
+        vm.selectAgent(agent.id)
+        vm.focusedPaneID = nil
+        vm.focusSelectedAgent()
+        #expect(vm.selectedRemoteAgent == nil)
+        #expect(vm.focusedPaneID != nil)
+        vm.renameSelectedAgent()
+        #expect(vm.agentRenameTarget == agent.id)
+        vm.deleteSelectedAgent()
+        await vm.persistenceTail?.value
+        #expect(vm.state.agents.isEmpty)
+        #expect(fixture.server.state.agents.isEmpty)
+        #expect(fixture.server.state.tabs.isEmpty)
+        #expect(remote.server.state == original)
+    }
+
     @Test func quickCreateWhileRemoteSelectedCreatesOnlyOnRemoteHost() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }

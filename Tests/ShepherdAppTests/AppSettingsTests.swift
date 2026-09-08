@@ -270,6 +270,27 @@ struct SpaceTreeTests {
         #expect(forest.map(\.depth) == [0, 0])
     }
 
+    @Test func pathCasingFollowsTheFilesystem() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let parentURL = root.appendingPathComponent("Developer")
+        let childURL = parentURL.appendingPathComponent("Project")
+        try fm.createDirectory(at: childURL, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let typedParent = root.appendingPathComponent("developer")
+        let ignoresCase = fm.fileExists(atPath: typedParent.path)
+        if !ignoresCase {
+            try fm.createDirectory(at: typedParent.appendingPathComponent("Project"),
+                                   withIntermediateDirectories: true)
+        }
+        let parent = Space(name: "parent", path: parentURL.path)
+        let child = Space(name: "child", path: typedParent.appendingPathComponent("Project").path)
+        let forest = ShepherdViewModel.spaceForest([child, parent])
+        #expect(forest.map(\.space.id) == (ignoresCase ? [parent.id, child.id] : [child.id, parent.id]))
+        #expect(forest.map(\.depth) == (ignoresCase ? [0, 1] : [0, 0]))
+    }
+
     @Test func anUnknownSpaceListsNothing() {
         let (state, _, _) = makeState()
         #expect(ShepherdViewModel.agents(in: state, space: SpaceID()).isEmpty)

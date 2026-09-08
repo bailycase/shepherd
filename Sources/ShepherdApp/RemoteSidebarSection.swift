@@ -142,6 +142,15 @@ struct RemoteHostBlock: View {
                         ) {
                             vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id)
                         }
+                        .contextMenu {
+                            Button("Focus") {
+                                vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id)
+                            }
+                            Divider()
+                            Button("Delete Agent (unavailable remotely)") {}
+                                .disabled(true)
+                                .help("Delete this agent in Shepherd on its host Mac.")
+                        }
                         // Scroll target for machine jumps and palette picks
                         // (see SidebarView); the ref type keeps remote rows
                         // distinct from local agent ids.
