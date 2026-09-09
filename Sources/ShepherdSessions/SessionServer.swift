@@ -1693,36 +1693,53 @@ public final class SessionServer: @unchecked Sendable {
     /// Attach atomically and return the screen replay plus the output
     /// watermark represented by that replay.
     public func attachSnapshot(sessionID: SessionID, replay: Bool) async throws -> AttachmentSnapshot {
-        try await enqueue {
-            guard let session = self.sessions[sessionID] else {
-                throw SessionServerError.noSuchSession(sessionID)
+        try await withCheckedThrowingContinuation { continuation in
+            attachSnapshot(sessionID: sessionID, replay: replay) { result in
+                continuation.resume(with: result)
             }
-            // Same queue turn as registration: no output can slip between the
-            // snapshot and the caller seeing `attached`.
-            self.attachedSessions.insert(sessionID)
-            // Anything still buffered was already fed into `screen`, so the
-            // snapshot represents it. Delivering it as well would replay that
-            // output on top of the snapshot — which showed up as pi's splash
-            // screen drawn twice, with two prompt boxes.
-            if let output = self.outputStates[sessionID] {
-                output.pending.removeAll(keepingCapacity: true)
-                output.pendingBytes = 0
-                output.delivery?.cancel()
-                if output.readSuspended {
-                    session.resumeOutputReading()
-                    output.readSuspended = false
+        }
+    }
+
+    /// Submit before returning, so a later detach cannot overtake this attach.
+    /// Completion runs on the main queue, in order with output callbacks.
+    public func attachSnapshot(
+        sessionID: SessionID,
+        replay: Bool,
+        completion: @escaping @MainActor (Result<AttachmentSnapshot, Error>) -> Void
+    ) {
+        queue.async {
+            let result = Result {
+                guard let session = self.sessions[sessionID] else {
+                    throw SessionServerError.noSuchSession(sessionID)
+                }
+                // Same queue turn as registration: no output can slip between the
+                // snapshot and the caller seeing `attached`.
+                self.attachedSessions.insert(sessionID)
+                // Anything still buffered was already fed into `screen`, so the
+                // snapshot represents it. Delivering it as well would replay that
+                // output on top of the snapshot — which showed up as pi's splash
+                // screen drawn twice, with two prompt boxes.
+                if let output = self.outputStates[sessionID] {
+                    output.pending.removeAll(keepingCapacity: true)
+                    output.pendingBytes = 0
+                    output.delivery?.cancel()
+                    if output.readSuspended {
+                        session.resumeOutputReading()
+                        output.readSuspended = false
+                    }
+                    self.deliverPendingExitIfReady(sessionID: sessionID)
+                    return AttachmentSnapshot(
+                        replay: replay ? session.screen.snapshot() : Data(),
+                        outputSequence: output.outputSequence
+                    )
                 }
                 self.deliverPendingExitIfReady(sessionID: sessionID)
                 return AttachmentSnapshot(
                     replay: replay ? session.screen.snapshot() : Data(),
-                    outputSequence: output.outputSequence
+                    outputSequence: 0
                 )
             }
-            self.deliverPendingExitIfReady(sessionID: sessionID)
-            return AttachmentSnapshot(
-                replay: replay ? session.screen.snapshot() : Data(),
-                outputSequence: 0
-            )
+            DispatchQueue.main.async { completion(result) }
         }
     }
 

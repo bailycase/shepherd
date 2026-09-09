@@ -203,6 +203,59 @@ struct OutputCoalescingTests {
         #expect(actual.count == expected.count && firstMismatch == nil, Comment(rawValue: detail))
     }
 
+    @Test(arguments: [false, true])
+    @MainActor
+    func pendingAttachIsOrderedBeforeDetachAndReplacement(replace: Bool) async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+        let info = try await h.server.createSession(params: CreateSessionParams(
+            cwd: "/tmp",
+            command: ["/bin/sh", "-c", "stty -echo -opost; printf 'READY\\n'; while IFS= read -r line; do printf '%s\\n' \"$line\"; done"]
+        ))
+        let deadline = ContinuousClock.now + .seconds(5)
+        while await h.server.screenText(sessionID: info.id)?.contains("READY") != true,
+              ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(await h.server.screenText(sessionID: info.id)?.contains("READY") == true)
+        let received = Locked(Data())
+        let replies = Locked<[Result<AttachmentSnapshot, Error>]>([])
+        h.server.onOutput = { _, data in received.withValue { $0.append(data) } }
+
+        // Keep the main actor until all submissions are made, so the first
+        // completion cannot run before disappearance and replacement.
+        h.server.attachSnapshot(sessionID: info.id, replay: true) { result in
+            replies.withValue { $0.append(result) }
+        }
+        h.server.detach(sessionID: info.id)
+        if replace {
+            h.server.attachSnapshot(sessionID: info.id, replay: true) { result in
+                replies.withValue { $0.append(result) }
+            }
+        }
+        #expect(replies.current.isEmpty)
+        h.server.write(sessionID: info.id, data: Data("after-detach\n".utf8))
+        #expect(try await waitUntil { replies.current.count == (replace ? 2 : 1) })
+        for reply in replies.current {
+            let snapshot = try reply.get()
+            #expect(String(decoding: snapshot.replay, as: UTF8.self).components(separatedBy: "READY").count == 2)
+            #expect(snapshot.outputSequence > 0)
+        }
+        let outputDeadline = ContinuousClock.now + .seconds(5)
+        while await h.server.screenText(sessionID: info.id)?.joined(separator: "\n").contains("after-detach") != true,
+              ContinuousClock.now < outputDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(await h.server.screenText(sessionID: info.id)?.joined(separator: "\n").contains("after-detach") == true)
+        if replace {
+            #expect(try await waitUntil { received.current == Data("after-detach\n".utf8) })
+        } else {
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(received.current.isEmpty)
+        }
+        #expect(await h.server.sessionInfo(sessionID: info.id)?.isAlive == true)
+    }
+
     /// Output buffered for a pane that detaches must not be delivered later.
     @Test func detachDropsBufferedOutput() async throws {
         let h = try Harness()
