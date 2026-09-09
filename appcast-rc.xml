@@ -4,7 +4,7 @@
         <title>Shepherd</title>
         <item>
             <title>0.1.0</title>
-            <pubDate>Tue, 08 Sep 2026 22:48:02 +0000</pubDate>
+            <pubDate>Wed, 09 Sep 2026 23:55:39 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>rc</sparkle:channel>
             <sparkle:version>25</sparkle:version>
@@ -17,7 +17,7 @@
         </item>
         <item>
             <title>0.1.0-rc.1</title>
-            <pubDate>Tue, 08 Sep 2026 22:48:03 +0000</pubDate>
+            <pubDate>Wed, 09 Sep 2026 23:55:39 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:channel>rc</sparkle:channel>
             <sparkle:version>24</sparkle:version>
