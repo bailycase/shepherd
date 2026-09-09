@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import ShepherdApp
@@ -177,17 +178,19 @@ struct ShellIntegrationTests {
         let stdin = Pipe()
         process.standardInput = stdin
         try process.run()
+        defer {
+            // Interactive shells can ignore SIGTERM. Never leave a timed-out child running.
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+        }
         stdin.fileHandleForWriting.write(Data(input.utf8))
         try stdin.fileHandleForWriting.close()
         let deadline = ContinuousClock.now + .seconds(10)
         while process.isRunning && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        if process.isRunning {
-            process.terminate()
-            Issue.record("Shell did not exit within 10 seconds")
-        }
-        process.waitUntilExit()
+        try #require(!process.isRunning, "Shell did not exit within 10 seconds")
+        // waitUntilExit pumps a thread-local run loop and can hang after an async hop,
+        // even when isRunning is false. Polling above already observed termination.
         return process.terminationStatus
     }
 }
