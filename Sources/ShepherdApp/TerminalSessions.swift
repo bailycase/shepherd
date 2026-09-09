@@ -48,8 +48,9 @@ final class TerminalSessionStore: ObservableObject {
         /// Output that races the attach replay. Sequence watermarks decide
         /// which chunks the snapshot already contains.
         fileprivate var buffered: [BufferedOutput] = []
-        /// Set while an initial attach or surface replacement is in flight.
+        /// True while subscribed, including the atomic snapshot handoff.
         fileprivate var attachRequested = false
+        fileprivate var surfaceGeneration: UInt64?
         private var nextAttachAttempt: UInt64 = 0
         fileprivate var activeAttachAttempt: UInt64?
         /// Last grid the surface reported via onResize; the PTY keeps this
@@ -113,69 +114,47 @@ final class TerminalSessionStore: ObservableObject {
         }
 
         func receive(_ data: Data, sequence: UInt64) {
-            if case .live = phase, activeAttachAttempt == nil {
+            guard attachRequested else { return }
+            if activeAttachAttempt == nil {
                 terminal.feed(data)
             } else {
                 buffered.append(BufferedOutput(data: data, sequence: sequence))
             }
         }
 
-        func beginAttachAttempt(replacing: Bool = false) -> UInt64? {
-            guard replacing || !attachRequested else { return nil }
+        func beginAttachAttempt() -> UInt64? {
+            guard !attachRequested else { return nil }
             nextAttachAttempt &+= 1
             attachRequested = true
             activeAttachAttempt = nextAttachAttempt
             return nextAttachAttempt
         }
 
-        /// Go live on an attach snapshot.
-        ///
-        /// The snapshot is the whole screen as of the attach turn, so output
-        /// that arrived *before* it is already represented and must be
-        /// dropped, not fed again — replaying it drew pi's splash screen a
-        /// second time, with two prompt boxes.
-        ///
-        /// `buffered` may hold bytes delivered before the snapshot and after
-        /// it while the attach was in flight. The server watermark, rather
-        /// than callback timing, decides which bytes the replay represents.
+        /// Apply the snapshot only to its ready generation, then feed bytes
+        /// beyond its watermark. Absent views never collect a local backlog.
         @discardableResult
         fileprivate func goLive(
             replay: Data,
             watermark: UInt64,
-            attempt: UInt64
+            attempt: UInt64,
+            generation: UInt64
         ) -> Bool {
-            guard activeAttachAttempt == attempt else { return false }
+            guard activeAttachAttempt == attempt,
+                  terminal.replaceWithReplay(replay, generation: generation) else { return false }
             let fresh = Self.output(after: watermark, from: buffered)
             buffered.removeAll()
-            attachRequested = false
             activeAttachAttempt = nil
             phase = .live
-            if !replay.isEmpty {
-                terminal.feed(replay)
-            }
             for chunk in fresh {
                 terminal.feed(chunk.data)
             }
             return true
         }
 
-        @discardableResult
-        fileprivate func replaceWithReplay(
-            _ replay: Data,
-            watermark: UInt64,
-            attempt: UInt64,
-            generation: UInt64
-        ) -> Bool {
-            guard activeAttachAttempt == attempt else { return false }
-            guard terminal.replaceWithReplay(replay, generation: generation) else { return false }
-            let fresh = Self.output(after: watermark, from: buffered)
-            buffered.removeAll()
+        fileprivate func stopOutput() {
             attachRequested = false
             activeAttachAttempt = nil
-            for chunk in fresh {
-                terminal.feed(chunk.data)
-            }
-            return true
+            buffered.removeAll()
         }
 
         static func output(after watermark: UInt64, from buffered: [BufferedOutput]) -> [BufferedOutput] {
@@ -184,8 +163,7 @@ final class TerminalSessionStore: ObservableObject {
 
         fileprivate func failAttach(attempt: UInt64, phase: Phase? = nil) {
             guard activeAttachAttempt == attempt else { return }
-            attachRequested = false
-            activeAttachAttempt = nil
+            stopOutput()
             if let phase { self.phase = phase }
         }
     }
@@ -321,6 +299,7 @@ final class TerminalSessionStore: ObservableObject {
     /// Session processes remain alive in the in-process server.
     func rebuildAllSurfaces() {
         for session in sessions.values {
+            session.stopOutput()
             if let sessionID = session.sessionID {
                 server.detach(sessionID: sessionID)
             }
@@ -362,6 +341,7 @@ final class TerminalSessionStore: ObservableObject {
     /// View-only detach: drop the local pane session without killing anything.
     func detachPane(_ paneID: PaneID) {
         guard let session = sessions.removeValue(forKey: paneID) else { return }
+        session.stopOutput()
         if let sessionID = session.sessionID {
             paneBySession.removeValue(forKey: sessionID)
             detachedSessionIDs.insert(sessionID)
@@ -377,6 +357,7 @@ final class TerminalSessionStore: ObservableObject {
     func parkPane(_ paneID: PaneID) {
         guard let session = sessions.removeValue(forKey: paneID),
               let sessionID = session.sessionID else { return }
+        session.stopOutput()
         server.detach(sessionID: sessionID)
     }
 
@@ -427,42 +408,18 @@ final class TerminalSessionStore: ObservableObject {
             // serialized at the exact grid the Ghostty surface will render.
             self.attachIfNeeded(session, sessionID: sessionID)
         }
-        session.terminal.onSurfaceReplaced = { [weak self, weak session] generation in
-            guard let self, let session else { return }
-            self.resyncSurface(session, generation: generation)
+        session.terminal.onSurfaceAttachmentChanged = { [weak self, weak session] generation in
+            guard let self, let session, self.sessions[session.paneID] === session else { return }
+            session.surfaceGeneration = generation
+            session.stopOutput()
+            guard let sessionID = session.sessionID else { return }
+            if generation == nil {
+                self.server.detach(sessionID: sessionID)
+            } else {
+                self.attachIfNeeded(session, sessionID: sessionID)
+            }
         }
         return session
-    }
-
-    private func resyncSurface(_ session: PaneSession, generation: UInt64) {
-        guard let sessionID = session.sessionID else { return }
-        guard case .live = session.phase else {
-            // Initial attachment already owns the authoritative replay; only
-            // release this replacement so goLive can feed it when ready.
-            _ = session.terminal.replaceWithReplay(Data(), generation: generation)
-            return
-        }
-        guard let attempt = session.beginAttachAttempt(replacing: true) else { return }
-        Task {
-            // Size-sync before the snapshot so it serializes at this surface's
-            // width (fire-and-forget resize precedes attach; both go through
-            // the server queue in order).
-            server.reportLocalViewport(sessionID: sessionID, cols: session.lastCols, rows: session.lastRows)
-            guard let snapshot = try? await server.attachSnapshot(sessionID: sessionID, replay: true) else {
-                session.failAttach(attempt: attempt)
-                return
-            }
-            guard self.sessions[session.paneID] === session,
-                  session.sessionID == sessionID,
-                  session.phase == .live else { return }
-            // Ignore a replay that raced with another structural replacement.
-            _ = session.replaceWithReplay(
-                snapshot.replay,
-                watermark: snapshot.outputSequence,
-                attempt: attempt,
-                generation: generation
-            )
-        }
     }
 
     func session(for pane: LeafPane, in tab: Tab) -> PaneSession {
@@ -811,7 +768,7 @@ final class TerminalSessionStore: ObservableObject {
         sessionID: SessionID
     ) async throws {
         session.sessionID = sessionID
-        session.attachRequested = false
+        session.stopOutput()
         sessions[session.paneID] = session
         paneBySession[sessionID] = session.paneID
         detachedSessionIDs.remove(sessionID)
@@ -839,39 +796,35 @@ final class TerminalSessionStore: ObservableObject {
                 cols: session.lastCols,
                 rows: session.lastRows
             )
-            attachIfNeeded(session, sessionID: sessionID)
         }
 
-        // Fallback for surfaces that never lay out (or whose grid matches and
-        // fires no resize): attach anyway after a short grace period.
-        Task { [weak self, weak session] in
-            try? await Task.sleep(nanoseconds: 700_000_000)
-            guard let self, let session,
-                  self.sessions[session.paneID] === session,
-                  session.sessionID == sessionID else { return }
-            self.attachIfNeeded(session, sessionID: sessionID)
-        }
+        attachIfNeeded(session, sessionID: sessionID)
     }
 
     private func attachIfNeeded(_ session: PaneSession, sessionID: SessionID) {
         guard sessions[session.paneID] === session,
-              session.sessionID == sessionID else { return }
+              session.sessionID == sessionID,
+              let generation = session.surfaceGeneration else { return }
         if case .exited = session.phase { return }
         guard let attempt = session.beginAttachAttempt() else { return }
-        Task { [weak self, weak session] in
-            guard let self, let session else { return }
-            do {
-                let snapshot = try await self.server.attachSnapshot(sessionID: sessionID, replay: true)
-                guard self.sessions[session.paneID] === session,
-                      session.sessionID == sessionID else { return }
-                if case .exited = session.phase { return }
+        // Submit both operations before yielding the main actor. A disappearance
+        // must enqueue its detach after this attach, never before it.
+        server.reportLocalViewport(sessionID: sessionID, cols: session.lastCols, rows: session.lastRows)
+        server.attachSnapshot(sessionID: sessionID, replay: true) { [weak self, weak session] result in
+            guard let self, let session,
+                  self.sessions[session.paneID] === session,
+                  session.sessionID == sessionID,
+                  session.activeAttachAttempt == attempt else { return }
+            if case .exited = session.phase { return }
+            switch result {
+            case .success(let snapshot):
                 _ = session.goLive(
                     replay: snapshot.replay,
                     watermark: snapshot.outputSequence,
-                    attempt: attempt
+                    attempt: attempt,
+                    generation: generation
                 )
-            } catch {
-                guard self.sessions[session.paneID] === session else { return }
+            case .failure(let error):
                 session.failAttach(attempt: attempt, phase: .failed(String(describing: error)))
             }
         }
