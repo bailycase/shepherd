@@ -36,16 +36,23 @@ extension ShepherdViewModel {
     }
 
     var blockedCount: Int {
+        _ = remoteProjectionRevision
         // Child runs needing attention count toward the waiting rollup: a
         // stuck subagent is exactly as attention-worthy as a blocked agent.
-        state.agents.count { $0.status == .blocked } + childRuns.attentionCount
+        return state.agents.count { $0.status == .blocked } + childRuns.attentionCount
+            + remoteHosts.connections.filter { $0.phase == .connected }.reduce(0) { total, connection in
+                total + connection.state.agents.count { $0.status == .blocked }
+                    + connection.children.values.reduce(0) { $0 + $1.count(where: \.needsAttention) }
+            }
     }
 
     /// Fleet-wide status counts for the sidebar's dot strip, in a fixed
     /// scan order (attention first). Absent statuses are omitted.
     var statusCounts: [(status: AgentStatus, count: Int)] {
-        [AgentStatus.blocked, .working, .done, .idle].compactMap { status in
+        _ = remoteProjectionRevision
+        return [AgentStatus.blocked, .working, .done, .idle].compactMap { status in
             let count = state.agents.count { $0.status == status }
+                + remoteHosts.connections.filter { $0.phase == .connected }.reduce(0) { $0 + $1.state.agents.count { $0.status == status } }
             return count > 0 ? (status, count) : nil
         }
     }
@@ -53,9 +60,15 @@ extension ShepherdViewModel {
     /// Blocked queue position of the selected agent, for the status line's
     /// `1 of 3 waiting`. Nil when nothing is blocked.
     var waitingQueue: (position: Int?, total: Int)? {
-        let blocked = agentsInForestOrder.filter { $0.status == .blocked }
+        _ = remoteProjectionRevision
+        let blocked: [(host: UUID?, agent: AgentID)] = agentsInForestOrder.filter { $0.status == .blocked }.map { (nil, $0.id) }
+            + remoteHosts.connections.filter { $0.phase == .connected }.flatMap { connection in
+                connection.state.agents.filter { $0.status == .blocked }.map { (connection.id, $0.id) }
+            }
         guard !blocked.isEmpty else { return nil }
-        let position = blocked.firstIndex { $0.id == selectedAgentID }.map { $0 + 1 }
+        let position = blocked.firstIndex {
+            $0.host == selectedRemoteAgent?.hostID && $0.agent == (selectedRemoteAgent?.agentID ?? selectedAgentID)
+        }.map { $0 + 1 }
         return (position, blocked.count)
     }
 
@@ -229,6 +242,8 @@ extension ShepherdViewModel {
     }
 
     func selectAgent(_ id: AgentID) {
+        remoteInspectionRequest = UUID()
+        remoteInspectingAgent = nil
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
         // Ordinary selection returns the workspace to the agent's terminal;
         // openChildInspector re-raises the inspector after this call.
@@ -352,6 +367,8 @@ extension ShepherdViewModel {
 
     /// A REMOTE row shows that agent's terminal, streamed from its host.
     func selectRemoteAgent(hostID: UUID, agentID: AgentID) {
+        remoteInspectionRequest = UUID()
+        remoteInspectingAgent = nil
         inspectingAgentID = nil
         selectedShellID = nil
         selectedRemoteAgent = RemoteAgentRef(hostID: hostID, agentID: agentID)
@@ -438,7 +455,10 @@ extension ShepherdViewModel {
         cwd: String?,
         model: String?,
         thinking: ThinkingLevel?,
-        initialPrompt: String?
+        initialPrompt: String?,
+        worktreeBranch: String? = nil,
+        worktreeBase: String? = nil,
+        worktreeFetchFirst: Bool? = nil
     ) async throws {
         let agentID = try await remoteHosts.createAgent(
             hostID: hostID,
@@ -446,7 +466,10 @@ extension ShepherdViewModel {
             cwd: cwd,
             model: model,
             thinking: thinking,
-            initialPrompt: initialPrompt
+            initialPrompt: initialPrompt,
+            worktreeBranch: worktreeBranch,
+            worktreeBase: worktreeBase,
+            worktreeFetchFirst: worktreeFetchFirst
         )
         selectRemoteAgent(hostID: hostID, agentID: agentID)
     }
@@ -467,18 +490,40 @@ extension ShepherdViewModel {
         refreshedSidebarDerivations().ordered
     }
 
+    var activeMachineAgents: [Agent] {
+        _ = remoteProjectionRevision
+        guard let remote = selectedRemoteAgent else { return orderedAgents }
+        return remoteOrderedAgents(hostID: remote.hostID)
+    }
+
+    func remoteOrderedAgents(hostID: UUID) -> [Agent] {
+        guard let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
+              connection.phase == .connected, !collapsedHosts.contains(hostID) else { return [] }
+        return connection.state.spaces.filter {
+            !$0.hidden && !isRemoteSpaceCollapsed(hostID: hostID, spaceID: $0.id)
+        }.flatMap { Self.sidebarAgents(of: $0.id, in: connection.state.agents) }
+    }
+
+    func selectAgentDigit(_ digit: Int) {
+        let agents = activeMachineAgents
+        guard agents.indices.contains(digit - 1) else { return }
+        if let remote = selectedRemoteAgent {
+            selectRemoteAgent(hostID: remote.hostID, agentID: agents[digit - 1].id)
+        } else { selectAgent(agents[digit - 1].id) }
+    }
+
     func shortcutBadge(for id: AgentID) -> Int? {
-        guard showAgentShortcutBadges else { return nil }
+        guard showAgentShortcutBadges, selectedRemoteAgent == nil else { return nil }
         return refreshedSidebarDerivations().badges[id]
     }
 
     /// ⌘↑/↓: move through agents in visible sidebar order, wrapping at the ends.
     func selectAdjacentAgent(_ delta: Int) {
-        let agents = orderedAgents
+        let agents = activeMachineAgents
         guard !agents.isEmpty else { return }
-        let current = agents.firstIndex { $0.id == selectedAgentID }
+        let current = agents.firstIndex { $0.id == (selectedRemoteAgent?.agentID ?? selectedAgentID) }
             ?? (delta > 0 ? agents.count - 1 : 0)
-        selectAgent(agents[(current + delta + agents.count) % agents.count].id)
+        selectAgentDigit((current + delta + agents.count) % agents.count + 1)
     }
 
     func layout(forTab id: TabID) -> PaneNode? {
@@ -488,10 +533,8 @@ extension ShepherdViewModel {
     /// ⌥⌘←/→: move pane focus through the active tab's leaves in order.
     func focusAdjacentPane(_ delta: Int) {
         if let remote = selectedRemoteAgent,
-           let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
-           let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
-           let layout = connection.state.tabs.first(where: { $0.id == agent.tabID })?.layout {
-            let leaves = layout.leaves
+           let layout = remoteVisibleTab(remote)?.layout {
+            let leaves = layout.leaves + (remoteInspectingAgent == remote ? [] : remoteReviews[remote].flatMap { $0.hostReviewPane ? nil : [LeafPane(id: $0.paneID, cwd: $0.cwd)] } ?? [])
             guard leaves.count > 1 else { return }
             let currentIndex = leaves.firstIndex { $0.id == remoteFocusedPaneID } ?? 0
             remoteFocusedPaneID = leaves[(currentIndex + delta + leaves.count) % leaves.count].id

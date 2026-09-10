@@ -9,11 +9,15 @@ import ShepherdProtocol
 @MainActor
 extension ShepherdViewModel {
     var paletteItems: [PaletteItem] {
+        _ = remoteProjectionRevision
         var items: [PaletteItem] = []
         let keys = KeybindingsStore.shared
 
         // Commands first, matching the mock's ordering.
-        if let space = selectedSpace ?? state.spaces.first {
+        let creationSpace = selectedRemoteAgent.flatMap { target in
+            remoteHosts.connections.first { $0.id == target.hostID }?.state.spaces.first { $0.id == remoteAgent(target)?.spaceID }
+        } ?? selectedSpace ?? state.spaces.first
+        if let space = creationSpace {
             items.append(PaletteItem(
                 id: "action.newAgent",
                 kind: .action("newAgent"),
@@ -51,16 +55,15 @@ extension ShepherdViewModel {
                 title: "new space on ⌁ \(connection.config.name)…"
             ))
         }
-        if let agent = selectedAgent {
-            if selectedRemoteAgent == nil {
-                items.append(PaletteItem(
-                    id: "action.rename",
-                    kind: .action("rename"),
-                    section: .commands,
-                    title: "rename \(agent.name)",
-                    shortcut: keys.display(.renameAgent)
-                ))
-            }
+        let actionAgent = selectedRemoteAgent.map { remoteAgent($0) } ?? selectedAgent
+        if let agent = actionAgent {
+            items.append(PaletteItem(
+                id: "action.rename",
+                kind: .action("rename"),
+                section: .commands,
+                title: "rename \(agent.name)",
+                shortcut: keys.display(.renameAgent)
+            ))
             items.append(PaletteItem(
                 id: "action.reviewDiff",
                 kind: .action("reviewDiff"),
@@ -78,6 +81,22 @@ extension ShepherdViewModel {
         // environment's openWindow, which a view-model action cannot reach
         // (the ⌘, chord and app menu already cover it).
 
+        for (target, children) in remoteChildren {
+            guard let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }), connection.phase == .connected,
+                  let agent = remoteAgent(target) else { continue }
+            for child in children {
+                items.append(PaletteItem(id: "remoteChild.\(target.hostID).\(target.agentID).\(child.id)",
+                                         kind: .remoteChild(hostID: target.hostID, agentID: target.agentID, child: child),
+                                         section: .subagents, title: child.label,
+                                         subtitle: "subagent · \(agent.name) · ⌁ \(connection.config.name)"))
+            }
+        }
+        for target in remoteWorktreeOperationIDs.keys {
+            items.append(PaletteItem(id: "operation.\(target.hostID).\(target.agentID)",
+                                     kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
+                                     section: .commands, title: "check remote worktree operation",
+                                     subtitle: remoteHosts.connections.first { $0.id == target.hostID }?.config.name))
+        }
         // Remote agents are destinations too — same rows as the sidebar's
         // REMOTE section, reachable from the keyboard.
         for connection in remoteHosts.connections where connection.phase == .connected {
@@ -186,6 +205,10 @@ extension ShepherdViewModel {
             openChildInspector(agentID: agentID, child: child)
         case .remoteAgent(let hostID, let agentID):
             selectRemoteAgent(hostID: hostID, agentID: agentID)
+        case .remoteChild(let hostID, let agentID, let child):
+            openRemoteChild(RemoteAgentRef(hostID: hostID, agentID: agentID), child: child)
+        case .remoteOperation(let hostID, let agentID):
+            remoteWorktreeSheet = RemoteAgentRef(hostID: hostID, agentID: agentID)
         case .remoteSpace(let hostID):
             remoteSpacePickerHostID = hostID
         case .action(let action):

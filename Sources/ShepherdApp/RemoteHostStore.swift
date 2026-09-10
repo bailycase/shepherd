@@ -39,8 +39,13 @@ final class RemoteHostStore: ObservableObject {
     final class Connection: ObservableObject, Identifiable {
         /// Editable in Settings; the store reconnects after a change.
         @Published fileprivate(set) var config: HostConfig
-        @Published var phase: Phase = .disconnected
-        @Published var state = ShepherdState()
+        @Published var phase: Phase = .disconnected { didSet { onProjectionChanged?() } }
+        @Published var state = ShepherdState() { didSet { onProjectionChanged?() } }
+        @Published fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
+        fileprivate var onProjectionChanged: (() -> Void)?
+        fileprivate var childRefreshTask: Task<Void, Never>?
+        fileprivate(set) var endpointID = UUID()
+        fileprivate(set) var transportID = UUID()
         fileprivate var stateGeneration = 0
         fileprivate var client: RemoteHostClient?
         fileprivate var reconnectTask: Task<Void, Never>?
@@ -56,6 +61,42 @@ final class RemoteHostStore: ObservableObject {
             self.id = config.id
         }
 
+        var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
+        var supportsWorktreeCreation: Bool {
+            client?.capabilities.isSuperset(of: [RemoteProtocol.creationOptionsCapability, RemoteProtocol.worktreeActionsCapability]) == true
+        }
+
+        func stopChildRefresh() {
+            childRefreshTask?.cancel()
+            childRefreshTask = nil
+            children = [:]
+        }
+
+        func startChildRefresh(client: RemoteHostClient) {
+            stopChildRefresh()
+            guard client.capabilities.contains(RemoteProtocol.agentInspectionCapability) else { return }
+            childRefreshTask = Task { [weak self, weak client] in
+                while !Task.isCancelled {
+                    guard let client, let agents = self?.state.agents,
+                          self?.client === client, self?.phase == .connected else { return }
+                    for agent in agents {
+                        guard !Task.isCancelled, self?.client === client else { return }
+                        do {
+                            if case .children(let rows) = try await client.agentQuery(agentID: agent.id, query: .children),
+                               !Task.isCancelled, self?.client === client,
+                               self?.state.agents.contains(where: { $0.id == agent.id }) == true {
+                                self?.children[agent.id] = rows
+                            }
+                        } catch {
+                            guard !Task.isCancelled, self?.client === client else { return }
+                            self?.children.removeValue(forKey: agent.id)
+                        }
+                    }
+                    try? await Task.sleep(for: .seconds(3))
+                }
+            }
+        }
+
         func pane(for sessionID: SessionID) -> RemotePaneSession? {
             panes[sessionID]
         }
@@ -63,7 +104,9 @@ final class RemoteHostStore: ObservableObject {
 
     static let defaultsKey = "shepherd.remote.hosts"
 
-    @Published private(set) var connections: [Connection] = []
+    var onProjectionChanged: (() -> Void)?
+    var onDropError: ((String) -> Void)?
+    @Published private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
 
     private let defaults: UserDefaults
 
@@ -93,6 +136,7 @@ final class RemoteHostStore: ObservableObject {
     /// Update a host's config and reconnect with the new values.
     func updateHost(id: UUID, name: String, host: String, port: UInt16, token: String) {
         guard let connection = connections.first(where: { $0.id == id }) else { return }
+        connection.endpointID = UUID()
         var config = connection.config
         config.name = name
         config.host = host
@@ -107,6 +151,7 @@ final class RemoteHostStore: ObservableObject {
         guard let index = connections.firstIndex(where: { $0.id == id }) else { return }
         let connection = connections.remove(at: index)
         connection.reconnectTask?.cancel()
+        connection.stopChildRefresh()
         connection.client?.disconnect()
         connection.client = nil
         for pane in connection.panes.values {
@@ -119,6 +164,7 @@ final class RemoteHostStore: ObservableObject {
     func reconnect(id: UUID) {
         guard let connection = connections.first(where: { $0.id == id }) else { return }
         connection.reconnectTask?.cancel()
+        connection.stopChildRefresh()
         for pane in connection.panes.values {
             pane.detach()
             pane.phase = .failed("reconnecting")
@@ -141,6 +187,8 @@ final class RemoteHostStore: ObservableObject {
 
     private func connect(_ connection: Connection) {
         guard connections.contains(where: { $0 === connection }) else { return }
+        connection.onProjectionChanged = { [weak self] in self?.onProjectionChanged?() }
+        connection.transportID = UUID()
         connection.phase = .connecting
         connection.reconnectTask = Task { [weak self, weak connection] in
             guard let self, let connection else { return }
@@ -165,6 +213,7 @@ final class RemoteHostStore: ObservableObject {
                     connection.state = state
                 }
                 connection.phase = .connected
+                connection.startChildRefresh(client: client)
                 connection.reconnectDelay = .seconds(1)
             } catch {
                 if connection.client === client {
@@ -187,6 +236,8 @@ final class RemoteHostStore: ObservableObject {
             for sessionID in Array(connection.panes.keys) where !liveSessionIDs.contains(sessionID) {
                 connection.panes.removeValue(forKey: sessionID)?.detach()
             }
+            let agentIDs = Set(state.agents.map(\.id))
+            connection.children = connection.children.filter { agentIDs.contains($0.key) }
             connection.stateGeneration &+= 1
             connection.state = state
         }
@@ -206,6 +257,7 @@ final class RemoteHostStore: ObservableObject {
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
             if case .connecting = connection.phase { return }
             connection.client = nil
+            connection.stopChildRefresh()
             for pane in connection.panes.values {
                 pane.phase = .failed("disconnected: \(reason)")
             }
@@ -229,6 +281,49 @@ final class RemoteHostStore: ObservableObject {
     }
 
     // MARK: - Remote mutations
+
+    func agentQuery(_ target: RemoteAgentRef, query: RemoteAgentQuery, endpointID: UUID? = nil, transportID: UUID? = nil) async throws -> RemoteAgentResult {
+        guard let connection = connections.first(where: { $0.id == target.hostID }),
+              connection.phase == .connected, let client = connection.client else {
+            throw RemoteHostClientError.rejected(code: "not_sent", message: "Host is disconnected. Reconnect before trying again.")
+        }
+        guard endpointID == nil || endpointID == connection.endpointID,
+              transportID == nil || transportID == connection.transportID else {
+            throw RemoteHostClientError.rejected(code: "host_changed", message: "Host connection changed. Reopen this action and inspect it again.")
+        }
+        let result = try await client.agentQuery(agentID: target.agentID, query: query)
+        guard connection.client === client,
+              endpointID == nil || endpointID == connection.endpointID else {
+            throw RemoteHostClientError.outcomeUnknown(message: "Host changed after the request was sent. Check the original host operation status before retrying.")
+        }
+        return result
+    }
+
+    func submitReview(_ target: RemoteAgentRef, text: String) async throws {
+        guard let connection = connections.first(where: { $0.id == target.hostID }),
+              connection.phase == .connected, let client = connection.client,
+              let agent = connection.state.agents.first(where: { $0.id == target.agentID }),
+              let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }),
+              let sessionID = tab.layout.leaves.first(where: { $0.agentID == agent.id })?.sessionID else {
+            throw RemoteHostClientError.disconnected
+        }
+        try await client.paste(sessionID: sessionID, text: text, submit: true)
+    }
+
+    func agentAction(_ target: RemoteAgentRef, action: RemoteAgentAction) async throws {
+        guard let connection = connections.first(where: { $0.id == target.hostID }),
+              connection.phase == .connected, let client = connection.client else {
+            throw RemoteHostClientError.disconnected
+        }
+        try await client.agentAction(agentID: target.agentID, action: action)
+    }
+
+    func creationOptions(hostID: UUID, spaceID: SpaceID, cwd: String?, fetchFirst: Bool?) async throws -> RemoteCreationOptions {
+        guard let connection = connections.first(where: { $0.id == hostID }), connection.phase == .connected, let client = connection.client else {
+            throw RemoteHostClientError.disconnected
+        }
+        return try await client.creationOptions(spaceID: spaceID, cwd: cwd, fetchFirst: fetchFirst)
+    }
 
     /// List a directory on a host (remote pickers). Empty path = host home.
     func listDir(hostID: UUID, path: String) async throws -> RemoteHostClient.DirListing {
@@ -262,7 +357,10 @@ final class RemoteHostStore: ObservableObject {
         cwd: String?,
         model: String?,
         thinking: ThinkingLevel?,
-        initialPrompt: String?
+        initialPrompt: String?,
+        worktreeBranch: String? = nil,
+        worktreeBase: String? = nil,
+        worktreeFetchFirst: Bool? = nil
     ) async throws -> AgentID {
         guard let client = connections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
@@ -272,7 +370,10 @@ final class RemoteHostStore: ObservableObject {
             cwd: cwd,
             model: model,
             thinking: thinking,
-            initialPrompt: initialPrompt
+            initialPrompt: initialPrompt,
+            worktreeBranch: worktreeBranch,
+            worktreeBase: worktreeBase,
+            worktreeFetchFirst: worktreeFetchFirst
         )
     }
 
@@ -326,6 +427,7 @@ final class RemoteHostStore: ObservableObject {
             return existing
         }
         let pane = RemotePaneSession(sessionID: sessionID, client: client)
+        pane.onDropError = { [weak self] in self?.onDropError?($0) }
         connection.panes[sessionID] = pane
         pane.start()
         return pane
@@ -361,6 +463,8 @@ final class RemotePaneSession: ObservableObject {
     let terminal: AppTerminalModel
     @Published var phase: Phase = .connecting
 
+    var onDropError: ((String) -> Void)?
+    private var uploading = false
     private weak var client: RemoteHostClient?
     private var lastCols = 80
     private var lastRows = 24
@@ -380,8 +484,24 @@ final class RemotePaneSession: ObservableObject {
             fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
             terminal: ThemeManager.shared.current.terminal,
             extraUnbinds: KeybindingsStore.shared.customGhosttyUnbinds,
-            acceptsFileDrops: false
+            acceptsFileDrops: true
         )
+        terminal.maximumDropBytes = RemoteProtocol.uploadMaxBytes
+        terminal.onFileDropError = { [weak self] in self?.onDropError?($0) }
+        terminal.onFileDrop = { [weak self] urls in
+            guard let self, let client = self.client else { return }
+            guard !self.uploading else { self.onDropError?("A file drop is already uploading"); return }
+            self.uploading = true
+            Task {
+                defer { self.uploading = false }
+                do {
+                    var paths: [String] = []
+                    for url in urls { paths.append(try await client.upload(file: url, sessionID: self.sessionID)) }
+                    let text = paths.map(shellQuoted).joined(separator: " ") + " "
+                    try await client.paste(sessionID: self.sessionID, text: text, submit: false)
+                } catch { self.onDropError?(String(describing: error)) }
+            }
+        }
         terminal.onInput = { [weak self] data in
             guard let self, let client = self.client else { return }
             client.write(sessionID: self.sessionID, data: data)

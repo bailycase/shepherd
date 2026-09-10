@@ -82,9 +82,11 @@ configured shells keep their normal startup without automatic pi theming.
 
 Settings ▸ Remote toggles a TCP listener (default port 7433) that serves the fleet to remote Shepherd clients. Auth is a shared bearer token generated in the support directory. **There is no TLS** — the listener binds on all interfaces and assumes a trusted network or VPN as the transport boundary. Do not expose it to the internet.
 
+Connected Macs can create, rename, reorder, and delete host agents; inspect subagents; search transcripts; and review diffs or PR changes. Worktree creation, setup, finalization, and confirmed deletion run on the host. File and image drops upload to the host, with a 32 MiB per-file limit. New remote features require a compatible host; ordinary agent creation and terminal access remain available with older hosts.
+
 ## Scope
 
-Shepherd supervises agents; it does not manage Git worktrees or branches. Agents run in their space's checkout and the app never mutates repository state. Quitting the app terminates every agent process.
+Shepherd supervises agents and provides explicit worktree creation, finalization, and confirmed deletion actions. Other agent work runs in the selected checkout. Quitting the host app terminates its agent processes; disconnecting a remote client does not.
 
 ## Documentation
 

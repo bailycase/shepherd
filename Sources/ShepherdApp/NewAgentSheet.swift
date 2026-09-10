@@ -3,6 +3,7 @@ import AppKit
 import ShepherdCore
 import ShepherdSessions
 import ShepherdRemote
+import ShepherdProtocol
 
 /// Model input: free text with a live filtered dropdown over pi's catalog
 /// (900+ ids — a plain Picker menu is unusable). Typing filters by fuzzy
@@ -98,6 +99,49 @@ struct SheetLinkButton: View {
     }
 }
 
+struct NewAgentBaseTarget: Hashable {
+    var hostID: UUID?
+    var spaceID: SpaceID?
+    var cwd: String
+    var worktree: Bool
+}
+
+struct NewAgentTargetDefaults {
+    private(set) var requestID = UUID()
+    private(set) var hostID: UUID?
+    private(set) var loading = false
+    private(set) var ready = false
+    var model = ""
+    var thinking: ThinkingLevel = .medium
+    var modelEdited = false
+    var thinkingEdited = false
+
+    mutating func begin(hostID: UUID?, model: String, thinking: ThinkingLevel) -> UUID {
+        let sameTarget = self.hostID == hostID && !ready
+        requestID = UUID()
+        self.hostID = hostID
+        if !sameTarget || !modelEdited { self.model = model; modelEdited = false }
+        if !sameTarget || !thinkingEdited { self.thinking = thinking; thinkingEdited = false }
+        loading = hostID != nil
+        ready = hostID == nil
+        return requestID
+    }
+
+    mutating func apply(requestID: UUID, model: String, thinking: ThinkingLevel) {
+        guard self.requestID == requestID else { return }
+        if !modelEdited { self.model = model }
+        if !thinkingEdited { self.thinking = thinking }
+        loading = false
+        ready = true
+    }
+
+    mutating func fail(requestID: UUID) {
+        guard self.requestID == requestID else { return }
+        loading = false
+        ready = false
+    }
+}
+
 struct NewAgentSheet: View {
     var vm: ShepherdViewModel
 
@@ -105,12 +149,18 @@ struct NewAgentSheet: View {
     @State private var targetHostID: UUID?
     @State private var spaceID: SpaceID?
     @State private var workingDirectory = ""
-    @State private var model = ""
+    @State private var defaults = NewAgentTargetDefaults()
     @State private var modelOptions: [String] = []
-    @State private var thinking: ThinkingLevel = AppSettings.shared.defaultThinking
     @State private var initialPrompt = ""
     @State private var worktree = false
     @State private var worktreeBranch = ""
+    @State private var worktreeBase = ""
+    @State private var fetchFirst = false
+    @State private var baseNote = ""
+    @State private var resolvingBase = false
+    @State private var baseResolved = false
+    @State private var baseRequestID = UUID()
+    @State private var resolvedBaseTarget: NewAgentBaseTarget?
     @State private var sessionCaption = "…"
     @State private var errorText: String?
     @State private var starting = false
@@ -136,9 +186,13 @@ struct NewAgentSheet: View {
         targetSpaces.first { $0.id == spaceID }
     }
 
+    private var baseTarget: NewAgentBaseTarget {
+        NewAgentBaseTarget(hostID: targetHostID, spaceID: spaceID, cwd: workingDirectory, worktree: worktree)
+    }
+
     private var canStart: Bool {
-        !starting && spaceID != nil
-            && (!worktree || !worktreeBranch.trimmingCharacters(in: .whitespaces).isEmpty)
+        !starting && spaceID != nil && defaults.ready && !defaults.loading && defaults.hostID == targetHostID
+            && (!worktree || (!worktreeBranch.trimmingCharacters(in: .whitespaces).isEmpty && baseResolved && resolvedBaseTarget == baseTarget && !resolvingBase))
     }
 
     /// Connected hosts only — an unreachable host cannot create anything.
@@ -206,16 +260,14 @@ struct NewAgentSheet: View {
                     }
                 }
 
-                // Local git checkouts offer an isolated worktree: the agent
-                // then works on its own branch in a sibling directory instead
-                // of the shared checkout. Remote hosts: not supported (git
-                // runs on this Mac).
-                if targetHostID == nil, GitWorktree.isRepo(workingDirectory) {
+                // Repository probes and worktree creation run on the chosen machine.
+                if targetHostID != nil || GitWorktree.isRepo(workingDirectory) {
                     SheetRow("worktree") {
                         HStack(spacing: 8) {
                             Toggle("", isOn: $worktree)
                                 .toggleStyle(.checkbox)
                                 .labelsHidden()
+                                .disabled(targetHostID != nil && remoteConnection?.supportsWorktreeCreation != true)
                             if worktree {
                                 TextField("", text: $worktreeBranch,
                                           prompt: Text("branch name").foregroundStyle(Tokens.textDim))
@@ -231,12 +283,28 @@ struct NewAgentSheet: View {
                     }
                 }
 
+                if worktree {
+                    SheetRow("base") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            TextField("base branch", text: $worktreeBase)
+                            Text(resolvingBase ? "resolving on target…" : baseNote)
+                                .font(Fonts.mono(10.5)).foregroundStyle(Tokens.textMetadata)
+                        }
+                    }
+                    SheetRow("fetch") {
+                        HStack {
+                            Toggle("Fetch origin before creating", isOn: $fetchFirst).toggleStyle(.checkbox)
+                            SheetLinkButton(label: "resolve base…") { Task { await resolveBase(fetch: fetchFirst) } }
+                        }
+                    }
+                }
+
                 SheetRow("model") {
-                    ModelField(model: $model, options: modelOptions)
+                    ModelField(model: Binding(get: { defaults.model }, set: { defaults.model = $0; defaults.modelEdited = true }), options: modelOptions)
                 }
 
                 SheetRow("thinking") {
-                    Picker("", selection: $thinking) {
+                    Picker("", selection: Binding(get: { defaults.thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true })) {
                         ForEach(ThinkingLevel.allCases, id: \.self) { level in
                             Text(level.rawValue).tag(level)
                         }
@@ -272,7 +340,10 @@ struct NewAgentSheet: View {
             .padding(.top, 6)
 
             HStack(spacing: 10) {
-                Text(errorText ?? sessionCaption)
+                if !defaults.ready && !defaults.loading {
+                    Button("Retry defaults") { loadModels() }
+                }
+                Text(errorText ?? (defaults.loading ? "loading host defaults…" : sessionCaption))
                     .font(Fonts.mono(10.5))
                     .foregroundStyle(errorText == nil ? Tokens.textTertiary : Tokens.statusBlocked)
                     .lineLimit(2)
@@ -295,16 +366,32 @@ struct NewAgentSheet: View {
                 vm.newAgentPreselect = nil
                 targetHostID = preselect.hostID
                 spaceID = preselect.spaceID
+            } else if let remote = vm.selectedRemoteAgent, let agent = vm.remoteAgent(remote) {
+                targetHostID = remote.hostID
+                spaceID = agent.spaceID
             } else {
                 spaceID = vm.selectedSpaceID ?? vm.visibleSpaces.first?.id
             }
             workingDirectory = selectedSpace?.path ?? ""
-            thinking = AppSettings.shared.defaultThinking
             loadModels()
             promptFocused = true
         }
+        .task(id: baseTarget) {
+            baseRequestID = UUID()
+            worktreeBase = ""
+            fetchFirst = false
+            baseNote = ""
+            baseResolved = false
+            resolvedBaseTarget = nil
+            resolvingBase = false
+            if worktree {
+                if worktreeBranch.isEmpty { worktreeBranch = GitWorktree.generatedBranch() }
+                await resolveBase(fetch: nil)
+            }
+        }
         .onChange(of: spaceID) {
             workingDirectory = selectedSpace?.path ?? ""
+            if !defaults.ready && !defaults.loading { loadModels() }
         }
         .onChange(of: targetHostID) {
             // Switching machines invalidates the space selection wholesale
@@ -317,8 +404,8 @@ struct NewAgentSheet: View {
             errorText = nil
             loadModels()
         }
-        .task {
-            sessionCaption = await vm.sessionCaption()
+        .task(id: targetHostID) {
+            sessionCaption = targetHostID == nil ? await vm.sessionCaption() : "session runs on the host"
         }
         .sheet(item: $remotePicking) { target in
             // One picker for both machines: the listing source is the only
@@ -363,30 +450,73 @@ struct NewAgentSheet: View {
     /// local catalog (`pi --list-models`, cached per app run), or the host's
     /// via listModels. The field pre-fills with the default; typing filters.
     private func loadModels() {
-        if let connection = remoteConnection {
-            modelOptions = []
-            model = ""
-            let hostID = connection.id
+        let hostID = targetHostID
+        let requestID = defaults.begin(hostID: hostID,
+                                       model: hostID == nil ? vm.settings.agentDefaults.model ?? PiConfig.defaultModel() ?? "" : "",
+                                       thinking: hostID == nil ? vm.settings.defaultThinking : .medium)
+        modelOptions = []
+        errorText = nil
+        if hostID != nil && remoteConnection?.supportsWorktreeCreation != true { worktree = false }
+        if let hostID {
+            let targetSpace = spaceID
             Task {
                 do {
-                    let listing = try await vm.remoteHosts.listModels(hostID: hostID)
-                    guard targetHostID == hostID else { return }
-                    modelOptions = listing.models
-                    model = listing.defaultModel ?? ""
+                    guard let targetSpace else { throw RemoteHostClientError.rejected(code: "no_space", message: "Choose a host space before loading defaults") }
+                    let result = try await vm.remoteHosts.creationOptions(hostID: hostID, spaceID: targetSpace, cwd: nil, fetchFirst: nil)
+                    guard defaults.requestID == requestID, targetHostID == hostID else { return }
+                    defaults.apply(requestID: requestID, model: result.model ?? "", thinking: result.thinking)
+                    // A catalog failure leaves the editable defaults usable.
+                    if let listing = try? await vm.remoteHosts.listModels(hostID: hostID), defaults.requestID == requestID {
+                        modelOptions = listing.models
+                    }
                 } catch {
-                    // Field degrades to free text.
+                    guard defaults.requestID == requestID else { return }
+                    defaults.fail(requestID: requestID)
+                    errorText = String(describing: error)
                 }
             }
             return
         }
-        // Shepherd's own default wins over pi's when the user set one.
-        model = AppSettings.shared.agentDefaults.model ?? PiConfig.defaultModel() ?? ""
         Task {
-            let ids = await Task.detached(priority: .userInitiated) {
-                PiModelCatalog.modelIDs()
-            }.value
-            guard targetHostID == nil else { return }
+            let ids = await Task.detached(priority: .userInitiated) { PiModelCatalog.modelIDs() }.value
+            guard defaults.requestID == requestID else { return }
             modelOptions = ids
+        }
+    }
+
+    private func resolveBase(fetch: Bool?) async {
+        guard let spaceID else { return }
+        let requestID = UUID()
+        baseRequestID = requestID
+        let hostID = targetHostID
+        let cwd = workingDirectory
+        let requestedTarget = baseTarget
+        resolvingBase = true
+        baseResolved = false
+        do {
+            let base: String
+            let note: String
+            let resolvedFetch: Bool
+            if let hostID {
+                let result = try await vm.remoteHosts.creationOptions(hostID: hostID, spaceID: spaceID, cwd: cwd, fetchFirst: fetch)
+                base = result.base; note = result.note; resolvedFetch = result.fetchFirst
+            } else {
+                let mode = vm.settings.worktreeBaseMode
+                resolvedFetch = fetch ?? vm.settings.worktreeFetchBeforeCreate
+                let result = await Task.detached { GitWorktree.resolveBase(repo: cwd, mode: mode, fetchFirst: resolvedFetch) }.value
+                base = result.display; note = result.note
+            }
+            guard baseRequestID == requestID, targetHostID == hostID, workingDirectory == cwd, self.spaceID == spaceID else { return }
+            worktreeBase = base
+            baseNote = note
+            fetchFirst = resolvedFetch
+            baseResolved = true
+            resolvedBaseTarget = requestedTarget
+            resolvingBase = false
+        } catch {
+            guard baseRequestID == requestID, targetHostID == hostID, workingDirectory == cwd else { return }
+            errorText = String(describing: error)
+            resolvingBase = false
         }
     }
 
@@ -394,7 +524,7 @@ struct NewAgentSheet: View {
         guard canStart, let spaceID else { return }
         starting = true
         errorText = nil
-        let trimmedModel = model.trimmingCharacters(in: .whitespaces)
+        let trimmedModel = defaults.model.trimmingCharacters(in: .whitespaces)
         let prompt = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let cwd = workingDirectory.isEmpty ? (selectedSpace?.path ?? "~") : workingDirectory
 
@@ -405,13 +535,14 @@ struct NewAgentSheet: View {
             let repo = cwd
             let branchName = worktreeBranch.trimmingCharacters(in: .whitespaces)
             let mode = AppSettings.shared.worktreeBaseMode
-            let fetchFirst = AppSettings.shared.worktreeFetchBeforeCreate
+            let fetchFirst = fetchFirst
+            let explicitBase = worktreeBase.trimmingCharacters(in: .whitespacesAndNewlines)
             Task {
                 do {
                     let (path, baseUsed) = try await Task.detached(priority: .userInitiated) { () -> (String, String) in
                         let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst)
-                        let path = try GitWorktree.add(repo: repo, branch: branchName, from: resolution.startPoint)
-                        return (path, resolution.display)
+                        let path = try GitWorktree.add(repo: repo, branch: branchName, from: explicitBase.isEmpty ? resolution.startPoint : explicitBase)
+                        return (path, explicitBase.isEmpty ? resolution.display : explicitBase)
                     }.value
                     startLocalAgent(cwd: path, worktreeBranch: branchName, worktreeBase: baseUsed)
                 } catch {
@@ -430,8 +561,11 @@ struct NewAgentSheet: View {
                         spaceID: spaceID,
                         cwd: cwd,
                         model: trimmedModel.isEmpty ? nil : trimmedModel,
-                        thinking: thinking,
-                        initialPrompt: prompt.isEmpty ? nil : prompt
+                        thinking: defaults.thinking,
+                        initialPrompt: prompt.isEmpty ? nil : prompt,
+                        worktreeBranch: worktree ? worktreeBranch.trimmingCharacters(in: .whitespaces) : nil,
+                        worktreeBase: worktree ? worktreeBase : nil,
+                        worktreeFetchFirst: worktree ? fetchFirst : nil
                     )
                     vm.showNewAgentSheet = false
                 } catch {
@@ -447,13 +581,13 @@ struct NewAgentSheet: View {
 
     private func startLocalAgent(cwd: String, worktreeBranch: String?, worktreeBase: String?) {
         guard let spaceID else { return }
-        let trimmedModel = model.trimmingCharacters(in: .whitespaces)
+        let trimmedModel = defaults.model.trimmingCharacters(in: .whitespaces)
         let prompt = initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let config = NewAgentConfig(
             spaceID: spaceID,
             workingDirectory: cwd,
             model: trimmedModel.isEmpty ? nil : trimmedModel,
-            thinking: thinking,
+            thinking: defaults.thinking,
             initialPrompt: prompt.isEmpty ? nil : prompt,
             worktreeBranch: worktreeBranch,
             worktreeBase: worktreeBase

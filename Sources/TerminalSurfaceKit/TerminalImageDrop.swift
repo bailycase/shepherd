@@ -79,16 +79,22 @@ public enum TerminalImageDrop {
     /// there is no file behind it. Order is preserved; unusable items are
     /// dropped.
     public static func resolve(_ providers: [NSItemProvider]) async -> [URL] {
+        (try? await resolve(providers, maximumBytes: nil)) ?? []
+    }
+
+    public static func resolve(_ providers: [NSItemProvider], maximumBytes: Int?) async throws -> [URL] {
         pruneOldDrops()
         var urls: [URL] = []
         for provider in providers {
             if let url = await fileURL(from: provider) {
-                // An oversized image file is resized into the drop directory
-                // and the copy is referenced instead, so oversized screenshots
-                // don't get persisted into history — the user's original file
-                // is never modified.
+                if let maximumBytes {
+                    let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+                    guard values.isRegularFile == true, let size = values.fileSize, size <= maximumBytes else {
+                        throw CocoaError(.fileReadTooLarge, userInfo: [NSLocalizedDescriptionKey: "Remote drops require regular files no larger than \(maximumBytes / 1024 / 1024) MiB."])
+                    }
+                }
                 urls.append(shrinkIfOversized(url) ?? url)
-            } else if let url = await materializeImage(from: provider) {
+            } else if let url = try await materializeImage(from: provider, maximumBytes: maximumBytes) {
                 urls.append(url)
             }
         }
@@ -146,10 +152,11 @@ public enum TerminalImageDrop {
 
     // MARK: Raw image data
 
-    private static func materializeImage(from provider: NSItemProvider) async -> URL? {
+    private static func materializeImage(from provider: NSItemProvider, maximumBytes: Int?) async throws -> URL? {
         guard let type = imageType(of: provider),
               let data = await data(from: provider, type: type) else { return nil }
 
+        if let maximumBytes, data.count > maximumBytes { throw CocoaError(.fileReadTooLarge) }
         let (encoded, encodedType) = normalize(data, type: type)
         guard !encoded.isEmpty else { return nil }
 

@@ -143,7 +143,8 @@ struct GitDiffTests {
         #expect(file.hunks[1].lines.map(\.newLine) == [10, 11])
     }
 
-    @Test func loadsTrackedAndUntrackedChanges() throws {
+    @Test(arguments: [nil, "", " \t\n"] as [String?])
+    func loadsTrackedAndUntrackedChanges(reference: String?) throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("shepherd-git-diff-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -158,7 +159,7 @@ struct GitDiffTests {
         try "after\n".write(to: directory.appendingPathComponent("tracked.txt"), atomically: true, encoding: .utf8)
         try "untracked\n".write(to: directory.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
 
-        let files = try GitDiff.load(cwd: directory.path, reference: nil)
+        let files = try GitDiff.load(cwd: directory.path, reference: reference)
         #expect(files.map(\.displayPath) == ["tracked.txt", "new.txt"])
         #expect(files.first?.addedCount == 1)
         #expect(files.first?.removedCount == 1)
@@ -166,7 +167,8 @@ struct GitDiffTests {
         #expect(files.last?.addedCount == 1)
     }
 
-    @Test func loadsUntrackedFilesInARepoWithNoCommits() throws {
+    @Test(arguments: [nil, "", " \t\n"] as [String?])
+    func loadsUntrackedFilesInARepoWithNoCommits(reference: String?) throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("shepherd-git-diff-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -176,7 +178,7 @@ struct GitDiffTests {
         try "hello\n".write(to: directory.appendingPathComponent("new.txt"), atomically: true, encoding: .utf8)
 
         // Unborn HEAD: the tracked diff is skipped, untracked files still load.
-        let files = try GitDiff.load(cwd: directory.path, reference: nil)
+        let files = try GitDiff.load(cwd: directory.path, reference: reference)
         #expect(files.map(\.displayPath) == ["new.txt"])
         #expect(files.first?.isNew == true)
     }

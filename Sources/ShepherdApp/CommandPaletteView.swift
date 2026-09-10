@@ -191,6 +191,9 @@ struct CommandPaletteView: View {
             }.value
             guard !Task.isCancelled else { return }
             contentRows = vm.paletteContentRows(matches: matches, excluding: existing)
+            let remote = await vm.remoteContentRows(query: trimmed, excluding: existing)
+            guard !Task.isCancelled else { return }
+            contentRows += remote
         }
     }
 }

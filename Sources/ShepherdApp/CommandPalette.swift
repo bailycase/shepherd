@@ -11,6 +11,8 @@ struct PaletteItem: Identifiable {
         case child(agentID: AgentID, child: ChildRun)
         case remoteAgent(hostID: UUID, agentID: AgentID)
         case remoteSpace(hostID: UUID)
+        case remoteChild(hostID: UUID, agentID: AgentID, child: ChildRun)
+        case remoteOperation(hostID: UUID, agentID: AgentID)
         case action(String)
     }
 

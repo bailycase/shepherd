@@ -193,17 +193,9 @@ struct FinalizeWorktreeSheet: View {
     /// Count what the PR would contain, preferring the remote-tracking ref
     /// (that is what GitHub compares against).
     private func refreshIncludedCommits() async {
-        let baseName = base.trimmingCharacters(in: .whitespaces)
-        guard !baseName.isEmpty else {
-            includedCommits = nil
-            return
-        }
-        let count = await LoginShell.run(
-            "git rev-list --count \(shellQuoted("origin/" + baseName))..HEAD 2>/dev/null "
-            + "|| git rev-list --count \(shellQuoted(baseName))..HEAD 2>/dev/null",
-            cwd: worktreePath
-        )
-        includedCommits = Int(count.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
+        let requestedBase = base
+        let count = await WorktreeCommitCount.load(base: requestedBase, worktree: worktreePath)
+        if base == requestedBase { includedCommits = count }
     }
 
     private func generateDescriptionIfNeeded(force: Bool = false) async {
@@ -325,6 +317,16 @@ struct FinalizeWorktreeSheet: View {
     }
 
     private func start() {
+        let checkout = URL(fileURLWithPath: worktreePath).resolvingSymlinksInPath().standardized.path
+        guard !vm.hostBusyWorktrees.contains(checkout) else {
+            vm.remoteActionError = "A worktree operation is running for this checkout"
+            return
+        }
+        vm.hostBusyWorktrees.insert(checkout)
+        finalizer.beforeCleanup = {
+            try vm.verifyCheckoutUnused(checkout, except: agent.id)
+            try await Task.detached { try GitWorktree.verifyIdentity(worktree: checkout, repo: space.path, branch: branch) }.value
+        }
         phase = .running
         let ctx = WorktreeFinalizer.Context(
             repo: space.path,
@@ -339,6 +341,7 @@ struct FinalizeWorktreeSheet: View {
             mergeMethod: vm.settings.worktreeMergeMethod.rawValue
         )
         Task {
+            defer { vm.hostBusyWorktrees.remove(checkout) }
             await finalizer.run(ctx)
             phase = finalizer.phase == .succeeded ? .done : .failed
         }
@@ -506,7 +509,9 @@ struct WorktreeSetupChecklist: View {
                 }
             }
             repoSettingsSection
+            if let error = model.actionError { DialogWarning(text: error) }
         }
+        .disabled(model.running)
     }
 
     /// Recommended GitHub repo settings: status + explanation + one-click
@@ -579,7 +584,7 @@ struct WorktreeSetupChecklist: View {
         switch check {
         case .git:
             HStack(spacing: 8) {
-                Text("Apple's installer opens outside Shepherd.")
+                Text(model.remoteAction == nil ? "Apple's installer opens outside Shepherd." : "Apple's installer opens on the host Mac.")
                     .font(Fonts.mono(10.5))
                     .foregroundStyle(Tokens.textTertiary)
                 SheetLinkButton(label: "install command line tools…") {
@@ -598,7 +603,7 @@ struct WorktreeSetupChecklist: View {
                     .textFieldStyle(.plain)
                     .font(Fonts.mono(11))
                     .frame(maxWidth: 200)
-                SheetLinkButton(label: "apply") {
+                SheetLinkButton(label: model.remoteAction == nil ? "apply" : "apply on host") {
                     Task { await model.applyIdentity(name: identityName, email: identityEmail) }
                 }
             }

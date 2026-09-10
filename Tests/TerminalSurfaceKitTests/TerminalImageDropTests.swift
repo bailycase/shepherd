@@ -112,6 +112,19 @@ struct TerminalImageDropTests {
         #expect(try Data(contentsOf: source) == data)
     }
 
+    @Test func remoteDropLimitRejectsBeforeReadingLargeFile() async throws {
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-limit-\(UUID()).png")
+        let data = pngData()
+        try data.write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+        let provider = try #require(NSItemProvider(contentsOf: source))
+        await #expect(throws: CocoaError.self) {
+            _ = try await TerminalImageDrop.resolve([provider], maximumBytes: data.count - 1)
+        }
+        #expect(try Data(contentsOf: source) == data)
+        #expect(try await TerminalImageDrop.resolve([provider], maximumBytes: data.count) == [source])
+    }
+
     @Test func acceptsBothFilesAndRawImages() {
         // A URL-only destination is what made screenshot drags no-ops.
         #expect(TerminalImageDrop.acceptedTypes.contains(.fileURL))

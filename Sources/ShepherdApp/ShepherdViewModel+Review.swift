@@ -24,6 +24,10 @@ extension ShepherdViewModel {
     /// The header button toggles: open a review pane for the selected agent,
     /// or close the one already open (comments are discarded like cancel).
     func openUserReview() {
+        if let target = selectedRemoteAgent {
+            openRemoteReview(target, pullRequest: false)
+            return
+        }
         guard let agent = selectedAgent else {
             NSSound.beep()
             return
@@ -39,6 +43,10 @@ extension ShepherdViewModel {
     /// against the PR base, falling back to the remote default branch).
     /// Replaces an open review for the agent.
     func openUserPRReview() {
+        if let target = selectedRemoteAgent {
+            openRemoteReview(target, pullRequest: true)
+            return
+        }
         guard let agent = selectedAgent else {
             NSSound.beep()
             return
@@ -50,6 +58,21 @@ extension ShepherdViewModel {
     }
 
     func submitReview(_ session: ReviewSession) {
+        if let target = remoteReviews.first(where: { $0.value === session })?.key {
+            guard !session.isSubmitting else { return }
+            session.isSubmitting = true
+            let text = formatReview(files: session.files, comments: session.comments, summary: session.summary, reference: session.reference)
+            Task {
+                defer { session.isSubmitting = false }
+                do {
+                    if session.hostReviewPane {
+                        _ = try await remoteHosts.agentQuery(target, query: .finishReview(paneID: session.paneID, text: text))
+                    } else { try await remoteHosts.submitReview(target, text: text) }
+                    if remoteReviews[target] === session { remoteReviews.removeValue(forKey: target) }
+                } catch { remoteActionError = String(describing: error) }
+            }
+            return
+        }
         guard reviewSessions[session.paneID] === session else { return }
         let text = formatReview(
             files: session.files,
@@ -67,6 +90,16 @@ extension ShepherdViewModel {
     }
 
     func cancelReview(_ session: ReviewSession) {
+        if let target = remoteReviews.first(where: { $0.value === session })?.key {
+            if session.hostReviewPane {
+                Task {
+                    do { _ = try await remoteHosts.agentQuery(target, query: .finishReview(paneID: session.paneID, text: nil)) }
+                    catch { remoteActionError = String(describing: error) }
+                }
+            }
+            remoteReviews.removeValue(forKey: target)
+            return
+        }
         guard reviewSessions[session.paneID] === session else { return }
         reviewSessions.removeValue(forKey: session.paneID)
         closeLocalPane(session.paneID)
@@ -100,6 +133,11 @@ extension ShepherdViewModel {
     /// clear the loaded diff and reload in place. Comments are kept — they
     /// re-anchor by file/line where the diff still contains them.
     func reloadReview(_ session: ReviewSession, reference: String?) {
+        if let target = remoteReviews.first(where: { $0.value === session })?.key {
+            session.isPRMode = reference == "pr"
+            loadRemoteReview(target, session: session, pullRequest: session.isPRMode, hostModeOverride: session.hostReviewPane ? session.isPRMode : nil)
+            return
+        }
         guard reviewSessions[session.paneID] === session else { return }
         session.reference = reference
         session.isPRMode = reference == "pr"
@@ -115,21 +153,20 @@ extension ShepherdViewModel {
         let cwdPath = session.cwd
         let reference = session.reference
         let paneID = session.paneID
-        Task.detached(priority: .userInitiated) {
-            // "pr" is a mode, not a git ref: resolve it to a merge-base spec
-            // against the PR base (or the remote default branch) first.
-            let resolved = reference == "pr" ? GitDiff.pullRequestReference(cwd: cwdPath) : reference
-            let result = Result { try GitDiff.load(cwd: cwdPath, reference: resolved) }
-            await MainActor.run {
-                // The user may have closed the pane before git finished.
-                guard self.reviewSessions[paneID] === session else { return }
-                session.isLoading = false
-                session.reference = resolved
-                switch result {
-                case .success(let files): session.files = files
-                case .failure(let error): session.loadError = String(describing: error)
-                }
+        let requestID = UUID()
+        session.loadRequestID = requestID
+        let loader = reviewDiffLoader
+        Task {
+            do {
+                let result = try await loader(cwdPath, reference)
+                guard reviewSessions[paneID] === session, session.loadRequestID == requestID else { return }
+                session.reference = result.reference
+                session.files = result.files
+            } catch {
+                guard reviewSessions[paneID] === session, session.loadRequestID == requestID else { return }
+                session.loadError = String(describing: error)
             }
+            session.isLoading = false
         }
     }
 
