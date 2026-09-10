@@ -171,7 +171,8 @@ struct ShellIntegrationTests {
     private func run(_ argv: [String], environment: [String: String], input: String) async throws -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: argv[0])
-        process.arguments = Array(argv.dropFirst())
+        // Pipe-driven zsh must not claim the runner's terminal for ZLE or job control.
+        process.arguments = Array(argv.dropFirst()) + (argv[0].hasSuffix("zsh") ? ["+o", "zle", "+o", "monitor"] : [])
         process.environment = environment
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
