@@ -83,12 +83,17 @@ final class AppTerminalModel {
     }
 
 
+    var onSurfaceAttachmentChanged: ((_ generation: UInt64?) -> Void)? {
+        get { surface.onSurfaceAttachmentChanged }
+        set { surface.onSurfaceAttachmentChanged = newValue }
+    }
+
     @discardableResult
     func replaceWithReplay(_ data: Data, generation: UInt64) -> Bool {
         surface.replaceWithReplay(data, generation: generation)
     }
 
-    fileprivate var model: TerminalSurfaceModel { surface }
+    var model: TerminalSurfaceModel { surface }
 }
 
 /// Installs the window-level file-drop overlay. Mount once per window.
