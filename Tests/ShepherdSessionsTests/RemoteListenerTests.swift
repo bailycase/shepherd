@@ -144,6 +144,125 @@ struct RemoteListenerTests {
         }
     }
 
+    @Test func uploadsAreChunkedPrivateAndConnectionOwned() async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+        let session = try await h.server.createSession(params: .init(cwd: h.dir.path, command: ["/bin/cat"], cols: 80, rows: 24))
+        let client = RemoteHostClient()
+        _ = try await client.connect(host: "127.0.0.1", port: h.port, token: h.token, clientName: "upload")
+        defer { client.disconnect() }
+        let source = h.dir.appendingPathComponent("source.bin")
+        let bytes = Data(repeating: 42, count: RemoteProtocol.uploadChunkBytes + 31)
+        try bytes.write(to: source)
+        let drops = h.dir.appendingPathComponent("remote-drops")
+        try FileManager.default.createDirectory(at: drops, withIntermediateDirectories: true)
+        let expired = drops.appendingPathComponent("expired")
+        try Data([1]).write(to: expired)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(-90_000)], ofItemAtPath: expired.path)
+        let path = try await client.upload(file: source, sessionID: session.id)
+        #expect(!FileManager.default.fileExists(atPath: expired.path))
+        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == bytes)
+        #expect(path.hasPrefix(h.dir.appendingPathComponent("remote-drops").path + "/"))
+        let permissions = try FileManager.default.attributesOfItem(atPath: path)[.posixPermissions] as? NSNumber
+        #expect(permissions?.intValue == 0o600)
+        #expect(try Data(contentsOf: source) == bytes)
+        let raw = try RemoteClient(port: h.port)
+        try raw.send(.hello(id: 1, token: h.token, clientName: "partial", protocolVersion: RemoteProtocol.version))
+        _ = try raw.readReply()
+        try raw.send(.upload(id: 2, action: .begin(sessionID: session.id, name: "../escape", size: 1)))
+        guard case .error = try raw.readReply() else { Issue.record("Traversal accepted"); return }
+        try raw.send(.upload(id: 3, action: .begin(sessionID: session.id, name: "too-large", size: RemoteProtocol.uploadMaxBytes + 1)))
+        guard case .error = try raw.readReply() else { Issue.record("Oversize accepted"); return }
+        try raw.send(.upload(id: 4, action: .begin(sessionID: session.id, name: "partial", size: 3)))
+        guard case .uploadResult(_, .ready(let id)) = try raw.readReply() else { Issue.record("Missing upload id"); return }
+        try raw.send(.upload(id: 40, action: .begin(sessionID: session.id, name: "second", size: 1)))
+        guard case .error = try raw.readReply() else { Issue.record("Overlapping upload accepted"); return }
+        try raw.send(.upload(id: 41, action: .chunk(uploadID: UUID(), data: Data([9]))))
+        guard case .error = try raw.readReply() else { Issue.record("Unknown chunk accepted"); return }
+        try raw.send(.upload(id: 42, action: .finish(uploadID: UUID())))
+        guard case .error = try raw.readReply() else { Issue.record("Unknown finish accepted"); return }
+        try raw.send(.upload(id: 43, action: .chunk(uploadID: id, data: Data([1, 2, 3]))))
+        guard case .ok = try raw.readReply() else { Issue.record("Original upload was lost"); return }
+        try raw.send(.upload(id: 44, action: .finish(uploadID: id)))
+        guard case .uploadResult(_, .complete(let preservedPath)) = try raw.readReply() else { Issue.record("Original upload could not finish"); return }
+        #expect(try Data(contentsOf: URL(fileURLWithPath: preservedPath)) == Data([1, 2, 3]))
+        try raw.send(.upload(id: 45, action: .begin(sessionID: session.id, name: "partial", size: 3)))
+        guard case .uploadResult(_, .ready(let id)) = try raw.readReply() else { Issue.record("Missing second upload id"); return }
+        let intruder = try RemoteClient(port: h.port)
+        try intruder.send(.hello(id: 1, token: h.token, clientName: "other", protocolVersion: RemoteProtocol.version))
+        _ = try intruder.readReply()
+        try intruder.send(.upload(id: 2, action: .chunk(uploadID: id, data: Data([1]))))
+        guard case .error = try intruder.readReply() else { Issue.record("Cross-connection chunk accepted"); return }
+        try raw.send(.upload(id: 5, action: .chunk(uploadID: id, data: Data([1]))))
+        _ = try raw.readReply()
+        raw.closeConnection()
+        let partial = h.dir.appendingPathComponent("remote-drops/\(id.uuidString)-partial")
+        try await waitUntil { !FileManager.default.fileExists(atPath: partial.path) }
+        #expect(FileManager.default.fileExists(atPath: path))
+        try intruder.send(.upload(id: 3, action: .begin(sessionID: session.id, name: "incomplete", size: 2)))
+        guard case .uploadResult(_, .ready(let incomplete)) = try intruder.readReply() else { Issue.record("Missing id"); return }
+        try intruder.send(.upload(id: 4, action: .finish(uploadID: incomplete)))
+        guard case .error = try intruder.readReply() else { Issue.record("Incomplete upload accepted"); return }
+        #expect(!FileManager.default.fileExists(atPath: drops.appendingPathComponent("\(incomplete.uuidString)-incomplete").path))
+        try intruder.send(.upload(id: 5, action: .begin(sessionID: session.id, name: "overflow", size: 1)))
+        guard case .uploadResult(_, .ready(let overflow)) = try intruder.readReply() else { Issue.record("Missing id"); return }
+        try intruder.send(.upload(id: 6, action: .chunk(uploadID: overflow, data: Data([1, 2]))))
+        guard case .error = try intruder.readReply() else { Issue.record("Declared size overrun accepted"); return }
+    }
+
+    @Test func creationChoicesReachHostUnchanged() async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+        let space = Space(name: "host", path: "/host/repo")
+        try await h.server.addSpace(space)
+        h.server.onRemoteCreationOptions = { spaceID, cwd, fetch, completion in
+            #expect(spaceID == space.id)
+            #expect(cwd == "/host/checkout")
+            #expect(fetch == false)
+            completion(.success(.init(base: "origin/release", note: "cached", fetchFirst: false, model: "host/model", thinking: .high)))
+        }
+        let created = AgentID()
+        h.server.onRemoteCreateAgent = { request, completion in
+            #expect(request.worktreeBase == "origin/release")
+            #expect(request.worktreeFetchFirst == false)
+            #expect(request.worktreeBranch == "worktree/test")
+            completion(.success(created))
+        }
+        let client = RemoteHostClient()
+        _ = try await client.connect(host: "127.0.0.1", port: h.port, token: h.token, clientName: "create")
+        defer { client.disconnect() }
+        let options = try await client.creationOptions(spaceID: space.id, cwd: "/host/checkout", fetchFirst: false)
+        #expect(options.base == "origin/release")
+        #expect(options.thinking == .high)
+        #expect(try await client.createAgent(spaceID: space.id, cwd: "/host/checkout", model: nil, thinking: nil, initialPrompt: nil, worktreeBranch: "worktree/test", worktreeBase: options.base, worktreeFetchFirst: options.fetchFirst) == created)
+    }
+
+    @Test func delayedAgentResultDoesNotReachAReplacementConnection() async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+        let space = Space(name: "test", path: "/tmp")
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: "/tmp")))
+        let agent = Agent(name: "agent", spaceID: space.id, tabID: tab.id)
+        try await h.server.putState(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let callbacks = Locked<[(Result<Void, RemoteCreateAgentError>) -> Void]>([])
+        h.server.onRemoteAgentAction = { _, _, completion in callbacks.withValue { $0.append(completion) } }
+        let first = try RemoteClient(port: h.port)
+        try first.send(.hello(id: 1, token: h.token, clientName: "first", protocolVersion: RemoteProtocol.version))
+        _ = try first.readReply()
+        try first.send(.agentAction(id: 77, agentID: agent.id, action: .rename(name: "private result")))
+        try await waitUntil { callbacks.current.count == 1 }
+        first.closeConnection()
+        try await Task.sleep(for: .milliseconds(100))
+        let second = try RemoteClient(port: h.port)
+        try second.send(.hello(id: 1, token: h.token, clientName: "replacement", protocolVersion: RemoteProtocol.version))
+        _ = try second.readReply()
+        callbacks.current[0](.failure(RemoteCreateAgentError("first client's result")))
+        #expect(throws: (any Error).self) { _ = try second.readReply(timeout: .milliseconds(300)) }
+        try second.send(.stateFetch(id: 2))
+        guard case .state(let id, _) = try second.readReply() else { Issue.record("Expected replacement state reply"); return }
+        #expect(id == 2)
+    }
+
     @Test func tokenIsGeneratedOnceWithOwnerOnlyPermissions() throws {
         let dir = try makeScratchDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

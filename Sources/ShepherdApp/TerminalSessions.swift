@@ -197,6 +197,7 @@ final class TerminalSessionStore: ObservableObject {
 
     /// The in-process server. Owned by the app (one per process).
     let server: SessionServer
+    var reserveCheckoutForLaunch: ((String) throws -> (() -> Void))?
     private var sessions: [PaneID: PaneSession] = [:]
     private var paneBySession: [SessionID: PaneID] = [:]
     private struct PendingExit {
@@ -505,6 +506,8 @@ final class TerminalSessionStore: ObservableObject {
                   liveBinding(forPane: pane.id) == nil else {
                 throw TerminalSessionStoreError.paneUnavailable(pane.id)
             }
+            let releaseCheckout = try reserveCheckoutForLaunch?(cwd)
+            defer { releaseCheckout?() }
             let info = try await server.createSession(
                 params: CreateSessionParams(
                     cwd: cwd,
@@ -754,6 +757,8 @@ final class TerminalSessionStore: ObservableObject {
                   liveBinding(forPane: session.paneID) == nil else {
                 throw TerminalSessionStoreError.paneUnavailable(session.paneID)
             }
+            let releaseCheckout = try reserveCheckoutForLaunch?(cwd)
+            defer { releaseCheckout?() }
             let info = try await server.createSession(
                 params: CreateSessionParams(
                     cwd: cwd,

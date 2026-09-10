@@ -130,6 +130,34 @@ struct RootView: View {
                 }
             }
         }
+        .onChange(of: vm.remoteRenameTarget) {
+            if let target = vm.remoteRenameTarget { renameDraft = vm.remoteAgent(target)?.name ?? "" }
+        }
+        .sheet(isPresented: Binding(
+            get: { vm.remoteRenameTarget != nil },
+            set: { if !$0 { vm.remoteRenameTarget = nil } }
+        )) {
+            RenameDialog(title: "Rename Agent", text: $renameDraft, onRename: {
+                if let target = vm.remoteRenameTarget {
+                    vm.performRemoteAction(target, action: .rename(name: renameDraft))
+                }
+                vm.remoteRenameTarget = nil
+            }, onCancel: { vm.remoteRenameTarget = nil })
+        }
+        .sheet(isPresented: Binding(
+            get: { vm.remoteWorktreeSheet != nil },
+            set: { if !$0 { vm.remoteWorktreeSheet = nil } }
+        )) {
+            if let target = vm.remoteWorktreeSheet {
+                RemoteWorktreeSheet(vm: vm, target: target, finalize: vm.remoteWorktreeFinalize)
+            }
+        }
+        .alert("Agent action failed", isPresented: Binding(
+            get: { vm.remoteActionError != nil },
+            set: { if !$0 { vm.remoteActionError = nil } }
+        )) {
+            Button("OK") { vm.remoteActionError = nil }
+        } message: { Text(vm.remoteActionError ?? "") }
         .onChange(of: vm.agentRenameTarget) {
             if let agent = vm.agent(id: vm.agentRenameTarget) {
                 renameDraft = agent.name
@@ -349,6 +377,7 @@ struct WorkspaceHeaderView: View {
                 let agent = connection.state.agents.first { $0.id == remote.agentID }
                 breadcrumb(space: "⌁ \(connection.config.name)", leaf: agent?.name ?? "agent")
                 Spacer(minLength: 0)
+                reviewButton
             } else if let shellID = vm.selectedShellID,
                let shell = vm.state.tabs.first(where: { $0.id == shellID }) {
                 breadcrumb(space: "shells", leaf: ShepherdViewModel.shellLabel(shell))
@@ -378,9 +407,8 @@ struct WorkspaceHeaderView: View {
 
     /// Toggles the native diff-review pane for the selected agent.
     private var reviewButton: some View {
-        let open = vm.selectedAgentID.map { id in
-            vm.reviewSessions.values.contains { $0.agentID == id }
-        } ?? false
+        let open = vm.selectedRemoteAgent.map { vm.remoteReviews[$0] != nil }
+            ?? (vm.selectedAgentID.map { id in vm.reviewSessions.values.contains { $0.agentID == id } } ?? false)
         return Button {
             vm.openUserReview()
         } label: {

@@ -9,19 +9,28 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var model: String?
     public var thinking: ThinkingLevel?
     public var initialPrompt: String?
+    public var worktreeBase: String?
+    public var worktreeFetchFirst: Bool?
+    public var worktreeBranch: String?
 
     public init(
         spaceID: SpaceID,
         cwd: String?,
         model: String?,
         thinking: ThinkingLevel?,
-        initialPrompt: String?
+        initialPrompt: String?,
+        worktreeBranch: String? = nil,
+        worktreeBase: String? = nil,
+        worktreeFetchFirst: Bool? = nil
     ) {
         self.spaceID = spaceID
         self.cwd = cwd
         self.model = model
         self.thinking = thinking
         self.initialPrompt = initialPrompt
+        self.worktreeBranch = worktreeBranch
+        self.worktreeBase = worktreeBase
+        self.worktreeFetchFirst = worktreeFetchFirst
     }
 }
 

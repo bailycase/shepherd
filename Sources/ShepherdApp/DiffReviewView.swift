@@ -69,7 +69,7 @@ struct DiffReviewPane: View {
                 }
             }
             .overlay(Rectangle().stroke(Tokens.paneBorder, lineWidth: 1))
-            ReviewActionButton("submit", prominent: true, disabled: session.loadError != nil) {
+            ReviewActionButton("submit", prominent: true, disabled: session.loadError != nil || session.isSubmitting || session.isLoading) {
                 vm.submitReview(session)
             }
         }
@@ -339,7 +339,7 @@ struct DiffReviewPane: View {
             .padding(.horizontal, Metrics.spacing8)
             .frame(height: Metrics.rowHeight)
             .overlay(Rectangle().stroke(Tokens.paneBorder, lineWidth: 1))
-            ReviewActionButton("submit", prominent: true, disabled: session.loadError != nil) {
+            ReviewActionButton("submit", prominent: true, disabled: session.loadError != nil || session.isSubmitting || session.isLoading) {
                 vm.submitReview(session)
             }
         }

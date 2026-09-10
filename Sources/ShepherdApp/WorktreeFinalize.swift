@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdProtocol
 
 /// Async login-shell runner for worktree setup probes and the finalize
 /// pipeline. `zsh -l` resolves the user's PATH (gh, brew-installed git)
@@ -174,25 +175,8 @@ enum WorktreeRepoSetting: String, CaseIterable, Identifiable {
     }
 }
 
-enum WorktreeRepoSettingState: Equatable {
-    case unknown
-    case checking
-    case enabled
-    case disabled
-    case unavailable(String)
-}
-
-enum WorktreeCheckState: Equatable {
-    case pending
-    case checking
-    case pass(String)
-    case fail(String)
-
-    var passed: Bool {
-        if case .pass = self { return true }
-        return false
-    }
-}
+typealias WorktreeRepoSettingState = RemoteWorktreeRepoSettingState
+typealias WorktreeCheckState = RemoteWorktreeCheckState
 
 /// Probes the finalize prerequisites and applies the fixable remedies.
 /// Repo-scoped: the `remote` check runs against the space's checkout.
@@ -202,7 +186,32 @@ final class WorktreeSetupModel: ObservableObject {
     /// Recommended GitHub repo settings — informational, never gate `allPassed`.
     @Published private(set) var repoSettings: [WorktreeRepoSetting: WorktreeRepoSettingState]
     @Published private(set) var running = false
-    let repoPath: String
+    private(set) var repoPath: String
+    var remoteAction: ((RemoteWorktreeSetupAction) async throws -> RemoteWorktreeSetup)?
+    @Published private(set) var actionError: String?
+    var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1, timeout: 20) }
+
+    var snapshot: RemoteWorktreeSetup {
+        .init(repoPath: repoPath,
+              checks: Dictionary(uniqueKeysWithValues: states.map { ($0.key.rawValue, $0.value) }),
+              repoSettings: Dictionary(uniqueKeysWithValues: repoSettings.map { ($0.key.rawValue, $0.value) }))
+    }
+
+    private func performRemote(_ action: RemoteWorktreeSetupAction) async {
+        guard let remoteAction else { return }
+        running = true
+        actionError = nil
+        defer { running = false }
+        do {
+            let result = try await remoteAction(action)
+            repoPath = result.repoPath
+            states = Dictionary(uniqueKeysWithValues: WorktreeSetupCheck.allCases.map { ($0, result.checks[$0.rawValue] ?? .pending) })
+            repoSettings = Dictionary(uniqueKeysWithValues: WorktreeRepoSetting.allCases.map { ($0, result.repoSettings[$0.rawValue] ?? .unknown) })
+        } catch {
+            actionError = String(describing: error)
+            if action == .check { states = Dictionary(uniqueKeysWithValues: WorktreeSetupCheck.allCases.map { ($0, .pending) }) }
+        }
+    }
 
     init(repoPath: String) {
         self.repoPath = repoPath
@@ -216,6 +225,7 @@ final class WorktreeSetupModel: ObservableObject {
 
     func runAll() async {
         guard !running else { return }
+        if remoteAction != nil { await performRemote(.check); return }
         running = true
         for check in WorktreeSetupCheck.allCases {
             states[check] = .checking
@@ -228,12 +238,13 @@ final class WorktreeSetupModel: ObservableObject {
     /// `{owner}/{repo}` from the checkout's origin remote. Needs gh auth —
     /// callers should probe only after the ghAuth check passes.
     func probeRepoSettings() async {
+        if remoteAction != nil { await performRemote(.check); return }
         for setting in WorktreeRepoSetting.allCases {
             repoSettings[setting] = .checking
         }
-        let r = await LoginShell.run(
+        let r = await runner(
             "gh api 'repos/{owner}/{repo}' --jq '[.delete_branch_on_merge, .allow_auto_merge] | @json'",
-            cwd: repoPath
+            repoPath
         )
         guard r.status == 0,
               let data = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
@@ -260,8 +271,12 @@ final class WorktreeSetupModel: ObservableObject {
     /// `gh repo edit <flag>` — admin-only on the repo; failure is disclosed,
     /// never retried silently.
     func enableRepoSetting(_ setting: WorktreeRepoSetting) async {
+        if remoteAction != nil {
+            await performRemote(setting == .deleteBranchOnMerge ? .enableDeleteBranchOnMerge : .enableAutoMerge)
+            return
+        }
         repoSettings[setting] = .checking
-        let r = await LoginShell.run("gh repo edit \(setting.enableFlag)", cwd: repoPath)
+        let r = await runner("gh repo edit \(setting.enableFlag)", repoPath)
         guard r.status == 0 else {
             repoSettings[setting] = .unavailable("failed — repo admin required")
             return
@@ -274,28 +289,34 @@ final class WorktreeSetupModel: ObservableObject {
         let trimmedName = name.trimmingCharacters(in: .whitespaces)
         let trimmedEmail = email.trimmingCharacters(in: .whitespaces)
         guard !trimmedName.isEmpty, !trimmedEmail.isEmpty else { return }
-        _ = await LoginShell.run(
+        if remoteAction != nil { await performRemote(.applyIdentity(name: trimmedName, email: trimmedEmail)); return }
+        let output = await runner(
             "git config --global user.name \(shellQuoted(trimmedName)) && "
-            + "git config --global user.email \(shellQuoted(trimmedEmail))"
+            + "git config --global user.email \(shellQuoted(trimmedEmail))", nil
         )
+        actionError = output.status == 0 ? nil : output.stderr
         states[.identity] = await probe(.identity)
     }
 
     /// Kick off Apple's Command Line Tools installer (its own GUI takes over).
     func installCommandLineTools() {
-        Task.detached(priority: .utility) {
-            _ = await LoginShell.run("xcode-select --install")
-        }
+        Task { await installTools() }
+    }
+
+    func installTools() async {
+        if remoteAction != nil { await performRemote(.installCommandLineTools); return }
+        let output = await runner("xcode-select --install", nil)
+        actionError = output.status == 0 ? nil : output.stderr
     }
 
     private func probe(_ check: WorktreeSetupCheck) async -> WorktreeCheckState {
         switch check {
         case .git:
-            let r = await LoginShell.run("""
+            let r = await runner("""
                 command -v git >/dev/null 2>&1 || exit 1
                 if [ "$(command -v git)" = /usr/bin/git ] && ! xcode-select -p >/dev/null 2>&1; then exit 2; fi
                 git --version
-                """)
+                """, nil)
             if r.status == 0 {
                 return .pass(r.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
             }
@@ -303,9 +324,9 @@ final class WorktreeSetupModel: ObservableObject {
                 ? "Apple's Command Line Tools are not installed"
                 : "git not found on PATH")
         case .identity:
-            let r = await LoginShell.run(
+            let r = await runner(
                 "git config --get user.name && git config --get user.email",
-                cwd: repoPath
+                repoPath
             )
             let parts = r.stdout.split(separator: "\n").map(String.init)
             if r.status == 0, parts.count == 2 {
@@ -313,15 +334,15 @@ final class WorktreeSetupModel: ObservableObject {
             }
             return .fail("git user.name / user.email are not set")
         case .remote:
-            let r = await LoginShell.run(
+            let r = await runner(
                 "git ls-remote --quiet --heads origin >/dev/null",
-                cwd: repoPath
+                repoPath
             )
             if r.status == 0 { return .pass("origin reachable with your credentials") }
             let detail = r.stderr.split(separator: "\n").last.map(String.init)
             return .fail(detail ?? "origin remote missing or unreachable")
         case .gh:
-            let r = await LoginShell.run("command -v gh >/dev/null 2>&1 && gh --version | head -1")
+            let r = await runner("command -v gh >/dev/null 2>&1 && gh --version | head -1", nil)
             if r.status == 0 {
                 return .pass(r.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
             }
@@ -329,7 +350,7 @@ final class WorktreeSetupModel: ObservableObject {
         case .ghAuth:
             // Documented contract: exit 0 = authenticated, 1 = auth issues,
             // 4 = authentication required. Never --json (always exits 0).
-            let r = await LoginShell.run("gh auth status --hostname github.com 2>&1")
+            let r = await runner("gh auth status --hostname github.com 2>&1", nil)
             if r.status == 0 {
                 let account = r.stdout.split(separator: "\n")
                     .first { $0.contains("Logged in to") }
@@ -338,6 +359,20 @@ final class WorktreeSetupModel: ObservableObject {
             }
             return .fail("not authenticated — run gh auth login")
         }
+    }
+}
+
+enum WorktreeCommitCount {
+    static func load(base: String, worktree: String) async -> Int? {
+        let name = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let result = await LoginShell.run(
+            "git rev-list --count \(shellQuoted("origin/" + name))..HEAD 2>/dev/null "
+                + "|| git rev-list --count \(shellQuoted(name))..HEAD 2>/dev/null",
+            cwd: worktree, timeout: 20
+        )
+        guard result.status == 0 else { return nil }
+        return Int(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
@@ -370,7 +405,7 @@ struct WorktreePRDescriptionGenerator {
         let commits = await runner(
             "\(resolveBase); git log --format='- %s' \"$base\"..HEAD | head -c 8000",
             worktree,
-            nil
+            20
         )
         let fallback = commits.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         let fallbackBody = fallback.isEmpty ? "- \(title)" : fallback
@@ -388,7 +423,7 @@ struct WorktreePRDescriptionGenerator {
             git diff --no-ext-diff --unified=2 "$base" | head -c 16000
             """,
             worktree,
-            nil
+            20
         )
         guard context.status == 0 else { return Result(body: fallbackBody, generated: false) }
 
@@ -496,6 +531,8 @@ final class WorktreeFinalizer: ObservableObject {
     /// Injectable clean gate; production is the same probe the delete dialog uses.
     var cleanCheck: (String, String) -> String? = GitWorktree.unreconciledWork
 
+    var beforeCleanup: (() async throws -> Void)?
+
     init() {
         states = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, .pending) })
     }
@@ -575,6 +612,8 @@ final class WorktreeFinalizer: ObservableObject {
             }
             return .done("clean")
         case .removeWorktree:
+            do { try await beforeCleanup?() }
+            catch { return .failed(String(describing: error)) }
             // No --force: the clean gate just proved it, and git's own
             // refusal is the last-resort safety net.
             let remove = await runner(

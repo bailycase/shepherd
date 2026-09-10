@@ -104,6 +104,7 @@ public final class SessionServer: @unchecked Sendable {
         var pendingReplies: [Data] = []
         var pendingReplyOffset = 0
         var queuedReplyBytes = 0
+        var upload: RemoteFileUpload?
 
         init(fd: Int32, isRemote: Bool = false) {
             self.fd = fd
@@ -210,6 +211,10 @@ public final class SessionServer: @unchecked Sendable {
     /// actor; the completion may be called from any thread. `nil` handler
     /// (headless server, tests) rejects the request.
     public var onRemoteCreateAgent: ((RemoteCreateAgentRequest, @escaping (Result<AgentID, RemoteCreateAgentError>) -> Void) -> Void)?
+
+    public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
+    public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
+    public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
 
     private let queue = DispatchQueue(label: "shepherd.sessions")
     private let socketPath: String
@@ -559,6 +564,99 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .hello(let id, _, _, _):
             send(.error(id: id, code: "protocol", message: "already authenticated"), to: client)
+        case .upload(let id, let action):
+            do {
+                switch action {
+                case .begin(let sessionID, let name, let size):
+                    guard sessions[sessionID]?.isAlive == true else { throw RemoteCreateAgentError("Session is not running") }
+                    guard client.upload == nil else { throw RemoteCreateAgentError("An upload is already in progress") }
+                    let upload = try RemoteFileUpload(directory: store.url.deletingLastPathComponent().appendingPathComponent("remote-drops"), sessionID: sessionID, name: name, size: size)
+                    client.upload = upload
+                    send(.uploadResult(id: id, result: .ready(uploadID: upload.id)), to: client)
+                case .chunk(let uploadID, let data):
+                    guard let upload = client.upload, upload.id == uploadID else { throw RemoteCreateAgentError("Unknown upload") }
+                    try upload.append(data)
+                    send(.ok(id: id), to: client)
+                case .finish(let uploadID):
+                    guard let upload = client.upload, upload.id == uploadID else { throw RemoteCreateAgentError("Unknown upload") }
+                    guard sessions[upload.sessionID]?.isAlive == true else { throw RemoteCreateAgentError("Session stopped before upload completed") }
+                    let path = try upload.finish()
+                    client.upload = nil
+                    send(.uploadResult(id: id, result: .complete(path: path)), to: client)
+                case .cancel(let uploadID):
+                    if client.upload?.id == uploadID { client.upload = nil }
+                    send(.ok(id: id), to: client)
+                }
+            } catch {
+                switch action {
+                case .chunk(let uploadID, _), .finish(let uploadID):
+                    if client.upload?.id == uploadID { client.upload = nil }
+                case .begin, .cancel: break
+                }
+                send(.error(id: id, code: "upload_failed", message: String(describing: error)), to: client)
+            }
+        case .creationOptions(let id, let spaceID, let cwd, let fetchFirst):
+            guard store.state.spaces.contains(where: { $0.id == spaceID }), let handler = onRemoteCreationOptions else {
+                send(.error(id: id, code: "unavailable", message: "Host creation options unavailable"), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(spaceID, cwd, fetchFirst) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let options): self.send(.creationOptions(id: id, options: options), to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "options_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
+        case .agentQuery(let id, let agentID, let query):
+            guard let handler = onRemoteAgentQuery else {
+                send(.error(id: id, code: "unavailable", message: "Agent inspection is unavailable on the host."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(agentID, query) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let value):
+                            let reply = RemoteReply.agentResult(id: id, result: value)
+                            guard let encoded = try? NDJSON.encode(reply), encoded.count < 1024 * 1024 else {
+                                self.send(.error(id: id, code: "too_large", message: "Agent result exceeds the remote payload limit."), to: client)
+                                return
+                            }
+                            self.send(reply, to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "query_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
+        case .agentAction(let id, let agentID, let action):
+            guard store.state.agents.contains(where: { $0.id == agentID }) else {
+                send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+                return
+            }
+            guard let handler = onRemoteAgentAction else {
+                send(.error(id: id, code: "unsupported", message: "Host cannot perform agent actions without a GUI."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(agentID, action) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success: self.send(.ok(id: id), to: client)
+                        case .failure(let error):
+                            self.send(.error(id: id, code: "action_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
         case .stateFetch(let id):
             send(.state(id: id, state: store.state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -603,19 +701,18 @@ public final class SessionServer: @unchecked Sendable {
         case .listModels(let id):
             // Asking pi shells out (~0.5s cold); never block the server
             // queue. Reply from the queue once the catalog returns.
-            let fd = client.fd
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let models = PiModelCatalog.modelIDs()
                 let fallback = models.isEmpty ? PiConfig.modelIDs() : models
                 let defaultModel = PiConfig.defaultModel()
                 self?.queue.async {
-                    guard let self, let client = self.clients[fd] else { return }
+                    guard let self, self.clients[client.fd] === client else { return }
                     self.send(.models(id: id, models: fallback, defaultModel: defaultModel), to: client)
                 }
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
-        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt):
+        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst):
             remoteCreateAgent(
                 id: id,
                 request: RemoteCreateAgentRequest(
@@ -623,7 +720,10 @@ public final class SessionServer: @unchecked Sendable {
                     cwd: cwd,
                     model: model,
                     thinking: thinking,
-                    initialPrompt: initialPrompt
+                    initialPrompt: initialPrompt,
+                    worktreeBranch: worktreeBranch,
+                    worktreeBase: worktreeBase,
+                    worktreeFetchFirst: worktreeFetchFirst
                 ),
                 client: client
             )
@@ -635,12 +735,11 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "unsupported", message: "host cannot mutate panes"), to: client)
             return
         }
-        let fd = client.fd
         hopToMain { [weak self] in
             handler(request) { outcome in
                 guard let self else { return }
                 self.queue.async {
-                    guard let client = self.clients[fd] else { return }
+                    guard self.clients[client.fd] === client else { return }
                     switch outcome {
                     case .ok:
                         self.send(.ok(id: id), to: client)
@@ -719,12 +818,11 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "no_such_space", message: "unknown space \(request.spaceID)"), to: client)
             return
         }
-        let fd = client.fd
         hopToMain { [weak self] in
             handler(request) { result in
                 guard let self else { return }
                 self.queue.async {
-                    guard let client = self.clients[fd] else { return }
+                    guard self.clients[client.fd] === client else { return }
                     switch result {
                     case .success(let agentID):
                         self.send(.agentCreated(id: id, agentID: agentID), to: client)
@@ -947,6 +1045,7 @@ public final class SessionServer: @unchecked Sendable {
     private func disconnect(_ client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
         clients.removeValue(forKey: client.fd)
+        client.upload = nil
         if client.isRemote {
             for sessionID in remoteAttachments.keys {
                 remoteAttachments[sessionID]?.remove(client.fd)
@@ -1562,6 +1661,19 @@ public final class SessionServer: @unchecked Sendable {
                 $0.agents[index].name = trimmed
                 $0.agents[index].nameIsFinal = true
             }
+        }
+    }
+
+    public func reorderAgent(_ agentID: AgentID, onto target: AgentID) async throws {
+        try await enqueue {
+            let agents = self.store.state.agents
+            guard let from = agents.firstIndex(where: { $0.id == agentID }),
+                  let to = agents.firstIndex(where: { $0.id == target }),
+                  agents[from].spaceID == agents[to].spaceID else {
+                throw SessionServerError.conflict("Agents must belong to the same space")
+            }
+            guard from != to else { return }
+            try self.mutateState { $0.agents.insert($0.agents.remove(at: from), at: to) }
         }
     }
 

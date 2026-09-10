@@ -1,3 +1,4 @@
+import Foundation
 import ShepherdCore
 import Testing
 @testable import ShepherdApp
@@ -5,6 +6,49 @@ import Testing
 @Suite("Agent creation")
 @MainActor
 struct AgentCreationTests {
+    @Test func baseResolutionIdentityChangesEvenWhenHostsUseTheSameDirectory() {
+        let first = NewAgentBaseTarget(hostID: UUID(), spaceID: SpaceID(), cwd: "/repo", worktree: true)
+        var second = first
+        second.hostID = UUID()
+        #expect(first != second)
+        second.hostID = first.hostID
+        #expect(first == second)
+        second.worktree = false
+        #expect(first != second)
+    }
+
+    @Test func delayedDefaultsPreserveEditsAndRejectPreviousHostResults() {
+        var defaults = NewAgentTargetDefaults()
+        let firstHost = UUID()
+        let first = defaults.begin(hostID: firstHost, model: "", thinking: .medium)
+        #expect(defaults.loading && !defaults.ready)
+        defaults.model = "chosen/model"
+        defaults.modelEdited = true
+        defaults.thinking = .high
+        defaults.thinkingEdited = true
+        defaults.apply(requestID: first, model: "host/default", thinking: .low)
+        #expect(defaults.ready && !defaults.loading)
+        #expect(defaults.model == "chosen/model")
+        #expect(defaults.thinking == .high)
+
+        let secondHost = UUID()
+        let second = defaults.begin(hostID: secondHost, model: "", thinking: .medium)
+        #expect(!defaults.ready)
+        defaults.apply(requestID: first, model: "stale", thinking: .low)
+        #expect(defaults.loading && defaults.model.isEmpty)
+        defaults.fail(requestID: second)
+        #expect(!defaults.loading && !defaults.ready)
+        let retry = defaults.begin(hostID: secondHost, model: "", thinking: .medium)
+        defaults.apply(requestID: retry, model: "second/default", thinking: .high)
+        #expect(defaults.ready && defaults.model == "second/default")
+
+        _ = defaults.begin(hostID: nil, model: "local/default", thinking: .low)
+        defaults.apply(requestID: retry, model: "late remote", thinking: .high)
+        #expect(defaults.hostID == nil && defaults.ready && !defaults.loading)
+        #expect(defaults.model == "local/default")
+        #expect(defaults.thinking == .low)
+    }
+
     @Test func quickCreateUsesTheSpaceCheckout() {
         let space = Space(
             name: "Shepherd",

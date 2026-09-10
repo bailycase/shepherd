@@ -85,6 +85,11 @@ extension ShepherdViewModel {
     @discardableResult
     func addSpace(at url: URL, createInitialAgent: Bool = true) async -> SpaceID? {
         let path = url.path
+        do { try verifyCheckoutAvailable(path) }
+        catch { remoteActionError = String(describing: error); return nil }
+        let reservation = UUID()
+        startingCheckoutUsers[reservation] = path
+        defer { startingCheckoutUsers.removeValue(forKey: reservation) }
         let space = Space(name: url.lastPathComponent, path: path)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: path)))
         do {
@@ -190,15 +195,14 @@ extension ShepherdViewModel {
                 NSSound.beep()
                 return
             }
-            let config = Self.quickAgentConfig(for: space, defaults: settings.agentDefaults)
             Task {
                 do {
                     try await createRemoteAgent(
                         hostID: selectedRemoteAgent.hostID,
-                        spaceID: config.spaceID,
-                        cwd: config.workingDirectory,
-                        model: config.model,
-                        thinking: config.thinking,
+                        spaceID: space.id,
+                        cwd: space.path,
+                        model: nil,
+                        thinking: nil,
                         initialPrompt: nil
                     )
                 } catch {
@@ -282,6 +286,10 @@ extension ShepherdViewModel {
         guard let space = state.spaces.first(where: { $0.id == config.spaceID }) else {
             throw AgentStartFailure(message: "space no longer exists")
         }
+        try verifyCheckoutAvailable(config.workingDirectory)
+        let reservation = UUID()
+        startingCheckoutUsers[reservation] = config.workingDirectory
+        defer { startingCheckoutUsers.removeValue(forKey: reservation) }
         let cwd = (config.workingDirectory as NSString).expandingTildeInPath
         let name = config.initialName ?? Self.provisionalName(for: config.initialPrompt)
         let agentID = AgentID()

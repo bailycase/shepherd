@@ -1,10 +1,83 @@
 import Foundation
 import Testing
+import ShepherdProtocol
 @testable import ShepherdApp
 
 @Suite("Worktree finalize pipeline")
 @MainActor
 struct WorktreeFinalizeTests {
+    @Test func remoteSetupUsesTypedHostActionsWithoutLocalCommands() async {
+        let model = WorktreeSetupModel(repoPath: "/client/must-not-run")
+        model.runner = { _, _ in
+            Issue.record("Remote setup executed a command locally")
+            return .init(status: 1, stdout: "", stderr: "unexpected")
+        }
+        var identityApplied = false
+        var autoMergeEnabled = false
+        var deleteBranchEnabled = false
+        var installerOpened = false
+        model.remoteAction = { action in
+            switch action {
+            case .check: break
+            case .applyIdentity(let name, let email): identityApplied = name == "Host User" && email == "host@example.invalid"
+            case .enableAutoMerge: autoMergeEnabled = true
+            case .enableDeleteBranchOnMerge: deleteBranchEnabled = true
+            case .installCommandLineTools: installerOpened = true
+            case .loginShell: Issue.record("Login shell has a terminal reply")
+            }
+            var checks = Dictionary(uniqueKeysWithValues: WorktreeSetupCheck.allCases.map { ($0.rawValue, RemoteWorktreeCheckState.pass("host ready")) })
+            if !identityApplied { checks["identity"] = .fail("missing host identity") }
+            return .init(repoPath: "/host/repo", checks: checks, repoSettings: [
+                "allowAutoMerge": autoMergeEnabled ? .enabled : .disabled,
+                "deleteBranchOnMerge": deleteBranchEnabled ? .enabled : .disabled
+            ])
+        }
+        await model.runAll()
+        #expect(!model.allPassed)
+        #expect(model.repoPath == "/host/repo")
+        await model.applyIdentity(name: " Host User ", email: " host@example.invalid ")
+        #expect(model.allPassed)
+        await model.enableRepoSetting(.allowAutoMerge)
+        await model.enableRepoSetting(.deleteBranchOnMerge)
+        await model.installTools()
+        #expect(model.repoSettings[.allowAutoMerge] == .enabled)
+        #expect(model.repoSettings[.deleteBranchOnMerge] == .enabled)
+        #expect(installerOpened)
+        model.remoteAction = { _ in throw GitWorktree.Failure(message: "host disconnected") }
+        await model.runAll()
+        #expect(model.actionError?.contains("host disconnected") == true)
+        #expect(!model.running)
+    }
+
+    @Test func hostSetupRepairsReprobeIdentityAndRepoSettings() async {
+        let model = WorktreeSetupModel(repoPath: "/host/repo")
+        var identity = false
+        var autoMerge = false
+        model.runner = { script, cwd in
+            if script.hasPrefix("git config --global") {
+                identity = script.contains(shellQuoted("O'Neil")) && script.contains(shellQuoted("host@example.invalid"))
+            }
+            if script.hasPrefix("git config --get") {
+                #expect(cwd == "/host/repo")
+                return .init(status: identity ? 0 : 1, stdout: identity ? "O'Neil\nhost@example.invalid\n" : "", stderr: "")
+            }
+            if script.hasPrefix("gh repo edit") { autoMerge = true }
+            if script.hasPrefix("gh api") {
+                #expect(cwd == "/host/repo")
+                return .init(status: 0, stdout: "[true,\(autoMerge)]", stderr: "")
+            }
+            return .init(status: 0, stdout: "ready", stderr: "")
+        }
+        await model.runAll()
+        #expect(!model.allPassed)
+        await model.applyIdentity(name: "O'Neil", email: "host@example.invalid")
+        #expect(model.allPassed)
+        await model.probeRepoSettings()
+        #expect(model.repoSettings[.allowAutoMerge] == .disabled)
+        await model.enableRepoSetting(.allowAutoMerge)
+        #expect(model.repoSettings[.allowAutoMerge] == .enabled)
+    }
+
     private static func context() -> WorktreeFinalizer.Context {
         WorktreeFinalizer.Context(
             repo: "/tmp/repo",
@@ -14,6 +87,34 @@ struct WorktreeFinalizeTests {
             title: "Fix the thing",
             body: ""
         )
+    }
+
+    @Test func failedRetirementStopsFilesystemCleanup() async {
+        let finalizer = WorktreeFinalizer()
+        finalizer.cleanCheck = { _, _ in nil }
+        finalizer.beforeCleanup = { throw GitWorktree.Failure(message: "persistence failed") }
+        var scripts: [String] = []
+        finalizer.runner = { script, _ in
+            scripts.append(script)
+            return .init(status: 0, stdout: "", stderr: "")
+        }
+        await finalizer.run(Self.context())
+        #expect(finalizer.phase == .failed)
+        #expect(!scripts.contains { $0.hasPrefix("git worktree remove") || $0.hasPrefix("git branch -D") })
+    }
+
+    @Test func checkedCleanProbeFailsForMissingCheckout() {
+        #expect(throws: GitWorktree.Failure.self) {
+            try GitWorktree.checkedUnreconciledWork(worktree: "/tmp/missing-\(UUID())", branch: "test")
+        }
+    }
+
+    @Test func localOnlyReachabilityDoesNotAuthorizeRemoteCleanup() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-clean-check-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let setup = await LoginShell.run("mkdir \(shellQuoted(root.path)) && git -C \(shellQuoted(root.path)) init -q && git -C \(shellQuoted(root.path)) -c user.name=Test -c user.email=test@example.invalid commit --allow-empty -qm initial && git -C \(shellQuoted(root.path)) branch another-local")
+        #expect(setup.status == 0)
+        #expect(try GitWorktree.checkedUnreconciledWork(worktree: root.path, branch: "main") != nil)
     }
 
     /// Happy path: every step runs in order, the PR URL is captured from gh
