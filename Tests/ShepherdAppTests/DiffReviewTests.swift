@@ -39,6 +39,65 @@ struct DiffReviewTests {
         return condition()
     }
 
+    private actor DelayedLoads {
+        var pending: [String: CheckedContinuation<(files: [DiffFile], reference: String?), any Error>] = [:]
+
+        func load(_ reference: String?) async throws -> (files: [DiffFile], reference: String?) {
+            try await withCheckedThrowingContinuation { pending[reference ?? "local"] = $0 }
+        }
+
+        func waitFor(_ reference: String) async throws {
+            let deadline = ContinuousClock.now + .seconds(5)
+            while pending[reference] == nil {
+                guard ContinuousClock.now < deadline else { throw GitWorktree.Failure(message: "Loader was not called for \(reference)") }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
+
+        func finish(_ reference: String, failing: Bool = false) {
+            guard let continuation = pending.removeValue(forKey: reference) else { return }
+            if failing { continuation.resume(throwing: GitWorktree.Failure(message: "stale load failed")) }
+            else { continuation.resume(returning: ([], reference)) }
+        }
+    }
+
+    @Test func hostReviewLoadsIgnoreStaleSuccessFailureAndLoadingState() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let space = Space(name: "host", path: "/host/not-executed")
+        let pane = LeafPane(cwd: space.path, isReview: true)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(name: "host", spaceID: space.id, tabID: tab.id)
+        try await fixture.server.putState(.init(spaces: [space], tabs: [tab], agents: [agent]))
+        let vm = ShepherdViewModel(server: fixture.server)
+        #expect(await waitUntil { vm.state.agents.count == 1 })
+        let session = ReviewSession(agentID: agent.id, paneID: pane.id, cwd: space.path, reference: nil)
+        vm.reviewSessions[session.paneID] = session
+        let loads = DelayedLoads()
+        vm.reviewDiffLoader = { _, reference in try await loads.load(reference) }
+        vm.reloadReview(session, reference: "old")
+        try await loads.waitFor("old")
+        vm.reloadReview(session, reference: "new")
+        try await loads.waitFor("new")
+        await loads.finish("old", failing: true)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(session.isLoading)
+        #expect(session.loadError == nil)
+        await loads.finish("new")
+        #expect(await waitUntil { !session.isLoading && session.reference == "new" })
+
+        vm.reloadReview(session, reference: "slow")
+        try await loads.waitFor("slow")
+        vm.reloadReview(session, reference: "latest")
+        try await loads.waitFor("latest")
+        await loads.finish("latest")
+        #expect(await waitUntil { session.reference == "latest" && !session.isLoading })
+        await loads.finish("slow")
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(session.reference == "latest")
+        #expect(session.loadError == nil)
+    }
+
     @Test func formatReviewIncludesLineContextAcrossFiles() {
         let firstLine = DiffLine(kind: .added, text: "let x = 1", oldLine: nil, newLine: 42, id: 0)
         let secondLine = DiffLine(kind: .removed, text: "old", oldLine: 7, newLine: nil, id: 0)

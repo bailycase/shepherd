@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 /// The New Agent sheet's "worktree" option and the space context menu's
 /// "New Worktree…": create a git worktree beside the checkout and start an
@@ -231,10 +232,68 @@ enum GitWorktree {
         return parts.isEmpty ? nil : parts.joined(separator: " and ")
     }
 
+    /// Destructive remote operations must not treat a failed probe as a clean checkout.
+    static func checkedUnreconciledWork(worktree: String, branch: String) throws -> String? {
+        let status = try run(["-C", worktree, "status", "--porcelain"])
+        let count = try run(["-C", worktree, "rev-list", "--count", "HEAD", "--not", "--remotes"])
+        guard let unpushed = Int(count.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            throw Failure(message: "Could not verify commits on the remote")
+        }
+        var parts: [String] = []
+        let dirty = status.split(separator: "\n").count
+        if dirty > 0 { parts.append("\(dirty) uncommitted changes") }
+        if unpushed > 0 { parts.append("\(unpushed) commits not on a remote") }
+        return parts.isEmpty ? nil : parts.joined(separator: " and ")
+    }
+
+    static func deletionFingerprint(worktree: String) throws -> String {
+        let identity = try identity(at: worktree)
+        var digest = SHA256()
+        func add(_ value: String) { digest.update(data: Data((value + "\0").utf8)) }
+        add(identity.repo); add(identity.path); add(identity.branch)
+        add(try run(["-C", worktree, "rev-parse", "HEAD"]))
+        add(try run(["-C", worktree, "ls-files", "--stage", "-z"]))
+        add(try run(["-C", worktree, "status", "--porcelain=v1", "-z", "--untracked-files=all"]))
+        let files = try run(["-C", worktree, "ls-files", "--cached", "--others", "-z"])
+        for file in Set(files.split(separator: "\0").map(String.init)).sorted() {
+            add(file)
+            let path = URL(fileURLWithPath: worktree).appendingPathComponent(file)
+            let attributes: [FileAttributeKey: Any]
+            do { attributes = try FileManager.default.attributesOfItem(atPath: path.path) }
+            catch CocoaError.fileReadNoSuchFile { add("deleted"); continue }
+            guard let type = attributes[.type] as? FileAttributeType else { throw Failure(message: "Cannot inspect checkout file") }
+            add(type.rawValue)
+            add(String(describing: attributes[.posixPermissions]))
+            if type == .typeSymbolicLink {
+                add(try FileManager.default.destinationOfSymbolicLink(atPath: path.path))
+            } else if type == .typeRegular {
+                let handle = try FileHandle(forReadingFrom: path)
+                defer { try? handle.close() }
+                while let bytes = try handle.read(upToCount: 256 * 1024), !bytes.isEmpty { digest.update(data: bytes) }
+            } else {
+                throw Failure(message: "Cannot safely fingerprint nested repository or special file: \(file)")
+            }
+        }
+        return digest.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func verifyIdentity(worktree: String, repo: String, branch: String) throws {
+        let current = try identity(at: worktree)
+        let expectedRepo = try primaryCheckout(at: repo)
+        guard current.repo == expectedRepo, current.branch == branch else {
+            throw Failure(message: "Checkout repository or branch changed. Checkout was kept.")
+        }
+    }
+
     /// Tear down what `add` created: `git worktree remove --force` on the
     /// derived destination, then delete the branch. Only the confirmed
     /// Delete Worktree Agent dialog calls this.
-    static func remove(repo: String, branch: String, worktree: String? = nil) throws {
+    static func remove(repo: String, branch: String, worktree: String? = nil, fingerprint: String? = nil) throws {
+        let path = worktree ?? destination(repo: repo, branch: branch)
+        try verifyIdentity(worktree: path, repo: repo, branch: branch)
+        if let fingerprint, try deletionFingerprint(worktree: path) != fingerprint {
+            throw Failure(message: "Checkout contents changed. Checkout was kept.")
+        }
         let repoPath = (repo as NSString).expandingTildeInPath
         try run([
             "-C", repoPath, "worktree", "remove", "--force",

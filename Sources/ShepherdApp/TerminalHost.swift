@@ -52,6 +52,21 @@ final class AppTerminalModel {
         surface.updateConfiguration(fontSize: fontSize, fontFamily: fontFamily, extraUnbinds: extraUnbinds)
     }
 
+    var maximumDropBytes: Int? {
+        get { surface.maximumDropBytes }
+        set { surface.maximumDropBytes = newValue }
+    }
+
+    var onFileDropError: ((String) -> Void)? {
+        get { surface.onFileDropError }
+        set { surface.onFileDropError = newValue }
+    }
+
+    var onFileDrop: (([URL]) -> Void)? {
+        get { surface.onFileDrop }
+        set { surface.onFileDrop = newValue }
+    }
+
     var onInput: ((Data) -> Void)? {
         get { surface.onInput }
         set { surface.onInput = newValue }
