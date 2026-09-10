@@ -61,6 +61,23 @@ swift test
 
 The GUI only runs through the Xcode project; `ShepherdApp` is a library product.
 
+## Pi in shell panes
+
+With the theme extension enabled, typing `pi` in a new zsh, bash, or fish pane loads
+Shepherd's theme for that run. Startup files live in Shepherd's support directory;
+Shepherd does not edit your shell rc files or pi settings. Existing `pi` aliases and
+functions take precedence. Absolute paths and `command pi` bypass the integration.
+Reopen existing shell panes after upgrading or changing the theme-extension toggle.
+
+Shell-launched pi has no Shepherd agent identity, so agent-only pane, review,
+automation, and peer tools remain unavailable. Status, naming, and subagent reporting
+also stay off. Use a Shepherd agent when you need those integrations.
+
+Zsh and fish retain native login startup. Bash loads `/etc/profile` and the first
+readable `.bash_profile`, `.bash_login`, or `.profile` through an interactive rc file;
+its `login_shell` flag is off and `.bash_logout` does not run automatically. Other
+configured shells keep their normal startup without automatic pi theming.
+
 ## Remote access
 
 Settings ▸ Remote toggles a TCP listener (default port 7433) that serves the fleet to remote Shepherd clients. Auth is a shared bearer token generated in the support directory. **There is no TLS** — the listener binds on all interfaces and assumes a trusted network or VPN as the transport boundary. Do not expose it to the internet.
