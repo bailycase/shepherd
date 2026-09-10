@@ -80,6 +80,14 @@ enum LoginShell {
                 continuation.resume(returning: output)
             }
 
+            // Register before launch so a fast exit cannot race completion setup.
+            reads.enter()
+            reads.enter()
+            process.terminationHandler = { process in
+                reads.notify(queue: .global(qos: .userInitiated)) {
+                    finish(captured.output(status: process.terminationStatus))
+                }
+            }
             do {
                 try process.run()
             } catch {
@@ -87,20 +95,13 @@ enum LoginShell {
                 return
             }
 
-            reads.enter()
             DispatchQueue.global().async {
                 captured.set(stdout: out.fileHandleForReading.readDataToEndOfFile())
                 reads.leave()
             }
-            reads.enter()
             DispatchQueue.global().async {
                 captured.set(stderr: err.fileHandleForReading.readDataToEndOfFile())
                 reads.leave()
-            }
-            DispatchQueue.global(qos: .userInitiated).async {
-                process.waitUntilExit()
-                reads.wait()
-                finish(captured.output(status: process.terminationStatus))
             }
 
             if let timeout {
