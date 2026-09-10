@@ -8,6 +8,7 @@ public enum RemoteHostClientError: Error, CustomStringConvertible, Sendable {
     case resolveFailed(host: String)
     case system(call: String, errno: Int32)
     case rejected(code: String, message: String)
+    case outcomeUnknown(message: String)
     case disconnected
     case timeout
 
@@ -19,6 +20,7 @@ public enum RemoteHostClientError: Error, CustomStringConvertible, Sendable {
             return "\(call) failed: \(String(cString: strerror(err))) (errno \(err))"
         case .rejected(let code, let message):
             return "\(code): \(message)"
+        case .outcomeUnknown(let message): return message
         case .disconnected:
             return "connection closed"
         case .timeout:
@@ -59,6 +61,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var nextRequestID = 1
     private var pendingReplies: [Int: CheckedContinuation<RemoteReply, Error>] = [:]
     private var disconnectNotified = false
+    private var uploading = false // Client queue owns the one active transfer.
 
     /// Pushed events wait here for the main queue. One hop is in flight at a
     /// time and consecutive output for one session merges into one callback,
@@ -224,16 +227,28 @@ public final class RemoteHostClient: @unchecked Sendable {
         cwd: String?,
         model: String?,
         thinking: ThinkingLevel?,
-        initialPrompt: String?
+        initialPrompt: String?,
+        worktreeBranch: String? = nil,
+        worktreeBase: String? = nil,
+        worktreeFetchFirst: Bool? = nil
     ) async throws -> AgentID {
-        let reply = try await request(timeout: 30) { id in
+        if worktreeBase != nil || worktreeFetchFirst != nil, !capabilities.contains(RemoteProtocol.creationOptionsCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose worktree creation options.")
+        }
+        if worktreeBranch != nil, !capabilities.contains(RemoteProtocol.worktreeActionsCapability) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to create worktree agents.")
+        }
+        let reply = try await request(timeout: 120) { id in
             .createAgent(
                 id: id,
                 spaceID: spaceID,
                 cwd: cwd,
                 model: model,
                 thinking: thinking,
-                initialPrompt: initialPrompt
+                initialPrompt: initialPrompt,
+            worktreeBranch: worktreeBranch,
+            worktreeBase: worktreeBase,
+            worktreeFetchFirst: worktreeFetchFirst
             )
         }
         guard case .agentCreated(_, let agentID) = reply else {
@@ -243,6 +258,86 @@ public final class RemoteHostClient: @unchecked Sendable {
             throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected createAgent reply")
         }
         return agentID
+    }
+
+    public func creationOptions(spaceID: SpaceID, cwd: String?, fetchFirst: Bool?) async throws -> RemoteCreationOptions {
+        guard capabilities.contains(RemoteProtocol.creationOptionsCapability) else {
+            guard cwd == nil, fetchFirst == nil else {
+                throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to choose worktree creation options.")
+            }
+            let listing = try await listModels()
+            return RemoteCreationOptions(base: "", note: "", fetchFirst: false, model: listing.defaultModel, thinking: .medium)
+        }
+        let reply = try await request(timeout: 120) { .creationOptions(id: $0, spaceID: spaceID, cwd: cwd, fetchFirst: fetchFirst) }
+        if case .creationOptions(_, let options) = reply { return options }
+        if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
+        throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected creation options reply")
+    }
+
+    public func upload(file: URL, sessionID: SessionID) async throws -> String {
+        guard capabilities.contains(RemoteProtocol.uploadCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to drop files or images.")
+        }
+        try queue.sync {
+            guard !uploading else {
+                throw RemoteHostClientError.rejected(code: "upload_busy", message: "A file drop is already uploading to this host")
+            }
+            uploading = true
+        }
+        defer { queue.sync { uploading = false } }
+        let values = try file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true, let size = values.fileSize, size <= RemoteProtocol.uploadMaxBytes else {
+            throw RemoteHostClientError.rejected(code: "upload_failed", message: "Drop regular files no larger than 32 MiB. Directories are not supported.")
+        }
+        let handle = try FileHandle(forReadingFrom: file)
+        defer { try? handle.close() }
+        let begin = try await request { .upload(id: $0, action: .begin(sessionID: sessionID, name: file.lastPathComponent, size: size)) }
+        if case .error(_, let code, let message) = begin { throw RemoteHostClientError.rejected(code: code, message: message) }
+        guard case .uploadResult(_, .ready(let uploadID)) = begin else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected upload reply")
+        }
+        do {
+            while let data = try handle.read(upToCount: RemoteProtocol.uploadChunkBytes), !data.isEmpty {
+                try Task.checkCancellation()
+                let reply = try await request { .upload(id: $0, action: .chunk(uploadID: uploadID, data: data)) }
+                if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
+            }
+            let reply = try await request { .upload(id: $0, action: .finish(uploadID: uploadID)) }
+            if case .uploadResult(_, .complete(let path)) = reply { return path }
+            if case .error(_, let code, let message) = reply { throw RemoteHostClientError.rejected(code: code, message: message) }
+            throw RemoteHostClientError.rejected(code: "protocol", message: "Unexpected upload completion")
+        } catch {
+            _ = try? await request { .upload(id: $0, action: .cancel(uploadID: uploadID)) }
+            throw error
+        }
+    }
+
+    public func agentQuery(agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
+        let capability: String
+        switch query {
+        case .worktreeSetup, .worktreeCommitCount, .worktreeDescription: capability = RemoteProtocol.worktreeSetupCapability
+        case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: capability = RemoteProtocol.worktreeActionsCapability
+        default: capability = RemoteProtocol.agentInspectionCapability
+        }
+        guard capabilities.contains(capability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to inspect remote agents.")
+        }
+        let reply = try await request(timeout: capability == RemoteProtocol.worktreeSetupCapability ? 150 : 30) { .agentQuery(id: $0, agentID: agentID, query: query) }
+        if case .agentResult(_, let result) = reply { return result }
+        if case .error(_, let code, let message) = reply {
+            throw RemoteHostClientError.rejected(code: code, message: message)
+        }
+        throw RemoteHostClientError.outcomeUnknown(message: "Unexpected agent inspection reply. Check operation status before retrying.")
+    }
+
+    public func agentAction(agentID: AgentID, action: RemoteAgentAction) async throws {
+        guard capabilities.contains(RemoteProtocol.agentActionsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to use remote agent actions."
+            )
+        }
+        let reply = try await request { .agentAction(id: $0, agentID: agentID, action: action) }
+        try expectOk(reply)
     }
 
     public func detach(sessionID: SessionID) {
@@ -383,7 +478,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 guard self.fd >= 0 else {
-                    continuation.resume(throwing: RemoteHostClientError.disconnected)
+                    continuation.resume(throwing: RemoteHostClientError.rejected(code: "not_sent", message: "Connection closed before the request was sent"))
                     return
                 }
                 let id = self.nextRequestID
@@ -498,7 +593,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             return
         }
         switch reply {
-        case .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
+        case .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _):

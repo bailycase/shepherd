@@ -8,7 +8,11 @@ struct WorkspaceView: View {
     /// The frame is the app's one attention surface: neutral hairline
     /// normally, the status color when the focused agent is blocked.
     private var frameColor: Color {
-        vm.selectedAgent?.status == .blocked ? Tokens.statusBlocked : Tokens.paneBorder
+        _ = vm.remoteProjectionRevision
+        let status = vm.selectedRemoteAgent.flatMap { target in
+            vm.remoteHosts.connections.first { $0.id == target.hostID && $0.phase == .connected }?.state.agents.first { $0.id == target.agentID }?.status
+        } ?? (vm.selectedRemoteAgent == nil ? vm.selectedAgent?.status : nil)
+        return status == .blocked ? Tokens.statusBlocked : Tokens.paneBorder
     }
 
     var body: some View {
@@ -403,7 +407,11 @@ private struct RemoteAgentPaneContent: View {
             switch connection.phase {
             case .connected:
                 if let agent = connection.state.agents.first(where: { $0.id == agentID }),
-                   let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) {
+                   let tab = connection.state.tabs.first(where: {
+                       let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
+                       return $0.id == (vm.remoteInspectingAgent == ref ? vm.remoteInspectorTabs[ref] ?? agent.tabID : agent.tabID)
+                   }) {
+                    HStack(spacing: 1) {
                     RemotePaneTreeView(
                         vm: vm,
                         connection: connection,
@@ -411,6 +419,13 @@ private struct RemoteAgentPaneContent: View {
                         tab: tab,
                         node: tab.layout
                     )
+                    .id(tab.id)
+                    if vm.remoteInspectingAgent != RemoteAgentRef(hostID: connection.id, agentID: agentID),
+                       let review = vm.remoteReviews[RemoteAgentRef(hostID: connection.id, agentID: agentID)], !review.hostReviewPane {
+                        DiffReviewPane(session: review, isFocused: vm.remoteFocusedPaneID == review.paneID)
+                            .simultaneousGesture(TapGesture().onEnded { vm.remoteFocusedPaneID = review.paneID })
+                    }
+                    }
                 } else {
                     PanePlaceholder(text: "agent has no layout on \(connection.config.name)")
                 }
@@ -421,14 +436,6 @@ private struct RemoteAgentPaneContent: View {
             case .disconnected:
                 PanePlaceholder(text: "\(connection.config.name) disconnected")
             }
-        }
-        .onDisappear {
-            guard let agent = connection.state.agents.first(where: { $0.id == agentID }),
-                  let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else { return }
-            vm.remoteHosts.closePanes(
-                connection: connection,
-                sessionIDs: tab.layout.leaves.compactMap(\.sessionID)
-            )
         }
     }
 }
@@ -457,9 +464,18 @@ private struct RemotePaneLeafView: View {
 
     var body: some View {
         Group {
-            if let sessionID = leaf.sessionID,
+            if leaf.isReview == true, let target = vm.selectedRemoteAgent {
+                if let review = vm.remoteReviews[target], review.paneID == leaf.id {
+                    DiffReviewPane(session: review, isFocused: vm.remoteFocusedPaneID == leaf.id)
+                } else {
+                    PanePlaceholder(text: "loading host review…")
+                        .task { vm.openRemoteHostReview(target, pane: leaf) }
+                }
+            } else if let sessionID = leaf.sessionID,
                let pane = vm.remoteHosts.paneSession(connection: connection, sessionID: sessionID) {
                 RemoteTerminalPane(pane: pane, isFocused: vm.remoteFocusedPaneID == leaf.id)
+                    .id(sessionID)
+                    .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: sessionID) }
             } else {
                 PanePlaceholder(text: "starting remote pane…")
             }

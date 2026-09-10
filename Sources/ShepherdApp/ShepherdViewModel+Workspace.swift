@@ -127,6 +127,13 @@ extension ShepherdViewModel {
     // MARK: Panes
 
     func splitFocusedPane(axis: SplitAxis) {
+        if let remote = selectedRemoteAgent {
+            if remoteInspectingAgent == remote, let tab = remoteVisibleTab(remote) {
+                controlRemoteInspector(remote, action: .split(paneID: remoteFocusedPaneID ?? tab.layout.firstLeaf.id, axis: axis))
+                return
+            }
+            if remoteReviews[remote]?.paneID == remoteFocusedPaneID { NSSound.beep(); return }
+        }
         if let remote = selectedRemoteAgent,
            let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
            let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
@@ -150,6 +157,8 @@ extension ShepherdViewModel {
         guard let tab = activeTab else { NSSound.beep(); return }
         let focus = focusedPaneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
         guard let leaf = tab.layout.leaf(withID: focus) else { return }
+        do { try verifyCheckoutAvailable(leaf.cwd) }
+        catch { remoteActionError = String(describing: error); return }
         let newPane = LeafPane(cwd: leaf.cwd)
         guard let newLayout = tab.layout.splitting(pane: focus, axis: axis, newPane: newPane) else { return }
         setLayout(newLayout, forTab: tab.id)
@@ -158,6 +167,11 @@ extension ShepherdViewModel {
 
     func closeFocusedPane() {
         if let remote = selectedRemoteAgent {
+            if remoteInspectingAgent == remote, let tab = remoteVisibleTab(remote) {
+                controlRemoteInspector(remote, action: .close(paneID: remoteFocusedPaneID ?? tab.layout.firstLeaf.id))
+                return
+            }
+            if let review = remoteReviews[remote], remoteFocusedPaneID == review.paneID { cancelReview(review); return }
             guard let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),
                   let agent = connection.state.agents.first(where: { $0.id == remote.agentID }),
                   let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }) else {
@@ -232,6 +246,10 @@ extension ShepherdViewModel {
     }
 
     func commitRemoteSplitRatio(ref: RemoteAgentRef, split: PaneNode, ratio: Double) {
+        if remoteInspectingAgent == ref {
+            controlRemoteInspector(ref, action: .resize(split: split, ratio: ratio))
+            return
+        }
         Task {
             try? await remoteHosts.resizePaneSplit(
                 hostID: ref.hostID,
@@ -308,16 +326,23 @@ extension ShepherdViewModel {
 
     // MARK: Agents
 
-    // Remote selection retains the last local ID for navigation, not commands.
-    // The remote protocol does not support agent rename or deletion.
     func renameSelectedAgent() {
-        guard selectedRemoteAgent == nil, let id = selectedAgentID else { return }
+        if let remote = selectedRemoteAgent {
+            remoteRenameTarget = remote
+            return
+        }
+        guard let id = selectedAgentID else { return }
         agentRenameTarget = id
     }
 
     func deleteSelectedAgent() {
-        guard selectedRemoteAgent == nil, let id = selectedAgentID else { return }
-        deleteAgent(id)
+        if let remote = selectedRemoteAgent {
+            requestRemoteDelete(remote)
+            return
+        }
+        guard let agent = selectedAgent else { return }
+        if agent.worktreeBranch != nil { worktreeDeleteTarget = agent.id }
+        else { deleteAgent(agent.id) }
     }
 
     /// A hand-typed name is final: pi's namer must never overwrite it.
@@ -329,53 +354,70 @@ extension ShepherdViewModel {
         enqueuePersistence("agent rename") { try await $0.renameAgent(id, to: trimmed) }
     }
 
-    /// Confirmed Delete Worktree Agent: retire the agent, and optionally tear
-    /// down the worktree checkout + branch that Shepherd created for it. The
-    /// removal runs off-main after a short grace so the agent's processes
-    /// (whose cwd is inside the worktree) are gone first.
+    /// Persist retirement and wait for the actual process exits before removing a checkout.
     func deleteWorktreeAgent(_ id: AgentID, removeWorktree: Bool) {
-        guard let agent = state.agents.first(where: { $0.id == id }) else { return }
-        let branch = agent.worktreeBranch
-        let repo = state.spaces.first { $0.id == agent.spaceID }?.path
-        let worktree = agent.worktreePath
-        deleteAgent(id)
-        guard removeWorktree, let branch, let repo else { return }
-        Task.detached(priority: .utility) {
-            try? await Task.sleep(for: .milliseconds(500))
+        guard removeWorktree else { deleteAgent(id); return }
+        guard let agent = state.agents.first(where: { $0.id == id }),
+              let branch = agent.worktreeBranch,
+              let repo = state.spaces.first(where: { $0.id == agent.spaceID })?.path else { return }
+        let path = agent.worktreePath ?? GitWorktree.destination(repo: repo, branch: branch)
+        let sessionIDs = state.tabs.filter { $0.id == agent.tabID || $0.inspectorFor == id }
+            .flatMap { $0.layout.leaves.compactMap(\.sessionID) }
+        Task {
             do {
-                try GitWorktree.remove(repo: repo, branch: branch, worktree: worktree)
-            } catch {
-                NSLog("Shepherd: worktree removal failed: \(error.localizedDescription)")
-            }
+                let canonical = URL(fileURLWithPath: path).resolvingSymlinksInPath().standardized.path
+                try verifyCheckoutAvailable(canonical)
+                try verifyCheckoutUnused(canonical, except: id)
+                hostBusyWorktrees.insert(canonical)
+                defer { hostBusyWorktrees.remove(canonical) }
+                let fingerprint = try await Task.detached { try GitWorktree.deletionFingerprint(worktree: path) }.value
+                try await deleteAgentPersisted(id, worktreeOperation: true)
+                let deadline = ContinuousClock.now + .seconds(10)
+                for sessionID in sessionIDs {
+                    while await server.sessionInfo(sessionID: sessionID)?.isAlive == true {
+                        guard ContinuousClock.now < deadline else { throw GitWorktree.Failure(message: "Agent processes have not stopped. Checkout was kept.") }
+                        try await Task.sleep(for: .milliseconds(50))
+                    }
+                }
+                try verifyCheckoutUnused(canonical, except: id)
+                try await Task.detached { try GitWorktree.remove(repo: repo, branch: branch, worktree: path, fingerprint: fingerprint) }.value
+            } catch { remoteActionError = String(describing: error) }
         }
     }
 
     func deleteAgent(_ id: AgentID) {
-        guard let agent = state.agents.first(where: { $0.id == id }),
-              let tabIndex = state.tabs.firstIndex(where: { $0.id == agent.tabID }) else { return }
-        let tab = state.tabs[tabIndex]
-
-        // Detach every view first. The server mutation below owns process
-        // termination, so exit callbacks cannot race a half-removed UI tree.
-        for leaf in tab.layout.leaves {
-            sessions.detachPane(leaf.id)
+        enqueuePersistence("agent deletion") { [weak self] _ in
+            guard let self else { return }
+            do { try await self.deleteAgentPersisted(id) }
+            catch {
+                await MainActor.run { self.remoteActionError = String(describing: error) }
+                throw error
+            }
         }
+    }
 
+    func deleteAgentPersisted(_ id: AgentID, worktreeOperation: Bool = false) async throws {
+        if !worktreeOperation, let agent = state.agents.first(where: { $0.id == id }),
+           let branch = agent.worktreeBranch,
+           let repo = state.spaces.first(where: { $0.id == agent.spaceID })?.path {
+            let path = URL(fileURLWithPath: agent.worktreePath ?? GitWorktree.destination(repo: repo, branch: branch))
+                .resolvingSymlinksInPath().standardized.path
+            guard !hostBusyWorktrees.contains(path) else { throw GitWorktree.Failure(message: "A worktree operation is running for this checkout") }
+        }
+        let doomedTabs = state.tabs.filter { tab in
+            tab.inspectorFor == id || state.agents.contains { $0.id == id && $0.tabID == tab.id }
+        }
+        try await server.deleteAgent(id)
+        for leaf in doomedTabs.flatMap({ $0.layout.leaves }) { sessions.detachPane(leaf.id) }
         cancelReviews(for: id)
         endAgentLaunch(id)
         childRuns.clear(agent: id)
-        state.agents.removeAll { $0.id == id }
-        state.tabs.remove(at: tabIndex)
-        if selectedAgentID == id {
-            selectPreviousAgent(after: id)
-        } else {
-            selectionHistory.removeAll { $0 == id }
-        }
+        if selectedAgentID == id { selectPreviousAgent(after: id) }
+        else { selectionHistory.removeAll { $0 == id } }
+        adopt(server.state)
         sessions.stateDidChange(state)
-        syncFocus()
-
-        enqueuePersistence("agent deletion") { try await $0.deleteAgent(id) }
     }
+
 }
 
 extension PaneNode {

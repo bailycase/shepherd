@@ -172,6 +172,8 @@ extension ShepherdViewModel {
             return
         }
 
+        do { try verifyCheckoutAvailable(cwd ?? anchorLeaf.cwd) }
+        catch { respond(.failed(code: "checkout_busy", message: String(describing: error))); return }
         let newPane = LeafPane(cwd: cwd.map { ($0 as NSString).expandingTildeInPath } ?? anchorLeaf.cwd)
         guard let newLayout = tab.layout.splitting(pane: anchor, axis: axis, newPane: newPane) else {
             respond(.failed(code: "split_failed", message: "could not split pane \(anchor)"))
@@ -199,7 +201,7 @@ extension ShepherdViewModel {
     }
 }
 
-private extension PaneNode {
+extension PaneNode {
     func containsSplit(_ target: PaneNode) -> Bool {
         if self == target { return true }
         guard case .split(_, _, let first, let second) = self else { return false }

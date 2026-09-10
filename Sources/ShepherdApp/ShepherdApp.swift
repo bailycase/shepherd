@@ -123,7 +123,7 @@ public struct ShepherdMacApp: App {
                 }
             }
             CommandMenu("Agent") {
-                let selected = vm.selectedRemoteAgent == nil ? vm.selectedAgentID : nil
+                let selected = vm.selectedRemoteAgent?.agentID ?? vm.selectedAgentID
                 Button("Focus") {
                     Task { @MainActor in vm.focusSelectedAgent() }
                 }
@@ -138,23 +138,22 @@ public struct ShepherdMacApp: App {
                     Task { @MainActor in vm.selectAdjacentAgent(1) }
                 }
                 .keyboardShortcut(keys.shortcut(.nextAgent))
-                .disabled(vm.orderedAgents.isEmpty)
+                .disabled(vm.activeMachineAgents.isEmpty)
                 Button("Previous Agent") {
                     Task { @MainActor in vm.selectAdjacentAgent(-1) }
                 }
                 .keyboardShortcut(keys.shortcut(.previousAgent))
-                .disabled(vm.orderedAgents.isEmpty)
+                .disabled(vm.activeMachineAgents.isEmpty)
                 Divider()
                 Button("Delete Agent") {
                     Task { @MainActor in vm.deleteSelectedAgent() }
                 }
                 .keyboardShortcut(keys.shortcut(.deleteAgent))
                 .disabled(selected == nil)
-                if !vm.orderedAgents.isEmpty {
+                if !vm.activeMachineAgents.isEmpty {
                     Divider()
-                    ForEach(Array(vm.orderedAgents.prefix(9).enumerated()), id: \.element.id) { index, agent in
+                    ForEach(Array(vm.activeMachineAgents.prefix(9).enumerated()), id: \.element.id) { index, agent in
                         Button(agent.name) {
-                            let id = agent.id
                             let digit = index + 1
                             // The chord stays permanently wired (conditional
                             // nil shortcuts left menus flaky after palette
@@ -164,7 +163,7 @@ public struct ShepherdMacApp: App {
                                 if vm.showCommandPalette {
                                     vm.runPaletteQuickPick(digit)
                                 } else {
-                                    vm.selectAgent(id)
+                                    vm.selectAgentDigit(digit)
                                 }
                             }
                         }

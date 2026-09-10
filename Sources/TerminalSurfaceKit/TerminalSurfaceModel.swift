@@ -112,6 +112,9 @@ struct SurfaceAttachmentTracker {
 
 @MainActor
 public final class TerminalSurfaceModel: ObservableObject {
+    public var maximumDropBytes: Int?
+    public var onFileDropError: ((String) -> Void)?
+    public var onFileDrop: (([URL]) -> Void)?
     public var onInput: ((Data) -> Void)?
     public var onResize: ((_ cols: Int, _ rows: Int) -> Void)?
     /// Fired when a NEW ghostty surface becomes ready after the first one.
@@ -393,6 +396,7 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// Insert Finder-dropped files using Ghostty's native macOS convention:
     /// absolute paths, shell-escaped and separated by spaces.
     func sendDroppedFiles(_ urls: [URL]) -> Bool {
+        if let onFileDrop { onFileDrop(urls); return true }
         guard let text = TerminalFileDrop.text(for: urls) else { return false }
         return viewState.send(text)
     }

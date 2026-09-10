@@ -1,7 +1,7 @@
 import Foundation
 
-struct DiffLine: Hashable, Identifiable {
-    enum Kind: Hashable {
+struct DiffLine: Codable, Hashable, Identifiable {
+    enum Kind: Codable, Hashable {
         case context
         case added
         case removed
@@ -14,7 +14,7 @@ struct DiffLine: Hashable, Identifiable {
     let id: Int
 }
 
-struct DiffHunk: Hashable, Identifiable {
+struct DiffHunk: Codable, Hashable, Identifiable {
     let header: String
     let lines: [DiffLine]
 
@@ -23,7 +23,7 @@ struct DiffHunk: Hashable, Identifiable {
     }
 }
 
-struct DiffFile: Hashable, Identifiable {
+struct DiffFile: Codable, Hashable, Identifiable {
     let oldPath: String?
     let newPath: String?
     let displayPath: String
@@ -154,6 +154,7 @@ enum GitDiff {
     }
 
     static func load(cwd: String, reference: String?) throws -> [DiffFile] {
+        let reference = reference.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         // A fresh repo with no commits has an unborn HEAD; `git diff HEAD`
         // exits 128 there. In local mode everything is untracked, so skip
         // the tracked diff instead of failing.

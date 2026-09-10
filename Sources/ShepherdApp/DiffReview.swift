@@ -38,8 +38,11 @@ struct ReviewComment: Identifiable, Hashable {
 @Observable
 final class ReviewSession: Identifiable {
     let id = UUID()
+    var loadRequestID = UUID()
+    var isSubmitting = false
+    var hostReviewPane = false
     let agentID: AgentID
-    let paneID: PaneID
+    var paneID: PaneID
     let cwd: String
     /// Mutable because PR mode resolves the base branch asynchronously after
     /// the pane is already open.

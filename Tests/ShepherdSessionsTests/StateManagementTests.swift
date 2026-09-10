@@ -262,6 +262,21 @@ struct StateManagementTests {
         #expect(h.stateChanged.current.isEmpty)
     }
 
+    @Test func reorderAgentPersistsOnlyWithinItsSpace() async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+        let spaces = [Space(name: "one", path: "/tmp/one"), Space(name: "two", path: "/tmp/two")]
+        let tabs = spaces.map { Tab(spaceID: $0.id, order: 0, layout: .leaf(LeafPane(cwd: $0.path))) }
+        let a = Agent(name: "a", spaceID: spaces[0].id, tabID: tabs[0].id)
+        let b = Agent(name: "b", spaceID: spaces[0].id, tabID: tabs[0].id)
+        let c = Agent(name: "c", spaceID: spaces[1].id, tabID: tabs[1].id)
+        try await h.server.putState(ShepherdState(spaces: spaces, tabs: tabs, agents: [a, b, c]))
+        try await h.server.reorderAgent(b.id, onto: a.id)
+        #expect(h.server.state.agents == [b, a, c])
+        await #expect(throws: SessionServerError.self) { try await h.server.reorderAgent(c.id, onto: a.id) }
+        #expect(h.server.state.agents == [b, a, c])
+    }
+
     @Test func renameAgentCommitsTrimmedNameAndPublishesCanonicalState() async throws {
         let h = try Harness()
         defer { h.tearDown() }

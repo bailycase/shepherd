@@ -90,6 +90,36 @@ final class ShepherdViewModel {
     /// selection state.
     var selectedRemoteAgent: RemoteAgentRef?
     var remoteFocusedPaneID: PaneID?
+    var remoteWorktreeSheet: RemoteAgentRef?
+    var remoteWorktreeFinalize = false
+    var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
+    var remoteInspectionRequest = UUID()
+    var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
+    var hostPRDescriptionGenerator = WorktreePRDescriptionGenerator()
+    var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] = [:]
+    var hostWorktreeOperationAgents: [UUID: AgentID] = [:]
+    var hostBusyWorktrees: Set<String> = []
+    var startingCheckoutUsers: [UUID: String] = [:]
+    var remoteProjectionRevision = 0
+    var remoteChildren: [RemoteAgentRef: [ChildRun]] {
+        _ = remoteProjectionRevision
+        return Dictionary(uniqueKeysWithValues: remoteHosts.connections.flatMap { connection in
+            connection.children.map { (RemoteAgentRef(hostID: connection.id, agentID: $0.key), $0.value) }
+        })
+    }
+    var reviewDiffLoader: @Sendable (String, String?) async throws -> (files: [DiffFile], reference: String?) = { cwd, reference in
+        try await Task.detached(priority: .userInitiated) {
+            let resolved = reference == "pr" ? GitDiff.pullRequestReference(cwd: cwd) : reference
+            return (try GitDiff.load(cwd: cwd, reference: resolved), resolved)
+        }.value
+    }
+    var remoteReviews: [RemoteAgentRef: ReviewSession] = [:]
+    var hostRemoteInspectors: [String: TabID] = [:]
+    var remoteInspectorTabs: [RemoteAgentRef: TabID] = [:]
+    var remoteInspectingAgent: RemoteAgentRef?
+    var remoteRenameTarget: RemoteAgentRef?
+    var remoteActionError: String?
+
     /// Configured remote Shepherd hosts and their live connections.
     let remoteHosts: RemoteHostStore
     /// Where the open space-directory browser creates its space: this Mac
@@ -354,6 +384,30 @@ final class ShepherdViewModel {
         }
         // Banners from a previous app run point at dead sessions; drop them.
         notifications.removeAll()
+        sessions.reserveCheckoutForLaunch = { [weak self] cwd in
+            guard let self else { throw AgentStartFailure(message: "Workspace closed") }
+            try self.verifyCheckoutAvailable(cwd)
+            let id = UUID()
+            self.startingCheckoutUsers[id] = cwd
+            return { [weak self] in self?.startingCheckoutUsers.removeValue(forKey: id) }
+        }
+        self.remoteHosts.onDropError = { [weak self] in self?.remoteActionError = $0 }
+        self.remoteHosts.onProjectionChanged = { [weak self] in
+            guard let self else { return }
+            self.remoteProjectionRevision &+= 1
+            for (target, review) in self.remoteReviews where review.hostReviewPane {
+                guard let connection = self.remoteHosts.connections.first(where: { $0.id == target.hostID }),
+                      connection.phase == .connected,
+                      !connection.state.tabs.contains(where: { $0.layout.contains(review.paneID) }) else { continue }
+                let oldPaneID = review.paneID
+                review.paneID = PaneID()
+                review.hostReviewPane = false
+                review.loadRequestID = UUID()
+                review.isLoading = false
+                review.loadError = nil
+                if self.remoteFocusedPaneID == oldPaneID { self.remoteFocusedPaneID = review.paneID }
+            }
+        }
         sessions.onAgentChildren = { [weak self] agentID, children in
             self?.applyAgentChildren(agentID, children)
         }
@@ -377,6 +431,41 @@ final class ShepherdViewModel {
         // independent of server.start()'s Unix socket, so ordering is safe;
         // the .task call remains as a no-op-if-bound backstop.
         applyRemoteListenerSetting()
+        installRemoteInspection()
+        server.onRemoteAgentAction = { [weak self] agentID, action, completion in
+            Task { @MainActor in
+                guard let self else {
+                    completion(.failure(RemoteCreateAgentError("Host is shutting down")))
+                    return
+                }
+                do {
+                    switch action {
+                    case .rename(let name): try await self.server.renameAgent(agentID, to: name)
+                    case .reorder(let target): try await self.server.reorderAgent(agentID, onto: target)
+                    case .deleteKeepingWorktree: try await self.deleteAgentPersisted(agentID)
+                    }
+                    completion(.success(()))
+                } catch {
+                    completion(.failure(RemoteCreateAgentError(String(describing: error))))
+                }
+            }
+        }
+        server.onRemoteCreationOptions = { [weak self] spaceID, cwd, fetchFirst, completion in
+            Task { @MainActor in
+                guard let self, let space = self.server.state.spaces.first(where: { $0.id == spaceID }) else {
+                    completion(.failure(RemoteCreateAgentError("Space no longer exists"))); return
+                }
+                let repo = cwd ?? space.path
+                let mode = self.settings.worktreeBaseMode
+                let fetch = fetchFirst ?? self.settings.worktreeFetchBeforeCreate
+                let resolution = await Task.detached {
+                    cwd == nil ? GitWorktree.BaseResolution(startPoint: nil, display: "", note: "")
+                        : GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetch)
+                }.value
+                completion(.success(.init(base: resolution.display, note: resolution.note, fetchFirst: fetch,
+                                          model: self.settings.agentDefaults.model ?? PiConfig.defaultModel(), thinking: self.settings.defaultThinking)))
+            }
+        }
         // Remote clients create agents through this host's normal spawn flow.
         server.onRemoteCreateAgent = { [weak self] request, completion in
             guard let self else {
@@ -384,15 +473,33 @@ final class ShepherdViewModel {
                 return
             }
             let space = self.state.spaces.first { $0.id == request.spaceID }
-            let config = NewAgentConfig(
+            var config = NewAgentConfig(
                 spaceID: request.spaceID,
                 workingDirectory: request.cwd ?? space?.path ?? "~",
-                model: request.model,
+                model: request.model ?? self.settings.agentDefaults.model,
                 thinking: request.thinking ?? self.settings.defaultThinking,
                 initialPrompt: request.initialPrompt
             )
             Task { @MainActor in
                 do {
+                    if let branch = request.worktreeBranch {
+                        let repo = config.workingDirectory
+                        let mode = self.settings.worktreeBaseMode
+                        let fetchFirst = request.worktreeFetchFirst ?? self.settings.worktreeFetchBeforeCreate
+                        guard let space else { throw RemoteCreateAgentError("Space no longer exists") }
+                        let (path, base) = try await Task.detached {
+                            guard try GitWorktree.primaryCheckout(at: repo) == GitWorktree.primaryCheckout(at: space.path) else {
+                                throw RemoteCreateAgentError("Choose a directory in the selected space's repository")
+                            }
+                            let resolution = GitWorktree.resolveBase(repo: repo, mode: mode, fetchFirst: fetchFirst)
+                            let base = request.worktreeBase?.trimmingCharacters(in: .whitespacesAndNewlines)
+                            return (try GitWorktree.add(repo: repo, branch: branch, from: base?.isEmpty == false ? base : resolution.startPoint), base?.isEmpty == false ? base! : resolution.display)
+                        }.value
+                        config.workingDirectory = path
+                        config.worktreeBranch = branch
+                        config.worktreeBase = base
+                        config.worktreePath = path
+                    }
                     let agentID = try await self.startAgent(config, selectAfter: false)
                     completion(.success(agentID))
                 } catch {
@@ -498,11 +605,11 @@ final class ShepherdViewModel {
         case .agentDigit(let digit):
             // Mirrors the Agent menu's digit rows: live only for an existing
             // sidebar index, routed to the palette's quick-pick while open.
-            guard orderedAgents.indices.contains(digit - 1) else { return false }
+            guard (showCommandPalette ? paletteVisibleRows.count : activeMachineAgents.count) >= digit else { return false }
             if showCommandPalette {
                 runPaletteQuickPick(digit)
             } else {
-                selectAgent(orderedAgents[digit - 1].id)
+                selectAgentDigit(digit)
             }
             return true
         case .shellDigit(let digit):
