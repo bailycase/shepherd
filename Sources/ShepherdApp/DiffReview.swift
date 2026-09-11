@@ -43,7 +43,7 @@ final class ReviewSession: Identifiable {
     var hostReviewPane = false
     let agentID: AgentID
     var paneID: PaneID
-    let cwd: String
+    var cwd: String
     /// Mutable because PR mode resolves the base branch asynchronously after
     /// the pane is already open.
     var reference: String?

@@ -185,18 +185,27 @@ extension ShepherdViewModel {
             return
         }
 
+        let cwdPath = ((requestedCwd ?? piPane.cwd) as NSString).expandingTildeInPath
+
         // One review pane per agent, regardless of entry point: an agent
         // re-requesting a review reloads the open pane instead of splitting
         // a second one.
         if let existing = reviewSessions.values.first(where: { $0.agentID == agentID }) {
+            if existing.cwd != cwdPath {
+                existing.cwd = cwdPath
+                existing.comments = []
+                existing.summary = ""
+                setLayout(tab.layout.updatingLeaf(existing.paneID) { $0.cwd = cwdPath }, forTab: tab.id)
+            }
             reloadReview(existing, reference: reference)
+            if isVisibleTab(tab) {
+                focusedPaneID = existing.paneID
+            }
             respond?(.submitted(
                 text: "Review pane already open; reloaded. The user's review will arrive as a message when they submit."
             ))
             return
         }
-
-        let cwdPath = ((requestedCwd ?? piPane.cwd) as NSString).expandingTildeInPath
 
         let reviewPane = LeafPane(cwd: cwdPath, isReview: true)
         guard let layout = tab.layout.splitting(
