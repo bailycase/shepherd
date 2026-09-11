@@ -61,6 +61,50 @@ swift test
 
 The GUI only runs through the Xcode project; `ShepherdApp` is a library product.
 
+## Agent coordination
+
+Agents can use `agent_list`, `agent_send` and `agent_spawn` to work with other top-level
+threads. Live coordination also provides:
+
+- `agent_read`: finalized visible messages from the recipient's current pi branch. Defaults
+  to the latest 20 entries, with an optional `limit` of 1–100 and an exclusive entry-ID
+  `after` cursor for forward paging. The JSON text includes `nextCursor`, `hasMore`,
+  `omittedEarlier` and per-message `truncated` flags. Text is capped at 4,000 characters per
+  entry and about 48 KiB per response. Thinking, image payloads, tool arguments and hidden
+  extension entries are omitted. A cursor outside the current branch fails; restart without
+  `after`. This is live `ctx.sessionManager.getBranch()`, not a Swift transcript parser.
+- `agent_steer`: calls `pi.sendUserMessage` with `deliverAs: "steer"`. Existing `agent_send`
+  stays `followUp`. Both report dispatch requested, not accepted or consumed.
+- `agent_interrupt`: requests best-effort cancellation of the current turn through `ctx.abort()`.
+  It does not confirm the agent stopped. Tools must cooperate. In pi 0.85.1's TUI, abort moves
+  queued messages into the editor and does not cancel retries or compaction.
+- `agent_wait`: polls the recipient's live `ctx.isIdle()` and `hasPendingMessages()` until
+  current activity settles. Default timeout is 30 seconds, maximum 120. This is not proof that
+  a sent task succeeded or was consumed. Caller disconnection, a changed recipient connection
+  or pi session, or timeout fails the wait, including reconnects between polls. Recipient
+  status replies carry a per-connection ID, so reconnecting with the same pi session still
+  fails. Cancellation stops polling, not the target.
+- `agent_delete`: opens Shepherd's native Delete Agent confirmation naming the requester and
+  target and warning that the pi session and all auxiliary processes will terminate. Only the
+  user's destructive button can approve it. Cancel, caller disconnection or a 120-second
+  confirmation timeout leaves the target intact. Once the user confirms, deletion follows the
+  normal Delete Agent lifecycle and keeps all worktrees and branches. There is no approval
+  boolean and this never invokes Delete Worktree Agent.
+
+Self-steer, self-interrupt, self-wait and self-delete are rejected. Read and control require a
+live recipient panes extension; agents already running an older extension need a fresh pi
+session. Each short live request has a server-generated token, a five-second timeout and a
+reply accepted only from the selected target connection. Cancelling a request cannot undo a
+steer or interrupt already dispatched. The local socket remains same-user IPC, not an
+independent security boundary. Coordination adds no remote TCP API or task scheduler.
+
+The extension behavior check uses the installed pi dependencies and Node's built-in test runner:
+
+```bash
+NODE_PATH="$(npm root -g)" node --test Tests/Extensions/agent-coordination.test.mjs
+env -u SHEPHERD_SUPPORT_DIR swift test --filter 'AgentCoordinationTests|AgentPeerDeletionTests|ProtocolTests|PiThemeTests'
+```
+
 ## Pi in shell panes
 
 With the theme extension enabled, typing `pi` in a new zsh, bash, or fish pane loads
