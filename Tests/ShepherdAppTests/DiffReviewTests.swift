@@ -275,6 +275,108 @@ struct DiffReviewTests {
         #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.map(\.id) == [backgroundPane.id])
     }
 
+    @Test func explicitReviewTargetsRetargetOnePaneAndDefaultBackToAgentDirectory() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let repos = ["agent", "external", "worktree"].map { fixture.dir.appendingPathComponent($0) }
+        for repo in repos {
+            try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+            try runGit(["init", "-q"], in: repo)
+            try runGit(["config", "user.name", "Shepherd Tests"], in: repo)
+            try runGit(["config", "user.email", "tests@example.com"], in: repo)
+            let source = repo.appendingPathComponent("\(repo.lastPathComponent).txt")
+            try "before\n".write(to: source, atomically: true, encoding: .utf8)
+            try runGit(["add", "."], in: repo)
+            try runGit(["commit", "-q", "-m", "initial"], in: repo)
+            try "after\n".write(to: source, atomically: true, encoding: .utf8)
+        }
+        let space = Space(name: "workspace", path: repos[0].path)
+        let agentID = AgentID()
+        let piPane = LeafPane(cwd: space.path, agentID: agentID)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(piPane))
+        let agent = Agent(id: agentID, name: "agent", spaceID: space.id, tabID: tab.id, paneID: piPane.id)
+        try await fixture.server.putState(.init(spaces: [space], tabs: [tab], agents: [agent]))
+        let vm = ShepherdViewModel(server: fixture.server)
+        #expect(await waitUntil { vm.state.agents.count == 1 })
+        vm.selectAgent(agentID)
+        var reviewPaneID: PaneID?
+
+        for requestedCwd in [repos[1].path, repos[2].path, nil] as [String?] {
+            vm.focusedPaneID = piPane.id
+            fixture.server.onReviewRequest?(.start(agentID: agentID, cwd: requestedCwd, reference: nil)) { _ in }
+            let session = try #require(vm.reviewSessions.values.first)
+            let expectedCwd = requestedCwd ?? piPane.cwd
+            if let reviewPaneID { #expect(session.paneID == reviewPaneID) }
+            reviewPaneID = session.paneID
+            #expect(vm.reviewSessions.count == 1)
+            #expect(session.cwd == expectedCwd)
+            #expect(session.comments.isEmpty)
+            #expect(session.commentsByLine.isEmpty)
+            #expect(session.summary.isEmpty)
+            #expect(vm.selectedAgentID == agentID)
+            #expect(vm.focusedPaneID == session.paneID)
+            #expect(await waitUntil { !session.isLoading })
+            #expect(session.loadError == nil)
+            let file = try #require(session.files.first)
+            #expect(session.files.map(\.displayPath) == [URL(fileURLWithPath: expectedCwd).lastPathComponent + ".txt"])
+            let layout = try #require(vm.state.tabs.first(where: { $0.id == tab.id })?.layout)
+            #expect(layout.leaves.count == 2)
+            #expect(layout.leaf(withID: session.paneID)?.cwd == expectedCwd)
+            #expect(layout.leaf(withID: piPane.id) == piPane)
+            #expect(await waitUntil {
+                fixture.server.state.tabs.first(where: { $0.id == tab.id })?.layout.leaf(withID: session.paneID)?.cwd == expectedCwd
+            })
+            session.comments = [ReviewComment(fileID: file.id, lineID: 0, filePath: file.displayPath, lineNumber: 1, text: "old target")]
+            session.summary = "old target summary"
+        }
+
+        let session = try #require(vm.reviewSessions.values.first)
+        let comments = session.comments
+        vm.focusedPaneID = piPane.id
+        fixture.server.onReviewRequest?(.start(agentID: agentID, cwd: nil, reference: nil)) { _ in }
+        #expect(vm.focusedPaneID == session.paneID)
+        #expect(session.comments == comments)
+        #expect(session.summary == "old target summary")
+        #expect(await waitUntil { !session.isLoading })
+    }
+
+    @Test(arguments: [false, true])
+    func retargetIgnoresPendingOldDiff(failing: Bool) async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let space = Space(name: "workspace", path: "/agent/not-executed")
+        let agentID = AgentID()
+        let piPane = LeafPane(cwd: space.path, agentID: agentID)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(piPane))
+        let agent = Agent(id: agentID, name: "agent", spaceID: space.id, tabID: tab.id, paneID: piPane.id)
+        try await fixture.server.putState(.init(spaces: [space], tabs: [tab], agents: [agent]))
+        let vm = ShepherdViewModel(server: fixture.server)
+        #expect(await waitUntil { vm.state.agents.count == 1 })
+        let loads = DelayedLoads()
+        vm.reviewDiffLoader = { cwd, _ in try await loads.load(cwd) }
+        fixture.server.onReviewRequest?(.start(agentID: agentID, cwd: nil, reference: nil)) { _ in }
+        try await loads.waitFor(piPane.cwd)
+        let session = try #require(vm.reviewSessions.values.first)
+        session.comments = [ReviewComment(fileID: "file", lineID: 0, filePath: "file", lineNumber: 1, text: "old repo")]
+        session.summary = "old repo"
+
+        let target = ("~/review-target" as NSString).expandingTildeInPath
+        fixture.server.onReviewRequest?(.start(agentID: agentID, cwd: "~/review-target", reference: nil)) { _ in }
+        try await loads.waitFor(target)
+        #expect(vm.reviewSessions[session.paneID] === session)
+        #expect(session.cwd == target)
+        #expect(session.comments.isEmpty)
+        #expect(session.summary.isEmpty)
+        await loads.finish(target)
+        #expect(await waitUntil { !session.isLoading && session.reference == target })
+        await loads.finish(piPane.cwd, failing: failing)
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(session.reference == target)
+        #expect(session.loadError == nil)
+        #expect(!session.isLoading)
+        #expect(session.comments.isEmpty)
+    }
+
     @Test func cancellingReviewDiscardsTheSession() throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }

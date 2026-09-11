@@ -110,8 +110,10 @@ export default function shepherdReview(pi: ExtensionAPI) {
     description:
       "Open a native diff review pane in Shepherd showing the git diff. Returns immediately; " +
       "the user's line comments and summary arrive later as a regular message when they submit. " +
-      "Use before finalizing substantial changes.",
-    promptSnippet: "Open a native diff review pane for the user",
+      "Use cwd to review another repository or worktree without changing the agent's directory. " +
+      "Reuses the agent's open review pane and focuses it if that workspace is visible. " +
+      "Changing cwd discards the previous review comments and summary. Use before finalizing substantial changes.",
+    promptSnippet: "Open a native diff review pane; pass cwd to target another repository or worktree",
     parameters: Type.Object({
       reference: Type.Optional(
         Type.String({
@@ -121,7 +123,11 @@ export default function shepherdReview(pi: ExtensionAPI) {
         }),
       ),
       cwd: Type.Optional(
-        Type.String({ description: "Repository directory; defaults to the agent's directory" }),
+        Type.String({
+          description:
+            "Repository or worktree directory to review, such as '~/src/project-worktree'; " +
+            "omit to use the agent's directory, including when a review pane is already open",
+        }),
       ),
     }),
     async execute(_toolCallId, params) {
