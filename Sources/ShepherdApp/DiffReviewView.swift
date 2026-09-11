@@ -41,6 +41,12 @@ struct DiffReviewPane: View {
         .onChange(of: themes.current.id) {
             highlightedHunks.removeAll()
         }
+        .onChange(of: session.cwd) {
+            editingTarget = nil
+            draft = ""
+            collapsedFiles.removeAll()
+            highlightedHunks.removeAll()
+        }
     }
 
     private var header: some View {

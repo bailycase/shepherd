@@ -105,6 +105,19 @@ NODE_PATH="$(npm root -g)" node --test Tests/Extensions/agent-coordination.test.
 env -u SHEPHERD_SUPPORT_DIR swift test --filter 'AgentCoordinationTests|AgentPeerDeletionTests|ProtocolTests|PiThemeTests'
 ```
 
+## Diff review
+
+Agents can call `review_diff` to open a native review pane. Pass `cwd` to review another
+repository or worktree, for example `{"cwd":"~/src/project-worktree"}`. Omitting `cwd`
+uses the agent's directory, even if the open review targets somewhere else. This never
+changes the agent process's working directory.
+
+Repeated calls reuse the agent's review pane and focus it when that agent's layout is
+visible, without switching away from another workspace. Changing the target directory
+clears the previous comments and summary. The tool returns immediately; the user's review
+arrives as a message when submitted. Use `reference` for a commit, branch, or range, or omit
+it for working-tree changes versus HEAD.
+
 ## Pi in shell panes
 
 With the theme extension enabled, typing `pi` in a new zsh, bash, or fish pane loads
