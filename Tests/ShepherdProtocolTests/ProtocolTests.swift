@@ -317,4 +317,28 @@ struct ProtocolTests {
         #expect(state.lastPathComponent == "state.json")
         #expect(state.deletingLastPathComponent() == ShepherdPaths.supportDirectory())
     }
+    @Test func agentCoordinationRoundTrips() throws {
+        let sender = AgentID()
+        let target = AgentID()
+        for operation in [AgentCoordinationRequest.Operation.read, .steer, .interrupt, .status, .delete] {
+            let request = AgentCoordinationRequest(operation: operation, text: "change course", limit: 10, after: "entry-1")
+            let result = AgentCoordinationResult(text: "requested", idle: false, sessionID: "session", connectionID: "connection", code: "cancelled")
+            let messages: [ExtensionMessage] = [
+                .coordinateAgent(id: 21, agentID: sender, targetAgentID: target, request: request),
+                .agentResponse(agentID: target, requestID: "server-token", result: result),
+                .cancelAgentRequest(id: 21, agentID: sender),
+            ]
+            for message in messages {
+                #expect(try NDJSON.decode(ExtensionMessage.self, from: NDJSON.encode(message).dropLast()) == message)
+            }
+            for reply in [ExtensionReply.agentRequest(id: 0, requestID: "server-token", targetAgentID: target, request: request),
+                          .agentResult(id: 21, result: result), .agentResult(id: 22, result: .init(text: "requested"))] {
+                #expect(try NDJSON.decode(ExtensionReply.self, from: NDJSON.encode(reply).dropLast()) == reply)
+            }
+        }
+        let raw = Data(#"{"type":"coordinateAgent","id":3,"agentID":"sender","targetAgentID":"target","request":{"operation":"delete"},"confirmed":true}"#.utf8)
+        #expect(try NDJSON.decode(ExtensionMessage.self, from: raw) == .coordinateAgent(
+            id: 3, agentID: AgentID(rawValue: "sender"), targetAgentID: AgentID(rawValue: "target"), request: .init(operation: .delete)))
+    }
+
 }

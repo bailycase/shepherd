@@ -13,6 +13,7 @@ struct RootView: View {
     @State private var worktreeDeleteWarning: String?
 
     var body: some View {
+        let peerDeleteConfirmation = vm.peerDeleteConfirmation
         HStack(spacing: 0) {
             // Left column: flat sidebar surface runs continuously behind the
             // traffic lights and the tree. No vibrancy material — the design
@@ -72,6 +73,27 @@ struct RootView: View {
         ) {
             if let space = vm.state.spaces.first(where: { $0.id == vm.worktreeSheetTarget }) {
                 NewWorktreeSheet(vm: vm, space: space)
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { peerDeleteConfirmation != nil },
+            set: { if !$0, let confirmation = peerDeleteConfirmation {
+                vm.cancelPeerDeletion(requestID: confirmation.requestID)
+            } }
+        )) {
+            if let confirmation = peerDeleteConfirmation {
+                DialogSheet(
+                    title: "Delete Agent",
+                    subtitle: "\(confirmation.senderName) requests deletion of \(confirmation.agent.name) [\(confirmation.agent.id)]. This terminates its pi session and all auxiliary processes. Its worktree and branches will be kept.",
+                    actions: [
+                        DialogAction("Cancel", kind: .cancel) {
+                            vm.cancelPeerDeletion(requestID: confirmation.requestID)
+                        },
+                        DialogAction("Delete Agent", kind: .destructive) {
+                            Task { await vm.confirmPeerDeletion(requestID: confirmation.requestID) }
+                        },
+                    ]
+                )
             }
         }
         .sheet(item: $vm.finalizeRequest) { request in
