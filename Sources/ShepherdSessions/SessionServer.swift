@@ -236,6 +236,17 @@ public final class SessionServer: @unchecked Sendable {
     /// The host GUI's own surface grid per session (fd -1 in the min).
     private var localViewports: [SessionID: (cols: Int, rows: Int)] = [:]
     private var clients: [Int32: ExtensionConnection] = [:]
+    private struct PendingAgentRequest {
+        let caller: ExtensionConnection
+        let target: ExtensionConnection?
+        let targetAgentID: AgentID
+        let id: Int
+        let timer: DispatchWorkItem
+        var deletionConfirmed = false
+    }
+    private var agentRequests: [String: PendingAgentRequest] = [:]
+    public var onAgentPeerCancellation: ((String) -> Void)?
+
     private var sessions: [SessionID: PTYSession] = [:]
     private var attachedSessions: Set<SessionID> = []
     /// Output waiting for the GUI, plus the one delivery currently executing
@@ -379,6 +390,9 @@ public final class SessionServer: @unchecked Sendable {
         outputStates.removeAll()
         for client in Array(clients.values) {
             disconnect(client)
+        }
+        for token in Array(agentRequests.keys) {
+            finishAgentRequest(token, result: .init(text: "server stopped", code: "disconnected"))
         }
         acceptSource?.cancel()
         acceptSource = nil
@@ -1045,6 +1059,9 @@ public final class SessionServer: @unchecked Sendable {
     private func disconnect(_ client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
         clients.removeValue(forKey: client.fd)
+        for (token, request) in agentRequests where !request.deletionConfirmed && (request.caller === client || request.target === client) {
+            finishAgentRequest(token, result: .init(text: "agent connection closed", code: "disconnected"))
+        }
         client.upload = nil
         if client.isRemote {
             for sessionID in remoteAttachments.keys {
@@ -1086,6 +1103,21 @@ public final class SessionServer: @unchecked Sendable {
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
         case .helloAgent(let agentID):
             client.agentID = agentID
+        case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
+            coordinateAgent(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request, client: client)
+        case .agentResponse(let agentID, let token, let result):
+            guard let pending = agentRequests[token], pending.target === client,
+                  pending.targetAgentID == agentID, client.agentID == agentID else { return }
+            guard result.text.utf8.count <= 64 * 1024 else {
+                finishAgentRequest(token, result: .init(text: "agent response exceeds 64 KiB", code: "reply_too_large"))
+                return
+            }
+            finishAgentRequest(token, result: result)
+        case .cancelAgentRequest(let id, let agentID):
+            guard client.agentID == agentID else { return }
+            for (token, pending) in agentRequests where pending.caller === client && pending.id == id && !pending.deletionConfirmed {
+                finishAgentRequest(token, result: .init(text: "request cancelled", code: "cancelled"))
+            }
         case .listAgents(let id, let agentID):
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
         case .sendToAgent(let id, let agentID, let targetAgentID, let text):
@@ -1153,6 +1185,90 @@ public final class SessionServer: @unchecked Sendable {
             routePaneRequest(.read(agentID: agentID, paneID: paneID), requestID: id, client: client)
         case .requestReview(let id, let agentID, let cwd, let reference):
             routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
+        }
+    }
+
+    private func coordinateAgent(id: Int, agentID: AgentID, targetAgentID: AgentID,
+                                 request: AgentCoordinationRequest, client: ExtensionConnection) {
+        guard client.agentID == agentID,
+              let sender = store.state.agents.first(where: { $0.id == agentID }),
+              store.state.agents.contains(where: { $0.id == targetAgentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "registered sender and existing target required"), to: client)
+            return
+        }
+        guard agentID != targetAgentID || request.operation == .read else {
+            reply(.error(id: id, code: "self_control", message: "an agent cannot control, wait for, or delete itself"), to: client)
+            return
+        }
+        guard agentRequests.values.filter({ $0.caller === client }).count < 16,
+              !agentRequests.values.contains(where: { $0.caller === client && $0.id == id }) else {
+            reply(.error(id: id, code: "busy", message: "too many pending agent requests or duplicate id"), to: client)
+            return
+        }
+        var forwarded = request
+        if request.operation == .steer {
+            guard let text = request.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  text.utf8.count <= 32 * 1024 else {
+                reply(.error(id: id, code: "invalid", message: "steering text must contain 1 to 32768 bytes"), to: client)
+                return
+            }
+            forwarded.text = "[from: \(sender.name)] \(text)"
+        }
+        let target = clients.values.first { !$0.isRemote && $0.agentID == targetAgentID }
+        guard request.operation == .delete || target != nil else {
+            reply(.error(id: id, code: "not_running", message: "target has no live panes extension"), to: client)
+            return
+        }
+        let token = UUID().uuidString
+        let timer = DispatchWorkItem { [weak self] in
+            guard let self, self.agentRequests[token]?.deletionConfirmed == false else { return }
+            self.finishAgentRequest(token, result: .init(text: "agent request timed out", code: "timeout"))
+        }
+        agentRequests[token] = PendingAgentRequest(caller: client, target: request.operation == .delete ? nil : target,
+                                                  targetAgentID: targetAgentID, id: id, timer: timer)
+        queue.asyncAfter(deadline: .now() + (request.operation == .delete ? 120 : 5), execute: timer)
+        if request.operation == .delete {
+            guard let handler = onAgentPeerRequest else {
+                finishAgentRequest(token, result: .init(text: "native confirmation unavailable", code: "unsupported"))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(.delete(agentID: agentID, targetAgentID: targetAgentID, requestID: token)) { outcome in
+                    guard let self else { return }
+                    self.queue.async {
+                        let result: AgentCoordinationResult
+                        switch outcome {
+                        case .ok: result = .init(text: "deleted agent \(targetAgentID); process termination requested; worktree and branch kept")
+                        case .failed(let code, let message): result = .init(text: message, code: code)
+                        case .agents: result = .init(text: "invalid deletion response", code: "invalid")
+                        }
+                        self.finishAgentRequest(token, result: result)
+                    }
+                }
+            }
+        } else if let target {
+            reply(.agentRequest(id: 0, requestID: token, targetAgentID: targetAgentID, request: forwarded), to: target)
+        }
+    }
+
+    private func finishAgentRequest(_ token: String, result: AgentCoordinationResult) {
+        guard let pending = agentRequests.removeValue(forKey: token) else { return }
+        pending.timer.cancel()
+        reply(.agentResult(id: pending.id, result: result), to: pending.caller)
+        if pending.target == nil {
+            hopToMain { [weak self] in self?.onAgentPeerCancellation?(token) }
+        }
+    }
+
+    /// Claim only after a native button click. A timed-out or cancelled dialog cannot delete.
+    public func claimAgentDeletion(_ token: String) async -> Bool {
+        await enqueueValue {
+            guard var pending = self.agentRequests[token], pending.target == nil,
+                  !pending.deletionConfirmed else { return false }
+            pending.deletionConfirmed = true
+            pending.timer.cancel()
+            self.agentRequests[token] = pending
+            return true
         }
     }
 
@@ -1287,7 +1403,9 @@ public final class SessionServer: @unchecked Sendable {
              .reviewResult(let id, _),
              .automations(let id, _),
              .agents(let id, _),
-             .message(let id, _):
+             .message(let id, _),
+             .agentRequest(let id, _, _, _),
+             .agentResult(let id, _):
             return id
         }
     }

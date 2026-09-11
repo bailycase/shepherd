@@ -4,6 +4,7 @@
 // The agent's own pi pane is off limits (it cannot close or type into itself).
 // Inert unless Shepherd's env is present.
 import * as net from "node:net";
+import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -21,6 +22,10 @@ interface Reply {
   automations?: AutomationInfo[];
   agents?: AgentPeerInfo[];
   text?: string;
+  requestID?: string;
+  targetAgentID?: string;
+  request?: { operation: string; text?: string; after?: string; limit?: number };
+  result?: { text: string; idle?: boolean; sessionID?: string; connectionID?: string; code?: string };
 }
 
 interface AgentPeerInfo {
@@ -56,16 +61,24 @@ export default function shepherdPanes(pi: ExtensionAPI) {
   // ---- socket client (request/reply, NDJSON) -------------------------------
 
   let socket: net.Socket | undefined;
-  let buffer = "";
+  let connecting: Promise<net.Socket> | undefined;
+  let liveContext;
   let nextID = 1;
+  let connectionLosses = 0;
   const pending = new Map<number, (reply: Reply) => void>();
 
   function connect(): Promise<net.Socket> {
     if (socket && !socket.destroyed) return Promise.resolve(socket);
-    return new Promise((resolve, reject) => {
+    if (connecting) return connecting;
+    connecting = new Promise((resolve, reject) => {
       const s = net.createConnection(socketPath);
+      const connectionID = randomUUID();
+      let buffer = "";
+      const timer = setTimeout(() => s.destroy(new Error("Shepherd connection timed out")), 5_000);
+      timer.unref?.();
       s.setEncoding("utf8");
       s.on("connect", () => {
+        clearTimeout(timer);
         socket = s;
         // Register for pushes: Shepherd may now deliver unsolicited
         // peer-thread message frames (id 0) on this connection.
@@ -83,7 +96,67 @@ export default function shepherdPanes(pi: ExtensionAPI) {
           if (line.trim().length > 0) {
             try {
               const reply = JSON.parse(line) as Reply;
-              if (reply.type === "message" && typeof reply.text === "string") {
+              if (reply.type === "agentRequest" && reply.targetAgentID === agentID) {
+                let result;
+                try {
+                  if (!liveContext) throw new Error("live session context unavailable");
+                  const ctx = liveContext;
+                  const req = reply.request;
+                  switch (req?.operation) {
+                    case "read": {
+                      const branch = ctx.sessionManager.getBranch();
+                      const after = req.after === undefined ? -1 : branch.findIndex((e) => e.id === req.after);
+                      if (req.after !== undefined && after < 0) throw new Error("cursor is not on the current branch; read again without after");
+                      const limit = Number.isInteger(req.limit) ? Math.max(1, Math.min(100, req.limit)) : 20;
+                      const visible = branch.slice(after + 1).filter((e) =>
+                        (e.type === "message" && ["user", "assistant", "toolResult", "bashExecution"].includes(e.message.role)) ||
+                        (e.type === "custom_message" && e.display === true) ||
+                        e.type === "compaction" || e.type === "branch_summary"
+                      );
+                      const selected = req.after === undefined ? visible.slice(-limit) : visible.slice(0, limit);
+                      const messages = [];
+                      let bytes = 0;
+                      for (const entry of selected) {
+                        const message = entry.type === "message" ? entry.message : entry;
+                        const content = message.content;
+                        // Only text blocks are copied. Never serialize thinking, image data, or tool arguments.
+                        let body = typeof content === "string" ? content : Array.isArray(content)
+                          ? content.filter((c) => c.type === "text").map((c) => c.text).join("\n") : "";
+                        if (message.role === "bashExecution") body = `$ ${message.command}\n${message.output}`;
+                        if (entry.type === "compaction" || entry.type === "branch_summary") body = entry.summary;
+                        const row = { id: entry.id, role: message.role ?? entry.type,
+                          text: body.slice(0, 4000), truncated: body.length > 4000 };
+                        const size = Buffer.byteLength(JSON.stringify(row));
+                        if (bytes + size > 48 * 1024) break;
+                        messages.push(row);
+                        bytes += size;
+                      }
+                      result = { text: JSON.stringify({ messages, nextCursor: messages.at(-1)?.id ?? req.after ?? null,
+                        hasMore: messages.length < selected.length || (req.after !== undefined && visible.length > messages.length),
+                        omittedEarlier: req.after === undefined && visible.length > selected.length }),
+                        sessionID: ctx.sessionManager.getSessionId() };
+                      break;
+                    }
+                    case "steer":
+                      if (typeof req.text !== "string" || !req.text.trim()) throw new Error("steering text is required");
+                      pi.sendUserMessage(req.text, { deliverAs: "steer" });
+                      result = { text: "steering dispatch requested; acceptance and consumption are not confirmed" };
+                      break;
+                    case "interrupt":
+                      ctx.abort();
+                      result = { text: "current-turn cancellation requested, not confirmed stopped; tools must cooperate. In pi TUI queued messages move to the editor; retries and compaction are not cancelled." };
+                      break;
+                    case "status":
+                      result = { text: "live activity snapshot", idle: ctx.isIdle() && !ctx.hasPendingMessages(),
+                        sessionID: ctx.sessionManager.getSessionId(), connectionID };
+                      break;
+                    default: throw new Error("unsupported live agent operation");
+                  }
+                } catch (error) {
+                  result = { text: String(error).slice(0, 1000), code: "recipient_error" };
+                }
+                try { s.write(JSON.stringify({ type: "agentResponse", agentID, requestID: reply.requestID, result }) + "\n"); } catch {}
+              } else if (reply.type === "message" && typeof reply.text === "string") {
                 // Unsolicited peer-thread message: inject as a real user
                 // message. followUp queues politely mid-turn; triggerTurn
                 // wakes an idle agent.
@@ -95,7 +168,6 @@ export default function shepherdPanes(pi: ExtensionAPI) {
               } else {
                 const resolver = pending.get(reply.id);
                 if (resolver) {
-                  pending.delete(reply.id);
                   resolver(reply);
                 }
               }
@@ -107,43 +179,53 @@ export default function shepherdPanes(pi: ExtensionAPI) {
         }
       });
       s.on("error", (error) => {
-        socket = undefined;
+        clearTimeout(timer);
+        if (socket === s) socket = undefined;
         reject(error);
       });
       s.on("close", () => {
+        connectionLosses++;
+        clearTimeout(timer);
+        reject(new Error("Shepherd closed the connection"));
+        if (socket && socket !== s) return;
         socket = undefined;
         // Fail everything still waiting rather than hanging the agent.
         for (const [id, resolver] of pending) {
-          pending.delete(id);
           resolver({ type: "error", id, code: "disconnected", message: "Shepherd closed the connection" });
         }
       });
       s.unref();
-    });
+    }).finally(() => { connecting = undefined; });
+    return connecting;
   }
 
   // Throws on failure: pi marks a tool errored only when execute throws.
-  async function request(payload: Record<string, unknown>): Promise<Reply> {
-    const s = await connect();
+  async function request(payload: Record<string, unknown>, signal?: AbortSignal, timeout = REQUEST_TIMEOUT_MS): Promise<Reply> {
+    if (signal?.aborted) throw new Error("request cancelled");
     const id = nextID++;
     const reply = await new Promise<Reply>((resolve) => {
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        resolve({ type: "error", id, code: "timeout", message: "Shepherd did not reply in time" });
-      }, REQUEST_TIMEOUT_MS);
-      timer.unref?.();
-
-      pending.set(id, (received) => {
+      const finish = (received: Reply) => {
+        if (!pending.delete(id)) return;
         clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
         resolve(received);
-      });
-      s.write(JSON.stringify({ ...payload, id, agentID }) + "\n");
+      };
+      const cancel = (code: string) => {
+        try { socket?.write(JSON.stringify({ type: "cancelAgentRequest", id, agentID }) + "\n"); } catch {}
+        finish({ type: "error", id, code, message: `Shepherd request ${code}` });
+      };
+      const abort = () => cancel("cancelled");
+      const timer = setTimeout(() => cancel("timeout"), timeout);
+      timer.unref?.();
+      pending.set(id, finish);
+      signal?.addEventListener("abort", abort, { once: true });
+      connect().then((s) => {
+        if (pending.has(id)) s.write(JSON.stringify({ ...payload, id, agentID }) + "\n");
+      }).catch((error) => finish({ type: "error", id, code: "disconnected", message: String(error) }));
     });
 
-    if (reply.type === "error") {
-      throw new Error(
-        `${reply.message ?? "pane request failed"}${reply.code ? ` (${reply.code})` : ""}`,
-      );
+    if (reply.type === "error" || reply.result?.code) {
+      throw new Error(`${reply.result?.text ?? reply.message ?? "request failed"} (${reply.result?.code ?? reply.code})`);
     }
     return reply;
   }
@@ -340,7 +422,93 @@ export default function shepherdPanes(pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params) {
       await request({ type: "sendToAgent", targetAgentID: params.agentID, text: params.text });
-      return text(`sent to agent ${params.agentID}`);
+      return text(`follow-up dispatch requested for agent ${params.agentID}; acceptance and consumption are not confirmed`);
+    },
+  });
+
+  pi.registerTool({
+    name: "agent_read",
+    label: "Read Agent Thread",
+    description: "Read finalized visible messages on a live agent's current branch, not streaming text. Thinking, images, hidden entries, and tool arguments are omitted. Returns entry IDs, nextCursor and truncation flags. Defaults to the latest 20 entries; after reads forward. Per-entry text is capped at 4000 characters, total at 48 KiB. A cursor from another branch is an error.",
+    parameters: Type.Object({
+      agentID: Type.String(),
+      after: Type.Optional(Type.String({ description: "Entry ID cursor from this branch, exclusive" })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+    }),
+    async execute(_id, params, signal) {
+      const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
+        request: { operation: "read", after: params.after, limit: params.limit } }, signal);
+      return text(reply.result?.text ?? "no messages");
+    },
+  });
+
+  pi.registerTool({
+    name: "agent_steer",
+    label: "Steer Agent Thread",
+    description: "Request steering dispatch to another live agent via pi.sendUserMessage deliverAs steer. Queues during a turn or starts an idle agent. Reports requested, not accepted or consumed. Cannot target yourself.",
+    parameters: Type.Object({ agentID: Type.String(), text: Type.String({ minLength: 1, maxLength: 32768 }) }),
+    async execute(_id, params, signal) {
+      const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
+        request: { operation: "steer", text: params.text } }, signal);
+      return text(reply.result?.text ?? "steering dispatch requested");
+    },
+  });
+
+  pi.registerTool({
+    name: "agent_interrupt",
+    label: "Interrupt Agent Thread",
+    description: "Request best-effort current-turn cancellation on another live agent. Does not confirm it stopped; tools must cooperate. Pi TUI moves queued messages to the editor and does not cancel retries or compaction. Cannot target yourself.",
+    parameters: Type.Object({ agentID: Type.String() }),
+    async execute(_id, params, signal) {
+      const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
+        request: { operation: "interrupt" } }, signal);
+      return text(reply.result?.text ?? "cancellation requested");
+    },
+  });
+
+  pi.registerTool({
+    name: "agent_wait",
+    label: "Wait for Agent Activity",
+    description: "Poll another live agent until ctx.isIdle and no pending messages. Only current activity has settled, not proof a sent task succeeded or was consumed. Times out or fails on disconnection/session change. Cancellable; cannot wait for yourself.",
+    parameters: Type.Object({ agentID: Type.String(),
+      timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 120 })) }),
+    async execute(_id, params, signal) {
+      if (params.agentID === agentID) throw new Error("cannot wait for yourself");
+      const deadline = Date.now() + (params.timeoutSeconds ?? 30) * 1000;
+      const initialConnectionLosses = connectionLosses;
+      let sessionID;
+      let connectionID;
+      while (Date.now() < deadline) {
+        if (connectionLosses !== initialConnectionLosses) throw new Error("caller disconnected while waiting");
+        const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
+          request: { operation: "status" } }, signal, Math.min(6_000, deadline - Date.now()));
+        if (connectionLosses !== initialConnectionLosses) throw new Error("caller disconnected while waiting");
+        if (sessionID && sessionID !== reply.result?.sessionID) throw new Error("target session changed while waiting");
+        if (connectionID && connectionID !== reply.result?.connectionID) throw new Error("target connection changed while waiting");
+        sessionID = reply.result?.sessionID;
+        connectionID = reply.result?.connectionID;
+        if (reply.result?.idle === true) return text("current activity settled; this does not confirm any sent task succeeded or was consumed");
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(new Error("wait cancelled")); };
+          const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, Math.min(250, Math.max(0, deadline - Date.now())));
+          timer.unref?.();
+          if (signal?.aborted) abort();
+          else signal?.addEventListener("abort", abort, { once: true });
+        });
+      }
+      throw new Error("wait timed out; current activity has not settled");
+    },
+  });
+
+  pi.registerTool({
+    name: "agent_delete",
+    label: "Request Agent Deletion",
+    description: "Ask the real user in Shepherd's native confirmation to delete another agent and terminate all its auxiliary processes. No agent-supplied approval is accepted. Cancel or a 120-second confirmation timeout keeps it intact. Keeps worktrees and branches. Cannot delete yourself.",
+    parameters: Type.Object({ agentID: Type.String() }),
+    async execute(_id, params, signal) {
+      const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,
+        request: { operation: "delete" } }, signal, 125_000);
+      return text(reply.result?.text ?? "deletion requested");
     },
   });
 
@@ -513,11 +681,15 @@ export default function shepherdPanes(pi: ExtensionAPI) {
 
   // Connect eagerly so pushes can reach this agent before it ever uses a
   // pane tool. Failures are fine — request() reconnects on demand.
-  pi.on("session_start", () => {
-    connect().catch(() => {});
-  });
+  for (const event of ["session_start", "session_switch", "session_fork", "session_tree"]) {
+    pi.on(event, (_event, ctx) => {
+      liveContext = ctx;
+      connect().catch(() => {});
+    });
+  }
 
   pi.on("session_shutdown", () => {
+    liveContext = undefined;
     try {
       socket?.end();
     } catch {

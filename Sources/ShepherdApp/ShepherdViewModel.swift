@@ -218,6 +218,13 @@ final class ShepherdViewModel {
     /// Worktree agent pending delete confirmation (alert in RootView) —
     /// deleting may also remove the checkout, so it always confirms.
     var worktreeDeleteTarget: AgentID?
+    struct PeerDeleteConfirmation {
+        let requestID: String
+        let agent: Agent
+        let senderName: String
+        let respond: (AgentPeerOutcome) -> Void
+    }
+    var peerDeleteConfirmation: PeerDeleteConfirmation?
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
     /// a live lookup would blank the sheet mid-success.
