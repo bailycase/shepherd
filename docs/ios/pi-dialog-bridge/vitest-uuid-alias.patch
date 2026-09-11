@@ -1,0 +1,15 @@
+diff --git a/vitest.base.ts b/vitest.base.ts
+index 9394bcb..138f7c9 100644
+--- a/vitest.base.ts
++++ b/vitest.base.ts
+@@ -37,6 +37,10 @@ export default defineConfig({
+ 			{ find: /^@earendil-works\/pi-ai$/, replacement: workspaceSourcePaths.aiIndex },
+ 			{ find: /^@earendil-works\/pi-ai\/compat$/, replacement: workspaceSourcePaths.aiCompat },
+ 			{ find: /^@earendil-works\/pi-ai\/oauth$/, replacement: workspaceSourcePaths.aiOAuth },
++			{
++				find: /^@earendil-works\/pi-ai\/utils\/uuid$/,
++				replacement: fileURLToPath(new URL("./packages/ai/src/utils/uuid.ts", import.meta.url)),
++			},
+ 			{
+ 				find: /^@earendil-works\/pi-ai\/providers\/(.+)$/,
+ 				replacement: `${workspaceSourcePaths.aiProviders}/$1.ts`,

@@ -1,0 +1,1036 @@
+diff --git a/packages/coding-agent/docs/extensions.md b/packages/coding-agent/docs/extensions.md
+index ce13db6..c218b18 100644
+--- a/packages/coding-agent/docs/extensions.md
++++ b/packages/coding-agent/docs/extensions.md
+@@ -2532,6 +2532,39 @@ const text = await ctx.ui.editor("Edit:", "prefilled text");
+ ctx.ui.notify("Done!", "info");  // "info" | "warning" | "error"
+ ```
+ 
++#### Remote answers to standard dialogs
++
++Interactive mode exposes all standard extension `select`, `confirm`, `input`, and `editor` dialogs through a pi-owned registry. The native desktop dialog remains available. Custom components, built-in dialogs, authentication prompts, and the restricted `project_trust` UI are not exposed. In RPC, JSON, and print modes these registry methods return an empty snapshot, a no-op unsubscribe function, and `"stale"` respectively. The existing RPC dialog protocol is unchanged.
++
++```typescript
++import type { DialogAnswer, DialogEvent, PendingDialog } from "@earendil-works/pi-coding-agent";
++
++const pending = new Map<string, PendingDialog>();
++const unsubscribe = ctx.ui.onDialog((event: DialogEvent) => {
++  if (event.type === "closed") pending.delete(event.id);
++  else pending.set(event.dialog.id, event.dialog);
++});
++// Subscribe first, then take the snapshot. Deduplicate by ID.
++for (const dialog of ctx.ui.getPendingDialogs()) pending.set(dialog.id, dialog);
++
++// After authenticating and authorizing the remote caller:
++const answer: DialogAnswer = { kind: "confirm", value: true };
++const status = ctx.ui.resolveDialog(dialogId, answer);
++// "accepted" | "stale" | "invalid"
++```
++
++`PendingDialog` has a process-unique `id`, `title`, `kind`, and optional `timeout` in milliseconds. Select dialogs include `options`; confirmations include `message`; inputs include optional `placeholder`; editors include optional `prefill`. Snapshots and payloads are read-only. Events are `{ type: "opened" | "updated", dialog }` or `{ type: "closed", id }`. They do not include submitted answers.
++
++Answers use the matching `kind` and a `value`: boolean for confirmations, string for select/input/editor. Select values must match an offered option. Empty input/editor strings are valid. `{ kind: "cancel" }` returns `undefined` to select/input/editor callers and `false` to confirm callers.
++
++Pi mounts the desktop component before queuing `opened`. Desktop submission, cancellation, timeout, caller abort, and remote resolution settle through the same synchronous callback. The first valid answer wins; unknown or already closed IDs return `"stale"`. Wrong kinds or values return `"invalid"` without closing the dialog. Invalid answers never reserve a winner. Overlapping standard dialogs reject with `Error("Extension dialog busy")` before mounting, rather than replacing the active dialog. Await each dialog before opening another.
++
++Listeners run asynchronously without blocking dialog mounting or settlement; errors are ignored. Notifications already queued can arrive after unsubscribe or after settlement, in lifecycle order. Keep listeners short and reconcile with `getPendingDialogs()` after reconnect. Reload, session replacement, and stop cancel pending dialogs and clear listeners. Subscribe again in the new `session_start`. The notification-only `ui_prompt_start` / `ui_prompt_end` events retain their existing coalesced waiting-span behavior.
++
++**External editor limitation:** Ctrl+G temporarily gives an external process control of the desktop terminal. While it runs, the editor record has `unavailable: "external-editor"`, and an `updated` event reports that state. Every remote answer, including cancel, returns `"invalid"` until the external editor exits. Then another `updated` event clears `unavailable`, and the same ID accepts answers again. A mobile client must disable answering while unavailable. This is not full remote parity during external editing. The normal multiline TUI editor accepts remote answers. Editors do not gain timeout or AbortSignal options through this API. Reset invalidates the ID but does not terminate the external child; new standard dialogs remain busy until that child exits.
++
++The registry is an in-process extension API, not a network endpoint or authentication mechanism. A bridge must authenticate callers, authorize access to this session, and protect dialog titles, choices, messages, and prefills as potentially sensitive data. Unsubscribe and close transport resources in `session_shutdown`.
++
+ #### Timed Dialogs with Countdown
+ 
+ Dialogs support a `timeout` option that auto-dismisses with a live countdown display:
+diff --git a/packages/coding-agent/src/core/extensions/index.ts b/packages/coding-agent/src/core/extensions/index.ts
+index f19816a..4e92a3c 100644
+--- a/packages/coding-agent/src/core/extensions/index.ts
++++ b/packages/coding-agent/src/core/extensions/index.ts
+@@ -49,6 +49,8 @@ export type {
+ 	ContextUsage,
+ 	CustomToolCallEvent,
+ 	CustomToolResultEvent,
++	DialogAnswer,
++	DialogEvent,
+ 	EditorFactory,
+ 	EditToolCallEvent,
+ 	EditToolResultEvent,
+@@ -105,6 +107,7 @@ export type {
+ 	MessageUpdateEvent,
+ 	ModelSelectEvent,
+ 	ModelSelectSource,
++	PendingDialog,
+ 	PowerShellToolCallEvent,
+ 	PowerShellToolResultEvent,
+ 	ProjectTrustContext,
+diff --git a/packages/coding-agent/src/core/extensions/runner.ts b/packages/coding-agent/src/core/extensions/runner.ts
+index 3346645..d02bb48 100644
+--- a/packages/coding-agent/src/core/extensions/runner.ts
++++ b/packages/coding-agent/src/core/extensions/runner.ts
+@@ -234,6 +234,9 @@ export async function emitProjectTrustEvent(
+ }
+ 
+ const noOpUIContext: ExtensionUIContext = {
++	getPendingDialogs: () => [],
++	onDialog: () => () => {},
++	resolveDialog: () => "stale",
+ 	select: async () => undefined,
+ 	confirm: async () => false,
+ 	input: async () => undefined,
+diff --git a/packages/coding-agent/src/core/extensions/types.ts b/packages/coding-agent/src/core/extensions/types.ts
+index eaff3a8..cc4d526 100644
+--- a/packages/coding-agent/src/core/extensions/types.ts
++++ b/packages/coding-agent/src/core/extensions/types.ts
+@@ -102,6 +102,25 @@ export interface ExtensionUIDialogOptions {
+ 	timeout?: number;
+ }
+ 
++/** A standard extension dialog currently displayed in the desktop TUI. */
++export type PendingDialog = Readonly<
++	{ id: string; title: string; timeout?: number } & (
++		| { kind: "select"; options: readonly string[] }
++		| { kind: "confirm"; message: string }
++		| { kind: "input"; placeholder?: string }
++		| { kind: "editor"; prefill?: string; unavailable?: "external-editor" }
++	)
++>;
++
++export type DialogAnswer =
++	| { kind: "select"; value: string }
++	| { kind: "confirm"; value: boolean }
++	| { kind: "input"; value: string }
++	| { kind: "editor"; value: string }
++	| { kind: "cancel" };
++
++export type DialogEvent = { type: "opened" | "updated"; dialog: PendingDialog } | { type: "closed"; id: string };
++
+ /** Placement for extension widgets. */
+ export type WidgetPlacement = "aboveEditor" | "belowEditor";
+ 
+@@ -131,6 +150,15 @@ export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: Keybindi
+  * Each mode (interactive, RPC, print) provides its own implementation.
+  */
+ export interface ExtensionUIContext {
++	/** Snapshot of displayed standard extension dialogs. Empty outside interactive mode. */
++	getPendingDialogs(): readonly PendingDialog[];
++
++	/** Subscribe before reading the snapshot. Unsubscribe stops future notifications; queued events may still arrive. */
++	onDialog(listener: (event: DialogEvent) => void): () => void;
++
++	/** First valid answer wins. Invalid includes an editor temporarily unavailable during external editing. */
++	resolveDialog(id: string, answer: DialogAnswer): "accepted" | "stale" | "invalid";
++
+ 	/** Show a selector and return the user's choice. */
+ 	select(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
+ 
+diff --git a/packages/coding-agent/src/core/index.ts b/packages/coding-agent/src/core/index.ts
+index 924932e..e0fdfd2 100644
+--- a/packages/coding-agent/src/core/index.ts
++++ b/packages/coding-agent/src/core/index.ts
+@@ -40,6 +40,8 @@ export {
+ 	type BeforeAgentStartEventResult,
+ 	type BuildSystemPromptOptions,
+ 	type ContextEvent,
++	type DialogAnswer,
++	type DialogEvent,
+ 	defineTool,
+ 	discoverAndLoadExtensions,
+ 	type ExecOptions,
+@@ -59,6 +61,7 @@ export {
+ 	type InlineExtension,
+ 	type LoadExtensionsResult,
+ 	type MessageRenderer,
++	type PendingDialog,
+ 	type RegisteredCommand,
+ 	type SessionBeforeCompactEvent,
+ 	type SessionBeforeForkEvent,
+diff --git a/packages/coding-agent/src/index.ts b/packages/coding-agent/src/index.ts
+index 6667389..6f991a8 100644
+--- a/packages/coding-agent/src/index.ts
++++ b/packages/coding-agent/src/index.ts
+@@ -69,6 +69,8 @@ export type {
+ 	ContextEvent,
+ 	ContextUsage,
+ 	CustomToolCallEvent,
++	DialogAnswer,
++	DialogEvent,
+ 	EditToolCallEvent,
+ 	EntryRenderer,
+ 	EntryRenderOptions,
+@@ -107,6 +109,7 @@ export type {
+ 	MessageRenderOptions,
+ 	MessageStartEvent,
+ 	MessageUpdateEvent,
++	PendingDialog,
+ 	PowerShellToolCallEvent,
+ 	ProjectTrustContext,
+ 	ProjectTrustEvent,
+diff --git a/packages/coding-agent/src/modes/interactive/components/extension-editor.ts b/packages/coding-agent/src/modes/interactive/components/extension-editor.ts
+index 9af7d8c..ceff92a 100644
+--- a/packages/coding-agent/src/modes/interactive/components/extension-editor.ts
++++ b/packages/coding-agent/src/modes/interactive/components/extension-editor.ts
+@@ -26,6 +26,9 @@ export class ExtensionEditorComponent extends Container implements Focusable {
+ 	private tui: TUI;
+ 	private keybindings: KeybindingsManager;
+ 	private externalEditorCommand: string;
++	private onExternalEditorChange?: (active: boolean) => void;
++	private externalEditorActive = false;
++	private disposed = false;
+ 
+ 	private _focused = false;
+ 	get focused(): boolean {
+@@ -45,10 +48,12 @@ export class ExtensionEditorComponent extends Container implements Focusable {
+ 		onCancel: () => void,
+ 		options?: EditorOptions,
+ 		externalEditorCommand?: string,
++		onExternalEditorChange?: (active: boolean) => void,
+ 	) {
+ 		super();
+ 
+ 		this.tui = tui;
++		this.onExternalEditorChange = onExternalEditorChange;
+ 		this.keybindings = keybindings;
+ 		this.externalEditorCommand =
+ 			externalEditorCommand ||
+@@ -96,6 +101,7 @@ export class ExtensionEditorComponent extends Container implements Focusable {
+ 	}
+ 
+ 	handleInput(keyData: string): void {
++		if (this.disposed || this.externalEditorActive) return;
+ 		const kb = getKeybindings();
+ 		// Escape or Ctrl+C to cancel
+ 		if (kb.matches(keyData, "tui.select.cancel")) {
+@@ -113,7 +119,13 @@ export class ExtensionEditorComponent extends Container implements Focusable {
+ 		this.editor.handleInput(keyData);
+ 	}
+ 
++	dispose(): void {
++		this.disposed = true;
++	}
++
+ 	private async handleOpenExternalEditor(): Promise<void> {
++		this.externalEditorActive = true;
++		this.onExternalEditorChange?.(true);
+ 		const content = this.editor.getText();
+ 		this.tui.stop();
+ 		try {
+@@ -121,12 +133,16 @@ export class ExtensionEditorComponent extends Container implements Focusable {
+ 				command: this.externalEditorCommand,
+ 				content,
+ 			});
+-			if (result.status === "complete") {
++			if (!this.disposed && result.status === "complete") {
+ 				this.editor.setText(result.content);
+ 			}
+ 		} finally {
+-			this.tui.start();
+-			this.tui.requestRender(true);
++			this.externalEditorActive = false;
++			if (!this.disposed) {
++				this.tui.start();
++				this.tui.requestRender(true);
++			}
++			this.onExternalEditorChange?.(false);
+ 		}
+ 	}
+ }
+diff --git a/packages/coding-agent/src/modes/interactive/interactive-mode.ts b/packages/coding-agent/src/modes/interactive/interactive-mode.ts
+index 8db1b80..6c78a83 100644
+--- a/packages/coding-agent/src/modes/interactive/interactive-mode.ts
++++ b/packages/coding-agent/src/modes/interactive/interactive-mode.ts
+@@ -67,6 +67,8 @@ import {
+ import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "../../core/defaults.ts";
+ import type {
+ 	AutocompleteProviderFactory,
++	DialogAnswer,
++	DialogEvent,
+ 	EditorFactory,
+ 	ExtensionCommandContext,
+ 	ExtensionContext,
+@@ -75,6 +77,7 @@ import type {
+ 	ExtensionUIDialogOptions,
+ 	ExtensionWidgetOptions,
+ 	MarkdownTransformer,
++	PendingDialog,
+ 	ProjectTrustContext,
+ 	WorkingIndicatorOptions,
+ } from "../../core/extensions/index.ts";
+@@ -469,10 +472,12 @@ export class InteractiveMode {
+ 	// Shutdown state
+ 	private shutdownRequested = false;
+ 
++	private activeDialog: { pending?: PendingDialog; finish: (answer: DialogAnswer) => void } | undefined;
++	private dialogListeners = new Set<(event: DialogEvent) => void>();
++	private externalDialogEditorActive = false;
++	private dialogUIStopped = false;
++
+ 	// Extension UI state
+-	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
+-	private extensionInput: ExtensionInputComponent | undefined = undefined;
+-	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
+ 	private extensionTerminalInputSubscriptions = new Set<{
+ 		handler: (data: string) => { consume?: boolean; data?: string } | undefined;
+ 		unsubscribe: () => void;
+@@ -2240,15 +2245,8 @@ export class InteractiveMode {
+ 	}
+ 
+ 	private resetExtensionUI(): void {
+-		if (this.extensionSelector) {
+-			this.hideExtensionSelector();
+-		}
+-		if (this.extensionInput) {
+-			this.hideExtensionInput();
+-		}
+-		if (this.extensionEditor) {
+-			this.hideExtensionEditor();
+-		}
++		this.activeDialog?.finish({ kind: "cancel" });
++		this.dialogListeners.clear();
+ 		this.ui.hideOverlay();
+ 		this.clearExtensionTerminalInputListeners();
+ 		this.setExtensionFooter(undefined);
+@@ -2406,25 +2404,48 @@ export class InteractiveMode {
+ 	 * Create the ExtensionUIContext for extensions.
+ 	 */
+ 	private createProjectTrustContext(cwd: string): ProjectTrustContext {
+-		const ui = this.createExtensionUIContext();
+ 		return {
+ 			cwd,
+ 			mode: "tui",
+ 			hasUI: true,
+ 			ui: {
+-				select: ui.select,
+-				confirm: ui.confirm,
+-				input: ui.input,
+-				notify: ui.notify,
++				select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
++				confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
++				input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
++				notify: (message, type) => this.showExtensionNotify(message, type),
+ 			},
+ 		};
+ 	}
+ 
+ 	private createExtensionUIContext(): ExtensionUIContext {
+ 		return {
+-			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
+-			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
+-			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
++			getPendingDialogs: () => (this.activeDialog?.pending ? [this.activeDialog.pending] : []),
++			onDialog: (listener) => {
++				this.dialogListeners.add(listener);
++				return () => {
++					this.dialogListeners.delete(listener);
++				};
++			},
++			resolveDialog: (id, answer) => {
++				const active = this.activeDialog;
++				const dialog = active?.pending;
++				if (!active || !dialog || dialog.id !== id) return "stale";
++				if (dialog.kind === "editor" && dialog.unavailable) return "invalid";
++				if (!answer || typeof answer !== "object") return "invalid";
++				if (answer.kind !== "cancel") {
++					if (answer.kind !== dialog.kind) return "invalid";
++					if (answer.kind === "confirm") {
++						if (typeof answer.value !== "boolean") return "invalid";
++					} else if (typeof answer.value !== "string") return "invalid";
++					if (dialog.kind === "select" && answer.kind === "select" && !dialog.options.includes(answer.value))
++						return "invalid";
++				}
++				active.finish(answer);
++				return "accepted";
++			},
++			select: (title, options, opts) => this.showExtensionSelector(title, options, opts, true),
++			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts, true),
++			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts, true),
+ 			notify: (message, type) => this.showExtensionNotify(message, type),
+ 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
+ 			setStatus: (key, text) => this.setExtensionStatus(key, text),
+@@ -2445,7 +2466,7 @@ export class InteractiveMode {
+ 			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
+ 			setEditorText: (text) => this.editor.setText(text),
+ 			getEditorText: () => this.editor.getExpandedText?.() ?? this.editor.getText(),
+-			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
++			editor: (title, prefill) => this.showExtensionEditor(title, prefill, true),
+ 			addAutocompleteProvider: (factory) => {
+ 				this.autocompleteProviderWrappers.push(factory);
+ 				this.setupAutocompleteProvider();
+@@ -2474,72 +2495,50 @@ export class InteractiveMode {
+ 		};
+ 	}
+ 
+-	/**
+-	 * Show a selector for extensions.
+-	 */
++	private emitDialogEvent(event: DialogEvent): void {
++		for (const listener of this.dialogListeners) {
++			queueMicrotask(() => {
++				try {
++					Promise.resolve(listener(event)).catch(() => {});
++				} catch {
++					// A bridge failure must not break desktop interaction.
++				}
++			});
++		}
++	}
++
+ 	private showExtensionSelector(
+ 		title: string,
+ 		options: string[],
+ 		opts?: ExtensionUIDialogOptions,
++		expose = false,
+ 	): Promise<string | undefined> {
+-		return new Promise((resolve) => {
+-			if (opts?.signal?.aborted) {
+-				resolve(undefined);
+-				return;
+-			}
+-
+-			const onAbort = () => {
+-				this.hideExtensionSelector();
+-				resolve(undefined);
+-			};
+-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+-
+-			this.extensionSelector = new ExtensionSelectorComponent(
++		return this.showStandardDialog(
++			{
++				id: crypto.randomUUID(),
++				kind: "select",
+ 				title,
+-				options,
+-				(option) => {
+-					opts?.signal?.removeEventListener("abort", onAbort);
+-					this.hideExtensionSelector();
+-					resolve(option);
+-				},
+-				() => {
+-					opts?.signal?.removeEventListener("abort", onAbort);
+-					this.hideExtensionSelector();
+-					resolve(undefined);
+-				},
+-				{ tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() },
+-			);
+-
+-			this.disposeActiveSelector();
+-			this.editorContainer.clear();
+-			this.editorContainer.addChild(this.extensionSelector);
+-			this.ui.setFocus(this.extensionSelector);
+-			this.ui.requestRender();
+-		});
++				options: Object.freeze([...options]),
++				timeout: opts?.timeout,
++			},
++			opts,
++			expose,
++		).then((value) => (typeof value === "string" ? value : undefined));
+ 	}
+ 
+-	/**
+-	 * Hide the extension selector.
+-	 */
+-	private hideExtensionSelector(): void {
+-		this.extensionSelector?.dispose();
+-		this.editorContainer.clear();
+-		this.editorContainer.addChild(this.editor);
+-		this.extensionSelector = undefined;
+-		this.ui.setFocus(this.editor);
+-		this.ui.requestRender();
+-	}
+-
+-	/**
+-	 * Show a confirmation dialog for extensions.
+-	 */
+ 	private async showExtensionConfirm(
+ 		title: string,
+ 		message: string,
+ 		opts?: ExtensionUIDialogOptions,
++		expose = false,
+ 	): Promise<boolean> {
+-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
+-		return result === "Yes";
++		return (
++			(await this.showStandardDialog(
++				{ id: crypto.randomUUID(), kind: "confirm", title, message, timeout: opts?.timeout },
++				opts,
++				expose,
++			)) === true
++		);
+ 	}
+ 
+ 	private async promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined> {
+@@ -2550,103 +2549,114 @@ export class InteractiveMode {
+ 		return confirmed ? error.issue.fallbackCwd : undefined;
+ 	}
+ 
+-	/**
+-	 * Show a text input for extensions.
+-	 */
+ 	private showExtensionInput(
+ 		title: string,
+ 		placeholder?: string,
+ 		opts?: ExtensionUIDialogOptions,
++		expose = false,
+ 	): Promise<string | undefined> {
+-		return new Promise((resolve) => {
+-			if (opts?.signal?.aborted) {
+-				resolve(undefined);
+-				return;
+-			}
++		return this.showStandardDialog(
++			{ id: crypto.randomUUID(), kind: "input", title, placeholder, timeout: opts?.timeout },
++			opts,
++			expose,
++		).then((value) => (typeof value === "string" ? value : undefined));
++	}
+ 
+-			const onAbort = () => {
+-				this.hideExtensionInput();
+-				resolve(undefined);
++	private showExtensionEditor(title: string, prefill?: string, expose = false): Promise<string | undefined> {
++		return this.showStandardDialog(
++			{ id: crypto.randomUUID(), kind: "editor", title, prefill },
++			undefined,
++			expose,
++		).then((value) => (typeof value === "string" ? value : undefined));
++	}
++
++	private showStandardDialog(
++		dialog: PendingDialog,
++		opts: ExtensionUIDialogOptions | undefined,
++		expose: boolean,
++	): Promise<string | boolean | undefined> {
++		if (opts?.signal?.aborted) return Promise.resolve(undefined);
++		if (this.activeDialog || this.externalDialogEditorActive)
++			return Promise.reject(new Error("Extension dialog busy"));
++		if (this.dialogUIStopped) return Promise.resolve(undefined);
++		return new Promise((resolve) => {
++			let closed = false;
++			let component: ExtensionSelectorComponent | ExtensionInputComponent | ExtensionEditorComponent;
++			const finish = (answer: DialogAnswer) => {
++				if (closed) return;
++				closed = true;
++				opts?.signal?.removeEventListener("abort", onAbort);
++				this.activeDialog = undefined;
++				component.dispose();
++				// Only restore the editor if this dialog still owns its container.
++				if (this.editorContainer.children.includes(component)) {
++					this.editorContainer.clear();
++					this.editorContainer.addChild(this.editor);
++					this.ui.setFocus(this.editor);
++					this.ui.requestRender();
++				}
++				resolve(answer.kind === "cancel" ? undefined : answer.value);
++				if (expose) this.emitDialogEvent({ type: "closed", id: dialog.id });
+ 			};
++			const onAbort = () => finish({ kind: "cancel" });
++			if (dialog.kind === "select" || dialog.kind === "confirm") {
++				component = new ExtensionSelectorComponent(
++					dialog.kind === "confirm" ? `${dialog.title}\n${dialog.message}` : dialog.title,
++					dialog.kind === "confirm" ? ["Yes", "No"] : [...dialog.options],
++					(value) =>
++						finish(
++							dialog.kind === "confirm"
++								? { kind: "confirm", value: value === "Yes" }
++								: { kind: "select", value },
++						),
++					onAbort,
++					{ tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() },
++				);
++			} else if (dialog.kind === "input") {
++				component = new ExtensionInputComponent(
++					dialog.title,
++					dialog.placeholder,
++					(value) => finish({ kind: "input", value }),
++					onAbort,
++					{ tui: this.ui, timeout: opts?.timeout },
++				);
++			} else {
++				component = new ExtensionEditorComponent(
++					this.ui,
++					this.keybindings,
++					dialog.title,
++					dialog.prefill,
++					(value) => finish({ kind: "editor", value }),
++					onAbort,
++					undefined,
++					this.settingsManager.getExternalEditorCommand(),
++					(active) => {
++						this.externalDialogEditorActive = active;
++						if (!active && closed && !this.dialogUIStopped) {
++							this.ui.start();
++							this.ui.requestRender(true);
++						}
++						if (closed || !expose || !this.activeDialog) return;
++						const pending = Object.freeze({
++							...dialog,
++							unavailable: active ? ("external-editor" as const) : undefined,
++						});
++						this.activeDialog.pending = pending;
++						this.emitDialogEvent({ type: "updated", dialog: pending });
++					},
++				);
++			}
++			this.disposeActiveSelector();
++			this.editorContainer.clear();
++			this.editorContainer.addChild(component);
++			this.ui.setFocus(component);
++			this.ui.requestRender();
++			this.activeDialog = { pending: expose ? Object.freeze(dialog) : undefined, finish };
+ 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+-
+-			this.extensionInput = new ExtensionInputComponent(
+-				title,
+-				placeholder,
+-				(value) => {
+-					opts?.signal?.removeEventListener("abort", onAbort);
+-					this.hideExtensionInput();
+-					resolve(value);
+-				},
+-				() => {
+-					opts?.signal?.removeEventListener("abort", onAbort);
+-					this.hideExtensionInput();
+-					resolve(undefined);
+-				},
+-				{ tui: this.ui, timeout: opts?.timeout },
+-			);
+-
+-			this.disposeActiveSelector();
+-			this.editorContainer.clear();
+-			this.editorContainer.addChild(this.extensionInput);
+-			this.ui.setFocus(this.extensionInput);
+-			this.ui.requestRender();
++			if (expose) this.emitDialogEvent({ type: "opened", dialog });
+ 		});
+ 	}
+ 
+-	/**
+-	 * Hide the extension input.
+-	 */
+-	private hideExtensionInput(): void {
+-		this.extensionInput?.dispose();
+-		this.editorContainer.clear();
+-		this.editorContainer.addChild(this.editor);
+-		this.extensionInput = undefined;
+-		this.ui.setFocus(this.editor);
+-		this.ui.requestRender();
+-	}
+-
+-	/**
+-	 * Show a multi-line editor for extensions (with Ctrl+G support).
+-	 */
+-	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
+-		return new Promise((resolve) => {
+-			this.extensionEditor = new ExtensionEditorComponent(
+-				this.ui,
+-				this.keybindings,
+-				title,
+-				prefill,
+-				(value) => {
+-					this.hideExtensionEditor();
+-					resolve(value);
+-				},
+-				() => {
+-					this.hideExtensionEditor();
+-					resolve(undefined);
+-				},
+-				undefined,
+-				this.settingsManager.getExternalEditorCommand(),
+-			);
+-
+-			this.disposeActiveSelector();
+-			this.editorContainer.clear();
+-			this.editorContainer.addChild(this.extensionEditor);
+-			this.ui.setFocus(this.extensionEditor);
+-			this.ui.requestRender();
+-		});
+-	}
+-
+-	/**
+-	 * Hide the extension editor.
+-	 */
+-	private hideExtensionEditor(): void {
+-		this.editorContainer.clear();
+-		this.editorContainer.addChild(this.editor);
+-		this.extensionEditor = undefined;
+-		this.ui.setFocus(this.editor);
+-		this.ui.requestRender();
+-	}
+-
+ 	/**
+ 	 * Set a custom editor component from an extension.
+ 	 * Pass undefined to restore the default editor.
+@@ -6571,6 +6581,9 @@ export class InteractiveMode {
+ 	}
+ 
+ 	stop(fullscreenExitOutput = this.settingsManager.getFullscreenExitOutput()): void {
++		this.dialogUIStopped = true;
++		this.activeDialog?.finish({ kind: "cancel" });
++		this.dialogListeners.clear();
+ 		this.disposeActiveSelector();
+ 		if (this.settingsManager.getShowTerminalProgress()) {
+ 			this.ui.terminal.setProgress(false);
+diff --git a/packages/coding-agent/src/modes/rpc/rpc-mode.ts b/packages/coding-agent/src/modes/rpc/rpc-mode.ts
+index fc8083b..2ed3123 100644
+--- a/packages/coding-agent/src/modes/rpc/rpc-mode.ts
++++ b/packages/coding-agent/src/modes/rpc/rpc-mode.ts
+@@ -134,6 +134,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
+ 	 * Create an extension UI context that uses the RPC protocol.
+ 	 */
+ 	const createExtensionUIContext = (): ExtensionUIContext => ({
++		getPendingDialogs: () => [],
++		onDialog: () => () => {},
++		resolveDialog: () => "stale",
+ 		select: (title, options, opts) =>
+ 			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
+ 				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+diff --git a/packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts b/packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts
+index 6e9c8ec..e454840 100644
+--- a/packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts
++++ b/packages/coding-agent/test/suite/regressions/5943-session-start-notify.test.ts
+@@ -11,6 +11,9 @@ function createUiContext(
+ 	onNotify: (message: string, type: "info" | "warning" | "error" | undefined) => void,
+ ): ExtensionUIContext {
+ 	return {
++		getPendingDialogs: () => [],
++		onDialog: () => () => {},
++		resolveDialog: () => "stale",
+ 		select: async () => undefined,
+ 		confirm: async () => false,
+ 		input: async () => undefined,
+diff --git a/packages/coding-agent/test/extension-dialogs.test.ts b/packages/coding-agent/test/extension-dialogs.test.ts
+new file mode 100644
+index 0000000..a06acdb
+--- /dev/null
++++ b/packages/coding-agent/test/extension-dialogs.test.ts
+@@ -0,0 +1,330 @@
++import { type Container, setKeybindings, Text, type TUI } from "@earendil-works/pi-tui";
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
++import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.ts";
++import type {
++	DialogAnswer,
++	DialogEvent,
++	ExtensionUIContext,
++	ProjectTrustContext,
++} from "../src/core/extensions/types.ts";
++import { KeybindingsManager } from "../src/core/keybindings.ts";
++import type { ExternalEditorResult } from "../src/modes/interactive/external-editor.ts";
++import { createInteractiveTui, InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
++import { initTheme } from "../src/modes/interactive/theme/theme.ts";
++import { createHarness, type Harness } from "./suite/harness.ts";
++
++const externalEditor = vi.hoisted(() => vi.fn<() => Promise<ExternalEditorResult>>());
++vi.mock("../src/modes/interactive/external-editor.ts", () => ({ editInExternalEditor: externalEditor }));
++
++type DialogHost = {
++	ui: TUI;
++	renderer: TUI;
++	editorContainer: Container;
++	createExtensionUIContext(): ExtensionUIContext;
++	createProjectTrustContext(cwd: string): ProjectTrustContext;
++	resetExtensionUI(): void;
++};
++
++const cases = [
++	{ kind: "select", open: (ui: ExtensionUIContext) => ui.select("Pick", ["A", "B"]), value: "B", local: "A" },
++	{ kind: "confirm", open: (ui: ExtensionUIContext) => ui.confirm("Proceed", "Continue?"), value: false, local: true },
++	{ kind: "input", open: (ui: ExtensionUIContext) => ui.input("Name", "placeholder"), value: "", local: "" },
++	{
++		kind: "editor",
++		open: (ui: ExtensionUIContext) => ui.editor("Edit", "prefill"),
++		value: "one\ntwo",
++		local: "prefill",
++	},
++] as const;
++
++let harness: Harness;
++let mode: InteractiveMode;
++let host: DialogHost;
++let terminal: VirtualTerminal;
++let ui: ExtensionUIContext;
++let events: DialogEvent[];
++let lifecycle: string[];
++
++beforeEach(async () => {
++	initTheme("dark", false);
++	lifecycle = [];
++	harness = await createHarness({
++		extensionFactories: [
++			(pi) => {
++				pi.on("ui_prompt_start", () => {
++					lifecycle.push("start");
++				});
++				pi.on("ui_prompt_end", () => {
++					lifecycle.push("end");
++				});
++			},
++		],
++	});
++	mode = new InteractiveMode({
++		session: harness.session,
++		setBeforeSessionInvalidate: () => {},
++		setRebindSession: () => {},
++	} as unknown as AgentSessionRuntime);
++	host = mode as unknown as DialogHost;
++	terminal = new VirtualTerminal();
++	host.ui = host.renderer = createInteractiveTui({
++		tuiMode: "regular",
++		terminal,
++		logDirectory: harness.tempDir,
++		showHardwareCursor: false,
++	});
++	host.ui.addChild(host.editorContainer);
++	setKeybindings(new KeybindingsManager());
++	host.ui.start();
++	await harness.session.bindExtensions({ uiContext: host.createExtensionUIContext(), mode: "tui" });
++	ui = harness.session.extensionRunner.createContext().ui;
++	events = [];
++	ui.onDialog((event) => {
++		events.push(event);
++	});
++});
++
++afterEach(() => {
++	vi.useRealTimers();
++	mode.stop();
++	harness.cleanup();
++});
++
++describe("standard extension dialog bridge", () => {
++	for (const testCase of cases) {
++		it(`${testCase.kind}: publishes mounted native UI, validates remote answers, and settles remote first`, async () => {
++			const result = testCase.open(ui);
++			const [dialog] = ui.getPendingDialogs();
++			expect(dialog.kind).toBe(testCase.kind);
++			expect(host.editorContainer.render(80).join("\n")).toContain(dialog.title);
++			await Promise.resolve();
++			expect(events).toEqual([{ type: "opened", dialog }]);
++			expect(ui.resolveDialog(dialog.id, { kind: "unknown", value: "bad" } as unknown as DialogAnswer)).toBe(
++				"invalid",
++			);
++			expect(ui.resolveDialog(dialog.id, { kind: testCase.kind, value: 42 } as unknown as DialogAnswer)).toBe(
++				"invalid",
++			);
++			expect(ui.resolveDialog(dialog.id, null as unknown as DialogAnswer)).toBe("invalid");
++			if (dialog.kind === "select") {
++				expect(dialog.options).toEqual(["A", "B"]);
++				expect(ui.resolveDialog(dialog.id, { kind: "select", value: "C" })).toBe("invalid");
++			}
++			if (dialog.kind === "confirm") expect(dialog.message).toBe("Continue?");
++			if (dialog.kind === "input") expect(dialog.placeholder).toBe("placeholder");
++			if (dialog.kind === "editor") expect(dialog.prefill).toBe("prefill");
++			expect(ui.resolveDialog(dialog.id, { kind: testCase.kind, value: testCase.value } as DialogAnswer)).toBe(
++				"accepted",
++			);
++			terminal.sendInput("\r");
++			expect(ui.resolveDialog(dialog.id, { kind: "cancel" })).toBe("stale");
++			await expect(result).resolves.toBe(testCase.value);
++			expect(ui.getPendingDialogs()).toEqual([]);
++			expect(events).toEqual([
++				{ type: "opened", dialog },
++				{ type: "closed", id: dialog.id },
++			]);
++			expect(lifecycle).toEqual(["start", "end"]);
++		});
++
++		it(`${testCase.kind}: desktop submission wins synchronously over a remote answer`, async () => {
++			const result = testCase.open(ui);
++			const [dialog] = ui.getPendingDialogs();
++			terminal.sendInput("\r");
++			expect(ui.resolveDialog(dialog.id, { kind: "cancel" })).toBe("stale");
++			await expect(result).resolves.toBe(testCase.local);
++		});
++
++		it(`${testCase.kind}: local and remote cancellation close once`, async () => {
++			for (const remote of [false, true]) {
++				const result = testCase.open(ui);
++				const [dialog] = ui.getPendingDialogs();
++				if (remote) expect(ui.resolveDialog(dialog.id, { kind: "cancel" })).toBe("accepted");
++				else terminal.sendInput("\x1b");
++				await expect(result).resolves.toBe(testCase.kind === "confirm" ? false : undefined);
++				expect(ui.resolveDialog(dialog.id, { kind: "cancel" })).toBe("stale");
++				expect(events.filter((event) => event.type === "closed" && event.id === dialog.id)).toHaveLength(1);
++			}
++		});
++	}
++
++	it("abort and timeout invalidate IDs without letting old callbacks dismiss the next dialog", async () => {
++		vi.useFakeTimers();
++		for (const kind of ["select", "confirm", "input"] as const) {
++			for (const timeout of [false, true]) {
++				const controller = new AbortController();
++				const opts = { signal: controller.signal, timeout: 1000 };
++				const result =
++					kind === "select"
++						? ui.select("Pick", ["A"], opts)
++						: kind === "confirm"
++							? ui.confirm("Proceed", "Continue?", opts)
++							: ui.input("Name", "", opts);
++				const [dialog] = ui.getPendingDialogs();
++				if (timeout) await vi.advanceTimersByTimeAsync(1000);
++				else controller.abort();
++				await expect(result).resolves.toBe(kind === "confirm" ? false : undefined);
++				const next = ui.input("Next");
++				controller.abort();
++				await vi.advanceTimersByTimeAsync(2000);
++				expect(ui.resolveDialog(dialog.id, { kind: "cancel" })).toBe("stale");
++				const [pending] = ui.getPendingDialogs();
++				expect(pending.title).toBe("Next");
++				ui.resolveDialog(pending.id, { kind: "input", value: "next" });
++				await expect(next).resolves.toBe("next");
++			}
++		}
++		const signal = AbortSignal.abort();
++		await expect(ui.select("never", ["A"], { signal })).resolves.toBeUndefined();
++		await expect(ui.confirm("never", "", { signal })).resolves.toBe(false);
++		await expect(ui.input("never", "", { signal })).resolves.toBeUndefined();
++		expect(ui.getPendingDialogs()).toEqual([]);
++	});
++
++	it("rejects overlapping standard dialogs before they can replace the displayed dialog", async () => {
++		const first = ui.input("First");
++		for (const testCase of cases) await expect(testCase.open(ui)).rejects.toThrow("Extension dialog busy");
++		expect(host.editorContainer.render(80).join("\n")).toContain("First");
++		terminal.sendInput("\r");
++		await expect(first).resolves.toBe("");
++	});
++
++	it("late desktop callbacks and caller abort cannot close a newer dialog after remote settlement", async () => {
++		const controller = new AbortController();
++		const first = ui.select("First", ["A"], { signal: controller.signal });
++		const oldComponent = host.editorContainer.children[0];
++		const [dialog] = ui.getPendingDialogs();
++		ui.resolveDialog(dialog.id, { kind: "select", value: "A" });
++		const next = ui.input("Next");
++		oldComponent.handleInput?.("\r");
++		controller.abort();
++		expect(ui.getPendingDialogs()[0].title).toBe("Next");
++		expect(host.editorContainer.render(80).join("\n")).toContain("Next");
++		terminal.sendInput("\r");
++		await expect(first).resolves.toBe("A");
++		await expect(next).resolves.toBe("");
++	});
++
++	it("isolates listener failures, supports unsubscribe and reconnect snapshots", async () => {
++		ui.onDialog(() => {
++			throw new Error("offline");
++		});
++		ui.onDialog(async () => {
++			throw new Error("offline async");
++		});
++		const removed = vi.fn();
++		ui.onDialog(removed)();
++		const result = ui.editor("Edit");
++		const [dialog] = host.createExtensionUIContext().getPendingDialogs();
++		expect(Object.isFrozen(dialog)).toBe(true);
++		await Promise.resolve();
++		ui.resolveDialog(dialog.id, { kind: "editor", value: "" });
++		await expect(result).resolves.toBe("");
++		expect(removed).not.toHaveBeenCalled();
++	});
++
++	it("reset and stop cancel pending dialogs and remove session listeners", async () => {
++		for (const testCase of cases) {
++			const result = testCase.open(ui);
++			const [dialog] = ui.getPendingDialogs();
++			host.resetExtensionUI();
++			await expect(result).resolves.toBe(testCase.kind === "confirm" ? false : undefined);
++			expect(ui.resolveDialog(dialog.id, { kind: "cancel" })).toBe("stale");
++		}
++		const eventCount = events.length;
++		const listener = vi.fn();
++		ui.onDialog(listener);
++		const result = ui.input("Last");
++		mode.stop();
++		await expect(result).resolves.toBeUndefined();
++		expect(ui.getPendingDialogs()).toEqual([]);
++		expect(events).toHaveLength(eventCount);
++		expect(listener.mock.calls.map(([event]) => event.type)).toEqual(["opened", "closed"]);
++	});
++
++	it("does not expose project trust or custom dialogs", async () => {
++		const trust = host.createProjectTrustContext(harness.tempDir).ui.confirm("Trust?", "Sensitive cwd");
++		expect(ui.getPendingDialogs()).toEqual([]);
++		terminal.sendInput("\r");
++		await expect(trust).resolves.toBe(true);
++		const custom = ui.custom((_tui, _theme, _keys, done) => {
++			done("ok");
++			return new Text("Custom");
++		});
++		await expect(custom).resolves.toBe("ok");
++		expect(ui.getPendingDialogs()).toEqual([]);
++		expect(events).toEqual([]);
++	});
++
++	it("reports unavailable during Ctrl+G and accepts answers only after the external editor returns", async () => {
++		let finishExternal!: (result: ExternalEditorResult) => void;
++		externalEditor.mockImplementation(
++			() =>
++				new Promise((resolve) => {
++					finishExternal = resolve;
++				}),
++		);
++		const result = ui.editor("Edit", "prefill");
++		const [dialog] = ui.getPendingDialogs();
++		terminal.sendInput("\x07");
++		expect(ui.getPendingDialogs()[0]).toMatchObject({ id: dialog.id, unavailable: "external-editor" });
++		expect(ui.resolveDialog(dialog.id, { kind: "editor", value: "remote" })).toBe("invalid");
++		expect(ui.resolveDialog(dialog.id, { kind: "cancel" })).toBe("invalid");
++		finishExternal({ status: "complete", content: "external" });
++		await Promise.resolve();
++		expect(ui.getPendingDialogs()[0]).not.toHaveProperty("unavailable", "external-editor");
++		expect(ui.resolveDialog(dialog.id, { kind: "editor", value: "remote" })).toBe("accepted");
++		await expect(result).resolves.toBe("remote");
++		expect(events.filter((event) => event.type === "updated")).toHaveLength(2);
++	});
++
++	it("reset during external editing invalidates the ID and keeps new dialogs busy until child exit", async () => {
++		let finishExternal!: (result: ExternalEditorResult) => void;
++		externalEditor.mockImplementation(
++			() =>
++				new Promise((resolve) => {
++					finishExternal = resolve;
++				}),
++		);
++		const result = ui.editor("Edit", "prefill");
++		const [dialog] = ui.getPendingDialogs();
++		terminal.sendInput("\x07");
++		host.resetExtensionUI();
++		await expect(result).resolves.toBeUndefined();
++		expect(ui.resolveDialog(dialog.id, { kind: "cancel" })).toBe("stale");
++		await expect(ui.input("Too early")).rejects.toThrow("Extension dialog busy");
++		finishExternal({ status: "complete", content: "late external text" });
++		await Promise.resolve();
++		const next = ui.input("Next");
++		terminal.sendInput("\r");
++		await expect(next).resolves.toBe("");
++	});
++
++	it("late external editor completion cannot restart a stopped terminal", async () => {
++		let finishExternal!: (result: ExternalEditorResult) => void;
++		externalEditor.mockImplementation(
++			() =>
++				new Promise((resolve) => {
++					finishExternal = resolve;
++				}),
++		);
++		const result = ui.editor("Edit");
++		terminal.sendInput("\x07");
++		mode.stop();
++		await expect(result).resolves.toBeUndefined();
++		const start = vi.spyOn(host.ui, "start");
++		finishExternal({ status: "complete", content: "late" });
++		await Promise.resolve();
++		expect(start).not.toHaveBeenCalled();
++		await expect(ui.input("Stopped")).resolves.toBeUndefined();
++	});
++
++	it("returns empty/no-op/stale without interactive UI", () => {
++		harness.session.extensionRunner.setUIContext(undefined, "print");
++		const unavailable = harness.session.extensionRunner.createContext().ui;
++		expect(unavailable.getPendingDialogs()).toEqual([]);
++		expect(unavailable.resolveDialog("missing", { kind: "cancel" })).toBe("stale");
++		unavailable.onDialog(() => {})();
++	});
++});

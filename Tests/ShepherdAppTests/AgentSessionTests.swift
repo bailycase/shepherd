@@ -42,6 +42,7 @@ struct AgentSessionTests {
             panesExtensionPath: "/tmp/panes.ts",
             reviewExtensionPath: "/tmp/review.ts",
             subagentsExtensionPath: "/tmp/subagents.ts",
+            nativeExtensionPath: "/tmp/native.ts",
             piThemePath: "/tmp/theme.json",
             piThemeName: "shepherd",
             model: nil,
@@ -51,6 +52,7 @@ struct AgentSessionTests {
 
         let shell = command.argv[3]
         #expect(shell.contains("--session-id 'moved-session-id'"))
+        #expect(shell.contains("-e '/tmp/native.ts'"))
         #expect(!shell.contains("--session-id '\(agent.id.rawValue)'"))
         // The agent's identity is unchanged: status and naming still route by
         // agent id, only the conversation moved.
