@@ -40,6 +40,7 @@ enum StatusExtension {
         subagentsExtensionPath: String?,
         /// nil when auto-naming is off in Settings.
         namerExtensionPath: String? = nil,
+        nativeExtensionPath: String? = nil,
         /// True while the agent's name is provisional: the namer then also
         /// titles from the opening prompt (SHEPHERD_NEEDS_NAME=1).
         needsName: Bool = false,
@@ -69,7 +70,7 @@ enum StatusExtension {
             cmd += " --thinking \(shellQuoted(thinking.rawValue))"
         }
         cmd += " -e \(shellQuoted(extensionPath))"
-        for path in [themeExtensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, namerExtensionPath].compactMap({ $0 }) {
+        for path in [themeExtensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, namerExtensionPath, nativeExtensionPath].compactMap({ $0 }) {
             cmd += " -e \(shellQuoted(path))"
         }
         if let initialPrompt, !initialPrompt.isEmpty {

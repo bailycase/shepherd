@@ -89,6 +89,31 @@ There is no proportional text in the app. Rows 12, child rows 11.5, section head
 semibold uppercase with +0.07em tracking, hints 11. Chrome fonts scale with the UI text scale
 setting; terminal font size is its own setting.
 
+## Mobile exception: native iOS client
+
+The iOS 27 app is a remote-only companion for iPhone and iPad. The Mac app remains
+terminal-first. Mobile uses a native transcript for live text and tool output, with native
+send/cancel controls and standard questions through the native thread bridge. It does not
+parse terminal output into a transcript. Unsupported host or pi capabilities are stated explicitly;
+the app never substitutes sample output or nonfunctional controls.
+
+A `NavigationStack` moves from a host's agent list to one thread. Connection settings use a
+native sheet. This replaces the desktop sidebar/workspace split on mobile; there are no desktop
+minimum dimensions. Lists and thread content fill the available width and respect safe areas,
+Dynamic Type, VoiceOver, and native touch targets. Mobile uses the system text face for readable
+chat prose and headings; code, tool output, and metadata stay monospace. User turns have a quiet
+Basalt fill, assistant prose stays unboxed, and tool/thinking rows collapse. Standard questions
+have a restrained status-colored outline and native buttons. The composer is pinned above the
+keyboard with separate send, stop, and delivery controls. These mobile-only exceptions do not
+change the desktop's flat terminal chrome.
+
+Mobile's local `MobileTokens` owns Basalt dark/light colors, adaptive fonts, and spacing
+without importing the Mac theme module. Metadata uses the higher-contrast secondary text ramp.
+Status remains a dot plus a word. Connection errors stay in the host section; cached rows are
+labeled last known and cannot open while disconnected. Setup explicitly requires a trusted LAN
+or VPN because the bearer-token transport has no TLS. Backgrounding disconnects the client;
+foregrounding reconnects and fetches current state without stopping the host's agents.
+
 ## Status language
 
 Status is a **colored dot + word**; the four status colors are the only saturated colors in

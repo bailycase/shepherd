@@ -862,6 +862,7 @@ final class TerminalSessionStore: ObservableObject {
             namerExtensionPath: settings.autoNameAgents
                 ? try NamerExtension.installedPath()
                 : nil,
+            nativeExtensionPath: try NativeExtension.installedPath(),
             needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
             isAutomation: isAutomation,
             piThemePath: settings.piThemeExtension ? try ShepherdPiTheme.installedPath(for: theme) : nil,

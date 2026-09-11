@@ -98,6 +98,7 @@ public final class SessionServer: @unchecked Sendable {
         /// Set by helloAgent: this connection belongs to that agent's panes
         /// extension and accepts unsolicited message pushes.
         var agentID: AgentID?
+        var nativeAgentID: AgentID?
         var lineBuffer = LineBuffer()
         var readSource: DispatchSourceRead?
         var writeSource: DispatchSourceWrite?
@@ -236,6 +237,8 @@ public final class SessionServer: @unchecked Sendable {
     /// The host GUI's own surface grid per session (fd -1 in the min).
     private var localViewports: [SessionID: (cols: Int, rows: Int)] = [:]
     private var clients: [Int32: ExtensionConnection] = [:]
+    private var nextNativeRequestID = 0
+    private var nativePending: [Int: (remote: ExtensionConnection, bridge: ExtensionConnection, requestID: Int)] = [:]
     private var sessions: [SessionID: PTYSession] = [:]
     private var attachedSessions: Set<SessionID> = []
     /// Output waiting for the GUI, plus the one delivery currently executing
@@ -562,6 +565,28 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         switch request {
+        case .nativeThread(let id, let agentID, let request):
+            guard !line.contains(13) else { disconnect(client); return }
+            guard let agent = store.state.agents.first(where: { $0.id == agentID }),
+                  let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
+                  let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID,
+                  sessions[sessionID]?.isAlive == true,
+                  let bridge = clients.values.first(where: { $0.nativeAgentID == agentID }) else {
+                send(.error(id: id, code: "native_unavailable", message: "Native bridge unavailable. Open or restart this agent on the host."), to: client)
+                return
+            }
+            guard line.count < 64 * 1024, nativePending.count < 128 else {
+                send(.error(id: id, code: "native_limit", message: "Native request limit exceeded."), to: client)
+                return
+            }
+            nextNativeRequestID += 1
+            let correlation = nextNativeRequestID
+            nativePending[correlation] = (client, bridge, id)
+            reply(.nativeThreadCommand(id: correlation, request: request), to: bridge)
+            queue.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, let pending = self.nativePending.removeValue(forKey: correlation) else { return }
+                self.send(.error(id: pending.requestID, code: "outcome_unknown", message: "Native bridge timed out. Refresh before acting; do not automatically retry."), to: pending.remote)
+            }
         case .hello(let id, _, _, _):
             send(.error(id: id, code: "protocol", message: "already authenticated"), to: client)
         case .upload(let id, let action):
@@ -1046,6 +1071,12 @@ public final class SessionServer: @unchecked Sendable {
         guard clients[client.fd] === client else { return }
         clients.removeValue(forKey: client.fd)
         client.upload = nil
+        for (id, pending) in nativePending where pending.remote === client || pending.bridge === client {
+            nativePending.removeValue(forKey: id)
+            if pending.bridge === client {
+                send(.error(id: pending.requestID, code: "outcome_unknown", message: "Native bridge disconnected. Refresh before acting; do not automatically retry."), to: pending.remote)
+            }
+        }
         if client.isRemote {
             for sessionID in remoteAttachments.keys {
                 remoteAttachments[sessionID]?.remove(client.fd)
@@ -1074,6 +1105,23 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         switch message {
+        case .helloNativeAgent(let agentID):
+            guard !line.contains(13) else { disconnect(client); return }
+            guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil,
+                  client.nativeAgentID == nil || client.nativeAgentID == agentID else { return }
+            for previous in Array(clients.values) where previous !== client && previous.nativeAgentID == agentID {
+                disconnect(previous)
+            }
+            client.nativeAgentID = agentID
+        case .nativeThreadResult(let id, let result):
+            guard !line.contains(13) else { disconnect(client); return }
+            guard let pending = nativePending[id], pending.bridge === client else { return }
+            nativePending.removeValue(forKey: id)
+            guard line.count < 256 * 1024 else {
+                send(.error(id: pending.requestID, code: "native_limit", message: "Native result exceeds snapshot limit."), to: pending.remote)
+                return
+            }
+            send(.nativeThread(id: pending.requestID, result: result), to: pending.remote)
         case .setAgentStatus(let agentID, let status):
             applyAgentStatus(agentID: agentID, status: status)
         case .setAgentName(let agentID, let name):
@@ -1085,6 +1133,7 @@ public final class SessionServer: @unchecked Sendable {
         case .notify(let agentID, let title, let body):
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
         case .helloAgent(let agentID):
+            guard client.nativeAgentID == nil else { return }
             client.agentID = agentID
         case .listAgents(let id, let agentID):
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
@@ -1279,7 +1328,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
-        case .ok(let id),
+        case .nativeThreadCommand(let id, _), .ok(let id),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),

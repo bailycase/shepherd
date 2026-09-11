@@ -139,6 +139,7 @@ struct PiThemeTests {
             .deletingLastPathComponent()
         let copies: [(String, String)] = [
             ("shepherd-status.ts", StatusExtension.extensionSource),
+            ("shepherd-native.ts", NativeExtension.extensionSource),
             ("shepherd-theme.ts", ThemeExtension.extensionSource),
             ("shepherd-namer.ts", NamerExtension.extensionSource),
             ("shepherd-panes.ts", PanesExtension.extensionSource),

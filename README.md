@@ -78,6 +78,10 @@ readable `.bash_profile`, `.bash_login`, or `.profile` through an interactive rc
 its `login_shell` flag is off and `.bash_logout` does not run automatically. Other
 configured shells keep their normal startup without automatic pi theming.
 
+## iOS MVP
+
+The `Shepherd iOS` scheme builds a native iOS 27 remote client for viewing live threads, sending messages, cancelling agents, and answering standard dialogs. See [iOS setup and limits](docs/ios/README.md). Mobile dialog answers currently require the included prototype pi source patch; it is not installed automatically.
+
 ## Remote access
 
 Settings ▸ Remote toggles a TCP listener (default port 7433) that serves the fleet to remote Shepherd clients. Auth is a shared bearer token generated in the support directory. **There is no TLS** — the listener binds on all interfaces and assumes a trusted network or VPN as the transport boundary. Do not expose it to the internet.

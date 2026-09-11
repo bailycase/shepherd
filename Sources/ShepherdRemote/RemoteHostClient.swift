@@ -52,6 +52,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     public private(set) var capabilities: Set<String> = []
 
     private let queue = DispatchQueue(label: "shepherd.remote.client")
+    private var connectionGeneration = UUID()
+    private let socketOpen: @Sendable (String, UInt16) throws -> Int32
     private var fd: Int32 = -1
     private var readSource: DispatchSourceRead?
     private var writeSource: DispatchSourceWrite?
@@ -80,7 +82,12 @@ public final class RemoteHostClient: @unchecked Sendable {
     private static let requestTimeout: TimeInterval = 10
     private static let maxQueuedWriteBytes = 8 * 1024 * 1024
 
-    public init() {}
+    public init() { socketOpen = { try Self.openSocket(host: $0, port: $1) } }
+
+    // Allows the pending-open lifecycle to be checked without relying on DNS timing.
+    init(socketOpen: @escaping @Sendable (String, UInt16) throws -> Int32) {
+        self.socketOpen = socketOpen
+    }
 
     deinit {
         // The read source's cancel handler owns closing the fd. Cancel is
@@ -103,42 +110,66 @@ public final class RemoteHostClient: @unchecked Sendable {
         token: String,
         clientName: String
     ) async throws -> ShepherdState {
-        let fd = try await Task.detached(priority: .userInitiated) {
-            try Self.openSocket(host: host, port: port)
-        }.value
-
-        try queue.sync {
+        let attempt = try queue.sync {
             guard self.fd < 0 else {
-                close(fd)
                 throw RemoteHostClientError.system(call: "connect", errno: EISCONN)
             }
-            self.fd = fd
-            let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
-            source.setEventHandler { [weak self] in self?.handleReadable() }
-            source.setCancelHandler { close(fd) }
-            self.readSource = source
-            source.activate()
+            connectionGeneration = UUID()
+            return connectionGeneration
         }
+        return try await withTaskCancellationHandler {
+            let fd = try await Task.detached(priority: .userInitiated) {
+                try self.socketOpen(host, port)
+            }.value
 
-        let helloReply = try await request { id in
-            .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version)
-        }
-        guard case .helloOk(_, _, let capabilities) = helloReply else {
-            if case .error(_, let code, let message) = helloReply {
-                disconnect()
-                throw RemoteHostClientError.rejected(code: code, message: message)
+            try queue.sync {
+                guard !Task.isCancelled, connectionGeneration == attempt else {
+                    close(fd)
+                    throw CancellationError()
+                }
+                self.fd = fd
+                disconnectNotified = false
+                lineBuffer = LineBuffer()
+                let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
+                source.setEventHandler { [weak self] in self?.handleReadable() }
+                source.setCancelHandler { close(fd) }
+                self.readSource = source
+                source.activate()
             }
-            disconnect()
-            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected hello reply")
-        }
-        self.capabilities = Set(capabilities)
 
-        let stateReply = try await request { id in .stateFetch(id: id) }
-        guard case .state(_, let state) = stateReply else {
-            disconnect()
-            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected state reply")
+            do {
+                let helloReply = try await request(connectionGeneration: attempt) { id in
+                    .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version)
+                }
+                guard case .helloOk(_, _, let capabilities) = helloReply else {
+                    if case .error(_, let code, let message) = helloReply {
+                        throw RemoteHostClientError.rejected(code: code, message: message)
+                    }
+                    throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected hello reply")
+                }
+                try queue.sync {
+                    guard connectionGeneration == attempt else { throw CancellationError() }
+                    self.capabilities = Set(capabilities)
+                }
+                let stateReply = try await request(connectionGeneration: attempt) { id in .stateFetch(id: id) }
+                guard case .state(_, let state) = stateReply else {
+                    throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected state reply")
+                }
+                try queue.sync {
+                    guard !Task.isCancelled, connectionGeneration == attempt else { throw CancellationError() }
+                }
+                return state
+            } catch {
+                queue.sync {
+                    if connectionGeneration == attempt { teardown(reason: "connection failed") }
+                }
+                throw error
+            }
+        } onCancel: {
+            self.queue.sync {
+                if self.connectionGeneration == attempt { self.teardown(reason: "cancelled") }
+            }
         }
-        return state
     }
 
     /// Attach to a session at the client surface's grid. The host replies
@@ -312,6 +343,26 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    public func nativeThread(agentID: AgentID, request command: NativeThreadRequest) async throws -> NativeThreadResult {
+        guard capabilities.contains(RemoteProtocol.nativeThreadCapability) else {
+            throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to view native threads.")
+        }
+        let reply: RemoteReply
+        do {
+            reply = try await request(timeout: 15) { .nativeThread(id: $0, agentID: agentID, request: command) }
+        } catch RemoteHostClientError.timeout {
+            throw RemoteHostClientError.outcomeUnknown(message: "Native request timed out. Refresh before acting; do not automatically retry.")
+        } catch RemoteHostClientError.disconnected {
+            throw RemoteHostClientError.outcomeUnknown(message: "Connection lost. Refresh before acting; do not automatically retry.")
+        }
+        if case .nativeThread(_, let result) = reply { return result }
+        if case .error(_, let code, let message) = reply {
+            if code == "outcome_unknown" { throw RemoteHostClientError.outcomeUnknown(message: message) }
+            throw RemoteHostClientError.rejected(code: code, message: message)
+        }
+        throw RemoteHostClientError.outcomeUnknown(message: "Native action outcome unknown. Refresh before acting; do not automatically retry.")
+    }
+
     public func agentQuery(agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
         let capability: String
         switch query {
@@ -473,11 +524,12 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// Issue an id-correlated request and await its reply.
     private func request(
         timeout: TimeInterval = RemoteHostClient.requestTimeout,
+        connectionGeneration: UUID? = nil,
         _ make: @escaping (Int) -> RemoteRequest
     ) async throws -> RemoteReply {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                guard self.fd >= 0 else {
+                guard self.fd >= 0, connectionGeneration == nil || self.connectionGeneration == connectionGeneration else {
                     continuation.resume(throwing: RemoteHostClientError.rejected(code: "not_sent", message: "Connection closed before the request was sent"))
                     return
                 }
@@ -593,7 +645,7 @@ public final class RemoteHostClient: @unchecked Sendable {
             return
         }
         switch reply {
-        case .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
+        case .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _):
@@ -651,6 +703,7 @@ public final class RemoteHostClient: @unchecked Sendable {
     }
 
     private func teardown(reason: String) {
+        connectionGeneration = UUID()
         guard fd >= 0 else { return }
         readSource?.cancel()
         readSource = nil

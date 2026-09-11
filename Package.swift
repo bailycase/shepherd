@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Shepherd",
-    platforms: [.macOS("26.0")],
+    platforms: [.macOS("26.0"), .iOS("27.0")],
     products: [
         .library(name: "ShepherdCore", targets: ["ShepherdCore"]),
         .library(name: "ShepherdProtocol", targets: ["ShepherdProtocol"]),
