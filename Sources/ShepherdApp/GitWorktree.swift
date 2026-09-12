@@ -254,7 +254,8 @@ enum GitWorktree {
         add(try run(["-C", worktree, "rev-parse", "HEAD"]))
         add(try run(["-C", worktree, "ls-files", "--stage", "-z"]))
         add(try run(["-C", worktree, "status", "--porcelain=v1", "-z", "--untracked-files=all"]))
-        let files = try run(["-C", worktree, "ls-files", "--cached", "--others", "-z"])
+        // Match status's ignore rules; tracked files are still included.
+        let files = try run(["-C", worktree, "ls-files", "--cached", "--others", "--exclude-standard", "-z"])
         for file in Set(files.split(separator: "\0").map(String.init)).sorted() {
             add(file)
             let path = URL(fileURLWithPath: worktree).appendingPathComponent(file)
