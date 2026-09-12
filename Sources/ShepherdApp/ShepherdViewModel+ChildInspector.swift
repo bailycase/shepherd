@@ -36,7 +36,8 @@ extension ShepherdViewModel {
             runner: runner,
             asyncDir: asyncDir,
             runID: child.runID,
-            childIndex: child.childIndex
+            childIndex: child.childIndex,
+            themePath: try? ShepherdPiTheme.installedPath(for: themeManager.current)
         )
 
         if let tab = state.tabs.first(where: { $0.inspectorFor == agentID }) {
@@ -93,13 +94,16 @@ extension ShepherdViewModel {
     /// No `exec`: the shell must survive the viewer so a later child click
     /// can ^C back to the prompt and launch the next dashboard in place.
     /// Quoting keeps temp paths with spaces intact.
-    static func inspectorCommand(runner: String, asyncDir: String, runID: String, childIndex: Int?) -> String {
+    static func inspectorCommand(runner: String, asyncDir: String, runID: String, childIndex: Int?, themePath: String? = nil) -> String {
         func quoted(_ s: String) -> String {
             "'" + s.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
         }
         var command = "node \(quoted(runner)) --async-dir \(quoted(asyncDir)) --run-id \(quoted(runID))"
         if let childIndex {
             command += " --index \(childIndex)"
+        }
+        if let themePath {
+            command += " --theme-path \(quoted(themePath))"
         }
         return command
     }

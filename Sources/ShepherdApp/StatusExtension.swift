@@ -38,6 +38,8 @@ enum StatusExtension {
         panesExtensionPath: String?,
         reviewExtensionPath: String?,
         subagentsExtensionPath: String?,
+        childrenExtensionPath: String? = nil,
+        childEnvironment: [String: String] = [:],
         /// nil when auto-naming is off in Settings.
         namerExtensionPath: String? = nil,
         /// True while the agent's name is provisional: the namer then also
@@ -69,7 +71,7 @@ enum StatusExtension {
             cmd += " --thinking \(shellQuoted(thinking.rawValue))"
         }
         cmd += " -e \(shellQuoted(extensionPath))"
-        for path in [themeExtensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, namerExtensionPath].compactMap({ $0 }) {
+        for path in [themeExtensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath, namerExtensionPath].compactMap({ $0 }) {
             cmd += " -e \(shellQuoted(path))"
         }
         if let initialPrompt, !initialPrompt.isEmpty {
@@ -90,6 +92,11 @@ enum StatusExtension {
         }
         if namerExtensionPath != nil && needsName {
             env["SHEPHERD_NEEDS_NAME"] = "1"
+        }
+        if let childrenExtensionPath {
+            env["SHEPHERD_NATIVE_CHILDREN"] = "1"
+            env["SHEPHERD_EXT_CHILDREN"] = childrenExtensionPath
+            env.merge(childEnvironment) { _, value in value }
         }
         if isAutomation {
             env["SHEPHERD_AUTOMATION"] = "1"
