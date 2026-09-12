@@ -77,6 +77,56 @@ struct GitWorktreeTests {
         #expect(try GitWorktree.add(repo: repo, branch: "agent/fix-thing") == path)
     }
 
+    @Test func deletionFingerprintIgnoresBuildCheckoutsButProtectsWork() throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("shepherd-fingerprint-\(UUID().uuidString)", isDirectory: true)
+        let repo = base.appendingPathComponent("repo").path
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: base) }
+
+        func git(_ args: [String], in directory: String) throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", directory] + args
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try process.run()
+            process.waitUntilExit()
+            try #require(process.terminationStatus == 0)
+        }
+        try git(["init", "-q"], in: repo)
+        try ".build/\n".write(toFile: repo + "/.gitignore", atomically: true, encoding: .utf8)
+        try git(["add", ".gitignore"], in: repo)
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init"], in: repo)
+        let path = try GitWorktree.add(repo: repo, branch: "agent/fingerprint")
+        let original = try GitWorktree.deletionFingerprint(worktree: path)
+        let dependency = path + "/.build/checkouts/MSDisplayLink"
+        try FileManager.default.createDirectory(atPath: dependency, withIntermediateDirectories: true)
+        try git(["init", "-q"], in: dependency)
+        try git(["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "dependency"], in: dependency)
+        #expect(try GitWorktree.deletionFingerprint(worktree: path) == original)
+
+        try "draft".write(toFile: path + "/notes.txt", atomically: true, encoding: .utf8)
+        let draft = try GitWorktree.deletionFingerprint(worktree: path)
+        #expect(draft != original)
+        try "revised".write(toFile: path + "/notes.txt", atomically: true, encoding: .utf8)
+        #expect(try GitWorktree.deletionFingerprint(worktree: path) != draft)
+
+        // Tracked files remain protected even inside an ignored directory.
+        try "tracked".write(toFile: path + "/.build/keep.txt", atomically: true, encoding: .utf8)
+        try git(["add", "-f", ".build/keep.txt"], in: path)
+        let tracked = try GitWorktree.deletionFingerprint(worktree: path)
+        try "changed".write(toFile: path + "/.build/keep.txt", atomically: true, encoding: .utf8)
+        #expect(try GitWorktree.deletionFingerprint(worktree: path) != tracked)
+
+        let confirmed = try GitWorktree.deletionFingerprint(worktree: path)
+        try FileManager.default.moveItem(atPath: dependency, toPath: path + "/nested")
+        #expect(throws: GitWorktree.Failure.self) { try GitWorktree.deletionFingerprint(worktree: path) }
+        try FileManager.default.moveItem(atPath: path + "/nested", toPath: dependency)
+        try GitWorktree.remove(repo: repo, branch: "agent/fingerprint", worktree: path, fingerprint: confirmed)
+        #expect(!FileManager.default.fileExists(atPath: path))
+    }
+
     @Test func importDirectoryUsesTheReposRegisteredWorktreeFolder() throws {
         let base = FileManager.default.temporaryDirectory
             .appendingPathComponent("shepherd-browse-\(UUID().uuidString)", isDirectory: true)
