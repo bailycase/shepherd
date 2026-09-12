@@ -231,7 +231,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .terminal: return ["Terminal Font", "Font Size", "Shell"]
         case .agents: return ["Default Model", "Default Thinking Level"]
         case .worktrees: return ["Base Branch", "Fetch Before Creating", "Commit Remaining Work", "Delete Local Branch", "Merge PR Automatically"]
-        case .pi: return ["Update Pi", "Update Extensions", "Installed Version", "Status", "Check Now", "Auto-name Agents", "Bundled Pi Extensions", "Sync Pi Theme", "Panes and Agent Tools", "Diff Review Tool", "Subagent Display"]
+        case .pi: return ["Update Pi", "Update Extensions", "Installed Version", "Status", "Check Now", "Auto-name Agents", "Bundled Pi Extensions", "Sync Pi Theme", "Panes and Agent Tools", "Diff Review Tool", "Subagent Display", "Native Subagents"]
         case .remote: return ["Hosts", "Serve This Mac"]
         case .keyboard: return ["New Agent", "Settings", "Pane Shortcuts"]
         case .advanced: return ["Files", "Reset Settings", "Updates", "About"]
