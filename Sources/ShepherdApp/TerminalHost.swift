@@ -52,6 +52,21 @@ final class AppTerminalModel {
         surface.updateConfiguration(fontSize: fontSize, fontFamily: fontFamily, extraUnbinds: extraUnbinds)
     }
 
+    var maximumDropBytes: Int? {
+        get { surface.maximumDropBytes }
+        set { surface.maximumDropBytes = newValue }
+    }
+
+    var onFileDropError: ((String) -> Void)? {
+        get { surface.onFileDropError }
+        set { surface.onFileDropError = newValue }
+    }
+
+    var onFileDrop: (([URL]) -> Void)? {
+        get { surface.onFileDrop }
+        set { surface.onFileDrop = newValue }
+    }
+
     var onInput: ((Data) -> Void)? {
         get { surface.onInput }
         set { surface.onInput = newValue }
@@ -68,12 +83,17 @@ final class AppTerminalModel {
     }
 
 
+    var onSurfaceAttachmentChanged: ((_ generation: UInt64?) -> Void)? {
+        get { surface.onSurfaceAttachmentChanged }
+        set { surface.onSurfaceAttachmentChanged = newValue }
+    }
+
     @discardableResult
     func replaceWithReplay(_ data: Data, generation: UInt64) -> Bool {
         surface.replaceWithReplay(data, generation: generation)
     }
 
-    fileprivate var model: TerminalSurfaceModel { surface }
+    var model: TerminalSurfaceModel { surface }
 }
 
 /// Installs the window-level file-drop overlay. Mount once per window.

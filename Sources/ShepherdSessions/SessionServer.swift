@@ -104,6 +104,7 @@ public final class SessionServer: @unchecked Sendable {
         var pendingReplies: [Data] = []
         var pendingReplyOffset = 0
         var queuedReplyBytes = 0
+        var upload: RemoteFileUpload?
 
         init(fd: Int32, isRemote: Bool = false) {
             self.fd = fd
@@ -200,6 +201,9 @@ public final class SessionServer: @unchecked Sendable {
     /// the reply comes back through the completion. Delivered on the main
     /// actor; the completion may be called from any thread.
     public var onPaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
+    /// An agent asked to open a native diff-review pane. The GUI owns the
+    /// review layout and user interaction; the completion carries the result.
+    public var onReviewRequest: ((ReviewRequest, @escaping (ReviewOutcome) -> Void) -> Void)?
     public var onRemotePaneRequest: ((PaneRequest, @escaping (PaneOutcome) -> Void) -> Void)?
     /// A remote client asked to create an agent. Spawning pi (extension
     /// flags, session-file seeding, pane binding) is the GUI's flow, so the
@@ -207,6 +211,10 @@ public final class SessionServer: @unchecked Sendable {
     /// actor; the completion may be called from any thread. `nil` handler
     /// (headless server, tests) rejects the request.
     public var onRemoteCreateAgent: ((RemoteCreateAgentRequest, @escaping (Result<AgentID, RemoteCreateAgentError>) -> Void) -> Void)?
+
+    public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
+    public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
+    public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
 
     private let queue = DispatchQueue(label: "shepherd.sessions")
     private let socketPath: String
@@ -228,6 +236,17 @@ public final class SessionServer: @unchecked Sendable {
     /// The host GUI's own surface grid per session (fd -1 in the min).
     private var localViewports: [SessionID: (cols: Int, rows: Int)] = [:]
     private var clients: [Int32: ExtensionConnection] = [:]
+    private struct PendingAgentRequest {
+        let caller: ExtensionConnection
+        let target: ExtensionConnection?
+        let targetAgentID: AgentID
+        let id: Int
+        let timer: DispatchWorkItem
+        var deletionConfirmed = false
+    }
+    private var agentRequests: [String: PendingAgentRequest] = [:]
+    public var onAgentPeerCancellation: ((String) -> Void)?
+
     private var sessions: [SessionID: PTYSession] = [:]
     private var attachedSessions: Set<SessionID> = []
     /// Output waiting for the GUI, plus the one delivery currently executing
@@ -262,8 +281,11 @@ public final class SessionServer: @unchecked Sendable {
     private func startOnQueue() throws {
         let stale = store.state.agents.filter { $0.status != .idle }.map(\.id)
         let deadInspectors = store.state.tabs.contains { $0.inspectorFor != nil }
+        let deadReviews = store.state.tabs.contains { tab in
+            tab.layout.leaves.contains { $0.isReview == true }
+        }
         let staleRuns = store.state.automations.contains { $0.agentID != nil }
-        if !stale.isEmpty || deadInspectors || staleRuns {
+        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns {
             do {
                 try store.update { state in
                     for id in stale {
@@ -275,6 +297,21 @@ public final class SessionServer: @unchecked Sendable {
                     // processes died with the previous run, so restoring
                     // them would show empty shells.
                     state.tabs.removeAll { $0.inspectorFor != nil }
+                    // Review panes are session-scoped UI: their native viewer
+                    // died with the previous run, so remove them from each
+                    // layout. A lone review leaf keeps the tab usable.
+                    for i in state.tabs.indices {
+                        var layout = state.tabs[i].layout
+                        let reviewIDs = layout.leaves.filter { $0.isReview == true }.map(\.id)
+                        for paneID in reviewIDs {
+                            if let closed = layout.closing(pane: paneID) {
+                                layout = closed
+                            } else {
+                                layout = layout.updatingLeaf(paneID) { $0.isReview = nil }
+                            }
+                        }
+                        state.tabs[i].layout = layout
+                    }
                     // Automation runs died with the previous app run; enabled
                     // ones restart through the GUI after adoption.
                     for i in state.automations.indices {
@@ -353,6 +390,9 @@ public final class SessionServer: @unchecked Sendable {
         outputStates.removeAll()
         for client in Array(clients.values) {
             disconnect(client)
+        }
+        for token in Array(agentRequests.keys) {
+            finishAgentRequest(token, result: .init(text: "server stopped", code: "disconnected"))
         }
         acceptSource?.cancel()
         acceptSource = nil
@@ -538,6 +578,99 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .hello(let id, _, _, _):
             send(.error(id: id, code: "protocol", message: "already authenticated"), to: client)
+        case .upload(let id, let action):
+            do {
+                switch action {
+                case .begin(let sessionID, let name, let size):
+                    guard sessions[sessionID]?.isAlive == true else { throw RemoteCreateAgentError("Session is not running") }
+                    guard client.upload == nil else { throw RemoteCreateAgentError("An upload is already in progress") }
+                    let upload = try RemoteFileUpload(directory: store.url.deletingLastPathComponent().appendingPathComponent("remote-drops"), sessionID: sessionID, name: name, size: size)
+                    client.upload = upload
+                    send(.uploadResult(id: id, result: .ready(uploadID: upload.id)), to: client)
+                case .chunk(let uploadID, let data):
+                    guard let upload = client.upload, upload.id == uploadID else { throw RemoteCreateAgentError("Unknown upload") }
+                    try upload.append(data)
+                    send(.ok(id: id), to: client)
+                case .finish(let uploadID):
+                    guard let upload = client.upload, upload.id == uploadID else { throw RemoteCreateAgentError("Unknown upload") }
+                    guard sessions[upload.sessionID]?.isAlive == true else { throw RemoteCreateAgentError("Session stopped before upload completed") }
+                    let path = try upload.finish()
+                    client.upload = nil
+                    send(.uploadResult(id: id, result: .complete(path: path)), to: client)
+                case .cancel(let uploadID):
+                    if client.upload?.id == uploadID { client.upload = nil }
+                    send(.ok(id: id), to: client)
+                }
+            } catch {
+                switch action {
+                case .chunk(let uploadID, _), .finish(let uploadID):
+                    if client.upload?.id == uploadID { client.upload = nil }
+                case .begin, .cancel: break
+                }
+                send(.error(id: id, code: "upload_failed", message: String(describing: error)), to: client)
+            }
+        case .creationOptions(let id, let spaceID, let cwd, let fetchFirst):
+            guard store.state.spaces.contains(where: { $0.id == spaceID }), let handler = onRemoteCreationOptions else {
+                send(.error(id: id, code: "unavailable", message: "Host creation options unavailable"), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(spaceID, cwd, fetchFirst) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let options): self.send(.creationOptions(id: id, options: options), to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "options_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
+        case .agentQuery(let id, let agentID, let query):
+            guard let handler = onRemoteAgentQuery else {
+                send(.error(id: id, code: "unavailable", message: "Agent inspection is unavailable on the host."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(agentID, query) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let value):
+                            let reply = RemoteReply.agentResult(id: id, result: value)
+                            guard let encoded = try? NDJSON.encode(reply), encoded.count < 1024 * 1024 else {
+                                self.send(.error(id: id, code: "too_large", message: "Agent result exceeds the remote payload limit."), to: client)
+                                return
+                            }
+                            self.send(reply, to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "query_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
+        case .agentAction(let id, let agentID, let action):
+            guard store.state.agents.contains(where: { $0.id == agentID }) else {
+                send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+                return
+            }
+            guard let handler = onRemoteAgentAction else {
+                send(.error(id: id, code: "unsupported", message: "Host cannot perform agent actions without a GUI."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(agentID, action) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success: self.send(.ok(id: id), to: client)
+                        case .failure(let error):
+                            self.send(.error(id: id, code: "action_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
         case .stateFetch(let id):
             send(.state(id: id, state: store.state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -582,19 +715,18 @@ public final class SessionServer: @unchecked Sendable {
         case .listModels(let id):
             // Asking pi shells out (~0.5s cold); never block the server
             // queue. Reply from the queue once the catalog returns.
-            let fd = client.fd
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let models = PiModelCatalog.modelIDs()
                 let fallback = models.isEmpty ? PiConfig.modelIDs() : models
                 let defaultModel = PiConfig.defaultModel()
                 self?.queue.async {
-                    guard let self, let client = self.clients[fd] else { return }
+                    guard let self, self.clients[client.fd] === client else { return }
                     self.send(.models(id: id, models: fallback, defaultModel: defaultModel), to: client)
                 }
             }
         case .addSpace(let id, let path):
             remoteAddSpace(id: id, path: path, client: client)
-        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt):
+        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst):
             remoteCreateAgent(
                 id: id,
                 request: RemoteCreateAgentRequest(
@@ -602,7 +734,10 @@ public final class SessionServer: @unchecked Sendable {
                     cwd: cwd,
                     model: model,
                     thinking: thinking,
-                    initialPrompt: initialPrompt
+                    initialPrompt: initialPrompt,
+                    worktreeBranch: worktreeBranch,
+                    worktreeBase: worktreeBase,
+                    worktreeFetchFirst: worktreeFetchFirst
                 ),
                 client: client
             )
@@ -614,12 +749,11 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "unsupported", message: "host cannot mutate panes"), to: client)
             return
         }
-        let fd = client.fd
         hopToMain { [weak self] in
             handler(request) { outcome in
                 guard let self else { return }
                 self.queue.async {
-                    guard let client = self.clients[fd] else { return }
+                    guard self.clients[client.fd] === client else { return }
                     switch outcome {
                     case .ok:
                         self.send(.ok(id: id), to: client)
@@ -698,12 +832,11 @@ public final class SessionServer: @unchecked Sendable {
             send(.error(id: id, code: "no_such_space", message: "unknown space \(request.spaceID)"), to: client)
             return
         }
-        let fd = client.fd
         hopToMain { [weak self] in
             handler(request) { result in
                 guard let self else { return }
                 self.queue.async {
-                    guard let client = self.clients[fd] else { return }
+                    guard self.clients[client.fd] === client else { return }
                     switch result {
                     case .success(let agentID):
                         self.send(.agentCreated(id: id, agentID: agentID), to: client)
@@ -748,6 +881,10 @@ public final class SessionServer: @unchecked Sendable {
         let grids = remote.isEmpty ? localViewports[sessionID].map { [$0] } ?? [] : remote
         guard let minCols = grids.map(\.cols).min(),
               let minRows = grids.map(\.rows).min() else { return }
+        // Viewport reports arrive on every surface layout, attach, and detach.
+        // A same-size resize would SIGWINCH the child into a full repaint for
+        // nothing; attach paths get their redraw from the snapshot instead.
+        guard session.cols != minCols || session.rows != minRows else { return }
         session.resize(cols: minCols, rows: minRows)
     }
 
@@ -922,6 +1059,10 @@ public final class SessionServer: @unchecked Sendable {
     private func disconnect(_ client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
         clients.removeValue(forKey: client.fd)
+        for (token, request) in agentRequests where !request.deletionConfirmed && (request.caller === client || request.target === client) {
+            finishAgentRequest(token, result: .init(text: "agent connection closed", code: "disconnected"))
+        }
+        client.upload = nil
         if client.isRemote {
             for sessionID in remoteAttachments.keys {
                 remoteAttachments[sessionID]?.remove(client.fd)
@@ -962,6 +1103,21 @@ public final class SessionServer: @unchecked Sendable {
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
         case .helloAgent(let agentID):
             client.agentID = agentID
+        case .coordinateAgent(let id, let agentID, let targetAgentID, let request):
+            coordinateAgent(id: id, agentID: agentID, targetAgentID: targetAgentID, request: request, client: client)
+        case .agentResponse(let agentID, let token, let result):
+            guard let pending = agentRequests[token], pending.target === client,
+                  pending.targetAgentID == agentID, client.agentID == agentID else { return }
+            guard result.text.utf8.count <= 64 * 1024 else {
+                finishAgentRequest(token, result: .init(text: "agent response exceeds 64 KiB", code: "reply_too_large"))
+                return
+            }
+            finishAgentRequest(token, result: result)
+        case .cancelAgentRequest(let id, let agentID):
+            guard client.agentID == agentID else { return }
+            for (token, pending) in agentRequests where pending.caller === client && pending.id == id && !pending.deletionConfirmed {
+                finishAgentRequest(token, result: .init(text: "request cancelled", code: "cancelled"))
+            }
         case .listAgents(let id, let agentID):
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
         case .sendToAgent(let id, let agentID, let targetAgentID, let text):
@@ -1027,6 +1183,92 @@ public final class SessionServer: @unchecked Sendable {
             )
         case .readPane(let id, let agentID, let paneID):
             routePaneRequest(.read(agentID: agentID, paneID: paneID), requestID: id, client: client)
+        case .requestReview(let id, let agentID, let cwd, let reference):
+            routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
+        }
+    }
+
+    private func coordinateAgent(id: Int, agentID: AgentID, targetAgentID: AgentID,
+                                 request: AgentCoordinationRequest, client: ExtensionConnection) {
+        guard client.agentID == agentID,
+              let sender = store.state.agents.first(where: { $0.id == agentID }),
+              store.state.agents.contains(where: { $0.id == targetAgentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "registered sender and existing target required"), to: client)
+            return
+        }
+        guard agentID != targetAgentID || request.operation == .read else {
+            reply(.error(id: id, code: "self_control", message: "an agent cannot control, wait for, or delete itself"), to: client)
+            return
+        }
+        guard agentRequests.values.filter({ $0.caller === client }).count < 16,
+              !agentRequests.values.contains(where: { $0.caller === client && $0.id == id }) else {
+            reply(.error(id: id, code: "busy", message: "too many pending agent requests or duplicate id"), to: client)
+            return
+        }
+        var forwarded = request
+        if request.operation == .steer {
+            guard let text = request.text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  text.utf8.count <= 32 * 1024 else {
+                reply(.error(id: id, code: "invalid", message: "steering text must contain 1 to 32768 bytes"), to: client)
+                return
+            }
+            forwarded.text = "[from: \(sender.name)] \(text)"
+        }
+        let target = clients.values.first { !$0.isRemote && $0.agentID == targetAgentID }
+        guard request.operation == .delete || target != nil else {
+            reply(.error(id: id, code: "not_running", message: "target has no live panes extension"), to: client)
+            return
+        }
+        let token = UUID().uuidString
+        let timer = DispatchWorkItem { [weak self] in
+            guard let self, self.agentRequests[token]?.deletionConfirmed == false else { return }
+            self.finishAgentRequest(token, result: .init(text: "agent request timed out", code: "timeout"))
+        }
+        agentRequests[token] = PendingAgentRequest(caller: client, target: request.operation == .delete ? nil : target,
+                                                  targetAgentID: targetAgentID, id: id, timer: timer)
+        queue.asyncAfter(deadline: .now() + (request.operation == .delete ? 120 : 5), execute: timer)
+        if request.operation == .delete {
+            guard let handler = onAgentPeerRequest else {
+                finishAgentRequest(token, result: .init(text: "native confirmation unavailable", code: "unsupported"))
+                return
+            }
+            hopToMain { [weak self] in
+                handler(.delete(agentID: agentID, targetAgentID: targetAgentID, requestID: token)) { outcome in
+                    guard let self else { return }
+                    self.queue.async {
+                        let result: AgentCoordinationResult
+                        switch outcome {
+                        case .ok: result = .init(text: "deleted agent \(targetAgentID); process termination requested; worktree and branch kept")
+                        case .failed(let code, let message): result = .init(text: message, code: code)
+                        case .agents: result = .init(text: "invalid deletion response", code: "invalid")
+                        }
+                        self.finishAgentRequest(token, result: result)
+                    }
+                }
+            }
+        } else if let target {
+            reply(.agentRequest(id: 0, requestID: token, targetAgentID: targetAgentID, request: forwarded), to: target)
+        }
+    }
+
+    private func finishAgentRequest(_ token: String, result: AgentCoordinationResult) {
+        guard let pending = agentRequests.removeValue(forKey: token) else { return }
+        pending.timer.cancel()
+        reply(.agentResult(id: pending.id, result: result), to: pending.caller)
+        if pending.target == nil {
+            hopToMain { [weak self] in self?.onAgentPeerCancellation?(token) }
+        }
+    }
+
+    /// Claim only after a native button click. A timed-out or cancelled dialog cannot delete.
+    public func claimAgentDeletion(_ token: String) async -> Bool {
+        await enqueueValue {
+            guard var pending = self.agentRequests[token], pending.target == nil,
+                  !pending.deletionConfirmed else { return false }
+            pending.deletionConfirmed = true
+            pending.timer.cancel()
+            self.agentRequests[token] = pending
+            return true
         }
     }
 
@@ -1090,6 +1332,20 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Hand a review request to the GUI and write its reply back to the client.
+    private func routeReviewRequest(_ request: ReviewRequest, requestID: Int, client: ExtensionConnection) {
+        guard let handler = onReviewRequest else {
+            reply(.error(id: requestID, code: "unsupported", message: "no review handler"), to: client)
+            return
+        }
+        hopToMain { [weak self, weak client] in
+            handler(request) { outcome in
+                guard let self, let client else { return }
+                self.queue.async { self.reply(outcome.withID(requestID), to: client) }
+            }
+        }
+    }
+
     private func reply(_ message: ExtensionReply, to client: ExtensionConnection) {
         guard clients[client.fd] === client else { return }
 
@@ -1144,9 +1400,12 @@ public final class SessionServer: @unchecked Sendable {
              .panes(let id, _),
              .paneOpened(let id, _),
              .paneContent(let id, _, _),
+             .reviewResult(let id, _),
              .automations(let id, _),
              .agents(let id, _),
-             .message(let id, _):
+             .message(let id, _),
+             .agentRequest(let id, _, _, _),
+             .agentResult(let id, _):
             return id
         }
     }
@@ -1212,6 +1471,13 @@ public final class SessionServer: @unchecked Sendable {
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
         if let index = store.state.agents.firstIndex(where: { $0.id == agentID }) {
             let current = store.state.agents[index].status
+            if current == status {
+                // Nothing to persist or broadcast (extension reconnects re-send
+                // the current status); the callback still fires so launch UI
+                // learns pi is up.
+                hopToMain { [weak self] in self?.onAgentStatus?(agentID, status) }
+                return
+            }
             if !current.canTransition(to: status) {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }
@@ -1516,6 +1782,19 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    public func reorderAgent(_ agentID: AgentID, onto target: AgentID) async throws {
+        try await enqueue {
+            let agents = self.store.state.agents
+            guard let from = agents.firstIndex(where: { $0.id == agentID }),
+                  let to = agents.firstIndex(where: { $0.id == target }),
+                  agents[from].spaceID == agents[to].spaceID else {
+                throw SessionServerError.conflict("Agents must belong to the same space")
+            }
+            guard from != to else { return }
+            try self.mutateState { $0.agents.insert($0.agents.remove(at: from), at: to) }
+        }
+    }
+
     public func removeAgent(_ agentID: AgentID) async throws {
         try await enqueue {
             guard self.store.state.agents.contains(where: { $0.id == agentID }) else {
@@ -1644,36 +1923,53 @@ public final class SessionServer: @unchecked Sendable {
     /// Attach atomically and return the screen replay plus the output
     /// watermark represented by that replay.
     public func attachSnapshot(sessionID: SessionID, replay: Bool) async throws -> AttachmentSnapshot {
-        try await enqueue {
-            guard let session = self.sessions[sessionID] else {
-                throw SessionServerError.noSuchSession(sessionID)
+        try await withCheckedThrowingContinuation { continuation in
+            attachSnapshot(sessionID: sessionID, replay: replay) { result in
+                continuation.resume(with: result)
             }
-            // Same queue turn as registration: no output can slip between the
-            // snapshot and the caller seeing `attached`.
-            self.attachedSessions.insert(sessionID)
-            // Anything still buffered was already fed into `screen`, so the
-            // snapshot represents it. Delivering it as well would replay that
-            // output on top of the snapshot — which showed up as pi's splash
-            // screen drawn twice, with two prompt boxes.
-            if let output = self.outputStates[sessionID] {
-                output.pending.removeAll(keepingCapacity: true)
-                output.pendingBytes = 0
-                output.delivery?.cancel()
-                if output.readSuspended {
-                    session.resumeOutputReading()
-                    output.readSuspended = false
+        }
+    }
+
+    /// Submit before returning, so a later detach cannot overtake this attach.
+    /// Completion runs on the main queue, in order with output callbacks.
+    public func attachSnapshot(
+        sessionID: SessionID,
+        replay: Bool,
+        completion: @escaping @MainActor (Result<AttachmentSnapshot, Error>) -> Void
+    ) {
+        queue.async {
+            let result = Result {
+                guard let session = self.sessions[sessionID] else {
+                    throw SessionServerError.noSuchSession(sessionID)
+                }
+                // Same queue turn as registration: no output can slip between the
+                // snapshot and the caller seeing `attached`.
+                self.attachedSessions.insert(sessionID)
+                // Anything still buffered was already fed into `screen`, so the
+                // snapshot represents it. Delivering it as well would replay that
+                // output on top of the snapshot — which showed up as pi's splash
+                // screen drawn twice, with two prompt boxes.
+                if let output = self.outputStates[sessionID] {
+                    output.pending.removeAll(keepingCapacity: true)
+                    output.pendingBytes = 0
+                    output.delivery?.cancel()
+                    if output.readSuspended {
+                        session.resumeOutputReading()
+                        output.readSuspended = false
+                    }
+                    self.deliverPendingExitIfReady(sessionID: sessionID)
+                    return AttachmentSnapshot(
+                        replay: replay ? session.screen.snapshot() : Data(),
+                        outputSequence: output.outputSequence
+                    )
                 }
                 self.deliverPendingExitIfReady(sessionID: sessionID)
                 return AttachmentSnapshot(
                     replay: replay ? session.screen.snapshot() : Data(),
-                    outputSequence: output.outputSequence
+                    outputSequence: 0
                 )
             }
-            self.deliverPendingExitIfReady(sessionID: sessionID)
-            return AttachmentSnapshot(
-                replay: replay ? session.screen.snapshot() : Data(),
-                outputSequence: 0
-            )
+            DispatchQueue.main.async { completion(result) }
         }
     }
 
@@ -1714,6 +2010,11 @@ public final class SessionServer: @unchecked Sendable {
     /// for display. Nil for unknown sessions or dead children.
     public func foregroundProcessName(sessionID: SessionID) async -> String? {
         await enqueueValue { self.sessions[sessionID]?.foregroundProcessName }
+    }
+
+    /// Current working directory of the foreground process in a session's PTY.
+    public func foregroundWorkingDirectory(sessionID: SessionID) async -> String? {
+        await enqueueValue { self.sessions[sessionID]?.foregroundWorkingDirectory }
     }
 
     /// Foreground command line of a session's PTY ("pi --model x"), for

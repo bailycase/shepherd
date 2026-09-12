@@ -58,6 +58,29 @@ enum PiSessionFile {
         return names.contains { $0.hasSuffix("_\(sessionID).jsonl") }
     }
 
+    /// True when pi has actually written events into the session (model and
+    /// thinking changes land as the first entries). A file we merely seeded
+    /// has one header line and no pi state. Launch flags like `--thinking`
+    /// must only be passed while this is false: once pi owns the session, the
+    /// file is the source of truth and flags would clobber in-session changes.
+    static func hasRuntimeState(
+        sessionID: String,
+        cwd: String,
+        sessionsRoot: URL = defaultSessionsRoot
+    ) -> Bool {
+        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
+              let name = names.first(where: { $0.hasSuffix("_\(sessionID).jsonl") }),
+              let data = try? Data(contentsOf: directory.appendingPathComponent(name))
+        else { return false }
+        // More than one newline-terminated line means pi appended events.
+        let newlines = data.filter { $0 == UInt8(ascii: "\n") }.count
+        if newlines > 1 { return true }
+        // A trailing partial second line counts too.
+        if let last = data.lastIndex(of: UInt8(ascii: "\n")), last < data.count - 1 { return true }
+        return false
+    }
+
     /// Write the one-line session header pi needs to adopt `sessionID` without
     /// warning. No-op when a session already exists. Returns false when
     /// anything went wrong (the caller carries on regardless).

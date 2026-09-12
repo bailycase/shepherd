@@ -3,6 +3,20 @@ import ShepherdCore
 import ShepherdSessions
 import ShepherdRemote
 
+enum DirectoryCompletion {
+    static func component(for query: String, matches: [String]) -> String {
+        guard let first = matches.first else { return query }
+        guard matches.count > 1 else { return first }
+
+        let candidates = matches.map { Array($0.lowercased()) }
+        let sharedCount = (0..<(candidates.map(\.count).min() ?? 0)).prefix { index in
+            candidates.dropFirst().allSatisfy { $0[index] == candidates[0][index] }
+        }.count
+        let sharedPrefix = String(first.prefix(sharedCount))
+        return sharedPrefix.count > query.count ? sharedPrefix : query
+    }
+}
+
 /// The same directory listing the host serves remotely, for this Mac — so
 /// local and remote space pickers are one UI with two listing sources.
 enum LocalDirectoryLister {
@@ -32,6 +46,8 @@ enum LocalDirectoryLister {
 /// over the wire. Editable path field (⏎ jumps), hidden-dirs toggle,
 /// click to descend, `..` to go up.
 struct RemoteDirectoryPicker: View {
+    var title = "Choose Directory"
+    var actionTitle = "Choose"
     let hostName: String
     /// Where browsing begins; empty = the machine's home directory. A cwd
     /// picker starts at the current value, not home.
@@ -54,22 +70,28 @@ struct RemoteDirectoryPicker: View {
     @FocusState private var pathFocused: Bool
 
     /// Hidden dirs shown only on request (or when the typed filter asks for
-    /// them), sorted after visible ones, narrowed to the typed prefix.
+    /// them), narrowed with shell-like fuzzy matching. Prefix matches sort
+    /// first, followed by subsequence matches in directory-name order.
     private var visibleDirs: [String] {
         let visible = dirs.filter { !$0.hasPrefix(".") }
-        var all = (showHidden || filter.hasPrefix("."))
+        let all = (showHidden || filter.hasPrefix("."))
             ? visible + dirs.filter { $0.hasPrefix(".") }
             : visible
-        if !filter.isEmpty {
-            all = all.filter { $0.lowercased().hasPrefix(filter.lowercased()) }
-        }
+        guard !filter.isEmpty else { return all }
         return all
+            .filter { fuzzyMatches(filter, in: $0) }
+            .sorted { lhs, rhs in
+                let leftPrefix = lhs.lowercased().hasPrefix(filter.lowercased())
+                let rightPrefix = rhs.lowercased().hasPrefix(filter.lowercased())
+                if leftPrefix != rightPrefix { return leftPrefix }
+                return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+            }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Choose Directory on \(hostName)")
+                Text("\(title) on \(hostName)")
                     .font(Fonts.mono(13.5, .semibold))
                     .foregroundStyle(Tokens.textPrimary)
                 // The path is editable: typing filters the listing to what's
@@ -81,6 +103,10 @@ struct RemoteDirectoryPicker: View {
                     .focused($pathFocused)
                     .onChange(of: pathDraft) { draftChanged() }
                     .onSubmit { submit() }
+                    .onKeyPress(.tab) {
+                        completePath()
+                        return .handled
+                    }
             }
             .padding(EdgeInsets(top: 16, leading: 20, bottom: 10, trailing: 20))
 
@@ -121,7 +147,7 @@ struct RemoteDirectoryPicker: View {
                     .foregroundStyle(Tokens.textTertiary)
                 Button("Cancel", action: cancel)
                     .keyboardShortcut(.cancelAction)
-                Button("Choose") { submit() }
+                Button(actionTitle) { submit() }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)
                     .tint(Tokens.accentButton)
@@ -150,6 +176,27 @@ struct RemoteDirectoryPicker: View {
         let base = draft == "/" ? "/" : String(draft[..<slash])
         filter = String(draft[draft.index(after: slash)...])
         if base != path { load(base, keepDraft: true) }
+    }
+
+    /// Tab completes a unique match fully. Ambiguous matches advance only to
+    /// their shared prefix, keeping every remaining option visible.
+    private func completePath() {
+        guard !loading, !filter.isEmpty, !visibleDirs.isEmpty else { return }
+        let component = DirectoryCompletion.component(for: filter, matches: visibleDirs)
+        guard component != filter else { return }
+        pathDraft = (path as NSString).appendingPathComponent(component)
+    }
+
+    private func fuzzyMatches(_ query: String, in candidate: String) -> Bool {
+        let candidateCharacters = Array(candidate.lowercased())
+        var candidateIndex = 0
+        for character in query.lowercased() {
+            guard let match = candidateCharacters[candidateIndex...].firstIndex(of: character) else {
+                return false
+            }
+            candidateIndex = match + 1
+        }
+        return true
     }
 
     /// One ⏎ chooses: an exact or unique match under the current listing, or

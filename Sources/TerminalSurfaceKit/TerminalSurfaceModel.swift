@@ -66,13 +66,13 @@ struct SurfaceAttachmentTracker {
     private var replacementPending = false
     private var replayGeneration: UInt64?
 
-    mutating func appeared(_ id: UUID) {
+    mutating func appeared(_ id: UUID, requiresReplay: Bool = false) {
         guard activeViewID != id else { return }
         generation &+= 1
         activeViewID = id
         isReady = false
         replayGeneration = nil
-        replacementPending = hasBeenReady
+        replacementPending = hasBeenReady || requiresReplay
     }
 
     mutating func disappeared(_ id: UUID) {
@@ -112,6 +112,9 @@ struct SurfaceAttachmentTracker {
 
 @MainActor
 public final class TerminalSurfaceModel: ObservableObject {
+    public var maximumDropBytes: Int?
+    public var onFileDropError: ((String) -> Void)?
+    public var onFileDrop: (([URL]) -> Void)?
     public var onInput: ((Data) -> Void)?
     public var onResize: ((_ cols: Int, _ rows: Int) -> Void)?
     /// Fired when a NEW ghostty surface becomes ready after the first one.
@@ -119,8 +122,12 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// replay cannot land in a newer surface.
     public var onSurfaceReplaced: ((_ generation: UInt64) -> Void)?
 
+    /// Snapshot-owning hosts stop streaming on nil and attach atomically when a
+    /// generation becomes ready. Unlike onSurfaceReplaced, includes the first view.
+    public var onSurfaceAttachmentChanged: ((_ generation: UInt64?) -> Void)?
+
     let viewState: TerminalViewState
-    private let session: InMemoryTerminalSession
+    let session: InMemoryTerminalSession
     private var pendingOutput = Data()
     private var attachment = SurfaceAttachmentTracker()
     /// Whether this pane should be drawing. Hidden panes stay mounted but must
@@ -341,7 +348,7 @@ public final class TerminalSurfaceModel: ObservableObject {
         // detach after its replacement attached and incorrectly clear that
         // shared pointer even though the in-memory session owns a live surface.
         guard attachment.isReady else {
-            pendingOutput.append(data)
+            if onSurfaceAttachmentChanged == nil { pendingOutput.append(data) }
             return
         }
         flushPendingOutput()
@@ -349,7 +356,9 @@ public final class TerminalSurfaceModel: ObservableObject {
     }
 
     func surfaceViewAppeared(_ id: UUID) {
-        attachment.appeared(id)
+        guard !attachment.isActive(id) else { return }
+        attachment.appeared(id, requiresReplay: onSurfaceAttachmentChanged != nil)
+        onSurfaceAttachmentChanged?(nil)
         // A replacement ghostty view starts visible, so a hidden pane would
         // silently resume rendering. Re-assert once it is in the window —
         // with retries, because "the next main-queue turn" is not always
@@ -366,7 +375,9 @@ public final class TerminalSurfaceModel: ObservableObject {
     }
 
     func surfaceViewDisappeared(_ id: UUID) {
+        guard attachment.isActive(id) else { return }
         attachment.disappeared(id)
+        onSurfaceAttachmentChanged?(nil)
     }
 
     private func confirmSurfaceReady(_ id: UUID, remainingAttempts: Int) {
@@ -385,6 +396,7 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// Insert Finder-dropped files using Ghostty's native macOS convention:
     /// absolute paths, shell-escaped and separated by spaces.
     func sendDroppedFiles(_ urls: [URL]) -> Bool {
+        if let onFileDrop { onFileDrop(urls); return true }
         guard let text = TerminalFileDrop.text(for: urls) else { return false }
         return viewState.send(text)
     }
@@ -408,9 +420,9 @@ public final class TerminalSurfaceModel: ObservableObject {
         case .ready:
             flushPendingOutput()
         case .replacement(let generation):
-            // Keep live output buffered until the owner's atomic replay catches
-            // the replacement up.
-            if let onSurfaceReplaced {
+            if let onSurfaceAttachmentChanged {
+                onSurfaceAttachmentChanged(generation)
+            } else if let onSurfaceReplaced {
                 onSurfaceReplaced(generation)
             } else if attachment.finishReplacement(generation: generation) {
                 flushPendingOutput()

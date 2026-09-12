@@ -94,6 +94,7 @@ struct PiThemeTests {
             extensionPath: "/tmp/status.ts",
             themeExtensionPath: "/tmp/theme.ts",
             panesExtensionPath: "/tmp/panes.ts",
+            reviewExtensionPath: "/tmp/review.ts",
             subagentsExtensionPath: "/tmp/subagents.ts",
             piThemePath: "/tmp/theme file.json",
             piThemeName: ShepherdPiTheme.name,
@@ -106,6 +107,7 @@ struct PiThemeTests {
         #expect(shellCommand.contains("--theme '/tmp/theme file.json'"))
         #expect(shellCommand.contains("--use-theme '\(ShepherdPiTheme.name)'"))
         #expect(shellCommand.contains("-e '/tmp/theme.ts'"))
+        #expect(shellCommand.contains("-e '/tmp/review.ts'"))
         #expect(command.env["SHEPHERD_EXT_THEME"] == "/tmp/theme.ts")
         #expect(command.env["SHEPHERD_PI_THEME_PATH"] == "/tmp/theme file.json")
         #expect(command.env["SHEPHERD_PI_THEME_NAME"] == ShepherdPiTheme.name)
@@ -140,6 +142,7 @@ struct PiThemeTests {
             ("shepherd-theme.ts", ThemeExtension.extensionSource),
             ("shepherd-namer.ts", NamerExtension.extensionSource),
             ("shepherd-panes.ts", PanesExtension.extensionSource),
+            ("shepherd-review.ts", ReviewExtension.extensionSource),
             ("shepherd-subagents.ts", SubagentsExtension.extensionSource),
             ("shepherd-inspect.mjs", InspectExtension.extensionSource),
         ]

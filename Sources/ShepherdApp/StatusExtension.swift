@@ -34,9 +34,10 @@ enum StatusExtension {
         piSessionID: String,
         socketPath: String,
         extensionPath: String,
-        themeExtensionPath: String,
-        panesExtensionPath: String,
-        subagentsExtensionPath: String,
+        themeExtensionPath: String?,
+        panesExtensionPath: String?,
+        reviewExtensionPath: String?,
+        subagentsExtensionPath: String?,
         /// nil when auto-naming is off in Settings.
         namerExtensionPath: String? = nil,
         /// True while the agent's name is provisional: the namer then also
@@ -46,7 +47,7 @@ enum StatusExtension {
         /// withholds the automation_* tools so a watcher cannot breed
         /// watchers (SHEPHERD_AUTOMATION=1).
         isAutomation: Bool = false,
-        piThemePath: String,
+        piThemePath: String?,
         piThemeName: String,
         model: String?,
         thinking: ThinkingLevel?,
@@ -57,8 +58,10 @@ enum StatusExtension {
         // own id (pi creates it on first launch) and follows the user through
         // `/new` and `/resume`, which the status extension reports back.
         cmd += " --session-id \(shellQuoted(piSessionID))"
-        cmd += " --theme \(shellQuoted(piThemePath))"
-        cmd += " --use-theme \(shellQuoted(piThemeName))"
+        if themeExtensionPath != nil, let piThemePath {
+            cmd += " --theme \(shellQuoted(piThemePath))"
+            cmd += " --use-theme \(shellQuoted(piThemeName))"
+        }
         if let model {
             cmd += " --model \(shellQuoted(model))"
         }
@@ -66,11 +69,8 @@ enum StatusExtension {
             cmd += " --thinking \(shellQuoted(thinking.rawValue))"
         }
         cmd += " -e \(shellQuoted(extensionPath))"
-        cmd += " -e \(shellQuoted(themeExtensionPath))"
-        cmd += " -e \(shellQuoted(panesExtensionPath))"
-        cmd += " -e \(shellQuoted(subagentsExtensionPath))"
-        if let namerExtensionPath {
-            cmd += " -e \(shellQuoted(namerExtensionPath))"
+        for path in [themeExtensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, namerExtensionPath].compactMap({ $0 }) {
+            cmd += " -e \(shellQuoted(path))"
         }
         if let initialPrompt, !initialPrompt.isEmpty {
             cmd += " \(shellQuoted(initialPrompt))"
@@ -79,12 +79,16 @@ enum StatusExtension {
             "SHEPHERD_AGENT_ID": agentID.rawValue,
             "SHEPHERD_SOCKET": socketPath,
             "SHEPHERD_EXT_STATUS": extensionPath,
-            "SHEPHERD_EXT_THEME": themeExtensionPath,
-            "SHEPHERD_EXT_PANES": panesExtensionPath,
-            "SHEPHERD_PI_THEME_PATH": piThemePath,
-            "SHEPHERD_PI_THEME_NAME": piThemeName,
         ]
-        if needsName {
+        if let themeExtensionPath, let piThemePath {
+            env["SHEPHERD_EXT_THEME"] = themeExtensionPath
+            env["SHEPHERD_PI_THEME_PATH"] = piThemePath
+            env["SHEPHERD_PI_THEME_NAME"] = piThemeName
+        }
+        if let panesExtensionPath {
+            env["SHEPHERD_EXT_PANES"] = panesExtensionPath
+        }
+        if namerExtensionPath != nil && needsName {
             env["SHEPHERD_NEEDS_NAME"] = "1"
         }
         if isAutomation {

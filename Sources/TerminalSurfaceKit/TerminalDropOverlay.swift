@@ -80,11 +80,11 @@ private final class TerminalDropOverlayView: NSView {
         let providers = TerminalImageDrop.providers(from: sender.draggingPasteboard)
         guard !providers.isEmpty else { return false }
         Task { @MainActor in
-            let urls = await TerminalImageDrop.resolve(providers)
-            guard !urls.isEmpty else { return }
-            if model.sendDroppedFiles(urls) {
-                model.takeKeyboardFocus()
-            }
+            do {
+                let urls = try await TerminalImageDrop.resolve(providers, maximumBytes: model.maximumDropBytes)
+                guard !urls.isEmpty else { return }
+                if model.sendDroppedFiles(urls) { model.takeKeyboardFocus() }
+            } catch { model.onFileDropError?(error.localizedDescription) }
         }
         // The work is async, so accept now; resolve() drops anything unusable.
         return true

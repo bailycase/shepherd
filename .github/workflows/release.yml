@@ -1,11 +1,16 @@
 name: Release
 
 # Tag vX.Y.Z → build the Prod app, sign, notarize, package a DMG, publish a
-# GitHub Release, and regenerate the Sparkle appcast on gh-pages. Signing is
+# GitHub Release, and regenerate the Sparkle appcasts on gh-pages. Signing is
 # Developer ID + notarization when the secrets exist, ad-hoc otherwise.
 #
-# Nightlies: every push to nightly runs the same pipeline with channel
-# "nightly", publishing a prerelease and appcast-nightly.xml.
+# Channels by tag name:
+#   vX.Y.Z          → stable   (appcast.xml)
+#   vX.Y.Z-rc.N     → rc       (appcast-rc.xml — rc + stable items)
+#   vX.Y.Z-beta.N   → beta     (appcast-beta.xml — beta + rc + stable items)
+#   push to nightly → nightly  (appcast-nightly.xml — isolated timeline)
+# Pre-release feeds are supersets so an rc/beta rider is still offered a
+# newer stable hotfix; "newest build number in the chosen feed wins".
 #
 # Secrets (all optional until Developer ID exists):
 #   SPARKLE_PRIVATE_KEY   EdDSA private key from `generate_keys -x`
@@ -41,7 +46,11 @@ jobs:
         id: meta
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "channel=stable" >> "$GITHUB_OUTPUT"
+            case "$GITHUB_REF_NAME" in
+              *-rc.*)   echo "channel=rc" >> "$GITHUB_OUTPUT" ;;
+              *-beta.*) echo "channel=beta" >> "$GITHUB_OUTPUT" ;;
+              *)        echo "channel=stable" >> "$GITHUB_OUTPUT" ;;
+            esac
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
             echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
           else
@@ -57,9 +66,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build
-          key: xcode-${{ runner.os }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved') }}
-          restore-keys: |
-            xcode-${{ runner.os }}-${{ steps.xcode.outputs.version }}-
+          # Exact-match only. A prefix-restored cache from before a model
+          # change poisons incremental builds (stale ShepherdCore objects vs
+          # new ShepherdApp sources — nightly 0217 shipped a build break that
+          # `swift test` had already passed). Release builds are rare enough
+          # that a clean rebuild beats a wrong binary.
+          key: xcode-${{ runner.os }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('Package.resolved', 'Sources/**/*.swift', 'App/**/*.swift') }}
 
       - name: Import Developer ID certificate
         id: cert
@@ -148,11 +160,17 @@ jobs:
         run: |
           NOTES="Download the DMG and drag Shepherd to Applications. Updates arrive automatically via Sparkle."
           ARGS=(--title "Shepherd $TAG" --notes "$NOTES")
-          if [[ "$CHANNEL" == "nightly" ]]; then
+          # rc/beta/nightly are GitHub prereleases; channel classification
+          # below is by tag NAME (nightly-*, v*-rc.*, v*-beta.*), never by
+          # the prerelease flag — so the nightly cleanup must match names
+          # too, or it would eat rc/beta releases.
+          if [[ "$CHANNEL" != "stable" ]]; then
             ARGS+=(--prerelease)
+          fi
+          if [[ "$CHANNEL" == "nightly" ]]; then
             # Keep only the latest few nightlies.
-            for old in $(gh release list --limit 100 --json tagName,isPrerelease \
-              --jq '.[] | select(.isPrerelease) | .tagName' | tail -n +4); do
+            for old in $(gh release list --limit 100 --json tagName \
+              --jq '.[] | select(.tagName | startswith("nightly-")) | .tagName' | tail -n +4); do
               gh release delete "$old" --cleanup-tag --yes || true
             done
             git tag "$TAG" && git push origin "$TAG"
@@ -177,16 +195,28 @@ jobs:
           fi
           echo "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle_key"
 
-          # The appcast is rebuilt from every published release asset so it
-          # always reflects the full history, split by channel.
-          mkdir -p casts/stable casts/nightly
-          gh release list --limit 100 --json tagName,isPrerelease \
-            --jq '.[] | [.tagName, (.isPrerelease|tostring)] | @tsv' \
-          | while IFS=$'\t' read -r tag pre; do
-            dir=casts/stable; [[ "$pre" == "true" ]] && dir=casts/nightly
-            gh release download "$tag" -p Shepherd.dmg -O "$dir/Shepherd-$tag.dmg" \
-              || gh release download "$tag" -p Shepherd.zip -O "$dir/Shepherd-$tag.zip" \
-              || true
+          # The appcasts are rebuilt from every published release asset so
+          # they always reflect the full history. Channel comes from the tag
+          # NAME. Pre-release feeds are supersets down the stability ladder:
+          # stable ⊂ rc ⊂ beta — a copy of each stable dmg lands in the rc
+          # and beta directories (and rc dmgs in beta) so those feeds can
+          # offer a newer stable build to pre-release riders.
+          mkdir -p casts/stable casts/rc casts/beta casts/nightly
+          gh release list --limit 100 --json tagName --jq '.[].tagName' \
+          | while read -r tag; do
+            case "$tag" in
+              nightly-*) dirs=(casts/nightly) ;;
+              *-rc.*)    dirs=(casts/rc casts/beta) ;;
+              *-beta.*)  dirs=(casts/beta) ;;
+              *)         dirs=(casts/stable casts/rc casts/beta) ;;
+            esac
+            first="${dirs[0]}"
+            gh release download "$tag" -p Shepherd.dmg -O "$first/Shepherd-$tag.dmg" \
+              || gh release download "$tag" -p Shepherd.zip -O "$first/Shepherd-$tag.zip" \
+              || continue
+            for dir in "${dirs[@]:1}"; do
+              cp "$first"/Shepherd-"$tag".* "$dir/" 2>/dev/null || true
+            done
           done
 
           # generate_appcast errors on an empty directory (e.g. no stable
@@ -194,23 +224,27 @@ jobs:
           empty_feed() {
             printf '<?xml version="1.0" encoding="utf-8"?>\n<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"><channel><title>Shepherd</title></channel></rss>\n' > "$1"
           }
-          if ls casts/stable/*.zip casts/stable/*.dmg >/dev/null 2>&1; then
-            "$BIN/generate_appcast" --ed-key-file "$RUNNER_TEMP/sparkle_key" \
+          # One generate_appcast run per channel directory. Non-stable feeds
+          # tag every item with their channel name (the client allows exactly
+          # that channel). compgen, not ls: `ls *.zip *.dmg` fails when
+          # either glob is unmatched, which wrote an empty feed despite
+          # existing dmg's.
+          build_feed() {
+            local dir=$1 channel=$2
+            local args=(--ed-key-file "$RUNNER_TEMP/sparkle_key" \
               --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/" \
-              --link "https://github.com/${{ github.repository }}" \
-              casts/stable
-          else
-            empty_feed casts/stable/appcast.xml
-          fi
-          if ls casts/nightly/*.zip casts/nightly/*.dmg >/dev/null 2>&1; then
-            "$BIN/generate_appcast" --ed-key-file "$RUNNER_TEMP/sparkle_key" \
-              --channel nightly \
-              --download-url-prefix "https://github.com/${{ github.repository }}/releases/download/" \
-              --link "https://github.com/${{ github.repository }}" \
-              casts/nightly
-          else
-            empty_feed casts/nightly/appcast.xml
-          fi
+              --link "https://github.com/${{ github.repository }}")
+            [[ -n "$channel" ]] && args+=(--channel "$channel")
+            if compgen -G "$dir/*.zip" >/dev/null || compgen -G "$dir/*.dmg" >/dev/null; then
+              "$BIN/generate_appcast" "${args[@]}" "$dir"
+            else
+              empty_feed "$dir/appcast.xml"
+            fi
+          }
+          build_feed casts/stable ""
+          build_feed casts/rc rc
+          build_feed casts/beta beta
+          build_feed casts/nightly nightly
 
           # generate_appcast writes URLs as prefix + filename; rewrite full
           # archives to their per-tag asset path (download/<tag>/Shepherd.<ext>).
@@ -218,6 +252,8 @@ jobs:
             perl -pi -e 's{download/Shepherd-([^"/]+)\.(zip|dmg)}{download/$1/Shepherd.$2}g' "$1"
           }
           fix_urls casts/stable/appcast.xml
+          fix_urls casts/rc/appcast.xml
+          fix_urls casts/beta/appcast.xml
           fix_urls casts/nightly/appcast.xml
 
           # Deltas (small binary patches to the newest version) also come out
@@ -232,12 +268,16 @@ jobs:
             gh release upload "$latest" "${deltas[@]}" --clobber
             perl -pi -e 's{download/([^"/]+\.delta)}{download/'"$latest"'/$1}g' "$dir/appcast.xml"
           }
-          stable_latest=$(gh release list --limit 100 --json tagName,isPrerelease \
-            --jq '[.[] | select(.isPrerelease | not)][0].tagName // empty')
-          nightly_latest=$(gh release list --limit 100 --json tagName,isPrerelease \
-            --jq '[.[] | select(.isPrerelease)][0].tagName // empty')
-          upload_deltas casts/stable "$stable_latest"
-          upload_deltas casts/nightly "$nightly_latest"
+          # Latest release per channel-directory, by tag name (newest first
+          # from `gh release list`). Superset dirs use their newest member.
+          latest_matching() {
+            gh release list --limit 100 --json tagName --jq '.[].tagName' \
+              | grep -E "$1" | head -1 || true
+          }
+          upload_deltas casts/stable "$(latest_matching '^v[0-9]+\.[0-9]+\.[0-9]+$')"
+          upload_deltas casts/rc "$(latest_matching '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$')"
+          upload_deltas casts/beta "$(latest_matching '^v[0-9]+\.[0-9]+\.[0-9]+(-(rc|beta)\.[0-9]+)?$')"
+          upload_deltas casts/nightly "$(latest_matching '^nightly-')"
 
           git config user.name github-actions
           git config user.email github-actions@github.com
@@ -248,8 +288,10 @@ jobs:
             git worktree add --orphan -b gh-pages pages
           fi
           cp casts/stable/appcast.xml pages/appcast.xml
+          cp casts/rc/appcast.xml pages/appcast-rc.xml
+          cp casts/beta/appcast.xml pages/appcast-beta.xml
           cp casts/nightly/appcast.xml pages/appcast-nightly.xml
           cd pages
-          git add appcast.xml appcast-nightly.xml
+          git add appcast.xml appcast-rc.xml appcast-beta.xml appcast-nightly.xml
           git commit -m "appcast: ${{ steps.meta.outputs.tag }}" || exit 0
           git push origin HEAD:gh-pages

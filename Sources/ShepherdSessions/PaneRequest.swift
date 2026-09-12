@@ -9,19 +9,28 @@ public struct RemoteCreateAgentRequest: Sendable {
     public var model: String?
     public var thinking: ThinkingLevel?
     public var initialPrompt: String?
+    public var worktreeBase: String?
+    public var worktreeFetchFirst: Bool?
+    public var worktreeBranch: String?
 
     public init(
         spaceID: SpaceID,
         cwd: String?,
         model: String?,
         thinking: ThinkingLevel?,
-        initialPrompt: String?
+        initialPrompt: String?,
+        worktreeBranch: String? = nil,
+        worktreeBase: String? = nil,
+        worktreeFetchFirst: Bool? = nil
     ) {
         self.spaceID = spaceID
         self.cwd = cwd
         self.model = model
         self.thinking = thinking
         self.initialPrompt = initialPrompt
+        self.worktreeBranch = worktreeBranch
+        self.worktreeBase = worktreeBase
+        self.worktreeFetchFirst = worktreeFetchFirst
     }
 }
 
@@ -89,6 +98,33 @@ public enum PaneOutcome: Hashable, Sendable {
     }
 }
 
+/// A native diff-review request from an agent's review extension.
+public enum ReviewRequest: Hashable, Sendable {
+    case start(agentID: AgentID, cwd: String?, reference: String?)
+
+    public var agentID: AgentID {
+        switch self {
+        case .start(let agentID, _, _):
+            return agentID
+        }
+    }
+}
+
+/// A handler's answer, before the server stamps it with the request id.
+public enum ReviewOutcome: Hashable, Sendable {
+    case submitted(text: String)
+    case failed(code: String, message: String)
+
+    public func withID(_ id: Int) -> ExtensionReply {
+        switch self {
+        case .submitted(let text):
+            return .reviewResult(id: id, text: text)
+        case .failed(let code, let message):
+            return .error(id: id, code: code, message: message)
+        }
+    }
+}
+
 /// An automation-management request from any pi session (the automation
 /// skill), forwarded to the GUI like pane requests — the GUI owns the run
 /// lifecycle (space resolution, agent spawn/kill).
@@ -126,10 +162,11 @@ public enum AgentPeerRequest: Hashable, Sendable {
     case list(agentID: AgentID)
     case send(agentID: AgentID, targetAgentID: AgentID, text: String)
     case spawn(agentID: AgentID, cwd: String, prompt: String)
+    case delete(agentID: AgentID, targetAgentID: AgentID, requestID: String)
 
     public var agentID: AgentID {
         switch self {
-        case .list(let agentID), .send(let agentID, _, _), .spawn(let agentID, _, _):
+        case .list(let agentID), .send(let agentID, _, _), .spawn(let agentID, _, _), .delete(let agentID, _, _):
             return agentID
         }
     }

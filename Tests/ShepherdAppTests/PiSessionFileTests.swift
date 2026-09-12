@@ -48,6 +48,30 @@ struct PiSessionFileTests {
         #expect(try sessionFiles(cwd: cwd, sessionsRoot: sessionsRoot).filter { $0.hasSuffix("_\(sessionID).jsonl") }.count == 1)
     }
 
+    /// A seeded header alone is not runtime state; pi appending events (or a
+    /// partial trailing line) is. Launch flags key off this distinction.
+    @Test func runtimeStateRequiresEventsBeyondTheSeededHeader() throws {
+        let cwd = try makeScratchCwd()
+        let sessionsRoot = try makeScratchSessionsRoot()
+        defer { cleanUp(cwd: cwd, sessionsRoot: sessionsRoot) }
+
+        let sessionID = UUID().uuidString
+        // No file at all: no state.
+        #expect(!PiSessionFile.hasRuntimeState(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot))
+
+        // Seeded header only: still no state.
+        #expect(PiSessionFile.seedIfMissing(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot))
+        #expect(!PiSessionFile.hasRuntimeState(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot))
+
+        // Pi appends an event (what a thinking change writes): state.
+        let file = try #require(seededFile(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot))
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data("{\"type\":\"thinking_level_change\",\"thinkingLevel\":\"max\"}\n".utf8))
+        try handle.close()
+        #expect(PiSessionFile.hasRuntimeState(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot))
+    }
+
     // MARK: helpers
 
     private func sessionsDirectory(cwd: String, sessionsRoot: URL) -> URL {

@@ -24,6 +24,13 @@ struct AppSettingsTests {
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.defaultThinking == AppSettings.Defaults.thinking)
         #expect(settings.autoNameAgents)
+        #expect(settings.piThemeExtension)
+        #expect(settings.piPanesExtension)
+        #expect(settings.piReviewExtension)
+        #expect(settings.piSubagentsExtension)
+        #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
+        #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
+        #expect(settings.worktreeGeneratePRDescription)
     }
 
     @Test func valuesPersistAndReload() {
@@ -35,8 +42,15 @@ struct AppSettingsTests {
         settings.defaultModel = "anthropic/claude-sonnet-4"
         settings.defaultThinking = .high
         settings.autoNameAgents = false
+        settings.piThemeExtension = false
+        settings.piPanesExtension = false
+        settings.piReviewExtension = false
+        settings.piSubagentsExtension = false
+        settings.autoUpdatePi = true
+        settings.autoUpdateExtensions = true
         settings.shellPath = "/bin/bash"
         settings.sidebarWidth = 275
+        settings.worktreeGeneratePRDescription = false
 
         let reloaded = AppSettings(store: store)
         #expect(reloaded.terminalFontFamily == "Menlo")
@@ -44,8 +58,15 @@ struct AppSettingsTests {
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4")
         #expect(reloaded.defaultThinking == .high)
         #expect(reloaded.autoNameAgents == false)
+        #expect(reloaded.piThemeExtension == false)
+        #expect(reloaded.piPanesExtension == false)
+        #expect(reloaded.piReviewExtension == false)
+        #expect(reloaded.piSubagentsExtension == false)
+        #expect(reloaded.autoUpdatePi)
+        #expect(reloaded.autoUpdateExtensions)
         #expect(reloaded.shellPath == "/bin/bash")
         #expect(reloaded.sidebarWidth == 275)
+        #expect(reloaded.worktreeGeneratePRDescription == false)
     }
 
     @Test func sidebarWidthIsClampedToItsDragRange() {
@@ -71,12 +92,26 @@ struct AppSettingsTests {
         settings.terminalFontSize = 20
         settings.defaultModel = "openai/gpt-5"
         settings.autoNameAgents = false
+        settings.piThemeExtension = false
+        settings.piPanesExtension = false
+        settings.piReviewExtension = false
+        settings.piSubagentsExtension = false
+        settings.autoUpdatePi = true
+        settings.autoUpdateExtensions = true
+        settings.worktreeGeneratePRDescription = false
 
         settings.resetToDefaults()
 
         #expect(settings.terminalFontSize == AppSettings.Defaults.terminalFontSize)
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.autoNameAgents)
+        #expect(settings.piThemeExtension)
+        #expect(settings.piPanesExtension)
+        #expect(settings.piReviewExtension)
+        #expect(settings.piSubagentsExtension)
+        #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
+        #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
+        #expect(settings.worktreeGeneratePRDescription)
         for key in AppSettings.Key.all {
             #expect(store.object(forKey: key) == nil)
         }
@@ -91,6 +126,36 @@ struct AppSettingsTests {
 
         settings.defaultModel = " openai/gpt-5 "
         #expect(settings.agentDefaults.model == "openai/gpt-5")
+    }
+
+    @Test func legacyCombinedPiSettingMigratesToExtensionUpdates() {
+        let store = scratchDefaults()
+        store.set(true, forKey: AppSettings.Key.autoUpdatePi)
+
+        #expect(AppSettings(store: store).autoUpdateExtensions)
+    }
+
+    @Test func automaticPiCommandsRespectIndependentSettings() {
+        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: false, updateExtensions: false).isEmpty)
+        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: true, updateExtensions: false) == [["update"]])
+        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: false, updateExtensions: true) == [["update", "--extensions"]])
+        #expect(PiUpdateManager.automaticUpdateArguments(updatePi: true, updateExtensions: true) == [
+            ["update"], ["update", "--extensions"],
+        ])
+    }
+
+    @Test func piUpdateButtonDisablesWhenCurrentOrBusy() {
+        #expect(PiUpdateManager.canUpdatePi(lastChecked: nil, isOutdated: false, isBusy: false))
+        #expect(PiUpdateManager.canUpdatePi(lastChecked: Date(), isOutdated: true, isBusy: false))
+        #expect(!PiUpdateManager.canUpdatePi(lastChecked: Date(), isOutdated: false, isBusy: false))
+        #expect(!PiUpdateManager.canUpdatePi(lastChecked: nil, isOutdated: true, isBusy: true))
+    }
+
+    @Test func piVersionComparisonHandlesPrefixesAndMissingComponents() {
+        #expect(PiUpdateManager.isVersion("1.2.3", olderThan: "1.2.4"))
+        #expect(PiUpdateManager.isVersion("v1.2", olderThan: "1.2.0" ) == false)
+        #expect(!PiUpdateManager.isVersion("1.3.0", olderThan: "1.2.9"))
+        #expect(!PiUpdateManager.isVersion("not-a-version", olderThan: "1.2.0"))
     }
 
     @Test func shellCommandFallsBackWhenThePathIsNotExecutable() {
@@ -203,6 +268,27 @@ struct SpaceTreeTests {
         let app2 = Space(name: "app2", path: "/tmp/app2")
         let forest = ShepherdViewModel.spaceForest([app, app2])
         #expect(forest.map(\.depth) == [0, 0])
+    }
+
+    @Test func pathCasingFollowsTheFilesystem() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let parentURL = root.appendingPathComponent("Developer")
+        let childURL = parentURL.appendingPathComponent("Project")
+        try fm.createDirectory(at: childURL, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+
+        let typedParent = root.appendingPathComponent("developer")
+        let ignoresCase = fm.fileExists(atPath: typedParent.path)
+        if !ignoresCase {
+            try fm.createDirectory(at: typedParent.appendingPathComponent("Project"),
+                                   withIntermediateDirectories: true)
+        }
+        let parent = Space(name: "parent", path: parentURL.path)
+        let child = Space(name: "child", path: typedParent.appendingPathComponent("Project").path)
+        let forest = ShepherdViewModel.spaceForest([child, parent])
+        #expect(forest.map(\.space.id) == (ignoresCase ? [parent.id, child.id] : [child.id, parent.id]))
+        #expect(forest.map(\.depth) == (ignoresCase ? [0, 1] : [0, 0]))
     }
 
     @Test func anUnknownSpaceListsNothing() {
