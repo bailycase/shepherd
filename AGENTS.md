@@ -95,7 +95,8 @@ Extensions/
   shepherd-namer.ts      Titles an agent from its opening prompt (setAgentName).
   shepherd-panes.ts      Gives an agent pane_open/run/read/focus/close tools.
   shepherd-theme.ts      Syncs pi's TUI theme with the app's generated theme file.
-  shepherd-subagents.ts  Projects pi-subagents child runs into the sidebar (setAgentChildren).
+  shepherd-subagents.ts  Merges native and pi-subagents child display (setAgentChildren).
+  shepherd-children.ts   Opt-in extension-owned RPC helpers; see docs/native-subagents.md.
   shepherd-inspect.mjs   Standalone TUI inspector for one subagent run (no socket traffic).
 ```
 
@@ -248,7 +249,8 @@ server owns PTYs but not layouts, so pane requests are forwarded to the GUI via
 `PaneControl.swift` is the only place that serves them. Load-bearing rules there: an agent may
 only touch panes in its **own** layout, it can never close or type into the pane running its
 own pi process, and the last pane in a layout cannot be closed. Shepherd does not nest agents —
-pi's own subagents run inside the agent's process; the app only *projects* them (sidebar child
+pi extensions own subagent execution; the opt-in bundled native helpers run as RPC child
+processes. The app only *projects* them (sidebar child
 rows via `shepherd-subagents.ts`, the read-mostly inspector via `shepherd-inspect.mjs`). Child
 runs are ephemeral display state, never persisted.
 

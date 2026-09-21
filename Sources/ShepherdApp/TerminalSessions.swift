@@ -931,6 +931,8 @@ final class TerminalSessionStore: ObservableObject {
             panesExtensionPath: settings.piPanesExtension ? try PanesExtension.installedPath() : nil,
             reviewExtensionPath: settings.piReviewExtension ? try ReviewExtension.installedPath() : nil,
             subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
+            childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
+            childEnvironment: settings.childEnvironment,
             // The namer loads whenever auto-naming is on: besides titling a
             // provisional agent from its opening prompt, it retitles on
             // /resume (pi session names are free; unnamed resumed sessions
@@ -962,6 +964,8 @@ final class TerminalSessionStore: ObservableObject {
             panesExtensionPath: settings.piPanesExtension ? try PanesExtension.installedPath() : nil,
             reviewExtensionPath: settings.piReviewExtension ? try ReviewExtension.installedPath() : nil,
             subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
+            childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
+            childEnvironment: settings.childEnvironment,
             namerExtensionPath: settings.autoNameAgents ? try NamerExtension.installedPath() : nil,
             needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
             isAutomation: isAutomation,

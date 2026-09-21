@@ -38,6 +38,8 @@ enum StatusExtension {
         panesExtensionPath: String?,
         reviewExtensionPath: String?,
         subagentsExtensionPath: String?,
+        childrenExtensionPath: String? = nil,
+        childEnvironment: [String: String] = [:],
         /// nil when auto-naming is off in Settings.
         namerExtensionPath: String? = nil,
         nativeExtensionPath: String? = nil,
@@ -70,7 +72,7 @@ enum StatusExtension {
             cmd += " --thinking \(shellQuoted(thinking.rawValue))"
         }
         cmd += " -e \(shellQuoted(extensionPath))"
-        for path in [themeExtensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, namerExtensionPath, nativeExtensionPath].compactMap({ $0 }) {
+        for path in [themeExtensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath, namerExtensionPath, nativeExtensionPath].compactMap({ $0 }) {
             cmd += " -e \(shellQuoted(path))"
         }
         if let initialPrompt, !initialPrompt.isEmpty {
@@ -91,6 +93,11 @@ enum StatusExtension {
         }
         if namerExtensionPath != nil && needsName {
             env["SHEPHERD_NEEDS_NAME"] = "1"
+        }
+        if let childrenExtensionPath {
+            env["SHEPHERD_NATIVE_CHILDREN"] = "1"
+            env["SHEPHERD_EXT_CHILDREN"] = childrenExtensionPath
+            env.merge(childEnvironment) { _, value in value }
         }
         if isAutomation {
             env["SHEPHERD_AUTOMATION"] = "1"
@@ -113,6 +120,8 @@ enum StatusExtension {
         panesExtensionPath: String?,
         reviewExtensionPath: String?,
         subagentsExtensionPath: String?,
+        childrenExtensionPath: String? = nil,
+        childEnvironment: [String: String] = [:],
         namerExtensionPath: String? = nil,
         needsName: Bool = false,
         isAutomation: Bool = false,
@@ -123,7 +132,7 @@ enum StatusExtension {
         if let model { cmd += " --model \(shellQuoted(model))" }
         if let thinking { cmd += " --thinking \(shellQuoted(thinking.rawValue))" }
         cmd += " -e \(shellQuoted(extensionPath))"
-        for path in [panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, namerExtensionPath].compactMap({ $0 }) {
+        for path in [panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath, namerExtensionPath].compactMap({ $0 }) {
             cmd += " -e \(shellQuoted(path))"
         }
         var env = [
@@ -132,6 +141,11 @@ enum StatusExtension {
             "SHEPHERD_EXT_STATUS": extensionPath,
         ]
         if let panesExtensionPath { env["SHEPHERD_EXT_PANES"] = panesExtensionPath }
+        if let childrenExtensionPath {
+            env["SHEPHERD_NATIVE_CHILDREN"] = "1"
+            env["SHEPHERD_EXT_CHILDREN"] = childrenExtensionPath
+            env.merge(childEnvironment) { _, value in value }
+        }
         if namerExtensionPath != nil && needsName { env["SHEPHERD_NEEDS_NAME"] = "1" }
         if isAutomation { env["SHEPHERD_AUTOMATION"] = "1" }
         if let model { env["SHEPHERD_MODEL"] = model }

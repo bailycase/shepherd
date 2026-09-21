@@ -178,7 +178,7 @@ struct SpaceSection: View {
             if !collapsed {
                 ForEach(agents) { agent in
                     let children = vm.children(of: agent.id)
-                    let showsSubagents = AgentRow.showsSubagents(for: agent.status)
+                    let showsSubagents = AgentRow.showsSubagents(for: agent.status, hasActiveChildren: children.contains { !$0.isTerminal || $0.needsAttention })
                     let childrenHidden = vm.collapsedChildren.contains(agent.id)
                     AgentRow(
                         agent: agent,
@@ -345,8 +345,8 @@ struct AgentRow: View {
         case none
     }
 
-    static func showsSubagents(for status: AgentStatus) -> Bool {
-        status != .done && status != .blocked
+    static func showsSubagents(for status: AgentStatus, hasActiveChildren: Bool = false) -> Bool {
+        hasActiveChildren || (status != .done && status != .blocked)
     }
 
     static func trailingAccessory(

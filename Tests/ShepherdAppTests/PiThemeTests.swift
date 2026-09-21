@@ -145,6 +145,11 @@ struct PiThemeTests {
             ("shepherd-panes.ts", PanesExtension.extensionSource),
             ("shepherd-review.ts", ReviewExtension.extensionSource),
             ("shepherd-subagents.ts", SubagentsExtension.extensionSource),
+            ("shepherd-children.ts", ChildrenExtension.extensionSource),
+            ("shepherd-children-config.ts", ChildrenExtension.configSource),
+            ("shepherd-children-ui.ts", ChildrenExtension.uiSource),
+            ("shepherd-workflow.ts", ChildrenExtension.workflowSource),
+            ("shepherd-missions.ts", ChildrenExtension.missionsSource),
             ("shepherd-inspect.mjs", InspectExtension.extensionSource),
         ]
 

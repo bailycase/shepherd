@@ -39,6 +39,12 @@ final class AppSettings: ObservableObject {
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
+        static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
+        static let childConcurrency = "shepherd.pi.children.concurrency"
+        static let childModel = "shepherd.pi.children.model"
+        static let childThinking = "shepherd.pi.children.thinking"
+        static let childContext = "shepherd.pi.children.context"
+        static let childScope = "shepherd.pi.children.scope"
         static let shellPath = "shepherd.pane.shell"
         static let uiDensity = "shepherd.ui.density"
         static let uiTextScale = "shepherd.ui.textScale"
@@ -58,7 +64,8 @@ final class AppSettings: ObservableObject {
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, defaultRuntime, shellPath,
-            piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension,
+            piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
+            childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth,
             remoteListenerEnabled, remoteListenerPort,
             autoUpdatePi, autoUpdateExtensions,
@@ -128,6 +135,38 @@ final class AppSettings: ObservableObject {
 
     @Published var piSubagentsExtension: Bool {
         didSet { store.set(piSubagentsExtension, forKey: Key.piSubagentsExtension) }
+    }
+
+    @Published var piNativeSubagents: Bool {
+        didSet { store.set(piNativeSubagents, forKey: Key.piNativeSubagents) }
+    }
+
+    @Published var childConcurrency: Int {
+        didSet { store.set(childConcurrency, forKey: Key.childConcurrency) }
+    }
+
+    @Published var childModel: String {
+        didSet { store.set(childModel, forKey: Key.childModel) }
+    }
+
+    @Published var childThinking: String {
+        didSet { store.set(childThinking, forKey: Key.childThinking) }
+    }
+
+    @Published var childContext: String {
+        didSet { store.set(childContext, forKey: Key.childContext) }
+    }
+
+    @Published var childScope: String {
+        didSet { store.set(childScope, forKey: Key.childScope) }
+    }
+
+    var childEnvironment: [String: String] {
+        ["SHEPHERD_CHILD_CONCURRENCY": String(min(16, max(1, childConcurrency))),
+         "SHEPHERD_CHILD_MODEL": childModel.trimmingCharacters(in: .whitespacesAndNewlines),
+         "SHEPHERD_CHILD_THINKING": childThinking,
+         "SHEPHERD_CHILD_CONTEXT": childContext,
+         "SHEPHERD_CHILD_SCOPE": childScope]
     }
 
     @Published var autoUpdatePi: Bool {
@@ -235,6 +274,15 @@ final class AppSettings: ObservableObject {
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
+        piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? false
+        childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
+        childModel = store.string(forKey: Key.childModel) ?? ""
+        let childReasoning = store.string(forKey: Key.childThinking) ?? ""
+        childThinking = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"].contains(childReasoning) ? childReasoning : ""
+        let context = store.string(forKey: Key.childContext) ?? "fresh"
+        childContext = ["fresh", "fork"].contains(context) ? context : "fresh"
+        let scope = store.string(forKey: Key.childScope) ?? "both"
+        childScope = ["user", "project", "both", "bundled"].contains(scope) ? scope : "both"
         autoUpdatePi = store.object(forKey: Key.autoUpdatePi) as? Bool ?? Defaults.autoUpdatePi
         // The former combined toggle ran both commands. Preserve that intent
         // when the new extension-specific preference has not been written.
@@ -315,6 +363,12 @@ final class AppSettings: ObservableObject {
         piPanesExtension = true
         piReviewExtension = true
         piSubagentsExtension = true
+        piNativeSubagents = false
+        childConcurrency = 4
+        childModel = ""
+        childThinking = ""
+        childContext = "fresh"
+        childScope = "both"
         autoUpdatePi = Defaults.autoUpdatePi
         autoUpdateExtensions = Defaults.autoUpdateExtensions
         shellPath = Defaults.shellPath
