@@ -231,10 +231,30 @@ for raw in sys.stdin.buffer:
             ui("notify", message="\x1b[31mred\x1b[0m alert", notifyType="warning")
             ui("setTitle", title="ignored")
             ui("setStatus", statusKey="huge", statusText="x" * 5000)
+            ui("setWidget", widgetKey="machine", widgetLines=['PI_SUBAGENT_ASYNC_JSON:{"kind":"snapshot"}'])
             emit({"type": "agent_settled"})
         elif message == "widgets-clear":
             ui("setStatus", statusKey="build")
             ui("setWidget", widgetKey="w")
+            emit({"type": "agent_settled"})
+        elif message == "subagent-noise":
+            # What pi-subagents leaves in the transcript: a tool call, its result, and a
+            # model-only custom message with the JSON completion report.
+            MESSAGES.append({"role": "user", "content": "spawn one"})
+            MESSAGES.append({"role": "assistant", "content": [
+                {"type": "text", "text": "Spawning."},
+                {"type": "toolCall", "id": "call_1", "name": "subagent", "arguments": {"action": "list"}}],
+                "stopReason": "toolUse"})
+            MESSAGES.append({"role": "toolResult", "toolCallId": "call_1", "toolName": "subagent",
+                             "content": [{"type": "text", "text": "Executable agents: worker"}], "isError": False})
+            MESSAGES.append({"role": "custom", "customType": "pi-subagents.completed", "display": False,
+                             "content": [{"type": "text", "text": "Background task completed: {\"ok\":true}"}]})
+            MESSAGES.append({"role": "custom", "customType": "note", "display": True,
+                             "content": [{"type": "text", "text": "A note the user should see"}]})
+            MESSAGES.append({"role": "assistant", "content": [{"type": "text", "text": "Done."}], "stopReason": "stop"})
+            STATE["messageCount"] = len(MESSAGES)
+            emit({"type": "agent_start"})
+            emit({"type": "agent_end", "messages": [], "willRetry": False})
             emit({"type": "agent_settled"})
         elif message == "fill":
             for i in range(120):

@@ -847,11 +847,15 @@ struct NativeToolGroup: View {
     let showTerminal: (() -> Void)?
 
     var body: some View {
+        // 40pt fits pi's builtins (read/edit/bash/grep); longer extension tool names widen the
+        // column for the whole group, capped so a silly name cannot eat the preview.
+        let longest = messages.compactMap(\.toolName).map(\.count).max() ?? 4
+        let nameWidth = min(120, max(40, CGFloat(longest) * 7.6 + 4))
         VStack(spacing: 0) {
             ForEach(Array(messages.enumerated()), id: \.element.entryID) { index, message in
                 if index > 0 { NativeTokens.borderSubtle.frame(height: 1) }
-                NativeToolRowView(row: NativeToolRow(message), duration: clock.toolDuration(message.toolCallID, now: clock.now),
-                                  showTerminal: showTerminal)
+                NativeToolRowView(row: NativeToolRow(message), nameColumnWidth: nameWidth,
+                                  duration: clock.toolDuration(message.toolCallID, now: clock.now), showTerminal: showTerminal)
             }
         }
         .background(NativeTokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
@@ -862,6 +866,8 @@ struct NativeToolGroup: View {
 
 struct NativeToolRowView: View {
     let row: NativeToolRow
+    /// Shared by every row in a group so previews align.
+    var nameColumnWidth: CGFloat = 40
     let duration: (text: String, live: Bool)?
     /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
     let showTerminal: (() -> Void)?
@@ -881,8 +887,10 @@ struct NativeToolRowView: View {
             } label: {
                 HStack(spacing: 10) {
                     glyph.frame(width: 14, height: 14)
+                    // Wide enough for pi's builtins and the common extension tools (subagent,
+                    // lumen_review); anything longer truncates rather than pushing the preview.
                     Text(row.name).font(NativeFonts.code).foregroundStyle(NativeTokens.textTertiary)
-                        .frame(width: 40, alignment: .leading).lineLimit(1)
+                        .frame(width: nameColumnWidth, alignment: .leading).lineLimit(1).truncationMode(.middle)
                     (Text(row.preview).foregroundStyle(NativeTokens.text) + Text(row.previewSuffix ?? "").foregroundStyle(NativeTokens.textMuted))
                         .font(NativeFonts.code).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 8)
