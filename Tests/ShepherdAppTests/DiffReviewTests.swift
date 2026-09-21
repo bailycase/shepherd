@@ -200,7 +200,13 @@ struct DiffReviewTests {
         let visibleID = AgentID()
         let backgroundPane = LeafPane(cwd: repo.path, agentID: backgroundID)
         let visiblePane = LeafPane(cwd: repo.path, agentID: visibleID)
-        let backgroundTab = Tab(spaceID: space.id, order: 0, layout: .leaf(backgroundPane))
+        let terminalLayout = PaneNode.split(
+            axis: .horizontal, ratio: 0.6,
+            first: .split(axis: .vertical, ratio: 0.4,
+                          first: .leaf(backgroundPane), second: .leaf(LeafPane(cwd: repo.path))),
+            second: .leaf(LeafPane(cwd: repo.path))
+        )
+        let backgroundTab = Tab(spaceID: space.id, order: 0, layout: terminalLayout)
         let visibleTab = Tab(spaceID: space.id, order: 1, layout: .leaf(visiblePane))
         let backgroundAgent = Agent(
             id: backgroundID,
@@ -241,7 +247,18 @@ struct DiffReviewTests {
             secondOutcome = $0
         }
         #expect(vm.reviewSessions.count == 1)
-        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.count == 2)
+        let dockedLayout = try #require(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout)
+        #expect(dockedLayout == .split(axis: .vertical, ratio: 0.5, first: terminalLayout,
+                                      second: .leaf(LeafPane(id: session.paneID, cwd: repo.path, isReview: true))))
+        #expect(dockedLayout.splitting(pane: session.paneID, axis: .vertical,
+                                     newPane: LeafPane(cwd: repo.path)) == nil)
+        let expanded = try #require(dockedLayout.splitting(pane: backgroundPane.id, axis: .horizontal,
+                                                         newPane: LeafPane(cwd: repo.path)))
+        if case .split(.vertical, _, _, .leaf(let right)) = expanded {
+            #expect(right.id == session.paneID)
+        } else {
+            Issue.record("Review must remain the full-height right dock after terminal splits")
+        }
         if case .submitted = try #require(secondOutcome) {} else {
             Issue.record("expected the duplicate request to be acknowledged, got \(String(describing: secondOutcome))")
         }
@@ -253,7 +270,7 @@ struct DiffReviewTests {
         }
         #expect(vm.selectedAgentID == visibleID)
         #expect(vm.focusedPaneID == visiblePane.id)
-        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.count == 2)
+        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.count == 4)
         #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaf(withID: session.paneID)?.isReview == true)
 
         // The pane opens instantly; the diff fills in asynchronously.
@@ -272,7 +289,7 @@ struct DiffReviewTests {
         vm.submitReview(session)
 
         #expect(vm.reviewSessions.isEmpty)
-        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.map(\.id) == [backgroundPane.id])
+        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout == terminalLayout)
     }
 
     @Test func explicitReviewTargetsRetargetOnePaneAndDefaultBackToAgentDirectory() async throws {
