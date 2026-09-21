@@ -208,15 +208,13 @@ extension ShepherdViewModel {
         }
 
         let reviewPane = LeafPane(cwd: cwdPath, isReview: true)
-        guard let layout = tab.layout.splitting(
-            pane: piPane.id,
+        // Dock beside the entire terminal layout, never inside an individual pane.
+        let layout = PaneNode.split(
             axis: .vertical,
-            newPane: reviewPane,
-            ratio: 0.5
-        ) else {
-            respond?(.failed(code: "split_failed", message: "could not split the agent pane"))
-            return
-        }
+            ratio: 0.5,
+            first: tab.layout,
+            second: .leaf(reviewPane)
+        )
 
         let visible = isVisibleTab(tab)
         setLayout(layout, forTab: tab.id)
