@@ -305,8 +305,7 @@ struct PaneLeafView: View {
         Group {
             if pane.isReview == true {
                 if let session = vm.reviewSessions[pane.id] {
-                    DiffReviewPane(session: session, isFocused: focused)
-                        .environment(vm)
+                    DiffReviewPane(vm: vm, session: session, isFocused: focused)
                 } else {
                     PanePlaceholder(text: "review unavailable")
                 }
@@ -422,7 +421,7 @@ private struct RemoteAgentPaneContent: View {
                     .id(tab.id)
                     if vm.remoteInspectingAgent != RemoteAgentRef(hostID: connection.id, agentID: agentID),
                        let review = vm.remoteReviews[RemoteAgentRef(hostID: connection.id, agentID: agentID)], !review.hostReviewPane {
-                        DiffReviewPane(session: review, isFocused: vm.remoteFocusedPaneID == review.paneID)
+                        DiffReviewPane(vm: vm, session: review, isFocused: vm.remoteFocusedPaneID == review.paneID)
                             .simultaneousGesture(TapGesture().onEnded { vm.remoteFocusedPaneID = review.paneID })
                     }
                     }
@@ -466,7 +465,7 @@ private struct RemotePaneLeafView: View {
         Group {
             if leaf.isReview == true, let target = vm.selectedRemoteAgent {
                 if let review = vm.remoteReviews[target], review.paneID == leaf.id {
-                    DiffReviewPane(session: review, isFocused: vm.remoteFocusedPaneID == leaf.id)
+                    DiffReviewPane(vm: vm, session: review, isFocused: vm.remoteFocusedPaneID == leaf.id)
                 } else {
                     PanePlaceholder(text: "loading host review…")
                         .task { vm.openRemoteHostReview(target, pane: leaf) }
