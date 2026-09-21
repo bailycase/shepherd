@@ -16,7 +16,6 @@ final class RPCThreadState {
     static let pageSize = 50
     static let dialogLimit = 8
     static let dialogBytes = 48 * 1024
-    static let notifyDuration: DispatchTimeInterval = .seconds(10)
     /// UI_LIMITS in the extension.
     static let widgetItems = 16
     static let widgetTextBytes = 4096
@@ -56,7 +55,6 @@ final class RPCThreadState {
     private var tools: [(id: String, value: NativeThreadMessage)] = []
     private var dialogs: [NativeThreadDialog] = []
     private var widgets: [(id: String, value: NativeThreadWidget)] = []
-    private var notifyToken = 0
     private var operations: [(id: String, operation: Operation)] = []
     private var projectionClipped = false
     private static let encoder = JSONEncoder()
@@ -462,15 +460,10 @@ final class RPCThreadState {
             if let text, Self.isMachineWidget(text) { setWidget(nil, key: key); return }
             setWidget(text.map { NativeThreadWidget(namespace: "pi", key: key, kind: .text, text: $0) }, key: key)
         case "notify":
-            let text = Self.stripANSI(request.message ?? "")
-            notifyToken += 1
-            let token = notifyToken
-            setWidget(text.isEmpty ? nil : NativeThreadWidget(namespace: "pi", key: "notify", kind: .status, title: request.notifyType, text: text), key: "notify")
-            queue.asyncAfter(deadline: .now() + Self.notifyDuration) { [weak self] in
-                guard let self, self.notifyToken == token else { return }
-                self.setWidget(nil, key: "notify")
-                self.commit()
-            }
+            // A TUI toast ("Ponytail loaded: full", "Task queued"). The native thread has no
+            // toast surface and the message rarely matters after the moment; dropping it beats
+            // parking it above the composer.
+            break
         default:
             // setStatus is the TUI footer slot (ponytail, goal, codex-fast park persistent
             // chrome there), not conversation content; setTitle / set_editor_text likewise.

@@ -287,28 +287,15 @@ struct RPCAgentThreadTests {
         defer { h.tearDown() }
         let s = try await h.ready()
         _ = try await h.send("widgets", from: s)
-        let shown = try await h.snapshot { ($0.widgets ?? []).count == 2 }
+        let shown = try await h.snapshot { ($0.widgets ?? []).count == 1 }
         let widgets = try #require(shown.widgets)
-        #expect(widgets.contains(NativeThreadWidget(namespace: "pi", key: "w", kind: .text, text: "Bold line\nlink")))
-        #expect(widgets.contains(NativeThreadWidget(namespace: "pi", key: "notify", kind: .status, title: "warning", text: "red alert")))
-        // setStatus is TUI footer chrome and never shows; neither does setTitle, nor a
-        // machine-readable widget payload meant for an extension's own TUI component.
-        #expect(!widgets.contains { $0.key == "build" || $0.key == "huge" || $0.key == "ignored" || $0.key == "machine" })
+        #expect(widgets == [NativeThreadWidget(namespace: "pi", key: "w", kind: .text, text: "Bold line\nlink")])
+        // setStatus is TUI footer chrome and notify is a toast: neither shows. Nor does
+        // setTitle, nor a machine-readable widget payload meant for an extension's own component.
 
         _ = try await h.send("widgets-clear", from: shown)
-        let cleared = try await h.snapshot { ($0.widgets ?? []).count == 1 }
-        #expect(cleared.widgets?.map(\.key) == ["notify"])
+        let cleared = try await h.snapshot { ($0.widgets ?? []).isEmpty }
         #expect(cleared.revision > shown.revision)
-    }
-
-    @Test func notifyExpiresOnItsOwn() async throws {
-        let h = try await Harness()
-        defer { h.tearDown() }
-        let s = try await h.ready()
-        _ = try await h.send("widgets", from: s)
-        _ = try await h.snapshot { ($0.widgets ?? []).contains { $0.key == "notify" } }
-        let gone = try await h.snapshot(timeout: .seconds(20)) { !($0.widgets ?? []).contains { $0.key == "notify" } }
-        #expect(gone.widgets?.map(\.key) == ["w"])
     }
 
     @Test func subagentNoiseStaysOutOfTheTranscript() async throws {

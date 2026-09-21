@@ -65,7 +65,8 @@ struct DesktopNativeThreadView: View {
                         }
                         // bb TimelineWorkingIndicator: one persistent tail row for the whole run.
                         if running, store.snapshot?.dialogs.isEmpty != false {
-                            NativeWorkingRow(label: nativeWorkingLabel(store.snapshot?.provisional ?? []))
+                            NativeWorkingRow(label: nativeWorkingLabel(store.snapshot?.provisional ?? []),
+                                             elapsed: clock.runElapsed(now: clock.now))
                         }
                         Color.clear.frame(height: 1).id("native-bottom")
                     }
@@ -84,13 +85,22 @@ struct DesktopNativeThreadView: View {
                 // scrollTo; detaching only ever happens on user scroll intent (see observe below).
                 .defaultScrollAnchor(follower.sticky ? .bottom : nil, for: .sizeChanges)
                 .onScrollGeometryChange(for: ScrollProbe.self) { geometry in
-                    ScrollProbe(distance: geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height,
-                                content: geometry.contentSize.height, container: geometry.containerSize.height)
+                    ScrollProbe(distance: geometry.contentSize.height + geometry.contentInsets.bottom
+                                    - geometry.contentOffset.y - geometry.containerSize.height,
+                                content: geometry.contentSize.height, container: geometry.containerSize.height,
+                                inset: geometry.contentInsets.bottom)
                 } action: { old, new in
                     observe(old: old, new: new)
                 }
-                .onScrollPhaseChange { _, phase in
-                    follower.userScrolling = phase == .interacting || phase == .decelerating
+                .onScrollPhaseChange { _, phase, context in
+                    // Only a live finger/wheel counts. Momentum (.decelerating) and programmatic
+                    // (.animating) phases are not intent; a gesture that ends at the bottom
+                    // re-sticks immediately via the geometry it lands on.
+                    follower.userScrolling = phase == .interacting
+                    if phase == .idle {
+                        let g = context.geometry
+                        follower.observe(distanceFromBottom: g.contentSize.height + g.contentInsets.bottom - g.contentOffset.y - g.containerSize.height)
+                    }
                 }
                 .onChange(of: store.snapshot) { _, snapshot in clock.observe(snapshot) }
                 .onChange(of: store.sentCount) { _, _ in
@@ -164,6 +174,8 @@ struct DesktopNativeThreadView: View {
         var distance: CGFloat
         var content: CGFloat
         var container: CGFloat
+        /// Bottom content inset (the floating composer); a change here is layout, not the user.
+        var inset: CGFloat
     }
 
     /// bb useStickyBottomScroll: a wheel tick counts as intent for 350 ms, phases cover drags.
@@ -171,10 +183,12 @@ struct DesktopNativeThreadView: View {
     /// did not change can only be the user (programmatic follow never scrolls up), so it counts
     /// as intent even when no wheel event was observed (pointer outside the view, keyboard).
     private func observe(old: ScrollProbe, new: ScrollProbe) {
-        let layoutChanged = new.content != old.content || new.container != old.container
+        let layoutChanged = new.content != old.content || new.container != old.container || new.inset != old.inset
         let movedUp = !layoutChanged && new.distance > old.distance + NativeScrollFollower.threshold
         let intent = movedUp || Date() <= wheelIntentUntil
-        let grew = new.content > old.content
+        // Content that fits the viewport has a negative "distance"; growth from there is
+        // layout, never the user, and must not register as unseen content.
+        let grew = new.content > old.content && old.distance > 0
         follower.observe(distanceFromBottom: new.distance, userIntent: intent, contentGrew: grew)
     }
 
@@ -237,6 +251,8 @@ struct NativeEmptyState: View {
 /// 28pt tail row while the agent runs: shimmering label, or a pulsing dot under Reduce Motion.
 struct NativeWorkingRow: View {
     let label: String
+    /// Elapsed run time, shown muted after the label so the composer needs no status line.
+    var elapsed: String? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 8) {
@@ -245,6 +261,9 @@ struct NativeWorkingRow: View {
                 Text(label).font(NativeFonts.caption).foregroundStyle(NativeTokens.textTertiary)
             } else {
                 NativeShimmerText(text: label)
+            }
+            if let elapsed {
+                Text(elapsed).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
             }
         }
         .frame(height: NativeMetrics.workingRowHeight)

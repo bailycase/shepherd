@@ -153,8 +153,8 @@ RPC agents, model and thinking chips, a delivery chip only while a turn runs) an
 28pt primary circle on the right that is Send, Stop (`dangerBg`) while running with an empty
 draft, or a spinner while pi accepts. Typing `/` at line start opens an inline command menu
 fed by pi's `get_commands` (RPC agents); there is no commands chip and no key-hint or working
-directory text. A 22pt status line above the card carries "Running <tool> · elapsed" or
-"Waiting for you · elapsed". Standard select, confirm, input, and editor questions replace the
+directory text. A 22pt status line above the card carries "Waiting for you · elapsed" while a question
+is pending; the working row in the thread carries the running state and elapsed time. Standard select, confirm, input, and editor questions replace the
 field inside the card (never in the scrolling thread, so a blocked agent is always answerable)
 with `Allow once` / `Deny` (Y/N while the panel holds focus) and exact bridge values. The
 thread echoes a sent message immediately, ends in one persistent shimmering working row while
