@@ -34,6 +34,7 @@ final class AppSettings: ObservableObject {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let autoNameAgents = "shepherd.agent.autoName"
+        static let defaultRuntime = "shepherd.agent.defaultRuntime"
         static let piThemeExtension = "shepherd.pi.extension.theme"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
@@ -56,7 +57,7 @@ final class AppSettings: ObservableObject {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, autoNameAgents, shellPath,
+            defaultThinking, autoNameAgents, defaultRuntime, shellPath,
             piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension,
             uiDensity, uiTextScale, sidebarWidth,
             remoteListenerEnabled, remoteListenerPort,
@@ -99,6 +100,12 @@ final class AppSettings: ObservableObject {
 
     @Published var defaultThinking: ThinkingLevel {
         didSet { store.set(defaultThinking.rawValue, forKey: Key.defaultThinking) }
+    }
+
+    /// How new agents run pi: a PTY + Ghostty terminal, or `pi --mode rpc` with
+    /// Shepherd as the only UI. Fixed per agent at creation (D1: terminal by default).
+    @Published var defaultRuntime: AgentRuntime {
+        didSet { store.set(defaultRuntime.rawValue, forKey: Key.defaultRuntime) }
     }
 
     /// Off means agents keep their provisional name (the truncated opening
@@ -223,6 +230,7 @@ final class AppSettings: ObservableObject {
         defaultThinking = store.string(forKey: Key.defaultThinking)
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
+        defaultRuntime = store.string(forKey: Key.defaultRuntime).flatMap(AgentRuntime.init(rawValue:)) ?? .terminal
         piThemeExtension = store.object(forKey: Key.piThemeExtension) as? Bool ?? true
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
@@ -281,7 +289,7 @@ final class AppSettings: ObservableObject {
     /// What a ⌘N agent and the New Agent sheet start with.
     var agentDefaults: AgentDefaults {
         let trimmed = defaultModel.trimmingCharacters(in: .whitespaces)
-        return AgentDefaults(model: trimmed.isEmpty ? nil : trimmed, thinking: defaultThinking)
+        return AgentDefaults(model: trimmed.isEmpty ? nil : trimmed, thinking: defaultThinking, runtime: defaultRuntime)
     }
 
     /// argv for a plain (non-agent) pane. Login shell so the user's PATH and
@@ -302,6 +310,7 @@ final class AppSettings: ObservableObject {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
+        defaultRuntime = .terminal
         piThemeExtension = true
         piPanesExtension = true
         piReviewExtension = true
@@ -373,6 +382,7 @@ final class AppSettings: ObservableObject {
 struct AgentDefaults: Equatable {
     var model: String?
     var thinking: ThinkingLevel
+    var runtime: AgentRuntime = .terminal
 
     static let piDefaults = AgentDefaults(model: nil, thinking: .medium)
 }

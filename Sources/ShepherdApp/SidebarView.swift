@@ -44,24 +44,25 @@ struct SidebarView: View {
                             )
                             if !vm.localMachineCollapsed {
                                 ForEach(vm.spaceTree, id: \.space.id) { group in
-                                    SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth + 1)
+                                    // The machine row is a section header (page 8), not a tree level:
+                                    // spaces stay flush with it and agents indent once.
+                                    SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth)
                                         .id(group.space.id)
                                 }
                             }
                             ForEach(vm.remoteHosts.connections) { connection in
-                                Rectangle().fill(Tokens.separator).frame(height: 1)
-                                    .padding(.vertical, 3)
                                 RemoteHostBlock(vm: vm, connection: connection)
+                                    .padding(.top, 6)
                             }
                         }
                         if let hint = vm.agentsHintText {
                             Text(hint)
-                                .font(Fonts.mono(10.5))
-                                .foregroundStyle(Tokens.textDim)
-                                .padding(EdgeInsets(top: 10, leading: 14, bottom: 3, trailing: 8))
+                                .font(NativeFonts.sidebarMeta)
+                                .foregroundStyle(NativeTokens.textMuted)
+                                .padding(EdgeInsets(top: 10, leading: NativeMetrics.sidebarPadding + 8, bottom: 3, trailing: NativeMetrics.sidebarPadding))
                         }
                     }
-                    .padding(.top, 2)
+                    .padding(.top, NativeMetrics.sidebarPadding)
                 }
                 // Keyboard navigation (⌘1–9, ⌘↑/↓, ⌃⇧digits) can land on a
                 // row scrolled out of view. Reveal it with a minimal animated
@@ -89,10 +90,11 @@ struct SidebarView: View {
 
             Spacer(minLength: 0)
 
+            // Bottom block: Automations and Shells behind a 1pt border (spec §3).
+            NativeTokens.border.frame(height: 1)
             AutomationsSection(vm: vm)
             ShellsSection(vm: vm)
-            // Breathing room under the last row now that the footer is gone.
-            Color.clear.frame(height: 8)
+            Color.clear.frame(height: NativeMetrics.sidebarPadding)
         }
     }
 }
@@ -106,20 +108,21 @@ struct WaitingSummary: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 7) {
                 Circle()
-                    .fill(Tokens.statusBlocked)
+                    .fill(NativeTokens.warning)
                     .frame(width: 7, height: 7)
                 Text("\(vm.blockedCount) waiting")
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.textSecondary)
+                    .font(NativeFonts.sidebarRow)
+                    .foregroundStyle(NativeTokens.warningText)
                 Spacer(minLength: 0)
             }
             Text(vm.waitingSummaryDetail)
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.textMetadata)
+                .font(NativeFonts.sidebarMeta)
+                .foregroundStyle(NativeTokens.textMuted)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
-        .padding(EdgeInsets(top: 2, leading: 14, bottom: 10, trailing: 10))
+        // Same inset as row content (sidebar padding + the row's own 8pt), so the dot lines up.
+        .padding(EdgeInsets(top: 2, leading: NativeMetrics.sidebarPadding + 8, bottom: 10, trailing: NativeMetrics.sidebarPadding + 8))
     }
 }
 
@@ -214,6 +217,11 @@ struct SpaceSection: View {
                     .sidebarDropTarget { payload in vm.dropAgent(payload: payload, on: agent.id) }
                     .contextMenu {
                         Button("Rename…") { vm.agentRenameTarget = agent.id }
+                        // D2: the runtime is fixed per process; switching restarts pi in the
+                        // same session. Confirms first (RootView sheet).
+                        Button(agent.runtime == .rpc ? "Restart as Terminal Agent…" : "Restart as Native (RPC) Agent…") {
+                            vm.runtimeRestartTarget = agent.id
+                        }
                         Divider()
                         if agent.worktreeBranch != nil {
                             Button("Finalize Worktree…") { vm.beginFinalizeWorktree(agent.id) }
@@ -253,7 +261,7 @@ struct SpaceSection: View {
                 }
             }
         }
-        .padding(.bottom, depth == 0 ? 6 : 0)
+        .padding(.bottom, depth == 0 ? 4 : 0)
     }
 }
 
@@ -272,51 +280,48 @@ struct SpaceHeaderRow: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 7) {
-            Text(collapsed ? "▸" : "▾")
-                .font(Fonts.mono(9))
-                .foregroundStyle(collapsed ? Tokens.textDim : Tokens.textTertiary)
-                .frame(width: 9)
-            // Roots are UPPERCASE section headers; nested projects read as
-            // paths: lowercase with a trailing slash (see DESIGN mock).
-            Text(depth == 0 ? name.uppercased() : name + "/")
-                .font(Fonts.mono(depth == 0 ? 10.5 : 11, .semibold))
-                .tracking(depth == 0 ? 0.74 : 0)
-                .foregroundStyle(collapsed ? Tokens.textDim : Tokens.textSecondary)
+        HStack(spacing: 8) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .rotationEffect(.degrees(collapsed ? 0 : 90))
+                .foregroundStyle(NativeTokens.textMuted)
+                .frame(width: 12)
+            Text(name)
+                .font(NativeFonts.sidebarRow)
+                .foregroundStyle(collapsed ? NativeTokens.textSecondary : NativeTokens.text)
                 .lineLimit(1)
             Spacer(minLength: 0)
             if blockedCount > 0 {
                 Text("\(blockedCount)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.statusBlocked)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.warningText)
             } else if agentCount > 0 {
                 Text("\(agentCount)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.textMuted)
             }
             if worktreeCount > 0 {
                 Text("⎇\(worktreeCount)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.textMuted)
                     .help("\(worktreeCount) worktree agent\(worktreeCount == 1 ? "" : "s")")
             }
             if active || hovering {
-                Text("+")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textTertiary)
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: onNewAgent)
-                    .help("New Agent in This Space")
+                SidebarPlusButton(help: "New Agent in This Space", action: onNewAgent)
             }
         }
-        .padding(.leading, 10 + CGFloat(depth) * 12)
-        .padding(.trailing, 14)
-        .frame(height: Metrics.rowHeight)
+        // Nesting indents the content, not the row: hover/selection fills always span the sidebar (page 8).
+        .padding(.leading, 8 + CGFloat(depth) * NativeMetrics.sidebarIndent)
+        .padding(.trailing, 8)
+        .frame(height: NativeMetrics.sidebarRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(active ? Tokens.rowActiveHeader : hovering ? Tokens.rowHover : Color.clear)
+        .background(hovering ? NativeTokens.bgHoverStrong : Color.clear, in: RoundedRectangle(cornerRadius: Radius.xs))
+        .padding(.horizontal, NativeMetrics.sidebarPadding)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: onToggle)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onToggle() }
     }
 }
 
@@ -365,34 +370,25 @@ struct AgentRow: View {
     }
 
     private var nameColor: Color {
-        if selected { return Tokens.textPrimary }
+        if selected { return NativeTokens.text }
         switch agent.status {
-        case .working, .blocked: return Tokens.textSecondary
-        case .done: return Tokens.textSecondary
-        case .idle: return Tokens.textDim
+        case .working, .blocked, .done: return NativeTokens.text
+        case .idle: return NativeTokens.textSecondary
         }
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            // A worktree agent reads as a sub-checkout of its space: a tree
-            // connector (with the extra indent below) into the status marker,
-            // then the branch glyph in front of its name.
-            if agent.worktreeBranch != nil {
-                Text("└─")
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(Tokens.textDim)
-            }
-            StatusMarker(status: agent.status)
+            SidebarStatusDot(status: agent.status, current: selected)
             if agent.worktreeBranch != nil {
                 Text("⎇")
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.textTertiary)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.textTertiary)
             }
             // Titles are generated, so they can run long (and a provisional
             // name is a truncated prompt): keep rows one line.
             Text(agent.name)
-                .font(Fonts.mono(12))
+                .font(NativeFonts.sidebarRow)
                 .foregroundStyle(nameColor)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -400,24 +396,28 @@ struct AgentRow: View {
             Spacer(minLength: 0)
             switch trailingAccessory {
             case .status(let status):
-                Text(status)
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(Tokens.statusColor(agent.status))
+                // The dot already says done; only "waiting" earns a word (page 8 right slot).
+                if status == "blocked" {
+                    Text("waiting")
+                        .font(NativeFonts.sidebarMeta)
+                        .foregroundStyle(NativeTokens.warningText)
+                        .fixedSize()
+                }
             case .badge(let badge):
                 Text("⌘\(badge)")
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(Tokens.textTertiary)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.textMuted)
                     .transition(.opacity)
             case .subagents(let count):
                 Button(action: { subAction?() }) {
                     Text("\(count) sub")
-                        .font(Fonts.mono(9.5))
-                        .foregroundStyle(subAttention ? Tokens.statusBlocked : Tokens.textMetadata)
+                        .font(NativeFonts.sidebarMeta)
+                        .foregroundStyle(subAttention ? NativeTokens.warningText : NativeTokens.textMuted)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(subAttention ? Tokens.statusBlocked.opacity(0.5) : Tokens.chipBorder, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Radius.sm)
+                                .stroke(subAttention ? NativeTokens.warning.opacity(0.5) : NativeTokens.borderStrong, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
@@ -432,21 +432,20 @@ struct AgentRow: View {
                 : .easeOut(duration: 0.12),
             value: badge
         )
-        .padding(.leading, 16 + CGFloat(depth) * 12 + (agent.worktreeBranch != nil ? 12 : 0))
-        .padding(.trailing, 10)
-        .frame(height: Metrics.rowHeight)
+        // Nested under the space header: one indent past the chevron puts the dot under the space
+        // name. The ⎇ glyph marks a worktree, no extra indent.
+        .padding(.leading, 8 + CGFloat(depth + 1) * NativeMetrics.sidebarIndent)
+        .padding(.trailing, 8)
+        .frame(height: NativeMetrics.sidebarRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-        .overlay(alignment: .leading) {
-            if selected {
-                Rectangle()
-                    .fill(Tokens.statusColor(agent.status))
-                    .frame(width: 2)
-            }
-        }
+        .background(selected ? NativeTokens.bgSelected : hovering ? NativeTokens.bgHoverStrong : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Radius.xs))
+        .padding(.horizontal, NativeMetrics.sidebarPadding)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
         .accessibilityElement(children: containsSubagentButton ? .contain : .ignore)
         .accessibilityLabel(
             "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(agent.status.rawValue), pi"
@@ -454,6 +453,35 @@ struct AgentRow: View {
     }
 }
 
+/// 7pt status dot per the spec's sidebar table: running → success, waiting →
+/// warning, idle → grey (accent when it's the open thread), done → grey.
+struct SidebarStatusDot: View {
+    let status: AgentStatus
+    var current = false
+    @State private var dimmed = false
+
+    var color: Color {
+        switch status {
+        case .working: return NativeTokens.success
+        case .blocked: return NativeTokens.warning
+        case .idle, .done: return current ? NativeTokens.accent : NativeTokens.dotIdle
+        }
+    }
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .opacity(status == .working && dimmed ? 0.45 : 1)
+            .onAppear {
+                guard status == .working,
+                      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    dimmed = true
+                }
+            }
+    }
+}
 
 /// Plain-text drop target for sidebar reordering: highlights while a drag
 /// hovers, hands the payload string to `perform`, and rejects (no flash, no
@@ -499,12 +527,11 @@ struct ChildRunRow: View {
     @State private var hovering = false
 
     private var dotColor: Color {
-        if child.needsAttention { return Tokens.statusBlocked }
+        if child.needsAttention { return NativeTokens.warning }
         switch child.state {
-        case "running", "queued": return Tokens.statusWorking
-        case "complete": return Tokens.statusDone
-        case "failed", "stopped", "rejected": return Tokens.statusBlocked
-        default: return Tokens.textDim
+        case "running", "queued": return NativeTokens.success
+        case "failed", "stopped", "rejected": return NativeTokens.danger
+        default: return selected ? NativeTokens.accent : NativeTokens.dotIdle
         }
     }
 
@@ -524,12 +551,12 @@ struct ChildRunRow: View {
         HStack(spacing: 8) {
             Circle()
                 .fill(dotColor)
-                .frame(width: 5, height: 5)
+                .frame(width: 7, height: 7)
             Text(child.label)
-                .font(Fonts.mono(11.5, selected ? .semibold : .regular))
+                .font(NativeFonts.sidebarRow)
                 .foregroundStyle(
-                    selected ? Tokens.textPrimary
-                        : child.isTerminal ? Tokens.textDim : Tokens.textSecondary
+                    selected ? NativeTokens.text
+                        : child.isTerminal ? NativeTokens.textSecondary : NativeTokens.text
                 )
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -538,23 +565,22 @@ struct ChildRunRow: View {
             // TimelineView keeps the elapsed age moving while the run lives.
             TimelineView(.periodic(from: .now, by: 1)) { _ in
                 Text(trailing)
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(child.needsAttention ? Tokens.statusBlocked : Tokens.textMetadata)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(child.needsAttention ? NativeTokens.warningText : NativeTokens.textMuted)
             }
         }
-        .padding(.leading, 30 + CGFloat(depth) * 12)
-        .padding(.trailing, 10)
-        .frame(height: Metrics.rowHeight)
+        .padding(.leading, 8 + CGFloat(depth + 2) * NativeMetrics.sidebarIndent)
+        .padding(.trailing, 8)
+        .frame(height: NativeMetrics.sidebarRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-        .overlay(alignment: .leading) {
-            if selected {
-                Rectangle().fill(dotColor).frame(width: 2)
-            }
-        }
+        .background(selected ? NativeTokens.bgSelected : hovering ? NativeTokens.bgHoverStrong : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Radius.xs))
+        .padding(.horizontal, NativeMetrics.sidebarPadding)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(child.label), subagent, \(child.state)")
     }
@@ -564,20 +590,34 @@ struct ChildRunRow: View {
 /// waiting summary) carries the state for accessibility.
 struct StatusMarker: View {
     let status: AgentStatus
-    @State private var dimmed = false
+    var body: some View { SidebarStatusDot(status: status) }
+}
+
+/// 11/600 caps section header with a trailing count (spec page 8).
+struct SidebarSectionHeader: View {
+    let title: String
+    var count: Int? = nil
+    var dimmed = false
+    var trailing: AnyView? = nil
 
     var body: some View {
-        Circle()
-            .fill(Tokens.statusColor(status))
-            .frame(width: 7, height: 7)
-            .opacity(status == .working && dimmed ? 0.45 : 1)
-            .onAppear {
-                guard status == .working,
-                      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    dimmed = true
-                }
+        HStack(spacing: 7) {
+            Text(title.uppercased())
+                .font(NativeFonts.sidebarSection)
+                .tracking(0.6)
+                .foregroundStyle(dimmed ? NativeTokens.textMuted : NativeTokens.textTertiary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if let count {
+                Text("\(count)")
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.textMuted)
             }
+            if let trailing { trailing }
+        }
+        .padding(.horizontal, 8)
+        .frame(height: NativeMetrics.sidebarRowHeight)
+        .padding(.horizontal, NativeMetrics.sidebarPadding)
     }
 }
 
@@ -591,19 +631,7 @@ struct AutomationsSection: View {
     var body: some View {
         let automations = vm.state.automations
         if !automations.isEmpty {
-            Rectangle().fill(Tokens.separator).frame(height: 1)
-            HStack(spacing: 7) {
-                Text("AUTOMATIONS")
-                    .font(Fonts.mono(10.5, .semibold))
-                    .tracking(0.74)
-                    .foregroundStyle(Tokens.textSecondary)
-                Spacer(minLength: 0)
-                Text("\(automations.count)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-            }
-            .padding(.horizontal, 14)
-            .frame(height: Metrics.rowHeight)
+            SidebarSectionHeader(title: "Automations", count: automations.count)
             ForEach(automations) { automation in
                 let agent = vm.automationAgent(automation)
                 AutomationRow(
@@ -645,30 +673,42 @@ struct AutomationRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            if let agent {
-                StatusMarker(status: agent.status)
+            if let agent, agent.status == .working || agent.status == .blocked {
+                SidebarStatusDot(status: agent.status, current: selected)
+            } else if agent != nil {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(NativeTokens.success)
+                    .frame(width: 7)
             } else {
                 Circle()
-                    .strokeBorder(Tokens.textDim, lineWidth: 1)
+                    .strokeBorder(NativeTokens.textDisabled, lineWidth: 1)
                     .frame(width: 7, height: 7)
             }
             Text(automation.name)
-                .font(Fonts.mono(12))
-                .foregroundStyle(selected ? Tokens.textPrimary : Tokens.textSecondary)
+                .font(NativeFonts.sidebarRow)
+                .foregroundStyle(selected ? NativeTokens.text : NativeTokens.text)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 0)
-            Text(agent.map { $0.status == .working ? "running" : $0.status.rawValue } ?? "stopped")
-                .font(Fonts.mono(10))
-                .foregroundStyle(Tokens.textMetadata)
+            Text(agent.map { $0.status == .working ? "running" : $0.status == .blocked ? "waiting" : "done" } ?? "stopped")
+                .font(NativeFonts.sidebarMeta)
+                .foregroundStyle(agent?.status == .blocked ? NativeTokens.warningText : NativeTokens.textMuted)
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
-        .frame(height: Metrics.rowHeight)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
+        .padding(.horizontal, 8)
+        .frame(height: NativeMetrics.sidebarRowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // A stopped automation has no click action (Run Now lives in the context menu),
+        // so it gets no hover fill and no button semantics.
+        .background(selected ? NativeTokens.bgSelected : hovering && agent != nil ? NativeTokens.bgHoverStrong : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Radius.xs))
+        .padding(.horizontal, NativeMetrics.sidebarPadding)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
+        .accessibilityAddTraits(agent != nil ? .isButton : [])
+        .accessibilityAction { action() }
+        .accessibilityLabel("\(automation.name), automation, \(agent.map { $0.status == .working ? "running" : $0.status == .blocked ? "waiting" : "done" } ?? "stopped")")
     }
 }
 
@@ -680,31 +720,14 @@ struct ShellsSection: View {
 
     var body: some View {
         let shells = vm.shellTabs
-        if !shells.isEmpty || hoveringHeader {
-            Rectangle().fill(Tokens.separator).frame(height: 1)
-        }
-        HStack(spacing: 7) {
-            Text("SHELLS")
-                .font(Fonts.mono(10.5, .semibold))
-                .tracking(0.74)
-                .foregroundStyle(shells.isEmpty ? Tokens.textDim : Tokens.textSecondary)
-            Spacer(minLength: 0)
-            if !shells.isEmpty {
-                Text("\(shells.count)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-            }
-            if hoveringHeader || shells.isEmpty {
-                Text("+")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textTertiary)
-                    .contentShape(Rectangle())
-                    .onTapGesture { vm.addShell() }
-                    .help("New Shell")
-            }
-        }
-        .padding(.horizontal, 14)
-        .frame(height: Metrics.rowHeight)
+        SidebarSectionHeader(
+            title: "Shells",
+            count: shells.isEmpty ? nil : shells.count,
+            dimmed: shells.isEmpty,
+            trailing: hoveringHeader || shells.isEmpty ? AnyView(
+                SidebarPlusButton(help: "New Shell") { vm.addShell() }
+            ) : nil
+        )
         .contentShape(Rectangle())
         .onHover { hoveringHeader = $0 }
         ForEach(vm.shellTabs) { shell in
@@ -741,24 +764,24 @@ struct ShellRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text("$")
-                .font(Fonts.mono(11))
-                .foregroundStyle(selected ? Tokens.focusAccent : Tokens.textDim)
+                .font(NativeFonts.sidebarRow)
+                .foregroundStyle(selected ? NativeTokens.accent : NativeTokens.textMuted)
             Text(label)
-                .font(Fonts.mono(12))
-                .foregroundStyle(selected ? Tokens.textPrimary : Tokens.textSecondary)
+                .font(NativeFonts.sidebarRow)
+                .foregroundStyle(selected ? NativeTokens.text : NativeTokens.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             if let process {
                 Text("· \(process)")
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.statusWorking)
+                    .font(NativeFonts.sidebarRow)
+                    .foregroundStyle(NativeTokens.successText)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
             if let badge {
                 Text(badge)
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(Tokens.textTertiary)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.textMuted)
                     .transition(.opacity)
             }
         }
@@ -768,23 +791,37 @@ struct ShellRow: View {
                 : .easeOut(duration: 0.12),
             value: badge
         )
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
-        .frame(height: Metrics.rowHeight)
+        .padding(.horizontal, 8)
+        .frame(height: NativeMetrics.sidebarRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-        .overlay(alignment: .leading) {
-            if selected {
-                Rectangle().fill(Tokens.focusAccent).frame(width: 2)
-            }
-        }
+        .background(selected ? NativeTokens.bgSelected : hovering ? NativeTokens.bgHoverStrong : Color.clear,
+                    in: RoundedRectangle(cornerRadius: Radius.xs))
+        .padding(.horizontal, NativeMetrics.sidebarPadding)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label), shell")
     }
 }
 
-/// `+ new space` row and the fleet dot-count strip.
-
+/// The 16pt "+" that appears on hover in section and space headers. A real button
+/// (label + button trait) rather than a tappable glyph, per spec §7.
+struct SidebarPlusButton: View {
+    let help: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(NativeTokens.textTertiary)
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}

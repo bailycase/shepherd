@@ -176,6 +176,7 @@ extension ShepherdViewModel {
             return
         }
         settings.resetToDefaults()
+        nativePresentation.defaultNative = false
         keybindings.resetAll()
         _ = themeManager.resetToDefault()
         themeManager.applyApplicationAppearance()
@@ -244,7 +245,8 @@ extension ShepherdViewModel {
             workingDirectory: space.path,
             model: defaults.model,
             thinking: defaults.thinking,
-            initialPrompt: nil
+            initialPrompt: nil,
+            runtime: defaults.runtime
         )
     }
 
@@ -319,7 +321,8 @@ extension ShepherdViewModel {
             nameIsFinal: !settings.autoNameAgents,
             worktreeBranch: config.worktreeBranch,
             worktreeBase: config.worktreeBase,
-            worktreePath: config.worktreePath
+            worktreePath: config.worktreePath,
+            runtime: config.runtime
         )
 
         // Reserve before addAgent broadcasts: the broadcast mounts the new
@@ -344,7 +347,8 @@ extension ShepherdViewModel {
         // Optimistic switch: the agent's pane appears immediately, wearing
         // the launch overlay, and the spawn continues behind it. Selection
         // must not wait on the grid wait + spawn + attach below.
-        beginAgentLaunch(agentID)
+        // RPC agents have no terminal to cover; the native view shows its own connecting state.
+        if config.runtime == .terminal { beginAgentLaunch(agentID) }
         if selectAfter {
             selectAgent(agentID)
             // A new agent is something you immediately talk to, so put the
@@ -365,6 +369,60 @@ extension ShepherdViewModel {
             throw AgentStartFailure(message: "session failed: \(error)")
         }
         return agentID
+    }
+
+    // MARK: Restart with another runtime (D2)
+
+    /// Stop the agent's pi and relaunch it as `runtime`, same agent id, same sidebar
+    /// position, same pi session (`--session-id`), so the transcript carries over.
+    /// Auxiliary panes respawn as shells like on relaunch. The confirm sheet lives in
+    /// RootView; this does the work.
+    func restartAgent(_ id: AgentID, as runtime: AgentRuntime) async throws {
+        guard var agent = state.agents.first(where: { $0.id == id }), agent.runtime != runtime,
+              let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+              let paneID = agent.paneID, let pane = tab.layout.leaf(withID: paneID) else {
+            throw AgentStartFailure(message: "agent is not restartable")
+        }
+        try verifyCheckoutAvailable(pane.cwd)
+        let reservation = UUID()
+        startingCheckoutUsers[reservation] = pane.cwd
+        defer { startingCheckoutUsers.removeValue(forKey: reservation) }
+
+        // Detach every pane view first: a detached session's exit retires it quietly
+        // instead of closing the pane and deleting the agent.
+        let doomed = tab.layout.leaves.compactMap { leaf in sessions.liveSession(forPane: leaf.id).map { (leaf.id, $0) } }
+        for leaf in tab.layout.leaves { sessions.detachPane(leaf.id) }
+        cancelReviews(for: id)
+        childRuns.clear(agent: id)
+        for (_, sessionID) in doomed { server.killSession(sessionID) }
+        let deadline = ContinuousClock.now + .seconds(10)
+        for (_, sessionID) in doomed {
+            while await server.sessionInfo(sessionID: sessionID)?.isAlive == true {
+                guard ContinuousClock.now < deadline else { throw AgentStartFailure(message: "the agent's processes did not stop") }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
+
+        agent.runtime = runtime
+        agent.status = .idle
+        sessions.reserveAgentPane(pane.id)
+        do {
+            try await server.updateAgent(agent)
+        } catch {
+            sessions.unreserveAgentPane(pane.id)
+            throw AgentStartFailure(message: "server rejected agent: \(error)")
+        }
+        let canonical = server.state
+        sessions.stateDidChange(canonical)
+        state = canonical
+        nativePresentation.prune(liveAgents: Set(state.agents.map(\.id)))
+        if runtime == .terminal { beginAgentLaunch(id) }
+        do {
+            try await sessions.createAgentSession(pane: pane, tab: tab, agent: agent, initialPrompt: nil)
+        } catch {
+            endAgentLaunch(id)
+            throw AgentStartFailure(message: "session failed: \(error)")
+        }
     }
 
     // MARK: Launch overlay

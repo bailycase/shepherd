@@ -101,6 +101,43 @@ enum StatusExtension {
         return SessionCommand(argv: ["/bin/zsh", "-l", "-c", cmd], env: env)
     }
 
+    /// argv + env for an RPC agent: `pi --mode rpc` through the same login shell, same
+    /// socket env, but no theme and no native extension (there is no TUI to theme or read).
+    /// The opening prompt is not passed positionally; RPC mode ignores positional messages,
+    /// so the app sends it as the first `prompt` command instead.
+    static func rpcCommand(
+        agentID: AgentID,
+        piSessionID: String,
+        socketPath: String,
+        extensionPath: String,
+        panesExtensionPath: String?,
+        reviewExtensionPath: String?,
+        subagentsExtensionPath: String?,
+        namerExtensionPath: String? = nil,
+        needsName: Bool = false,
+        isAutomation: Bool = false,
+        model: String?,
+        thinking: ThinkingLevel?
+    ) -> SessionCommand {
+        var cmd = "exec pi --mode rpc --session-id \(shellQuoted(piSessionID))"
+        if let model { cmd += " --model \(shellQuoted(model))" }
+        if let thinking { cmd += " --thinking \(shellQuoted(thinking.rawValue))" }
+        cmd += " -e \(shellQuoted(extensionPath))"
+        for path in [panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, namerExtensionPath].compactMap({ $0 }) {
+            cmd += " -e \(shellQuoted(path))"
+        }
+        var env = [
+            "SHEPHERD_AGENT_ID": agentID.rawValue,
+            "SHEPHERD_SOCKET": socketPath,
+            "SHEPHERD_EXT_STATUS": extensionPath,
+        ]
+        if let panesExtensionPath { env["SHEPHERD_EXT_PANES"] = panesExtensionPath }
+        if namerExtensionPath != nil && needsName { env["SHEPHERD_NEEDS_NAME"] = "1" }
+        if isAutomation { env["SHEPHERD_AUTOMATION"] = "1" }
+        if let model { env["SHEPHERD_MODEL"] = model }
+        return SessionCommand(argv: ["/bin/zsh", "-l", "-c", cmd], env: env)
+    }
+
     /// Single-quote wrapping with '"'"' escaping for embedded single quotes.
     private static func shellQuoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"

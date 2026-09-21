@@ -1,0 +1,56 @@
+This Mac
+ 19
+ Shepherd
+ 8
+ Plan shepherd extensions
+ Dock review pane
+ Fix remote subagent deletion
+ Fix terminal output buffer
+ Investigate SwiftUI live preview
+ Fix remote nightly
+ Fix agent deletion workflow
+ Horizon
+ Unreachable
+ Remote agents
+ Automations
+ 1
+ Merge PR #24 after CI
+ done
+ Shells
+ 1
+ $~ · pi
+ Shepherd
+ /
+ Investigate SwiftUI live preview capabilities
+ Needs approval
+ 18 turns · 46k ctx
+ Terminal
+ Native
+ Focused regression test and Mac Dev build passed. Slash commands and image drops still need native bridge support; they remain available in Terminal mode.
+ 2:44 PM · 3m 12s · 6 tool calls
+ Looks good. Commit it and push to main.
+ 2:47 PM
+ Thought for 2s
+ Committing the three changed files with a message describing the label removal, then pushing.
+ bash
+ git add -A && git commit -m "Remove speaker labels; show tool previews"
+ 3 files changed
+ 0.4s
+ bash
+ git push origin main
+ needs approval
+ Shepherd wants to push to a remote
+ git push origin main
+ Allow once
+ Always for this agent
+ Deny
+ Y / N
+ Message the agent
+ /commands
+ claude-opus
+ Waiting for you · 0m 21s
+ ⌘. stop
+ ⌘N new agent
+ ⌘D split
+ ⌘⇧B pane
+ Working in ~/dev/shepherd

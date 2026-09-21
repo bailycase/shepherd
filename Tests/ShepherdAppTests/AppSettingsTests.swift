@@ -99,11 +99,14 @@ struct AppSettingsTests {
         settings.autoUpdatePi = true
         settings.autoUpdateExtensions = true
         settings.worktreeGeneratePRDescription = false
+        settings.defaultRuntime = .rpc
+        #expect(AppSettings(store: store).defaultRuntime == .rpc)
 
         settings.resetToDefaults()
 
         #expect(settings.terminalFontSize == AppSettings.Defaults.terminalFontSize)
         #expect(settings.defaultModel.isEmpty)
+        #expect(settings.defaultRuntime == .terminal)
         #expect(settings.autoNameAgents)
         #expect(settings.piThemeExtension)
         #expect(settings.piPanesExtension)
@@ -190,12 +193,19 @@ struct SettingsDrivenAgentTests {
     }
 
     @Test func quickCreateInheritsTheConfiguredDefaults() {
-        let defaults = AgentDefaults(model: "anthropic/claude-sonnet-4", thinking: .high)
+        let defaults = AgentDefaults(model: "anthropic/claude-sonnet-4", thinking: .high, runtime: .rpc)
         let config = ShepherdViewModel.quickAgentConfig(for: space, defaults: defaults)
 
         #expect(config.model == "anthropic/claude-sonnet-4")
         #expect(config.thinking == .high)
+        #expect(config.runtime == .rpc)
         #expect(config.workingDirectory == space.path)
+
+        // Settings ▸ Agents ▸ Runtime feeds ⌘N through agentDefaults; terminal unless chosen.
+        let settings = AppSettings(store: UserDefaults(suiteName: "settings-runtime-\(UUID())")!)
+        #expect(ShepherdViewModel.quickAgentConfig(for: space, defaults: settings.agentDefaults).runtime == .terminal)
+        settings.defaultRuntime = .rpc
+        #expect(ShepherdViewModel.quickAgentConfig(for: space, defaults: settings.agentDefaults).runtime == .rpc)
     }
 
     /// Without configured defaults, ⌘N keeps its original contract: pi's own
@@ -204,6 +214,7 @@ struct SettingsDrivenAgentTests {
         let config = ShepherdViewModel.quickAgentConfig(for: space)
         #expect(config.model == nil)
         #expect(config.thinking == .medium)
+        #expect(config.runtime == .terminal)
     }
 
     @Test func namerRunsOnlyForProvisionalNamesWithAutoNamingOn() {

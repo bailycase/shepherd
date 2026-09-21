@@ -15,6 +15,29 @@ struct HostSettingsView: View {
         let tokens = MobileTokens(scheme: scheme)
         NavigationStack {
             Form {
+                if connection.configuration != nil {
+                    Section {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(connection.phase == .connected ? tokens.successText : tokens.textSecondary)
+                                .frame(width: MobileTokens.statusSize, height: MobileTokens.statusSize)
+                                .accessibilityHidden(true)
+                            Text(connection.phase.label)
+                                .font(MobileTokens.caption)
+                                .foregroundStyle(connection.phase == .connected ? tokens.successText : tokens.textSecondary)
+                            Spacer()
+                            if connection.phase == .connecting { ProgressView() }
+                        }
+                        .accessibilityElement(children: .combine)
+                        if connection.phase == .connecting {
+                            Button("Cancel connection") { connection.stop() }
+                        } else if connection.phase != .connected {
+                            Button("Reconnect", systemImage: "arrow.clockwise") { connection.reconnect() }
+                        }
+                    } header: {
+                        Text("CONNECTION").font(MobileTokens.caption).foregroundStyle(tokens.textSecondary)
+                    }
+                }
                 Section {
                     LabeledContent("Name") {
                         TextField("My Mac", text: $name).multilineTextAlignment(.trailing)
@@ -30,17 +53,18 @@ struct HostSettingsView: View {
                     SecureField("Bearer token", text: $token)
                         .privacySensitive().font(MobileTokens.mono)
                 } header: {
-                    Text("MAC HOST").font(MobileTokens.caption)
+                    Text("MAC HOST").font(MobileTokens.caption).foregroundStyle(tokens.textSecondary)
                 } footer: {
                     Text("Turn on Remote in Shepherd ▸ Settings on your Mac and copy its token. Keep Shepherd running there.")
+                        .foregroundStyle(tokens.textSecondary)
                 }
                 Section {
                     Label("Trusted LAN or VPN only. There is no TLS, so the token and thread travel unencrypted. Never expose the port to the internet.", systemImage: "lock.open")
                     Label("The token stays in this device's Keychain; only name, address, and port are saved in preferences.", systemImage: "key")
                 }
                 .font(MobileTokens.caption)
-                .foregroundStyle(tokens.secondary)
-                .listRowBackground(tokens.sidebar)
+                .foregroundStyle(tokens.textSecondary)
+                .listRowBackground(tokens.raised)
                 if connection.configuration != nil {
                     Section {
                         Button("Forget this host", role: .destructive) { confirmingForget = true }
@@ -50,12 +74,12 @@ struct HostSettingsView: View {
             }
             .textInputAutocapitalization(.never)
             .autocorrectionDisabled()
-            .foregroundStyle(tokens.primary)
+            .foregroundStyle(tokens.text)
             .scrollContentBackground(.hidden)
-            .background(tokens.background)
-            .navigationTitle("Host Connection")
+            .background(tokens.canvas)
+            .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(tokens.sidebar, for: .navigationBar)
+            .toolbarBackground(tokens.canvas, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -67,10 +67,14 @@ workspace sits slightly lighter, and the framed pane floats on it.
 └──────────────┴──────────────────────────────────────────────┘
 ```
 
-- **Sidebar**: flat `sidebarBg`. Traffic lights on the sidebar surface · waiting summary ·
-  the machine/space tree (agents nested under collapsible spaces, status dot + title per row) ·
-  AUTOMATIONS and SHELLS sections. No tabs, no scope switching — the tree is the only
-  persistent navigation.
+- **Sidebar**: flat `bg.canvas` from the chat spec (`NativeTokens`). Traffic lights on the
+  sidebar surface · waiting summary · the machine/space tree (agents nested under collapsible
+  spaces, 7pt status dot + title per 23pt density-scaled row, 12pt indent per level,
+  `bg.selected` for the active row, `bg.hoverStrong` on hover) · AUTOMATIONS and SHELLS
+  sections with 10.5pt mono uppercase headings. The spec's 32pt rows and 22pt indent were
+  tried and rejected: a real fleet lost a third of the tree. Rows are hover/click views carrying button traits and accessibility
+  actions; the hover-only "+" glyphs are real buttons with labels. No tabs, no scope
+  switching — the tree is the only persistent navigation.
 - **Header**: `space / agent` breadcrumb, working directory in metadata color, trailing
   `status ⟨age⟩` in the status color.
 - **Pane frame**: the workspace's single framed region, inset ~2pt, 1px border (`paneBorder`
@@ -80,14 +84,17 @@ workspace sits slightly lighter, and the framed pane floats on it.
 - **Settings**: its own window, shaped like the main one — category list on `sidebarBg`,
   grouped rows over `workspaceBg`.
 
-**Metrics** (`DesignTokens.swift` → `Metrics`): sidebar 230 default (190–340) · traffic lights
-38 · header 42 · status line 28 · row height 23 · pane inset 2 · row radius 0 · min window
-1040×640. Spacing scale 2/5/8/12/14/20. Chrome scales with the density setting (0.8–1.5).
+**Metrics** (`DesignTokens.swift` → `Metrics` for terminal chrome, `NativeMetrics` for the
+sidebar and native thread): sidebar 230 default (190–340; the spec's fixed 256 and ⌘⇧S collapse
+are not implemented) · traffic lights 38 · terminal header 42, native header 52 · status line
+28 · sidebar row 23 (density-scaled) · pane inset 2 · min window 1040×640. Spacing scale 2/5/8/12/14/20.
+Terminal chrome scales with the density setting (0.8–1.5).
 
-**Typography** (`Fonts`): SF Mono for everything — chrome, rows, headers, hints, terminals.
-There is no proportional text in the app. Rows 12, child rows 11.5, section headings 10.5
-semibold uppercase with +0.07em tracking, hints 11. Chrome fonts scale with the UI text scale
-setting; terminal font size is its own setting.
+**Typography**: terminal chrome (`Fonts`) is SF Mono — status line, pane frame, hints,
+terminals. The sidebar and native thread (`NativeFonts`) use the spec's ramp with system
+faces: breadcrumb label 13/500, prose body 15/1.6, code 12.5 mono, metadata micro 11 mono.
+The sidebar keeps the compact mono ramp (rows 12, meta 10.5, headings 10.5 semibold caps). Chrome fonts scale with the UI
+text scale setting; terminal font size is its own setting.
 
 ## Mobile exception: native iOS client
 
@@ -100,19 +107,66 @@ the app never substitutes sample output or nonfunctional controls.
 A `NavigationStack` moves from a host's agent list to one thread. Connection settings use a
 native sheet. This replaces the desktop sidebar/workspace split on mobile; there are no desktop
 minimum dimensions. Lists and thread content fill the available width and respect safe areas,
-Dynamic Type, VoiceOver, and native touch targets. Mobile uses the system text face for readable
-chat prose and headings; code, tool output, and metadata stay monospace. User turns have a quiet
-Basalt fill, assistant prose stays unboxed, and tool/thinking rows collapse. Standard questions
-have a restrained status-colored outline and native buttons. The composer is pinned above the
-keyboard with separate send, stop, and delivery controls. These mobile-only exceptions do not
-change the desktop's flat terminal chrome.
+Dynamic Type, VoiceOver, and 44pt touch targets. Mobile follows the native chat spec
+(`docs/design-spec/`): prose is the system sans face at 16/1.5, code, tool rows, and metadata
+are system mono. The Agents list uses 56pt rows (title plus a one-line mono status), a host
+section header with a connection pill, and a dimmed Unreachable card with Retry. A thread's
+header is the title with a dot-and-word status line beneath. User turns are trailing bubbles on
+`bg.bubble` (radius 14 with a 4pt bottom-trailing corner); assistant prose stays unboxed;
+consecutive tool calls collapse into one 44pt summary row ("6 tool calls · read 1 · edit 3 ·
+bash 2") that expands to 40pt rows, and bash output pushes a full-screen view. Standard
+questions are a bottom sheet with a grabber and stacked 50pt actions (`Allow once` primary,
+`Deny` in danger text, `Cancel` ghost), answerable one-handed. The composer is a pill field
+(radius 22, grows to five lines) with the Send circle inside it; Send becomes Stop while the
+agent runs and a "Waiting for you" slot appears while a question is pending. These mobile-only
+exceptions do not change the desktop's flat terminal chrome.
 
-Mobile's local `MobileTokens` owns Basalt dark/light colors, adaptive fonts, and spacing
-without importing the Mac theme module. Metadata uses the higher-contrast secondary text ramp.
-Status remains a dot plus a word. Connection errors stay in the host section; cached rows are
-labeled last known and cannot open while disconnected. Setup explicitly requires a trusted LAN
+Mobile's local `MobileTokens` mirrors the spec palette (same hex as the desktop `NativeTokens`)
+without importing the Mac theme module. Status remains a dot plus a word. Host configuration, connection status, errors, and reconnect
+controls live in the Settings sheet, reached through the fleet's gear button. The main screen
+contains only agents and brief empty-state guidance; cached rows are labeled last known and
+cannot open while disconnected. Setup explicitly requires a trusted LAN
 or VPN because the bearer-token transport has no TLS. Backgrounding disconnects the client;
 foregrounding reconnects and fetches current state without stopping the host's agents.
+
+## Desktop exception: optional native conversation
+
+Terminal is the shipped default; Settings ▸ Agents ▸ Default View switches it to Native for
+every agent on this Mac. A local agent's primary pane can still be flipped the other way
+through the header's Terminal/Native segmented control or the Agent menu; that override is
+per-agent and device-local, and changing the default later leaves overrides alone. Both presentations use the same running pi process. The terminal
+stays mounted, with drawing, focus, drops, interaction, and accessibility suppressed while
+native content is visible. Switching sends nothing and cancels nothing. Normal cold parking
+still applies when a layout is hidden.
+
+Native content follows the chat spec in `docs/design-spec/` through `NativeTokens`,
+`NativeFonts`, `NativeMetrics`, and `Radius`, not the terminal `Tokens`: a 52pt header
+(breadcrumb · status pill · turn count · Terminal/Native switch · options), a 760pt content
+column with 32pt gutters and 680pt prose, system sans at 15/1.6 for prose and system mono for
+code and agent-touched text (the spec's IBM Plex Sans and JetBrains Mono are not bundled).
+User turns are trailing bubbles on `bg.bubble` with a 12pt radius and one 4pt corner; there are
+no speaker labels. Tool calls are 36pt rows (14pt status glyph · tool name · command or path
+· result · duration · chevron) that expand only when there is saved output; failed rows expand
+on `dangerBg`. Semantic `.text` colors sit only on their matching `.bg` or on `bgSurface`.
+The composer is a raised 12pt-radius card: the field on top, one stable row beneath (attach for
+RPC agents, model and thinking chips, a delivery chip only while a turn runs) and a single
+28pt primary circle on the right that is Send, Stop (`dangerBg`) while running with an empty
+draft, or a spinner while pi accepts. Typing `/` at line start opens an inline command menu
+fed by pi's `get_commands` (RPC agents); there is no commands chip and no key-hint or working
+directory text. A 22pt status line above the card carries "Running <tool> · elapsed" or
+"Waiting for you · elapsed". Standard select, confirm, input, and editor questions replace the
+field inside the card (never in the scrolling thread, so a blocked agent is always answerable)
+with `Allow once` / `Deny` (Y/N while the panel holds focus) and exact bridge values. The
+thread echoes a sent message immediately, ends in one persistent shimmering working row while
+the agent runs, follows the tail until the user scrolls (a "↓ Jump to latest" pill returns),
+and sending re-attaches to the tail. The composer is a bottom safe-area inset on the scroll view, never padding inside the content, so the thread always ends at its last turn. Unsupported pi versions, external editors, custom TUI extensions, images, and clipped
+output have explicit Terminal fallback. Native prompts are literal text, not slash commands.
+Shepherd-aware extensions may explicitly publish keyed, display-only status captions and
+plain-text panels through the versioned native UI event bus. Both native clients use the same
+bounded items. The app chooses all fonts and layout; panels are plain text above the composer.
+No arbitrary extension widgets, buttons, callbacks, colors, or layout trees are supported. Shells, auxiliary panes, review, inspectors,
+remote agents, and terminal chrome keep their existing behavior. The new presentation actions
+have menu entries but no default keyboard shortcut or advertised chord.
 
 ## Status language
 

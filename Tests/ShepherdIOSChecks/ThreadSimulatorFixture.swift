@@ -22,11 +22,17 @@ struct ThreadSimulatorFixture: App {
 
     var body: some Scene {
         WindowGroup {
-            NavigationStack {
-                if let agent = connection.state.agents.first {
-                    ThreadView(connection: connection, agentID: agent.id)
+            Group {
+                if ProcessInfo.processInfo.environment["FIXTURE_SCREEN"] == "fleet" {
+                    FleetView(connection: connection)
                 } else {
-                    Text(connection.phase.label)
+                    NavigationStack {
+                        if let agent = connection.state.agents.first {
+                            ThreadView(connection: connection, agentID: agent.id)
+                        } else {
+                            Text(connection.phase.label)
+                        }
+                    }
                 }
             }
                         .preferredColorScheme(ProcessInfo.processInfo.environment["FIXTURE_SCHEME"] == "light" ? .light : .dark)

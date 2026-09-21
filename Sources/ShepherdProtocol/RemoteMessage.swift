@@ -11,6 +11,8 @@ public enum RemoteProtocol {
     public static let uploadCapability = "session.upload.v1"
     public static let creationOptionsCapability = "agent.creation.options.v1"
     public static let nativeThreadCapability = "native.thread.v1"
+    /// v2: snapshot runtime/stats/commands, setModel/setThinking, send images.
+    public static let nativeThreadV2Capability = "native.thread.v2"
     public static let version = 1
     public static let pasteCapability = "session.paste.v1"
     public static let paneControlCapability = "pane.control.v1"
@@ -18,7 +20,7 @@ public enum RemoteProtocol {
     public static let worktreeActionsCapability = "agent.worktree.v1"
     public static let worktreeSetupCapability = "agent.worktree.setup.v1"
     public static let agentInspectionCapability = "agent.inspection.v1"
-    public static let capabilities = [nativeThreadCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)

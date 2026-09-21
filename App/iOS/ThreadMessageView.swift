@@ -1,120 +1,264 @@
 import SwiftUI
 import ShepherdProtocol
+import ShepherdRemote
 
-struct ThreadMessageView: View {
-    let message: NativeThreadMessage
+// Turn rendering per docs/design-spec page 5 + page 9 §4/§8. Derivations (turns, items,
+// tool rows, group summary, head truncation) come from ShepherdRemote and are shared with
+// the desktop; this file only lays them out at phone sizes.
+
+/// User turn: trailing bubble, 15pt, radius 14 with a 4 bottom-trailing corner. No speaker label.
+struct MobileUserTurn: View {
+    let messages: [NativeThreadMessage]
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         let tokens = MobileTokens(scheme: scheme)
-        VStack(alignment: .leading, spacing: MobileTokens.spacing) {
-            if message.toolName != nil || message.role == "toolResult" {
-                tool(tokens)
-            } else if message.role == "user" {
-                blocks
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(tokens.raised, in: RoundedRectangle(cornerRadius: MobileTokens.radius))
-                    .accessibilityElement(children: .contain)
-            } else {
-                if message.role != "assistant" {
-                    Text(message.role.replacingOccurrences(of: "_", with: " "))
-                        .font(MobileTokens.caption)
-                        .foregroundStyle(tokens.secondary)
+        VStack(alignment: .trailing, spacing: 6) {
+            ForEach(messages, id: \.entryID) { message in
+                VStack(alignment: .leading, spacing: MobileTokens.spacing) {
+                    ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
+                        if block.kind == .unsupportedImage {
+                            Text("Image · view on your Mac").font(MobileTokens.caption12).foregroundStyle(tokens.textMuted)
+                        } else {
+                            Text(block.text).font(MobileTokens.bubble).lineSpacing(MobileTokens.bubbleLeading).textSelection(.enabled)
+                        }
+                    }
                 }
-                blocks
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(tokens.bubble, in: UnevenRoundedRectangle(
+                    topLeadingRadius: MobileTokens.bubbleRadius, bottomLeadingRadius: MobileTokens.bubbleRadius,
+                    bottomTrailingRadius: MobileTokens.bubbleCorner, topTrailingRadius: MobileTokens.bubbleRadius))
+                .frame(maxWidth: 300, alignment: .trailing)
             }
-            if message.truncated {
-                Text("output truncated · full content on your Mac")
-                    .font(MobileTokens.caption)
-                    .foregroundStyle(tokens.secondary)
-            }
+            // The bridge carries no timestamps, so the micro line under the bubble stays empty.
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func tool(_ tokens: MobileTokens) -> some View {
-        let name = message.toolName ?? "result"
-        let failed = message.isError == true
-        return Collapsible(label: "Tool \(name)\(failed ? ", error" : "")") {
-            HStack(spacing: 6) {
-                Image(systemName: failed ? "exclamationmark.triangle" : "wrench.and.screwdriver")
-                    .foregroundStyle(failed ? tokens.danger : tokens.secondary)
-                Text(name).foregroundStyle(tokens.primary)
-                if let status = message.status, status != "complete" || failed {
-                    Text(failed ? "error" : status).foregroundStyle(failed ? tokens.danger : tokens.secondary)
-                }
-            }
-        } content: {
-            if let arguments = message.argumentsText { CodeBlock(text: arguments) }
-            ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
-                if block.kind == .unsupportedImage { imagePlaceholder(tokens) } else { CodeBlock(text: block.text) }
-            }
-        }
-    }
-
-    @ViewBuilder private var blocks: some View {
-        let tokens = MobileTokens(scheme: scheme)
-        ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
-            switch block.kind {
-            case .text: MarkdownText(text: block.text)
-            case .thinking:
-                Collapsible(label: "thinking") {
-                    Label("thinking", systemImage: "brain").foregroundStyle(tokens.secondary)
-                } content: {
-                    Text(block.text)
-                        .font(MobileTokens.caption)
-                        .foregroundStyle(tokens.secondary)
-                        .textSelection(.enabled)
-                }
-            case .unsupportedImage: imagePlaceholder(tokens)
-            }
-        }
-    }
-
-    private func imagePlaceholder(_ tokens: MobileTokens) -> some View {
-        Label("image · view on your Mac", systemImage: "photo")
-            .font(MobileTokens.caption)
-            .foregroundStyle(tokens.secondary)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("You")
     }
 }
 
-// Collapsed by default; DisclosureGroup keeps phantom height inside a LazyVStack, so this is explicit.
-struct Collapsible<Label: View, Content: View>: View {
-    let label: String
-    @ViewBuilder let header: () -> Label
-    @ViewBuilder let content: () -> Content
+/// Agent turn: thinking disclosure, prose, collapsed tool groups, footer once settled.
+struct MobileAgentTurn: View {
+    let messages: [NativeThreadMessage]
+    let running: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let tokens = MobileTokens(scheme: scheme)
+        let items = nativeTurnItems(messages)
+        let streaming = running && messages.contains { $0.status == "streaming" || $0.status == "running" }
+        VStack(alignment: .leading, spacing: MobileTokens.blockSpacing) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                switch item {
+                case .thinking(let text):
+                    MobileThinkingDisclosure(text: text, streaming: streaming && index == items.count - 1)
+                case .prose(let text):
+                    MarkdownText(text: text)
+                case .tools(let group):
+                    MobileToolGroup(messages: group)
+                case .note(let text):
+                    Text(text).font(MobileTokens.caption12).foregroundStyle(tokens.textMuted)
+                }
+            }
+            // No timestamps or durations from the bridge; only the tool count is real, and it is
+            // redundant when the turn ends on a group row that already states it.
+            let endsOnGroup: Bool = if case .tools = items.last { true } else { false }
+            if !streaming, !endsOnGroup {
+                let tools = messages.count { $0.toolName != nil || $0.role == "toolResult" }
+                if tools > 0 {
+                    Text("\(tools) tool call\(tools == 1 ? "" : "s")").font(MobileTokens.micro).foregroundStyle(tokens.textMuted)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Agent")
+    }
+}
+
+struct MobileThinkingDisclosure: View {
+    /// nil while streaming with nothing to show yet.
+    let text: String?
+    let streaming: Bool
     @State private var expanded = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    init(label: String, @ViewBuilder header: @escaping () -> Label, @ViewBuilder content: @escaping () -> Content) {
-        self.label = label
-        self.header = header
-        self.content = content
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: MobileTokens.spacing) {
+        let tokens = MobileTokens(scheme: scheme)
+        VStack(alignment: .leading, spacing: 6) {
             Button {
                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) { expanded.toggle() }
             } label: {
-                HStack {
-                    header()
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .foregroundStyle(MobileTokens(scheme: scheme).secondary)
+                HStack(spacing: 8) {
+                    if streaming {
+                        MobileSpinner(color: tokens.accent, size: 11)
+                        Text("Thinking…").font(MobileTokens.caption12).italic().foregroundStyle(tokens.textTertiary)
+                    } else {
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                            .rotationEffect(.degrees(expanded ? 90 : 0)).foregroundStyle(tokens.textMuted).frame(width: 12)
+                        // The bridge carries no thinking duration, so the caption stays "Thought".
+                        Text("Thought").font(MobileTokens.caption12).italic().foregroundStyle(tokens.textTertiary)
+                    }
+                    Spacer(minLength: 0)
                 }
-                .font(MobileTokens.caption)
-                .frame(minHeight: 44)
+                .frame(minHeight: MobileTokens.touch)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(label)
+            .disabled(text == nil)
+            .accessibilityLabel(streaming ? "Thinking" : "Thought")
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-            if expanded { content() }
+            if expanded, let text {
+                Text(text).font(MobileTokens.bubble).italic().lineSpacing(MobileTokens.bubbleLeading)
+                    .foregroundStyle(tokens.textTertiary).textSelection(.enabled)
+                    .padding(.leading, 12)
+                    .overlay(alignment: .leading) { tokens.border.frame(width: 2) }
+            }
         }
+    }
+}
+
+/// Collapsed to one 44pt summary row ("6 tool calls · read 1 · edit 3 · bash 2"); expanded rows are 40pt.
+struct MobileToolGroup: View {
+    let messages: [NativeThreadMessage]
+    @State private var expanded = false
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let tokens = MobileTokens(scheme: scheme)
+        let rows = messages.map(NativeToolRow.init)
+        let summary = nativeToolGroupSummary(messages)
+        let head = summary.split(separator: " · ", maxSplits: 1).map(String.init)
+        VStack(spacing: 0) {
+            Button {
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    glyph(for: rows, tokens).frame(width: 14, height: 14)
+                    Text(head.first ?? summary).font(MobileTokens.labelStrong).foregroundStyle(tokens.text).lineLimit(1)
+                    Spacer(minLength: 8)
+                    if head.count > 1 {
+                        Text(head[1]).font(MobileTokens.micro).foregroundStyle(tokens.textMuted).lineLimit(1).truncationMode(.tail)
+                    }
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(expanded ? 180 : 0)).foregroundStyle(tokens.textMuted).frame(width: 12)
+                }
+                .padding(.horizontal, 12)
+                .frame(height: MobileTokens.toolSummaryHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(summary)
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            if expanded {
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    tokens.borderSubtle.frame(height: 1)
+                    MobileToolRowView(row: row)
+                }
+            }
+        }
+        .background(tokens.surface, in: RoundedRectangle(cornerRadius: MobileTokens.radius))
+        .clipShape(RoundedRectangle(cornerRadius: MobileTokens.radius))
+        .overlay(RoundedRectangle(cornerRadius: MobileTokens.radius).strokeBorder(tokens.border, lineWidth: 1))
+    }
+
+    @ViewBuilder private func glyph(for rows: [NativeToolRow], _ tokens: MobileTokens) -> some View {
+        if rows.contains(where: { $0.state == .running }) {
+            MobileSpinner(color: tokens.accent, size: 11)
+        } else if rows.contains(where: { $0.state == .failed }) {
+            Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(tokens.danger)
+        } else {
+            Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(tokens.success)
+        }
+    }
+}
+
+/// 40pt row: glyph · name · head-truncated preview · result. Bash and any row with saved
+/// output push a full-screen output view instead of expanding inline.
+struct MobileToolRowView: View {
+    let row: NativeToolRow
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let tokens = MobileTokens(scheme: scheme)
+        let label = HStack(spacing: 8) {
+            Text(row.name).font(MobileTokens.mono).foregroundStyle(tokens.textTertiary).frame(width: 36, alignment: .leading).lineLimit(1)
+            Text("\(nativeHeadTruncated(row.preview, max: 34))\(Text(row.previewSuffix ?? "").foregroundStyle(tokens.textMuted))")
+                .foregroundStyle(tokens.text)
+                .font(MobileTokens.mono).lineLimit(1).truncationMode(.head)
+            Spacer(minLength: 6)
+            HStack(spacing: 5) {
+                if let diff = row.diff {
+                    Text("\(Text("+\(diff.added)").foregroundStyle(tokens.successText)) \(Text("−\(diff.removed)").foregroundStyle(tokens.dangerText))")
+                        .font(MobileTokens.micro)
+                }
+                if let result = row.results.first {
+                    Text(result.text).font(MobileTokens.micro).foregroundStyle(tone(result.tone, tokens)).lineLimit(1)
+                } else if row.state == .running {
+                    Text("running").font(MobileTokens.micro).foregroundStyle(tokens.accentText)
+                }
+                if row.expandable {
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(tokens.textMuted)
+                }
+            }
+            .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .frame(height: MobileTokens.toolRowHeight)
+        .contentShape(Rectangle())
+        .background(row.state == .failed ? tokens.dangerBg : .clear)
+
+        Group {
+            if row.expandable {
+                NavigationLink { MobileToolOutputView(row: row) } label: { label }
+                    .buttonStyle(.plain)
+            } else {
+                label
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Tool \(row.accessibilityLabel)")
+        .accessibilityAddTraits(row.expandable ? .isButton : [])
+    }
+
+    private func tone(_ tone: NativeToolRow.Tone, _ tokens: MobileTokens) -> Color {
+        switch tone {
+        case .success: tokens.successText
+        case .danger: tokens.dangerText
+        case .muted: tokens.textMuted
+        }
+    }
+}
+
+/// Full-screen saved output for one tool call.
+struct MobileToolOutputView: View {
+    let row: NativeToolRow
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let tokens = MobileTokens(scheme: scheme)
+        ScrollView([.vertical, .horizontal]) {
+            VStack(alignment: .leading, spacing: MobileTokens.blockSpacing) {
+                Text(row.preview + (row.previewSuffix ?? "")).font(MobileTokens.code).foregroundStyle(tokens.text)
+                Text(row.output).font(MobileTokens.output).lineSpacing(4)
+                    .foregroundStyle(row.state == .failed ? tokens.dangerText : tokens.textSecondary)
+                    .textSelection(.enabled)
+                if row.truncated {
+                    Text("Output truncated · full text on your Mac").font(MobileTokens.caption12).foregroundStyle(tokens.textMuted)
+                }
+            }
+            .padding(MobileTokens.inset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(row.state == .failed ? tokens.dangerBg : tokens.muted)
+        .navigationTitle(row.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(tokens.canvas, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
     }
 }
 
@@ -143,7 +287,7 @@ struct MarkdownText: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: MobileTokens.spacing) {
+        VStack(alignment: .leading, spacing: MobileTokens.blockSpacing) {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
                 if segment.code {
                     CodeBlock(text: segment.text)
@@ -158,9 +302,9 @@ struct MarkdownText: View {
                             let listed = trimmed.split(separator: "\n", omittingEmptySubsequences: false)
                                 .map { $0.hasPrefix("- ") || $0.hasPrefix("* ") ? "•  " + $0.dropFirst(2) : $0 }
                                 .joined(separator: "\n")
-                            Text((try? AttributedString(markdown: listed, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-                                 ?? AttributedString(listed))
+                            Text(Self.inline(listed, tokens: MobileTokens(scheme: scheme)))
                                 .font(MobileTokens.prose)
+                                .lineSpacing(MobileTokens.proseLeading)
                         }
                     }
                 }
@@ -168,6 +312,19 @@ struct MarkdownText: View {
         }
         .textSelection(.enabled)
         .tint(MobileTokens(scheme: scheme).accent)
+    }
+
+    /// Inline code runs take the mono face at a size that sits inside 16pt prose, on `bg.hover`;
+    /// left at the prose size they dominate the sentence.
+    static func inline(_ text: String, tokens: MobileTokens) -> AttributedString {
+        guard var attributed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
+            return AttributedString(text)
+        }
+        for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
+            attributed[run.range].font = MobileTokens.inlineCode
+            attributed[run.range].backgroundColor = tokens.hover
+        }
+        return attributed
     }
 }
 
@@ -179,13 +336,15 @@ struct CodeBlock: View {
         let tokens = MobileTokens(scheme: scheme)
         ScrollView(.horizontal, showsIndicators: false) {
             Text(text.trimmingCharacters(in: .newlines))
-                .font(MobileTokens.mono)
+                .font(MobileTokens.code)
+                .lineSpacing(3)
                 .textSelection(.enabled)
-                .padding(10)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(tokens.raised)
-        .clipShape(RoundedRectangle(cornerRadius: MobileTokens.radius))
-        .overlay(RoundedRectangle(cornerRadius: MobileTokens.radius).strokeBorder(tokens.border, lineWidth: 1))
+        .background(tokens.muted)
+        .clipShape(RoundedRectangle(cornerRadius: MobileTokens.spacing))
+        .overlay(RoundedRectangle(cornerRadius: MobileTokens.spacing).strokeBorder(tokens.border, lineWidth: 1))
     }
 }

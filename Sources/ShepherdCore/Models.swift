@@ -115,6 +115,15 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// How an agent's pi process is driven. Fixed at creation: a TUI cannot be attached to an
+/// RPC process later, and an RPC client cannot read a TUI. See docs/rpc-agents-plan.md.
+public enum AgentRuntime: String, Codable, Hashable, Sendable {
+    /// `pi` in a PTY rendered by Ghostty; the native view reads it through an extension.
+    case terminal
+    /// `pi --mode rpc` on pipes; Shepherd is the only UI.
+    case rpc
+}
+
 public struct Agent: Codable, Hashable, Sendable, Identifiable {
     public var id: AgentID
     /// Sidebar title. Starts as the agent's opening prompt (truncated) and is
@@ -147,6 +156,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The actual checkout path. Shepherd-created worktrees can derive it
     /// from repo + branch; imported worktrees may use any directory name.
     public var worktreePath: String?
+    /// Decodes `.terminal` from state files written before RPC agents existed.
+    public var runtime: AgentRuntime
 
     public init(
         id: AgentID = AgentID(),
@@ -161,7 +172,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         piSessionID: String? = nil,
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
-        worktreePath: String? = nil
+        worktreePath: String? = nil,
+        runtime: AgentRuntime = .terminal
     ) {
         self.id = id
         self.name = name
@@ -176,6 +188,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.worktreeBranch = worktreeBranch
         self.worktreeBase = worktreeBase
         self.worktreePath = worktreePath
+        self.runtime = runtime
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -186,7 +199,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, runtime
     }
 
     public init(from decoder: Decoder) throws {
@@ -209,6 +222,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
         worktreePath = try c.decodeIfPresent(String.self, forKey: .worktreePath)
+        runtime = try c.decodeIfPresent(AgentRuntime.self, forKey: .runtime) ?? .terminal
     }
 }
 

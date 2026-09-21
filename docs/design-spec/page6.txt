@@ -1,0 +1,18 @@
+Investigate SwiftUI live preview
+ Needs approval· 0m 21s
+ Looks good. Commit it and push to main.
+ 2:47 PM
+ Committing the three changed files, then pushing.
+ bash
+ git commit -m "Remove speaker…
+ 0.4s
+ bash
+ git push origin main
+ waiting
+ Message the agent
+ Push to a remote?
+ Shepherd · in ~/dev/shepherd
+ git push origin main
+ Allow once
+ Always for this agent
+ Deny

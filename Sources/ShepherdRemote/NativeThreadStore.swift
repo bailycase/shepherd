@@ -1,47 +1,67 @@
 import Combine
 import Foundation
 import ShepherdProtocol
-import ShepherdRemote
 
 @MainActor
-final class ThreadStore: ObservableObject {
-    typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
+public final class NativeThreadStore: ObservableObject {
+    public typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
 
-    @Published private(set) var snapshot: NativeThreadSnapshot?
-    @Published private(set) var messages: [NativeThreadMessage] = []
-    @Published private(set) var olderCursor: String?
-    @Published private(set) var loadingOlder = false
-    @Published private(set) var ready = false
-    @Published private(set) var busy = false
-    @Published private(set) var loadError: String?
-    @Published private(set) var notice: String?
-    @Published private(set) var sentCount = 0
-    @Published var draft = ""
-    @Published var delivery: NativeThreadDelivery = .followUp
+    @Published public private(set) var snapshot: NativeThreadSnapshot?
+    @Published public private(set) var messages: [NativeThreadMessage] = []
+    @Published public private(set) var olderCursor: String?
+    @Published public private(set) var loadingOlder = false
+    @Published public private(set) var ready = false
+    @Published public private(set) var busy = false
+    @Published public private(set) var loadError: String?
+    @Published public private(set) var notice: String?
+    @Published public private(set) var sentCount = 0
+    /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending").
+    /// Each one leaves once pi persists a user message with the same text, or when the session changes.
+    @Published public private(set) var pending: [NativeThreadMessage] = []
+    /// `snapshot.running` held true for 400 ms after it drops, so tool boundaries never flicker
+    /// the pill, the tail indicator, or the Stop button.
+    @Published public private(set) var settledRunning = false
+    @Published public var draft = ""
+    @Published public var delivery: NativeThreadDelivery = .followUp
+
+    public init() {}
 
     private var request: Request?
+    private var settleTask: Task<Void, Never>?
     private var epoch = UUID()
     private var recentRequest = UUID()
     private var historyEpoch = UUID()
 
-    var displayedMessages: [NativeThreadMessage] {
+    public var displayedMessages: [NativeThreadMessage] {
         let ids = Set(messages.map(\.entryID))
         let toolIDs = Set(messages.compactMap(\.toolCallID))
         return messages + (snapshot?.provisional ?? []).filter {
             !ids.contains($0.entryID) && ($0.toolCallID == nil || !toolIDs.contains($0.toolCallID!))
-        }
+        } + pending
     }
 
-    var pollInterval: Duration {
+    /// Reconcile echoes against a snapshot: gone when the real message landed or the session moved on.
+    private func settlePending(_ value: NativeThreadSnapshot, sameSession: Bool) {
+        guard !pending.isEmpty else { return }
+        guard sameSession else { pending = []; return }
+        let persisted = Set((value.messages + value.provisional).filter { $0.role == "user" }.map(Self.userText))
+        pending.removeAll { persisted.contains(Self.userText($0)) }
+    }
+
+    private static func userText(_ message: NativeThreadMessage) -> String {
+        message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public var pollInterval: Duration {
         snapshot?.running == true || snapshot?.dialogs.isEmpty == false ? .milliseconds(500) : .seconds(2)
     }
 
-    func supports(_ action: String) -> Bool {
+    public func supports(_ action: String) -> Bool {
         ready && !busy && snapshot?.supportedActions.contains(action) == true
     }
 
     // The view's foreground task owns this loop. Reconnection always starts without a revision.
-    func run(request: @escaping Request) async {
+    public func run(request: @escaping Request) async {
         guard !Task.isCancelled else { return }
         stop()
         let run = epoch
@@ -62,7 +82,7 @@ final class ThreadStore: ObservableObject {
         }
     }
 
-    func stop() {
+    public func stop() {
         if busy { notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically." }
         epoch = UUID()
         recentRequest = UUID()
@@ -71,9 +91,26 @@ final class ThreadStore: ObservableObject {
         ready = false
         busy = false
         loadingOlder = false
+        settleTask?.cancel()
+        settleTask = nil
+        settledRunning = false
     }
 
-    func refresh(fresh: Bool = false, resetHistory: Bool = false) async {
+    private func settleRunning(_ running: Bool) {
+        settleTask?.cancel()
+        settleTask = nil
+        if running {
+            settledRunning = true
+        } else if settledRunning {
+            settleTask = Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled, let self, self.snapshot?.running != true else { return }
+                self.settledRunning = false
+            }
+        }
+    }
+
+    public func refresh(fresh: Bool = false, resetHistory: Bool = false) async {
         guard !Task.isCancelled, let request else { return }
         let run = epoch
         let ticket = UUID()
@@ -90,6 +127,8 @@ final class ThreadStore: ObservableObject {
             case .snapshot(let value):
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
                 if sameSession, let previous, value.revision < previous.revision { return }
+                settlePending(value, sameSession: sameSession)
+                settleRunning(value.running)
                 if !resetHistory, sameSession, value.olderCursor != nil,
                    let first = value.messages.first,
                    let overlap = messages.firstIndex(where: { $0.entryID == first.entryID }) {
@@ -126,7 +165,7 @@ final class ThreadStore: ObservableObject {
         }
     }
 
-    func loadOlder() async {
+    public func loadOlder() async {
         guard ready, !loadingOlder, let request, let current = snapshot, let cursor = olderCursor else { return }
         let run = epoch
         let history = historyEpoch
@@ -152,23 +191,42 @@ final class ThreadStore: ObservableObject {
         }
     }
 
-    func send() async {
+    /// `images` requires `sendImages` support (v2, RPC agents); they are dropped otherwise.
+    public func send(images: [NativeImage] = []) async {
         guard supports("send"), !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               let current = snapshot else { return }
         let text = draft
         let operation = UUID()
+        let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
-                            operationID: operation, text: text, delivery: delivery), operation: operation, current: current, sentText: text)
+                            operationID: operation, text: text, delivery: delivery, images: attached),
+                      operation: operation, current: current, sentText: text)
     }
 
-    func abort() async {
+    /// "provider/id"; gated by `setModel` in `supportedActions`.
+    public func setModel(_ model: String) async {
+        guard supports("setModel"), let current = snapshot, current.model != model else { return }
+        let operation = UUID()
+        await perform(.setModel(expectedSessionID: current.piSessionID, generation: current.generation,
+                                operationID: operation, model: model), operation: operation, current: current)
+    }
+
+    /// off/low/medium/high; gated by `setThinking` in `supportedActions`.
+    public func setThinking(_ level: String) async {
+        guard supports("setThinking"), let current = snapshot, current.thinking != level else { return }
+        let operation = UUID()
+        await perform(.setThinking(expectedSessionID: current.piSessionID, generation: current.generation,
+                                   operationID: operation, level: level), operation: operation, current: current)
+    }
+
+    public func abort() async {
         guard supports("abort"), let current = snapshot else { return }
         let operation = UUID()
         await perform(.abort(expectedSessionID: current.piSessionID, generation: current.generation,
                              operationID: operation), operation: operation, current: current)
     }
 
-    func answer(dialogID: String, sessionID: String, generation: String, answer: NativeDialogAnswer) async {
+    public func answer(dialogID: String, sessionID: String, generation: String, answer: NativeDialogAnswer) async {
         guard supports("answer"), let current = snapshot,
               current.piSessionID == sessionID, current.generation == generation,
               current.dialogs.contains(where: { $0.id == dialogID && $0.unavailable == nil }) else { return }
@@ -195,8 +253,11 @@ final class ThreadStore: ObservableObject {
                 if let sentText {
                     if draft == sentText { draft = "" }
                     sentCount += 1
+                    pending.append(NativeThreadMessage(entryID: "pending:\(operation.uuidString)", role: "user",
+                                                       blocks: [NativeThreadBlock(kind: .text, text: sentText)], status: "pending"))
                 }
-                notice = "Accepted by pi. This does not confirm completion or saved history."
+                // Success is visible in the thread itself; only failures earn a notice.
+                notice = nil
             case .failure(_, let message): notice = message
             default:
                 notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."

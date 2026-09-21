@@ -3,6 +3,7 @@ import SwiftUI
 import Foundation
 import Testing
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdSessions
 @testable import ShepherdApp
 @testable import TerminalSurfaceKit
@@ -193,6 +194,75 @@ struct TerminalSessionStoreTests {
 
         #expect(await server.listSessions().isEmpty)
         #expect(await store.awaitSession(forPane: pane.id, timeout: .milliseconds(50)) == nil)
+    }
+
+    /// An RPC agent's pane binds its session without a Ghostty surface, grid wait, or attach,
+    /// survives surface rebuilds and cold parking, and still closes the pane when pi dies.
+    @Test func rpcAgentPaneBindsWithoutASurface() async throws {
+        let dir = URL(fileURLWithPath: "/tmp/shepherd-store-\(UInt32.random(in: 0..<1_000_000))", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let server = SessionServer(
+            socketPath: dir.appendingPathComponent("d.sock").path,
+            stateURL: dir.appendingPathComponent("state.json")
+        )
+        try server.start()
+        defer { server.stop() }
+        let stub = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("ShepherdSessionsTests/Fixtures/stub-pi.py").path
+        let space = Space(name: "s", path: dir.path)
+        let agentID = AgentID()
+        let pane = LeafPane(cwd: dir.path, agentID: agentID)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(id: agentID, name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id, runtime: .rpc)
+        try await server.putState(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
+        let store = TerminalSessionStore(server: server)
+        var exitedPaneID: PaneID?
+        store.onPaneSessionExited = { exitedPaneID = $0 }
+
+        // The store's spawn path builds pi's argv from installed extensions; a scratch support
+        // dir keeps that off the user's files, and the stub stands in for `pi` on PATH.
+        let bin = dir.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let script = "#!/bin/sh\nexec /usr/bin/env python3 '\(stub)'\n"
+        try script.write(to: bin.appendingPathComponent("pi"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.appendingPathComponent("pi").path)
+        let oldPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        setenv("PATH", "\(bin.path):\(oldPath)", 1)
+        setenv("ZDOTDIR", dir.path, 1)
+        defer { setenv("PATH", oldPath, 1); unsetenv("ZDOTDIR") }
+
+        let session = store.session(for: pane, in: tab)
+        #expect(session.isRPC)
+        let deadline = ContinuousClock.now + .seconds(20)
+        while ContinuousClock.now < deadline, session.phase != .live { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(session.phase == .live)
+        #expect(!session.hasTerminalModel)
+        let sessionID = try #require(store.liveSession(forPane: pane.id))
+        let info = try #require(await server.sessionInfo(sessionID: sessionID))
+        #expect(info.cols == 0 && info.rows == 0)
+        #expect(info.command.last?.contains("--mode rpc") == true)
+
+        // Surface rebuilds and cold parking leave the binding alone.
+        store.rebuildAllSurfaces()
+        store.parkPane(pane.id)
+        #expect(store.session(for: pane, in: tab) === session)
+        #expect(store.liveSession(forPane: pane.id) == sessionID)
+        #expect(!session.hasTerminalModel)
+
+        // The thread is reachable through the server; a `die` prompt closes the pane like a PTY exit.
+        var ready: NativeThreadSnapshot?
+        while ContinuousClock.now < deadline, ready == nil {
+            if case .snapshot(let value) = try? await server.nativeThread(agentID: agentID, request: .snapshot()), !value.piSessionID.isEmpty { ready = value }
+            else { try await Task.sleep(for: .milliseconds(50)) }
+        }
+        let snapshot = try #require(ready)
+        #expect(snapshot.isRPC)
+        _ = try? await server.nativeThread(agentID: agentID, request: .send(
+            expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(), text: "die", delivery: .followUp))
+        while ContinuousClock.now < deadline, exitedPaneID == nil { try await Task.sleep(for: .milliseconds(50)) }
+        #expect(exitedPaneID == pane.id)
+        #expect(session.phase == .exited(3))
     }
 
     @Test func attachWatermarkKeepsOnlyPostSnapshotOutput() {
