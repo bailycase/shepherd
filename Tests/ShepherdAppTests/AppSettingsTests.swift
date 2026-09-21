@@ -28,9 +28,36 @@ struct AppSettingsTests {
         #expect(settings.piPanesExtension)
         #expect(settings.piReviewExtension)
         #expect(settings.piSubagentsExtension)
+        #expect(!settings.piNativeSubagents)
         #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
         #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
         #expect(settings.worktreeGeneratePRDescription)
+    }
+
+    @Test func nativeChildDefaultsPersistAndReachLaunchEnvironment() {
+        let store = scratchDefaults()
+        let settings = AppSettings(store: store)
+        #expect(settings.childConcurrency == 4)
+        #expect(settings.childContext == "fresh")
+        #expect(settings.childScope == "both")
+        #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
+        settings.childConcurrency = 7
+        settings.childModel = " provider/model "
+        settings.childThinking = "high"
+        settings.childContext = "fork"
+        settings.childScope = "user"
+        let loaded = AppSettings(store: store)
+        #expect(loaded.childEnvironment == [
+            "SHEPHERD_CHILD_CONCURRENCY": "7", "SHEPHERD_CHILD_MODEL": "provider/model",
+            "SHEPHERD_CHILD_THINKING": "high", "SHEPHERD_CHILD_CONTEXT": "fork", "SHEPHERD_CHILD_SCOPE": "user",
+        ])
+        loaded.resetToDefaults()
+        #expect(loaded.childConcurrency == 4 && loaded.childContext == "fresh" && loaded.childScope == "both")
+        #expect(loaded.childModel.isEmpty && loaded.childThinking.isEmpty)
+        store.set(99, forKey: AppSettings.Key.childConcurrency)
+        store.set("invalid", forKey: AppSettings.Key.childContext)
+        #expect(AppSettings(store: store).childConcurrency == 16)
+        #expect(AppSettings(store: store).childContext == "fresh")
     }
 
     @Test func valuesPersistAndReload() {
@@ -46,6 +73,7 @@ struct AppSettingsTests {
         settings.piPanesExtension = false
         settings.piReviewExtension = false
         settings.piSubagentsExtension = false
+        settings.piNativeSubagents = true
         settings.autoUpdatePi = true
         settings.autoUpdateExtensions = true
         settings.shellPath = "/bin/bash"
@@ -62,6 +90,7 @@ struct AppSettingsTests {
         #expect(reloaded.piPanesExtension == false)
         #expect(reloaded.piReviewExtension == false)
         #expect(reloaded.piSubagentsExtension == false)
+        #expect(reloaded.piNativeSubagents)
         #expect(reloaded.autoUpdatePi)
         #expect(reloaded.autoUpdateExtensions)
         #expect(reloaded.shellPath == "/bin/bash")
@@ -96,6 +125,7 @@ struct AppSettingsTests {
         settings.piPanesExtension = false
         settings.piReviewExtension = false
         settings.piSubagentsExtension = false
+        settings.piNativeSubagents = true
         settings.autoUpdatePi = true
         settings.autoUpdateExtensions = true
         settings.worktreeGeneratePRDescription = false
@@ -112,6 +142,7 @@ struct AppSettingsTests {
         #expect(settings.piPanesExtension)
         #expect(settings.piReviewExtension)
         #expect(settings.piSubagentsExtension)
+        #expect(!settings.piNativeSubagents)
         #expect(settings.autoUpdatePi == AppSettings.Defaults.autoUpdatePi)
         #expect(settings.autoUpdateExtensions == AppSettings.Defaults.autoUpdateExtensions)
         #expect(settings.worktreeGeneratePRDescription)

@@ -10,7 +10,7 @@ import ShepherdProtocol
 /// stick in the UI:
 ///   - a publish replaces the agent's rows wholesale (the extension always
 ///     sends its full projection),
-///   - terminal rows expire after `terminalTTL` even if no publish follows,
+///   - terminal rows without pending attention expire after `terminalTTL`,
 ///   - an agent whose extension has gone quiet (`staleAfter` without any
 ///     publish) loses all its rows — a killed pi can't strand "running" rows,
 ///   - `clear(agent:)` serves the hard cases (process exit, agent deletion).
@@ -37,13 +37,13 @@ struct ChildRuns {
         // Track when each row first went terminal, keyed by agent and row id;
         // the TTL runs from that moment, not from the publish that repeats it.
         var seen = Set<ChildKey>()
-        for child in children where child.isTerminal {
+        for child in children where child.isTerminal && !child.needsAttention {
             let key = ChildKey(agentID: agentID, runID: child.id)
             seen.insert(key)
             if terminalSince[key] == nil { terminalSince[key] = now }
         }
         for key in Array(terminalSince.keys) where key.agentID == agentID && !seen.contains(key) {
-            // Row disappeared or came back live (resume): forget the mark.
+            // Row disappeared, resumed, or needs a reply: forget the mark.
             terminalSince.removeValue(forKey: key)
         }
         let kept = children.filter { child in

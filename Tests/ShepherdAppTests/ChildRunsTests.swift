@@ -21,6 +21,11 @@ struct ChildRunsTests {
         #expect(AgentRow.trailingAccessory(status: .working, badge: nil, subCount: 2) == .subagents(2))
     }
 
+    @Test @MainActor func backgroundChildrenRemainAccessibleAfterParentSettlesOrBlocks() {
+        #expect(AgentRow.showsSubagents(for: .done, hasActiveChildren: true))
+        #expect(AgentRow.showsSubagents(for: .blocked, hasActiveChildren: true))
+    }
+
     @Test func publishReplacesRowsWholesale() {
         var runs = ChildRuns()
         let agent = AgentID()
@@ -63,6 +68,31 @@ struct ChildRunsTests {
         // …and expires TTL after it first went terminal.
         runs.apply(agentID: agent, children: [run("a", state: "complete"), run("b")], now: t0.addingTimeInterval(61))
         #expect(runs.children(of: agent).map(\.runID) == ["b"])
+    }
+
+    @Test func unansweredTerminalRowsSurviveTTLUntilAttentionClears() {
+        var runs = ChildRuns()
+        runs.terminalTTL = 60
+        let agent = AgentID()
+        let t0 = Date()
+        let question = run("question", state: "complete", attention: true)
+        runs.apply(agentID: agent, children: [question, run("history", state: "complete")], now: t0)
+        let expiredHistory = runs.sweep(now: t0.addingTimeInterval(61))
+        #expect(expiredHistory)
+        #expect(runs.children(of: agent).map(\.runID) == ["question"])
+        runs.apply(agentID: agent, children: [question], now: t0.addingTimeInterval(90))
+        let expiredQuestion = runs.sweep(now: t0.addingTimeInterval(151))
+        #expect(!expiredQuestion)
+        #expect(runs.attentionCount == 1)
+        runs.apply(agentID: agent, children: [run("question", state: "complete")], now: t0.addingTimeInterval(152))
+        #expect(runs.children(of: agent).count == 1)
+        let expiredAnswer = runs.sweep(now: t0.addingTimeInterval(213))
+        #expect(expiredAnswer)
+        #expect(runs.children(of: agent).isEmpty)
+        runs.apply(agentID: agent, children: [question], now: t0.addingTimeInterval(214))
+        let expiredPublisher = runs.sweep(now: t0.addingTimeInterval(335))
+        #expect(expiredPublisher)
+        #expect(runs.children(of: agent).isEmpty)
     }
 
     @Test func stalePublisherLosesAllRows() {
@@ -152,9 +182,10 @@ struct ChildInspectorCommandTests {
             runner: "/Users/x/Library/Application Support/Shepherd/shepherd-inspect.mjs",
             asyncDir: "/tmp/dir with spaces/run-1",
             runID: "run-1",
-            childIndex: 2
+            childIndex: 2,
+            themePath: "/tmp/theme's colors.json"
         )
-        #expect(command == "node '/Users/x/Library/Application Support/Shepherd/shepherd-inspect.mjs' --async-dir '/tmp/dir with spaces/run-1' --run-id 'run-1' --index 2")
+        #expect(command == "node '/Users/x/Library/Application Support/Shepherd/shepherd-inspect.mjs' --async-dir '/tmp/dir with spaces/run-1' --run-id 'run-1' --index 2 --theme-path '/tmp/theme'\"'\"'s colors.json'")
     }
 
     @Test func omitsIndexForSingleRuns() {
@@ -162,5 +193,6 @@ struct ChildInspectorCommandTests {
             runner: "/r.mjs", asyncDir: "/a", runID: "id", childIndex: nil
         )
         #expect(!command.contains("--index"))
+        #expect(!command.contains("--theme-path"))
     }
 }

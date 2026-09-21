@@ -63,6 +63,8 @@ enum SubagentsExtension {
           let rootSession = false;
           let sessionGeneration = 0;
           let rpcReady = false;
+          let nativeChildren: unknown[] = [];
+          let parentSessionID = "";
           // Event-sourced facts the snapshot lacks: asyncDir per run, and attention.
           const runs = new Map<string, { asyncDir?: string; agents?: string[]; startedAt: number }>();
           const attention = new Map<string, string>();
@@ -144,7 +146,7 @@ enum SubagentsExtension {
                 asyncDir: run.asyncDir ?? derivedAsyncDir(id),
               });
             }
-            return rows.slice(0, MAX_CHILDREN);
+            return rows;
           }
 
           // The RPC status reply carries a bounded, versioned display snapshot
@@ -187,13 +189,10 @@ enum SubagentsExtension {
                 )
                 : [];
               if (n.kind === "workflow" && kids.length > 0) {
-                kids.forEach((kid, index) => {
-                  if (rows.length < MAX_CHILDREN) push(kid, n.id, index);
-                });
-              } else if (rows.length < MAX_CHILDREN) {
+                kids.forEach((kid, index) => push(kid, n.id, index));
+              } else {
                 push(n, n.id);
               }
-              if (rows.length >= MAX_CHILDREN) break;
             }
             return rows;
           }
@@ -249,7 +248,9 @@ enum SubagentsExtension {
               let children: unknown[] | undefined;
               if (rpcReady) children = await rpcStatus();
               if (!rootSession || generation !== sessionGeneration) return;
-              const rows = children ?? eventDerivedChildren();
+              const rows = [...nativeChildren, ...(children ?? eventDerivedChildren())].sort((a: any, b: any) =>
+                Number(b.state === "running" || b.state === "queued") - Number(a.state === "running" || a.state === "queued")
+                || Number(b.needsAttention === true) - Number(a.needsAttention === true)).slice(0, MAX_CHILDREN);
               lastPublishHadRows = rows.length > 0;
               report(rows);
               syncRefreshTimer();
@@ -292,6 +293,11 @@ enum SubagentsExtension {
           // ---- lifecycle events ----------------------------------------------------
 
           try {
+            pi.events.on("shepherd:children:v1", (data: any) => {
+              if (!rootSession || data?.owner !== parentSessionID || !Array.isArray(data.children)) return;
+              nativeChildren = data.children.slice(0, MAX_CHILDREN);
+              schedulePublish();
+            });
             pi.events.on(RPC_READY_EVENT, () => {
               rpcReady = true;
             });
@@ -341,7 +347,8 @@ enum SubagentsExtension {
             // hasUI distinguishes the interactive parent from a headless child
             // runtime; default to publishing when the field is absent.
             sessionGeneration += 1;
-            rootSession = (ctx as { hasUI?: boolean }).hasUI !== false;
+            rootSession = !process.env.SHEPHERD_CHILD && (ctx as { hasUI?: boolean }).hasUI !== false;
+            parentSessionID = ctx.sessionManager.getSessionId();
           });
 
           // The one reliable trigger for every spawn shape: workflows, singles, and
@@ -375,6 +382,8 @@ enum SubagentsExtension {
             const wasRootSession = rootSession;
             sessionGeneration += 1;
             rootSession = false;
+            nativeChildren = [];
+            lastPublishHadRows = false;
             runs.clear();
             terminal.clear();
             attention.clear();

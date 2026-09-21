@@ -1,8 +1,11 @@
 import SwiftUI
+import ShepherdSessions
 
 struct PiSettings: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var updates = PiUpdateManager.shared
+
+    @State private var modelOptions: [String] = []
 
     var body: some View {
         SettingsGroup(title: "Bundled Pi Extensions") {
@@ -40,6 +43,14 @@ struct PiSettings: View {
                     .toggleStyle(.switch)
             }
             SettingsRow(
+                title: "native subagents",
+                subtitle: "Opt in to Shepherd helpers, agent files, scripted workflows, and durable missions. Requires pi 0.85.1 or newer. Children stop with their parent; user-installed subagent tools remain unchanged."
+            ) {
+                Toggle("native subagents", isOn: $settings.piNativeSubagents)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+            SettingsRow(
                 title: "subagent display",
                 subtitle: "Show pi subagent runs in the sidebar and open their inspector. Off does not stop subagents from running."
             ) {
@@ -51,6 +62,42 @@ struct PiSettings: View {
         SettingsNote(text: "applies to agents launched on this Mac, including automations and remotely created agents · running agents keep their extensions until restarted; quit and reopen Shepherd to apply to all · user-installed pi extensions are unchanged")
         SettingsNote(text: "status and session tracking are always on so lifecycle updates and /new or /resume restoration keep working")
         SettingsNote(text: "a hand-typed rename is always final · naming never blocks pi's first turn")
+
+        if settings.piNativeSubagents {
+            SettingsGroup(title: "Native Subagent Defaults") {
+                SettingsRow(title: "concurrency", subtitle: "Shared child process limit per parent, including workflows.", isFirst: true) {
+                    Stepper("\(settings.childConcurrency)", value: $settings.childConcurrency, in: 1...16)
+                }
+                SettingsRow(title: "model", subtitle: "Agent files and explicit calls override this default.") {
+                    Picker("child model", selection: $settings.childModel) {
+                        Text("inherit parent").tag("")
+                        ForEach(Array(Set(modelOptions + (settings.childModel.isEmpty ? [] : [settings.childModel]))).sorted(), id: \.self) { Text($0).tag($0) }
+                    }.labelsHidden()
+                }
+                SettingsRow(title: "thinking") {
+                    Picker("child thinking", selection: $settings.childThinking) {
+                        Text("inherit parent").tag("")
+                        ForEach(["off", "minimal", "low", "medium", "high", "xhigh", "max"], id: \.self) { Text($0).tag($0) }
+                    }.labelsHidden()
+                }
+                SettingsRow(title: "context") {
+                    Picker("child context", selection: $settings.childContext) {
+                        Text("fresh").tag("fresh")
+                        Text("fork").tag("fork")
+                    }.labelsHidden().pickerStyle(.segmented)
+                }
+                SettingsRow(title: "agent discovery", subtitle: "Project profiles require Pi project trust. Files remain the source of truth; Shepherd never rewrites them.") {
+                    Picker("agent discovery", selection: $settings.childScope) {
+                        Text("user + project").tag("both")
+                        Text("user").tag("user")
+                        Text("project").tag("project")
+                        Text("bundled only").tag("bundled")
+                    }.labelsHidden()
+                }
+            }
+            .task { modelOptions = PiConfig.modelIDs() }
+            SettingsNote(text: "explicit call > agent file > these defaults > parent model and thinking · workflow scripts have a restricted API, not an OS sandbox · child tools run with your account permissions")
+        }
 
         SettingsGroup(title: "Automatic Updates") {
             SettingsRow(

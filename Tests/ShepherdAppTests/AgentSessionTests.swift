@@ -59,9 +59,9 @@ struct AgentSessionTests {
         #expect(command.env["SHEPHERD_AGENT_ID"] == agent.id.rawValue)
     }
 
-    @Test(arguments: 0..<32)
+    @Test(arguments: 0..<64)
     func optionalExtensionsOnlyEnableTheirOwnLaunchFlags(enabled: Int) {
-        let paths = ["/tmp/theme.ts", "/tmp/panes.ts", "/tmp/review.ts", "/tmp/subagents.ts", "/tmp/namer.ts"]
+        let paths = ["/tmp/theme.ts", "/tmp/panes.ts", "/tmp/review.ts", "/tmp/subagents.ts", "/tmp/namer.ts", "/tmp/children.ts"]
         let selected = paths.enumerated().map { index, path in
             enabled & (1 << index) != 0 ? path : nil
         }
@@ -75,6 +75,8 @@ struct AgentSessionTests {
                 panesExtensionPath: selected[1],
                 reviewExtensionPath: selected[2],
                 subagentsExtensionPath: selected[3],
+                childrenExtensionPath: selected[5],
+                childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "7", "SHEPHERD_CHILD_MODEL": "custom/model"],
                 namerExtensionPath: selected[4],
                 needsName: true,
                 isAutomation: isAutomation,
@@ -104,6 +106,10 @@ struct AgentSessionTests {
             #expect(command.env["SHEPHERD_PI_THEME_PATH"] == (selected[0] == nil ? nil : "/tmp/theme file.json"))
             #expect(command.env["SHEPHERD_PI_THEME_NAME"] == (selected[0] == nil ? nil : "shepherd"))
             #expect(command.env["SHEPHERD_EXT_PANES"] == selected[1])
+            #expect(command.env["SHEPHERD_EXT_CHILDREN"] == selected[5])
+            #expect(command.env["SHEPHERD_CHILD_CONCURRENCY"] == (selected[5] == nil ? nil : "7"))
+            #expect(command.env["SHEPHERD_CHILD_MODEL"] == (selected[5] == nil ? nil : "custom/model"))
+            #expect(command.env["SHEPHERD_NATIVE_CHILDREN"] == (selected[5] == nil ? nil : "1"))
             #expect(command.env["SHEPHERD_NEEDS_NAME"] == (selected[4] == nil ? nil : "1"))
             #expect(command.env["SHEPHERD_AUTOMATION"] == (isAutomation ? "1" : nil))
         }
