@@ -158,7 +158,8 @@ struct RPCAgentThreadTests {
         let tooling = try await h.snapshot { $0.provisional.contains { $0.entryID == "provisional:tool:call_abc123" } }
         let assistant = try #require(tooling.provisional.first { $0.entryID == "provisional:assistant:1" })
         #expect(assistant.status == "toolUse")
-        #expect(assistant.blocks.map(\.text) == ["Hello line\u{2028}sep world", "bash [call_abc123]\n{\"command\":\"ls\"}"])
+        // The toolCall block is not prose; the tool row below carries the call.
+        #expect(assistant.blocks.map(\.text) == ["Hello line\u{2028}sep world"])
         let tool = try #require(tooling.provisional.first { $0.entryID == "provisional:tool:call_abc123" })
         #expect(tool.role == "toolResult")
         #expect(tool.status == "running")
@@ -290,8 +291,9 @@ struct RPCAgentThreadTests {
         let widgets = try #require(shown.widgets)
         #expect(widgets.contains(NativeThreadWidget(namespace: "pi", key: "w", kind: .text, text: "Bold line\nlink")))
         #expect(widgets.contains(NativeThreadWidget(namespace: "pi", key: "notify", kind: .status, title: "warning", text: "red alert")))
-        // setStatus is TUI footer chrome and never shows; neither does setTitle.
-        #expect(!widgets.contains { $0.key == "build" || $0.key == "huge" || $0.key == "ignored" })
+        // setStatus is TUI footer chrome and never shows; neither does setTitle, nor a
+        // machine-readable widget payload meant for an extension's own TUI component.
+        #expect(!widgets.contains { $0.key == "build" || $0.key == "huge" || $0.key == "ignored" || $0.key == "machine" })
 
         _ = try await h.send("widgets-clear", from: shown)
         let cleared = try await h.snapshot { ($0.widgets ?? []).count == 1 }
@@ -307,6 +309,28 @@ struct RPCAgentThreadTests {
         _ = try await h.snapshot { ($0.widgets ?? []).contains { $0.key == "notify" } }
         let gone = try await h.snapshot(timeout: .seconds(20)) { !($0.widgets ?? []).contains { $0.key == "notify" } }
         #expect(gone.widgets?.map(\.key) == ["w"])
+    }
+
+    @Test func subagentNoiseStaysOutOfTheTranscript() async throws {
+        let h = try await Harness()
+        defer { h.tearDown() }
+        let s = try await h.ready()
+        _ = try await h.send("subagent-noise", from: s)
+        let shown = try await h.snapshot { $0.messages.contains { $0.entryID == "m:7" } }
+        let roles = shown.messages.map(\.role)
+        // 2 seeded + 6 appended, minus the display:false custom → 7 rows; ids stay positional.
+        #expect(shown.messages.count == 7)
+        #expect(!roles.contains("custom") || shown.messages.contains { $0.role == "custom" && $0.blocks.first?.text == "A note the user should see" })
+        #expect(!shown.messages.contains { $0.blocks.contains { $0.text.contains("Background task completed") } })
+        // The assistant's toolCall block is not rendered as prose; the tool row carries it.
+        let assistant = try #require(shown.messages.first { $0.entryID == "m:3" })
+        #expect(assistant.blocks.map(\.text) == ["Spawning."])
+        #expect(shown.messages.contains { $0.toolName == "subagent" && $0.argumentsText?.contains("list") == true })
+        // A cursor into filtered history still resolves by id.
+        guard case .snapshot(let older) = try await h.request(.snapshot(expectedSessionID: shown.piSessionID, beforeEntryID: "m:7")) else {
+            Issue.record("expected older page"); return
+        }
+        #expect(older.messages.last?.entryID == "m:6")
     }
 
     @Test func pagingWithBeforeEntryID() async throws {

@@ -294,7 +294,20 @@ final class RPCThreadState {
         session.request(.getMessages) { [weak self] result in
             guard let self, case .success(let response) = result, response.success,
                   let messages = try? response.data?["messages"]?.decode([RPCMessage].self) else { return }
-            self.history = messages.enumerated().map { Self.project(entryID: "m:\($0.offset)", message: $0.element) }
+            // Same filter as the terminal extension: custom messages are model-only unless the
+            // extension marked them display (pi-subagents' task-completed JSON is the usual case).
+            // Indices stay positional so `m:<i>` cursors remain stable across refreshes.
+            // pi keeps a call's arguments on the assistant's toolCall block; the toolResult row
+            // is what we show, so hand the arguments across by call id.
+            var arguments: [String: JSONValue] = [:]
+            for message in messages where message.role == "assistant" {
+                for case .toolCall(let id, _, let args) in message.content { if let args { arguments[id] = args } }
+            }
+            self.history = messages.enumerated().compactMap { index, message in
+                if message.role == "custom" && message.display != true { return nil }
+                let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
+                return Self.project(entryID: "m:\(index)", message: message, args: args)
+            }
             // message_end precedes persistence; a refresh means everything ended is now history.
             self.provisional.removeAll { $0.ended }
             self.tools.removeAll { $0.value.status == "complete" }
@@ -444,6 +457,9 @@ final class RPCThreadState {
         case "setWidget":
             guard let key = request.widgetKey else { return }
             let text = request.widgetLines.map { $0.map(Self.stripANSI).joined(separator: "\n") }
+            // Some extensions publish machine payloads for their own TUI component
+            // (pi-subagents: "PI_SUBAGENT_ASYNC_JSON:{…}"). Those are not for people.
+            if let text, Self.isMachineWidget(text) { setWidget(nil, key: key); return }
             setWidget(text.map { NativeThreadWidget(namespace: "pi", key: key, kind: .text, text: $0) }, key: key)
         case "notify":
             let text = Self.stripANSI(request.message ?? "")
@@ -463,6 +479,15 @@ final class RPCThreadState {
     }
 
     /// nil clears. Over-limit items are dropped with a log line, never fatal.
+    /// `UPPER_SNAKE:` marker prefixes and bare JSON objects/arrays are machine widgets.
+    static func isMachineWidget(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") { return true }
+        guard let colon = trimmed.firstIndex(of: ":") else { return false }
+        let marker = trimmed[..<colon]
+        return marker.count >= 4 && marker.allSatisfy { $0.isUppercase || $0 == "_" || $0.isNumber }
+    }
+
     private func setWidget(_ item: NativeThreadWidget?, key: String) {
         let id = "pi\u{0}\(key)"
         guard let item else {
@@ -521,7 +546,9 @@ final class RPCThreadState {
     private func snapshot(beforeEntryID: String?) -> NativeThreadResult {
         var end = history.count
         if let beforeEntryID {
-            guard beforeEntryID.hasPrefix("m:"), let index = Int(beforeEntryID.dropFirst(2)), index >= 0, index < history.count else {
+            // Entry ids are positional in pi's message list, but history skips model-only
+            // customs, so resolve the cursor by id rather than by array index.
+            guard let index = history.firstIndex(where: { $0.entryID == beforeEntryID }) else {
                 return .failure(code: "stale_cursor", message: "History changed. Refresh the recent page.")
             }
             end = index
@@ -598,8 +625,10 @@ final class RPCThreadState {
                 result.blocks.append(NativeThreadBlock(kind: .thinking, text: clip(text)))
             case .image:
                 result.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: clip("[Image unavailable in native thread]")))
-            case .toolCall(let id, let name, let arguments):
-                result.blocks.append(NativeThreadBlock(kind: .text, text: clip("\(name) [\(id)]\n\(json(arguments ?? .object([:])))")))
+            case .toolCall:
+                // The tool row (name, arguments, result) is the call's surface; dumping the
+                // call JSON as prose duplicated it.
+                break
             case .unknown:
                 break
             }

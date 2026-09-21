@@ -282,10 +282,14 @@ public struct RPCMessage: Codable, Hashable, Sendable {
     /// Assistant messages with `stopReason: "error"` carry the provider error here.
     public var errorMessage: String?
     public var timestamp: Double?
+    /// `custom` messages: extensions mark model-only payloads `display: false`.
+    public var customType: String?
+    public var display: Bool?
 
     public init(
         role: String, content: [RPCContentBlock], toolName: String? = nil, toolCallId: String? = nil,
-        isError: Bool? = nil, stopReason: String? = nil, errorMessage: String? = nil, timestamp: Double? = nil
+        isError: Bool? = nil, stopReason: String? = nil, errorMessage: String? = nil, timestamp: Double? = nil,
+        customType: String? = nil, display: Bool? = nil
     ) {
         self.role = role
         self.content = content
@@ -295,9 +299,11 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         self.stopReason = stopReason
         self.errorMessage = errorMessage
         self.timestamp = timestamp
+        self.customType = customType
+        self.display = display
     }
 
-    enum CodingKeys: String, CodingKey { case role, content, toolName, toolCallId, isError, stopReason, errorMessage, timestamp }
+    enum CodingKeys: String, CodingKey { case role, content, toolName, toolCallId, isError, stopReason, errorMessage, timestamp, customType, display }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -315,6 +321,8 @@ public struct RPCMessage: Codable, Hashable, Sendable {
         stopReason = try c.decodeIfPresent(String.self, forKey: .stopReason)
         errorMessage = try c.decodeIfPresent(String.self, forKey: .errorMessage)
         timestamp = try c.decodeIfPresent(Double.self, forKey: .timestamp)
+        customType = try c.decodeIfPresent(String.self, forKey: .customType)
+        display = try c.decodeIfPresent(Bool.self, forKey: .display)
     }
 }
 
