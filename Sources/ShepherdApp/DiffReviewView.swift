@@ -2,9 +2,9 @@ import SwiftUI
 import ShepherdCore
 
 struct DiffReviewPane: View {
+    var vm: ShepherdViewModel
     @Bindable var session: ReviewSession
     let isFocused: Bool
-    @Environment(ShepherdViewModel.self) private var vm
     @ObservedObject private var themes = ThemeManager.shared
     @State private var editingTarget: CommentTarget?
     @State private var draft = ""
