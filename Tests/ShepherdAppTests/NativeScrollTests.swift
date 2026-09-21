@@ -145,6 +145,94 @@ struct NativeScrollTests {
         #expect(f.distanceFromBottom > detachedDistance - 2, "growth yanked a detached user back to the bottom")
     }
 
+    /// A turn ending: the provisional assistant/tool rows vanish and history replaces them,
+    /// so content shrinks a little, then grows. Neither step is the user; stay stuck.
+    @Test func contentReplacementDoesNotDetachOrShowTheJumpPill() async throws {
+        let f = try Fixture(messageCount: 20, running: true)
+        defer { f.tearDown() }
+        try await waitFor { f.store.ready }
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2)
+        // Running with two provisional rows.
+        var mid = Fixture.makeSnapshot(count: 20, running: true, revision: 2)
+        mid.provisional = [
+            NativeThreadMessage(entryID: "provisional:assistant:1", role: "assistant",
+                                blocks: [NativeThreadBlock(kind: .text, text: "streaming a fairly long paragraph of text that wraps onto two lines at least")], status: "streaming", truncated: false),
+            NativeThreadMessage(entryID: "provisional:tool:c1", role: "toolResult", blocks: [], toolName: "bash", toolCallID: "c1",
+                                argumentsText: "{\"command\":\"ls\"}", status: "running", truncated: false),
+        ]
+        f.snapshot = mid
+        try await waitFor { f.store.snapshot?.revision == 2 }
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2)
+        // Turn ends: provisional gone, one shorter history message instead, still running=false.
+        f.snapshot = Fixture.makeSnapshot(count: 21, running: false, revision: 3)
+        try await waitFor { f.store.snapshot?.revision == 3 }
+        try await f.layout()
+        try await Task.sleep(for: .milliseconds(500))  // settledRunning debounce
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2, "replacement detached the tail: \(f.distanceFromBottom)")
+        // The jump pill must not be visible while pinned to the bottom.
+        func findJump(_ view: NSView) -> Bool {
+            if let button = view as? NSButton, button.title.contains("Jump") { return true }
+            if (view.accessibilityLabel() ?? "").contains("Jump to latest") { return true }
+            return view.subviews.contains(where: findJump)
+        }
+        #expect(!findJump(f.host), "jump pill shown while at the bottom")
+    }
+
+    /// A short thread (content shorter than the viewport) that grows past it: the offset is
+    /// clamped at 0 the whole time, so "distance from bottom" is negative, then large. None
+    /// of that is user intent; the tail must be followed and the pill must stay hidden.
+    @Test func shortThreadGrowingPastTheViewportFollowsTheTail() async throws {
+        let f = try Fixture(messageCount: 2, running: true)
+        defer { f.tearDown() }
+        try await waitFor { f.store.ready }
+        try await f.layout()
+        func findJump(_ view: NSView) -> Bool {
+            if (view.accessibilityLabel() ?? "").contains("Jump to latest") { return true }
+            return view.subviews.contains(where: findJump)
+        }
+        #expect(!findJump(f.host))
+        for (i, count) in [4, 8, 14, 22].enumerated() {
+            f.snapshot = Fixture.makeSnapshot(count: count, running: true, revision: UInt64(i + 2))
+            try await waitFor { f.store.messages.count == count }
+            try await f.layout()
+            #expect(!findJump(f.host), "jump pill shown after growing to \(count)")
+        }
+        #expect(f.distanceFromBottom < 2, "tail not followed after growth: \(f.distanceFromBottom)")
+    }
+
+    /// The composer changes height (status line, attachments, multi-line draft). That moves the
+    /// scroll view's inset, which SwiftUI reports as an offset change. It is not user intent.
+    @Test func composerGrowthDoesNotDetach() async throws {
+        let f = try Fixture(messageCount: 24)
+        defer { f.tearDown() }
+        try await waitFor { f.store.ready }
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2)
+        func findJump(_ view: NSView) -> Bool {
+            if (view.accessibilityLabel() ?? "").contains("Jump to latest") { return true }
+            return view.subviews.contains(where: findJump)
+        }
+        // A five-line draft grows the card by ~80pt.
+        f.store.draft = (1...5).map { "line \($0)" }.joined(separator: "\n")
+        try await f.layout()
+        try await Task.sleep(for: .milliseconds(200))
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2, "composer growth detached the tail: \(f.distanceFromBottom)")
+        // Running toggles the working row and, before this fix, a status line in the composer.
+        f.snapshot = Fixture.makeSnapshot(count: 24, running: true, revision: 2)
+        try await waitFor { f.store.snapshot?.revision == 2 }
+        try await f.layout()
+        f.store.draft = ""
+        try await f.layout()
+        try await Task.sleep(for: .milliseconds(200))
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2, "composer shrink detached the tail: \(f.distanceFromBottom)")
+        #expect(!findJump(f.host), "jump pill shown after composer resize")
+    }
+
     @Test func sendingReattachesToTheTailWithoutBlankSpace() async throws {
         let f = try Fixture(messageCount: 30)
         defer { f.tearDown() }

@@ -72,7 +72,9 @@ struct NativeComposer: View {
             } else if let notice = store.notice {
                 Text(notice).font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted).textSelection(.enabled)
             }
-            if waiting || running { statusLine(waiting: waiting) }
+            // Running state lives in the thread's shimmering working row; only a pending
+            // question earns a line here, since the card itself becomes the answer form.
+            if waiting { statusLine(waiting: waiting) }
             if commandQuery != nil {
                 NativeCommandMenu(matches: commandMatches, selected: $commandIndex) { choose($0) }
             }
@@ -90,17 +92,11 @@ struct NativeComposer: View {
         .onChange(of: commandQuery) { _, _ in commandIndex = 0 }
     }
 
-    /// 22pt line above the card: "Running bash · 12s" or "Waiting for you · 4s".
+    /// 22pt line above the card: "Waiting for you · 4s".
     private func statusLine(waiting: Bool) -> some View {
         HStack(spacing: 6) {
-            if waiting {
-                Circle().fill(NativeTokens.warning).frame(width: 6, height: 6)
-                Text("Waiting for you · \(clock.waitingElapsed(now: clock.now))")
-            } else {
-                NativeSpinner(color: NativeTokens.accent, size: 10)
-                let tool = store.snapshot?.provisional.last(where: { $0.toolName != nil && $0.status == "running" })?.toolName
-                Text("Running \(tool ?? "turn") · \(clock.runElapsed(now: clock.now))")
-            }
+            Circle().fill(NativeTokens.warning).frame(width: 6, height: 6)
+            Text("Waiting for you · \(clock.waitingElapsed(now: clock.now))")
         }
         .font(NativeFonts.caption)
         .foregroundStyle(NativeTokens.textMuted)
