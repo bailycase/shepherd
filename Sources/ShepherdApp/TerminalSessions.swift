@@ -526,9 +526,10 @@ final class TerminalSessionStore: ObservableObject {
     /// with the previous app run), so `aliveSessions` is whatever the server
     /// holds right now — normally empty.
     private func bootstrap() async throws {
+        aliveSessions = Set(await server.listSessions().filter(\.isAlive).map(\.id))
+        // Read after the suspension so bootstrap cannot republish an older workspace.
         let state = server.state
         serverState = state
-        aliveSessions = Set(await server.listSessions().filter(\.isAlive).map(\.id))
         onStateChanged?(state)
     }
 
