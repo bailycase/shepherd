@@ -5,6 +5,10 @@ import { createHash, randomUUID } from "node:crypto";
 const FRAME_LIMIT = 1024 * 1024;
 const SNAPSHOT_LIMIT = 240 * 1024;
 const TEXT_LIMIT = 16 * 1024;
+const UI_REQUEST = "shepherd:native-ui:request";
+const UI_RESPONSE = "shepherd:native-ui:response";
+const UI_LIMITS = Object.freeze({ namespaceBytes: 128, keyBytes: 128, requestIDBytes: 128,
+  titleBytes: 256, textBytes: 4096, items: 16, aggregateBytes: 32768 });
 const failure = (code, message) => ({ failure: { code, message } });
 const bytes = (value) => Buffer.byteLength(JSON.stringify(value));
 
@@ -13,7 +17,7 @@ export default function shepherdNative(pi) {
   const socketPath = process.env.SHEPHERD_SOCKET;
   if (!agentID || !socketPath) return;
 
-  let ctx, socket, retry, unsubscribe;
+  let ctx, socket, retry, unsubscribe, unsubscribeWidgets;
   let stopped = true, connected = false, retryDelay = 500;
   let generation = randomUUID(), sessionID, revision = 0, signature = "";
   let sequence = 0, currentAssistant, projectionClipped = false;
@@ -21,6 +25,52 @@ export default function shepherdNative(pi) {
   const operations = new Map();
   const provisional = new Map();
   const tools = new Map();
+  const widgets = new Map();
+
+  function widgetRequest(request) {
+    const invalid = (message) => ({ ok: false, error: { code: "invalid", message } });
+    const limit = (message) => ({ ok: false, error: { code: "limit", message } });
+    const bounded = (value, max) => typeof value === "string" && value.length > 0 && Buffer.byteLength(value) <= max;
+    if (!request || typeof request !== "object" || Array.isArray(request) || request.version !== 1 ||
+        !bounded(request.requestID, UI_LIMITS.requestIDBytes)) return invalid("version 1 and a requestID up to 128 UTF-8 bytes are required.");
+    if (request.type === "capabilities") return { ok: true, kinds: ["status", "text"], limits: UI_LIMITS };
+    if (!["set", "clear"].includes(request.type)) return invalid("Unknown native UI request type.");
+    if (!bounded(request.namespace, UI_LIMITS.namespaceBytes) || !bounded(request.key, UI_LIMITS.keyBytes)) {
+      return invalid("namespace and key must each contain 1–128 UTF-8 bytes.");
+    }
+    refreshContext(ctx);
+    const id = JSON.stringify([request.namespace, request.key]);
+    if (request.type === "clear") { widgets.delete(id); return { ok: true }; }
+    if (!["status", "text"].includes(request.kind) || typeof request.text !== "string" ||
+        (request.title !== undefined && typeof request.title !== "string")) return invalid("set requires a status/text kind, plain text, and an optional string title.");
+    if (Buffer.byteLength(request.text) > UI_LIMITS.textBytes ||
+        Buffer.byteLength(request.title ?? "") > UI_LIMITS.titleBytes) return limit("text exceeds 4096 bytes or title exceeds 256 bytes.");
+    const item = { namespace: request.namespace, key: request.key, kind: request.kind,
+      ...(request.title === undefined ? {} : { title: request.title }), text: request.text };
+    if (!widgets.has(id) && widgets.size >= UI_LIMITS.items) return limit("At most 16 native UI items are allowed per session.");
+    const next = [...widgets.entries()].filter(([key]) => key !== id).map(([, value]) => value).concat(item);
+    if (bytes(next) > UI_LIMITS.aggregateBytes) return limit("Native UI items exceed the 32768-byte encoded array budget.");
+    widgets.set(id, item);
+    return { ok: true };
+  }
+
+  function subscribeWidgets() {
+    try { unsubscribeWidgets?.(); } catch {}
+    unsubscribeWidgets = undefined;
+    if (typeof pi.events?.on !== "function" || typeof pi.events?.emit !== "function") return;
+    unsubscribeWidgets = pi.events.on(UI_REQUEST, (request) => {
+      // Extension event payloads are not trusted; never throw through the shared pi bus.
+      let requestID = null, result;
+      try {
+        if (typeof request?.requestID === "string" && Buffer.byteLength(request.requestID) <= UI_LIMITS.requestIDBytes) requestID = request.requestID;
+        result = widgetRequest(request);
+      } catch {
+        result = { ok: false, error: { code: "invalid", message: "Native UI request could not be processed." } };
+      }
+      // A producer's throwing response listener must not trigger a second response.
+      try { pi.events.emit(UI_RESPONSE, { version: 1, requestID, ...result }); } catch {}
+    });
+  }
 
   function project(entryID, message) {
     let remaining = TEXT_LIMIT, truncated = false;
@@ -72,7 +122,7 @@ export default function shepherdNative(pi) {
     if (reset || sessionID !== current) {
       sessionID = current;
       generation = randomUUID();
-      operations.clear(); provisional.clear(); tools.clear(); currentAssistant = undefined;
+      operations.clear(); provisional.clear(); tools.clear(); widgets.clear(); currentAssistant = undefined;
       projectionClipped = false;
       signature = "";
       revision++;
@@ -110,7 +160,7 @@ export default function shepherdNative(pi) {
     const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
     const thinking = typeof pi.getThinkingLevel === "function" ? pi.getThinkingLevel() : undefined;
     const active = [...provisional.values()].map((p) => p.value).concat([...tools.values()]);
-    const nextSignature = createHash("sha256").update(JSON.stringify([branch.map((e) => e.id), active, dialogs, running, model, thinking])).digest("hex");
+    const nextSignature = createHash("sha256").update(JSON.stringify([branch.map((e) => e.id), active, dialogs, [...widgets.values()], running, model, thinking])).digest("hex");
     if (nextSignature !== signature) { signature = nextSignature; revision++; }
     if (request.beforeEntryID == null && request.afterRevision === revision) return { unchanged: { piSessionID: sessionID, generation, revision } };
     let end = branch.length;
@@ -120,7 +170,7 @@ export default function shepherdNative(pi) {
     }
     const value = { piSessionID: sessionID, generation, revision, running, model, thinking,
       supportedActions: dialogsSupported() ? ["send", "abort", "answer"] : ["send", "abort"],
-      dialogsSupported: dialogsSupported(), dialogs, messages: [], provisional: active,
+      dialogsSupported: dialogsSupported(), dialogs, widgets: [...widgets.values()], messages: [], provisional: active,
       clipped: projectionClipped || dialogs.some((d) => d.unavailable === "payload-limit") };
     // Keep active output bounded before filling the remaining budget with history.
     while (bytes(value) > 120 * 1024 && value.provisional.length) { value.provisional.shift(); value.clipped = true; }
@@ -235,6 +285,9 @@ export default function shepherdNative(pi) {
     clearTimeout(retry); retry = undefined;
     try { unsubscribe?.(); } catch {}
     unsubscribe = undefined;
+    try { unsubscribeWidgets?.(); } catch {}
+    unsubscribeWidgets = undefined;
+    widgets.clear();
     const old = socket; socket = undefined; connected = false;
     buffer = Buffer.alloc(0);
     old?.destroy();
@@ -243,7 +296,7 @@ export default function shepherdNative(pi) {
   const on = (name, handler) => pi.on(name, (event, context) => {
     try { handler(event, context); } catch {}
   });
-  on("session_start", (_, context) => { refreshContext(context, true); stopped = false; connect(); });
+  on("session_start", (_, context) => { refreshContext(context, true); subscribeWidgets(); stopped = false; connect(); });
   on("session_tree", (_, context) => { refreshContext(context, true); });
   on("session_shutdown", () => { stop(); ctx = undefined; });
   for (const name of ["agent_start", "agent_end", "agent_settled", "model_select", "session_compact", "ui_prompt_start", "ui_prompt_end"]) {

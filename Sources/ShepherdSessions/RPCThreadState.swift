@@ -1,0 +1,625 @@
+import Dispatch
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
+
+/// The native-thread view of one `RPCSession`, fed by pi's event stream. This
+/// is the server-side port of `Extensions/shepherd-native.ts`: same
+/// projection rules, limits, error codes, and operation idempotency, so
+/// desktop and iOS clients cannot tell an RPC agent from a terminal one.
+/// Confined to the session queue (which targets the server queue).
+final class RPCThreadState {
+    static let textLimit = 16 * 1024
+    static let snapshotLimit = 240 * 1024
+    static let activeLimit = 120 * 1024
+    static let pageSize = 50
+    static let dialogLimit = 8
+    static let dialogBytes = 48 * 1024
+    static let notifyDuration: DispatchTimeInterval = .seconds(10)
+    /// UI_LIMITS in the extension.
+    static let widgetItems = 16
+    static let widgetTextBytes = 4096
+    static let widgetTitleBytes = 256
+    static let widgetAggregateBytes = 32 * 1024
+    static let operationTableSize = 256
+    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages"]
+
+    private struct Provisional {
+        let key: Int
+        var raw: RPCMessage
+        var value: NativeThreadMessage
+        var ended: Bool
+    }
+
+    private struct Operation {
+        let fingerprint: NativeThreadRequest
+        var result: NativeThreadResult?
+        var waiters: [(NativeThreadResult) -> Void] = []
+    }
+
+    private let session: RPCSession
+    private let queue: DispatchQueue
+    private(set) var piSessionID: String?
+    private(set) var generation = UUID().uuidString
+    private(set) var revision: UInt64 = 0
+    private var signature = 0
+    private(set) var running = false
+    private(set) var model: String?
+    private(set) var thinking: String?
+    private(set) var stats: NativeThreadStats?
+    private(set) var commands: [NativeCommand]?
+    private var history: [NativeThreadMessage] = []
+    private var provisional: [Provisional] = []
+    private var sequence = 0
+    private var currentAssistant: Int?
+    private var tools: [(id: String, value: NativeThreadMessage)] = []
+    private var dialogs: [NativeThreadDialog] = []
+    private var widgets: [(id: String, value: NativeThreadWidget)] = []
+    private var notifyToken = 0
+    private var operations: [(id: String, operation: Operation)] = []
+    private var projectionClipped = false
+    private static let encoder = JSONEncoder()
+    private static let ansi = try! NSRegularExpression(
+        pattern: "\u{1B}(?:\\[[0-?]*[ -/]*[@-~]|\\][^\u{07}\u{1B}]*(?:\u{07}|\u{1B}\\\\)|[@-Z\\\\-_])"
+    )
+
+    init(session: RPCSession, queue: DispatchQueue) {
+        self.session = session
+        self.queue = queue
+    }
+
+    /// Populate from a freshly spawned (or resumed) pi.
+    func bootstrap() {
+        refreshState()
+        refreshMessages()
+        refreshStats()
+        session.request(.getCommands) { [weak self] result in
+            guard let self, case .success(let response) = result, response.success else { return }
+            self.commands = Self.projectCommands(response.data?["commands"])
+            self.commit()
+        }
+    }
+
+    // MARK: - Events (session queue)
+
+    func handle(_ event: RPCEvent) {
+        switch event {
+        case .agentStart:
+            running = true
+        case .agentEnd:
+            running = false
+            refreshMessages()
+            refreshState()
+            refreshStats()
+        case .agentSettled:
+            running = false
+        case .messageStart(let message):
+            guard message.role == "assistant" else { break }
+            sequence += 1
+            currentAssistant = sequence
+            upsertAssistant(message, ended: false)
+        case .messageUpdate(let delta, _):
+            guard let key = currentAssistant, let index = provisional.firstIndex(where: { $0.key == key }) else {
+                // message_start was missed (spawned mid-turn); start accumulating now.
+                sequence += 1
+                currentAssistant = sequence
+                var raw = RPCMessage(role: "assistant", content: [])
+                Self.apply(delta, to: &raw)
+                upsertAssistant(raw, ended: false)
+                break
+            }
+            var raw = provisional[index].raw
+            Self.apply(delta, to: &raw)
+            upsertAssistant(raw, ended: false)
+        case .messageEnd(let message):
+            guard message.role == "assistant" else { break }
+            if currentAssistant == nil {
+                sequence += 1
+                currentAssistant = sequence
+            }
+            upsertAssistant(message, ended: true)
+            currentAssistant = nil
+        case .toolExecutionStart(let id, let name, let args):
+            upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
+        case .toolExecutionUpdate(let id, let name, let args, let partial):
+            upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
+        case .toolExecutionEnd(let id, let name, let result, let isError):
+            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: "complete")
+        case .extensionUIRequest(let request):
+            handleUIRequest(request)
+        case .extensionError(let path, let event, let error):
+            ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
+        case .turnStart, .turnEnd, .queueUpdate, .unknown:
+            break
+        }
+        commit()
+    }
+
+    // MARK: - Requests (server queue)
+
+    func handle(_ request: NativeThreadRequest, completion: @escaping (NativeThreadResult) -> Void) {
+        guard let piSessionID else {
+            completion(.failure(code: "native_unavailable", message: "Session is not ready."))
+            return
+        }
+        commit()
+        switch request {
+        case .snapshot(let expectedSessionID, let beforeEntryID, let afterRevision):
+            if let expectedSessionID, expectedSessionID != piSessionID {
+                completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
+                return
+            }
+            if beforeEntryID == nil, afterRevision == revision {
+                completion(.unchanged(piSessionID: piSessionID, generation: generation, revision: revision))
+                return
+            }
+            completion(snapshot(beforeEntryID: beforeEntryID))
+        case .send(let expectedSessionID, let generation, let operationID, _, _, _),
+             .abort(let expectedSessionID, let generation, let operationID),
+             .answer(let expectedSessionID, let generation, let operationID, _, _),
+             .setModel(let expectedSessionID, let generation, let operationID, _),
+             .setThinking(let expectedSessionID, let generation, let operationID, _):
+            guard expectedSessionID == piSessionID, generation == self.generation else {
+                completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
+                return
+            }
+            let key = operationID.uuidString.uppercased()
+            if let index = operations.firstIndex(where: { $0.id == key }) {
+                guard operations[index].operation.fingerprint == request else {
+                    completion(.failure(code: "operation_conflict", message: "Operation ID was reused with a different payload."))
+                    return
+                }
+                if let result = operations[index].operation.result {
+                    completion(result)
+                } else {
+                    operations[index].operation.waiters.append(completion)
+                }
+                return
+            }
+            operations.append((key, Operation(fingerprint: request)))
+            if operations.count > Self.operationTableSize { operations.removeFirst() }
+            perform(request, operationID: operationID) { [weak self] result in
+                guard let self else { completion(result); return }
+                guard let index = self.operations.firstIndex(where: { $0.id == key }) else {
+                    // Evicted while in flight; still answer this caller.
+                    completion(result)
+                    return
+                }
+                self.operations[index].operation.result = result
+                let waiters = self.operations[index].operation.waiters
+                self.operations[index].operation.waiters = []
+                self.revision += 1
+                completion(result)
+                waiters.forEach { $0(result) }
+            }
+        }
+    }
+
+    private func perform(_ request: NativeThreadRequest, operationID: UUID, completion: @escaping (NativeThreadResult) -> Void) {
+        let accepted = NativeThreadResult.accepted(operationID: operationID)
+        let dispatchFailed = NativeThreadResult.failure(code: "dispatch_failed", message: "Pi rejected native dispatch. Refresh before acting.")
+        let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
+            if case .success(let response) = result, response.success {
+                completion(accepted)
+            } else {
+                completion(dispatchFailed)
+            }
+        }
+        switch request {
+        case .send(_, _, _, let text, let delivery, let images):
+            let images = images ?? []
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.utf8.count <= Self.textLimit else {
+                completion(.failure(code: "invalid", message: "Send requires text up to 16 KiB and a valid delivery mode."))
+                return
+            }
+            // Per-image cap from the contract; the aggregate keeps one prompt line
+            // under RPCSession's 8 MiB stdin queue once base64-expanded.
+            guard images.count <= NativeImage.maxPerSend,
+                  images.allSatisfy({ $0.data.count <= NativeImage.maxBytes && $0.mimeType.hasPrefix("image/") }),
+                  images.reduce(0, { $0 + $1.data.count }) <= 5 * 1024 * 1024 else {
+                completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
+                return
+            }
+            let behavior: RPCStreamingBehavior? = running ? (delivery == .steer ? .steer : .followUp) : nil
+            let rpcImages = images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
+            session.request(.prompt(message: text, images: rpcImages, streamingBehavior: behavior), completion: settle)
+        case .abort:
+            session.request(.abort, completion: settle)
+        case .setModel(_, _, _, let model):
+            // "provider/id"; ids may themselves contain "/" so split on the first one only.
+            guard let slash = model.firstIndex(of: "/"), slash > model.startIndex, model.index(after: slash) < model.endIndex else {
+                completion(.failure(code: "invalid", message: "Model must be provider/id."))
+                return
+            }
+            let provider = String(model[..<slash])
+            let id = String(model[model.index(after: slash)...])
+            session.request(.setModel(provider: provider, modelId: id)) { [weak self] result in
+                settle(result)
+                self?.refreshState()
+            }
+        case .setThinking(_, _, _, let level):
+            guard ["off", "low", "medium", "high"].contains(level) else {
+                completion(.failure(code: "invalid", message: "Thinking level must be off, low, medium, or high."))
+                return
+            }
+            session.request(.setThinkingLevel(level: level)) { [weak self] result in
+                settle(result)
+                self?.refreshState()
+            }
+        case .answer(_, _, _, let dialogID, let answer):
+            guard let index = dialogs.firstIndex(where: { $0.id == dialogID }), dialogs[index].unavailable == nil else {
+                completion(.failure(code: "dialog_unavailable", message: "Dialog answer not accepted. Refresh the thread."))
+                return
+            }
+            let command: RPCCommand
+            switch answer {
+            case .select(let value), .input(let value), .editor(let value):
+                command = .extensionUIResponse(id: dialogID, value: value)
+            case .confirm(let value):
+                command = .extensionUIResponse(id: dialogID, confirmed: value)
+            case .cancel:
+                command = .extensionUIResponse(id: dialogID, cancelled: true)
+            }
+            // pi never answers extension_ui_response; the write is the dispatch.
+            session.send(command)
+            dialogs.remove(at: index)
+            completion(session.isAlive ? accepted : dispatchFailed)
+        case .snapshot:
+            completion(dispatchFailed)
+        }
+    }
+
+    // MARK: - Refresh
+
+    private func refreshState() {
+        session.request(.getState) { [weak self] result in
+            guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
+            if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
+                if self.piSessionID != nil { self.resetForNewSession() }
+                self.piSessionID = id
+            }
+            if let m = data["model"], let provider = m["provider"]?.stringValue, let id = m["id"]?.stringValue {
+                self.model = "\(provider)/\(id)"
+            } else {
+                self.model = nil
+            }
+            self.thinking = data["thinkingLevel"]?.stringValue
+            if let streaming = data["isStreaming"]?.boolValue { self.running = streaming }
+            self.commit()
+        }
+    }
+
+    private func refreshMessages() {
+        session.request(.getMessages) { [weak self] result in
+            guard let self, case .success(let response) = result, response.success,
+                  let messages = try? response.data?["messages"]?.decode([RPCMessage].self) else { return }
+            self.history = messages.enumerated().map { Self.project(entryID: "m:\($0.offset)", message: $0.element) }
+            // message_end precedes persistence; a refresh means everything ended is now history.
+            self.provisional.removeAll { $0.ended }
+            self.tools.removeAll { $0.value.status == "complete" }
+            self.commit()
+        }
+    }
+
+    private func refreshStats() {
+        session.request(.getSessionStats) { [weak self] result in
+            guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
+            let usage = data["contextUsage"]
+            self.stats = NativeThreadStats(
+                contextTokens: usage?["tokens"]?.doubleValue.map { Int($0) },
+                contextWindow: usage?["contextWindow"]?.doubleValue.map { Int($0) },
+                contextPercent: usage?["percent"]?.doubleValue,
+                totalTokens: data["tokens"]?["total"]?.doubleValue.map { Int($0) },
+                cost: data["cost"]?.doubleValue
+            )
+            self.commit()
+        }
+    }
+
+    /// get_commands → capped, byte-limited list. Over-long names are dropped, descriptions clipped.
+    static func projectCommands(_ value: JSONValue?) -> [NativeCommand] {
+        guard let items = value?.arrayValue else { return [] }
+        var result: [NativeCommand] = []
+        for item in items {
+            guard let name = item["name"]?.stringValue, !name.isEmpty, name.utf8.count <= NativeCommand.maxNameBytes else { continue }
+            var description = item["description"]?.stringValue
+            if let text = description, text.utf8.count > NativeCommand.maxDescriptionBytes {
+                description = String(decoding: Array(text.utf8.prefix(NativeCommand.maxDescriptionBytes)), as: UTF8.self)
+            }
+            result.append(NativeCommand(name: name, description: description, source: item["source"]?.stringValue))
+            if result.count == NativeCommand.maxCount { break }
+        }
+        return result
+    }
+
+    /// pi switched sessions (new_session / switch): nothing from the previous
+    /// session may be acted on with the old generation.
+    private func resetForNewSession() {
+        generation = UUID().uuidString
+        operations.removeAll()
+        provisional.removeAll()
+        tools.removeAll()
+        widgets.removeAll()
+        history.removeAll()
+        currentAssistant = nil
+        projectionClipped = false
+        signature = 0
+        revision += 1
+    }
+
+    // MARK: - Provisional items
+
+    private func upsertAssistant(_ raw: RPCMessage, ended: Bool) {
+        guard let key = currentAssistant else { return }
+        var value = Self.project(entryID: "provisional:assistant:\(key)", message: raw)
+        value.status = ended ? (raw.stopReason ?? "complete") : "streaming"
+        if let index = provisional.firstIndex(where: { $0.key == key }) {
+            provisional[index] = Provisional(key: key, raw: raw, value: value, ended: ended)
+        } else {
+            provisional.append(Provisional(key: key, raw: raw, value: value, ended: ended))
+        }
+        if provisional.count > Self.pageSize {
+            provisional.removeFirst()
+            projectionClipped = true
+        }
+    }
+
+    private func upsertTool(id: String, name: String, args: JSONValue?, content: [RPCContentBlock], isError: Bool?, status: String) {
+        let previous = tools.first { $0.id == id }?.value
+        var value = Self.project(
+            entryID: "provisional:tool:\(id)",
+            message: RPCMessage(role: "toolResult", content: content, toolName: name, toolCallId: id, isError: isError),
+            args: args
+        )
+        if value.argumentsText == nil { value.argumentsText = previous?.argumentsText }
+        value.status = status
+        if let index = tools.firstIndex(where: { $0.id == id }) {
+            tools[index].value = value
+        } else {
+            tools.append((id, value))
+        }
+        if tools.count > Self.pageSize {
+            tools.removeFirst()
+            projectionClipped = true
+        }
+    }
+
+    static func apply(_ delta: RPCAssistantDelta, to message: inout RPCMessage) {
+        guard let index = delta.contentIndex, index >= 0 else { return }
+        while message.content.count <= index { message.content.append(.text("")) }
+        switch delta.type {
+        case "text_start":
+            message.content[index] = .text("")
+        case "text_delta":
+            if case .text(let text) = message.content[index] {
+                message.content[index] = .text(text + (delta.delta ?? ""))
+            } else {
+                message.content[index] = .text(delta.delta ?? "")
+            }
+        case "text_end":
+            if let content = delta.content { message.content[index] = .text(content) }
+        case "thinking_start":
+            message.content[index] = .thinking("")
+        case "thinking_delta":
+            if case .thinking(let text) = message.content[index] {
+                message.content[index] = .thinking(text + (delta.delta ?? ""))
+            } else {
+                message.content[index] = .thinking(delta.delta ?? "")
+            }
+        case "thinking_end":
+            if let content = delta.content { message.content[index] = .thinking(content) }
+        case "toolcall_start":
+            message.content[index] = .toolCall(id: delta.id ?? "", name: delta.toolName ?? "", arguments: nil)
+        case "toolcall_end":
+            if let call = delta.toolCall { message.content[index] = call }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Dialogs and widgets
+
+    private func handleUIRequest(_ request: RPCExtensionUIRequest) {
+        switch request.method {
+        case "select", "confirm", "input", "editor":
+            guard let kind = NativeThreadDialog.Kind(rawValue: request.method) else { return }
+            var dialog = NativeThreadDialog(
+                id: request.id, kind: kind, title: request.title ?? "", options: request.options,
+                message: request.message, placeholder: request.placeholder, prefill: request.prefill, timeout: request.timeout
+            )
+            if Self.bytes(dialog) > Self.dialogBytes {
+                dialog = NativeThreadDialog(id: request.id, kind: kind, title: "Dialog too large for native thread", unavailable: "payload-limit")
+            }
+            dialogs.removeAll { $0.id == request.id }
+            dialogs.append(dialog)
+            if let timeout = request.timeout, timeout > 0 {
+                // pi auto-resolves on its side; we only stop showing it.
+                queue.asyncAfter(deadline: .now() + .milliseconds(Int(timeout))) { [weak self] in
+                    guard let self else { return }
+                    self.dialogs.removeAll { $0.id == request.id }
+                    self.commit()
+                }
+            }
+        case "setWidget":
+            guard let key = request.widgetKey else { return }
+            let text = request.widgetLines.map { $0.map(Self.stripANSI).joined(separator: "\n") }
+            setWidget(text.map { NativeThreadWidget(namespace: "pi", key: key, kind: .text, text: $0) }, key: key)
+        case "notify":
+            let text = Self.stripANSI(request.message ?? "")
+            notifyToken += 1
+            let token = notifyToken
+            setWidget(text.isEmpty ? nil : NativeThreadWidget(namespace: "pi", key: "notify", kind: .status, title: request.notifyType, text: text), key: "notify")
+            queue.asyncAfter(deadline: .now() + Self.notifyDuration) { [weak self] in
+                guard let self, self.notifyToken == token else { return }
+                self.setWidget(nil, key: "notify")
+                self.commit()
+            }
+        default:
+            // setStatus is the TUI footer slot (ponytail, goal, codex-fast park persistent
+            // chrome there), not conversation content; setTitle / set_editor_text likewise.
+            break
+        }
+    }
+
+    /// nil clears. Over-limit items are dropped with a log line, never fatal.
+    private func setWidget(_ item: NativeThreadWidget?, key: String) {
+        let id = "pi\u{0}\(key)"
+        guard let item else {
+            widgets.removeAll { $0.id == id }
+            return
+        }
+        guard !key.isEmpty, key.utf8.count <= 128 else {
+            ShepherdLog.warning("rpc session \(session.id) widget key rejected (1–128 bytes)")
+            return
+        }
+        guard item.text.utf8.count <= Self.widgetTextBytes, (item.title ?? "").utf8.count <= Self.widgetTitleBytes else {
+            ShepherdLog.warning("rpc session \(session.id) widget '\(key)' dropped: text exceeds \(Self.widgetTextBytes) bytes or title exceeds \(Self.widgetTitleBytes)")
+            return
+        }
+        let existing = widgets.firstIndex { $0.id == id }
+        guard existing != nil || widgets.count < Self.widgetItems else {
+            ShepherdLog.warning("rpc session \(session.id) widget '\(key)' dropped: at most \(Self.widgetItems) items")
+            return
+        }
+        var next = widgets.filter { $0.id != id }
+        next.append((id, item))
+        guard Self.bytes(next.map(\.value)) <= Self.widgetAggregateBytes else {
+            ShepherdLog.warning("rpc session \(session.id) widget '\(key)' dropped: items exceed the \(Self.widgetAggregateBytes)-byte budget")
+            return
+        }
+        widgets = next
+    }
+
+    static func stripANSI(_ text: String) -> String {
+        let range = NSRange(text.startIndex..., in: text)
+        return ansi.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+    }
+
+    // MARK: - Snapshot
+
+    private func commit() {
+        var hasher = Hasher()
+        hasher.combine(history.count)
+        hasher.combine(provisional.map(\.value))
+        hasher.combine(tools.map(\.value))
+        hasher.combine(dialogs)
+        hasher.combine(widgets.map(\.value))
+        hasher.combine(running)
+        hasher.combine(model)
+        hasher.combine(thinking)
+        hasher.combine(piSessionID)
+        hasher.combine(stats)
+        hasher.combine(commands)
+        let next = hasher.finalize()
+        if next != signature {
+            signature = next
+            revision += 1
+        }
+    }
+
+    private func snapshot(beforeEntryID: String?) -> NativeThreadResult {
+        var end = history.count
+        if let beforeEntryID {
+            guard beforeEntryID.hasPrefix("m:"), let index = Int(beforeEntryID.dropFirst(2)), index >= 0, index < history.count else {
+                return .failure(code: "stale_cursor", message: "History changed. Refresh the recent page.")
+            }
+            end = index
+        }
+        let dialogs = Array(self.dialogs.prefix(Self.dialogLimit))
+        var value = NativeThreadSnapshot(
+            piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
+            model: model, thinking: thinking, supportedActions: Self.supportedActions, dialogsSupported: true,
+            dialogs: dialogs, widgets: widgets.map(\.value), messages: [],
+            provisional: provisional.map(\.value) + tools.map(\.value),
+            clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
+            runtime: "rpc", stats: stats, commands: commands
+        )
+        // Keep active output bounded before filling the remaining budget with history.
+        while Self.bytes(value) > Self.activeLimit, !value.provisional.isEmpty {
+            value.provisional.removeFirst()
+            value.clipped = true
+        }
+        while Self.bytes(value) > Self.activeLimit, !value.dialogs.isEmpty {
+            value.dialogs.removeLast()
+            value.clipped = true
+        }
+        var size = Self.bytes(value)
+        var index = end - 1
+        while index >= 0 {
+            let message = history[index]
+            size += Self.bytes(message) + 1
+            if size > Self.snapshotLimit {
+                value.clipped = true
+                break
+            }
+            value.messages.insert(message, at: 0)
+            index -= 1
+            if value.messages.count == Self.pageSize { break }
+        }
+        if index >= 0, let first = value.messages.first { value.olderCursor = first.entryID }
+        return .snapshot(value: value)
+    }
+
+    private static func bytes<T: Encodable>(_ value: T) -> Int {
+        (try? encoder.encode(value).count) ?? Int.max
+    }
+
+    // MARK: - Projection (port of project() in shepherd-native.ts)
+
+    static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil) -> NativeThreadMessage {
+        var remaining = textLimit
+        var truncated = false
+        func clip(_ value: String) -> String {
+            let raw = Array(value.utf8)
+            if raw.count <= remaining {
+                remaining -= raw.count
+                return value
+            }
+            truncated = true
+            var end = remaining
+            while end > 0, raw[end] & 0xC0 == 0x80 { end -= 1 }
+            remaining = 0
+            return String(decoding: raw[0..<end], as: UTF8.self)
+        }
+        var result = NativeThreadMessage(entryID: entryID, role: message.role.isEmpty ? "custom" : message.role, blocks: [])
+        if let toolName = message.toolName { result.toolName = clip(toolName) }
+        if let toolCallID = message.toolCallId { result.toolCallID = clip(toolCallID) }
+        if let args { result.argumentsText = clip(json(args)) }
+        for block in message.content {
+            if result.blocks.count >= 128 || remaining == 0 {
+                truncated = true
+                break
+            }
+            switch block {
+            case .text(let text):
+                result.blocks.append(NativeThreadBlock(kind: .text, text: clip(text)))
+            case .thinking(let text):
+                result.blocks.append(NativeThreadBlock(kind: .thinking, text: clip(text)))
+            case .image:
+                result.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: clip("[Image unavailable in native thread]")))
+            case .toolCall(let id, let name, let arguments):
+                result.blocks.append(NativeThreadBlock(kind: .text, text: clip("\(name) [\(id)]\n\(json(arguments ?? .object([:])))")))
+            case .unknown:
+                break
+            }
+        }
+        if let error = message.errorMessage, !error.isEmpty {
+            result.blocks.append(NativeThreadBlock(kind: .text, text: clip(error)))
+        }
+        if let isError = message.isError { result.isError = isError }
+        if let stop = message.stopReason, !stop.isEmpty { result.status = clip(stop) }
+        result.truncated = truncated
+        return result
+    }
+
+    private static let argumentEncoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return e
+    }()
+
+    private static func json(_ value: JSONValue) -> String {
+        (try? argumentEncoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
+    }
+}

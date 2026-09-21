@@ -9,6 +9,8 @@ public enum SessionServerError: Error, CustomStringConvertible {
     case socketPathTooLong(path: String)
     case system(call: String, errno: Int32)
     case noSuchSession(SessionID)
+    /// A terminal-only operation (attach, screen, resize) on an RPC session.
+    case noTerminal(SessionID)
     case noSuchSpace(SpaceID)
     case noSuchTab(TabID)
     case noSuchPane(PaneID)
@@ -26,6 +28,8 @@ public enum SessionServerError: Error, CustomStringConvertible {
             return "\(call) failed: \(String(cString: strerror(err))) (errno \(err))"
         case .noSuchSession(let id):
             return "unknown session \(id)"
+        case .noTerminal(let id):
+            return "session \(id) is an RPC session and has no terminal"
         case .noSuchSpace(let id):
             return "unknown space \(id)"
         case .noSuchTab(let id):
@@ -238,8 +242,67 @@ public final class SessionServer: @unchecked Sendable {
     private var localViewports: [SessionID: (cols: Int, rows: Int)] = [:]
     private var clients: [Int32: ExtensionConnection] = [:]
     private var nextNativeRequestID = 0
-    private var nativePending: [Int: (remote: ExtensionConnection, bridge: ExtensionConnection, requestID: Int)] = [:]
-    private var sessions: [SessionID: PTYSession] = [:]
+    private enum NativeOutcome {
+        case result(NativeThreadResult)
+        case failure(code: String, message: String)
+    }
+
+    private struct NativePending {
+        let remote: ExtensionConnection?
+        let bridge: ExtensionConnection
+        // Invoked exactly once on the server queue; local completions hop to main.
+        let completion: (NativeOutcome) -> Void
+    }
+
+    private var nativePending: [Int: NativePending] = [:]
+
+    /// One child process per session, on a PTY (terminal agents, shells) or on
+    /// pipes (`pi --mode rpc`). Terminal-only paths take `pty` and treat nil as
+    /// "no terminal"; liveness, exit, and kill are shared.
+    private enum ServerSession {
+        case pty(PTYSession)
+        case rpc(RPCSession, RPCThreadState)
+
+        var pty: PTYSession? {
+            if case .pty(let session) = self { return session }
+            return nil
+        }
+
+        var thread: RPCThreadState? {
+            if case .rpc(_, let state) = self { return state }
+            return nil
+        }
+
+        var isAlive: Bool {
+            switch self {
+            case .pty(let s): return s.isAlive
+            case .rpc(let s, _): return s.isAlive
+            }
+        }
+
+        var info: SessionInfo {
+            switch self {
+            case .pty(let s): return s.info
+            case .rpc(let s, _): return s.info
+            }
+        }
+
+        func signalProcessGroup(_ sig: Int32) {
+            switch self {
+            case .pty(let s): s.signalProcessGroup(sig)
+            case .rpc(let s, _): s.signalProcessGroup(sig)
+            }
+        }
+
+        func shutdown() {
+            switch self {
+            case .pty(let s): s.shutdown()
+            case .rpc(let s, _): s.shutdown()
+            }
+        }
+    }
+
+    private var sessions: [SessionID: ServerSession] = [:]
     private var attachedSessions: Set<SessionID> = []
     /// Output waiting for the GUI, plus the one delivery currently executing
     /// on the main queue, tracked independently for each session.
@@ -390,6 +453,76 @@ public final class SessionServer: @unchecked Sendable {
             listenFD = -1
         }
         stopRemoteListenerOnQueue()
+    }
+
+    // MARK: - Native thread bridge
+
+    /// Uses the running agent's extension, without TCP, authentication, or PTY input.
+    /// Transport failures match RemoteHostClient.nativeThread: rejected or outcomeUnknown.
+    /// Pi-level failures remain NativeThreadResult.failure. Cancellation does not undo
+    /// dispatch; as with TCP, callers must ignore stale responses and never auto-retry.
+    public func nativeThread(agentID: AgentID, request: NativeThreadRequest) async throws -> NativeThreadResult {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                // Include the same envelope budget as TCP, excluding NDJSON's newline.
+                let bytes = (try? NDJSON.encode(RemoteRequest.nativeThread(id: 0, agentID: agentID, request: request)).count - 1) ?? Int.max
+                self.dispatchNativeThread(agentID: agentID, request: request, requestBytes: bytes) { outcome in
+                    self.hopToMain {
+                        switch outcome {
+                        case .result(let result): continuation.resume(returning: result)
+                        case .failure("outcome_unknown", let message):
+                            continuation.resume(throwing: RemoteHostClientError.outcomeUnknown(message: message))
+                        case .failure(let code, let message):
+                            continuation.resume(throwing: RemoteHostClientError.rejected(code: code, message: message))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Queue-owned dispatch shared by local and authenticated TCP callers. The bridge
+    /// checks pi's current session/generation; persisted agent session IDs may lag /resume.
+    private func dispatchNativeThread(
+        agentID: AgentID,
+        request: NativeThreadRequest,
+        requestBytes: Int,
+        remote: ExtensionConnection? = nil,
+        completion: @escaping (NativeOutcome) -> Void
+    ) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }),
+              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
+              let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID,
+              let session = sessions[sessionID], session.isAlive else {
+            completion(.failure(code: "native_unavailable", message: "Native bridge unavailable. Open or restart this agent on the host."))
+            return
+        }
+        // Image sends (v2) carry base64 payloads; text requests keep the tight bound.
+        let requestLimit = request.images.isEmpty ? 64 * 1024 : 12 * 1024 * 1024
+        guard requestBytes < requestLimit, nativePending.count < 128 else {
+            completion(.failure(code: "native_limit", message: "Native request limit exceeded."))
+            return
+        }
+        // RPC agents have no extension bridge: the server owns the thread state.
+        if let thread = session.thread {
+            thread.handle(request) { completion(.result($0)) }
+            return
+        }
+        guard let bridge = clients.values.first(where: { $0.nativeAgentID == agentID }) else {
+            completion(.failure(code: "native_unavailable", message: "Native bridge unavailable. Open or restart this agent on the host."))
+            return
+        }
+        nextNativeRequestID += 1
+        let correlation = nextNativeRequestID
+        nativePending[correlation] = NativePending(remote: remote, bridge: bridge, completion: completion)
+        reply(.nativeThreadCommand(id: correlation, request: request), to: bridge)
+        queue.asyncAfter(deadline: .now() + 10) { [weak self] in
+            self?.finishNativeThread(correlation, outcome: .failure(code: "outcome_unknown", message: "Native bridge timed out. Refresh before acting; do not automatically retry."))
+        }
+    }
+
+    private func finishNativeThread(_ correlation: Int, outcome: NativeOutcome) {
+        nativePending.removeValue(forKey: correlation)?.completion(outcome)
     }
 
     // MARK: - Remote listener (server queue)
@@ -567,25 +700,12 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .nativeThread(let id, let agentID, let request):
             guard !line.contains(13) else { disconnect(client); return }
-            guard let agent = store.state.agents.first(where: { $0.id == agentID }),
-                  let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
-                  let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID,
-                  sessions[sessionID]?.isAlive == true,
-                  let bridge = clients.values.first(where: { $0.nativeAgentID == agentID }) else {
-                send(.error(id: id, code: "native_unavailable", message: "Native bridge unavailable. Open or restart this agent on the host."), to: client)
-                return
-            }
-            guard line.count < 64 * 1024, nativePending.count < 128 else {
-                send(.error(id: id, code: "native_limit", message: "Native request limit exceeded."), to: client)
-                return
-            }
-            nextNativeRequestID += 1
-            let correlation = nextNativeRequestID
-            nativePending[correlation] = (client, bridge, id)
-            reply(.nativeThreadCommand(id: correlation, request: request), to: bridge)
-            queue.asyncAfter(deadline: .now() + 10) { [weak self] in
-                guard let self, let pending = self.nativePending.removeValue(forKey: correlation) else { return }
-                self.send(.error(id: pending.requestID, code: "outcome_unknown", message: "Native bridge timed out. Refresh before acting; do not automatically retry."), to: pending.remote)
+            dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, remote: client) { [weak self, weak client] outcome in
+                guard let self, let client else { return }
+                switch outcome {
+                case .result(let result): self.send(.nativeThread(id: id, result: result), to: client)
+                case .failure(let code, let message): self.send(.error(id: id, code: code, message: message), to: client)
+                }
             }
         case .hello(let id, _, _, _):
             send(.error(id: id, code: "protocol", message: "already authenticated"), to: client)
@@ -699,7 +819,7 @@ public final class SessionServer: @unchecked Sendable {
             // Remaining viewers get their space back immediately.
             applyMinViewport(sessionID: sessionID)
         case .input(let sessionID, let data):
-            if let session = sessions[sessionID], session.isAlive {
+            if let session = sessions[sessionID]?.pty, session.isAlive {
                 session.writeInput(data)
             }
         case .resize(let sessionID, let cols, let rows, _):
@@ -869,8 +989,8 @@ public final class SessionServer: @unchecked Sendable {
     /// literal block regardless of newlines (raw input would submit each
     /// line), then the submit key, acked.
     private func remotePaste(id: Int, sessionID: SessionID, text: String, submit: Bool, client: ExtensionConnection) {
-        guard let session = sessions[sessionID], session.isAlive else {
-            send(.error(id: id, code: "no_such_session", message: "session is not running"), to: client)
+        guard let session = sessions[sessionID]?.pty, session.isAlive else {
+            send(.error(id: id, code: "no_such_session", message: "session is not running or has no terminal"), to: client)
             return
         }
         session.writeInput(RemoteProtocol.composedInput(text: text, submit: submit))
@@ -887,7 +1007,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func applyMinViewport(sessionID: SessionID) {
-        guard let session = sessions[sessionID] else { return }
+        guard let session = sessions[sessionID]?.pty else { return }
         let remote = Array((remoteViewports[sessionID] ?? [:]).values)
         let grids = remote.isEmpty ? localViewports[sessionID].map { [$0] } ?? [] : remote
         guard let minCols = grids.map(\.cols).min(),
@@ -920,8 +1040,12 @@ public final class SessionServer: @unchecked Sendable {
         viewportGeneration: UInt64,
         client: ExtensionConnection
     ) {
-        guard let session = sessions[sessionID] else {
+        guard let entry = sessions[sessionID] else {
             send(.error(id: id, code: "no_such_session", message: "unknown session \(sessionID)"), to: client)
+            return
+        }
+        guard let session = entry.pty else {
+            send(.error(id: id, code: "no_terminal", message: "session \(sessionID) is an RPC session and has no terminal"), to: client)
             return
         }
         if cols > 0, rows > 0 {
@@ -1072,10 +1196,7 @@ public final class SessionServer: @unchecked Sendable {
         clients.removeValue(forKey: client.fd)
         client.upload = nil
         for (id, pending) in nativePending where pending.remote === client || pending.bridge === client {
-            nativePending.removeValue(forKey: id)
-            if pending.bridge === client {
-                send(.error(id: pending.requestID, code: "outcome_unknown", message: "Native bridge disconnected. Refresh before acting; do not automatically retry."), to: pending.remote)
-            }
+            finishNativeThread(id, outcome: .failure(code: "outcome_unknown", message: "Native bridge disconnected. Refresh before acting; do not automatically retry."))
         }
         if client.isRemote {
             for sessionID in remoteAttachments.keys {
@@ -1116,12 +1237,11 @@ public final class SessionServer: @unchecked Sendable {
         case .nativeThreadResult(let id, let result):
             guard !line.contains(13) else { disconnect(client); return }
             guard let pending = nativePending[id], pending.bridge === client else { return }
-            nativePending.removeValue(forKey: id)
             guard line.count < 256 * 1024 else {
-                send(.error(id: pending.requestID, code: "native_limit", message: "Native result exceeds snapshot limit."), to: pending.remote)
+                finishNativeThread(id, outcome: .failure(code: "native_limit", message: "Native result exceeds snapshot limit."))
                 return
             }
-            send(.nativeThread(id: pending.requestID, result: result), to: pending.remote)
+            finishNativeThread(id, outcome: .result(result))
         case .setAgentStatus(let agentID, let status):
             applyAgentStatus(agentID: agentID, status: status)
         case .setAgentName(let agentID, let name):
@@ -1833,6 +1953,27 @@ public final class SessionServer: @unchecked Sendable {
     private func makeSessionOnQueue(params: CreateSessionParams) throws -> SessionInfo {
         let server = self
         weak let serverWeak = server
+        if params.runtime == .rpc {
+            let sessionQueue = DispatchQueue(label: "shepherd.rpc", target: queue)
+            let session: RPCSession
+            do {
+                session = try RPCSession(params: params, queue: sessionQueue)
+            } catch {
+                throw PTYSession.SpawnError(message: String(describing: error))
+            }
+            let sid = session.id
+            let thread = RPCThreadState(session: session, queue: sessionQueue)
+            session.onEvent = { [weak thread] event in thread?.handle(event) }
+            session.onStderr = { line in ShepherdLog.info("rpc session \(sid) stderr: \(line)") }
+            session.onExit = { [weak serverWeak] code in
+                serverWeak?.sessionDidExit(sid, code: code)
+            }
+            sessions[sid] = .rpc(session, thread)
+            session.start()
+            sessionQueue.async { thread.bootstrap() }
+            ShepherdLog.info("rpc session \(sid) created: \(session.command.joined(separator: " "))")
+            return session.info
+        }
         let sessionQueue = DispatchQueue(label: "shepherd.pty", target: queue)
         let session = try PTYSession(params: params, queue: sessionQueue)
         let sid = session.id
@@ -1842,7 +1983,7 @@ public final class SessionServer: @unchecked Sendable {
         session.onExit = { [weak serverWeak] code in
             serverWeak?.sessionDidExit(sid, code: code)
         }
-        sessions[sid] = session
+        sessions[sid] = .pty(session)
         outputStates[sid] = SessionOutputState()
         session.start()
         ShepherdLog.info(
@@ -1870,8 +2011,11 @@ public final class SessionServer: @unchecked Sendable {
     ) {
         queue.async {
             let result = Result {
-                guard let session = self.sessions[sessionID] else {
+                guard let entry = self.sessions[sessionID] else {
                     throw SessionServerError.noSuchSession(sessionID)
+                }
+                guard let session = entry.pty else {
+                    throw SessionServerError.noTerminal(sessionID)
                 }
                 // Same queue turn as registration: no output can slip between the
                 // snapshot and the caller seeing `attached`.
@@ -1918,7 +2062,7 @@ public final class SessionServer: @unchecked Sendable {
                 output.pendingBytes = 0
                 output.delivery?.cancel()
                 if output.readSuspended {
-                    self.sessions[sessionID]?.resumeOutputReading()
+                    self.sessions[sessionID]?.pty?.resumeOutputReading()
                     output.readSuspended = false
                 }
             }
@@ -1930,7 +2074,7 @@ public final class SessionServer: @unchecked Sendable {
     /// ordered: each is enqueued on the server queue in submission order.
     public func write(sessionID: SessionID, data: Data) {
         queue.async {
-            guard let session = self.sessions[sessionID], session.isAlive else { return }
+            guard let session = self.sessions[sessionID]?.pty, session.isAlive else { return }
             session.writeInput(data)
         }
     }
@@ -1940,23 +2084,23 @@ public final class SessionServer: @unchecked Sendable {
     /// Foreground process name of a session's PTY ("zsh", "pi", "htop"),
     /// for display. Nil for unknown sessions or dead children.
     public func foregroundProcessName(sessionID: SessionID) async -> String? {
-        await enqueueValue { self.sessions[sessionID]?.foregroundProcessName }
+        await enqueueValue { self.sessions[sessionID]?.pty?.foregroundProcessName }
     }
 
     /// Current working directory of the foreground process in a session's PTY.
     public func foregroundWorkingDirectory(sessionID: SessionID) async -> String? {
-        await enqueueValue { self.sessions[sessionID]?.foregroundWorkingDirectory }
+        await enqueueValue { self.sessions[sessionID]?.pty?.foregroundWorkingDirectory }
     }
 
     /// Foreground command line of a session's PTY ("pi --model x"), for
     /// shell restore. Nil at a bare prompt.
     public func foregroundCommandLine(sessionID: SessionID) async -> String? {
-        await enqueueValue { self.sessions[sessionID]?.foregroundCommandLine }
+        await enqueueValue { self.sessions[sessionID]?.pty?.foregroundCommandLine }
     }
 
     public func screenText(sessionID: SessionID) async -> [String]? {
         await enqueueValue {
-            guard let session = self.sessions[sessionID] else { return nil }
+            guard let session = self.sessions[sessionID]?.pty else { return nil }
             var lines = session.screen.visibleText()
             while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
                 lines.removeLast()
@@ -1967,7 +2111,7 @@ public final class SessionServer: @unchecked Sendable {
 
     public func resize(sessionID: SessionID, cols: Int, rows: Int) {
         queue.async {
-            guard let session = self.sessions[sessionID] else { return }
+            guard let session = self.sessions[sessionID]?.pty else { return }
             session.resize(cols: cols, rows: rows)
         }
     }
@@ -2023,7 +2167,7 @@ public final class SessionServer: @unchecked Sendable {
         // GUI viewer, and the remote client must still receive output.
         streamToRemoteClients(sessionID: sessionID, data: data)
         guard attachedSessions.contains(sessionID),
-              let session = sessions[sessionID] else { return }
+              let session = sessions[sessionID]?.pty else { return }
 
         output.pending.append(.init(data: data, sequence: output.outputSequence))
         output.pendingBytes += data.count
@@ -2084,7 +2228,7 @@ public final class SessionServer: @unchecked Sendable {
 
         if output.readSuspended,
            output.outstandingBytes <= Self.outputLowWaterMark {
-            sessions[sessionID]?.resumeOutputReading()
+            sessions[sessionID]?.pty?.resumeOutputReading()
             output.readSuspended = false
         }
         scheduleOutputDelivery(sessionID: sessionID)

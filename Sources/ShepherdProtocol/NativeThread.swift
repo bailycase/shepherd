@@ -2,9 +2,67 @@ import Foundation
 
 public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case snapshot(expectedSessionID: String? = nil, beforeEntryID: String? = nil, afterRevision: UInt64? = nil)
-    case send(expectedSessionID: String, generation: String, operationID: UUID, text: String, delivery: NativeThreadDelivery)
+    /// `images` is v2 (RPC agents, `sendImages` in `supportedActions`); absent on the wire when nil.
+    case send(expectedSessionID: String, generation: String, operationID: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage]? = nil)
     case abort(expectedSessionID: String, generation: String, operationID: UUID)
     case answer(expectedSessionID: String, generation: String, operationID: UUID, dialogID: String, answer: NativeDialogAnswer)
+    /// v2: `model` is "provider/id". Gated by `setModel` in `supportedActions`.
+    case setModel(expectedSessionID: String, generation: String, operationID: UUID, model: String)
+    /// v2: off/low/medium/high. Gated by `setThinking` in `supportedActions`.
+    case setThinking(expectedSessionID: String, generation: String, operationID: UUID, level: String)
+
+    public var images: [NativeImage] {
+        if case .send(_, _, _, _, _, let images) = self { return images ?? [] }
+        return []
+    }
+}
+
+/// An image attached to a `send`. `data` travels base64 (Codable's default for `Data`).
+public struct NativeImage: Codable, Hashable, Sendable {
+    public static let maxBytes = 2 * 1024 * 1024
+    public static let maxPerSend = 4
+    public var mimeType: String
+    public var data: Data
+
+    public init(mimeType: String, data: Data) {
+        self.mimeType = mimeType
+        self.data = data
+    }
+}
+
+/// v2 snapshot field from pi's `get_session_stats`. Every member is optional: pi omits
+/// `contextUsage` without a model, and cost is absent on some providers.
+public struct NativeThreadStats: Codable, Hashable, Sendable {
+    public var contextTokens: Int?
+    public var contextWindow: Int?
+    public var contextPercent: Double?
+    public var totalTokens: Int?
+    public var cost: Double?
+
+    public init(contextTokens: Int? = nil, contextWindow: Int? = nil, contextPercent: Double? = nil, totalTokens: Int? = nil, cost: Double? = nil) {
+        self.contextTokens = contextTokens
+        self.contextWindow = contextWindow
+        self.contextPercent = contextPercent
+        self.totalTokens = totalTokens
+        self.cost = cost
+    }
+}
+
+/// v2 snapshot entry from pi's `get_commands`: a slash command the client may send as `/name`.
+public struct NativeCommand: Codable, Hashable, Sendable {
+    public static let maxCount = 128
+    public static let maxNameBytes = 64
+    public static let maxDescriptionBytes = 256
+    public var name: String
+    public var description: String?
+    /// extension / prompt / skill.
+    public var source: String?
+
+    public init(name: String, description: String? = nil, source: String? = nil) {
+        self.name = name
+        self.description = description
+        self.source = source
+    }
 }
 
 public enum NativeThreadDelivery: String, Codable, Hashable, Sendable { case followUp, steer }
@@ -35,10 +93,46 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var supportedActions: [String]
     public var dialogsSupported: Bool
     public var dialogs: [NativeThreadDialog]
+    /// Absent on older bridges. Unknown future item kinds are ignored by renderers.
+    public var widgets: [NativeThreadWidget]?
     public var messages: [NativeThreadMessage]
     public var olderCursor: String?
     public var provisional: [NativeThreadMessage]
     public var clipped: Bool
+    /// v2: "terminal" or "rpc". nil from older bridges (terminal).
+    public var runtime: String?
+    /// v2: RPC agents only.
+    public var stats: NativeThreadStats?
+    /// v2: RPC agents only.
+    public var commands: [NativeCommand]?
+
+    public var isRPC: Bool { runtime == "rpc" }
+
+    public init(
+        piSessionID: String, generation: String, revision: UInt64, running: Bool, model: String? = nil,
+        thinking: String? = nil, supportedActions: [String], dialogsSupported: Bool, dialogs: [NativeThreadDialog],
+        widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
+        provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
+        commands: [NativeCommand]? = nil
+    ) {
+        self.piSessionID = piSessionID
+        self.generation = generation
+        self.revision = revision
+        self.running = running
+        self.model = model
+        self.thinking = thinking
+        self.supportedActions = supportedActions
+        self.dialogsSupported = dialogsSupported
+        self.dialogs = dialogs
+        self.widgets = widgets
+        self.messages = messages
+        self.olderCursor = olderCursor
+        self.provisional = provisional
+        self.clipped = clipped
+        self.runtime = runtime
+        self.stats = stats
+        self.commands = commands
+    }
 }
 
 public struct NativeThreadMessage: Codable, Hashable, Sendable {
@@ -51,12 +145,32 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     public var status: String?
     public var isError: Bool?
     public var truncated: Bool
+
+    public init(
+        entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
+        argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false
+    ) {
+        self.entryID = entryID
+        self.role = role
+        self.blocks = blocks
+        self.toolName = toolName
+        self.toolCallID = toolCallID
+        self.argumentsText = argumentsText
+        self.status = status
+        self.isError = isError
+        self.truncated = truncated
+    }
 }
 
 public struct NativeThreadBlock: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Hashable, Sendable { case text, thinking, unsupportedImage }
     public var kind: Kind
     public var text: String
+
+    public init(kind: Kind, text: String) {
+        self.kind = kind
+        self.text = text
+    }
 }
 
 public struct NativeThreadDialog: Codable, Hashable, Sendable {
@@ -70,4 +184,54 @@ public struct NativeThreadDialog: Codable, Hashable, Sendable {
     public var prefill: String?
     public var timeout: Double?
     public var unavailable: String?
+
+    public init(
+        id: String, kind: Kind, title: String, options: [String]? = nil, message: String? = nil,
+        placeholder: String? = nil, prefill: String? = nil, timeout: Double? = nil, unavailable: String? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.options = options
+        self.message = message
+        self.placeholder = placeholder
+        self.prefill = prefill
+        self.timeout = timeout
+        self.unavailable = unavailable
+    }
+}
+
+public struct NativeThreadWidget: Codable, Hashable, Sendable, Identifiable {
+    public enum Kind: String, Codable, Hashable, Sendable { case status, text, unknown }
+    public var namespace: String
+    public var key: String
+    public var kind: Kind
+    public var title: String?
+    public var text: String
+    // Preserve JS's byte-distinct keys despite Swift's canonical Unicode equality.
+    public var id: String { Data(namespace.utf8).base64EncodedString() + ":" + Data(key.utf8).base64EncodedString() }
+
+    private enum CodingKeys: String, CodingKey { case namespace, key, kind, title, text }
+
+    public init(namespace: String, key: String, kind: Kind, title: String? = nil, text: String) {
+        self.namespace = namespace
+        self.key = key
+        self.kind = kind
+        self.title = title
+        self.text = text
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        kind = Kind(rawValue: try values.decode(String.self, forKey: .kind)) ?? .unknown
+        // A future kind need not have this version's fields. Keep the thread readable.
+        if kind == .unknown {
+            namespace = ""; key = ""; title = nil; text = ""
+            return
+        }
+        namespace = try values.decode(String.self, forKey: .namespace)
+        key = try values.decode(String.self, forKey: .key)
+        title = try values.decodeIfPresent(String.self, forKey: .title)
+        text = try values.decode(String.self, forKey: .text)
+    }
 }

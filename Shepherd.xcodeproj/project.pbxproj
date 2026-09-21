@@ -14,7 +14,6 @@
 		15000000000000000000B005 /* HostSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A005 /* HostSettingsView.swift */; };
 		15000000000000000000B006 /* FleetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A006 /* FleetView.swift */; };
 		15000000000000000000B007 /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A007 /* ThreadView.swift */; };
-		15000000000000000000B008 /* ThreadStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A008 /* ThreadStore.swift */; };
 		15000000000000000000B009 /* ThreadMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A009 /* ThreadMessageView.swift */; };
 		15000000000000000000B00A /* ThreadDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A00A /* ThreadDialogView.swift */; };
 		15000000000000000000B101 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
@@ -53,7 +52,6 @@
 		15000000000000000000A005 /* HostSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSettingsView.swift; sourceTree = "<group>"; };
 		15000000000000000000A006 /* FleetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetView.swift; sourceTree = "<group>"; };
 		15000000000000000000A007 /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
-		15000000000000000000A008 /* ThreadStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadStore.swift; sourceTree = "<group>"; };
 		15000000000000000000A009 /* ThreadMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadMessageView.swift; sourceTree = "<group>"; };
 		15000000000000000000A00A /* ThreadDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadDialogView.swift; sourceTree = "<group>"; };
 		15000000000000000000A201 /* Shepherd iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shepherd iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -101,7 +99,6 @@
 				15000000000000000000A007 /* ThreadView.swift */,
 				15000000000000000000A00A /* ThreadDialogView.swift */,
 				15000000000000000000A009 /* ThreadMessageView.swift */,
-				15000000000000000000A008 /* ThreadStore.swift */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -254,7 +251,6 @@
 				15000000000000000000B007 /* ThreadView.swift in Sources */,
 				15000000000000000000B00A /* ThreadDialogView.swift in Sources */,
 				15000000000000000000B009 /* ThreadMessageView.swift in Sources */,
-				15000000000000000000B008 /* ThreadStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

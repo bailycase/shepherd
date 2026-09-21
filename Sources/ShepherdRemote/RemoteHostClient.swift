@@ -347,6 +347,22 @@ public final class RemoteHostClient: @unchecked Sendable {
         guard capabilities.contains(RemoteProtocol.nativeThreadCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to view native threads.")
         }
+        switch command {
+        case .setModel, .setThinking:
+            guard capabilities.contains(RemoteProtocol.nativeThreadV2Capability) else {
+                throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to change the model or thinking level.")
+            }
+        case .send where !command.images.isEmpty:
+            guard capabilities.contains(RemoteProtocol.nativeThreadV2Capability) else {
+                throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to send images.")
+            }
+            // One NDJSON frame per request; the host drops anything over the cap.
+            if let bytes = try? NDJSON.encode(RemoteRequest.nativeThread(id: 0, agentID: agentID, request: command)).count,
+               bytes - 1 > NDJSON.maxPayloadBytes {
+                throw RemoteHostClientError.rejected(code: "too_large", message: "Images exceed the remote payload limit. Send fewer or smaller images.")
+            }
+        default: break
+        }
         let reply: RemoteReply
         do {
             reply = try await request(timeout: 15) { .nativeThread(id: $0, agentID: agentID, request: command) }

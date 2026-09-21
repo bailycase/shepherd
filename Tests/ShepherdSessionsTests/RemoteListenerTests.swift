@@ -236,6 +236,59 @@ struct RemoteListenerTests {
         #expect(try newer.waitForDisconnect())
     }
 
+    @Test func nativePendingLimitIsSharedAndRemoteDisconnectLeavesLocalRequestsIntact() async throws {
+        let h = try Harness()
+        defer { h.tearDown() }
+        let space = Space(name: "native", path: h.dir.path)
+        let session = try await h.server.createSession(params: .init(cwd: h.dir.path, command: ["/bin/cat"], cols: 80, rows: 24))
+        let pane = LeafPane(sessionID: session.id, cwd: h.dir.path)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(name: "native", spaceID: space.id, tabID: tab.id, paneID: pane.id)
+        try await h.server.addSpace(space)
+        try await h.server.addAgent(agent, withTab: tab)
+        let bridge = try ExtensionClient(path: h.dir.appendingPathComponent("d.sock").path)
+        try bridge.send(.helloNativeAgent(agentID: agent.id))
+        try bridge.send(.listPanes(id: 900, agentID: agent.id))
+        _ = try bridge.readReply()
+        let remote = try RemoteClient(port: h.port)
+        try remote.send(.hello(id: 1, token: h.token, clientName: "mixed-native", protocolVersion: RemoteProtocol.version))
+        _ = try remote.readReply()
+        try remote.send(.nativeThread(id: 2, agentID: agent.id, request: .snapshot()))
+        guard case .nativeThreadCommand(let remoteID, _) = try bridge.readReply() else {
+            Issue.record("Missing remote command"); return
+        }
+        var locals: [(Int, Task<NativeThreadResult, Error>)] = []
+        for _ in 0..<127 {
+            let task = Task { try await h.server.nativeThread(agentID: agent.id, request: .snapshot()) }
+            guard case .nativeThreadCommand(let id, _) = try bridge.readReply() else {
+                Issue.record("Missing local command"); return
+            }
+            locals.append((id, task))
+        }
+        do {
+            _ = try await h.server.nativeThread(agentID: agent.id, request: .snapshot())
+            Issue.record("Local request exceeded shared pending limit")
+        } catch RemoteHostClientError.rejected(let code, _) { #expect(code == "native_limit") }
+        try remote.send(.nativeThread(id: 3, agentID: agent.id, request: .snapshot()))
+        guard case .error(3, "native_limit", _) = try remote.readReply() else {
+            Issue.record("Remote request exceeded shared pending limit"); return
+        }
+        // Closing the listener synchronously disconnects this remote client only.
+        h.server.stopRemoteListener()
+        let freedSlot = Task { try await h.server.nativeThread(agentID: agent.id, request: .snapshot()) }
+        guard case .nativeThreadCommand(let freedID, _) = try bridge.readReply() else {
+            Issue.record("Remote disconnect did not release pending slot"); return
+        }
+        let result = NativeThreadResult.unchanged(piSessionID: "s", generation: "g", revision: 1)
+        try bridge.send(.nativeThreadResult(id: remoteID, result: .failure(code: "late", message: "disconnected remote")))
+        for (id, task) in locals {
+            try bridge.send(.nativeThreadResult(id: id, result: result))
+            #expect(try await task.value == result)
+        }
+        try bridge.send(.nativeThreadResult(id: freedID, result: result))
+        #expect(try await freedSlot.value == result)
+    }
+
     @Test func uploadsAreChunkedPrivateAndConnectionOwned() async throws {
         let h = try Harness()
         defer { h.tearDown() }

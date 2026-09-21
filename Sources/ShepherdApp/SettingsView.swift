@@ -149,7 +149,7 @@ struct SettingsView: View {
                 switch vm.settingsSection {
                 case .appearance: AppearanceSettings(vm: vm)
                 case .terminal: TerminalSettings(vm: vm)
-                case .agents: AgentSettings()
+                case .agents: AgentSettings(presentation: vm.nativePresentation)
                 case .pi: PiSettings()
                 case .worktrees: WorktreeSettings()
                 case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
@@ -229,7 +229,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .appearance: return ["Theme", "UI Density", "UI Text Scale", "Sidebar Width"]
         case .terminal: return ["Terminal Font", "Font Size", "Shell"]
-        case .agents: return ["Default Model", "Default Thinking Level"]
+        case .agents: return ["Default Model", "Default Thinking Level", "Runtime", "Default View"]
         case .worktrees: return ["Base Branch", "Fetch Before Creating", "Commit Remaining Work", "Delete Local Branch", "Merge PR Automatically"]
         case .pi: return ["Update Pi", "Update Extensions", "Installed Version", "Status", "Check Now", "Auto-name Agents", "Bundled Pi Extensions", "Sync Pi Theme", "Panes and Agent Tools", "Diff Review Tool", "Subagent Display"]
         case .remote: return ["Hosts", "Serve This Mac"]

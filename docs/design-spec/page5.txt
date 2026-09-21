@@ -1,0 +1,24 @@
+Investigate SwiftUI live preview
+ Idle· 17 turns · 42k
+ Remove the visible speaker labels, and make tool rows show something useful instead of just "complete".
+ 2:41 PM
+ Thought for 4s
+ I'll finish removing the speaker labels and make tool rows show a useful command or path preview.
+ 6 tool calls
+ read 1 · edit 3 · bash 2
+ edit
+ Sources/ShepherdApp/DesktopNativeThreadView.swift
+ +58−41
+ edit
+ App/iOS/ThreadView.swift
+ +0−4
+ bash
+ swift test --filter toolPreview…
+ 1 passed
+ bash
+ xcodebuild -scheme 'Shepherd (Dev)'…
+ succeeded
+ Removed the visible speaker labels and the desktop gutter. User-message fills still distinguish the conversation.
+ Focused regression test and Mac Dev build passed.
+ 2:44 PM · 3m 12s
+ Message the agent

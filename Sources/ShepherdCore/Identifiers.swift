@@ -49,13 +49,28 @@ public struct CreateSessionParams: Codable, Hashable, Sendable {
     public var cols: Int
     public var rows: Int
     public var env: [String: String]?
+    /// `.rpc` spawns `command` on pipes (no PTY); decodes `.terminal` when absent.
+    public var runtime: AgentRuntime
 
-    public init(cwd: String, command: [String] = [], cols: Int = 80, rows: Int = 24, env: [String: String]? = nil) {
+    public init(cwd: String, command: [String] = [], cols: Int = 80, rows: Int = 24, env: [String: String]? = nil, runtime: AgentRuntime = .terminal) {
         self.cwd = cwd
         self.command = command
         self.cols = cols
         self.rows = rows
         self.env = env
+        self.runtime = runtime
+    }
+
+    private enum CodingKeys: String, CodingKey { case cwd, command, cols, rows, env, runtime }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        cwd = try c.decode(String.self, forKey: .cwd)
+        command = try c.decode([String].self, forKey: .command)
+        cols = try c.decode(Int.self, forKey: .cols)
+        rows = try c.decode(Int.self, forKey: .rows)
+        env = try c.decodeIfPresent([String: String].self, forKey: .env)
+        runtime = try c.decodeIfPresent(AgentRuntime.self, forKey: .runtime) ?? .terminal
     }
 }
 

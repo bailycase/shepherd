@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ShepherdCore
+import ShepherdRemote
 
 struct WorkspaceView: View {
     var vm: ShepherdViewModel
@@ -301,6 +302,9 @@ struct PaneLeafView: View {
         let visible = vm.isVisibleTab(tab)
         let focused = vm.focusedPaneID == pane.id && visible
         let launching = pane.agentID.map { vm.launchingAgents.contains($0) } ?? false
+        let nativeAgent = NativePresentation.primaryAgent(in: tab, pane: pane, agents: vm.state.agents)
+        let native = nativeAgent.map { vm.nativePresentation.isNative($0) } ?? false
+        let rpc = nativeAgent?.runtime == .rpc
 
         Group {
             if pane.isReview == true {
@@ -310,19 +314,46 @@ struct PaneLeafView: View {
                 } else {
                     PanePlaceholder(text: "review unavailable")
                 }
+            } else if rpc, let agent = nativeAgent {
+                // No terminal behind an RPC agent (D2): the thread is the pane. The session
+                // binding still goes through the store so exits close the pane.
+                RPCAgentPane(
+                    session: vm.sessions.session(for: pane, in: tab),
+                    store: vm.nativePresentation.store(for: agent.id),
+                    active: visible,
+                    isFocused: focused,
+                    request: { try await vm.server.nativeThread(agentID: agent.id, request: $0) },
+                    agentName: agent.name
+                )
             } else {
                 ZStack {
                     LiveTerminalPane(
                         session: vm.sessions.session(for: pane, in: tab),
                         agentID: pane.agentID,
-                        isFocused: focused,
-                        isRendering: visible
+                        isFocused: focused && !native,
+                        isRendering: visible && !native
                     )
+                    .opacity(native ? 0 : 1)
+                    .allowsHitTesting(!native)
+                    .accessibilityHidden(native)
+                    if let agent = nativeAgent {
+                        DesktopNativeThreadView(
+                            store: vm.nativePresentation.store(for: agent.id),
+                            active: visible && native,
+                            isFocused: focused && native,
+                            request: { try await vm.server.nativeThread(agentID: agent.id, request: $0) },
+                            showTerminal: { vm.nativePresentation.setNative(false, for: agent.id) },
+                            agentName: agent.name
+                        )
+                        .opacity(native ? 1 : 0)
+                        .allowsHitTesting(native)
+                        .accessibilityHidden(!native)
+                    }
                     // A just-created agent's terminal boots behind an opaque cover:
                     // login-shell echo and pi's first paint are noise, not content.
                     // Visual only — hit testing passes through, and the surface
                     // keeps keyboard focus, so typing lands in pi's prompt.
-                    if launching {
+                    if launching && !native {
                         AgentLaunchOverlay()
                             .allowsHitTesting(false)
                             .transition(.opacity)
@@ -345,6 +376,29 @@ struct PaneLeafView: View {
 
 // AgentLaunchOverlay (the ASCII crook boot screen) lives in
 // AgentLaunchOverlay.swift.
+
+/// An RPC agent's only surface. Observes the pane session for exit/failure so a dead
+/// pi shows the same placeholder a terminal pane would.
+struct RPCAgentPane: View {
+    @ObservedObject var session: TerminalSessionStore.PaneSession
+    @ObservedObject var store: NativeThreadStore
+    let active: Bool
+    let isFocused: Bool
+    let request: NativeThreadStore.Request
+    let agentName: String
+
+    var body: some View {
+        switch session.phase {
+        case .connecting, .live:
+            DesktopNativeThreadView(store: store, active: active, isFocused: isFocused, request: request,
+                                    showTerminal: nil, agentName: agentName)
+        case .failed(let reason):
+            PanePlaceholder(text: "session unavailable · \(reason)")
+        case .exited(let code):
+            PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
+        }
+    }
+}
 
 struct LiveTerminalPane: View {
     @ObservedObject var session: TerminalSessionStore.PaneSession

@@ -15,6 +15,8 @@ struct NewAgentConfig {
     var model: String?
     var thinking: ThinkingLevel
     var initialPrompt: String?
+    /// Terminal (PTY + Ghostty) or RPC (`pi --mode rpc`, no terminal). Fixed for the agent's life.
+    var runtime: AgentRuntime = .terminal
     /// A caller-chosen starting name (worktree agents wear their branch
     /// leaf). Provisional like a prompt-derived name: pi's namer retitles it
     /// from the agent's first prompt when auto-naming is on.
@@ -218,6 +220,8 @@ final class ShepherdViewModel {
     /// Worktree agent pending delete confirmation (alert in RootView) —
     /// deleting may also remove the checkout, so it always confirms.
     var worktreeDeleteTarget: AgentID?
+    /// Agent pending a "Restart as Terminal / Native (RPC)" confirmation (sheet in RootView).
+    var runtimeRestartTarget: AgentID?
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
     /// a live lookup would blank the sheet mid-success.
@@ -283,6 +287,7 @@ final class ShepherdViewModel {
     var showShellShortcutBadges = false
 
     let sessions: TerminalSessionStore
+    let nativePresentation: NativePresentation
     /// System notifications when an unwatched agent finishes or blocks.
     let notifications = AgentNotifications()
     let settings: AppSettings
@@ -347,6 +352,7 @@ final class ShepherdViewModel {
         self.server = server
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
+        self.nativePresentation = NativePresentation(defaults: sidebarDefaults)
         self.keybindings = keybindings ?? .shared
         self.themeManager = themeManager ?? .shared
         self.remoteHosts = remoteHosts ?? RemoteHostStore()
@@ -671,6 +677,7 @@ final class ShepherdViewModel {
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         state = serverState
+        nativePresentation.prune(liveAgents: Set(state.agents.map(\.id)))
         pruneReviewSessions()
         syncShellProcessTimer()
         // First adoption of the restored workspace: stand the enabled

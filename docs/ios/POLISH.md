@@ -16,6 +16,10 @@ The mobile design exception is recorded in `DESIGN.md`. Desktop styling and the 
 
 Parent review corrected masked user-message accessibility, disclosure accessibility values, Reduce Motion handling for the working indicator, simultaneous working/question presentation, misleading delivery timing labels, and prominent-button foreground contrast.
 
+## Second pass
+
+A later Fable 5.1 pass, reviewed and adjusted by the parent, tightened the iOS thread: tool and thinking rows share an icon column and inline chevron, code blocks and text widgets share one panel treatment, status widgets render on one line, dialog buttons match the prose scale, the composer field shows a focus border with a hairline above the bar, and fleet/settings metadata use the secondary ramp. Review fixes restored 44pt touch targets on disclosure rows and dialog cancel, and made the composer-focus scroll respect Reduce Motion. The same pass restyled the desktop native view; see `docs/desktop-native.md`.
+
 ## Validation
 
 - `bash Tests/ShepherdIOSChecks/run.sh` passed connection, thread-state, dialog, and cancelled-handshake checks.

@@ -13,13 +13,21 @@ struct MachineHeaderRow: View {
     let name: String
     let collapsed: Bool
     let detail: Detail
-    var markerColor: Color = Tokens.focusAccent
+    var markerColor: Color = NativeTokens.accent
     /// "⌃⇧2"-style hint; shown on hover (discoverability without noise).
     var keycap: String?
     let onToggle: () -> Void
     var onPlus: (() -> Void)?
     var plusHelp: String = ""
     @State private var hovering = false
+
+    private var detailLabel: String {
+        switch detail {
+        case .blocked(let count): "\(count) waiting"
+        case .count(let count): "\(count) agent\(count == 1 ? "" : "s")"
+        case .label(let text): text
+        }
+    }
 
     enum Detail {
         case count(Int)
@@ -29,57 +37,53 @@ struct MachineHeaderRow: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Text(collapsed ? "▸" : "▾")
-                .font(Fonts.mono(9))
-                .foregroundStyle(collapsed ? Tokens.textDim : Tokens.textTertiary)
-                .frame(width: 9)
             if let marker {
                 Text(marker)
-                    .font(Fonts.mono(10.5))
+                    .font(NativeFonts.sidebarMeta)
                     .foregroundStyle(markerColor)
             }
             Text(name.uppercased())
-                .font(Fonts.mono(10.5, .semibold))
-                .tracking(0.74)
-                .foregroundStyle(collapsed ? Tokens.textDim : Tokens.textSecondary)
+                .font(NativeFonts.sidebarSection)
+                .tracking(0.6)
+                .foregroundStyle(collapsed ? NativeTokens.textMuted : NativeTokens.textTertiary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             if hovering, let keycap {
                 Text(keycap)
-                    .font(Fonts.mono(9.5))
-                    .foregroundStyle(Tokens.textHint)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.textMuted)
             }
             switch detail {
             case .blocked(let count):
                 Text("\(count)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.statusBlocked)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.warningText)
             case .count(let count):
                 Text("\(count)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(NativeTokens.textMuted)
             case .label(let text):
                 Text(text)
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
+                    .font(NativeFonts.sidebarMeta)
+                    .foregroundStyle(text == "Unreachable" ? NativeTokens.dangerText : NativeTokens.textMuted)
             }
             if hovering, let onPlus {
-                Text("+")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textTertiary)
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: onPlus)
-                    .help(plusHelp)
+                SidebarPlusButton(help: plusHelp, action: onPlus)
             }
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 14)
-        .frame(height: Metrics.rowHeight)
+        .padding(.horizontal, 8)
+        .frame(height: NativeMetrics.sidebarRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(hovering ? Tokens.rowHover : Color.clear)
+        .background(hovering ? NativeTokens.bgHoverStrong : Color.clear, in: RoundedRectangle(cornerRadius: Radius.xs))
+        .padding(.horizontal, NativeMetrics.sidebarPadding)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: onToggle)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onToggle() }
+        // The plus stays reachable as its own element; the row label carries the connection state.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(name), \(detailLabel), \(collapsed ? "collapsed" : "expanded")")
     }
 }
 
@@ -95,9 +99,9 @@ struct RemoteHostBlock: View {
             let blocked = connection.state.agents.count { $0.status == .blocked }
                 + connection.children.values.reduce(0) { $0 + $1.count(where: \.needsAttention) }
             return blocked > 0 ? .blocked(blocked) : .count(connection.state.agents.count)
-        case .connecting: return .label("connecting…")
-        case .failed: return .label("unreachable")
-        case .disconnected: return .label("off")
+        case .connecting: return .label("Connecting…")
+        case .failed: return .label("Unreachable")
+        case .disconnected: return .label("Off")
         }
     }
 
@@ -107,7 +111,7 @@ struct RemoteHostBlock: View {
             name: connection.config.name,
             collapsed: vm.collapsedHosts.contains(connection.id),
             detail: detail,
-            markerColor: connection.phase == .connected ? Tokens.focusAccent : Tokens.textDim,
+            markerColor: connection.phase == .connected ? NativeTokens.accent : NativeTokens.textMuted,
             keycap: vm.machineKeycap(forHost: connection.id),
             onToggle: { vm.toggleHostCollapsed(connection.id) },
             onPlus: { vm.remoteSpacePickerHostID = connection.id },
@@ -130,7 +134,7 @@ struct RemoteHostBlock: View {
                     active: false,
                     blockedCount: agents.count { $0.status == .blocked } + agents.reduce(0) { $0 + (connection.children[$1.id] ?? []).count(where: \.needsAttention) },
                     agentCount: agents.count,
-                    depth: 1,
+                    depth: 0,
                     onToggle: {
                         vm.toggleRemoteSpaceCollapsed(hostID: connection.id, spaceID: space.id)
                     },
@@ -146,7 +150,7 @@ struct RemoteHostBlock: View {
                             selected: vm.selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: agent.id),
                             badge: vm.showAgentShortcutBadges && vm.selectedRemoteAgent?.hostID == connection.id
                                 ? vm.remoteOrderedAgents(hostID: connection.id).firstIndex(where: { $0.id == agent.id }).flatMap { $0 < 9 ? $0 + 1 : nil } : nil,
-                            depth: 1
+                            depth: 0
                         ) {
                             vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id)
                         }
@@ -205,13 +209,13 @@ private struct RemoteChildRows<Content: View>: View {
         if !children.isEmpty {
             Button(expanded ? "▾ subagents" : "▸ \(children.count) subagents") { expanded.toggle() }
                 .buttonStyle(.plain)
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(children.contains(where: \.needsAttention) ? Tokens.statusBlocked : Tokens.textMetadata)
+                .font(NativeFonts.sidebarMeta)
+                .foregroundStyle(children.contains(where: \.needsAttention) ? NativeTokens.warningText : NativeTokens.textMuted)
                 .accessibilityLabel("\(children.count) subagents, \(children.filter(\.needsAttention).count) waiting")
-                .padding(.leading, 38)
+                .padding(.leading, NativeMetrics.sidebarPadding + 8 + 2 * NativeMetrics.sidebarIndent)
             if expanded {
                 ForEach(children) { child in
-                    ChildRunRow(child: child, depth: 1) {
+                    ChildRunRow(child: child, depth: 0) {
                         vm.openRemoteChild(RemoteAgentRef(hostID: connection.id, agentID: agent.id), child: child)
                     }
                 }

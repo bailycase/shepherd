@@ -96,6 +96,14 @@ final class AppTerminalModel {
     var model: TerminalSurfaceModel { surface }
 }
 
+/// Image drops outside a terminal (the native composer) go through the same resize
+/// rules as terminal drops: longest edge 2000px, JPEG stays JPEG, else PNG.
+enum AppImageDrop {
+    static func resolve(_ providers: [NSItemProvider]) async -> [URL] {
+        await TerminalImageDrop.resolve(providers)
+    }
+}
+
 /// Installs the window-level file-drop overlay. Mount once per window.
 struct AppTerminalDropOverlay: View {
     var body: some View { TerminalDropOverlayInstaller().frame(width: 0, height: 0) }

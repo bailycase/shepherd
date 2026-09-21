@@ -131,6 +131,45 @@ struct AgentSessionTests {
         #expect(command.env["SHEPHERD_NEEDS_NAME"] == nil)
     }
 
+    /// An RPC agent launches `pi --mode rpc` through the same login shell with the same
+    /// socket env, but without the theme or native extension and without a positional
+    /// prompt (RPC mode ignores it; the app sends it as the first `prompt`).
+    @Test func rpcCommandMirrorsTerminalWiringWithoutTUIExtensions() {
+        let terminal = StatusExtension.command(
+            agentID: AgentID(rawValue: "agent-id"), piSessionID: "moved-session", socketPath: "/tmp/shepherd.sock",
+            extensionPath: "/tmp/status.ts", themeExtensionPath: "/tmp/theme.ts", panesExtensionPath: "/tmp/panes.ts",
+            reviewExtensionPath: "/tmp/review.ts", subagentsExtensionPath: "/tmp/subagents.ts", namerExtensionPath: "/tmp/namer.ts",
+            nativeExtensionPath: "/tmp/native.ts", needsName: true, isAutomation: true, piThemePath: "/tmp/theme.json",
+            piThemeName: "shepherd", model: "provider/model", thinking: .high, initialPrompt: "fix it"
+        )
+        let rpc = StatusExtension.rpcCommand(
+            agentID: AgentID(rawValue: "agent-id"), piSessionID: "moved-session", socketPath: "/tmp/shepherd.sock",
+            extensionPath: "/tmp/status.ts", panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: "/tmp/review.ts",
+            subagentsExtensionPath: "/tmp/subagents.ts", namerExtensionPath: "/tmp/namer.ts", needsName: true,
+            isAutomation: true, model: "provider/model", thinking: .high
+        )
+        #expect(rpc.argv.prefix(3) == terminal.argv.prefix(3))
+        let shell = rpc.argv[3]
+        #expect(shell.hasPrefix("exec pi --mode rpc --session-id 'moved-session'"))
+        #expect(!terminal.argv[3].contains("--mode rpc"))
+        #expect(shell.contains("--model 'provider/model'") && shell.contains("--thinking 'high'"))
+        for path in ["/tmp/status.ts", "/tmp/panes.ts", "/tmp/review.ts", "/tmp/subagents.ts", "/tmp/namer.ts"] {
+            #expect(shell.contains(" -e '\(path)'"))
+        }
+        #expect(!shell.contains("theme") && !shell.contains("native.ts") && !shell.contains("fix it"))
+        // Same env contract minus the theme keys.
+        let themeKeys: Set<String> = ["SHEPHERD_EXT_THEME", "SHEPHERD_PI_THEME_PATH", "SHEPHERD_PI_THEME_NAME"]
+        #expect(rpc.env == terminal.env.filter { !themeKeys.contains($0.key) })
+        #expect(rpc.env["SHEPHERD_AGENT_ID"] == "agent-id" && rpc.env["SHEPHERD_NEEDS_NAME"] == "1" && rpc.env["SHEPHERD_AUTOMATION"] == "1")
+
+        let bare = StatusExtension.rpcCommand(
+            agentID: AgentID(), piSessionID: "s", socketPath: "/tmp/s", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil, model: nil, thinking: nil
+        )
+        #expect(bare.argv[3] == "exec pi --mode rpc --session-id 's' -e '/tmp/status.ts'")
+        #expect(bare.env["SHEPHERD_EXT_PANES"] == nil && bare.env["SHEPHERD_MODEL"] == nil)
+    }
+
     /// Agents written before session tracking have no stored session and must
     /// keep opening their original conversation.
     @Test func agentsPredatingSessionTrackingKeepTheirOriginalSession() throws {

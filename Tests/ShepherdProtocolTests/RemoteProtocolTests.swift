@@ -76,6 +76,14 @@ struct RemoteProtocolTests {
                 initialPrompt: "fix the \"thing\"\nplease"
             ),
             .createAgent(id: 7, spaceID: SpaceID(), cwd: nil, model: nil, thinking: nil, initialPrompt: nil),
+            .nativeThread(id: 80, agentID: AgentID(), request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
+            .nativeThread(id: 81, agentID: AgentID(), request: .send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "hi", delivery: .followUp)),
+            .nativeThread(id: 82, agentID: AgentID(), request: .send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: "look", delivery: .steer,
+                                                                    images: [NativeImage(mimeType: "image/png", data: Data([1, 2, 3]))])),
+            .nativeThread(id: 83, agentID: AgentID(), request: .abort(expectedSessionID: "s", generation: "g", operationID: UUID())),
+            .nativeThread(id: 84, agentID: AgentID(), request: .answer(expectedSessionID: "s", generation: "g", operationID: UUID(), dialogID: "d", answer: .editor(value: "x"))),
+            .nativeThread(id: 85, agentID: AgentID(), request: .setModel(expectedSessionID: "s", generation: "g", operationID: UUID(), model: "anthropic/claude")),
+            .nativeThread(id: 86, agentID: AgentID(), request: .setThinking(expectedSessionID: "s", generation: "g", operationID: UUID(), level: "high")),
         ]
         for request in requests {
             let line = try NDJSON.encode(request)
@@ -125,6 +133,21 @@ struct RemoteProtocolTests {
             .models(id: 11, models: [], defaultModel: nil),
             .spaceAdded(id: 6, spaceID: SpaceID()),
             .agentCreated(id: 7, agentID: AgentID()),
+            .nativeThread(id: 80, result: .accepted(operationID: UUID())),
+            .nativeThread(id: 81, result: .unchanged(piSessionID: "s", generation: "g", revision: 3)),
+            .nativeThread(id: 82, result: .failure(code: "stale_session", message: "refresh")),
+            .nativeThread(id: 83, result: .snapshot(value: NativeThreadSnapshot(
+                piSessionID: "s", generation: "g", revision: 4, running: true, model: "p/m", thinking: "low",
+                supportedActions: ["send", "abort", "answer", "setModel", "setThinking", "sendImages"], dialogsSupported: true,
+                dialogs: [NativeThreadDialog(id: "d", kind: .confirm, title: "Sure?", timeout: 5000)],
+                widgets: [NativeThreadWidget(namespace: "pi", key: "notify", kind: .status, title: "warning", text: "careful")],
+                messages: [NativeThreadMessage(entryID: "m:0", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "hi")])],
+                olderCursor: nil, provisional: [], clipped: false, runtime: "rpc",
+                stats: NativeThreadStats(contextTokens: 42000, contextWindow: 200000, contextPercent: 21, totalTokens: 100, cost: 0.1),
+                commands: [NativeCommand(name: "fix", description: "Fix it", source: "prompt"), NativeCommand(name: "bare")]))),
+            .nativeThread(id: 84, result: .snapshot(value: NativeThreadSnapshot(
+                piSessionID: "s", generation: "g", revision: 1, running: false, supportedActions: ["send"], dialogsSupported: false,
+                dialogs: [], messages: [], provisional: [], clipped: true))),
         ]
         for reply in replies {
             let line = try NDJSON.encode(reply)

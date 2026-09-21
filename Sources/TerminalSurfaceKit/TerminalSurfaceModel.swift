@@ -396,6 +396,8 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// Insert Finder-dropped files using Ghostty's native macOS convention:
     /// absolute paths, shell-escaped and separated by spaces.
     func sendDroppedFiles(_ urls: [URL]) -> Bool {
+        // Async image resolution can outlive a presentation switch.
+        guard renderingActive, acceptsFileDrops else { return false }
         if let onFileDrop { onFileDrop(urls); return true }
         guard let text = TerminalFileDrop.text(for: urls) else { return false }
         return viewState.send(text)

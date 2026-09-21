@@ -26,11 +26,35 @@ Mobile saves one host's name/address/port in UserDefaults. Its token is stored s
 - Paged older history and live updates while the thread is open.
 - Follow-up or steering messages and agent cancellation.
 - Native select, confirm, input, and multiline editor answers when the host pi provides the dialog API below.
+- Explicit, keyed text/status widgets from [Shepherd-aware extensions](../native-ui-widgets.md).
 - Connection errors and stale-action handling. Unknown-outcome actions are not automatically retried; check the thread before submitting again.
 
 An accepted action means pi accepted synchronous API dispatch, not that the response finished or the message was persisted. Messages are literal text; built-in desktop slash commands are not interpreted by the mobile composer. Cancel uses pi's normal abort behavior, which may restore queued prompts into the desktop editor.
 
 Worktree management, creation, diff review, arbitrary custom TUI controls, and image rendering are outside this MVP. Images appear as explicit placeholders. Output is clipped at 16 KiB per entry, with pages of up to 50 visible entries and an encoded snapshot limit below 256 KiB. The full session remains on the host. The open thread polls every 500 ms while active or waiting, otherwise every two seconds. Hidden/background threads do not poll.
+
+## Presentation
+
+The phone follows the design spec in `../design-spec/` (page 9 §8 and the page 4–6 artboards). `App/iOS/MobileTokens.swift` holds the same light/dark hex values as the desktop's `NativeTokens`, kept local so the iOS target never imports the Mac app module, plus the phone type ramp (body 16 ×1.5, bubble 15, tool rows 12 mono, title 16/600, micro 11 mono). Turn grouping, tool rows, DiffStat, durations, the status pill, the collapsed group summary and head truncation come from `ShepherdRemote/NativeThreadPresentation.swift`, shared with the desktop.
+
+- Agents list: host section header with a Connected / Connecting / Unreachable pill, 56pt rows (title + one-line status in micro mono, chevron), "Show N more" past five rows, an Automations section, and a dimmed card with Retry when the host is unreachable (cached rows stay visible but cannot open). The status line shows the state word and the space name only; the current tool and elapsed time are thread-snapshot data the fleet state does not carry, so they are omitted rather than faked.
+- Thread header: back · title (label/600) with a status line beneath (dot + pill text, no fill, "· N turns" once the full history is loaded) · Stop (danger) while running or waiting · options menu (delivery, refresh).
+- Body: user turns are trailing bubbles (15pt, radius 14 with a 4pt bottom-trailing corner), agent prose is 16pt at ×1.5, thinking is a collapsed disclosure, and consecutive tool calls collapse into one 44pt summary row ("6 tool calls · read 1 · edit 3 · bash 2"). Expanded rows are 40pt with head-truncated paths; bash rows and any row with saved output push a full-screen output view. The footer shows only the tool count.
+- Composer: pill field (44pt minimum, radius 22, grows to five lines) with the Send circle inside; Send becomes Stop while running or waiting when the draft is empty. A "Waiting for you" slot appears while a question is pending and re-opens the sheet if it was swiped away. The gutter is 16pt.
+- Approval: a bottom sheet (`.sheet` with medium/large detents, grabber, radius 20, system scrim) with stacked 50pt actions: confirm → Allow once / Deny, select → stacked options, input/editor → field + Submit, plus a plain Cancel. "Always for this agent" appears only when a select option literally offers it.
+- Touch targets are at least 44pt. Reduce Motion replaces the spinner with a pulsing dot and disables expand animations.
+
+### Substitutions and spec items not honoured
+
+- Fonts: IBM Plex Sans / JetBrains Mono are not bundled; system sans and system monospace at the spec sizes.
+- No attach icon: the bridge has no attachment support, so the affordance is omitted rather than disabled.
+- No timestamps under bubbles, no turn durations, no "Thought for Ns", no "Nk" context count: the bridge does not carry them.
+- No per-row durations or live elapsed on the phone: the fleet state and snapshot carry no start times.
+- The scrim is the system sheet dimming, not exactly 32% text.primary.
+- No local notification when approval is needed while backgrounded (the app disconnects on background).
+- Shells and Settings tabs from the artboard are not present; Settings remains a sheet behind the gear button.
+
+The screenshots in `screenshots/` were re-captured after this restyle from the simulator fixture: `polished-thread-{dark,light}.png` (thread with the confirm sheet open) and `agents-{dark,light}.png` (the Agents list, via `FIXTURE_SCREEN=fleet FIXTURE_DIALOG=none`). `FIXTURE_DIALOG=none` renders an idle thread with the composer visible.
 
 ## Standard dialog dependency
 

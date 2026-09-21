@@ -68,6 +68,8 @@ struct LegacyJSONTests {
         // Pre-worktree files carry no branch or path; the agent is not a worktree.
         #expect(state.agents.first?.worktreeBranch == nil)
         #expect(state.agents.first?.worktreePath == nil)
+        // Pre-RPC files: every agent was a terminal agent.
+        #expect(state.agents.first?.runtime == .terminal)
 
         let encodedObject = try #require(
             JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any]
@@ -102,5 +104,18 @@ struct LegacyJSONTests {
         #expect(decoded == agent)
         #expect(decoded.worktreeBranch == "worktree/calm-stone-3831")
         #expect(decoded.worktreePath == "/tmp/calm-stone-3831")
+    }
+
+    @Test func runtimeRoundTripsAndDefaultsToTerminal() throws {
+        let rpc = Agent(name: "rpc", spaceID: SpaceID(rawValue: "s"), tabID: TabID(rawValue: "t"), runtime: .rpc)
+        #expect(try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(rpc)).runtime == .rpc)
+        #expect(Agent(name: "x", spaceID: SpaceID(rawValue: "s"), tabID: TabID(rawValue: "t")).runtime == .terminal)
+    }
+
+    @Test func createSessionParamsRuntimeDefaultsToTerminal() throws {
+        let legacy = #"{"cwd":"/tmp","command":["/bin/zsh"],"cols":80,"rows":24}"#
+        #expect(try JSONDecoder().decode(CreateSessionParams.self, from: Data(legacy.utf8)).runtime == .terminal)
+        let rpc = CreateSessionParams(cwd: "/tmp", command: ["pi", "--mode", "rpc"], runtime: .rpc)
+        #expect(try JSONDecoder().decode(CreateSessionParams.self, from: JSONEncoder().encode(rpc)) == rpc)
     }
 }

@@ -138,19 +138,138 @@ test("native same-process bridge snapshots, actions, dialogs and reconnect", { t
     assert.equal((await request(send)).failure.code, "stale_session");
     assert.equal((await request({ snapshot: { expectedSessionID: "session" } })).failure.code, "stale_session");
     snapshot = (await request({ snapshot: {} })).snapshot.value;
+    // Older pi without an event bus still served all standard actions above.
+    assert.deepEqual(snapshot.widgets, []);
+    const listeners = new Map();
+    pi.events = {
+      on(name, handler) {
+        const set = listeners.get(name) ?? new Set(); listeners.set(name, set); set.add(handler);
+        return () => set.delete(handler);
+      },
+      emit(name, value) { for (const handler of listeners.get(name) ?? []) handler(value); },
+    };
+    const uiBefore = { ...ctx.ui };
+    emit("session_start"); emit("session_start");
+    assert.equal(listeners.get("shepherd:native-ui:request").size, 1);
+    const widget = (args) => {
+      const requestID = randomUUID();
+      let response;
+      const off = pi.events.on("shepherd:native-ui:response", (value) => { response = value; });
+      pi.events.emit("shepherd:native-ui:request", { version: 1, requestID, ...args });
+      off();
+      assert.equal(response.version, 1);
+      assert.equal(response.requestID, args.requestID === undefined ? requestID : args.requestID);
+      return response;
+    };
+    let invalidResponse;
+    const offInvalid = pi.events.on("shepherd:native-ui:response", (reply) => { invalidResponse = reply; });
+    for (const requestID of [undefined, 42, "x".repeat(129)]) {
+      pi.events.emit("shepherd:native-ui:request", { version: 1, type: "capabilities", requestID });
+      assert.equal(invalidResponse.requestID, null); assert.equal(invalidResponse.error.code, "invalid");
+    }
+    offInvalid();
+    const caps = widget({ type: "capabilities" });
+    assert.equal(caps.ok, true); assert.deepEqual(caps.kinds, ["status", "text"]);
+    assert.deepEqual(caps.limits, { namespaceBytes: 128, keyBytes: 128, requestIDBytes: 128, titleBytes: 256,
+      textBytes: 4096, items: 16, aggregateBytes: 32768 });
+    const set = { type: "set", namespace: "build", key: "result", kind: "status", title: "Build", text: "running" };
+    for (const bad of [{ version: 2 }, { type: "button" }, { kind: "html" }, { text: 2 }, { title: {} },
+      { namespace: "" }, { key: "" }, { namespace: "😀".repeat(33) }, { key: "x".repeat(129) }]) {
+      assert.equal(widget({ ...set, ...bad }).error.code, "invalid");
+    }
+    for (const bad of [{ text: "😀".repeat(1025) }, { title: "x".repeat(257) }]) {
+      assert.equal(widget({ ...set, ...bad }).error.code, "limit");
+    }
+    assert.equal(widget(set).ok, true);
+    snapshot = (await request({ snapshot: {} })).snapshot.value;
+    const beforeWidgetRevision = snapshot.revision;
+    assert.equal(widget({ ...set, text: "passed" }).ok, true);
+    snapshot = (await request({ snapshot: { afterRevision: beforeWidgetRevision } })).snapshot.value;
+    assert.equal(snapshot.widgets.length, 1); assert.equal(snapshot.widgets[0].text, "passed");
+    assert.equal(widget({ ...set, text: "x".repeat(4097) }).error.code, "limit");
+    assert.ok((await request({ snapshot: { afterRevision: snapshot.revision } })).unchanged);
+    assert.equal(widget({ ...set, namespace: "test", kind: "text", text: "**literal**, not markdown" }).ok, true);
+    // Tuple keys cannot collide through a producer-supplied separator.
+    for (const [namespace, key] of [["a:b", "c"], ["a", "b:c"]]) assert.equal(widget({ ...set, namespace, key }).ok, true);
+    snapshot = (await request({ snapshot: {} })).snapshot.value;
+    assert.equal(snapshot.widgets.length, 4);
+    assert.equal(widget({ type: "clear", namespace: "build", key: "result" }).ok, true);
+    assert.equal(widget({ type: "clear", namespace: "build", key: "result" }).ok, true);
+    snapshot = (await request({ snapshot: { afterRevision: snapshot.revision } })).snapshot.value;
+    assert.equal(snapshot.widgets.length, 3); assert.equal(snapshot.widgets[0].namespace, "test");
+    emit("session_tree"); snapshot = (await request({ snapshot: {} })).snapshot.value;
+    assert.deepEqual(snapshot.widgets, []);
+    for (let i = 0; i < 16; i++) assert.equal(widget({ ...set, key: String(i) }).ok, true);
+    assert.equal(widget({ ...set, key: "overflow" }).error.code, "limit");
+    assert.equal(widget({ ...set, key: "0", text: "replacement at capacity" }).ok, true);
+    assert.equal((await request({ snapshot: {} })).snapshot.value.widgets.length, 16);
+    emit("session_start");
+    // Escaped control characters count against encoded payload, not just raw text bytes.
+    assert.equal(widget({ ...set, text: "\u0000".repeat(4096) }).ok, true);
+    assert.equal(widget({ ...set, key: "second", text: "\u0000".repeat(4096) }).error.code, "limit");
+    assert.equal((await request({ snapshot: {} })).snapshot.value.widgets.length, 1);
+    emit("session_tree");
+    for (let i = 0; i < 7; i++) assert.equal(widget({ ...set, key: String(i), text: "x".repeat(4096) }).ok, true);
+    assert.equal(widget({ ...set, key: "eighth", text: "x".repeat(4096) }).error.code, "limit");
+    branch = Array.from({ length: 50 }, (_, i) => ({ type: "message", id: `budget${i}`, message: { role: "user", content: "x".repeat(16384) } }));
+    snapshot = (await request({ snapshot: {} })).snapshot.value;
+    assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) <= 240 * 1024);
+    assert.equal(snapshot.widgets.length, 7); assert.ok(snapshot.clipped);
     peer.destroy(); await next();
-    assert.equal((await request({ snapshot: {} })).snapshot.value.generation, snapshot.generation);
+    const reconnected = (await request({ snapshot: {} })).snapshot.value;
+    assert.equal(reconnected.generation, snapshot.generation);
+    assert.deepEqual(reconnected.widgets, snapshot.widgets);
+    sessionID = "widget-session"; emit("model_select");
+    assert.deepEqual((await request({ snapshot: {} })).snapshot.value.widgets, []);
+    assert.equal(widget({ ...set, namespace: "😀".repeat(32), key: "x".repeat(128), title: "x".repeat(256), text: "😀".repeat(1024) }).ok, true);
+    assert.deepEqual(ctx.ui, uiBefore); // No setStatus/widget factory or dialog monkeypatches.
+    // A throwing producer response listener must not throw into pi.
+    let responseCount = 0;
+    const offThrow = pi.events.on("shepherd:native-ui:response", () => { responseCount++; throw Error("producer error"); });
+    assert.doesNotThrow(() => pi.events.emit("shepherd:native-ui:request", null));
+    assert.equal(responseCount, 1);
+    offThrow();
+
     peer.write('{"type":"nativeThreadCommand","id":9,"request":{"snapshot":{}}}\r\n');
     await once(peer, "close"); await next();
     peer.write(Buffer.alloc(1024 * 1024 + 1, 65)); await once(peer, "close"); await next();
     // A split LF frame is held until complete, then correlated normally.
     peer.write('{"type":"nativeThreadCommand","id":999,"request":');
     peer.write('{"snapshot":{}}}\n'); assert.equal((await next()).id, 999);
+    emit("session_shutdown");
+    assert.equal(listeners.get("shepherd:native-ui:request").size, 0);
+    emit("session_start"); await next();
+    assert.deepEqual((await request({ snapshot: {} })).snapshot.value.widgets, []);
   } finally {
     emit("session_shutdown"); peer?.destroy(); server.close();
     for (const [i, key] of ["SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET"].entries()) {
       if (oldEnv[i] == null) delete process.env[key]; else process.env[key] = oldEnv[i];
     }
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("documented producer keeps one terminal fallback on absent bus and native rejection", async () => {
+  const { default: example } = await import("../../docs/examples/native-ui-widgets.ts");
+  for (const mode of ["absent", "accepted", "rejected"]) {
+    let handler;
+    const calls = { status: [], widget: [], notices: [] }, listeners = new Set();
+    const pi = { registerCommand: (_, command) => { handler = command.handler; } };
+    if (mode !== "absent") pi.events = {
+      on: (_, fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+      emit: (_, request) => {
+        for (const fn of listeners) fn({ version: 1, requestID: request.requestID,
+          ok: mode === "accepted", error: { code: "limit", message: "fixture limit" } });
+      },
+    };
+    example(pi);
+    await handler("", { ui: {
+      setStatus: (...args) => calls.status.push(args),
+      setWidget: (...args) => calls.widget.push(args),
+      notify: (...args) => calls.notices.push(args),
+    } });
+    assert.equal(calls.status.length, 1); assert.equal(calls.widget.length, 1);
+    assert.equal(calls.notices.length, mode === "rejected" ? 2 : 0);
+    assert.equal(listeners.size, 0);
   }
 });

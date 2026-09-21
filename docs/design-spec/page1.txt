@@ -1,0 +1,71 @@
+This Mac
+ 19
+ Shepherd
+ 8
+ Plan shepherd extensions
+ Dock review pane
+ Fix remote subagent deletion
+ Fix terminal output buffer
+ Investigate SwiftUI live preview
+ Fix remote nightly
+ Fix agent deletion workflow
+ Horizon
+ Unreachable
+ Remote agents
+ Automations
+ 1
+ Merge PR #24 after CI
+ done
+ Shells
+ 1
+ $~ · pi
+ Shepherd
+ /
+ Investigate SwiftUI live preview capabilities
+ Idle
+ 17 turns · 42k ctx
+ Terminal
+ Native
+ Remove the visible speaker labels, and make tool rows show something useful — a command or a path — instead of just "complete".
+ 2:41 PM
+ Thought for 4s
+ I'll finish removing the speaker labels and make tool rows show a useful command or path preview. Slash commands and image support stay separate from this visual change.
+ read
+ Sources/ShepherdApp/DesktopNativeThreadView.swift:237–396
+ 160 lines
+ edit
+ Sources/ShepherdApp/DesktopNativeThreadView.swift
+ +58−41
+ 6 blocks
+ edit
+ App/iOS/ThreadView.swift
+ +0−4
+ 1 block
+ edit
+ Tests/ShepherdAppTests/NativePresentationTests.swift
+ +9−1
+ 1 block
+ bash
+ swift test --filter toolPreviewPrefersActionAndFallsBackToSavedOutput
+ 1 passed
+ 10.2s
+ Build complete! (10.20 sec)
+◇ Suite "Desktop native presentation" started.
+◆ Test toolPreviewPrefersActionAndFallsBackToSavedOutput() passed after 0.001 seconds.
+◆ Test run with 1 test in 1 suite passed after 0.001 seconds.
+ bash
+ xcodebuild -scheme 'Shepherd (Dev)' -destination 'platform=macOS' build
+ BUILD SUCCEEDED
+ 48s
+ Removed the visible speaker labels and the desktop gutter. User-message fills still distinguish the conversation.
+ Tool rows now show a command or path preview when available, or the first output line for saved results. The repetitive "complete" label is gone.
+ Focused regression test and Mac Dev build passed. Slash commands and image drops still need native bridge support; they remain available in Terminal mode.
+ 2:44 PM · 3m 12s · 6 tool calls
+ Message the agent
+ /commands
+ claude-opus
+ ⏎ send · ⇧⏎ newline
+ ⌘N new agent
+ ⌘D split
+ ⌘⇧B pane
+ Working in ~/dev/shepherd

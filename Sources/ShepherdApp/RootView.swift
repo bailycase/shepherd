@@ -25,7 +25,8 @@ struct RootView: View {
                 SidebarView(vm: vm)
             }
             .frame(width: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
-            .background(Tokens.sidebarBg.ignoresSafeArea())
+            // Spec bg.canvas: the sidebar surface the restyled rows are designed on.
+            .background(NativeTokens.bgCanvas.ignoresSafeArea())
             // Rebuild chrome (not terminal panes) when density/text scale
             // change; fonts and metrics are read inside row bodies where
             // SwiftUI's input diffing cannot see them.
@@ -284,6 +285,26 @@ struct RootView: View {
         }
         .sheet(
             isPresented: Binding(
+                get: { vm.runtimeRestartTarget != nil },
+                set: { if !$0 { vm.runtimeRestartTarget = nil } }
+            )
+        ) {
+            let agent = vm.agent(id: vm.runtimeRestartTarget)
+            let toRPC = agent?.runtime == .terminal
+            DialogSheet(
+                title: toRPC ? "Restart as Native (RPC) Agent" : "Restart as Terminal Agent",
+                subtitle: "Stops \(agent?.name ?? "the agent")’s pi and relaunches it in the same session, so the conversation carries over. "
+                    + (toRPC ? "There will be no terminal: Shepherd becomes pi’s only UI." : "The agent gets a terminal again; the native view stays available.")
+                    + " Anything pi is doing right now is interrupted.",
+                width: 520,
+                actions: [
+                    DialogAction("Cancel", kind: .cancel) { vm.runtimeRestartTarget = nil },
+                    DialogAction("Restart", kind: .destructive) { confirmRuntimeRestart(to: toRPC ? .rpc : .terminal) },
+                ]
+            )
+        }
+        .sheet(
+            isPresented: Binding(
                 get: { vm.spaceDeleteTarget != nil },
                 set: { if !$0 { vm.spaceDeleteTarget = nil } }
             )
@@ -318,6 +339,19 @@ struct RootView: View {
 
     /// Same dismissal choreography as Remove Space: deleting tears down a
     /// mounted terminal layout, so let the alert finish dismissing first.
+    /// Same choreography as the delete flows: the restart swaps a mounted pane's
+    /// surface, so let the sheet finish dismissing first.
+    private func confirmRuntimeRestart(to runtime: AgentRuntime) {
+        let id = vm.runtimeRestartTarget
+        vm.runtimeRestartTarget = nil
+        guard let id else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            do { try await vm.restartAgent(id, as: runtime) }
+            catch { vm.remoteActionError = String(describing: error) }
+        }
+    }
+
     private func confirmWorktreeDelete(removeWorktree: Bool) {
         let id = vm.worktreeDeleteTarget
         vm.worktreeDeleteTarget = nil
@@ -371,6 +405,29 @@ struct WorkspaceHeaderView: View {
     @ObservedObject private var appearance = AppSettings.shared
 
     var body: some View {
+        // A native agent gets the spec's 52pt header (breadcrumb · pill · turns · ModeSwitch · options).
+        if let agent = vm.nativePresentationAgent, vm.nativePresentation.isNative(agent),
+           vm.inspectingAgentID != agent.id,
+           let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
+            NativeThreadHeader(
+                store: vm.nativePresentation.store(for: agent.id),
+                project: space.name,
+                title: agent.name,
+                native: Binding(
+                    get: { vm.nativePresentation.isNative(agent) },
+                    set: { vm.nativePresentation.setNative($0, for: agent) }
+                ),
+                // RPC agents have no terminal (D2): no switch, no "Show Terminal".
+                showTerminal: vm.nativePresentation.canSwitch(agent) ? { vm.nativePresentation.setNative(false, for: agent) } : nil
+            )
+            .contentShape(Rectangle())
+            .gesture(WindowDragGesture())
+        } else {
+            terminalHeader
+        }
+    }
+
+    private var terminalHeader: some View {
         HStack(spacing: 8) {
             if let remote = vm.selectedRemoteAgent,
                let connection = vm.remoteHosts.connections.first(where: { $0.id == remote.hostID }) {
@@ -389,6 +446,21 @@ struct WorkspaceHeaderView: View {
                     leaf: vm.inspectingAgentID == agent.id ? "\(agent.name) / subagents" : agent.name
                 )
                 Spacer(minLength: 0)
+                if let nativeAgent = vm.nativePresentationAgent, vm.nativePresentation.canSwitch(nativeAgent) {
+                    Picker("Agent presentation", selection: Binding(
+                        get: { vm.nativePresentation.isNative(nativeAgent) },
+                        set: { vm.nativePresentation.setNative($0, for: nativeAgent) }
+                    )) {
+                        Text("Terminal").tag(false)
+                        Text("Native").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .font(Fonts.mono(11))
+                    .fixedSize()
+                    .help("Two views of the same pi process. Switching does not send or cancel anything.")
+                }
                 reviewButton
             } else if let space = vm.selectedSpace {
                 breadcrumb(space: space.name, leaf: "shell")

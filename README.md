@@ -78,6 +78,10 @@ readable `.bash_profile`, `.bash_login`, or `.profile` through an interactive rc
 its `login_shell` flag is off and `.bash_logout` does not run automatically. Other
 configured shells keep their normal startup without automatic pi theming.
 
+## Native desktop preview
+
+Local agent panes can switch between native chat and the existing Ghostty terminal without restarting pi. Terminal remains the default; auxiliary panes stay unchanged. See [desktop setup and limits](docs/desktop-native.md) and the [extension text/status widget API](docs/native-ui-widgets.md).
+
 ## iOS MVP
 
 The `Shepherd iOS` scheme builds a native iOS 27 remote client for viewing live threads, sending messages, cancelling agents, and answering standard dialogs. See [iOS setup and limits](docs/ios/README.md). Mobile dialog answers currently require the included prototype pi source patch; it is not installed automatically.

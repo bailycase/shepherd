@@ -19,7 +19,7 @@ xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
 DYLD_LIBRARY_PATH="$build" "$build/check"
 
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
-    App/iOS/ThreadStore.swift Tests/ShepherdIOSChecks/ThreadStoreCheck.swift \
+    -parse-as-library Tests/ShepherdIOSChecks/ThreadStoreCheck.swift \
     -o "$build/thread-check"
 DYLD_LIBRARY_PATH="$build" "$build/thread-check"
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
