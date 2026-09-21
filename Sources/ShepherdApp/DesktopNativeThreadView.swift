@@ -91,6 +91,11 @@ struct DesktopNativeThreadView: View {
                                 inset: geometry.contentInsets.bottom)
                 } action: { old, new in
                     observe(old: old, new: new)
+                    // The size-change anchor does not re-pin when the inset or the composer
+                    // changes under it; while stuck, every layout change lands on the tail.
+                    if follower.sticky, new.layoutDiffers(from: old), new.distance > NativeScrollFollower.threshold {
+                        proxy.scrollTo("native-bottom", anchor: .bottom)
+                    }
                 }
                 .onScrollPhaseChange { _, phase, context in
                     // Only a live finger/wheel counts. Momentum (.decelerating) and programmatic
@@ -176,16 +181,17 @@ struct DesktopNativeThreadView: View {
         var container: CGFloat
         /// Bottom content inset (the floating composer); a change here is layout, not the user.
         var inset: CGFloat
+        func layoutDiffers(from other: ScrollProbe) -> Bool {
+            content != other.content || container != other.container || inset != other.inset
+        }
     }
 
-    /// bb useStickyBottomScroll: a wheel tick counts as intent for 350 ms, phases cover drags.
-    /// Belt and braces: the offset moving away from the tail while the content and container
-    /// did not change can only be the user (programmatic follow never scrolls up), so it counts
-    /// as intent even when no wheel event was observed (pointer outside the view, keyboard).
+    /// bb useStickyBottomScroll: intent is a wheel tick (350 ms window) or a live drag phase.
+    /// Offset changes alone are never intent: layout shrink and the resulting offset shift
+    /// arrive in separate callbacks, so "moved up without a size change" misfires on every
+    /// provisional→history swap.
     private func observe(old: ScrollProbe, new: ScrollProbe) {
-        let layoutChanged = new.content != old.content || new.container != old.container || new.inset != old.inset
-        let movedUp = !layoutChanged && new.distance > old.distance + NativeScrollFollower.threshold
-        let intent = movedUp || Date() <= wheelIntentUntil
+        let intent = Date() <= wheelIntentUntil
         // Content that fits the viewport has a negative "distance"; growth from there is
         // layout, never the user, and must not register as unseen content.
         let grew = new.content > old.content && old.distance > 0

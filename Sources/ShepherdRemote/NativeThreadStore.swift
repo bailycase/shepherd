@@ -32,12 +32,15 @@ public final class NativeThreadStore: ObservableObject {
     private var recentRequest = UUID()
     private var historyEpoch = UUID()
 
+    /// History, then the optimistic user echo, then the live (provisional) reply to it. The echo
+    /// must precede provisional rows: the reply to a sent message streams below it, and the
+    /// order must not flip once pi persists the message (that flip re-laid the whole tail).
     public var displayedMessages: [NativeThreadMessage] {
         let ids = Set(messages.map(\.entryID))
         let toolIDs = Set(messages.compactMap(\.toolCallID))
-        return messages + (snapshot?.provisional ?? []).filter {
+        return messages + pending + (snapshot?.provisional ?? []).filter {
             !ids.contains($0.entryID) && ($0.toolCallID == nil || !toolIDs.contains($0.toolCallID!))
-        } + pending
+        }
     }
 
     /// Reconcile echoes against a snapshot: gone when the real message landed or the session moved on.

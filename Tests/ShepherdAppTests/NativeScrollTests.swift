@@ -103,6 +103,8 @@ struct NativeScrollTests {
         defer { f.tearDown() }
         try await waitFor { f.store.ready }
         try await f.layout()
+        try await Task.sleep(for: .milliseconds(300))
+        try await f.layout()
         // Opens pinned to the tail.
         #expect(f.distanceFromBottom < 2, "expected to open at the bottom, distance \(f.distanceFromBottom)")
         // No trailing space: the document ends where the last turn ends (the composer is a
@@ -231,6 +233,59 @@ struct NativeScrollTests {
         try await f.layout()
         #expect(f.distanceFromBottom < 2, "composer shrink detached the tail: \(f.distanceFromBottom)")
         #expect(!findJump(f.host), "jump pill shown after composer resize")
+    }
+
+    /// Exactly what a live send looks like: at the bottom, send → echo appended → pi reports
+    /// running → working row appears → a tool row streams in above the working row. The
+    /// tail must stay pinned and the jump pill must never appear.
+    @Test func sendThenReplyKeepsTheTailAndHidesTheJumpPill() async throws {
+        let f = try Fixture(messageCount: 12)
+        defer { f.tearDown() }
+        try await waitFor { f.store.ready }
+        try await f.layout()
+        func findJump(_ view: NSView) -> Bool {
+            if (view.accessibilityLabel() ?? "").contains("Jump to latest") { return true }
+            return view.subviews.contains(where: findJump)
+        }
+        f.store.draft = "spawn some agent"
+        await f.store.send()
+        try await waitFor { f.store.sentCount == 1 }
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2, "after send: \(f.distanceFromBottom)")
+        #expect(!findJump(f.host), "pill after send")
+        // pi picks it up: running, then a provisional tool row and text.
+        var running = Fixture.makeSnapshot(count: 12, running: true, revision: 2)
+        f.snapshot = running
+        try await waitFor { f.store.snapshot?.revision == 2 }
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2, "after running: \(f.distanceFromBottom)")
+        #expect(!findJump(f.host), "pill after running")
+        running.revision = 3
+        running.provisional = [
+            NativeThreadMessage(entryID: "provisional:tool:c1", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "Run fan-out: 0/32 used")],
+                                toolName: "subagent", toolCallID: "c1", argumentsText: "{\"agent\":\"delegate\"}", status: "complete", truncated: false),
+            NativeThreadMessage(entryID: "provisional:assistant:1", role: "assistant",
+                                blocks: [NativeThreadBlock(kind: .text, text: "Spawned a subagent to say hello.")], status: "streaming", truncated: false),
+        ]
+        f.snapshot = running
+        try await waitFor { f.store.snapshot?.revision == 3 }
+        try await f.layout()
+        #expect(f.distanceFromBottom < 2, "after tool row: \(f.distanceFromBottom)")
+        #expect(!findJump(f.host), "pill after tool row")
+        // The echo must sit ABOVE the provisional reply, and stay there once persisted.
+        let ids = f.store.displayedMessages.map(\.entryID)
+        let echo = try #require(ids.firstIndex { $0.hasPrefix("pending:") })
+        let tool = try #require(ids.firstIndex { $0 == "provisional:tool:c1" })
+        #expect(echo < tool, "echo below reply: \(ids)")
+        var persisted = Fixture.makeSnapshot(count: 12, running: true, revision: 4)
+        persisted.messages.append(NativeThreadMessage(entryID: "m12", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "spawn some agent")], truncated: false))
+        persisted.provisional = running.provisional
+        f.snapshot = persisted
+        try await waitFor { f.store.snapshot?.revision == 4 }
+        try await f.layout()
+        #expect(f.store.pending.isEmpty)
+        #expect(f.distanceFromBottom < 2, "after persist: \(f.distanceFromBottom)")
+        #expect(!findJump(f.host), "pill after persist")
     }
 
     @Test func sendingReattachesToTheTailWithoutBlankSpace() async throws {
