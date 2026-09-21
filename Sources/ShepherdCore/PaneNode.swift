@@ -61,11 +61,12 @@ public extension PaneNode {
         leaves.first { $0.id == id }
     }
 
-    /// Replace the leaf `paneID` with a split of it and `newPane`. Returns nil when the pane is absent.
+    /// Replace a terminal leaf with a split of it and `newPane`.
+    /// Returns nil when the pane is absent or is a docked review pane.
     func splitting(pane paneID: PaneID, axis: SplitAxis, newPane: LeafPane, ratio: Double = 0.5) -> PaneNode? {
         switch self {
         case .leaf(let pane):
-            guard pane.id == paneID else { return nil }
+            guard pane.id == paneID, pane.isReview != true else { return nil }
             return .split(axis: axis, ratio: ratio, first: .leaf(pane), second: .leaf(newPane))
         case .split(let axis0, let ratio0, let first, let second):
             if let replaced = first.splitting(pane: paneID, axis: axis, newPane: newPane, ratio: ratio) {
