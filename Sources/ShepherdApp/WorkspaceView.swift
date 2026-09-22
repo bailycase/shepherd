@@ -333,7 +333,7 @@ struct PaneLeafView: View {
                             vm.subagentInspector.runByAgent.removeValue(forKey: agent.id)
                         }, select: { vm.subagentInspector.runByAgent[agent.id] = $0.runID }, fork: { run in
                             do { try await vm.forkSubagent(agentID: agent.id, run: run); return nil } catch { return String(describing: error) }
-                        })
+                        }, review: { vm.openReview(agentID: agent.id, path: $0) })
                         .id(inspecting)
                     } else if let review {
                         ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
@@ -611,7 +611,8 @@ private struct RemoteAgentThreadPane: View {
             if let inspecting {
                 SubagentInspector(store: store, runID: inspecting, active: true, close: {
                     vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
-                }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil)
+                }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
+                review: { vm.openRemoteReview(ref, path: $0) })
                 .id(inspecting)
             } else if let review {
                 ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: true), store: store)

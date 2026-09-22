@@ -181,7 +181,7 @@ struct SubagentCard: View {
             if replying { replyField(placeholder: "Steer \(role) — delivered before its next turn") }
             HStack(spacing: 6) {
                 Button { actions.inspect(run) } label: {
-                    HStack(spacing: 6) { Text("Inspect"); Text("⌘I").font(Fonts.micro).foregroundStyle(Tokens.textMuted) }
+                    HStack(spacing: 6) { Text("Inspect"); Text(KeybindingsStore.shared.display(.inspectSubagent)).font(Fonts.micro).foregroundStyle(Tokens.textMuted) }
                 }
                 .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
                 .accessibilityLabel("Inspect \(role)")
