@@ -6,8 +6,7 @@ import ShepherdRemote
 @testable import ShepherdSessions
 
 /// The native-thread path for RPC agents: a real `SessionServer` on scratch
-/// paths with an RPC session spawned from `Fixtures/stub-pi.py`. Mirrors what
-/// `LocalNativeThreadTests` covers for terminal agents through the bridge.
+/// paths with an RPC session spawned from `Fixtures/stub-pi.py`.
 @Suite("RPC agent native thread", .serialized)
 struct RPCAgentThreadTests {
     static let stubPath = URL(fileURLWithPath: #filePath)

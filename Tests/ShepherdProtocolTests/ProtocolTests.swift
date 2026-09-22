@@ -178,7 +178,7 @@ struct ProtocolTests {
         }
     }
 
-    /// The card fields the children extension publishes (docs/design-spec/subagent-card-states.png)
+    /// The card fields the children extension publishes (docs/design-spec/boards/09-subagent-cards.png)
     /// decode from its exact JSON.stringify shape, and every one is optional: pi-subagents rows
     /// (no card fields) and old hosts keep decoding.
     @Test func childCardFieldsDecodeAndRoundTrip() throws {

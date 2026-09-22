@@ -371,7 +371,7 @@ struct NativeScrollTests {
         #expect(f.distanceFromBottom <= NativeScrollFollower.threshold, "not on the tail: \(f.distanceFromBottom)")
     }
 
-    /// A terminal agent's bridge sends a bounded, paged window. Sending grows the thread, the
+    /// The server sends a bounded, paged window. Sending grows the thread, the
     /// window slides, and history is replaced with a different set of rows (with an older
     /// cursor). The view must end on the echo and reply, never past them.
     @Test func sendingWhileTheHistoryWindowSlidesStaysOnTheContent() async throws {

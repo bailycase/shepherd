@@ -136,7 +136,7 @@ struct NativePresentationTests {
         #expect(nativeTurns([user, prose, a, user]).map(\.isUser) == [true, false, true])
     }
 
-    // MARK: Subagent cards (docs/design-spec/subagent-card-states.png)
+    // MARK: Subagent cards (docs/design-spec/boards/09-subagent-cards.png)
 
     private static let boardNow = Date(timeIntervalSince1970: 10_000)
     /// The four cards on the board, timed so the durations read as drawn.
@@ -706,7 +706,7 @@ struct NativePresentationTests {
         try capture(host, name: "real-session")
     }
 
-    /// The board's thread (docs/design-spec/subagents-with-inspector.png): a user turn, the
+    /// The board's thread (docs/design-spec/boards/07-subagents-live.png): a user turn, the
     /// "Splitting into three" prose, three spawn calls that the cards replace, a closing line.
     private static func subagentSnapshot(running: Bool) -> NativeThreadSnapshot {
         func spawn(_ id: String, _ role: String) -> NativeThreadMessage {
@@ -785,7 +785,7 @@ struct NativePresentationTests {
 
     /// Screenshot-only: the three cards on the board, with real timings (the clock runs from
     /// startedAt), rendered as the workspace composes them. Compare with
-    /// docs/design-spec/subagents-with-inspector.png.
+    /// docs/design-spec/boards/07-subagents-live.png.
     @Test func subagentCardsRenderTheBoard() async throws {
         guard ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_DIR"] != nil else { return }
         let store = NativeThreadStore()
@@ -916,7 +916,7 @@ struct NativePresentationTests {
     }
 
     /// Screenshot-only: the thread with the worker open in the side-panel inspector, its
-    /// transcript served from a synthetic page. Compare with docs/design-spec/subagents-with-inspector.png.
+    /// transcript served from a synthetic page. Compare with docs/design-spec/boards/07-subagents-live.png.
     @Test func subagentInspectorRendersTheBoard() async throws {
         guard ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_DIR"] != nil else { return }
         let store = NativeThreadStore()
