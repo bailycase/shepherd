@@ -775,13 +775,13 @@ final class ShepherdViewModel {
 
     var remoteListenerStatus: String {
         if let port = remoteListenerBoundPort {
-            return "Serving on port \(port). Remote Shepherds connect over your VPN."
+            return "Serving on port \(port). Other Macs with your token connect to agents here."
         }
-        if let error = remoteListenerError {
-            return "Failed to start: \(error)"
-        }
-        return "Off. Enable on the Mac whose sessions you want to reach."
+        return "Let other Macs with your token connect to agents here."
     }
+
+    /// The bind failure, shown inline under the listener row.
+    var remoteListenerProblem: String? { remoteListenerError.map { "Couldn't start: \($0)" } }
 
     /// Applied at startup (ShepherdApp calls this after server.start()) and
     /// from the Settings toggle.

@@ -5,184 +5,155 @@ import ShepherdSessions
 struct PiSettings: View {
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var updates = PiUpdateManager.shared
-
     @State private var modelOptions: [String] = []
 
     var body: some View {
-        SettingsGroup(title: "Bundled Pi Extensions") {
-            SettingsRow(
-                title: "Name Agents Automatically",
-                subtitle: "Pi titles each new agent from its opening prompt on the first turn, using the cheapest model it is authed for. Off keeps the truncated prompt as the name.",
-                isFirst: true
-            ) {
-                Toggle("Name agents automatically", isOn: $settings.autoNameAgents)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
+        SettingsPage(title: "Pi",
+                     explanation: "Extensions Shepherd bundles into pi, defaults for native subagents, and keeping pi up to date.") {
+            SettingsGroup(title: "Bundled extensions",
+                          footnote: "Applies to agents launched on this Mac, including automations and remote agents. Running agents keep their extensions until restarted. Status and session tracking are always on.") {
+                SettingsRow(title: "Name agents automatically",
+                            subtitle: "Titles each new agent from its first prompt using the cheapest authed model. A rename you type is always final.") {
+                    SettingsSwitch(label: "Name agents automatically", isOn: $settings.autoNameAgents)
+                }
+                SettingsRow(title: "Sync pi theme",
+                            subtitle: "Use Shepherd's palette when you run pi by hand in a shell, and follow theme changes.") {
+                    SettingsSwitch(label: "Sync pi theme", isOn: $settings.piThemeExtension)
+                }
+                SettingsRow(title: "Panes and agent tools",
+                            subtitle: "Let agents control panes, message or spawn agents, manage automations and send notifications.") {
+                    SettingsSwitch(label: "Panes and agent tools", isOn: $settings.piPanesExtension)
+                }
+                SettingsRow(title: "Diff review tool", subtitle: "Let agents open the review pane with review_diff.") {
+                    SettingsSwitch(label: "Diff review tool", isOn: $settings.piReviewExtension)
+                }
+                SettingsRow(title: "Native subagents",
+                            subtitle: "Shepherd helpers, agent files, scripted workflows and durable missions. Needs pi 0.85.1+. Children stop with their parent.") {
+                    SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
+                }
+                SettingsRow(title: "Subagent display",
+                            subtitle: "Show subagent runs in the sidebar and open their inspector. Off doesn't stop them running.") {
+                    SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
+                }
             }
-            SettingsRow(
-                title: "sync pi theme",
-                subtitle: "Use Shepherd's palette in pi and follow theme changes. Off uses pi's own theme."
-            ) {
-                Toggle("sync pi theme", isOn: $settings.piThemeExtension)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-            SettingsRow(
-                title: "panes and agent tools",
-                subtitle: "Let agents control panes, message or spawn agents, manage automations, and send notifications. Off removes these tools, including notifications from automation runs."
-            ) {
-                Toggle("panes and agent tools", isOn: $settings.piPanesExtension)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-            SettingsRow(
-                title: "diff review tool",
-                subtitle: "Let agents open a native diff review with review_diff."
-            ) {
-                Toggle("diff review tool", isOn: $settings.piReviewExtension)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-            SettingsRow(
-                title: "native subagents",
-                subtitle: "Opt in to Shepherd helpers, agent files, scripted workflows, and durable missions. Requires pi 0.85.1 or newer. Children stop with their parent; user-installed subagent tools remain unchanged."
-            ) {
-                Toggle("native subagents", isOn: $settings.piNativeSubagents)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-            SettingsRow(
-                title: "subagent display",
-                subtitle: "Show pi subagent runs in the sidebar and open their inspector. Off does not stop subagents from running."
-            ) {
-                Toggle("subagent display", isOn: $settings.piSubagentsExtension)
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-            }
-        }
-        SettingsNote(text: "applies to agents launched on this Mac, including automations and remotely created agents · running agents keep their extensions until restarted; quit and reopen Shepherd to apply to all · user-installed pi extensions are unchanged")
-        SettingsNote(text: "status and session tracking are always on so lifecycle updates and /new or /resume restoration keep working")
-        SettingsNote(text: "a hand-typed rename is always final · naming never blocks pi's first turn")
 
-        if settings.piNativeSubagents {
-            SettingsGroup(title: "Native Subagent Defaults") {
-                SettingsRow(title: "concurrency", subtitle: "Shared child process limit per parent, including workflows.", isFirst: true) {
-                    Stepper("\(settings.childConcurrency)", value: $settings.childConcurrency, in: 1...16)
+            if settings.piNativeSubagents {
+                SettingsGroup(title: "Native subagent defaults",
+                              footnote: "Precedence: explicit call → agent file → these defaults → parent. Child tools run with your account's access.") {
+                    SettingsRow(title: "Concurrency", subtitle: "Child process limit per parent, including workflows.") {
+                        ShepherdStepper(value: $settings.childConcurrency, in: 1...16)
+                    }
+                    SettingsRow(title: "Model", subtitle: "Agent files and explicit calls override this.") {
+                        PopupMenu(settings.childModel.isEmpty ? "Inherit parent" : settings.childModel,
+                                  mono: !settings.childModel.isEmpty, minWidth: 140) {
+                            Button("Inherit parent") { settings.childModel = "" }
+                            Divider()
+                            ForEach(Array(Set(modelOptions + (settings.childModel.isEmpty ? [] : [settings.childModel]))).sorted(), id: \.self) { id in
+                                Button(id) { settings.childModel = id }
+                            }
+                        }
+                    }
+                    SettingsRow(title: "Thinking") {
+                        PopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized, minWidth: 140) {
+                            Button("Inherit parent") { settings.childThinking = "" }
+                            Divider()
+                            ForEach(["off", "minimal", "low", "medium", "high", "xhigh", "max"], id: \.self) { level in
+                                Button(level.capitalized) { settings.childThinking = level }
+                            }
+                        }
+                    }
+                    SettingsRow(title: "Context", subtitle: "Start each child fresh, or fork the parent's conversation.") {
+                        SegmentedControl(selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
+                    }
+                    SettingsRow(title: "Agent discovery", subtitle: "Project profiles require pi project trust. Files stay the source of truth.") {
+                        PopupMenu(Self.scopes.first { $0.0 == settings.childScope }?.1 ?? settings.childScope, minWidth: 140) {
+                            ForEach(Self.scopes, id: \.0) { scope in
+                                Button(scope.1) { settings.childScope = scope.0 }
+                            }
+                        }
+                    }
                 }
-                SettingsRow(title: "model", subtitle: "Agent files and explicit calls override this default.") {
-                    Picker("child model", selection: $settings.childModel) {
-                        Text("inherit parent").tag("")
-                        ForEach(Array(Set(modelOptions + (settings.childModel.isEmpty ? [] : [settings.childModel]))).sorted(), id: \.self) { Text($0).tag($0) }
-                    }.labelsHidden()
-                }
-                SettingsRow(title: "thinking") {
-                    Picker("child thinking", selection: $settings.childThinking) {
-                        Text("inherit parent").tag("")
-                        ForEach(["off", "minimal", "low", "medium", "high", "xhigh", "max"], id: \.self) { Text($0).tag($0) }
-                    }.labelsHidden()
-                }
-                SettingsRow(title: "context") {
-                    Picker("child context", selection: $settings.childContext) {
-                        Text("fresh").tag("fresh")
-                        Text("fork").tag("fork")
-                    }.labelsHidden().pickerStyle(.segmented)
-                }
-                SettingsRow(title: "agent discovery", subtitle: "Project profiles require Pi project trust. Files remain the source of truth; Shepherd never rewrites them.") {
-                    Picker("agent discovery", selection: $settings.childScope) {
-                        Text("user + project").tag("both")
-                        Text("user").tag("user")
-                        Text("project").tag("project")
-                        Text("bundled only").tag("bundled")
-                    }.labelsHidden()
-                }
+                .task { modelOptions = PiConfig.modelIDs() }
             }
-            .task { modelOptions = PiConfig.modelIDs() }
-            SettingsNote(text: "explicit call > agent file > these defaults > parent model and thinking · workflow scripts have a restricted API, not an OS sandbox · child tools run with your account permissions")
-        }
 
-        SettingsGroup(title: "Automatic Updates") {
-            SettingsRow(
-                title: "Update Pi",
-                subtitle: "Runs pi update once a day.",
-                isFirst: true
-            ) {
-                updateToggle($settings.autoUpdatePi)
-            }
-            SettingsRow(
-                title: "Update Extensions",
-                subtitle: "Runs pi update --extensions once a day."
-            ) {
-                updateToggle($settings.autoUpdateExtensions)
-            }
-        }
-
-        SettingsGroup(title: "Pi") {
-            SettingsRow(title: "Installed Version", isFirst: true) {
-                Text(updates.currentVersion ?? "unknown")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-            }
-            SettingsRow(title: "Status") {
-                Text(statusText)
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(updates.isOutdated ? Tokens.destructive : Tokens.textMetadata)
-            }
-            SettingsRow(title: "Check Now") {
-                Button(updates.isChecking ? "Checking…" : "Check") {
-                    updates.checkNow()
+            SettingsGroup(title: "Updates", footnote: "Updating never restarts running agents.") {
+                SettingsRow(title: "Update pi daily", subtitle: "Runs pi update once a day.") {
+                    updateSwitch("Update pi daily", $settings.autoUpdatePi)
                 }
-                .disabled(updates.isBusy)
-            }
-            SettingsRow(title: "Update Pi Now") {
-                Button(piUpdateButtonTitle) { updates.updatePiNow() }
-                    .disabled(!updates.canUpdatePi)
-            }
-            SettingsRow(title: "Update Extensions Now") {
-                Button(extensionUpdateButtonTitle) { updates.updateExtensionsNow() }
-                    .disabled(!updates.canUpdateExtensions)
+                SettingsRow(title: "Update extensions daily", subtitle: "Runs pi update --extensions once a day.") {
+                    updateSwitch("Update extensions daily", $settings.autoUpdateExtensions)
+                }
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("pi \(updates.currentVersion ?? "—")").font(Fonts.rowTitle).foregroundStyle(Tokens.text)
+                        status
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 8) {
+                        Button(updates.isChecking ? "Checking…" : "Check now") { updates.checkNow() }
+                            .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                            .disabled(updates.isBusy)
+                        Button(piUpdateTitle) { updates.updatePiNow() }
+                            .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                            .disabled(!updates.canUpdatePi)
+                        Button(extensionsUpdateTitle) { updates.updateExtensionsNow() }
+                            .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                            .disabled(!updates.canUpdateExtensions)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(minHeight: Metrics.settingsRowMinHeight)
             }
         }
-        SettingsNote(text: "updates use the pi installation resolved from your login shell · running agents are not restarted")
     }
 
-    private func updateToggle(_ binding: Binding<Bool>) -> some View {
-        Toggle("", isOn: Binding(
+    private static let scopes: [(String, String)] = [("both", "User + project"), ("user", "User"), ("project", "Project"), ("bundled", "Bundled only")]
+
+    private func updateSwitch(_ label: String, _ binding: Binding<Bool>) -> some View {
+        SettingsSwitch(label: label, isOn: Binding(
             get: { binding.wrappedValue },
             set: {
                 binding.wrappedValue = $0
                 if $0 { updates.applyAutoUpdateSetting() }
             }
         ))
-        .labelsHidden()
-        .toggleStyle(.switch)
-        .controlSize(.small)
     }
 
-    private var piUpdateButtonTitle: String {
-        switch updates.activeUpdate {
-        case .pi, .both: return "Updating…"
-        default: return updates.lastChecked != nil && !updates.isOutdated ? "Up to Date" : "Update"
-        }
-    }
-
-    private var extensionUpdateButtonTitle: String {
-        switch updates.activeUpdate {
-        case .extensions, .both: return "Updating…"
-        default: return updates.extensionsUpdatedAt == nil ? "Update" : "Updated"
-        }
-    }
-
-    private var statusText: String {
-        if updates.isChecking { return "checking…" }
-        if let target = updates.activeUpdate {
-            switch target {
-            case .pi: return "updating Pi…"
-            case .extensions: return "updating extensions…"
-            case .both: return "updating Pi and extensions…"
+    /// "● Up to date · extensions updated · uses the pi resolved from your login shell"
+    private var status: some View {
+        let (text, color): (String, Color) = {
+            if updates.isChecking { return ("Checking…", Tokens.textMuted) }
+            switch updates.activeUpdate {
+            case .pi: return ("Updating pi…", Tokens.accentText)
+            case .extensions: return ("Updating extensions…", Tokens.accentText)
+            case .both: return ("Updating pi and extensions…", Tokens.accentText)
+            case nil: break
             }
+            if updates.isOutdated { return ("Update available · \(updates.latestVersion ?? "newer version")", Tokens.warningText) }
+            if let error = updates.lastError { return (error, Tokens.dangerText) }
+            if updates.lastChecked == nil { return ("Not checked yet", Tokens.textMuted) }
+            return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), Tokens.successText)
+        }()
+        return HStack(spacing: 6) {
+            Circle().fill(color).frame(width: 6, height: 6)
+            (Text(text).foregroundStyle(color) + Text(" · uses the pi resolved from your login shell").foregroundStyle(Tokens.textTertiary))
+                .fixedSize(horizontal: false, vertical: true)
         }
-        if updates.isOutdated { return "pi outdated · latest \(updates.latestVersion ?? "unknown")" }
-        if let error = updates.lastError { return "error · \(error)" }
-        return updates.lastChecked == nil ? "not checked" : "Pi up to date"
+        .font(Fonts.description)
+    }
+
+    private var piUpdateTitle: String {
+        switch updates.activeUpdate {
+        case .pi, .both: "Updating…"
+        default: "Update pi"
+        }
+    }
+
+    private var extensionsUpdateTitle: String {
+        switch updates.activeUpdate {
+        case .extensions, .both: "Updating…"
+        default: updates.extensionsUpdatedAt == nil ? "Update extensions" : "Extensions updated"
+        }
     }
 }
