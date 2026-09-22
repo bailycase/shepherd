@@ -47,10 +47,7 @@ extension ShepherdViewModel {
                         result = .review(files: try JSONEncoder().encode(review.files), reference: review.reference)
                     case .finishReview(let paneID, let text):
                         guard let review = self.reviewSessions[paneID], review.agentID == agentID else { throw RemoteCreateAgentError("Review closed on host") }
-                        if let text {
-                            guard let sessionID = tab.layout.leaves.first(where: { $0.agentID == agentID })?.sessionID else { throw RemoteCreateAgentError("Agent terminal unavailable") }
-                            self.server.write(sessionID: sessionID, data: RemoteProtocol.composedInput(text: text, submit: true))
-                        }
+                        if let text { try await self.sendUserMessage(text, to: agentID) }
                         self.cancelReview(review)
                         result = .ok
                     case .review(let pullRequest):
@@ -61,14 +58,6 @@ extension ShepherdViewModel {
                         result = .review(files: files, reference: reference)
                     case .inspectorPane(let tabID, let action):
                         result = try await self.handleRemoteInspectorPane(agentID: agentID, tabID: tabID, action: action)
-                    case .inspect(let childID):
-                        guard let child = self.children(of: agentID).first(where: { $0.id == childID }),
-                              let asyncDir = child.asyncDir else {
-                            throw RemoteCreateAgentError("Child run is no longer available")
-                        }
-                        let runner = try InspectExtension.installedPath()
-                        let command = Self.inspectorCommand(runner: runner, asyncDir: asyncDir, runID: child.runID, childIndex: child.childIndex)
-                        result = .inspector(try await self.openRemoteUtilityTerminal(agent: agent, cwd: cwd, key: "\(agentID.rawValue):\(childID)", command: command))
                     }
                     completion(.success(result))
                 } catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
@@ -176,19 +165,11 @@ extension ShepherdViewModel {
         }
     }
 
+    /// A remote agent's subagent opens in the same native side panel as a local one; the
+    /// transcript comes from the host through the agent's native thread snapshot.
     func openRemoteChild(_ target: RemoteAgentRef, child: ChildRun) {
         selectRemoteAgent(hostID: target.hostID, agentID: target.agentID)
-        let requestID = UUID()
-        remoteInspectionRequest = requestID
-        Task {
-            do {
-                guard case .inspector(let tabID) = try await remoteHosts.agentQuery(target, query: .inspect(childID: child.id)),
-                      remoteInspectionRequest == requestID, selectedRemoteAgent == target else { return }
-                showRemoteInspector(target, tabID: tabID)
-            } catch {
-                if remoteInspectionRequest == requestID, selectedRemoteAgent == target { remoteActionError = String(describing: error) }
-            }
-        }
+        subagentInspector.remoteRuns[target] = child.runID
     }
 
     func showRemoteInspector(_ target: RemoteAgentRef, tabID: TabID) {

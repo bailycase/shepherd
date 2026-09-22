@@ -5,8 +5,8 @@ import ShepherdCore
 ///
 /// The workspace keeps every *mounted* layout in the view tree and toggles
 /// visibility, rather than swapping layouts in and out of the view tree.
-/// Agent layouts, global shells, and inspector tabs are always mounted —
-/// their processes must run (or were created on demand). A space's shell
+/// Agent layouts and global shells are always mounted — their processes must
+/// run (or were created on demand). A space's shell
 /// workspace mounts on first visit: mounting spawns a login shell and a
 /// Ghostty surface, and a large space tree must not pay that for spaces
 /// never opened. Once mounted, a layout stays mounted for the app's run.
@@ -31,9 +31,6 @@ struct WorkspaceSelection {
     let state: ShepherdState
     let selectedSpaceID: SpaceID?
     let selectedAgentID: AgentID?
-    /// When set (a subagent row is selected), the agent's inspector tab is
-    /// the visible layout instead of the agent's own.
-    var inspectingAgentID: AgentID? = nil
     /// When set (a SHELLS row is selected), that global shell is the visible
     /// layout; it wins over space/agent selection.
     var selectedShellID: TabID? = nil
@@ -90,9 +87,7 @@ struct WorkspaceSelection {
             // comment. The active tab is always mounted so a first visit
             // renders immediately — the view model marks it visited so it
             // stays mounted after selection moves on.
-            let isSpaceShell = tab.spaceID != nil
-                && tab.inspectorFor == nil
-                && !agentTabIDs.contains(tab.id)
+            let isSpaceShell = tab.spaceID != nil && !agentTabIDs.contains(tab.id)
             guard tab.id == active || !parkedTabIDs.contains(tab.id) else { return false }
             return !isSpaceShell || tab.id == active || visitedTabIDs.contains(tab.id)
         }.sorted { a, b in
@@ -118,10 +113,6 @@ struct WorkspaceSelection {
            state.tabs.contains(where: { $0.id == shellID && $0.isShell }) {
             return shellID
         }
-        if let inspecting = inspectingAgentID,
-           let tab = state.tabs.first(where: { $0.inspectorFor == inspecting }) {
-            return tab.id
-        }
         if let id = selectedAgentID,
            let agent = state.agents.first(where: { $0.id == id }),
            agent.spaceID == selectedSpaceID,
@@ -129,10 +120,9 @@ struct WorkspaceSelection {
             return agent.tabID
         }
         // The space's main layout: lowest order, without sorting a copy of
-        // every tab in the space. Inspector layouts never stand in for a
-        // space's shell workspace.
+        // every tab in the space.
         return state.tabs
-            .filter { $0.spaceID == selectedSpaceID && $0.inspectorFor == nil }
+            .filter { $0.spaceID == selectedSpaceID }
             .min { $0.order < $1.order }?
             .id
     }

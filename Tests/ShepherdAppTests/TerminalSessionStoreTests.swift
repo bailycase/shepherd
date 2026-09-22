@@ -214,7 +214,7 @@ struct TerminalSessionStoreTests {
         let agentID = AgentID()
         let pane = LeafPane(cwd: dir.path, agentID: agentID)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-        let agent = Agent(id: agentID, name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id, runtime: .rpc)
+        let agent = Agent(id: agentID, name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
         try await server.putState(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
         let store = TerminalSessionStore(server: server)
         var exitedPaneID: PaneID?

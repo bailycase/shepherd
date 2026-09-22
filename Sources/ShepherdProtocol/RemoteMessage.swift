@@ -167,7 +167,6 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     case reviewPane(paneID: PaneID, pullRequest: Bool? = nil)
     case finishReview(paneID: PaneID, text: String?)
     case children
-    case inspect(childID: String)
     case inspectorPane(tabID: TabID, action: RemoteInspectorPaneAction)
     case search(query: String)
 }

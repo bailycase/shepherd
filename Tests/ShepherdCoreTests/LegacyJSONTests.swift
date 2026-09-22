@@ -68,8 +68,6 @@ struct LegacyJSONTests {
         // Pre-worktree files carry no branch or path; the agent is not a worktree.
         #expect(state.agents.first?.worktreeBranch == nil)
         #expect(state.agents.first?.worktreePath == nil)
-        // Pre-RPC files: every agent was a terminal agent.
-        #expect(state.agents.first?.runtime == .terminal)
 
         let encodedObject = try #require(
             JSONSerialization.jsonObject(with: JSONEncoder().encode(state)) as? [String: Any]
@@ -106,15 +104,22 @@ struct LegacyJSONTests {
         #expect(decoded.worktreePath == "/tmp/calm-stone-3831")
     }
 
-    @Test func runtimeRoundTripsAndDefaultsToTerminal() throws {
-        let rpc = Agent(name: "rpc", spaceID: SpaceID(rawValue: "s"), tabID: TabID(rawValue: "t"), runtime: .rpc)
-        #expect(try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(rpc)).runtime == .rpc)
-        #expect(Agent(name: "x", spaceID: SpaceID(rawValue: "s"), tabID: TabID(rawValue: "t")).runtime == .terminal)
+    /// The terminal-era migration: an agent persisted as `"runtime": "terminal"` decodes into
+    /// the same agent (same pi session), and encodes as RPC so old remote clients never try to
+    /// attach a PTY to it.
+    @Test func terminalEraAgentsDecodeUnchangedAndEncodeAsRPC() throws {
+        let legacy = #"{"id":"a","name":"old","spaceID":"s","tabID":"t","paneID":"p","status":"working","piSessionID":"conv","runtime":"terminal"}"#
+        let agent = try JSONDecoder().decode(Agent.self, from: Data(legacy.utf8))
+        #expect(agent.id == AgentID(rawValue: "a") && agent.paneID == PaneID(rawValue: "p"))
+        #expect(agent.effectivePiSessionID == "conv")
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(agent)) as? [String: Any])
+        #expect(encoded["runtime"] as? String == "rpc")
+        #expect(try JSONDecoder().decode(Agent.self, from: JSONEncoder().encode(agent)) == agent)
     }
 
-    @Test func createSessionParamsRuntimeDefaultsToTerminal() throws {
+    @Test func createSessionParamsRuntimeDefaultsToPTY() throws {
         let legacy = #"{"cwd":"/tmp","command":["/bin/zsh"],"cols":80,"rows":24}"#
-        #expect(try JSONDecoder().decode(CreateSessionParams.self, from: Data(legacy.utf8)).runtime == .terminal)
+        #expect(try JSONDecoder().decode(CreateSessionParams.self, from: Data(legacy.utf8)).runtime == .pty)
         let rpc = CreateSessionParams(cwd: "/tmp", command: ["pi", "--mode", "rpc"], runtime: .rpc)
         #expect(try JSONDecoder().decode(CreateSessionParams.self, from: JSONEncoder().encode(rpc)) == rpc)
     }

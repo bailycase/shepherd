@@ -67,7 +67,7 @@ extension ShepherdViewModel {
                 do {
                     if session.hostReviewPane {
                         _ = try await remoteHosts.agentQuery(target, query: .finishReview(paneID: session.paneID, text: text))
-                    } else { try await remoteHosts.submitReview(target, text: text) }
+                    } else { try await remoteHosts.sendUserMessage(target, text: text) }
                     if remoteReviews[target] === session { remoteReviews.removeValue(forKey: target) }
                 } catch { remoteActionError = String(describing: error) }
             }
@@ -80,13 +80,26 @@ extension ShepherdViewModel {
             summary: session.summary,
             reference: session.reference
         )
-        if let piSessionID = piSessionID(for: session.agentID) {
-            server.write(sessionID: piSessionID, data: Data((text + "\n").utf8))
-        } else {
-            NSSound.beep()
+        let agentID = session.agentID
+        Task {
+            do { try await sendUserMessage(text, to: agentID) }
+            catch { remoteActionError = String(describing: error) }
         }
         reviewSessions.removeValue(forKey: session.paneID)
         closeLocalPane(session.paneID)
+    }
+
+    /// Queue `text` as the agent's next user turn: delivered now when idle, as a follow-up
+    /// when the agent is mid-turn.
+    func sendUserMessage(_ text: String, to agentID: AgentID) async throws {
+        guard case .snapshot(let snapshot) = try await server.nativeThread(agentID: agentID, request: .snapshot()),
+              !snapshot.piSessionID.isEmpty else {
+            throw AgentStartFailure(message: "The agent is not ready yet. Try again in a moment.")
+        }
+        let result = try await server.nativeThread(agentID: agentID, request: .send(
+            expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
+            operationID: UUID(), text: text, delivery: .followUp))
+        if case .failure(_, let message) = result { throw AgentStartFailure(message: message) }
     }
 
     func cancelReview(_ session: ReviewSession) {
@@ -230,11 +243,5 @@ extension ShepherdViewModel {
         ))
 
         loadReviewDiff(session)
-    }
-
-    private func piSessionID(for agentID: AgentID) -> SessionID? {
-        guard let agent = state.agents.first(where: { $0.id == agentID }),
-              let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }
-        return tab.layout.leaves.first(where: { $0.agentID == agentID })?.sessionID
     }
 }

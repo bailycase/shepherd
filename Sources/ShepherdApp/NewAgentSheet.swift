@@ -152,7 +152,6 @@ struct NewAgentSheet: View {
     @State private var defaults = NewAgentTargetDefaults()
     @State private var modelOptions: [String] = []
     @State private var initialPrompt = ""
-    @State private var runtime: AgentRuntime = AppSettings.shared.defaultRuntime
     @State private var worktree = false
     @State private var worktreeBranch = ""
     @State private var worktreeBase = ""
@@ -315,23 +314,6 @@ struct NewAgentSheet: View {
                     .frame(maxWidth: 300)
                 }
 
-                // Remote hosts may predate RPC agents; they always get a terminal agent.
-                if targetHostID == nil {
-                    SheetRow("runtime") {
-                        HStack(spacing: 8) {
-                            Picker("", selection: $runtime) {
-                                Text("terminal").tag(AgentRuntime.terminal)
-                                Text("native (rpc)").tag(AgentRuntime.rpc)
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .frame(maxWidth: 200)
-                            Text(runtime == .rpc ? "headless pi, Shepherd is the only UI" : "pi in a terminal you can drop into")
-                                .font(Fonts.mono(11))
-                                .foregroundStyle(Tokens.textDim)
-                        }
-                    }
-                }
 
                 // Prompt: full-width editor under its label, no row chrome —
                 // this is the field you actually type into.
@@ -608,7 +590,6 @@ struct NewAgentSheet: View {
             model: trimmedModel.isEmpty ? nil : trimmedModel,
             thinking: defaults.thinking,
             initialPrompt: prompt.isEmpty ? nil : prompt,
-            runtime: runtime,
             worktreeBranch: worktreeBranch,
             worktreeBase: worktreeBase
         )

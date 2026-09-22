@@ -12,8 +12,6 @@ struct DesktopNativeThreadView: View {
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request
-    /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
-    let showTerminal: (() -> Void)?
     /// Composer placeholder before the first turn: "Message <agent>…".
     var agentName: String? = nil
     /// Opens a subagent in the side-panel inspector (RPC agents with native children).
@@ -71,7 +69,7 @@ struct DesktopNativeThreadView: View {
                             if turn.isUser {
                                 NativeUserTurn(messages: turn.messages, caption: turn.messages.first?.timestamp.map { nativeClockText($0) }).id(turn.id)
                             } else {
-                                NativeAgentTurn(messages: turn.messages, running: running, clock: clock, showTerminal: showTerminal,
+                                NativeAgentTurn(messages: turn.messages, running: running, clock: clock,
                                                 subagents: placements[turn.id] ?? NativeSubagentPlacement(), subagentActions: subagentActions,
                                                 startedAt: index > 0 && turns[index - 1].isUser ? turns[index - 1].messages.first?.timestamp : nil)
                                     .id(turn.id)
@@ -156,7 +154,7 @@ struct DesktopNativeThreadView: View {
                 }
             }
             NativeComposer(store: store, clock: clock, active: active, agentName: agentName,
-                           hasTurns: !turns.isEmpty, gutter: gutter, showTerminal: showTerminal, composing: $composing)
+                           hasTurns: !turns.isEmpty, gutter: gutter, composing: $composing)
                 // ⌘I opens the first live subagent (the card's own Inspect button targets a specific run).
                 .background {
                     if let first = store.subagents.first(where: { !$0.isTerminal }) ?? store.subagents.first, inspectSubagent != nil {
@@ -245,9 +243,9 @@ struct DesktopNativeThreadView: View {
         if let snapshot = store.snapshot {
             if !store.ready, store.loadError == nil { quiet("Last known thread · refreshing before enabling actions") }
             if !snapshot.dialogsSupported {
-                quiet("Questions need the pi dialog bridge · older pi and custom TUI extensions answer in Terminal", link: true)
+                quiet("This host's pi cannot answer questions here · update Shepherd on the host")
             }
-            if snapshot.clipped { quiet("Some output is clipped", link: true) }
+            if snapshot.clipped { quiet("Some output is clipped") }
         }
     }
 
@@ -255,17 +253,14 @@ struct DesktopNativeThreadView: View {
     /// and shows its banner in the composer instead.
     @ViewBuilder private var emptyState: some View {
         if store.snapshot == nil, store.loadError == nil {
-            NativeEmptyState(title: "Starting…", caption: "Connecting to this agent’s native bridge", pulsing: true)
+            NativeEmptyState(title: "Starting…", caption: "Connecting to this agent’s pi process", pulsing: true)
         } else if store.snapshot != nil {
             NativeEmptyState(title: "No messages yet", caption: "Say what the agent should do; ⇧⏎ adds a line.", pulsing: false)
         }
     }
 
-    private func quiet(_ text: String, link: Bool = false) -> some View {
-        HStack(spacing: 8) {
-            Text(text).font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted).textSelection(.enabled)
-            if link { NativeTerminalLink(action: showTerminal) }
-        }
+    private func quiet(_ text: String) -> some View {
+        Text(text).font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted).textSelection(.enabled)
     }
 }
 
@@ -505,19 +500,6 @@ struct NativeSpinner: View {
     }
 }
 
-/// The one way out of native mode from inside the thread: plain accent text.
-struct NativeTerminalLink: View {
-    var title = "Terminal"
-    /// nil (RPC agents) renders nothing: the surrounding message stands on its own.
-    let action: (() -> Void)?
-    var color: Color = NativeTokens.accentText
-    var body: some View {
-        if let action {
-            Button(title, action: action).buttonStyle(.plain).font(NativeFonts.caption).foregroundStyle(color)
-        }
-    }
-}
-
 // MARK: Header pieces (page 1, 8)
 
 struct NativeAgentStatusPill: View {
@@ -558,47 +540,11 @@ struct NativeAgentStatusPill: View {
     }
 }
 
-struct NativeModeSwitch: View {
-    @Binding var native: Bool
-    var body: some View {
-        HStack(spacing: 2) {
-            segment("Terminal", selected: !native) { native = false }
-            segment("Native", selected: native) { native = true }
-        }
-        .padding(2)
-        .background(NativeTokens.bgTrack, in: RoundedRectangle(cornerRadius: Radius.md))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Agent presentation")
-    }
-
-    private func segment(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(selected ? NativeFonts.captionMedium : NativeFonts.caption)
-                .foregroundStyle(selected ? NativeTokens.text : NativeTokens.textSecondary)
-                .padding(.horizontal, 10)
-                .frame(height: 24)
-                .background {
-                    if selected {
-                        RoundedRectangle(cornerRadius: Radius.sm).fill(NativeTokens.bgRaised)
-                            .shadow(color: NativeTokens.thumbShadow, radius: 2, y: 1)
-                    }
-                }
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
-    }
-}
-
-/// 52pt header: breadcrumb · pill · spacer · turn count · ModeSwitch · options.
+/// 52pt header: breadcrumb · pill · spacer · turn/ctx counter · options.
 struct NativeThreadHeader: View {
     @ObservedObject var store: NativeThreadStore
     let project: String
     let title: String
-    @Binding var native: Bool
-    /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
-    let showTerminal: (() -> Void)?
     /// Header-local run clock: "Running · 1m 12s" counts from when this view first saw the run.
     @StateObject private var clock = NativeThreadClock()
     @State private var wide = true
@@ -645,15 +591,11 @@ struct NativeThreadHeader: View {
             if store.olderCursor == nil, store.snapshot != nil, wide {
                 Text("\(turnCount) turn\(turnCount == 1 ? "" : "s")").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).fixedSize()
             }
-            // An RPC agent has no terminal to switch to (D2).
-            if showTerminal != nil { NativeModeSwitch(native: $native).fixedSize() }
             Menu {
                 Button("Refresh thread") { Task { await store.refresh(fresh: true) } }
                 if store.olderCursor != nil {
                     Button("Load older messages") { Task { await store.loadOlder() } }
                 }
-                Divider()
-                if let showTerminal { Button("Show Terminal") { showTerminal() } }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 12, weight: .medium)).foregroundStyle(NativeTokens.textSecondary)
                     .frame(width: NativeMetrics.iconButton, height: NativeMetrics.iconButton)
@@ -715,8 +657,6 @@ struct NativeAgentTurn: View {
     let messages: [NativeThreadMessage]
     let running: Bool
     @ObservedObject var clock: NativeThreadClock
-    /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
-    let showTerminal: (() -> Void)?
     /// Subagent cards for this turn, keyed by the spawn call they replace.
     var subagents = NativeSubagentPlacement()
     var subagentActions: NativeSubagentActions? = nil
@@ -736,7 +676,7 @@ struct NativeAgentTurn: View {
                     NativeProse(text: text)
                 case .tools(let group):
                     // Groups get extra air so they read as blocks between paragraphs, not glued to them.
-                    NativeToolGroup(messages: group, clock: clock, showTerminal: showTerminal,
+                    NativeToolGroup(messages: group, clock: clock,
                                     subagents: subagents, subagentActions: subagentActions)
                         .padding(.vertical, 6)
                 case .error(let text, let count):
@@ -753,7 +693,6 @@ struct NativeAgentTurn: View {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(text).font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
                             .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
-                        NativeTerminalLink(action: showTerminal)
                     }
                     .padding(.leading, 10)
                     .overlay(alignment: .leading) { NativeTokens.border.frame(width: 2) }
@@ -954,8 +893,6 @@ struct NativeCodeBlock: View {
 struct NativeToolGroup: View {
     let messages: [NativeThreadMessage]
     @ObservedObject var clock: NativeThreadClock
-    /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
-    let showTerminal: (() -> Void)?
     /// Subagent cards replace their spawning shepherd_child_start rows.
     var subagents = NativeSubagentPlacement()
     var subagentActions: NativeSubagentActions? = nil
@@ -983,7 +920,7 @@ struct NativeToolGroup: View {
             ForEach(Array(rows.enumerated()), id: \.element.entryID) { index, message in
                 if index > 0 { NativeTokens.borderSubtle.frame(height: 1) }
                 NativeToolRowView(row: NativeToolRow(message), nameColumnWidth: nameWidth,
-                                  duration: clock.toolDuration(message.toolCallID, now: clock.now), showTerminal: showTerminal)
+                                  duration: clock.toolDuration(message.toolCallID, now: clock.now))
             }
         }
         .background(NativeTokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
@@ -997,8 +934,6 @@ struct NativeToolRowView: View {
     /// Shared by every row in a group so previews align.
     var nameColumnWidth: CGFloat = 40
     let duration: (text: String, live: Bool)?
-    /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
-    let showTerminal: (() -> Void)?
     @State private var expanded = false
     @State private var showCall = false
     @State private var hovering = false
@@ -1079,15 +1014,8 @@ struct NativeToolRowView: View {
                         .foregroundStyle(NativeTokens.textSecondary).textSelection(.enabled)
                         .animation(nil, value: row.output)
                     if !live, lines.count > Self.maxLines || row.truncated {
-                        if showTerminal != nil {
-                            NativeTerminalLink(title: lines.count > Self.maxLines ? "… \(lines.count - Self.maxLines) more lines" : "… more in Terminal",
-                                               action: showTerminal,
-                                               color: row.state == .failed ? NativeTokens.dangerText : NativeTokens.accentText)
-                        } else {
-                            // RPC agents have no terminal to open; say so plainly.
-                            Text(lines.count > Self.maxLines ? "… \(lines.count - Self.maxLines) more lines · output truncated" : "Output truncated")
-                                .font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
-                        }
+                        Text(lines.count > Self.maxLines ? "… \(lines.count - Self.maxLines) more lines · output truncated" : "Output truncated")
+                            .font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

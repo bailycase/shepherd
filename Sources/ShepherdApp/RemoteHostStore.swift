@@ -14,7 +14,8 @@ struct RemoteAgentRef: Hashable {
 /// Configured remote Shepherd hosts (persisted in UserDefaults as JSON) and
 /// one live connection per host. The remote host runs the full Shepherd app;
 /// this store is the MacBook-side viewer: it adopts pushed state for the
-/// sidebar and bridges attached panes' terminals over the wire.
+/// sidebar, serves remote agents' native threads, and bridges auxiliary
+/// shell panes' terminals over the wire.
 ///
 /// Reconnects with backoff while a host is unreachable — a laptop that slept
 /// picks its hosts back up without any UI action.
@@ -299,15 +300,25 @@ final class RemoteHostStore: ObservableObject {
         return result
     }
 
-    func submitReview(_ target: RemoteAgentRef, text: String) async throws {
+    /// A remote agent's native thread, served by its host.
+    func nativeThread(_ target: RemoteAgentRef, request: NativeThreadRequest) async throws -> NativeThreadResult {
         guard let connection = connections.first(where: { $0.id == target.hostID }),
-              connection.phase == .connected, let client = connection.client,
-              let agent = connection.state.agents.first(where: { $0.id == target.agentID }),
-              let tab = connection.state.tabs.first(where: { $0.id == agent.tabID }),
-              let sessionID = tab.layout.leaves.first(where: { $0.agentID == agent.id })?.sessionID else {
+              connection.phase == .connected, let client = connection.client else {
             throw RemoteHostClientError.disconnected
         }
-        try await client.paste(sessionID: sessionID, text: text, submit: true)
+        return try await client.nativeThread(agentID: target.agentID, request: request)
+    }
+
+    /// Queue `text` as the remote agent's next user turn (a follow-up while it runs).
+    func sendUserMessage(_ target: RemoteAgentRef, text: String) async throws {
+        guard case .snapshot(let snapshot) = try await nativeThread(target, request: .snapshot()),
+              !snapshot.piSessionID.isEmpty else {
+            throw RemoteHostClientError.rejected(code: "not_ready", message: "The agent is not ready yet. Try again in a moment.")
+        }
+        let result = try await nativeThread(target, request: .send(
+            expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
+            operationID: UUID(), text: text, delivery: .followUp))
+        if case .failure(let code, let message) = result { throw RemoteHostClientError.rejected(code: code, message: message) }
     }
 
     func agentAction(_ target: RemoteAgentRef, action: RemoteAgentAction) async throws {

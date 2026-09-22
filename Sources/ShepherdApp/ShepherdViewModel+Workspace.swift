@@ -14,7 +14,6 @@ extension ShepherdViewModel {
             state: state,
             selectedSpaceID: selectedSpaceID,
             selectedAgentID: selectedAgentID,
-            inspectingAgentID: inspectingAgentID,
             selectedShellID: selectedShellID,
             remoteSelectionActive: selectedRemoteAgent != nil,
             visitedTabIDs: visitedSpaceShellTabs,
@@ -278,24 +277,8 @@ extension ShepherdViewModel {
         let tab = state.tabs[tabIndex]
         let exitedAgentID = tab.layout.leaf(withID: paneID)?.agentID
 
-        if let inspected = tab.inspectorFor {
-            // The inspector's shell ended (user exited it): the ephemeral
-            // layout goes with it, and the workspace falls back to the
-            // agent's terminal.
-            sessions.detachPane(paneID)
-            state.tabs.remove(at: tabIndex)
-            if inspectingAgentID == inspected { inspectingAgentID = nil }
-            inspectedChild.removeValue(forKey: inspected)
-            sessions.stateDidChange(state)
-            let tabID = tab.id
-            enqueuePersistence("inspector exit cleanup") { try await $0.removeTab(tabID) }
-            syncFocus()
-            return
-        }
-
         if let agentID = exitedAgentID {
             cancelReviews(for: agentID)
-            endAgentLaunch(agentID)
             childRuns.clear(agent: agentID)
             state.agents.removeAll { $0.id == agentID }
             if selectedAgentID == agentID {
@@ -361,7 +344,7 @@ extension ShepherdViewModel {
               let branch = agent.worktreeBranch,
               let repo = state.spaces.first(where: { $0.id == agent.spaceID })?.path else { return }
         let path = agent.worktreePath ?? GitWorktree.destination(repo: repo, branch: branch)
-        let sessionIDs = state.tabs.filter { $0.id == agent.tabID || $0.inspectorFor == id }
+        let sessionIDs = state.tabs.filter { $0.id == agent.tabID }
             .flatMap { $0.layout.leaves.compactMap(\.sessionID) }
         Task {
             do {
@@ -405,12 +388,12 @@ extension ShepherdViewModel {
             guard !hostBusyWorktrees.contains(path) else { throw GitWorktree.Failure(message: "A worktree operation is running for this checkout") }
         }
         let doomedTabs = state.tabs.filter { tab in
-            tab.inspectorFor == id || state.agents.contains { $0.id == id && $0.tabID == tab.id }
+            state.agents.contains { $0.id == id && $0.tabID == tab.id }
         }
         try await server.deleteAgent(id)
         for leaf in doomedTabs.flatMap({ $0.layout.leaves }) { sessions.detachPane(leaf.id) }
         cancelReviews(for: id)
-        endAgentLaunch(id)
+        subagentInspector.runByAgent.removeValue(forKey: id)
         childRuns.clear(agent: id)
         if selectedAgentID == id { selectPreviousAgent(after: id) }
         else { selectionHistory.removeAll { $0 == id } }

@@ -22,8 +22,8 @@ enum TerminalSessionStoreError: Error, CustomStringConvertible {
 /// external connect/bootstrap dance: the store adopts
 /// the persisted state at init and every pane renders against live sessions.
 /// On relaunch all previously bound sessions are dead (they died with the
-/// app), so each pane respawns fresh — pi for agent panes, a login shell for
-/// everything else.
+/// app), so each pane respawns fresh — `pi --mode rpc` for an agent's primary
+/// pane, a login shell for everything else.
 @MainActor
 final class TerminalSessionStore: ObservableObject {
 
@@ -375,10 +375,10 @@ final class TerminalSessionStore: ObservableObject {
         server.detach(sessionID: sessionID)
     }
 
-    /// True when `agent` runs pi over RPC in `pane` (its primary pane). Auxiliary
-    /// panes an RPC agent opens are ordinary shells.
+    /// True when `pane` is `agent`'s primary pane, where its pi runs over RPC. Auxiliary
+    /// panes an agent opens are ordinary shells.
     private func isRPCPane(_ pane: LeafPane, agent: Agent?) -> Bool {
-        guard let agent, agent.runtime == .rpc else { return false }
+        guard let agent else { return false }
         return pane.agentID == agent.id && agent.paneID == pane.id
     }
 
@@ -445,15 +445,15 @@ final class TerminalSessionStore: ObservableObject {
     }
 
     func session(for pane: LeafPane, in tab: Tab) -> PaneSession {
-        // Before bootstrap the mirror is empty; the runtime decides the session kind, so
-        // read the server directly rather than guess terminal.
+        // Before bootstrap the mirror is empty; the pane's role decides the session kind, so
+        // read the server directly rather than guess a shell.
         let agents = (serverState ?? server.state).agents
         let agent = pane.agentID.flatMap { id in agents.first { $0.id == id } }
         let rpc = isRPCPane(pane, agent: agent)
         if let existing = sessions[pane.id] {
             if existing.isRPC == rpc { return existing }
-            // The agent's runtime changed under an unbound pane session (restart as
-            // Terminal/RPC): a session of the other kind can never serve this pane.
+            // The pane changed role under an unbound pane session: a session of the other
+            // kind can never serve this pane.
             detachPane(pane.id)
         }
         let session = makeSession(paneID: pane.id, isRPC: rpc)
@@ -482,16 +482,11 @@ final class TerminalSessionStore: ObservableObject {
                 throw TerminalSessionStoreError.paneUnavailable(pane.id)
             }
             let cwd = Self.resolvedCwd(pane.cwd)
+            guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
             // RPC mode ignores a positional prompt; it goes in as the first `prompt` command below.
-            let command = rpc
-                ? try Self.rpcAgentCommand(for: agent, cwd: cwd, isAutomation: isAutomation)
-                : try Self.agentCommand(for: agent, cwd: cwd, initialPrompt: initialPrompt, isAutomation: isAutomation)
+            let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, isAutomation: isAutomation)
             // Give pi a session to find, so --session-id does not warn.
             PiSessionFile.seedIfMissing(sessionID: agent.effectivePiSessionID, cwd: cwd)
-            // Spawn at the surface's real grid: pi paints its TUI once, at the
-            // right size, instead of drawing at 80×24 and visibly reflowing on
-            // the first resize. An RPC agent has no grid to wait for.
-            if !rpc { await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds) }
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
                   session.sessionID == nil,
                   liveBinding(forPane: pane.id) == nil else {
@@ -506,7 +501,7 @@ final class TerminalSessionStore: ObservableObject {
                     cols: session.lastCols,
                     rows: session.lastRows,
                     env: command.env.isEmpty ? nil : command.env,
-                    runtime: rpc ? .rpc : .terminal
+                    runtime: .rpc
                 )
             )
             createdSessionID = info.id
@@ -530,7 +525,7 @@ final class TerminalSessionStore: ObservableObject {
             }
             try await adopt(session, sessionID: info.id)
             createdSessionID = nil
-            if rpc, let initialPrompt, !initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let initialPrompt, !initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 sendOpeningPrompt(initialPrompt, to: agent.id, sessionID: info.id)
             }
         } catch {
@@ -548,7 +543,7 @@ final class TerminalSessionStore: ObservableObject {
         }
     }
 
-    /// An RPC agent's opening prompt: wait for pi to answer its first snapshot, then send
+    /// An agent's opening prompt: wait for pi to answer its first snapshot, then send
     /// it as a normal native `send`. Detached so creation does not block on pi's startup;
     /// a failure is logged, never fatal (the user can type the prompt again).
     private func sendOpeningPrompt(_ text: String, to agentID: AgentID, sessionID: SessionID) {
@@ -562,13 +557,13 @@ final class TerminalSessionStore: ObservableObject {
                         expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
                         operationID: UUID(), text: text, delivery: .followUp))
                     if case .failure(let code, let message) = result {
-                        NSLog("Shepherd: opening prompt for RPC agent \(agentID) rejected: \(code) \(message)")
+                        NSLog("Shepherd: opening prompt for agent \(agentID) rejected: \(code) \(message)")
                     }
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(250))
             }
-            NSLog("Shepherd: RPC agent \(agentID) never became ready for its opening prompt")
+            NSLog("Shepherd: agent \(agentID) never became ready for its opening prompt")
         }
     }
 
@@ -739,20 +734,17 @@ final class TerminalSessionStore: ObservableObject {
             // in one pane.
             if reservedPanes.contains(session.paneID) { return }
 
-            // No live binding: agent leaves come back as pi (rebuilt from the
-            // agent record), everything else as a login shell in the leaf cwd.
+            // No live binding: an agent's primary pane comes back as `pi --mode rpc` (rebuilt
+            // from the agent record, resuming its pi session), everything else as a login
+            // shell in the leaf cwd.
             let cwd = Self.resolvedCwd(pane.cwd)
             let command: SessionCommand
             if let agentID = pane.agentID,
                let agent = serverState?.agents.first(where: { $0.id == agentID }) {
-                // Respawn keeps the agent's runtime; a session made for the other
-                // runtime cannot serve this pane.
-                guard session.isRPC == isRPCPane(pane, agent: agent) else {
+                guard session.isRPC, isRPCPane(pane, agent: agent) else {
                     throw TerminalSessionStoreError.paneUnavailable(session.paneID)
                 }
-                command = session.isRPC
-                    ? try Self.rpcAgentCommand(for: agent, cwd: cwd)
-                    : try Self.agentCommand(for: agent, cwd: cwd, initialPrompt: nil)
+                command = try Self.rpcAgentCommand(for: agent, cwd: cwd)
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
                 PiSessionFile.seedIfMissing(sessionID: agent.effectivePiSessionID, cwd: cwd)
@@ -798,7 +790,7 @@ final class TerminalSessionStore: ObservableObject {
                     cols: session.lastCols,
                     rows: session.lastRows,
                     env: command.env.isEmpty ? nil : command.env,
-                    runtime: session.isRPC ? .rpc : .terminal
+                    runtime: session.isRPC ? .rpc : .pty
                 )
             )
             createdSessionID = info.id
@@ -911,52 +903,12 @@ final class TerminalSessionStore: ObservableObject {
         }
     }
 
-    private static func agentCommand(for agent: Agent, cwd: String, initialPrompt: String?, isAutomation: Bool = false) throws -> SessionCommand {
-        let settings = AppSettings.shared
-        let theme = ThemeManager.shared.current
-        // Pass model/thinking only into a session pi has never written to.
-        // Once pi owns the session it persists both (model_change /
-        // thinking_level_change events) and restores them on resume; passing
-        // the flags again would reset in-session changes on every relaunch.
-        let sessionIsFresh = !PiSessionFile.hasRuntimeState(
-            sessionID: agent.effectivePiSessionID,
-            cwd: cwd
-        )
-        return StatusExtension.command(
-            agentID: agent.id,
-            piSessionID: agent.effectivePiSessionID,
-            socketPath: ShepherdPaths.socketURL().path,
-            extensionPath: try StatusExtension.installedPath(),
-            themeExtensionPath: settings.piThemeExtension ? try ThemeExtension.installedPath() : nil,
-            panesExtensionPath: settings.piPanesExtension ? try PanesExtension.installedPath() : nil,
-            reviewExtensionPath: settings.piReviewExtension ? try ReviewExtension.installedPath() : nil,
-            subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
-            childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
-            childEnvironment: settings.childEnvironment,
-            // The namer loads whenever auto-naming is on: besides titling a
-            // provisional agent from its opening prompt, it retitles on
-            // /resume (pi session names are free; unnamed resumed sessions
-            // cost one cheap-model call).
-            namerExtensionPath: settings.autoNameAgents
-                ? try NamerExtension.installedPath()
-                : nil,
-            nativeExtensionPath: try NativeExtension.installedPath(),
-            needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
-            isAutomation: isAutomation,
-            piThemePath: settings.piThemeExtension ? try ShepherdPiTheme.installedPath(for: theme) : nil,
-            piThemeName: ShepherdPiTheme.name,
-            model: sessionIsFresh ? agent.model : nil,
-            thinking: sessionIsFresh ? agent.thinkingLevel : nil,
-            initialPrompt: initialPrompt
-        )
-    }
-
-    /// `pi --mode rpc` for an RPC agent: same socket/status/panes/review/subagents/namer
-    /// wiring as a terminal agent, no theme, no native extension.
+    /// `pi --mode rpc` for an agent, with Shepherd's socket, status, panes, review, subagents,
+    /// and namer extensions.
     private static func rpcAgentCommand(for agent: Agent, cwd: String, isAutomation: Bool = false) throws -> SessionCommand {
         let settings = AppSettings.shared
         let sessionIsFresh = !PiSessionFile.hasRuntimeState(sessionID: agent.effectivePiSessionID, cwd: cwd)
-        return StatusExtension.rpcCommand(
+        return StatusExtension.command(
             agentID: agent.id,
             piSessionID: agent.effectivePiSessionID,
             socketPath: ShepherdPaths.socketURL().path,

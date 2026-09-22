@@ -1,10 +1,14 @@
 # AGENTS.md — working on Shepherd
 
 Shepherd is a native macOS app (SwiftUI, macOS 26+) for running and supervising many `pi` coding
-agents. The app owns real PTYs in-process (one per pane, running real pi TUIs) and renders them
-with libghostty. There is no daemon process: sessions live and die with the app, exactly like a
-normal terminal app — close Shepherd and every agent stops. On relaunch the workspace (spaces,
-agents, shells, pane layouts) restores from `state.json` and every pane respawns a fresh process.
+agents. Every agent is `pi --mode rpc` on pipes, owned in-process, and Shepherd is its only UI:
+the native thread (transcript, composer, questions, subagents). Plain shells — global shells,
+a space's shell, panes an agent or the user opens beside a thread — are real PTYs rendered with
+libghostty. There is no daemon process: sessions live and die with the app — close Shepherd and
+every agent stops. On relaunch the workspace (spaces, agents, shells, pane layouts) restores from
+`state.json` and every pane respawns a fresh process (agents resume their pi session).
+There is no terminal agent anymore: `state.json` files from that era decode unchanged (the
+`runtime` key is ignored) and those agents relaunch over RPC in the same pi session.
 **Read `DESIGN.md` before touching any UI** — it is the authority on visuals and interaction.
 
 Remote access exists and is optional: the app can serve its fleet over an authenticated TCP
@@ -94,29 +98,35 @@ Extensions/
   shepherd-status.ts     Reports agent lifecycle status + active pi session ID.
   shepherd-namer.ts      Titles an agent from its opening prompt (setAgentName).
   shepherd-panes.ts      Gives an agent pane_open/run/read/focus/close tools.
-  shepherd-theme.ts      Syncs pi's TUI theme with the app's generated theme file.
+  shepherd-theme.ts      Syncs the theme of a pi run by hand in a shell pane (shells only).
   shepherd-subagents.ts  Merges native and pi-subagents child display (setAgentChildren).
   shepherd-children.ts   Opt-in extension-owned RPC helpers; see docs/native-subagents.md.
-  shepherd-inspect.mjs   Standalone TUI inspector for one subagent run (no socket traffic).
+  shepherd-inspect.mjs   View helpers imported by the children extension's in-pi fleet view.
 ```
 
 There is no tab UI: navigation is the sidebar (agent row → that agent's pane layout; space row
 → the space's shell workspace; shell row → a global shell). Server-side "tabs" survive purely
-as layout containers: per-agent, per-space-main, global shells (`spaceID == nil`), and
-ephemeral subagent-inspector tabs (purged at startup).
+as layout containers: per-agent, per-space-main, and global shells (`spaceID == nil`). Tabs
+with `inspectorFor` are host-side utility terminals opened for a remote client (a remote
+`gh auth login`) and are purged at startup. Subagents open in the native inspector inside the
+parent's own workspace.
 
 Data flow: the **in-process SessionServer is the single source of truth** for
 spaces/tabs/agents/layouts (persisted to state.json) and owns every PTY. The local GUI calls it
 directly (no socket) and adopts `onStateChanged` broadcasts; it owns only view state
 (selection, focus, grouping, sheets, theme, keybindings). Remote clients reach the same server
 over the TCP remote protocol instead. On app quit the server kills every session; on relaunch
-the workspace restores from state.json and each pane spawns a fresh process (pi for agent
-panes, a login shell otherwise — global shells replay a remembered foreground command).
+the workspace restores from state.json and each pane spawns a fresh process (`pi --mode rpc`
+for an agent's primary pane, a login shell otherwise — global shells replay a remembered
+foreground command).
 
-Agent sessions run `pi` through a login shell (`zsh -l -c "exec pi …"` so the user's PATH
-resolves) with `SHEPHERD_AGENT_ID`/`SHEPHERD_SOCKET` in the env, a stable `--session-id`
+Agent sessions run `pi --mode rpc` through a login shell (`zsh -l -c "exec pi --mode rpc …"`
+so the user's PATH resolves) with `SHEPHERD_AGENT_ID`/`SHEPHERD_SOCKET` in the env, a stable `--session-id`
 (`PiSessionFile` seeds a minimal session header if pi hasn't yet, so relaunch resume and
-palette transcript search work), and the extensions passed via `pi -e`. The status extension
+palette transcript search work), and the extensions passed via `pi -e`. `RPCSession` owns the
+pipes and `RPCThreadState` projects pi's events into the `NativeThreadSnapshot` that
+`SessionServer.nativeThread` serves to the local GUI and, over TCP, to remote clients. The
+opening prompt is the first native `send`, not a positional argument. The status extension
 reports `setAgentStatus` (fire-and-forget): `session_start→idle`, `agent_start→working`,
 `agent_settled→done`, ask/question-style `tool_execution_*` → `blocked`,
 `session_shutdown→idle`. It also reports `setAgentSession` with the live pi session ID.
@@ -229,10 +239,10 @@ Corollary from DESIGN.md: never advertise a hint for a shortcut that isn't wired
 
 **Status transitions.** The table in `AgentStatus.canTransition` allows `done → working` (a
 completed agent starting a new turn). The server applies extension reports unconditionally but
-logs table violations — keep it that way; real PTY lifecycles are messier than the table.
+logs table violations — keep it that way; real process lifecycles are messier than the table.
 `SessionServer.start()` resets every agent's persisted status to `.idle` — sessions died with
 the previous app run, so stale statuses must not survive a relaunch. Startup also purges
-inspector tabs (ephemeral by contract).
+utility-terminal (`inspectorFor`) tabs (ephemeral by contract).
 
 **Dropped images are resized on the way in.** `TerminalImageDrop` clamps the longest edge to
 2000px and re-encodes — JPEG sources stay JPEG, everything else becomes PNG. This is not a
@@ -242,7 +252,7 @@ Resize where the image enters, never by rewriting the user's own file (an oversi
 file is copied down into the drop directory and that copy is referenced instead). Drop files
 prune after 24h.
 
-**Agents drive their own panes.** A new agent starts as exactly one pane (its pi terminal);
+**Agents drive their own panes.** A new agent starts as exactly one pane (its native thread);
 extra panes are opened by the agent through `shepherd-panes.ts` or by the user with ⌘D. The
 server owns PTYs but not layouts, so pane requests are forwarded to the GUI via
 `SessionServer.onPaneRequest` (and `onRemotePaneRequest`) and answered through `PaneOutcome`;
@@ -251,12 +261,11 @@ only touch panes in its **own** layout, it can never close or type into the pane
 own pi process, and the last pane in a layout cannot be closed. Shepherd does not nest agents —
 pi extensions own subagent execution; the opt-in bundled native helpers run as RPC child
 processes. The app only *projects* them (sidebar child
-rows via `shepherd-subagents.ts`, the read-mostly inspector via `shepherd-inspect.mjs`). Child
-runs are ephemeral display state, never persisted.
+rows via `shepherd-subagents.ts`, the native inspector from the thread snapshot). Child runs are
+ephemeral display state, never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps
-every *mounted* local layout in the view tree — agent layouts, global shells, and inspector
-tabs always; a space's shell workspace joins on first visit (mounting spawns its login shell
+every *mounted* local layout in the view tree — agent layouts and global shells always; a space's shell workspace joins on first visit (mounting spawns its login shell
 and surface, so a large space tree must not pay that per space at launch) and then never
 leaves; selection only changes which one is visible
 (`opacity`, hit-testing, and `isRendering` — ghostty occlusion stops hidden panes' render
@@ -265,9 +274,10 @@ loops). Three things silently reintroduce the full-repaint lag if touched: reord
 `opacity(0)` (ConditionalContent destroys the subtree), and applying `setRenderingActive`
 fire-and-forget (the model retries; see TerminalSurfaceKit/NOTES.md). The one deliberate
 unmount is cold parking: a layout hidden for 30s and outside the four most recently shown
-(`WorkspaceSelection.coldParkCandidates`) drops its Ghostty surfaces via
+(`WorkspaceSelection.coldParkCandidates`) drops its shell panes' Ghostty surfaces via
 `TerminalSessionStore.parkPane` while its processes and host-side screens keep running;
-reselecting it remounts from the server snapshot. Measured in docs/benchmarks.
+reselecting it remounts from the server snapshot. An agent's thread pane has no surface; its
+binding survives parking and its `NativeThreadStore` keeps the draft and history. Measured in docs/benchmarks.
 
 **Sessions/views separation.** Closing panes detaches views only; a process exiting on its own
 closes its pane (and retires its agent). Delete Agent is the explicit lifecycle action that

@@ -144,149 +144,70 @@ struct RemoteListenerTests {
         }
     }
 
-    @Test func nativeThreadRoutesOnlyToDedicatedLiveBridge() async throws {
+    @Test func nativeThreadIsServedFromTheAgentsRPCSession() async throws {
         let h = try Harness()
         defer { h.tearDown() }
         let space = Space(name: "native", path: h.dir.path)
-        let session = try await h.server.createSession(params: .init(cwd: h.dir.path, command: ["/bin/cat"], cols: 80, rows: 24))
+        try await h.server.addSpace(space)
+        let session = try await h.server.createSession(params: .init(
+            cwd: h.dir.path, command: ["python3", RPCAgentThreadTests.stubPath], runtime: .rpc))
         let pane = LeafPane(sessionID: session.id, cwd: h.dir.path)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
         let agent = Agent(name: "native", spaceID: space.id, tabID: tab.id, paneID: pane.id)
-        try await h.server.addSpace(space)
         try await h.server.addAgent(agent, withTab: tab)
-        let bridge = try ExtensionClient(path: h.dir.appendingPathComponent("d.sock").path)
-        let peers = try ExtensionClient(path: h.dir.appendingPathComponent("d.sock").path)
-        try peers.send(.helloAgent(agentID: agent.id))
-        try bridge.send(.helloNativeAgent(agentID: agent.id))
-        // A same-connection round trip makes registration observable without a sleep.
-        try bridge.send(.listPanes(id: 900, agentID: agent.id))
-        _ = try bridge.readReply()
+        // A pane bound to a PTY has no pi thread behind it.
+        let shell = try await h.server.createSession(params: .init(cwd: h.dir.path, command: ["/bin/cat"], cols: 80, rows: 24))
+        let shellPane = LeafPane(sessionID: shell.id, cwd: h.dir.path)
+        let shellTab = Tab(spaceID: space.id, order: 1, layout: .leaf(shellPane))
+        let shellAgent = Agent(name: "shell", spaceID: space.id, tabID: shellTab.id, paneID: shellPane.id)
+        try await h.server.addAgent(shellAgent, withTab: shellTab)
+
         let remote = try RemoteClient(port: h.port)
         try remote.send(.hello(id: 1, token: h.token, clientName: "native", protocolVersion: RemoteProtocol.version))
         guard case .helloOk(_, _, let capabilities) = try remote.readReply() else { Issue.record("Missing hello"); return }
         #expect(capabilities.contains(RemoteProtocol.nativeThreadCapability))
-        #expect(h.server.pushMessage(toAgent: agent.id, text: "peer channel intact"))
-        #expect(try peers.readReply() == .message(id: 0, text: "peer channel intact"))
-        try remote.send(.nativeThread(id: 77, agentID: agent.id, request: .snapshot()))
-        guard case .nativeThreadCommand(let correlation, .snapshot) = try bridge.readReply() else { Issue.record("Missing native command"); return }
-        #expect(correlation != 77)
-        // A reply from the panes connection must not settle a native request.
-        try peers.send(.nativeThreadResult(id: correlation, result: .failure(code: "spoof", message: "wrong connection")))
-        try peers.send(.listPanes(id: 901, agentID: agent.id))
-        _ = try peers.readReply()
-        let result = NativeThreadResult.unchanged(piSessionID: "session", generation: "generation", revision: 4)
-        try bridge.send(.nativeThreadResult(id: correlation + 1000, result: .failure(code: "wrong_id", message: "wrong correlation")))
-        try bridge.send(.nativeThreadResult(id: correlation, result: result))
-        #expect(try remote.readReply() == .nativeThread(id: 77, result: result))
-        // Session/generation binding is preserved unchanged for the pi-owned check.
-        let action = NativeThreadRequest.send(expectedSessionID: "old", generation: "old", operationID: UUID(), text: "Continue", delivery: .steer)
-        try remote.send(.nativeThread(id: 78, agentID: agent.id, request: action))
-        guard case .nativeThreadCommand(let actionID, let forwarded) = try bridge.readReply() else { Issue.record("Missing action"); return }
-        #expect(forwarded == action)
-        try bridge.send(.nativeThreadResult(id: actionID, result: .failure(code: "stale_session", message: "Refresh")))
-        #expect(try remote.readReply() == .nativeThread(id: 78, result: .failure(code: "stale_session", message: "Refresh")))
-        try remote.send(.nativeThread(id: 79, agentID: agent.id, request: .snapshot()))
-        guard case .nativeThreadCommand(let largeID, _) = try bridge.readReply() else { Issue.record("Missing command"); return }
-        try bridge.send(.nativeThreadResult(id: largeID, result: .failure(code: "large", message: String(repeating: "x", count: 256 * 1024))))
-        guard case .error(79, "native_limit", _) = try remote.readReply() else { Issue.record("Oversize result accepted"); return }
-        try remote.send(.nativeThread(id: 80, agentID: agent.id, request: .snapshot()))
-        _ = try bridge.readReply()
-        bridge.closeConnection()
-        guard case .error(80, "outcome_unknown", _) = try remote.readReply() else { Issue.record("Pending request not failed on disconnect"); return }
-        try remote.send(.nativeThread(id: 81, agentID: agent.id, request: .snapshot()))
-        guard case .error(81, "native_unavailable", _) = try remote.readReply() else { Issue.record("Missing bridge accepted"); return }
-        let replacement = try ExtensionClient(path: h.dir.appendingPathComponent("d.sock").path)
-        try replacement.send(.helloNativeAgent(agentID: agent.id))
-        try replacement.send(.listPanes(id: 902, agentID: agent.id))
-        _ = try replacement.readReply()
+        var ready: NativeThreadSnapshot?
+        let deadline = ContinuousClock.now + .seconds(30)
+        var id = 10
+        while ready == nil, ContinuousClock.now < deadline {
+            id += 1
+            try remote.send(.nativeThread(id: id, agentID: agent.id, request: .snapshot()))
+            if case .nativeThread(id, .snapshot(let value)) = try remote.readReply(), !value.piSessionID.isEmpty {
+                ready = value
+            } else {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        let snapshot = try #require(ready, "the RPC agent never answered a snapshot")
+        #expect(snapshot.isRPC)
+
+        try remote.send(.nativeThread(id: 900, agentID: agent.id, request: .send(
+            expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(),
+            text: String(repeating: "x", count: 64 * 1024), delivery: .followUp)))
+        guard case .error(900, "native_limit", _) = try remote.readReply() else { Issue.record("Oversize request accepted"); return }
+        try remote.send(.nativeThread(id: 901, agentID: shellAgent.id, request: .snapshot()))
+        guard case .error(901, "native_unavailable", _) = try remote.readReply() else { Issue.record("PTY pane served a thread"); return }
+
         let client = RemoteHostClient()
         _ = try await client.connect(host: "127.0.0.1", port: h.port, token: h.token, clientName: "typed-native")
         defer { client.disconnect() }
+        guard case .snapshot(let typed) = try await client.nativeThread(agentID: agent.id, request: .snapshot()) else {
+            Issue.record("Typed client got no snapshot"); return
+        }
+        #expect(typed.piSessionID == snapshot.piSessionID)
         let oldHost = RemoteHostClient()
         do {
             _ = try await oldHost.nativeThread(agentID: agent.id, request: .snapshot())
             Issue.record("Missing capability was accepted")
         } catch RemoteHostClientError.rejected(let code, _) { #expect(code == "update_required") }
-        let pending = Task { try await client.nativeThread(agentID: agent.id, request: .snapshot()) }
-        guard case .nativeThreadCommand(let typedID, _) = try replacement.readReply() else { Issue.record("Missing typed command"); return }
-        try replacement.send(.nativeThreadResult(id: typedID, result: result))
-        #expect(try await pending.value == result)
-        try remote.send(.nativeThread(id: 82, agentID: agent.id, request: .snapshot()))
-        _ = try replacement.readReply()
-        let newer = try ExtensionClient(path: h.dir.appendingPathComponent("d.sock").path)
-        try newer.send(.helloNativeAgent(agentID: agent.id))
-        #expect(try replacement.waitForDisconnect())
-        guard case .error(82, "outcome_unknown", _) = try remote.readReply() else { Issue.record("Replacement did not invalidate old requests"); return }
-        try remote.send(.nativeThread(id: 83, agentID: agent.id, request: .send(expectedSessionID: "s", generation: "g", operationID: UUID(), text: String(repeating: "x", count: 64 * 1024), delivery: .followUp)))
-        guard case .error(83, "native_limit", _) = try remote.readReply() else { Issue.record("Oversize request accepted"); return }
-        try remote.send(.nativeThread(id: 84, agentID: agent.id, request: .snapshot()))
-        _ = try newer.readReply()
-        guard case .error(84, "outcome_unknown", _) = try remote.readReply(timeout: .seconds(15)) else { Issue.record("Missing bridge timeout"); return }
-        let screen = await h.server.screenText(sessionID: session.id) ?? []
-        #expect(!screen.joined().contains("Continue"))
+
         h.server.killSession(session.id)
         let exitDeadline = ContinuousClock.now + .seconds(10)
         while await h.server.sessionInfo(sessionID: session.id)?.isAlive == true, ContinuousClock.now < exitDeadline {
             try await Task.sleep(for: .milliseconds(20))
         }
-        #expect(await h.server.sessionInfo(sessionID: session.id)?.isAlive == false)
-        try remote.send(.nativeThread(id: 85, agentID: agent.id, request: .snapshot()))
-        guard case .error(85, "native_unavailable", _) = try remote.readReply() else { Issue.record("Stopped PTY accepted"); return }
-        try newer.sendRaw(Data("{\"type\":\"helloNativeAgent\",\"agentID\":\"\(agent.id.rawValue)\"}\r\n".utf8))
-        #expect(try newer.waitForDisconnect())
-    }
-
-    @Test func nativePendingLimitIsSharedAndRemoteDisconnectLeavesLocalRequestsIntact() async throws {
-        let h = try Harness()
-        defer { h.tearDown() }
-        let space = Space(name: "native", path: h.dir.path)
-        let session = try await h.server.createSession(params: .init(cwd: h.dir.path, command: ["/bin/cat"], cols: 80, rows: 24))
-        let pane = LeafPane(sessionID: session.id, cwd: h.dir.path)
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-        let agent = Agent(name: "native", spaceID: space.id, tabID: tab.id, paneID: pane.id)
-        try await h.server.addSpace(space)
-        try await h.server.addAgent(agent, withTab: tab)
-        let bridge = try ExtensionClient(path: h.dir.appendingPathComponent("d.sock").path)
-        try bridge.send(.helloNativeAgent(agentID: agent.id))
-        try bridge.send(.listPanes(id: 900, agentID: agent.id))
-        _ = try bridge.readReply()
-        let remote = try RemoteClient(port: h.port)
-        try remote.send(.hello(id: 1, token: h.token, clientName: "mixed-native", protocolVersion: RemoteProtocol.version))
-        _ = try remote.readReply()
-        try remote.send(.nativeThread(id: 2, agentID: agent.id, request: .snapshot()))
-        guard case .nativeThreadCommand(let remoteID, _) = try bridge.readReply() else {
-            Issue.record("Missing remote command"); return
-        }
-        var locals: [(Int, Task<NativeThreadResult, Error>)] = []
-        for _ in 0..<127 {
-            let task = Task { try await h.server.nativeThread(agentID: agent.id, request: .snapshot()) }
-            guard case .nativeThreadCommand(let id, _) = try bridge.readReply() else {
-                Issue.record("Missing local command"); return
-            }
-            locals.append((id, task))
-        }
-        do {
-            _ = try await h.server.nativeThread(agentID: agent.id, request: .snapshot())
-            Issue.record("Local request exceeded shared pending limit")
-        } catch RemoteHostClientError.rejected(let code, _) { #expect(code == "native_limit") }
-        try remote.send(.nativeThread(id: 3, agentID: agent.id, request: .snapshot()))
-        guard case .error(3, "native_limit", _) = try remote.readReply() else {
-            Issue.record("Remote request exceeded shared pending limit"); return
-        }
-        // Closing the listener synchronously disconnects this remote client only.
-        h.server.stopRemoteListener()
-        let freedSlot = Task { try await h.server.nativeThread(agentID: agent.id, request: .snapshot()) }
-        guard case .nativeThreadCommand(let freedID, _) = try bridge.readReply() else {
-            Issue.record("Remote disconnect did not release pending slot"); return
-        }
-        let result = NativeThreadResult.unchanged(piSessionID: "s", generation: "g", revision: 1)
-        try bridge.send(.nativeThreadResult(id: remoteID, result: .failure(code: "late", message: "disconnected remote")))
-        for (id, task) in locals {
-            try bridge.send(.nativeThreadResult(id: id, result: result))
-            #expect(try await task.value == result)
-        }
-        try bridge.send(.nativeThreadResult(id: freedID, result: result))
-        #expect(try await freedSlot.value == result)
+        try remote.send(.nativeThread(id: 902, agentID: agent.id, request: .snapshot()))
+        guard case .error(902, "native_unavailable", _) = try remote.readReply() else { Issue.record("Stopped pi accepted"); return }
     }
 
     @Test func uploadsAreChunkedPrivateAndConnectionOwned() async throws {

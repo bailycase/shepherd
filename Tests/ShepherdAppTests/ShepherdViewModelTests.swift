@@ -53,28 +53,6 @@ struct ShepherdViewModelTests {
         return (space, tab)
     }
 
-    /// A just-created agent wears the launch overlay until pi's status
-    /// extension first reports — delivered over the same wiring a real
-    /// report takes (session store callback → view model).
-    @Test func launchOverlayLiftsOnFirstStatusReport() throws {
-        let fixture = try Fixture()
-        defer { fixture.tearDown() }
-        let vm = ShepherdViewModel(server: fixture.server)
-        let agentID = AgentID()
-
-        vm.beginAgentLaunch(agentID)
-        #expect(vm.launchingAgents.contains(agentID))
-
-        vm.sessions.onAgentStatus?(agentID, .idle)
-        #expect(vm.launchingAgents.isEmpty)
-
-        // Explicit end (spawn failure, deletion) is idempotent.
-        vm.beginAgentLaunch(agentID)
-        vm.endAgentLaunch(agentID)
-        vm.endAgentLaunch(agentID)
-        #expect(vm.launchingAgents.isEmpty)
-    }
-
     @Test func failedDeletionKeepsWorkspaceAndCheckout() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
@@ -289,7 +267,7 @@ struct ShepherdViewModelTests {
         #expect(review.comments == draft.comments)
     }
 
-    @Test func delayedRemoteReviewAndInspectorResponsesDoNotReplaceNewerChoices() async throws {
+    @Test func delayedRemoteReviewResponsesDoNotReplaceNewerChoices() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
         let space = Space(name: "host", path: "/tmp/unused")
@@ -302,13 +280,11 @@ struct ShepherdViewModelTests {
         let remotes = RemoteHostStore(defaults: defaults)
         let vm = ShepherdViewModel(server: fixture.server, remoteHosts: remotes)
         var reviews: [(Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void] = []
-        var inspectors: [(Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void] = []
         var submissions: [(Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void] = []
         fixture.server.onRemoteAgentQuery = { _, query, completion in
             MainActor.assumeIsolated {
                 switch query {
                 case .review, .reviewPane: reviews.append(completion)
-                case .inspect: inspectors.append(completion)
                 case .finishReview: submissions.append(completion)
                 default: completion(.success(.children([])))
                 }
@@ -345,26 +321,12 @@ struct ShepherdViewModelTests {
         #expect(await waitUntil { !review.isSubmitting })
         #expect(vm.remoteReviews[target] === replacement)
         #expect(replacement.summary == "keep these comments")
+        // A remote subagent opens in the native side panel; no host round trip.
         vm.openRemoteChild(target, child: .init(runID: "one", label: "one", state: "running"))
-        #expect(await waitUntil { inspectors.count == 1 })
+        #expect(vm.selectedRemoteAgent == target && vm.subagentInspector.remoteRuns[target] == "one")
         vm.openRemoteChild(target, child: .init(runID: "two", label: "two", state: "running"))
-        #expect(await waitUntil { inspectors.count == 2 })
-        let inspector = Tab(spaceID: space.id, order: 1, layout: .leaf(LeafPane(cwd: space.path)), inspectorFor: agent.id)
-        try await fixture.server.addTab(inspector)
-        #expect(await waitUntil { connection.state.tabs.contains { $0.id == inspector.id } })
-        inspectors[1](.success(.inspector(inspector.id)))
-        #expect(await waitUntil { vm.remoteInspectingAgent == target })
-        #expect(vm.remoteFocusedPaneID == inspector.layout.firstLeaf.id)
-        vm.focusAdjacentPane(1)
-        #expect(vm.remoteFocusedPaneID == inspector.layout.firstLeaf.id)
+        #expect(vm.subagentInspector.remoteRuns[target] == "two")
         #expect(vm.remoteReviews[target] === replacement)
-        #expect(replacement.summary == "keep these comments")
-        #expect(vm.remoteInspectingAgent == target)
-        vm.selectAgent(agent.id)
-        inspectors[0](.success(.inspector(TabID())))
-        try await Task.sleep(for: .milliseconds(50))
-        #expect(vm.selectedRemoteAgent == nil)
-        #expect(vm.remoteInspectingAgent == nil)
     }
 
     @Test func remoteWorktreeCreationRejectsAnotherRepositoryBeforeMutation() async throws {
@@ -509,8 +471,6 @@ struct ShepherdViewModelTests {
         try await host.server.updateAgent(blockedAgent)
         #expect(await waitUntil { vm.blockedCount == 3 })
         vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id)
-        #expect(vm.waitingQueue?.position == 2)
-        #expect(vm.statusCounts.first(where: { $0.status == .blocked })?.count == 2)
         hostVM.applyAgentChildren(agent.id, [])
         #expect(await waitUntil { vm.remoteChildren[target]?.isEmpty == true })
         #expect(!vm.paletteItems.contains { $0.title == "hidden child" })
@@ -639,8 +599,9 @@ struct ShepherdViewModelTests {
         vm.sweepColdPanes(now: Date().addingTimeInterval(60))
         #expect(vm.parkedTabIDs == [tabs[0].id])
         #expect(!vm.mountedTabs.contains { $0.id == tabs[0].id })
-        // The store dropped the pane session: a remount gets a fresh one.
-        #expect(vm.sessions.session(for: firstPane, in: tabs[0]) !== paneSession)
+        // An agent's pane is its RPC thread: there is no surface to release, so the binding
+        // survives parking and a remount adopts the same pane session.
+        #expect(vm.sessions.session(for: firstPane, in: tabs[0]) === paneSession)
 
         // Selecting it unparks it and it re-enters the mounted set.
         vm.selectAgent(agents[0].id)
@@ -1338,7 +1299,7 @@ struct ShepherdViewModelTests {
         let space = Space(name: "s", path: fixture.dir.path)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: fixture.dir.path)))
         let parent = Agent(name: "parent", spaceID: space.id, tabID: tab.id,
-                           paneID: tab.layout.firstLeaf.id, runtime: .rpc)
+                           paneID: tab.layout.firstLeaf.id)
         try await fixture.server.putState(.init(spaces: [space], tabs: [tab], agents: [parent]))
         let vm = ShepherdViewModel(server: fixture.server)
         #expect(await waitUntil { vm.state.agents.count == 1 })
@@ -1366,7 +1327,7 @@ struct ShepherdViewModelTests {
         defer { fixture.tearDown() }
         let space = Space(name: "s", path: fixture.dir.path)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: fixture.dir.path)))
-        let parent = Agent(name: "parent", spaceID: space.id, tabID: tab.id, paneID: tab.layout.firstLeaf.id, runtime: .rpc)
+        let parent = Agent(name: "parent", spaceID: space.id, tabID: tab.id, paneID: tab.layout.firstLeaf.id)
         try await fixture.server.putState(.init(spaces: [space], tabs: [tab], agents: [parent]))
         let vm = ShepherdViewModel(server: fixture.server)
         #expect(await waitUntil { vm.state.agents.count == 1 })
@@ -1394,7 +1355,7 @@ struct ShepherdViewModelTests {
                            sessionFile: child.path, sessionID: "child-id", cwd: fixture.dir.path)
         let forked = try await vm.forkSubagent(agentID: parent.id, run: run)
         let agent = try #require(vm.state.agents.first { $0.id == forked })
-        #expect(agent.name == "tests (fork)" && !agent.nameIsFinal && agent.runtime == .rpc && agent.spaceID == space.id)
+        #expect(agent.name == "tests (fork)" && !agent.nameIsFinal && agent.spaceID == space.id)
         #expect(agent.model == "anthropic/claude-sonnet" && agent.thinkingLevel == .low)
         let sessionID = try #require(agent.piSessionID)
         #expect(sessionID != "child-id" && agent.effectivePiSessionID == sessionID)

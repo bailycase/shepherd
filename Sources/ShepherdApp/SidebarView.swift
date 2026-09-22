@@ -181,7 +181,7 @@ struct SpaceSection: View {
                     AgentRow(
                         agent: agent,
                         selected: vm.selectedAgentID == agent.id && vm.selectedShellID == nil
-                            && vm.selectedRemoteAgent == nil && vm.inspectingAgentID == nil,
+                            && vm.selectedRemoteAgent == nil,
                         badge: vm.shortcutBadge(for: agent.id),
                         depth: depth
                     ) {
@@ -191,11 +191,6 @@ struct SpaceSection: View {
                     .sidebarDropTarget { payload in vm.dropAgent(payload: payload, on: agent.id) }
                     .contextMenu {
                         Button("Rename…") { vm.agentRenameTarget = agent.id }
-                        // D2: the runtime is fixed per process; switching restarts pi in the
-                        // same session. Confirms first (RootView sheet).
-                        Button(agent.runtime == .rpc ? "Restart as Terminal Agent…" : "Restart as Native (RPC) Agent…") {
-                            vm.runtimeRestartTarget = agent.id
-                        }
                         Divider()
                         if agent.worktreeBranch != nil {
                             Button("Finalize Worktree…") { vm.beginFinalizeWorktree(agent.id) }

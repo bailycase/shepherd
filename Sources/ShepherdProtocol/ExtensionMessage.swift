@@ -11,8 +11,6 @@ import ShepherdCore
 /// own workspace: open panes, run commands in them, read what they printed,
 /// and close them.
 public enum ExtensionMessage: Codable, Hashable, Sendable {
-    case nativeThreadResult(id: Int, result: NativeThreadResult)
-    case helloNativeAgent(agentID: AgentID)
     /// Lifecycle status for one agent.
     case setAgentStatus(agentID: AgentID, status: AgentStatus)
     /// Generated title from the namer extension. The server applies it only
@@ -85,7 +83,6 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     case stopAutomation(id: Int, automationID: AutomationID)
 
     private enum CodingKeys: String, CodingKey {
-        case result
         case type, id, agentID, status, name, piSessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
@@ -94,8 +91,6 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
-        case nativeThreadResult
-        case helloNativeAgent
         case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent
         case helloChildren, childCommandResult
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
@@ -107,10 +102,6 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
-        case .nativeThreadResult:
-            self = .nativeThreadResult(id: try c.decode(Int.self, forKey: .id), result: try c.decode(NativeThreadResult.self, forKey: .result))
-        case .helloNativeAgent:
-            self = .helloNativeAgent(agentID: try c.decode(AgentID.self, forKey: .agentID))
         case .setAgentStatus:
             self = .setAgentStatus(
                 agentID: try c.decode(AgentID.self, forKey: .agentID),
@@ -250,13 +241,6 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .nativeThreadResult(let id, let result):
-            try c.encode(Kind.nativeThreadResult, forKey: .type)
-            try c.encode(id, forKey: .id)
-            try c.encode(result, forKey: .result)
-        case .helloNativeAgent(let agentID):
-            try c.encode(Kind.helloNativeAgent, forKey: .type)
-            try c.encode(agentID, forKey: .agentID)
         case .setAgentStatus(let agentID, let status):
             try c.encode(Kind.setAgentStatus, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
@@ -635,7 +619,6 @@ public struct PaneInfo: Codable, Hashable, Sendable {
 
 /// App → extension replies, correlated by request `id`.
 public enum ExtensionReply: Codable, Hashable, Sendable {
-    case nativeThreadCommand(id: Int, request: NativeThreadRequest)
     /// Sent on a `helloChildren` connection; answered by `ExtensionMessage.childCommandResult`.
     /// `mode` (steer/followUp) applies to `message`.
     case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
@@ -656,21 +639,18 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     case message(id: Int, text: String)
 
     private enum CodingKeys: String, CodingKey {
-        case request
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text
         case runID, action, mode
     }
 
     private enum Kind: String, Codable {
-        case nativeThreadCommand, childCommand
+        case childCommand
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
-        case .nativeThreadCommand:
-            self = .nativeThreadCommand(id: try c.decode(Int.self, forKey: .id), request: try c.decode(NativeThreadRequest.self, forKey: .request))
         case .childCommand:
             self = .childCommand(
                 id: try c.decode(Int.self, forKey: .id),
@@ -729,10 +709,6 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .nativeThreadCommand(let id, let request):
-            try c.encode(Kind.nativeThreadCommand, forKey: .type)
-            try c.encode(id, forKey: .id)
-            try c.encode(request, forKey: .request)
         case .childCommand(let id, let runID, let action, let text, let mode):
             try c.encode(Kind.childCommand, forKey: .type)
             try c.encode(id, forKey: .id)

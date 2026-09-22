@@ -86,31 +86,24 @@ struct PiThemeTests {
         #expect(colors.thinkingText == colors.muted)
     }
 
-    @Test func launchCommandForcesTheGeneratedTheme() {
+    @Test func agentLaunchIsHeadlessRPCWithoutATheme() {
         let command = StatusExtension.command(
             agentID: AgentID(rawValue: "11111111-1111-1111-1111-111111111111"),
             piSessionID: "11111111-1111-1111-1111-111111111111",
             socketPath: "/tmp/shepherd.sock",
             extensionPath: "/tmp/status.ts",
-            themeExtensionPath: "/tmp/theme.ts",
             panesExtensionPath: "/tmp/panes.ts",
             reviewExtensionPath: "/tmp/review.ts",
             subagentsExtensionPath: "/tmp/subagents.ts",
-            piThemePath: "/tmp/theme file.json",
-            piThemeName: ShepherdPiTheme.name,
             model: nil,
-            thinking: nil,
-            initialPrompt: nil
+            thinking: nil
         )
 
         let shellCommand = command.argv[3]
-        #expect(shellCommand.contains("--theme '/tmp/theme file.json'"))
-        #expect(shellCommand.contains("--use-theme '\(ShepherdPiTheme.name)'"))
-        #expect(shellCommand.contains("-e '/tmp/theme.ts'"))
+        #expect(shellCommand.hasPrefix("exec pi --mode rpc --session-id "))
+        #expect(!shellCommand.contains("--theme"))
         #expect(shellCommand.contains("-e '/tmp/review.ts'"))
-        #expect(command.env["SHEPHERD_EXT_THEME"] == "/tmp/theme.ts")
-        #expect(command.env["SHEPHERD_PI_THEME_PATH"] == "/tmp/theme file.json")
-        #expect(command.env["SHEPHERD_PI_THEME_NAME"] == ShepherdPiTheme.name)
+        #expect(command.env["SHEPHERD_EXT_THEME"] == nil)
     }
 
     private func rgbDistance(_ lhs: String, _ rhs: String) throws -> Double {
@@ -139,7 +132,6 @@ struct PiThemeTests {
             .deletingLastPathComponent()
         let copies: [(String, String)] = [
             ("shepherd-status.ts", StatusExtension.extensionSource),
-            ("shepherd-native.ts", NativeExtension.extensionSource),
             ("shepherd-theme.ts", ThemeExtension.extensionSource),
             ("shepherd-namer.ts", NamerExtension.extensionSource),
             ("shepherd-panes.ts", PanesExtension.extensionSource),

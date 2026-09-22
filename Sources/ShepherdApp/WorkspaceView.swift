@@ -7,16 +7,6 @@ import ShepherdRemote
 struct WorkspaceView: View {
     var vm: ShepherdViewModel
 
-    /// The frame is the app's one attention surface: neutral hairline
-    /// normally, the status color when the focused agent is blocked.
-    private var frameColor: Color {
-        _ = vm.remoteProjectionRevision
-        let status = vm.selectedRemoteAgent.flatMap { target in
-            vm.remoteHosts.connections.first { $0.id == target.hostID && $0.phase == .connected }?.state.agents.first { $0.id == target.agentID }?.status
-        } ?? (vm.selectedRemoteAgent == nil ? vm.selectedAgent?.status : nil)
-        return status == .blocked ? Tokens.statusBlocked : Tokens.paneBorder
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
@@ -61,11 +51,6 @@ struct WorkspaceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Tokens.workspaceBg)
-            .border(frameColor, width: 1)
-            .padding(.horizontal, Metrics.paneFrameInset)
-            .padding(.bottom, Metrics.paneFrameInset)
-
-            StatusLineView(vm: vm)
         }
         // A lazily mounted space shell must stay mounted once shown;
         // recording here catches every path that changes the active tab.
@@ -302,10 +287,7 @@ struct PaneLeafView: View {
         // agent's terminal would swallow typing.
         let visible = vm.isVisibleTab(tab)
         let focused = vm.focusedPaneID == pane.id && visible
-        let launching = pane.agentID.map { vm.launchingAgents.contains($0) } ?? false
-        let nativeAgent = NativePresentation.primaryAgent(in: tab, pane: pane, agents: vm.state.agents)
-        let native = nativeAgent.map { vm.nativePresentation.isNative($0) } ?? false
-        let rpc = nativeAgent?.runtime == .rpc
+        let agent = primaryAgent(in: tab, pane: pane, agents: vm.state.agents)
 
         Group {
             if pane.isReview == true {
@@ -315,14 +297,14 @@ struct PaneLeafView: View {
                 } else {
                     PanePlaceholder(text: "review unavailable")
                 }
-            } else if rpc, let agent = nativeAgent {
-                // No terminal behind an RPC agent (D2): the thread is the pane. The session
-                // binding still goes through the store so exits close the pane. A subagent
-                // under inspection splits the pane: thread left, inspector right.
-                let store = vm.nativePresentation.store(for: agent.id)
+            } else if let agent {
+                // The thread is the agent's pane; the session binding still goes through the
+                // store so a pi exit closes the pane. A subagent under inspection splits the
+                // pane: thread left, inspector right.
+                let store = vm.threadStores.store(for: agent.id)
                 let inspecting = vm.subagentInspector.runByAgent[agent.id]
                 NativeInspectorSplit(state: vm.subagentInspector, showInspector: inspecting != nil) {
-                    RPCAgentPane(
+                    AgentThreadPane(
                         session: vm.sessions.session(for: pane, in: tab),
                         store: store,
                         active: visible,
@@ -343,44 +325,10 @@ struct PaneLeafView: View {
                     }
                 }
             } else {
-                ZStack {
-                    LiveTerminalPane(
-                        session: vm.sessions.session(for: pane, in: tab),
-                        agentID: pane.agentID,
-                        isFocused: focused && !native,
-                        isRendering: visible && !native
-                    )
-                    .opacity(native ? 0 : 1)
-                    .allowsHitTesting(!native)
-                    .accessibilityHidden(native)
-                    if let agent = nativeAgent {
-                        DesktopNativeThreadView(
-                            store: vm.nativePresentation.store(for: agent.id),
-                            active: visible && native,
-                            isFocused: focused && native,
-                            request: { try await vm.server.nativeThread(agentID: agent.id, request: $0) },
-                            showTerminal: { vm.nativePresentation.setNative(false, for: agent.id) },
-                            agentName: agent.name
-                        )
-                        .opacity(native ? 1 : 0)
-                        .allowsHitTesting(native)
-                        .accessibilityHidden(!native)
-                    }
-                    // A just-created agent's terminal boots behind an opaque cover:
-                    // login-shell echo and pi's first paint are noise, not content.
-                    // Visual only — hit testing passes through, and the surface
-                    // keeps keyboard focus, so typing lands in pi's prompt.
-                    if launching && !native {
-                        AgentLaunchOverlay()
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(
-                    NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                        ? nil
-                        : .easeOut(duration: 0.12),
-                    value: launching
+                LiveTerminalPane(
+                    session: vm.sessions.session(for: pane, in: tab),
+                    isFocused: focused,
+                    isRendering: visible
                 )
             }
         }
@@ -391,12 +339,9 @@ struct PaneLeafView: View {
     }
 }
 
-// AgentLaunchOverlay (the ASCII crook boot screen) lives in
-// AgentLaunchOverlay.swift.
-
-/// An RPC agent's only surface. Observes the pane session for exit/failure so a dead
-/// pi shows the same placeholder a terminal pane would.
-struct RPCAgentPane: View {
+/// An agent's only surface. Observes the pane session for exit/failure so a dead pi shows
+/// the same placeholder a shell pane would.
+struct AgentThreadPane: View {
     @ObservedObject var session: TerminalSessionStore.PaneSession
     @ObservedObject var store: NativeThreadStore
     let active: Bool
@@ -410,7 +355,7 @@ struct RPCAgentPane: View {
         switch session.phase {
         case .connecting, .live:
             DesktopNativeThreadView(store: store, active: active, isFocused: isFocused, request: request,
-                                    showTerminal: nil, agentName: agentName, inspectSubagent: inspectSubagent, inspectedRunID: inspectedRunID)
+                                    agentName: agentName, inspectSubagent: inspectSubagent, inspectedRunID: inspectedRunID)
         case .failed(let reason):
             PanePlaceholder(text: "session unavailable · \(reason)")
         case .exited(let code):
@@ -421,9 +366,7 @@ struct RPCAgentPane: View {
 
 struct LiveTerminalPane: View {
     @ObservedObject var session: TerminalSessionStore.PaneSession
-    let agentID: AgentID?
     let isFocused: Bool
-    @ObservedObject private var piUpdates = PiUpdateManager.shared
     /// False for a mounted-but-hidden pane, which keeps its surface but must
     /// stop running a render loop.
     var isRendering: Bool = true
@@ -439,10 +382,6 @@ struct LiveTerminalPane: View {
                     PanePlaceholder(text: "starting session…")
                         .allowsHitTesting(false)
                 }
-                if agentID != nil, piUpdates.isOutdated {
-                    PiOutdatedOverlay()
-                        .allowsHitTesting(false)
-                }
             }
         case .failed(let reason):
             PanePlaceholder(text: "session unavailable · \(reason)")
@@ -452,9 +391,8 @@ struct LiveTerminalPane: View {
     }
 }
 
-/// The terminal of an agent on a remote host, streamed over that host's
-/// connection. One pane, no splits: remote agents render their pi terminal
-/// only — auxiliary panes stay a host-side concern.
+/// An agent on a remote host: its native thread served by the host, plus any auxiliary
+/// shell panes in its layout streamed over that host's connection.
 struct RemoteAgentPane: View {
     var vm: ShepherdViewModel
     let ref: RemoteAgentRef
@@ -523,7 +461,7 @@ private struct RemotePaneTreeView: View {
     var body: some View {
         switch node {
         case .leaf(let leaf):
-            RemotePaneLeafView(vm: vm, connection: connection, leaf: leaf)
+            RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf)
         case .split:
             RemotePaneSplitView(vm: vm, connection: connection, ref: ref, tab: tab, node: node)
         }
@@ -533,11 +471,15 @@ private struct RemotePaneTreeView: View {
 private struct RemotePaneLeafView: View {
     var vm: ShepherdViewModel
     @ObservedObject var connection: RemoteHostStore.Connection
+    let ref: RemoteAgentRef
+    let tab: Tab
     let leaf: LeafPane
 
     var body: some View {
         Group {
-            if leaf.isReview == true, let target = vm.selectedRemoteAgent {
+            if let agent = primaryAgent(in: tab, pane: leaf, agents: connection.state.agents) {
+                RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name, isFocused: vm.remoteFocusedPaneID == leaf.id)
+            } else if leaf.isReview == true, let target = vm.selectedRemoteAgent {
                 if let review = vm.remoteReviews[target], review.paneID == leaf.id {
                     DiffReviewPane(session: review, isFocused: vm.remoteFocusedPaneID == leaf.id)
                 } else {
@@ -619,6 +561,43 @@ private struct RemotePaneSplitView: View {
     }
 }
 
+/// A remote agent's thread. Same view as a local agent's, with requests sent to the host.
+private struct RemoteAgentThreadPane: View {
+    var vm: ShepherdViewModel
+    let ref: RemoteAgentRef
+    let agentName: String
+    let isFocused: Bool
+
+    var body: some View {
+        let store = vm.remoteThreadStores.store(for: ref)
+        let inspecting = vm.subagentInspector.remoteRuns[ref]
+        NativeInspectorSplit(state: vm.subagentInspector, showInspector: inspecting != nil) {
+            DesktopNativeThreadView(
+                store: store,
+                active: true,
+                isFocused: isFocused && inspecting == nil,
+                request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
+                agentName: agentName,
+                inspectSubagent: { run in
+                    if vm.subagentInspector.remoteRuns[ref] == run.runID {
+                        vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
+                    } else {
+                        vm.subagentInspector.remoteRuns[ref] = run.runID
+                    }
+                },
+                inspectedRunID: inspecting
+            )
+        } inspector: {
+            if let inspecting {
+                NativeSubagentInspector(store: store, runID: inspecting, active: true, close: {
+                    vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
+                }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil)
+                .id(inspecting)
+            }
+        }
+    }
+}
+
 private struct RemoteTerminalPane: View {
     @ObservedObject var pane: RemotePaneSession
     let isFocused: Bool
@@ -650,63 +629,5 @@ struct PanePlaceholder: View {
             .foregroundStyle(Tokens.textDim)
             .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-}
-
-// MARK: Status line
-
-struct StatusLineView: View {
-    var vm: ShepherdViewModel
-    @ObservedObject private var keys = KeybindingsStore.shared
-    @ObservedObject private var appearance = AppSettings.shared
-    @State private var hoveringNewSpace = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            // Leading queue segment — the only place the status line speaks,
-            // and only about attention.
-            if let queue = vm.waitingQueue {
-                Text(queue.position.map { "\($0) of \(queue.total) waiting" } ?? "\(queue.total) waiting")
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.statusBlocked)
-            }
-            // The sidebar footer's affordances, relocated: new-space entry
-            // point and the fleet dot counts.
-            Text("+ new space")
-                .font(Fonts.mono(11))
-                .foregroundStyle(hoveringNewSpace ? Tokens.textSecondary : Tokens.textTertiary)
-                .contentShape(Rectangle())
-                .onHover { hoveringNewSpace = $0 }
-                .onTapGesture { vm.addSpaceFromPanel() }
-                .help("New Space (\(keys.display(.newSpace)))")
-            HStack(spacing: 10) {
-                ForEach(vm.statusCounts, id: \.status) { entry in
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(Tokens.statusColor(entry.status))
-                            .frame(width: 6, height: 6)
-                        Text("\(entry.count)")
-                            .font(Fonts.mono(10))
-                            .foregroundStyle(Tokens.textMetadata)
-                    }
-                    .help("\(entry.count) \(entry.status.rawValue)")
-                }
-            }
-            Spacer()
-            // Hints follow the user's actual bindings (DESIGN.md: never
-            // advertise a chord that isn't wired).
-            Text(
-                [
-                    "\(keys.display(.newAgent)) new agent",
-                    "\(keys.display(.splitVertical)) split",
-                    "\(keys.display(.focusNextPane)) pane",
-                ].joined(separator: " · ")
-            )
-            .font(Fonts.mono(11))
-            .foregroundStyle(Tokens.textHint)
-        }
-        .padding(.horizontal, 14)
-        .frame(height: Metrics.statusLineHeight)
-        .background(Tokens.workspaceBg)
     }
 }

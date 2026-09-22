@@ -1,22 +1,11 @@
 import Foundation
 import ShepherdProtocol
 
-/// Installs Shepherd's own subagent inspector — a flat terminal viewer
-/// over a pi-subagents run's lifecycle artifacts, launched in a pane when a
-/// subagent row is clicked. Extensions/shepherd-inspect.mjs is canonical;
-/// keep this literal byte-identical to it.
+/// View helpers shared by the children extension's in-pi fleet view
+/// (`shepherd-children-ui.ts` imports them). Installed beside the children extension by
+/// `ChildrenExtension`. Extensions/shepherd-inspect.mjs is canonical; keep this literal
+/// byte-identical to it.
 enum InspectExtension {
-    static func installedPath() throws -> String {
-        let directory = ShepherdPaths.supportDirectory()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent("shepherd-inspect.mjs")
-        let source = Data(extensionSource.utf8)
-        if (try? Data(contentsOf: url)) != source {
-            try source.write(to: url, options: .atomic)
-        }
-        return url.path
-    }
-
     static let extensionSource = #"""
         #!/usr/bin/env node
         // Flat terminal inspector over native or pi-subagents artifacts. Importable view
