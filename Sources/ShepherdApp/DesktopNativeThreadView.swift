@@ -36,7 +36,7 @@ struct DesktopNativeThreadView: View {
     /// thread can neither hide under the card nor scroll into blank space below the last turn.
     @State private var composerHeight: CGFloat = NativeMetrics.composerInset
 
-    /// 32pt gutters (spec §3) once the 760pt column fits; a narrow window drops to 16 so the
+    /// Keep the content close to the edges; narrow windows drop to 16pt gutters so the
     /// column keeps the width instead of the margins.
     private var gutter: CGFloat {
         width >= NativeMetrics.threadMaxWidth + 2 * NativeMetrics.gutter ? NativeMetrics.gutter : NativeMetrics.gutterCompact
@@ -69,7 +69,7 @@ struct DesktopNativeThreadView: View {
                         if turns.isEmpty { emptyState }
                         ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
                             if turn.isUser {
-                                NativeUserTurn(messages: turn.messages).id(turn.id)
+                                NativeUserTurn(messages: turn.messages, caption: turn.messages.first?.timestamp.map { nativeClockText($0) }).id(turn.id)
                             } else {
                                 NativeAgentTurn(messages: turn.messages, running: running, clock: clock, showTerminal: showTerminal,
                                                 subagents: placements[turn.id] ?? NativeSubagentPlacement(), subagentActions: subagentActions,
@@ -84,7 +84,6 @@ struct DesktopNativeThreadView: View {
                         }
                         Color.clear.frame(height: 1).id("native-bottom")
                     }
-                    // Spec §3: the 760pt column is content width; gutters sit outside it.
                     .frame(maxWidth: NativeMetrics.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
@@ -817,7 +816,8 @@ struct NativeTurnFooter: View {
 
     var body: some View {
         let tools = messages.count { $0.toolName != nil || $0.role == "toolResult" }
-        let prose = messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text)
+        let prose = messages.filter { $0.role == "assistant" && $0.toolName == nil }
+            .flatMap(\.blocks).filter { $0.kind == .text }.map(\.text)
         let time = nativeTurnTimeText(startedAt: startedAt, endedAt: messages.compactMap(\.timestamp).max())
         let ordered = subagents.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
         HStack(spacing: 4) {

@@ -141,8 +141,8 @@ still applies when a layout is hidden.
 
 Native content follows the chat spec in `docs/design-spec/` through `NativeTokens`,
 `NativeFonts`, `NativeMetrics`, and `Radius`, not the terminal `Tokens`: a 52pt header
-(breadcrumb · status pill · turn count · Terminal/Native switch · options), a 760pt content
-column with 32pt gutters and 680pt prose, system sans at 15/1.6 for prose and system mono for
+(breadcrumb · status pill · turn count · Terminal/Native switch · options), a content
+column capped at 1200pt with 24pt gutters and prose capped at 1100pt, system sans at 15/1.6 for prose and system mono for
 code and agent-touched text (the spec's IBM Plex Sans and JetBrains Mono are not bundled).
 User turns are trailing bubbles on `bg.bubble` with a 12pt radius and one 4pt corner; there are
 no speaker labels. Tool calls are 36pt rows (14pt status glyph · tool name · command or path

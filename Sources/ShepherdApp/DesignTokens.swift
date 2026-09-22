@@ -210,10 +210,10 @@ enum NativeFonts {
 enum NativeMetrics {
     static let headerHeight: CGFloat = 52
     static let headerPadding: CGFloat = 20
-    static let threadMaxWidth: CGFloat = 760
-    static let proseMaxWidth: CGFloat = 680
+    static let threadMaxWidth: CGFloat = 1200
+    static let proseMaxWidth: CGFloat = 1100
     static let userMaxWidth: CGFloat = 600
-    static let gutter: CGFloat = 32
+    static let gutter: CGFloat = 24
     /// Gutter when the window is too narrow for the full column plus 32pt margins.
     static let gutterCompact: CGFloat = 16
     static let threadTop: CGFloat = 28
@@ -238,15 +238,17 @@ enum NativeMetrics {
     static let subagentCardRowSpacing: CGFloat = 8
     static let subagentCardButton: CGFloat = 28
     static let subagentProgressHeight: CGFloat = 4
-    static let subagentProgressWidth: CGFloat = 240
     static let subagentGlyph: CGFloat = 14
     /// RunsStrip collapsed row and its 8×8 cells.
     static let runsStripHeight: CGFloat = 36
+    static let subagentLedgerRowHeight: CGFloat = 56
+    static let subagentLedgerRoleWidth: CGFloat = 72
+    static let subagentSelectionWidth: CGFloat = 3
     static let runsStripCell: CGFloat = 8
     static let runsStripCellGap: CGFloat = 3
     // Subagent inspector panel.
     static let inspectorMinWidth: CGFloat = 420
-    static let inspectorDefaultFraction: CGFloat = 0.6
+    static let inspectorDefaultFraction: CGFloat = 0.44
     static let inspectorHeaderHeight: CGFloat = 52
     static let inspectorGoalPadding: CGFloat = 12
     /// Sidebar rows keep the pre-spec density (23pt rows, 12pt indent, density-scaled): the

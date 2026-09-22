@@ -37,6 +37,21 @@ export function defaultChildTools(cwd) {
   return settings.getDefaultTools() ?? ["read", "bash", "edit", "write"];
 }
 
+/// Resolve enabled user extensions using Pi's package filters and discovery rules. Keep
+/// --no-extensions on the child and pass these paths explicitly: a different cwd must not
+/// implicitly load project code. Missing packages are skipped, never installed here.
+export async function childUserExtensions(cwd) {
+  const agentDir = getAgentDir();
+  const settings = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
+  const errors = settings.drainErrors();
+  if (errors.length) throw Error(`Cannot read Pi extension settings: ${errors[0].error.message}`);
+  const packages = new DefaultPackageManager({ cwd, agentDir, settingsManager: settings });
+  const resources = await packages.resolve(async () => "skip");
+  return [...new Set(resources.extensions
+    .filter((resource) => resource.enabled && resource.metadata.scope === "user")
+    .map((resource) => fs.realpathSync(resource.path)))];
+}
+
 export function childTargetContext(ctx, cwd) {
   const trusted = cwd === fs.realpathSync(ctx.cwd) ? ctx.isProjectTrusted?.() === true : new ProjectTrustStore(getAgentDir()).get(cwd) === true;
   return { ...ctx, cwd, isProjectTrusted: () => trusted };

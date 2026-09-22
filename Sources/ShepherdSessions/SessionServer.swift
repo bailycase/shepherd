@@ -547,6 +547,8 @@ public final class SessionServer: @unchecked Sendable {
         case .message: .message
         case .cancel: .cancel
         case .resume: .resume
+        case .pause: .pause
+        case .continue: .continue
         }
         reply(.childCommand(id: correlation, runID: runID, action: childAction, text: text, mode: mode), to: client)
         queue.asyncAfter(deadline: .now() + 15) { [weak self] in

@@ -298,17 +298,6 @@ struct NativePresentationTests {
         #expect(nativeTurnTimeText(startedAt: start, endedAt: nil) == nativeClockText(start))
     }
 
-    @Test func sidebarGroupRowReadsDoneTimeOrFailures() {
-        let runs = Self.doneRuns
-        let utc = TimeZone(identifier: "UTC")!
-        let ended = runs.compactMap(\.endedAt).max()!
-        #expect(SubagentGroupRow.trailing(runs) == ("done \(nativeClockText(ended, meridiem: false))", false))
-        #expect(nativeClockText(ended, meridiem: false, timeZone: utc) == "2:46")
-        var failed = runs[0]; failed.state = "failed"
-        #expect(SubagentGroupRow.trailing([failed, runs[1]]) == ("1 failed", true))
-        #expect(SubagentGroupRow.trailing([ChildRun(runID: "x", label: "l", state: "complete")]) == ("done", false))
-    }
-
     @Test func siblingsStepInSpawnOrderWithinTheGroup() {
         let runs = Self.doneRuns
         let spawn = { (id: String) -> NativeThreadMessage in
@@ -347,6 +336,9 @@ struct NativePresentationTests {
         #expect(segments == [.subagents([runA]), .rows([read])])
         #expect(nativeToolSegments([read, a], placement: placements[turns[1].id]!) == [.rows([read]), .subagents([runA])])
         #expect(nativeToolSegments([read], placement: NativeSubagentPlacement()) == [.rows([read])])
+        let wait = tool("shepherd_child_wait", args: nil, output: "internal run report")
+        #expect(nativeToolSegments([a, wait, read], placement: placements[turns[1].id]!) == [.subagents([runA]), .rows([read])])
+        #expect(nativeToolSegments([wait], placement: NativeSubagentPlacement()) == [.rows([wait])])
         // Above the threshold, every spawn row folds into one strip at the first spawn's position.
         var many = NativeSubagentPlacement()
         var rows: [NativeThreadMessage] = []
@@ -839,6 +831,64 @@ struct NativePresentationTests {
             subagents: Array(boardRuns.prefix(3)))
     }
 
+    @Test func inspectorLoadsCompleteTranscriptAndHonorsDetachedReading() async throws {
+        let store = NativeThreadStore()
+        let snapshot = Self.subagentSnapshot(running: false)
+        let older = NativeThreadMessage(entryID: "c:old", role: "user", blocks: [.init(kind: .text, text: "original task")])
+        let newest = NativeThreadMessage(entryID: "c:new", role: "assistant", blocks: [.init(kind: .text, text: "finished")])
+        let request: NativeThreadStore.Request = { request in
+            if case .subagentTranscript(_, let id, let cursor) = request {
+                return .transcript(value: NativeSubagentTranscript(runID: id, messages: cursor == nil ? [newest] : [older],
+                                                                  olderCursor: cursor == nil ? "c:new" : nil, earlierCount: cursor == nil ? 1 : 0))
+            }
+            return .snapshot(value: snapshot)
+        }
+        let polling = Task { await store.run(request: request) }
+        defer { polling.cancel(); store.stop() }
+        try await waitFor { store.ready }
+        let model = NativeSubagentTranscriptModel()
+        let following = Task { await model.follow(store: store, runID: "native-tests") { false } }
+        defer { following.cancel() }
+        try await waitFor { model.loaded }
+        model.setFollowing(false)
+        await model.reload(store: store, runID: "native-tests")
+        #expect(!model.following)
+        await model.loadAll(store: store, runID: "native-tests")
+        #expect(model.messages.map(\.entryID) == ["c:old", "c:new"])
+        #expect(model.earlierCount == 0 && !model.loadingOlder)
+    }
+
+    @Test func subagentAllStatesRenderTheBoard() async throws {
+        guard ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_DIR"] != nil else { return }
+        let clock = NativeThreadClock()
+        clock.now = Self.boardNow
+        let actions = NativeSubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true)
+        let runs = Self.boardRuns
+        let many = (0..<12).map { index -> ChildRun in
+            var run = runs[index < 7 ? 2 : index < 10 ? 0 : index == 10 ? 1 : 3]
+            run.runID = "strip-\(index)"
+            run.startedAt = Double(index)
+            return run
+        }
+        let content = VStack(alignment: .leading, spacing: 22) {
+            ForEach(runs, id: \.id) { run in
+                NativeSubagentCard(run: run, clock: clock, actions: actions)
+            }
+            Text("MANY PARALLEL RUNS").font(NativeFonts.section).foregroundStyle(NativeTokens.textMuted)
+            NativeRunsStrip(runs: many, clock: clock, actions: actions, expanded: .constant(false))
+        }
+        .padding(32).frame(width: 760, alignment: .topLeading).background(NativeTokens.bgSurface)
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 820), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await Task.sleep(for: .milliseconds(300))
+        window.layoutIfNeeded()
+        try capture(host, name: "subagents-all-states")
+    }
+
     /// Screenshot-only: the three cards on the board, with real timings (the clock runs from
     /// startedAt), rendered as the workspace composes them. Compare with
     /// docs/design-spec/subagents-with-inspector.png.
@@ -1060,7 +1110,7 @@ struct NativePresentationTests {
         try await waitFor { vm.state.agents.count == rows.count }
         vm.selectedSpaceID = space.id
         vm.selectedAgentID = agents[4].id
-        // The board's nested children under the selected agent: worker 37m, reviewer needs you, tests done.
+        // Loaded children must not add rows to the sidebar; they live in the thread cards.
         vm.applyAgentChildren(agents[4].id, Self.boardRuns.prefix(3).map { run in
             var run = run
             let shift = Date().timeIntervalSince1970 * 1000 - Self.boardNow.timeIntervalSince1970 * 1000
@@ -1068,10 +1118,7 @@ struct NativePresentationTests {
             run.endedAt = run.endedAt.map { $0 + shift }
             return run
         })
-        // A finished group under another agent folds to "↳ 3 SUBAGENTS · done 11:09"; unfolded here
-        // so the shot shows the child rows with their durations (board: completed sidebar).
         vm.applyAgentChildren(agents[6].id, Self.doneRuns)
-        vm.unfoldedSubagentGroups.insert(agents[6].id)
         // An unreachable second machine makes the tree show its THIS MAC / host structure.
         vm.remoteHosts.addHost(name: "Horizon", host: "127.0.0.1", port: 1, token: "x")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 256, height: 640),

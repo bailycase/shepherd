@@ -1332,6 +1332,31 @@ struct ShepherdViewModelTests {
         #expect(overridden.resetToDefault().id == "basalt-dark")
     }
 
+    @Test func finishedRPCChildOpensInTheParentsSidePanelWithoutAnInspectorTab() async throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let space = Space(name: "s", path: fixture.dir.path)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: fixture.dir.path)))
+        let parent = Agent(name: "parent", spaceID: space.id, tabID: tab.id,
+                           paneID: tab.layout.firstLeaf.id, runtime: .rpc)
+        try await fixture.server.putState(.init(spaces: [space], tabs: [tab], agents: [parent]))
+        let vm = ShepherdViewModel(server: fixture.server)
+        #expect(await waitUntil { vm.state.agents.count == 1 })
+        let completed = ChildRun(runID: "finished-worker", label: "worker", state: "complete",
+                                 sessionFile: fixture.dir.appendingPathComponent("child.jsonl").path)
+        vm.openChildInspector(agentID: parent.id, child: completed)
+        #expect(vm.selectedAgentID == parent.id)
+        #expect(vm.subagentInspector.runByAgent[parent.id] == completed.runID)
+        #expect(vm.state.tabs.count == 1 && vm.state.tabs.allSatisfy { $0.inspectorFor == nil })
+        // Opening another finished child retargets the panel; it does not create a workspace.
+        var sibling = completed; sibling.runID = "finished-reviewer"
+        vm.openChildInspector(agentID: parent.id, child: sibling)
+        #expect(vm.subagentInspector.runByAgent[parent.id] == sibling.runID)
+        vm.toggleSubagentInspector(agentID: parent.id, runID: sibling.runID)
+        #expect(vm.subagentInspector.runByAgent[parent.id] == nil)
+        #expect(vm.state.tabs.count == 1)
+    }
+
     /// "Fork as new agent": the child's transcript lands under a fresh pi session id in the
     /// cwd's session directory and a provisional "<role> (fork)" RPC agent starts on it; a
     /// missing transcript creates nothing.

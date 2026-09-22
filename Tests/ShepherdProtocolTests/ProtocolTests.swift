@@ -209,6 +209,8 @@ struct ProtocolTests {
             .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
             .childCommand(id: 2, runID: "native-1", action: .cancel, text: nil, mode: nil),
             .childCommand(id: 3, runID: "native-1", action: .resume, text: nil, mode: nil),
+            .childCommand(id: 4, runID: "native-1", action: .pause, text: nil, mode: nil),
+            .childCommand(id: 5, runID: "native-1", action: .continue, text: nil, mode: nil),
         ]
         for reply in replies {
             let line = try NDJSON.encode(reply)

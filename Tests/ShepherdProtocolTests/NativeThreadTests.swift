@@ -105,7 +105,7 @@ struct NativeThreadTests {
         v2.subagents = [
             NativeSubagent(runID: "native-1", label: "worker: restyle", state: "running", startedAt: 1, needsAttention: false,
                            role: "worker", model: "p/m", context: "async", step: ChildStep(index: 1, total: 3), turns: 2, toolCalls: 3, tokens: 4,
-                           lastActivity: ChildActivity(tool: "bash", preview: "swift build", at: 5), toolCallID: "call_1", task: "Restyle", sessionFile: "/tmp/s.jsonl"),
+                           lastActivity: ChildActivity(tool: "bash", preview: "swift build", at: 5), toolCallID: "call_1", task: "Restyle", sessionFile: "/tmp/s.jsonl", paused: true),
             NativeSubagent(runID: "native-2", label: "reviewer: check", state: "running", needsAttention: true, attentionText: "Which?",
                            question: ChildQuestion(text: "Which?", options: ["A", "B"])),
             NativeSubagent(runID: "native-3", label: "tests: run", state: "complete", result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118000), output: "All pass."),
@@ -116,6 +116,8 @@ struct NativeThreadTests {
             NativeThreadRequest.subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .message, text: "A", mode: .steer),
             .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .cancel),
             .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .resume),
+            .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .pause),
+            .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .continue),
             .subagentTranscript(expectedSessionID: "s", runID: "native-1"),
             .subagentTranscript(expectedSessionID: "s", runID: "native-1", beforeEntryID: "c:9"),
         ] {
