@@ -55,10 +55,11 @@ public struct ShepherdSwitchStyle: ToggleStyle {
         let configuration: ToggleStyleConfiguration
         @Environment(\.isEnabled) private var enabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @Environment(\.labelsVisibility) private var labelsVisibility
 
         var body: some View {
             HStack(spacing: 8) {
-                configuration.label
+                if labelsVisibility != .hidden { configuration.label }
                 Button { configuration.isOn.toggle() } label: {
                     Capsule()
                         .fill(configuration.isOn ? Tokens.accent : Tokens.bgTrack)
@@ -221,4 +222,89 @@ public struct SearchField: View {
             }
         }
     }
+}
+
+/// A slider with its value in mono beside it ("105%", "239 pt"). Double-clicking the value
+/// restores `neutral` when one is given.
+public struct ValueSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let format: (Double) -> String
+    var neutral: Double?
+
+    public init(value: Binding<Double>, in range: ClosedRange<Double>, step: Double,
+                neutral: Double? = nil, format: @escaping (Double) -> String) {
+        _value = value
+        self.range = range
+        self.step = step
+        self.neutral = neutral
+        self.format = format
+    }
+
+    public var body: some View {
+        HStack(spacing: 12) {
+            // Stepped by rounding, not `step:` — AppKit draws a tick per step otherwise.
+            Slider(value: Binding(get: { value }, set: { value = (($0 / step).rounded() * step).clamped(to: range) }), in: range)
+                .tint(Tokens.accent)
+                .frame(width: 180)
+                .labelsHidden()
+            Text(format(value))
+                .font(Fonts.micro)
+                .foregroundStyle(Tokens.textSecondary)
+                .frame(minWidth: 44, alignment: .trailing)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { if let neutral { value = neutral } }
+                .help(neutral == nil ? "" : "Double-click to reset")
+        }
+    }
+}
+
+/// "− 4 +": a bordered stepper for small integer settings.
+public struct ShepherdStepper: View {
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+
+    public init(value: Binding<Int>, in range: ClosedRange<Int>) {
+        _value = value
+        self.range = range
+    }
+
+    public var body: some View {
+        HStack(spacing: 0) {
+            button("minus", enabled: value > range.lowerBound) { value -= 1 }
+            Tokens.borderStrong.frame(width: 1)
+            Text("\(value)").font(Fonts.micro).foregroundStyle(Tokens.text).frame(width: 34)
+            Tokens.borderStrong.frame(width: 1)
+            button("plus", enabled: value < range.upperBound) { value += 1 }
+        }
+        .frame(height: Metrics.fieldHeight)
+        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.button))
+        .overlay(RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1))
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue("\(value)")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: if value < range.upperBound { value += 1 }
+            case .decrement: if value > range.lowerBound { value -= 1 }
+            @unknown default: break
+            }
+        }
+    }
+
+    private func button(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(enabled ? Tokens.text : Tokens.textDisabled)
+                .frame(width: 30, height: Metrics.fieldHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+}
+
+private extension Double {
+    func clamped(to range: ClosedRange<Double>) -> Double { min(max(self, range.lowerBound), range.upperBound) }
 }
