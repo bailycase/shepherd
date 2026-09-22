@@ -101,6 +101,12 @@ function fixtureServer() {
     if (last.role === "user" && text.includes("SHELL:")) {
       const command = text.slice(text.indexOf("SHELL:") + 6);
       say({ tool_calls: [{ index: 0, id: "shell-call", type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] }, "tool_calls");
+    } else if (last.role === "user" && text.includes("WRITE_THEN_EDIT:")) {
+      const file = text.slice(text.indexOf("WRITE_THEN_EDIT:") + 16);
+      say({ tool_calls: [
+        { index: 0, id: "write-call", type: "function", function: { name: "write", arguments: JSON.stringify({ path: file, content: "one\ntwo\n" }) } },
+        { index: 1, id: "edit-call", type: "function", function: { name: "edit", arguments: JSON.stringify({ path: file, oldText: "two", newText: "two\nthree\nfour" }) } },
+      ] }, "tool_calls");
     } else if (last.role === "user" && text.includes("ASK_PARENT")) {
       say({ tool_calls: [{ index: 0, id: "parent-call", type: "function", function: { name: "shepherd_parent_message", arguments: JSON.stringify({ message: "Need a decision", needsReply: true, options: ["Replace everywhere", "Rename new ones"] }) } }] }, "tool_calls");
     } else {
@@ -143,6 +149,12 @@ test("card helpers: tool preview follows the desktop rule and edit diffs cancel 
   assert.deepEqual(mod.editDiff({ edits: [{ oldText: "a", newText: "a\nb\nc" }, { oldText: "x\ny", newText: "" }] }), { added: 2, removed: 2 });
   assert.deepEqual(mod.editDiff({ oldText: "one\ntwo\nthree", newText: "one\n2\nthree\nfour" }), { added: 2, removed: 1 });
   assert.equal(mod.editDiff({ command: "ls" }), undefined);
+  // Ledger/RESULT summary: first two sentences, whitespace flattened, 240-char cap with an ellipsis.
+  assert.equal(mod.summarize("Restyled the thread.\nAll 14 pass on macOS. Third sentence."), "Restyled the thread. All 14 pass on macOS.");
+  assert.equal(mod.summarize("no punctuation"), "no punctuation");
+  assert.equal(mod.summarize(""), undefined);
+  const long = mod.summarize("x".repeat(300) + ". y.");
+  assert.equal(long.length, 240); assert(long.endsWith("…"));
 });
 
 test("merged sidebar projection prioritizes active native and legacy runs before terminal attention and history", async () => {
@@ -252,6 +264,9 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.deepEqual(doneCard.result, { files: 0, added: 0, removed: 0, tools: 0, tokens: 2 });
     assert.match(doneCard.output, /reply:/); assert.equal(doneCard.task, "SLOW one"); assert.equal(doneCard.sessionFile, pair[0].sessionFile);
     assert.equal(doneCard.question, undefined); assert.equal(doneCard.exitReason, undefined);
+    // Completed-run fields: summary from the output, the child's own session id, cwd; no files when none were touched.
+    assert.equal(doneCard.summary, mod.summarize(doneCard.output)); assert.equal(doneCard.cwd, fs.realpathSync(dir)); assert.equal(doneCard.files, undefined);
+    assert.equal(doneCard.sessionID, JSON.parse(fs.readFileSync(pair[0].sessionFile, "utf8").split("\n")[0]).id);
     assert(requests.every((r) => !r.tools?.some((t) => ["bash", "write", "edit", "shepherd_child_start"].includes(t.function.name))));
     assert.equal(h.messages.length, 2); assert(h.messages.every((m) => m.options.triggerTurn && m.options.deliverAs === "followUp"));
     const firstFile = pair[0].sessionFile;
@@ -265,7 +280,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const partial = (await h.call("wait", { ids: [limited.id], timeoutSeconds: 30 }))[0];
     assert.equal(partial.state, "failed"); assert.equal(partial.stopReason, "length"); assert.match(partial.error, /Incomplete/);
     const failedCard = h.projections.at(-1).children.find((c) => c.runID === limited.id);
-    assert.match(failedCard.exitReason, /^Incomplete answer/); assert.equal(failedCard.result, undefined);
+    assert.match(failedCard.exitReason, /^Incomplete answer/); assert.equal(failedCard.result, undefined); assert.equal(failedCard.summary, undefined);
     const ask = await h.call("start", { task: "ASK_PARENT", role: "scout" });
     const asked = (await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 }))[0];
     assert(asked.needsReply); assert(h.messages.some((m) => m.message.content.includes("Needs reply")));
@@ -317,6 +332,13 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "lease.json"), JSON.stringify({ message: "lease must reject" }));
     await until(() => askStatus().controlRequestID === "lease" && askStatus().controlNotice === "control failed: Child session already has a live writer");
     fs.rmSync(leaseDir,{recursive:true});
+    // Files touched by edit/write aggregate per path (write counts no lines, the edit adds two).
+    const editor = await h.call("start", { task: `WRITE_THEN_EDIT:${path.join(dir, "touched.txt")}`, role: "worker" });
+    assert.equal((await h.call("wait", { ids: [editor.id], timeoutSeconds: 30 }))[0].state, "complete");
+    const editorCard = h.projections.at(-1).children.find((c) => c.runID === editor.id);
+    assert.deepEqual(editorCard.files, [{ path: path.join(dir, "touched.txt"), added: 2, removed: 0 }]);
+    assert.deepEqual(editorCard.result, { files: 1, added: 2, removed: 0, tools: 2, tokens: 4 });
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(path.dirname(editor.sessionFile), "status.json"))).files, editorCard.files);
     const shell = await h.call("start", { task: `SHELL:printf '%s' "$SHEPHERD_AGENT_ID:$SHEPHERD_SOCKET:$SHEPHERD_CHILD" > '${dir}/env'; sleep 20`, role: "worker" });
     await until(() => fs.existsSync(path.join(dir, "env"))); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
     const shellCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);

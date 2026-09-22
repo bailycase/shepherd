@@ -69,6 +69,14 @@ enum ChildrenExtension {
           }
           return edits.length ? { added, removed } : undefined;
         }
+        // First two sentences of a child's final output, ≤ 240 chars, for the ledger row and RESULT block.
+        export function summarize(text, limit = 240) {
+          const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+          if (!flat) return undefined;
+          const sentences = flat.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) ?? [flat];
+          const out = sentences.slice(0, 2).map((s) => s.trim()).join(" ");
+          return out.length > limit ? out.slice(0, limit - 1).trimEnd() + "…" : out;
+        }
         const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== "ESRCH"; } };
         const signalPID = (pid, signal) => { try { process.kill(pid, signal); } catch (e) { if (e.code !== "ESRCH") throw e; } };
 
@@ -198,9 +206,21 @@ enum ChildrenExtension {
             supported = version[0] > 0 || version[1] > 85 || (version[1] === 85 && version[2] >= 1);
           } catch { /* Unknown distributions must establish the supported Pi version. */ }
           const current = (run) => active && run.owner === owner;
+          // Per-path edit/write totals in first-touched order, capped at 32 entries.
+          const fileChanges = (run) => [...(run.files ?? new Map())].slice(0, 32).map(([path, diff]) => ({ path, ...diff }));
+          // The child's pi session id from its JSONL header (first line only; cached once read).
+          const sessionID = (run) => {
+            if (run.sessionID) return run.sessionID;
+            let fd; try {
+              fd = fs.openSync(run.sessionFile, "r"); const head = Buffer.alloc(4096); const n = fs.readSync(fd, head, 0, 4096, 0);
+              const line = head.subarray(0, n).toString("utf8").split("\n")[0];
+              if (line) run.sessionID = JSON.parse(line).id;
+            } catch { /* No header yet; the card publishes without it. */ } finally { if (fd !== undefined) fs.closeSync(fd); }
+            return run.sessionID;
+          };
           const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
             workflowId: run.workflowId, settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
-            turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: [...(run.files ?? [])], added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
+            turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
           // Card projection for the native thread (docs/design-spec/subagent-card-states.png). Every field
           // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
           function card(run) {
@@ -216,7 +236,10 @@ enum ChildrenExtension {
               result: run.state === "complete" ? { files: run.files?.size ?? 0, added: run.added ?? 0, removed: run.removed ?? 0, tools: run.toolCalls ?? 0, tokens: run.tokens ?? 0 } : undefined,
               exitReason: run.state === "failed" ? [run.exitCode ? `exit ${run.exitCode}` : undefined, clip(run.error, 200)].filter(Boolean).join(" · ") : undefined,
               toolCallID: run.toolCallID, task: clip(run.task, 600), output: run.state === "complete" ? clip(run.output, 600) : undefined,
-              sessionFile: run.sessionFile,
+              sessionFile: run.sessionFile, cwd: run.cwd,
+              files: run.files?.size ? fileChanges(run) : undefined,
+              summary: run.state === "complete" ? summarize(run.output) : undefined,
+              sessionID: ["complete", "failed", "stopped"].includes(run.state) ? sessionID(run) : undefined,
             };
           }
           function publish() {
@@ -322,7 +345,10 @@ enum ChildrenExtension {
               const text = (event.result?.content ?? []).filter((p) => p.type === "text").map((p) => p.text).join("\n");
               const diff = event.toolName === "edit" && !event.isError ? editDiff(args) : undefined;
               if (diff) { run.added = (run.added ?? 0) + diff.added; run.removed = (run.removed ?? 0) + diff.removed; }
-              if (["edit", "write"].includes(event.toolName) && !event.isError && typeof args?.path === "string") run.files.add(args.path);
+              if (["edit", "write"].includes(event.toolName) && !event.isError && typeof args?.path === "string" && (run.files.has(args.path) || run.files.size < 32)) {
+                const entry = run.files.get(args.path) ?? { added: 0, removed: 0 };
+                run.files.set(args.path, { added: entry.added + (diff?.added ?? 0), removed: entry.removed + (diff?.removed ?? 0) });
+              }
               run.lastActivity = { kind: "tool", tool: clip(event.toolName, 80), preview: toolPreview(args, text), diff, at: Date.now() };
               if (event.toolName === "shepherd_parent_message") {
                 const details = event.result?.details;
@@ -377,7 +403,7 @@ enum ChildrenExtension {
             run.pending = new Map(); run.exited = false; run.cancelled = false; run.settled = false;
             run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
             run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
-            run.toolArgs = new Map(); run.files ??= new Set();
+            run.toolArgs = new Map(); run.files ??= new Map();
             run.closed = new Promise((resolve) => { run.resolveClosed = resolve; });
             const env = { ...process.env };
             for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
@@ -532,7 +558,7 @@ enum ChildrenExtension {
                 runs.set(data.id, { ...data, dir, sessionFile: path.join(dir, "session.jsonl"), output: clip(status.output), error: status.error,
                   needsReply: status.needsReply === true, lastStop: status.stopReason,
                   turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
-                  files: new Set(Array.isArray(status.files) ? status.files : []), lastActivity: status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, exitCode: status.exitCode,
+                  files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, exitCode: status.exitCode,
                   tools: Array.isArray(status.tools) ? data.tools.filter((name) => status.tools.includes(name)) : data.tools,
                   missionId: status.missionId ?? data.missionId,
                   state: ["complete", "failed", "stopped"].includes(status.state) ? status.state : "stopped", startedAt: status.startedAt ?? data.startedAt, endedAt: status.endedAt, latestTool: status.latestTool });
@@ -612,7 +638,7 @@ enum ChildrenExtension {
                 requiresProjectTrust: profile.requiresProjectTrust || (targetContext.isProjectTrusted() && (profile.inheritSkills || profile.skills?.length)), profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
                 extensions: profile.extensions ?? [], skills: childSkills(profile, targetContext), workflowId, ...missionFor(params, params.task),
                 tools: requestedTools.filter((name) => pi.getActiveTools().includes(name)), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
-                toolCallID: typeof toolCallID === "string" ? toolCallID : undefined, stepIndex, turns: 0, toolCalls: 0, tokens: 0, added: 0, removed: 0, files: new Set() };
+                toolCallID: typeof toolCallID === "string" ? toolCallID : undefined, stepIndex, turns: 0, toolCalls: 0, tokens: 0, added: 0, removed: 0, files: new Map() };
               runs.set(id, run);
               try {
                 if (run.context === "fork") Object.assign(run, forkSession(ctx.sessionManager, cwd, run.sessionFile));

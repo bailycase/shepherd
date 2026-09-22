@@ -431,6 +431,14 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
     public var output: String?
     /// The child's pi session JSONL, for the inspector transcript.
     public var sessionFile: String?
+    /// Files the child edited or wrote, with line counts aggregated per path (≤ 32 entries).
+    public var files: [ChildFileChange]?
+    /// First two sentences of the final output, ≤ 240 characters.
+    public var summary: String?
+    /// The child's own pi session id (a fork copies its transcript under a fresh id).
+    public var sessionID: String?
+    /// The directory the child ran in; file links resolve against it.
+    public var cwd: String?
 
     public var id: String { childIndex.map { "\(runID)#\($0)" } ?? runID }
 
@@ -467,7 +475,11 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         toolCallID: String? = nil,
         task: String? = nil,
         output: String? = nil,
-        sessionFile: String? = nil
+        sessionFile: String? = nil,
+        files: [ChildFileChange]? = nil,
+        summary: String? = nil,
+        sessionID: String? = nil,
+        cwd: String? = nil
     ) {
         self.runID = runID
         self.childIndex = childIndex
@@ -496,7 +508,19 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         self.task = task
         self.output = output
         self.sessionFile = sessionFile
+        self.files = files
+        self.summary = summary
+        self.sessionID = sessionID
+        self.cwd = cwd
     }
+}
+
+/// One path a child touched: edit/write calls aggregated (inspector RESULT block).
+public struct ChildFileChange: Codable, Hashable, Sendable {
+    public var path: String
+    public var added: Int
+    public var removed: Int
+    public init(path: String, added: Int, removed: Int) { self.path = path; self.added = added; self.removed = removed }
 }
 
 public struct ChildStep: Codable, Hashable, Sendable {
