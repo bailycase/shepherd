@@ -181,7 +181,7 @@ struct DiffReviewTests {
         """)
     }
 
-    @Test func agentReviewStaysInBackgroundAndSubmitsThenCloses() async throws {
+    @Test func agentReviewDocksWithoutTouchingTheLayoutAndKeepsCommentsWhenSendFails() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
         let repo = fixture.dir.appendingPathComponent("repo", isDirectory: true)
@@ -234,14 +234,12 @@ struct DiffReviewTests {
         #expect(await waitUntil { vm.reviewSessions.count == 1 })
         let session = try #require(vm.reviewSessions.values.first)
 
-        // A second agent request must not split another pane — it reloads
-        // the open one.
+        // A second agent request reloads the open review instead of opening another.
         var secondOutcome: ReviewOutcome?
         fixture.server.onReviewRequest?(.start(agentID: backgroundID, cwd: repo.path, reference: nil)) {
             secondOutcome = $0
         }
         #expect(vm.reviewSessions.count == 1)
-        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.count == 2)
         if case .submitted = try #require(secondOutcome) {} else {
             Issue.record("expected the duplicate request to be acknowledged, got \(String(describing: secondOutcome))")
         }
@@ -253,8 +251,8 @@ struct DiffReviewTests {
         }
         #expect(vm.selectedAgentID == visibleID)
         #expect(vm.focusedPaneID == visiblePane.id)
-        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.count == 2)
-        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaf(withID: session.paneID)?.isReview == true)
+        // The review docks in the right pane: the persisted layout never changes.
+        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.map(\.id) == [backgroundPane.id])
 
         // The pane opens instantly; the diff fills in asynchronously.
         #expect(await waitUntil { !session.isLoading })
@@ -271,8 +269,91 @@ struct DiffReviewTests {
         )]
         vm.submitReview(session)
 
-        #expect(vm.reviewSessions.isEmpty)
-        #expect(vm.state.tabs.first(where: { $0.id == backgroundTab.id })?.layout.leaves.map(\.id) == [backgroundPane.id])
+        // No pi is running for this agent, so the send fails: the review and its comments stay.
+        #expect(await waitUntil { vm.remoteActionError != nil && !session.isSubmitting })
+        #expect(vm.reviewSessions.count == 1)
+        #expect(session.comments.count == 1)
+    }
+
+    @Test func openReviewReplacesTheInspectorAndFocusesTheFile() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let vm = ShepherdViewModel(server: fixture.server)
+        let agentID = AgentID()
+        let session = ReviewSession(agentID: agentID, paneID: PaneID(), cwd: "/tmp", reference: nil)
+        vm.reviewSessions[session.paneID] = session
+        vm.subagentInspector.runByAgent[agentID] = "run-1"
+        let before = session.focusRequest
+
+        vm.openReview(agentID: agentID, path: "/repo/Sources/App.swift")
+
+        #expect(vm.subagentInspector.runByAgent[agentID] == nil)
+        #expect(vm.reviewSessions.count == 1)
+        #expect(session.focusFile == "/repo/Sources/App.swift")
+        #expect(session.focusRequest != before)
+    }
+
+    @Test func reviewFileMatchesAbsoluteAndRelativeToolPaths() {
+        let files = [file("Sources/App.swift"), file("README.md")]
+        #expect(reviewFile(matching: "Sources/App.swift", in: files)?.id == "Sources/App.swift")
+        #expect(reviewFile(matching: "/Users/me/repo/Sources/App.swift", in: files)?.id == "Sources/App.swift")
+        #expect(reviewFile(matching: "App.swift", in: files)?.id == "Sources/App.swift")
+        #expect(reviewFile(matching: "pp.swift", in: files) == nil)
+        #expect(reviewFile(matching: "Other.swift", in: files) == nil)
+    }
+
+    @Test func longRunsFoldIntoOneStripAndExpandOnRequest() throws {
+        let removed = (1...13).map { DiffLine(kind: .removed, text: "old \($0)", oldLine: 19 + $0, newLine: nil, id: $0) }
+        let added = (1...3).map { DiffLine(kind: .added, text: "new \($0)", oldLine: nil, newLine: $0, id: 100 + $0) }
+        let hunk = DiffHunk(header: "@@ -20,13 +1,3 @@", lines: removed + added)
+        let diff = DiffFile(oldPath: "a.swift", newPath: "a.swift", displayPath: "a.swift", isNew: false, isDeleted: false, isRenamed: false, isBinary: false, hunks: [hunk])
+
+        let rows = reviewRows(diff, expandedRuns: [])
+        let folds = rows.compactMap { row -> (String, Int, String)? in
+            if case .collapsed(let key, let count, _, let range) = row.kind { return (key, count, range) }
+            return nil
+        }
+        // 13 removed lines: five shown, seven folded, one shown; the three added stay whole.
+        #expect(folds.count == 1)
+        #expect(folds.first?.1 == 7)
+        #expect(folds.first?.2 == "25–31")
+        #expect(rows.count == 1 + 5 + 1 + 1 + 3)
+
+        let key = try #require(folds.first?.0)
+        #expect(reviewRows(diff, expandedRuns: [key]).count == 1 + 16)
+        #expect(reviewRows(diff, expandedRuns: nil).count == 1 + 16)
+        #expect(Set(reviewRows(diff, expandedRuns: []).map(\.id)).count == rows.count)
+    }
+
+    @Test func revertRestoresTrackedFilesAndTrashesNewOnesFromASubdirectory() throws {
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let repo = fixture.dir.appendingPathComponent("repo", isDirectory: true)
+        let sub = repo.appendingPathComponent("sub", isDirectory: true)
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        try runGit(["init", "-q"], in: repo)
+        try runGit(["config", "user.name", "Shepherd Tests"], in: repo)
+        try runGit(["config", "user.email", "tests@example.com"], in: repo)
+        let tracked = sub.appendingPathComponent("tracked.txt")
+        try "before\n".write(to: tracked, atomically: true, encoding: .utf8)
+        try runGit(["add", "."], in: repo)
+        try runGit(["commit", "-q", "-m", "initial"], in: repo)
+        try "after\n".write(to: tracked, atomically: true, encoding: .utf8)
+        let fresh = sub.appendingPathComponent("fresh.txt")
+        try "new\n".write(to: fresh, atomically: true, encoding: .utf8)
+
+        // Loaded from the subdirectory, every path is still repository-relative.
+        let files = try GitDiff.load(cwd: sub.path, reference: nil)
+        #expect(Set(files.map(\.displayPath)) == ["sub/tracked.txt", "sub/fresh.txt"])
+
+        for file in files { try GitDiff.revert(file, cwd: sub.path) }
+        #expect(try String(contentsOf: tracked, encoding: .utf8) == "before\n")
+        #expect(!FileManager.default.fileExists(atPath: fresh.path))
+        #expect(try GitDiff.load(cwd: sub.path, reference: nil).isEmpty)
+    }
+
+    private func file(_ path: String) -> DiffFile {
+        DiffFile(oldPath: path, newPath: path, displayPath: path, isNew: false, isDeleted: false, isRenamed: false, isBinary: false, hunks: [])
     }
 
     @Test func cancellingReviewDiscardsTheSession() throws {

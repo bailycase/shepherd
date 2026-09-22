@@ -183,6 +183,21 @@ public extension NativeToolRow {
     }
 }
 
+/// Files the agent's current turn has edited or written (as the tool calls named them), for
+/// the review pane's "being edited" dots. Empty when the agent is not running.
+public func nativeTouchedPaths(_ messages: [NativeThreadMessage], running: Bool) -> Set<String> {
+    guard running else { return [] }
+    let turn = messages.lastIndex { $0.role == "user" }.map { messages.index(after: $0) } ?? messages.startIndex
+    var paths: Set<String> = []
+    for message in messages[turn...] where message.toolName == "edit" || message.toolName == "write" {
+        guard let data = message.argumentsText?.data(using: .utf8),
+              let args = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let path = args["path"] as? String, !path.isEmpty else { continue }
+        paths.insert(path)
+    }
+    return paths
+}
+
 /// "+58 −41" with a true minus sign: the one spelling of a DiffStat as text.
 public func nativeDiffText(added: Int, removed: Int) -> String {
     "+\(added) \u{2212}\(removed)"

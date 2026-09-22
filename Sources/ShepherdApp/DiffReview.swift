@@ -11,6 +11,7 @@ struct ReviewComment: Identifiable, Hashable {
     let marker: String
     let content: String
     var text: String
+    var createdAt = Date()
 
     var id: String { "\(fileID):\(lineID)" }
     var path: String { filePath }
@@ -60,6 +61,11 @@ final class ReviewSession: Identifiable {
         didSet { rebuildCommentIndex() }
     }
     var summary: String
+    /// Files the reviewer marked viewed: collapsed, their chips dimmed.
+    var viewed: Set<String> = []
+    /// The file the strip selected or a "review ›" link asked for; the pane scrolls to it.
+    var focusFile: String?
+    var focusRequest = UUID()
 
     /// Comment lookups so row and header rendering are O(1) instead of a
     /// linear scan per visible row.

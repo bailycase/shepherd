@@ -293,19 +293,15 @@ struct PaneLeafView: View {
 
         Group {
             if pane.isReview == true {
-                if let session = vm.reviewSessions[pane.id] {
-                    DiffReviewPane(session: session, isFocused: focused)
-                        .environment(vm)
-                } else {
-                    PanePlaceholder(text: "review unavailable")
-                }
+                PanePlaceholder(text: "review unavailable")
             } else if let agent {
                 // The thread is the agent's pane; the session binding still goes through the
-                // store so a pi exit closes the pane. A subagent under inspection splits the
-                // pane: thread left, inspector right.
+                // store so a pi exit closes the pane. The right pane docks beside it: an
+                // inspected subagent, else the agent's review.
                 let store = vm.threadStores.store(for: agent.id)
                 let inspecting = vm.subagentInspector.runByAgent[agent.id]
-                RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil) {
+                let review = vm.reviewSessions.values.first { $0.agentID == agent.id }
+                RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
                     AgentThreadPane(
                         session: vm.sessions.session(for: pane, in: tab),
                         store: store,
@@ -317,7 +313,7 @@ struct PaneLeafView: View {
                         workingDirectory: pane.cwd,
                         inspectSubagent: { vm.toggleSubagentInspector(agentID: agent.id, runID: $0.runID) },
                         inspectedRunID: inspecting,
-                        review: { _ in vm.selectAgent(agent.id); vm.openUserReview() }
+                        review: { path in vm.selectAgent(agent.id); vm.openReview(agentID: agent.id, path: path) }
                     )
                 } pane: {
                     if let inspecting {
@@ -327,6 +323,8 @@ struct PaneLeafView: View {
                             do { try await vm.forkSubagent(agentID: agent.id, run: run); return nil } catch { return String(describing: error) }
                         })
                         .id(inspecting)
+                    } else if let review {
+                        ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
                     }
                 }
             } else {
@@ -431,7 +429,6 @@ private struct RemoteAgentPaneContent: View {
                        let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
                        return $0.id == (vm.remoteInspectingAgent == ref ? vm.remoteInspectorTabs[ref] ?? agent.tabID : agent.tabID)
                    }) {
-                    HStack(spacing: 1) {
                     RemotePaneTreeView(
                         vm: vm,
                         connection: connection,
@@ -440,12 +437,6 @@ private struct RemoteAgentPaneContent: View {
                         node: tab.layout
                     )
                     .id(tab.id)
-                    if vm.remoteInspectingAgent != RemoteAgentRef(hostID: connection.id, agentID: agentID),
-                       let review = vm.remoteReviews[RemoteAgentRef(hostID: connection.id, agentID: agentID)], !review.hostReviewPane {
-                        DiffReviewPane(session: review, isFocused: vm.remoteFocusedPaneID == review.paneID)
-                            .simultaneousGesture(TapGesture().onEnded { vm.remoteFocusedPaneID = review.paneID })
-                    }
-                    }
                 } else {
                     PanePlaceholder(text: "agent has no layout on \(connection.config.name)")
                 }
@@ -490,7 +481,7 @@ private struct RemotePaneLeafView: View {
                 RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name, isFocused: vm.remoteFocusedPaneID == leaf.id)
             } else if leaf.isReview == true, let target = vm.selectedRemoteAgent {
                 if let review = vm.remoteReviews[target], review.paneID == leaf.id {
-                    DiffReviewPane(session: review, isFocused: vm.remoteFocusedPaneID == leaf.id)
+                    ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true))
                 } else {
                     PanePlaceholder(text: "loading host review…")
                         .task { vm.openRemoteHostReview(target, pane: leaf) }
@@ -580,7 +571,9 @@ private struct RemoteAgentThreadPane: View {
     var body: some View {
         let store = vm.remoteThreadStores.store(for: ref)
         let inspecting = vm.subagentInspector.remoteRuns[ref]
-        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil) {
+        // A review a host layout still carries as a leaf (older hosts) renders there instead.
+        let review = vm.remoteReviews[ref].flatMap { $0.hostReviewPane ? nil : $0 }
+        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
             ThreadView(
                 store: store,
                 active: true,
@@ -596,6 +589,7 @@ private struct RemoteAgentThreadPane: View {
                     }
                 },
                 inspectedRunID: inspecting,
+                review: { path in vm.openRemoteReview(ref, path: path) },
                 listModels: {
                     let ids = (try? await vm.remoteHosts.listModels(hostID: ref.hostID).models) ?? []
                     return ids.map { PiModelCatalog.Entry(id: $0) }
@@ -607,6 +601,8 @@ private struct RemoteAgentThreadPane: View {
                     vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
                 }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil)
                 .id(inspecting)
+            } else if let review {
+                ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: true), store: store)
             }
         }
     }

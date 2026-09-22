@@ -8,20 +8,24 @@ public struct ShepherdButtonStyle: ButtonStyle {
 
     let kind: Kind
     let size: Size
+    let tint: Color?
 
-    public init(_ kind: Kind = .secondary, size: Size = .medium) {
+    /// `tint` recolors a secondary or ghost label (the review's green Commit).
+    public init(_ kind: Kind = .secondary, size: Size = .medium, tint: Color? = nil) {
         self.kind = kind
         self.size = size
+        self.tint = tint
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        StyledButton(configuration: configuration, kind: kind, size: size)
+        StyledButton(configuration: configuration, kind: kind, size: size, tint: tint)
     }
 
     private struct StyledButton: View {
         let configuration: ButtonStyleConfiguration
         let kind: Kind
         let size: Size
+        let tint: Color?
         @Environment(\.isEnabled) private var enabled
         @State private var hovering = false
 
@@ -54,8 +58,8 @@ public struct ShepherdButtonStyle: ButtonStyle {
             guard enabled else { return Tokens.textDisabled }
             return switch kind {
             case .primary: Tokens.primaryLabel
-            case .secondary: Tokens.text
-            case .ghost: Tokens.textSecondary
+            case .secondary: tint ?? Tokens.text
+            case .ghost: tint ?? Tokens.textSecondary
             case .destructive: Tokens.dangerText
             }
         }
