@@ -2335,7 +2335,9 @@ public final class SessionServer: @unchecked Sendable {
         return r == 0
     }
 
-    static func socketAddress(for path: String) throws -> sockaddr_un {
+    /// The `sockaddr_un` for `path`, rejecting paths longer than `sun_path` allows. Public for
+    /// clients of the extension socket (and the test support module).
+    public static func socketAddress(for path: String) throws -> sockaddr_un {
         var addr = sockaddr_un()
         let capacity = MemoryLayout.size(ofValue: addr.sun_path)
         let bytes = path.utf8CString

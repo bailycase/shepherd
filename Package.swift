@@ -88,16 +88,29 @@ let package = Package(
             dependencies: ["ShepherdCore", "ShepherdProtocol"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
-        .testTarget(name: "ShepherdCoreTests", dependencies: ["ShepherdCore"]),
-        .testTarget(name: "ShepherdProtocolTests", dependencies: ["ShepherdProtocol"]),
-        .testTarget(
-            name: "ShepherdRemoteTests",
-            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote"]
+        // Tests come in two tiers (see AGENTS.md "Testing"):
+        //   *UnitTests — pure logic: no processes, sockets, windows, or sleeps. `swift test --filter UnitTests`.
+        //   *IntegrationTests and ShepherdPreviewTests — real servers, stub pi, git, AppKit
+        //   windows, rendered previews. `swift test --filter "IntegrationTests|PreviewTests"`.
+        .testTarget(name: "ShepherdCoreUnitTests", dependencies: ["ShepherdCore"]),
+        .testTarget(name: "ShepherdProtocolUnitTests", dependencies: ["ShepherdProtocol"]),
+        .testTarget(name: "ShepherdDesignUnitTests", dependencies: ["ShepherdDesign"]),
+        .testTarget(name: "ShepherdRemoteUnitTests", dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote"]),
+        .testTarget(name: "ShepherdSessionsUnitTests", dependencies: ["ShepherdSessions"]),
+        .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp"]),
+        .testTarget(name: "ShepherdCLIUnitTests", dependencies: ["shepherd-cli"]),
+        .testTarget(name: "TerminalSurfaceKitUnitTests", dependencies: ["TerminalSurfaceKit"]),
+        .target(
+            name: "ShepherdTestSupport",
+            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdSessions"],
+            path: "Tests/ShepherdTestSupport",
+            resources: [.copy("Resources/stub-pi.py")]
         ),
-        .testTarget(name: "ShepherdDesignTests", dependencies: ["ShepherdDesign"]),
-        .testTarget(name: "ShepherdSessionsTests", dependencies: ["ShepherdSessions"], exclude: ["Fixtures"]),
-        .testTarget(name: "TerminalSurfaceKitTests", dependencies: ["TerminalSurfaceKit"]),
-        .testTarget(name: "ShepherdAppTests", dependencies: ["ShepherdApp"]),
-        .testTarget(name: "ShepherdCLITests", dependencies: ["shepherd-cli"]),
+        .testTarget(name: "ShepherdSessionsIntegrationTests", dependencies: ["ShepherdSessions", "ShepherdTestSupport"]),
+        .testTarget(
+            name: "ShepherdAppIntegrationTests",
+            dependencies: ["ShepherdApp", "TerminalSurfaceKit", "ShepherdTestSupport"]
+        ),
+        .testTarget(name: "ShepherdPreviewTests", dependencies: ["ShepherdApp", "ShepherdTestSupport"]),
     ]
 )
