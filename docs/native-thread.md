@@ -1,146 +1,231 @@
 # The native thread
 
-Every Shepherd agent is `pi --mode rpc` on plain pipes, and Shepherd is its only UI. This
-document follows one agent from process launch to pixels. Visuals and interaction are specified
-in [DESIGN.md](../DESIGN.md); subagent execution in [native-subagents.md](native-subagents.md).
+Every Shepherd agent is `pi --mode rpc` running on plain pipes, and Shepherd is the only UI pi
+has. This document follows one agent from process launch to what appears on screen.
+[DESIGN.md](../DESIGN.md) specifies how the thread looks; [native-subagents.md](native-subagents.md)
+covers how subagents run.
 
 ```text
-pi --mode rpc                                   ShepherdSessions
-  → RPCSession            stdin/stdout JSONL pipes, owned in-process
+pi --mode rpc                                           ShepherdSessions
+  → RPCSession            JSONL over stdin/stdout, owned in-process
   → RPCThreadState        pi events → NativeThreadSnapshot; requests → RPC commands
-  → SessionServer.nativeThread (local, direct)   |   RemoteRequest.nativeThread (TCP)
-  → NativeThreadStore     poll, page, echo, settle            ShepherdRemote
-  → ThreadView · Composer · SubagentInspector                ShepherdApp
+  → SessionServer.nativeThread (local, direct)  |  RemoteRequest.nativeThread (TCP)
+  → NativeThreadStore     poll, page, echo, settle              ShepherdRemote
+  → ThreadView · Composer · SubagentInspector                   ShepherdApp/Thread
 ```
 
-There is no terminal rendering of an agent anywhere, no Terminal/Native switch, and no
-`shepherd-native` bridge extension: the server speaks pi's RPC protocol directly.
+Agents never render in a terminal. There is no Terminal/Native switch and no bridge extension:
+the server speaks pi's RPC protocol directly.
 
 ## Launch
 
-`TerminalSessionStore` spawns an agent's primary pane as an RPC session (`SessionRuntime.rpc`);
-every other pane is a login shell on a PTY. The command (`StatusExtension.command`) runs through
-the user's login shell so `PATH` resolves:
+`TerminalSessionStore` (`TerminalSessions.swift`) spawns an agent's primary pane as an RPC
+session (`SessionRuntime.rpc`). Every other pane is a PTY running the shell configured in
+Settings ▸ Terminal. `StatusExtension.command` builds the agent command. It always goes through
+a zsh login shell, so the user's `PATH` resolves:
 
 ```sh
-zsh -l -c "exec pi --mode rpc --session-id <id> [--model … --thinking …] -e shepherd-status.ts -e …"
+/bin/zsh -l -c "exec pi --mode rpc --session-id '<id>' [--model '<m>' --thinking '<t>'] \
+  -e '<status>' [-e '<panes>'] [-e '<review>'] [-e '<subagents>'] [-e '<children>'] [-e '<namer>']"
 ```
 
-- `--session-id` is stable per agent. `PiSessionFile` seeds a minimal session header if pi has
-  not written one yet, so relaunch resumes the same conversation and palette search can read it.
-  `--model`/`--thinking` are passed only for a fresh session.
-- Extensions ride `-e` flags (status always; panes, review, subagents, native children, and the
-  namer per Settings ▸ Pi). Nothing is installed into `~/.pi/agent/`.
-- `SHEPHERD_AGENT_ID` and `SHEPHERD_SOCKET` connect the extensions to the app's socket.
-- The opening prompt is the first native `send`, not a positional argument (RPC mode ignores
-  positional messages).
+- **`--session-id`** is `Agent.effectivePiSessionID`: the pi session the agent was last in, or
+  the agent's own ID for a new agent. `PiSessionFile` writes a minimal session header before
+  launch if pi has not written one yet, so pi finds the session instead of warning.
+  `--model`/`--thinking` are passed only while that file has no conversation (a fresh session).
+- **Extensions** are installed into the support directory from embedded literals and loaded
+  with `-e`. Nothing is installed into `~/.pi/agent/`. The status extension is always loaded; the
+  rest follow Settings ▸ Pi ▸ Bundled extensions: "Panes and agent tools", "Diff review tool",
+  "Subagent display", "Native subagents", and "Name agents automatically" (the namer, and only
+  for agents whose name is not final).
+- **Environment:**
+  - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
+  - With the panes extension: `SHEPHERD_EXT_PANES`.
+  - With native subagents: `SHEPHERD_NATIVE_CHILDREN=1`, `SHEPHERD_EXT_CHILDREN`, and the
+    `SHEPHERD_CHILD_*` defaults.
+  - `SHEPHERD_NEEDS_NAME=1` for an agent whose name is not final.
+  - `SHEPHERD_AUTOMATION=1` for automation runs.
+  - `SHEPHERD_MODEL` when a model is passed.
+  - `RPCSession` strips terminal variables (`TMUX`, `STY`, …) and sets no `TERM`.
+- **The opening prompt** is the first native `send`, delivered once pi's session is ready. It is
+  not a positional argument, because RPC mode ignores positional messages.
 
-On app quit every child dies with the app; on relaunch each agent respawns in its pi session.
-Agents persisted by the terminal era (`"runtime": "terminal"`) decode unchanged — `Agent`
-ignores the key — and relaunch over RPC with their history intact.
-`LegacyTerminalAgents.forgetPresentationPreferences` clears the old per-agent view defaults.
+Quitting the app kills every child. On relaunch each agent respawns in its pi session with its
+history intact. State files from before RPC agents decode unchanged: `Agent` ignores the
+per-agent `runtime` key (and always encodes `"rpc"` so older remote clients never try to attach
+a PTY). `LegacyTerminalAgents.forgetPresentationPreferences` clears the old per-agent view
+defaults.
+
+## Status and session reporting
+
+`shepherd-status.ts` connects to the extension socket and reports fire-and-forget NDJSON
+messages:
+
+| pi event | Status reported |
+| --- | --- |
+| `session_start` | `idle`, plus `setAgentSession` with the pi session ID |
+| `agent_start` | `working` |
+| `agent_settled` | `done` |
+| `tool_execution_start` for an ask/question-style tool | `blocked` |
+| `tool_execution_end` for that tool | `working` (once no waits remain) |
+| `session_shutdown` | `idle` |
+
+The server applies each status even when `AgentStatus.canTransition` disallows the transition,
+and logs a warning. `setAgentSession` persists the new `piSessionID`, so `/new` or `/resume`
+survives a relaunch. It also clears `nameIsFinal`, because a different session is a different
+conversation.
 
 ## RPCSession
 
-Owns the child process and its pipes: JSONL commands in on stdin, responses and events out on
-stdout, one record per LF with the NDJSON 1 MiB cap. Requests carry deadlines and fail cleanly
-when the process exits. stderr is diagnostics only (logged line by line, runaway lines cut).
-`kill()` sends SIGTERM, then SIGKILL after a grace period. Like `PTYSession`, all mutable state
-is confined to a queue that targets the server's serial queue.
+`RPCSession` owns the child process and its pipes. JSONL commands go in on stdin; responses and
+events come out on stdout, one record per LF.
+
+- **Record size:** stdout records may be up to 256 MiB. `get_messages` returns a long session's
+  whole history as a single record, far beyond the 1 MiB NDJSON cap that still applies to the
+  extension socket and TCP frames. A larger record is logged and skipped.
+- **Stdin:** queued up to 8 MiB. A command beyond that is dropped.
+- **Requests:** each has a 10 s deadline and fails cleanly on timeout or when the process exits.
+- **stderr:** used for diagnostics only, logged line by line. A line is cut at 64 KiB.
+- **Shutdown:** `kill()` sends SIGTERM to the process group, then SIGKILL after 2 s.
+- **Queueing:** like `PTYSession`, all mutable state is confined to a queue that targets the
+  server's serial queue.
 
 ## RPCThreadState
 
-The server-side projection of one agent's thread, confined to the same queue.
+`RPCThreadState` is the server-side projection of one agent's thread, confined to the same queue.
 
-- **Bootstrap** on spawn or resume: `get_state` (pi session ID, model, thinking level,
-  streaming), `get_messages` (history), `get_session_stats` (context usage, tokens, cost), and
-  `get_commands` (the slash-command registry, capped and byte-limited).
-- **Events** update the projection in place: `agent_start`/`agent_end`/`agent_settled` drive
-  `running`; `message_start`/`message_update`/`message_end` stream the current assistant message
-  as a *provisional* entry; `tool_execution_*` upsert running and finished tool calls (with the
-  start time for live durations); `extension_ui_request` carries questions and widgets. Thinking
-  spans are timed as they stream so history keeps "Thought for Ns".
-- **Questions**: `select`, `confirm`, `input`, and `editor` requests become
-  `NativeThreadDialog`s (at most 8, 48 KiB; oversized ones render as unavailable). A request with
-  a timeout disappears when pi resolves it on its own.
-- **Widgets**: `setWidget` text (ANSI stripped) becomes a `NativeThreadWidget` (16 items, 4 KiB
-  each, 32 KiB total). Machine payloads, `setStatus` footer text, and `notify` toasts are dropped:
-  they belong to pi's TUI chrome, not the conversation.
-- **Snapshots** are bounded (240 KiB, 16 KiB per text field; clipped output is flagged) and
-  carry a monotonically increasing `revision`, the pi session ID, and a `generation` that
-  changes whenever pi switches sessions, so nothing from an old session can be acted on.
-  History pages 50 entries at a time.
+- **Bootstrap** runs on spawn or resume. It sends `get_state` (session ID, model, thinking
+  level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost), and
+  `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` answers,
+  requests fail with `native_unavailable` ("Session is not ready.").
+- **Events** update the projection in place:
+  - `message_start`, `message_update`, and `message_end` stream the current assistant message
+    as a provisional entry.
+  - `tool_execution_*` upserts running and finished tool calls, with start times for live
+    durations.
+  - `agent_start` and `agent_end` drive `running`. `agent_end` also re-fetches messages, state,
+    and stats, which settles the provisional entries into history.
+  - Thinking spans are timed as they stream, so history can show "Thought for Ns".
+  - `turn_*` and `queue_update` events are ignored, and so is anything the lenient `RPCWire`
+    decoder doesn't know (compaction included).
+- **Session switches** are detected whenever `get_state` reports a new session ID. The
+  projection resets and gets a new `generation`.
+- **Questions:** `extension_ui_request` with `select`, `confirm`, `input`, or `editor` becomes a
+  `NativeThreadDialog`.
+  - A snapshot carries at most 8. One larger than 48 KiB renders as unavailable
+    ("payload-limit").
+  - A question with a timeout disappears when pi resolves it on its own.
+  - The first answer wins, whether it comes from this Mac or a remote client. A second answer
+    gets `dialog_unavailable`.
+  - Questions need no pi patch; they are part of pi's RPC protocol.
+- **Widgets:** `setWidget` text (ANSI stripped) becomes a `NativeThreadWidget`: at most 16, 4 KiB
+  of text each, 32 KiB in total. Machine payloads, `notify`, `setStatus`, and `setTitle` are
+  dropped, because they belong to pi's TUI chrome.
+- **Snapshots** are bounded:
+  - 240 KiB in total, of which live content (provisional entries, then dialogs) may use
+    120 KiB.
+  - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
+    128 blocks per message. Clipped content is flagged.
+  - A monotonically increasing `revision`, the pi session ID, and a `generation`, so nothing
+    from an old session can be acted on.
+  - History pages hold 50 entries, walked with `olderCursor`. A stale cursor gets
+    `stale_cursor`.
 - **Requests** (`NativeThreadRequest`): `snapshot`, `send` (follow-up or steer delivery, optional
-  images), `abort`, `answer`, `setModel`, `setThinking`, `subagentCommand` (message / cancel / resume /
-  pause / continue, routed to the children extension's control connection, never the parent
-  model), and `subagentTranscript` (one page of a child's session file). Every mutating request
-  carries an operation ID; replays return the recorded result instead of acting twice. An
-  accepted result means pi accepted the command, not that the work finished. The snapshot's
-  `supportedActions` tells clients what they may offer.
-- **Subagents**: the rows the children extension publishes (`setAgentChildren`) ride the
+  images), `abort`, `answer`, `setModel`, `setThinking`, `subagentCommand` (message, cancel,
+  resume, pause, continue; routed to the children extension's control connection, never the
+  parent model), and `subagentTranscript` (one page of a child's session file, read from its
+  last 8 MiB).
+  - Every mutating request carries an operation ID and the expected session and generation.
+    Replaying an ID returns the recorded result; reusing it with a different payload gets
+    `operation_conflict`. A session mismatch gets `stale_session`.
+  - An accepted result means the command was dispatched, not that the work finished.
+  - `supportedActions` lists what clients may offer: `send`, `abort`, `answer`, `setModel`,
+    `setThinking`, `sendImages`, `subagents`.
+- **Subagents:** the rows the subagent display extension publishes (`setAgentChildren`) ride the
   snapshot as `subagents`.
 
 ## Serving
 
 `SessionServer.nativeThread(agentID:request:)` answers the local GUI directly on the server
-queue — no socket, no TCP, no authentication. Authenticated remote clients send the same
-`NativeThreadRequest` inside `RemoteRequest.nativeThread` and get the same result; only the
-transport differs. Requests are size-checked with the TCP envelope budget (64 KiB, 12 MiB for
-image sends). A missing or dead pi process answers `native_unavailable`.
+queue, with no socket, TCP, or authentication involved. An authenticated remote client sends the
+same `NativeThreadRequest` inside `RemoteRequest.nativeThread` and gets the same result; only the
+transport differs.
+
+- **Size limits:** a request must be under 64 KiB, or 12 MiB when it carries images. Larger
+  requests get `native_limit`. Remote requests are also bound by the 1 MiB TCP frame, so
+  `RemoteHostClient` rejects larger image sends before sending.
+- **Remote capabilities:** remote model, thinking, and image requests need the host's
+  `native.thread.v2` capability.
+- **Unavailable agents:** a missing or dead pi process answers `native_unavailable`.
 
 ## NativeThreadStore
 
-The platform-neutral client (ShepherdRemote), one per agent for the agent's lifetime
-(`NativeThreadStores` for local agents, `remoteThreadStores` for remote ones), so drafts,
-history pages, and scroll state survive switching and cold parking.
+The platform-neutral client lives in ShepherdRemote. There is one store per agent for the
+agent's lifetime: `NativeThreadStores` for local agents, and a separate set for remote agents.
+Drafts, history pages, and scroll state therefore survive switching and cold parking.
 
-- The visible view's task polls: every 500 ms while the agent runs, a question is pending, or a
-  subagent is live; every 2 s otherwise. Polls pass the last revision and ignore older
-  snapshots.
-- `messages` are paged history (`loadOlder`); `displayedMessages` is history, then optimistic
-  echoes of accepted sends (`pending`), then pi's provisional entries — in an order that never
-  flips when pi persists a message, so the tail never re-lays out.
-- `settledRunning` holds `running` true for 400 ms after it drops, so tool boundaries never
-  flicker the pill, the working row, or the Stop button.
-- `draft` and `delivery` (follow-up or steer) belong to the store; `supports(_:)` gates every
-  control on the snapshot's `supportedActions`.
-- Transport failures surface as `loadError` (the header's Error pill and the composer's
-  Reconnect banner); a stale response is ignored and never retried automatically.
+- **Polling:** the visible thread's task polls every 500 ms while the agent runs, a question is
+  pending, or a subagent is live, and every 2 s otherwise. Each poll passes the last revision;
+  older snapshots are ignored. A hidden thread stops polling.
+- **Message order:** `messages` is the paged history (`loadOlder`). `displayedMessages` is
+  history, then optimistic echoes of accepted sends, then pi's provisional entries. This order
+  never flips when pi persists a message, so the tail never re-lays out.
+- **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
+  boundaries don't flicker the pill, the working row, or the Stop button.
+- **Drafts and gating:** `draft` and `delivery` (follow-up or steer) belong to the store.
+  `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
+  busy.
+- **Errors:** transport failures surface as `loadError` (the header's Error pill and the
+  composer's Reconnect banner), and action failures as `notice`. Actions are never retried
+  automatically; an unknown outcome is reported, not resent. A stale session triggers a fresh
+  snapshot.
 
 ## Presentation and views
 
-`NativeThreadPresentation` (ShepherdRemote) holds the pure derivations: turns and turn items,
-tool-row previews, results and durations, DiffStat from edit payloads, the status pill state,
-subagent card/strip/ledger models, and `NativeScrollFollower` (detach only on a live scroll
-gesture; momentum, content replacement, composer resizes, and growth are layout, never intent).
-They are unit-tested in `NativePresentationTests` and shared with iOS.
+`NativeThreadPresentation` (ShepherdRemote) holds the pure derivations:
 
-`ShepherdApp/Thread/` renders them: `ThreadView` (the scroll view, following, turn jumping),
-`ThreadTurns` (user bubble, agent turn, thinking, footer, working row), `ThreadTools` (tool
-groups and rows), `ThreadMarkdown` (prose and code blocks), `Composer` (field, chips, slash
-menu, model picker, question panel, widgets), `Subagents` (cards, runs strip, ledger), and
-`SubagentInspector` in the right pane. `ThreadHeader` sits above. A remote agent uses the same
-views with requests sent to its host.
+- turns and turn items, and the Markdown block parser
+- tool-row previews, results, and durations
+- `DiffStat` from edit payloads
+- the status pill state
+- subagent card, strip, and ledger models
+- `NativeScrollFollower`: only a live scroll gesture detaches following; momentum, content
+  replacement, composer resizes, and growth are treated as layout, never as intent
+
+iOS shares these derivations.
+
+`Sources/ShepherdApp/Thread/` renders them:
+
+- **`ThreadView`:** the scroll view, tail following, and turn jumps (⌥⌘↑/↓).
+- **`ThreadTurns`:** the user bubble, agent turn, thinking, turn footer with copy and retry, and
+  the working row.
+- **`ThreadTools`:** tool groups and one-line tool rows.
+- **`ThreadMarkdown`:** prose and syntax-colored code blocks.
+- **`Composer`:**
+  - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
+  - chips: model with its picker on ⇧⌘M, thinking, and delivery (Follow-up / Steer, shown only
+    while a turn runs with a draft)
+  - the slash menu, fed from pi's command registry
+  - the question panel and extension widgets
+- **`Subagents`:** cards, the runs strip, and the ledger.
+- **`SubagentInspector`:** the inspector, hosted with the review in the right pane
+  (`RightPaneSplit`).
+
+`ThreadHeader` sits above the thread. A remote agent uses the same views, with requests sent to
+its host.
 
 ## Testing
 
-- `Tests/ShepherdSessionsTests/RPCSessionTests.swift` and `RPCAgentThreadTests.swift` cover the
-  pipes and the projection.
-- `NativePresentationTests` cover the derivations; `NativeScrollTests` open real windows to check
-  following (opens at the bottom with no trailing space, growth keeps the tail pinned until a
-  trackpad gesture, sending re-attaches).
-- **Real session render** (opt-in):
-  `SHEPHERD_REAL_SESSION=<session.jsonl> SHEPHERD_NATIVE_SCREENSHOT_DIR=/tmp/x swift test --filter realSessionRenders`
-  projects the last page of a real pi session and captures `real-session.png` at 1500pt — for
-  problems fixtures never produce (provider errors, pi system entries, long output).
-- **Live end to end** (opt-in):
-  `SHEPHERD_E2E=1 SHEPHERD_NATIVE_SCREENSHOT_DIR=/tmp/e2e swift test --filter LiveEndToEndTests`
-  builds the real view model and `RootView` over a real `SessionServer`, starts an RPC agent with
-  the bundled children extension against the scripted local provider
-  `Tests/Extensions/e2e-provider.mjs` (scratch `PI_CODING_AGENT_DIR` and `SHEPHERD_SUPPORT_DIR`,
-  no network), finds controls by visible text with Vision OCR, and clicks them with real mouse
-  events — so hidden or clipped buttons fail the run. It spawns three children, inspects and
-  pauses the running worker, answers the reviewer's question, waits for the ledger, opens a
-  finished child, and sends a follow-up, capturing `e2e-1-live-cards` through `e2e-6-followup`.
+- **Unit (`swift test --filter UnitTests`):** the `RPCThreadState` projection fed recorded pi
+  events, `NativeThread` wire round-trips against `Tests/Extensions/native-thread-wire.json`, and
+  the presentation derivations.
+- **Integration (`swift test --filter IntegrationTests`):** a real `SessionServer`
+  (`ScratchServer`) driving the scripted stub pi (`StubPi.command`,
+  `Tests/ShepherdTestSupport/Resources/stub-pi.py`). The stub's prompt keywords script
+  questions, hangs, crashes, oversized records, widgets, session switches, and long histories.
+  For example, `LargeHistoryTests` loads a 6 MiB history.
+- **Previews:** `ShepherdPreviewTests` render thread states offscreen in light and dark into
+  `$SHEPHERD_PREVIEW_DIR`.
+- **Live model:** the opt-in run is gated on `SHEPHERD_LIVE_MODEL`.
 
-Neither opt-in test touches the user's pi configuration, sessions, or a running Shepherd.
+None of these touch the user's pi configuration, sessions, or a running Shepherd.

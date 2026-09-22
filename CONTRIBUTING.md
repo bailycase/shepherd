@@ -1,91 +1,97 @@
 # Contributing to Shepherd
 
-Shepherd is an opinionated macOS app for supervising coding agents. Changes should
-keep the product focused on agent supervision: native agent threads, with real
-terminals for the panes beside a thread.
+Shepherd is an opinionated macOS app for supervising coding agents: native agent threads, with
+real terminals only as panes beside a thread. Changes should keep it focused on that. For a large
+feature or behavior change, open an issue before writing the implementation.
 
-## Before changing code
+## Read first
 
-Read the documents relevant to your change:
-
-- [`AGENTS.md`](AGENTS.md) contains build instructions, architecture rules, and known traps.
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) defines dependency direction and state ownership.
-- [`DESIGN.md`](DESIGN.md) governs UI and interaction. Read it before changing UI; the
-  original design handoff and boards are in [`docs/design-spec/`](docs/design-spec/).
-
-For large features or behavior changes, open an issue before writing the implementation.
+- [AGENTS.md](AGENTS.md): build and test commands, the source map, and the rules that are easy to
+  break (protocol contracts, embedded extensions, concurrency, tokens, keybindings, repository
+  mutations).
+- [ARCHITECTURE.md](ARCHITECTURE.md): module boundaries, ownership, and data flow.
+- [DESIGN.md](DESIGN.md): the authority on UI and interaction. The original handoff and boards are
+  in [docs/design-spec/](docs/design-spec/).
 
 ## Branches
 
-Development work branches from `nightly` and pull requests target `nightly`.
+Branch from `nightly` and target `nightly` with your pull request. Use `feat/…` for features and
+`fix/…` for fixes. PRs merge with a merge commit.
 
-Use a descriptive branch name. Feature branches use the `feat/` prefix.
-
-## Build and test
-
-Run the smallest relevant test first, then the full suite:
+## Build and run
 
 ```sh
 swift build
-swift test
+xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' build
 ```
 
-For app changes, also build the development scheme:
+Run the app through the `Shepherd (Dev)` scheme in Xcode; there is no `swift run` path for the
+GUI. The Dev scheme keeps its state in `~/Library/Application Support/Shepherd-dev`, so it never
+disturbs an installed copy.
 
-```sh
-xcodebuild \
-  -project Shepherd.xcodeproj \
-  -scheme 'Shepherd (Dev)' \
-  -destination 'platform=macOS' \
-  build
-```
+## Tests
 
-The GUI runs through the Xcode project, not `swift run`. Exercise UI and terminal
-changes in the app before submitting them, in both light and dark appearance. Debug
-builds have a Component Gallery (Debug menu) showing every shared component.
+Tests use Swift Testing and come in tiers. Run the smallest one that covers your change first,
+then everything.
+
+| Tier | Command | Scope |
+| --- | --- | --- |
+| Unit | `swift test --filter UnitTests` | Pure logic: no processes, sockets, windows, git, or sleeps. Seconds for the whole tier. |
+| Integration | `swift test --filter IntegrationTests` | A real `SessionServer` (`ScratchServer`), the scripted stub pi (`StubPi.command`), git scratch repos, off-screen windows. Waits are named `eventually(...)` polls, never fixed sleeps. |
+| Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter PreviewTests` | Offscreen renders of every surface, in light and dark, written as PNGs. Skipped without the variable. |
+| Everything | `swift test` | All of the above; CI runs this with `--no-parallel`. |
+| Extensions | `PI_PACKAGE_DIR=<installed pi package> node --test Tests/Extensions/*.test.mjs` | The bundled pi extensions, against a local fake provider. |
+
+An opt-in run against a real model is gated on `SHEPHERD_LIVE_MODEL` (for example
+`cpa/~anthropic/claude-haiku-latest`). Shared helpers live in `Tests/ShepherdTestSupport`.
+[AGENTS.md](AGENTS.md#testing) says which tier a change needs and which coverage must never be
+dropped.
+
+**Tests must never take your focus or drive your mouse or keyboard.** Test windows are
+off-screen, borderless, and ordered back. Tests never post synthetic input and never touch your pi
+configuration, sessions, or a running Shepherd.
 
 ## Project rules
 
-- Keep changes small and place code in the narrowest existing owner.
-- Do not add abstractions or validation without a current need.
-- Add focused tests for changed behavior.
-- Add round-trip tests when changing protocol messages.
-- Update canonical extension sources and their embedded Swift copies together.
-- Use the `ShepherdDesign` tokens (`Tokens`, `Fonts`, `Metrics`, `Radius`) and shared
-  components instead of hardcoded colors, fonts, or dimensions. New color roles must
-  pass the contrast tests in `Tests/ShepherdDesignTests`.
-- Do not commit credentials, tokens, sessions, logs, caches, or local runtime state.
-
-`AGENTS.md` contains the complete contracts for protocols, concurrency, PTYs,
-persistence, worktrees, remote access, and embedded extensions.
+- Keep changes small, and put code in the narrowest existing owner.
+- Don't add abstractions or validation without a current need.
+- Add focused tests for the behavior you changed, in the right tier.
+- When you change a protocol message, update every consumer and its round-trip test.
+- Edit an `Extensions/` source and its embedded Swift literal together
+  (`scripts/sync-embedded-extension.py`); a test enforces byte identity.
+- Use `ShepherdDesign` (`Tokens`, `Fonts`, `Metrics`, `Radius`) and its shared components, never
+  hardcoded colors, fonts, or sizes. A new color role must pass the contrast tests in both
+  variants.
+- Check visible changes in both light and dark appearance, with previews and in the running app.
+  Debug builds have a Component Gallery in the View menu.
+- Don't commit credentials, tokens, sessions, logs, caches, or local runtime state.
 
 ## Commits
 
-Use Conventional Commit subjects:
+Use Conventional Commit subjects, one logical change per commit:
 
 ```text
 feat: add remote host filtering
 fix: preserve pane focus after switching
 docs: explain the release channels
 refactor: simplify session adoption
+test: cover stale-session answers
 chore: update a dependency
 ```
 
-Keep each commit to one logical change. Do not add AI or tool attribution lines.
+Use `feat!:` for a breaking change. Don't add AI or tool attribution lines.
 
 ## Pull requests
 
-A pull request should include:
+Fill in the [pull request template](.github/pull_request_template.md). It asks for:
 
-- What changed and why.
-- Related issues.
-- Commands and manual checks actually performed.
-- Screenshots or recordings for visible changes.
-- Risks, tradeoffs, and useful starting points for review.
+- what changed and why
+- the test tiers you ran and what they showed
+- light and dark previews for any visible change
 
-Do not claim checks passed unless you ran them and observed the result.
+Don't claim checks passed unless you ran them and saw the result.
 
 ## Security
 
-Do not open public issues or pull requests for suspected vulnerabilities. Follow
-[`SECURITY.md`](SECURITY.md).
+Don't open public issues or pull requests for suspected vulnerabilities. Follow
+[SECURITY.md](SECURITY.md).

@@ -1,39 +1,69 @@
-# MVP validation
+# Checking the iOS client
 
-Validated on 2026-09-10 with Xcode beta, iOS 27 Simulator, iPhone 17 Pro. The branch is `feat/ios-native-mvp`. No physical-device provisioning or global pi replacement was performed.
+The iOS app ([README.md](README.md)) is deferred, but it still shares `ShepherdCore`,
+`ShepherdProtocol`, and `ShepherdRemote` with the Mac. Run these checks when you change those
+modules, or when iOS work resumes. Neither script is part of `swift test`.
 
-## Results
+## Compile
 
-- All 402 Swift tests passed in the final full run. Log: `/tmp/shepherd-ios-final-repeat.log`.
-- Native extension Node/socket checks passed, including rewritten-final-message reconciliation and embedded Swift source identity.
-- `Tests/ShepherdIOSChecks/run.sh` passed connection, thread-state, dialog, pagination, and cancelled-handshake checks.
-- macOS Dev and iOS 27 Simulator builds passed.
-- The prototype pi patch passed root checks and 113 focused tests in its isolated v0.85.1 checkout.
-- Fourteen real runtime integration checks passed through Swift RemoteHostClient, SessionServer, the canonical native extension, and a real pi AgentSession with a deterministic faux provider. The dialogs used the real InteractiveMode components and virtual terminal keyboard input.
-- The shipping iOS app passed an actual XCUITest touch/typing flow against that real scratch host. The final result bundle reports one passed test and zero failures, about 105 seconds. Bundle: `/tmp/shepherd-ui-acceptance/clean-pass.xcresult`; log: `/tmp/shepherd-ui-acceptance/clean-pass.log`.
+```sh
+xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd iOS' \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+```
 
-The iOS flow saved a synthetic host credential through the real Keychain path, cold-launched and reconnected, opened the host agent, sent text, displayed the reply and expanded tool output, answered select/confirm/input/multiline editor questions, verified each original desktop dialog closed and returned its expected value, cancelled an active faux-provider response, backgrounded/foregrounded, and sent again to the same pi session. The editor check inserted multiline text before an existing prefill and verified both were preserved; it did not test select-all replacement.
+## Connection and thread-store checks
 
-## Screenshots
+```sh
+bash Tests/ShepherdIOSChecks/run.sh
+```
 
-These screenshots contain only synthetic test data:
+This takes no arguments. It compiles the three shared modules as macOS libraries into a
+temporary directory, then builds and runs three programs:
 
-- [Connected fleet](screenshots/fleet.png)
-- [Native transcript and expanded tool output](screenshots/native-thread.png)
-- [Standard confirmation](screenshots/confirm.png)
+- **`HostConnectionCheck`:** `App/iOS/HostConnection.swift` with an in-memory token store. It
+  covers port validation, exactly what is saved, live state pushes over real TCP, superseded
+  handshakes, reconnect after backgrounding, failure, retry and cancel, and forgetting the host.
+- **`ThreadStoreCheck`:** `NativeThreadStore`. It covers revisions, merging history with live
+  entries, stale sessions, acceptance, drafts, unknown outcomes with no automatic resend,
+  questions, abort, and stop and reconnect.
+- **`RemoteConnectCheck`:** checks that cancelling or disconnecting while a socket is still
+  opening never sends `hello`.
 
-## Issues found during validation
+The token store is a stand-in, so real Keychain behavior is not tested here.
 
-- Fixed cancelled/superseded socket opens authenticating after disconnect.
-- Fixed provisional assistant messages surviving after a later pi handler rewrote the persisted final response.
-- Fixed a tool disclosure accessibility label masking its expanded output.
-- Fixed the embedded extension literal's missing final newline after regeneration.
-- An unsigned simulator build failed Keychain access with `-34018`. Xcode signing of the full simulator build with local-only application/keychain entitlements resolved it. Signing only the outer unsigned app caused launch failure.
-- A pre-existing worktree-import test failed once in a full run and passed in isolation and the final full run. No assertion was weakened.
-- Early scratch UI tests had incorrect text replacement and scroll selection assumptions. Final acceptance ran against a fresh scratch session. An earlier passing test's result bundle was overwritten by a duplicate command, so the reported result is the later independently exported `clean-pass.xcresult`.
+## Simulator render
 
-## Remaining limits
+```sh
+bash Tests/ShepherdIOSChecks/run-simulator.sh [productsDir] [deviceUDID]
+```
 
-The host needs the documented prototype pi source patch for standard mobile dialog answers. It is not an upstream release or an automatic install. Native sends are literal text, not the desktop slash-command parser. Custom UI, authentication/project-trust prompts, images, worktree management, and creation are outside the agreed first MVP. External editors temporarily disable mobile answers.
+Build the `Shepherd iOS` scheme for the simulator first, with
+`-derivedDataPath /tmp/shepherd-ios-thread-build`. The script expects the products there by
+default. The default simulator UDID is hard-coded in the script, so pass your own.
 
-The runtime proof used a real SessionServer and real pi session with virtual terminal rendering, not a full physical desktop CLI walkthrough. Physical iPhone signing, TestFlight, iPad interaction, VoiceOver navigation, and large Dynamic Type remain unvalidated. The UI automation was a temporary local XCTest project; the repository's reproducible fast checks are under `Tests/ShepherdIOSChecks` and `Tests/Extensions`.
+The script builds a separate fixture app from the production views and an in-memory token
+store. It serves a fixed snapshot from a local Python responder that rejects any state-changing
+request. Then it launches the app, waits, and takes a screenshot. It asserts that the app made no
+terminal `attach`, `input`, or `resize` requests, and that it polled or fetched state.
+
+| Variable | Values |
+| --- | --- |
+| `FIXTURE_SCREEN` | `fleet`, or the thread (default) |
+| `FIXTURE_DIALOG` | `none` (idle thread, composer visible), `select`, `input`, or a confirm question (default) |
+| `FIXTURE_UNAVAILABLE` | marks the input question unavailable |
+| `FIXTURE_SCHEME` | `light`, or dark (default) |
+| `FIXTURE_SHOT` | screenshot path (default `/tmp/shepherd-ios-thread-fixture.png`) |
+
+`screenshots/` holds renders from the September 2026 MVP work: `agents-{dark,light}.png`,
+`polished-thread-{dark,light}.png`, `fleet.png`, `native-thread.png`, and `confirm.png`. They
+predate the RPC-only host and the macOS redesign. Treat them as history, not as a reference.
+
+## Not yet validated
+
+- A real pi session driven from a phone against the current RPC host.
+- Physical-device signing and TestFlight.
+- iPad layouts, VoiceOver navigation, and large Dynamic Type.
+
+The September 2026 acceptance run (an XCUITest flow on the simulator) exercised a host that
+bridged dialogs through a patched pi. That host no longer exists. Re-run an end-to-end pass
+before calling the client validated again.
