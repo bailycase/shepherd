@@ -46,8 +46,11 @@ final class RPCSession: @unchecked Sendable {
 
     /// Same bound as the PTY input queue. Rejected writes are all-or-none.
     static let outputQueueLimit = PTYSession.inputQueueLimit
-    /// Strict JSONL: one record per LF, capped like NDJSON frames.
-    static let maxRecordBytes = NDJSON.maxPayloadBytes
+    /// Strict JSONL: one record per LF. Not the 1 MiB network frame cap: pi answers
+    /// `get_messages` with the whole context in one record, and a long session's (big tool
+    /// results) runs to many megabytes. Dropping it left the thread showing no history at all.
+    /// This bound only stops a runaway child from growing the buffer without limit.
+    static let maxRecordBytes = 256 * 1024 * 1024
     /// stderr is diagnostics only; a runaway line is cut here.
     static let maxStderrLineBytes = 64 * 1024
     /// `kill()` waits this long for SIGTERM before SIGKILL.
@@ -366,10 +369,15 @@ final class RPCSession: @unchecked Sendable {
     /// `maxRecordBytes` and malformed JSON are logged and dropped; the reader
     /// never stops.
     private func feedStdout(_ chunk: Data) {
+        // Only the new bytes can hold the next LF: rescanning a multi-megabyte partial record
+        // on every chunk made large replies quadratic.
+        let searchFrom = stdoutBuffer.count
         stdoutBuffer.append(chunk)
-        while let lf = stdoutBuffer.firstIndex(of: 0x0A) {
+        var from = stdoutBuffer.startIndex + searchFrom
+        while let lf = stdoutBuffer[from...].firstIndex(of: 0x0A) {
             var line = stdoutBuffer[stdoutBuffer.startIndex..<lf]
             stdoutBuffer.removeSubrange(stdoutBuffer.startIndex...lf)
+            from = stdoutBuffer.startIndex
             if discardingRecord {
                 discardingRecord = false
                 continue
