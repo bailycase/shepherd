@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import Vision
 import ShepherdProtocol
 import ShepherdRemote
 @testable import ShepherdApp
@@ -124,7 +125,7 @@ struct NativeScrollTests {
         clip.scroll(to: NSPoint(x: 0, y: document.bounds.height))
         f.scrollView.reflectScrolledClipView(clip)
         try await f.layout()
-        #expect(f.distanceFromBottom >= -1 && f.distanceFromBottom < 2)
+        #expect(f.distanceFromBottom >= -1 && f.distanceFromBottom < 2, "after dragging past the end: \(f.distanceFromBottom)")
     }
 
     @Test func growthKeepsTheTailPinnedUntilTheUserScrollsUp() async throws {
@@ -176,12 +177,7 @@ struct NativeScrollTests {
         try await f.layout()
         #expect(f.distanceFromBottom < 2, "replacement detached the tail: \(f.distanceFromBottom)")
         // The jump pill must not be visible while pinned to the bottom.
-        func findJump(_ view: NSView) -> Bool {
-            if let button = view as? NSButton, button.title.contains("Jump") { return true }
-            if (view.accessibilityLabel() ?? "").contains("Jump to latest") { return true }
-            return view.subviews.contains(where: findJump)
-        }
-        #expect(!findJump(f.host), "jump pill shown while at the bottom")
+        #expect(!jumpVisible(f.host), "jump pill shown while at the bottom")
     }
 
     /// A short thread (content shorter than the viewport) that grows past it: the offset is
@@ -192,16 +188,12 @@ struct NativeScrollTests {
         defer { f.tearDown() }
         try await waitFor { f.store.ready }
         try await f.layout()
-        func findJump(_ view: NSView) -> Bool {
-            if (view.accessibilityLabel() ?? "").contains("Jump to latest") { return true }
-            return view.subviews.contains(where: findJump)
-        }
-        #expect(!findJump(f.host))
+        #expect(!jumpVisible(f.host))
         for (i, count) in [4, 8, 14, 22].enumerated() {
             f.snapshot = Fixture.makeSnapshot(count: count, running: true, revision: UInt64(i + 2))
             try await waitFor { f.store.messages.count == count }
             try await f.layout()
-            #expect(!findJump(f.host), "jump pill shown after growing to \(count)")
+            #expect(!jumpVisible(f.host), "jump pill shown after growing to \(count)")
         }
         #expect(f.distanceFromBottom < 2, "tail not followed after growth: \(f.distanceFromBottom)")
     }
@@ -214,10 +206,6 @@ struct NativeScrollTests {
         try await waitFor { f.store.ready }
         try await f.layout()
         #expect(f.distanceFromBottom < 2)
-        func findJump(_ view: NSView) -> Bool {
-            if (view.accessibilityLabel() ?? "").contains("Jump to latest") { return true }
-            return view.subviews.contains(where: findJump)
-        }
         // A five-line draft grows the card by ~80pt.
         f.store.draft = (1...5).map { "line \($0)" }.joined(separator: "\n")
         try await f.layout()
@@ -233,7 +221,7 @@ struct NativeScrollTests {
         try await Task.sleep(for: .milliseconds(200))
         try await f.layout()
         #expect(f.distanceFromBottom < 2, "composer shrink detached the tail: \(f.distanceFromBottom)")
-        #expect(!findJump(f.host), "jump pill shown after composer resize")
+        #expect(!jumpVisible(f.host), "jump pill shown after composer resize")
     }
 
     /// Exactly what a live send looks like: at the bottom, send → echo appended → pi reports
@@ -244,23 +232,19 @@ struct NativeScrollTests {
         defer { f.tearDown() }
         try await waitFor { f.store.ready }
         try await f.layout()
-        func findJump(_ view: NSView) -> Bool {
-            if (view.accessibilityLabel() ?? "").contains("Jump to latest") { return true }
-            return view.subviews.contains(where: findJump)
-        }
         f.store.draft = "spawn some agent"
         await f.store.send()
         try await waitFor { f.store.sentCount == 1 }
         try await f.layout()
         #expect(f.distanceFromBottom < 2, "after send: \(f.distanceFromBottom)")
-        #expect(!findJump(f.host), "pill after send")
+        #expect(!jumpVisible(f.host), "pill after send")
         // pi picks it up: running, then a provisional tool row and text.
         var running = Fixture.makeSnapshot(count: 12, running: true, revision: 2)
         f.snapshot = running
         try await waitFor { f.store.snapshot?.revision == 2 }
         try await f.layout()
         #expect(f.distanceFromBottom < 2, "after running: \(f.distanceFromBottom)")
-        #expect(!findJump(f.host), "pill after running")
+        #expect(!jumpVisible(f.host), "pill after running")
         running.revision = 3
         running.provisional = [
             NativeThreadMessage(entryID: "provisional:tool:c1", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "Run fan-out: 0/32 used")],
@@ -272,7 +256,7 @@ struct NativeScrollTests {
         try await waitFor { f.store.snapshot?.revision == 3 }
         try await f.layout()
         #expect(f.distanceFromBottom < 2, "after tool row: \(f.distanceFromBottom)")
-        #expect(!findJump(f.host), "pill after tool row")
+        #expect(!jumpVisible(f.host), "pill after tool row")
         // The echo must sit ABOVE the provisional reply, and stay there once persisted.
         let ids = f.store.displayedMessages.map(\.entryID)
         let echo = try #require(ids.firstIndex { $0.hasPrefix("pending:") })
@@ -286,7 +270,131 @@ struct NativeScrollTests {
         try await f.layout()
         #expect(f.store.pending.isEmpty)
         #expect(f.distanceFromBottom < 2, "after persist: \(f.distanceFromBottom)")
-        #expect(!findJump(f.host), "pill after persist")
+        #expect(!jumpVisible(f.host), "pill after persist")
+    }
+
+    /// Whether the "Jump to latest" pill is on screen, read from the rendered window. SwiftUI
+    /// buttons are not NSViews, so a view-tree search never finds it.
+    private func jumpVisible(_ host: NSView) -> Bool {
+        host.layoutSubtreeIfNeeded()
+        guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return false }
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        guard let image = bitmap.cgImage else { return false }
+        let request = VNRecognizeTextRequest()
+        request.usesLanguageCorrection = false
+        try? VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).contains { $0.topCandidates(1).first?.string.localizedCaseInsensitiveContains("Jump to latest") == true }
+    }
+
+    /// Reported: scrolled all the way down while the agent streams, and the jump pill is still
+    /// showing. Scroll up a little, stream, then scroll back to the bottom by hand: the view must
+    /// re-stick, follow further growth, and drop the pill.
+    @Test func scrollingBackToTheBottomWhileStreamingReattaches() async throws {
+        let f = try Fixture(messageCount: 24, running: true)
+        defer { f.tearDown() }
+        try await waitFor { f.store.ready }
+        try await f.layout()
+        try await f.wheel(deltaY: 300)
+        #expect(f.distanceFromBottom > 100)
+        for revision in 2...4 {
+            f.snapshot = Fixture.makeSnapshot(count: 24 + (Int(revision) - 1) * 2, running: true, revision: UInt64(revision))
+            try await waitFor { f.store.snapshot?.revision == UInt64(revision) }
+            try await f.layout()
+        }
+        #expect(jumpVisible(f.host), "pill should show while detached and streaming")
+        // Back down by hand, well past the end (trackpad overshoot clamps at the bottom).
+        try await f.wheel(deltaY: -4000)
+        try await Task.sleep(for: .milliseconds(500))
+        try await f.layout()
+        #expect(f.distanceFromBottom <= NativeScrollFollower.threshold, "not at the bottom: \(f.distanceFromBottom)")
+        #expect(!jumpVisible(f.host), "pill still showing at the bottom")
+        // And the tail follows again.
+        f.snapshot = Fixture.makeSnapshot(count: 36, running: true, revision: 5)
+        try await waitFor { f.store.snapshot?.revision == 5 }
+        try await f.layout()
+        #expect(f.distanceFromBottom <= NativeScrollFollower.threshold, "growth after re-stick left the tail: \(f.distanceFromBottom)")
+        #expect(!jumpVisible(f.host))
+    }
+
+    /// Reported: sending in a long thread scrolled the whole chat off screen. Send from the
+    /// bottom of a thread whose snapshot is paged (older history exists) while the agent runs,
+    /// with a provisional reply streaming: the view must end at the echo/reply, not in blank space.
+    @Test func sendingInALongRunningThreadStaysOnTheContent() async throws {
+        let f = try Fixture(messageCount: 60, running: true)
+        defer { f.tearDown() }
+        try await waitFor { f.store.ready }
+        try await f.layout()
+        f.store.draft = "steer: also check the composer"
+        await f.store.send()
+        try await waitFor { f.store.sentCount == 1 }
+        for revision in 2...5 {
+            var next = Fixture.makeSnapshot(count: 60 + Int(revision) - 2, running: true, revision: UInt64(revision))
+            next.provisional = [NativeThreadMessage(entryID: "provisional:assistant:r", role: "assistant",
+                                                    blocks: [NativeThreadBlock(kind: .text, text: String(repeating: "streamed words ", count: revision * 20))],
+                                                    status: "streaming", truncated: false)]
+            f.snapshot = next
+            try await waitFor { f.store.snapshot?.revision == UInt64(revision) }
+            try await f.layout()
+            let document = f.scrollView.documentView!
+            let clip = f.scrollView.contentView
+            // Something must be on screen: the visible rect intersects laid-out content.
+            let visible = clip.bounds
+            let onScreen = document.subviews.flatMap { $0.subviews }.contains { $0.frame.intersects(visible) && $0.frame.height > 4 }
+            #expect(onScreen, "no content visible after revision \(revision); offset \(visible.origin.y) doc \(document.bounds.height)")
+            #expect(f.distanceFromBottom <= NativeScrollFollower.threshold, "left the tail after revision \(revision): \(f.distanceFromBottom)")
+            #expect(f.distanceFromBottom >= -1, "scrolled past the end after revision \(revision): \(f.distanceFromBottom)")
+        }
+        #expect(!jumpVisible(f.host))
+    }
+
+    /// The terminal bridge sends a bounded window; when it cannot overlap the previous one the
+    /// store replaces history with a much shorter list. Content shrinks under a pinned view: it
+    /// must land on the new tail, never on blank space past the end.
+    @Test func historyShrinkingUnderThePinnedViewLandsOnTheTail() async throws {
+        let f = try Fixture(messageCount: 60, running: true)
+        defer { f.tearDown() }
+        try await waitFor { f.store.ready }
+        try await f.layout()
+        var shorter = Fixture.makeSnapshot(count: 8, running: true, revision: 2)
+        shorter.messages = shorter.messages.enumerated().map { index, message in
+            var message = message; message.entryID = "w\(index)"; return message
+        }
+        f.snapshot = shorter
+        try await waitFor { f.store.messages.count == 8 }
+        try await f.layout()
+        try await Task.sleep(for: .milliseconds(200))
+        try await f.layout()
+        #expect(f.distanceFromBottom >= -1, "scrolled past the end: \(f.distanceFromBottom)")
+        #expect(f.distanceFromBottom <= NativeScrollFollower.threshold, "not on the tail: \(f.distanceFromBottom)")
+    }
+
+    /// A terminal agent's bridge sends a bounded, paged window. Sending grows the thread, the
+    /// window slides, and history is replaced with a different set of rows (with an older
+    /// cursor). The view must end on the echo and reply, never past them.
+    @Test func sendingWhileTheHistoryWindowSlidesStaysOnTheContent() async throws {
+        let f = try Fixture(messageCount: 40, running: false)
+        defer { f.tearDown() }
+        f.snapshot.olderCursor = "m0"
+        try await waitFor { f.store.ready }
+        try await f.layout()
+        f.store.draft = "next step please"
+        await f.store.send()
+        try await waitFor { f.store.sentCount == 1 }
+        for revision in 2...4 {
+            var next = Fixture.makeSnapshot(count: 44 + revision * 4, running: revision < 4, revision: UInt64(revision))
+            // The window slides: drop the oldest rows so the first id no longer overlaps.
+            next.messages = Array(next.messages.dropFirst(revision * 6))
+            next.messages.append(NativeThreadMessage(entryID: "u-sent", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "next step please")], truncated: false))
+            next.olderCursor = next.messages.first?.entryID
+            f.snapshot = next
+            try await waitFor { f.store.snapshot?.revision == UInt64(revision) }
+            try await f.layout()
+            try await Task.sleep(for: .milliseconds(150))
+            try await f.layout()
+            #expect(f.distanceFromBottom >= -1, "scrolled past the end after revision \(revision): \(f.distanceFromBottom)")
+            #expect(f.distanceFromBottom <= NativeScrollFollower.threshold, "left the tail after revision \(revision): \(f.distanceFromBottom)")
+        }
+        #expect(!jumpVisible(f.host))
     }
 
     @Test func sendingReattachesToTheTailWithoutBlankSpace() async throws {

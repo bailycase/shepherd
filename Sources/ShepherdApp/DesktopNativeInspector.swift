@@ -378,7 +378,7 @@ struct NativeSubagentInspector: View {
             .defaultScrollAnchor(terminal ? .top : .bottom, for: .initialOffset)
             .defaultScrollAnchor(transcript.following && !terminal ? .bottom : nil, for: .sizeChanges)
             .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height > 4
+                DesktopNativeThreadView.distanceFromBottom(geometry) > 4
             } action: { _, below in
                 moreBelow = below
                 if !below { transcript.setFollowing(true) }

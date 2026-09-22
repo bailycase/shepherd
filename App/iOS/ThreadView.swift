@@ -110,7 +110,8 @@ struct ThreadView: View {
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             .defaultScrollAnchor(nearBottom ? .bottom : nil, for: .sizeChanges)
             .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height < 120
+                // containerSize excludes the insets and the offset starts at -top, so this is 0 at the tail.
+                geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height - geometry.contentInsets.top < 120
             } action: { _, value in nearBottom = value }
             .onChange(of: store.snapshot) { _, _ in
                 if nearBottom { proxy.scrollTo("thread-bottom", anchor: .bottom) }

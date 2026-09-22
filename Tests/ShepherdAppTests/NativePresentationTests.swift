@@ -570,7 +570,9 @@ struct NativePresentationTests {
         let cases: [(name: String, start: NativeScrollFollower, distance: Double, intent: Bool, gesture: Bool, grew: Bool, sticky: Bool, unseen: Bool)] = [
             ("starts sticky; programmatic growth keeps it", .init(), 300, false, false, true, true, false),
             ("wheel intent away from the bottom detaches", .init(), 300, true, false, false, false, false),
-            ("drag gesture detaches", .init(), 40, false, true, false, false, false),
+            // A gesture in progress is not intent by itself: the view decides whether it moved
+            // the offset up (intent) or rows merely re-measured under it (layout).
+            ("gesture in progress without an upward move stays stuck", .init(), 40, false, true, false, true, false),
             ("layout jitter without intent never detaches", .init(), 500, false, false, false, true, false),
             ("content grows while detached marks unseen", .init(sticky: false), 300, false, false, true, false, true),
             ("returning within 4pt re-sticks and clears unseen", .init(sticky: false, unseen: true), 3, false, false, false, true, false),

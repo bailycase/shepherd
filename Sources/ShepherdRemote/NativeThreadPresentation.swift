@@ -617,15 +617,18 @@ public struct NativeScrollFollower: Equatable, Sendable {
         self.unseen = unseen
     }
 
-    /// One scroll-geometry observation. `userIntent` ORs the stored gesture flag with any
-    /// caller-side intent (a recent wheel event); `contentGrew` is the content height rising.
+    /// One scroll-geometry observation. Only `userIntent` detaches: the caller passes it when a
+    /// live gesture or wheel tick moved the offset up with the layout unchanged. A gesture that
+    /// is merely in progress while rows re-measure is layout, not the user (that stranded the
+    /// view detached at the bottom with the jump pill showing). `contentGrew` is the content
+    /// height rising.
     public mutating func observe(distanceFromBottom: Double, userIntent: Bool = false, contentGrew: Bool = false) {
         if distanceFromBottom <= Self.threshold {
             sticky = true
             unseen = false
             return
         }
-        if userIntent || userScrolling { sticky = false }
+        if userIntent { sticky = false }
         if !sticky, contentGrew { unseen = true }
     }
 
