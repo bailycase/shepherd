@@ -17,7 +17,7 @@ struct Composer: View {
     let gutter: CGFloat
     var composing: FocusState<Bool>.Binding
     var listModels: (() async -> [PiModelCatalog.Entry])?
-    /// Bumped by ⇧⌘M: open the model picker.
+    /// Bumped by the model-picker shortcut: open the model picker.
     var modelPickerRequest = 0
     @State private var attachments: [ImageAttachment] = []
     @State private var attachmentError: String?
@@ -544,7 +544,7 @@ struct ModelPicker: View {
                     .onKeyPress(.upArrow) { selected = max(0, selected - 1); return .handled }
                     .onKeyPress(.return) { if flat.indices.contains(selected) { choose(flat[selected].entry.id) }; return .handled }
                     .onKeyPress(.escape) { close(); return .handled }
-                Text("⇧⌘M").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text(KeybindingsStore.shared.display(.modelPicker)).font(Fonts.micro).foregroundStyle(Tokens.textMuted)
             }
             .padding(.horizontal, 12)
             .frame(height: 38)
