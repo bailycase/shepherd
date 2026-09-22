@@ -1,0 +1,73 @@
+import ShepherdDesign
+import SwiftUI
+import Testing
+@testable import ShepherdApp
+
+/// Behaviors use the Go and Python grammars: the Swift grammar's query compile alone costs
+/// ~0.3s, and nothing here depends on the language.
+@Suite("Code highlighting")
+@MainActor
+struct CodeHighlightTests {
+    private let style = CodeHighlight.Style(
+        comment: Color(hex: "#565758"), string: Color(hex: "#A1C592"), number: Color(hex: "#CEB370"),
+        keyword: Color(hex: "#8892B5"), type: Color(hex: "#A38FB5"), function: Color(hex: "#8FB3AD")
+    )
+
+    private func color(of fragment: String, in line: AttributedString) -> Color? {
+        line.runs.first { String(line[$0.range].characters).contains(fragment) }?.foregroundColor
+    }
+
+    @Test(arguments: [
+        ("Swift", "fence.swift"), ("py", "fence.py"), ("golang", "fence.go"), ("rs", "fence.rs"),
+        ("jsx", "fence.js"), ("ts", "fence.ts"), ("tsx", "fence.tsx"), ("c++", "fence.cpp"),
+        ("zsh", "fence.sh"), ("console", "fence.sh"), ("rb", "fence.rb"), ("jsonc", "fence.json"),
+        ("brainfuck", nil),
+    ] as [(String, String?)])
+    func fenceLanguagesPickAGrammar(language: String, path: String?) {
+        #expect(CodeHighlight.path(forFenceLanguage: language) == path)
+    }
+
+    @Test func aFenceWithoutALanguageHasNoGrammar() {
+        #expect(CodeHighlight.path(forFenceLanguage: nil) == nil)
+    }
+
+    @Test func keywordsStringsAndCommentsTakeTheirRoles() throws {
+        let line = try #require(CodeHighlight.highlightLines([#"var value = "hello" // done"#], path: "main.go", style: style).first)
+        #expect(color(of: "var", in: line) == style.keyword)
+        #expect(color(of: "hello", in: line) == style.string)
+        #expect(color(of: "// done", in: line) == style.comment)
+    }
+
+    @Test func pythonHashCommentsAreComments() throws {
+        let line = try #require(CodeHighlight.highlightLines(["value = 42  # count"], path: "script.py", style: style).first)
+        #expect(color(of: "# count", in: line) == style.comment)
+    }
+
+    /// Lines are highlighted as one document, so a block comment spans the line break.
+    @Test func blockCommentsContinueAcrossLines() {
+        let lines = CodeHighlight.highlightLines(["var value = 1 /* start", "continuation */"], path: "main.go", style: style)
+        #expect(lines.count == 2)
+        #expect(color(of: "/* start", in: lines[0]) == style.comment)
+        #expect(color(of: "continuation */", in: lines[1]) == style.comment)
+    }
+
+    /// Tree-sitter reports UTF-16 ranges; astral characters before a capture must not shift colors.
+    @Test func unicodeBeforeACaptureKeepsRangesAligned() throws {
+        let line = try #require(CodeHighlight.highlightLines([#"x = "🐑🐑" if ok else 'hello'  # done"#], path: "a.py", style: style).first)
+        #expect(color(of: "if", in: line) == style.keyword)
+        #expect(color(of: "hello", in: line) == style.string)
+        #expect(color(of: "# done", in: line) == style.comment)
+    }
+
+    @Test func unknownExtensionsStayUnstyledButKeepTheirText() throws {
+        let source = #"let value = "hello""#
+        let line = try #require(CodeHighlight.highlightLines([source], path: "config.xyz", style: style).first)
+        #expect(line.runs.allSatisfy { $0.foregroundColor == nil })
+        #expect(String(line.characters) == source)
+    }
+
+    @Test func outputHasOneLinePerInputLine() {
+        #expect(CodeHighlight.highlightLines([], path: "main.go", style: style).isEmpty)
+        #expect(CodeHighlight.highlightLines(["a", "", "b"], path: "main.go", style: style).map { String($0.characters) } == ["a", "", "b"])
+    }
+}
