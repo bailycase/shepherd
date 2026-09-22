@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdDesign
 import TerminalSurfaceKit
 
 /// Thin forwarders around the frozen TerminalSurfaceKit API. The only file in
@@ -17,16 +18,22 @@ final class AppTerminalModel {
         surface = TerminalSurfaceModel(
             fontSize: fontSize,
             fontFamily: fontFamily,
-            appearance: TerminalAppearance(
-                background: terminal.background,
-                foreground: terminal.foreground,
-                cursorColor: terminal.cursorColor,
-                selectionBackground: terminal.selectionBackground,
-                selectionForeground: terminal.selectionForeground,
-                palette: terminal.palette
-            ),
+            appearance: Self.appearance(terminal),
             extraUnbinds: extraUnbinds,
             acceptsFileDrops: acceptsFileDrops
+        )
+    }
+
+    /// Ghostty takes its scalar colors as bare hex; the palette keeps its `#`.
+    private static func appearance(_ terminal: ShepherdTheme.Terminal) -> TerminalAppearance {
+        func bare(_ hex: String) -> String { hex.hasPrefix("#") ? String(hex.dropFirst()) : hex }
+        return TerminalAppearance(
+            background: bare(terminal.background),
+            foreground: bare(terminal.foreground),
+            cursorColor: bare(terminal.cursor),
+            selectionBackground: terminal.selectionBackground.map(bare),
+            selectionForeground: terminal.selectionForeground.map(bare),
+            palette: terminal.palette
         )
     }
 
@@ -36,14 +43,7 @@ final class AppTerminalModel {
 
     func updateAppearance(_ terminal: ShepherdTheme.Terminal) {
         surface.updateAppearance(
-            TerminalAppearance(
-                background: terminal.background,
-                foreground: terminal.foreground,
-                cursorColor: terminal.cursorColor,
-                selectionBackground: terminal.selectionBackground,
-                selectionForeground: terminal.selectionForeground,
-                palette: terminal.palette
-            )
+            Self.appearance(terminal)
         )
     }
 

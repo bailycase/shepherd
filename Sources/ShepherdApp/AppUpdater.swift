@@ -1,6 +1,7 @@
 import Foundation
 import Sparkle
 import SwiftUI
+import ShepherdDesign
 
 /// The update channel a user rides. One channel at a time; each maps to a
 /// feed on gh-pages. Feeds are supersets down the stability ladder (the rc

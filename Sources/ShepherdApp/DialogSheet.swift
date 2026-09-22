@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdDesign
 
 /// One flat labeled row shared by every sheet and dialog: dim mono label
 /// column, control on the right, hairline separator underneath. This is the

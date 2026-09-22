@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdDesign
 import ShepherdSessions
 
 struct PiSettings: View {

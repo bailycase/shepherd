@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import ShepherdDesign
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
