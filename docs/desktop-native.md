@@ -50,3 +50,10 @@ A real Ghostty/PTY leaf test verified repeated presentation switches preserve th
 Controlled desktop and iOS views rendered text/status widgets and questions in dark/light mode. These snapshots use synthetic data, not a claimed live model conversation. Full desktop dialog-click, VoiceOver, physical Finder drag, and installed-pi end-to-end acceptance remain unverified in this preview. Ghostty rendering tests require an awake display; asleep displays caused both new and unchanged lifecycle tests to fail before rendering, then pass after waking without assertion changes.
 
 All changes remain uncommitted on `feat/ios-native-mvp`, alongside the existing mobile Settings edits.
+
+## Automated UI checks
+
+Two opt-in tests exercise the native UI without a person at the keyboard. Neither touches the user's pi configuration, sessions, or a running Shepherd.
+
+- **Real session render.** `SHEPHERD_REAL_SESSION=<session.jsonl> SHEPHERD_NATIVE_SCREENSHOT_DIR=/tmp/x swift test --filter realSessionRenders` projects the last page of a real pi session through the RPC transcript reader and captures `real-session.png` at 1500pt. Use it to find problems that fixtures never produce, such as provider errors, pi system entries, and long tool output.
+- **Live end to end.** `SHEPHERD_E2E=1 SHEPHERD_NATIVE_SCREENSHOT_DIR=/tmp/e2e swift test --filter LiveEndToEndTests` builds the real view model and `RootView` over a real `SessionServer`. It starts an RPC agent on `pi --mode rpc` with the bundled children extension, backed by the scripted local provider `Tests/Extensions/e2e-provider.mjs`. Scratch `PI_CODING_AGENT_DIR` and `SHEPHERD_SUPPORT_DIR` directories keep it isolated, and it makes no network calls. The test finds controls by visible text with Vision OCR and clicks them with real mouse events, so hidden or clipped buttons fail the run. It spawns three children, inspects the running worker, pauses and continues it, answers the reviewer's question, waits for the ledger, opens a finished child, and sends a follow-up. It captures `e2e-1-live-cards` through `e2e-6-followup`.

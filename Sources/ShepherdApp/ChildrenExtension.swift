@@ -73,7 +73,8 @@ enum ChildrenExtension {
         export function summarize(text, limit = 240) {
           const flat = String(text ?? "").replace(/\s+/g, " ").trim();
           if (!flat) return undefined;
-          const sentences = flat.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) ?? [flat];
+          // A sentence ends at punctuation followed by space or the end, so "View.swift" or "v1.2" stay whole.
+          const sentences = flat.match(/.+?[.!?]+(?=\s|$)|.+$/g) ?? [flat];
           const out = sentences.slice(0, 2).map((s) => s.trim()).join(" ");
           return out.length > limit ? out.slice(0, limit - 1).trimEnd() + "…" : out;
         }

@@ -251,6 +251,9 @@ for raw in sys.stdin.buffer:
                              "content": [{"type": "text", "text": "Background task completed: {\"ok\":true}"}]})
             MESSAGES.append({"role": "custom", "customType": "note", "display": True,
                              "content": [{"type": "text", "text": "A note the user should see"}]})
+            # Shepherd's own child report: displayed in the TUI, owned by the cards in RPC threads.
+            MESSAGES.append({"role": "custom", "customType": "shepherd-child", "display": True,
+                             "content": [{"type": "text", "text": "Child native-1 (worker): complete"}]})
             MESSAGES.append({"role": "assistant", "content": [{"type": "text", "text": "Done."}], "stopReason": "stop"})
             STATE["messageCount"] = len(MESSAGES)
             emit({"type": "agent_start"})

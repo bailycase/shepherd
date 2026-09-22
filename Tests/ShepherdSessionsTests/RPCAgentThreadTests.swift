@@ -303,10 +303,12 @@ struct RPCAgentThreadTests {
         defer { h.tearDown() }
         let s = try await h.ready()
         _ = try await h.send("subagent-noise", from: s)
-        let shown = try await h.snapshot { $0.messages.contains { $0.entryID == "m:7" } }
+        let shown = try await h.snapshot { $0.messages.contains { $0.entryID == "m:8" } }
         let roles = shown.messages.map(\.role)
-        // 2 seeded + 6 appended, minus the display:false custom → 7 rows; ids stay positional.
+        // 2 seeded + 7 appended, minus the display:false custom and Shepherd's child report
+        // (the cards own it) → 7 rows; ids stay positional.
         #expect(shown.messages.count == 7)
+        #expect(!shown.messages.contains { $0.blocks.contains { $0.text.hasPrefix("Child native-1") } })
         #expect(!roles.contains("custom") || shown.messages.contains { $0.role == "custom" && $0.blocks.first?.text == "A note the user should see" })
         #expect(!shown.messages.contains { $0.blocks.contains { $0.text.contains("Background task completed") } })
         // The assistant's toolCall block is not rendered as prose; the tool row carries it.
@@ -314,7 +316,7 @@ struct RPCAgentThreadTests {
         #expect(assistant.blocks.map(\.text) == ["Spawning."])
         #expect(shown.messages.contains { $0.toolName == "subagent" && $0.argumentsText?.contains("list") == true })
         // A cursor into filtered history still resolves by id.
-        guard case .snapshot(let older) = try await h.request(.snapshot(expectedSessionID: shown.piSessionID, beforeEntryID: "m:7")) else {
+        guard case .snapshot(let older) = try await h.request(.snapshot(expectedSessionID: shown.piSessionID, beforeEntryID: "m:8")) else {
             Issue.record("expected older page"); return
         }
         #expect(older.messages.last?.entryID == "m:6")

@@ -102,7 +102,8 @@ struct NativeSubagentInspector: View {
             if terminal, run != nil { result }
             NativeTokens.border.frame(height: 1)
             transcriptView
-            if terminal { turnLine } else { liveTranscriptFooter }
+            // The position line only earns its row when the transcript overflows.
+            if terminal { if moreBelow || visibleTurns.count < nativeTurns(transcript.messages).count { turnLine } } else { liveTranscriptFooter }
             if terminal { terminalBar } else { composer }
         }
         .font(NativeFonts.body)
@@ -135,7 +136,7 @@ struct NativeSubagentInspector: View {
         HStack(spacing: 8) {
             NativeBranchGlyph(color: nativeSubagentColor(state))
             HStack(spacing: 6) {
-                Text(role).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1)
+                Text(role).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1).layoutPriority(-1)
                 if let position, siblings.count > 1 {
                     Text("· \(position + 1) of \(siblings.count)").font(NativeFonts.label).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
                 }
@@ -206,6 +207,7 @@ struct NativeSubagentInspector: View {
                 .help("Close the inspector (⌘I)")
                 .accessibilityLabel("Close inspector")
             }
+            .fixedSize()
         }
         if !meta.isEmpty {
             Text(meta).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).lineLimit(1).truncationMode(.tail)
