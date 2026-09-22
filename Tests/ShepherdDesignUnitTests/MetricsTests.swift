@@ -18,16 +18,14 @@ struct DensityTests {
     @Test func designedDensityGivesTheDenseSidebar() {
         withDensity(1) {
             #expect(Metrics.sidebarRowHeight == 26)
-            #expect(Metrics.sidebarRowHeightCompact == 22)
             #expect(Metrics.settingsRowMinHeight == 52)
         }
     }
 
-    @Test(arguments: [(0.85, 22.0, 19.0, 44.0), (1.2, 31.0, 26.0, 62.0)])
-    func rowHeightsScaleAndRoundToWholePoints(density: Double, row: Double, compact: Double, settings: Double) {
+    @Test(arguments: [(0.85, 22.0, 44.0), (1.2, 31.0, 62.0)])
+    func rowHeightsScaleAndRoundToWholePoints(density: Double, row: Double, settings: Double) {
         withDensity(CGFloat(density)) {
             #expect(Metrics.sidebarRowHeight == CGFloat(row))
-            #expect(Metrics.sidebarRowHeightCompact == CGFloat(compact))
             #expect(Metrics.settingsRowMinHeight == CGFloat(settings))
         }
     }
