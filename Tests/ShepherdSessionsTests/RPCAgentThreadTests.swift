@@ -98,7 +98,7 @@ struct RPCAgentThreadTests {
         #expect(s.thinking == "medium")
         #expect(!s.running)
         #expect(s.dialogsSupported)
-        #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages"])
+        #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents"])
         #expect(s.runtime == "rpc")
         #expect(s.dialogs.isEmpty)
         #expect(s.widgets == [])
@@ -503,6 +503,106 @@ struct RPCAgentThreadTests {
         _ = try await h.send("plain", from: try await h.snapshot { !$0.running })
         let plain = try await h.lastStdin(type: "prompt", after: before)
         #expect(plain["images"] == nil)
+    }
+
+    /// Native child runs published over the socket (a fake children extension) land in the RPC
+    /// snapshot as cards; card actions travel back to that extension as childCommand frames;
+    /// the transcript pages from the child's session file.
+    @Test func subagentCardsCommandsAndTranscript() async throws {
+        let h = try await Harness()
+        defer { h.tearDown() }
+        let s = try await h.ready()
+        #expect(s.supportedActions.contains("subagents"))
+        #expect(s.subagents == [])
+
+        // A synthetic child session: 60 user/assistant pairs plus a tool call and a model-only custom.
+        let sessionFile = h.dir.appendingPathComponent("child-session.jsonl")
+        var lines = [#"{"type":"session","id":"child","version":3,"cwd":"/tmp"}"#]
+        for i in 0..<60 {
+            lines.append(#"{"type":"message","id":"u\#(i)","message":{"role":"user","content":"step \#(i)"}}"#)
+            lines.append(#"{"type":"message","id":"a\#(i)","message":{"role":"assistant","content":[{"type":"text","text":"reply \#(i)"}],"stopReason":"stop"}}"#)
+        }
+        lines.append(#"{"type":"message","id":"c1","message":{"role":"custom","customType":"x","display":false,"content":[{"type":"text","text":"hidden"}]}}"#)
+        lines.append(#"{"type":"message","id":"t0","message":{"role":"assistant","content":[{"type":"toolCall","id":"call_e","name":"edit","arguments":{"path":"A.swift"}}],"stopReason":"toolUse"}}"#)
+        lines.append(#"{"type":"message","id":"t1","message":{"role":"toolResult","toolCallId":"call_e","toolName":"edit","content":[{"type":"text","text":"ok"}],"isError":false}}"#)
+        lines.append(#"{"type":"model_change","id":"m","provider":"p","modelId":"m"}"#)
+        try (lines.joined(separator: "\n") + "\n").write(to: sessionFile, atomically: true, encoding: .utf8)
+
+        let children = try ExtensionClient(path: h.dir.appendingPathComponent("r.sock").path)
+        try children.send(.helloChildren(agentID: h.agent.id))
+        let running = ChildRun(runID: "native-1", label: "worker: restyle", state: "running", startedAt: 1000, needsAttention: false, asyncDir: "/tmp/c",
+                               role: "worker", model: "anthropic/claude-fable-5-1", thinking: "high", context: "background", turns: 78, toolCalls: 82, tokens: 922_000,
+                               lastActivity: ChildActivity(tool: "edit", preview: "Sources/A.swift", diff: ChildDiff(added: 31, removed: 0), at: 2000),
+                               toolCallID: "call_abc123", task: "Restyle the native thread", sessionFile: sessionFile.path)
+        let asking = ChildRun(runID: "native-2", label: "reviewer: check", state: "running", needsAttention: true, attentionText: "Two names collide",
+                              role: "reviewer", question: ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"]))
+        let done = ChildRun(runID: "native-3", label: "tests: run", state: "complete", startedAt: 1000, endedAt: 243_000, role: "tests",
+                            result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118_000), output: "Added 6 presentation tests.")
+        try children.send(.setAgentChildren(agentID: h.agent.id, children: [running, asking, done]))
+        let withCards = try await h.snapshot { $0.subagents?.count == 3 }
+        #expect(withCards.revision > s.revision)
+        #expect(withCards.subagents?.first?.toolCallID == "call_abc123")
+        #expect(withCards.subagents?[1].question?.options == ["Replace everywhere", "Rename new ones"])
+        #expect(withCards.subagents?[2].result?.added == 96)
+
+        // Answering a needs-you card: validated by the thread state, dispatched to the children
+        // extension as a childCommand, and only accepted once the extension answers.
+        let op = UUID()
+        let answer = NativeThreadRequest.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: op,
+                                                         runID: "native-2", action: .message, text: "Replace everywhere", mode: .steer)
+        async let outcome = h.request(answer)
+        let frame = try children.readReply()
+        guard case .childCommand(let id, let runID, let action, let text, let mode) = frame else {
+            Issue.record("expected childCommand, got \(frame)"); return
+        }
+        #expect(runID == "native-2" && action == .message && text == "Replace everywhere" && mode == .steer)
+        try children.send(.childCommandResult(id: id, error: nil))
+        #expect(try await outcome == .accepted(operationID: op))
+        // The parent pi never saw a prompt for it.
+        #expect(!h.stdinLines().contains { $0["type"] as? String == "prompt" })
+        // Same operation replays without a second frame; a failure text becomes a failure result.
+        #expect(try await h.request(answer) == .accepted(operationID: op))
+        async let failing = h.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
+                                                          runID: "native-1", action: .cancel))
+        guard case .childCommand(let cancelID, _, .cancel, nil, nil) = try children.readReply() else { Issue.record("expected cancel"); return }
+        try children.send(.childCommandResult(id: cancelID, error: "Child is not running"))
+        #expect(try await failing.isFailure(code: "child_command_failed"))
+        // Guards that never reach the socket.
+        #expect(try await h.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
+                                                     runID: "nope", action: .cancel)).isFailure(code: "unknown_run"))
+        #expect(try await h.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
+                                                     runID: "native-2", action: .message, text: "  ")).isFailure(code: "invalid"))
+        #expect(try await h.request(.subagentCommand(expectedSessionID: "stale", generation: s.generation, operationID: UUID(),
+                                                     runID: "native-2", action: .cancel)).isFailure(code: "stale_session"))
+
+        // Transcript: newest 50 of 122 visible entries (the model-only custom is filtered), then paging.
+        guard case .transcript(let page) = try await h.request(.subagentTranscript(expectedSessionID: s.piSessionID, runID: "native-1")) else {
+            Issue.record("expected transcript"); return
+        }
+        #expect(page.runID == "native-1" && page.messages.count == 50 && page.earlierCount == 72)
+        #expect(page.messages.last?.entryID == "c:t1" && page.messages.last?.toolName == "edit")
+        #expect(page.messages.last?.argumentsText == #"{"path":"A.swift"}"#)
+        #expect(!page.messages.contains { $0.role == "custom" })
+        #expect(page.olderCursor == page.messages.first?.entryID)
+        guard case .transcript(let older) = try await h.request(.subagentTranscript(expectedSessionID: s.piSessionID, runID: "native-1", beforeEntryID: page.olderCursor)) else {
+            Issue.record("expected older page"); return
+        }
+        #expect(older.messages.count == 50 && older.earlierCount == 22 && older.messages.last?.entryID != page.messages.first?.entryID)
+        guard case .transcript(let oldest) = try await h.request(.subagentTranscript(expectedSessionID: s.piSessionID, runID: "native-1", beforeEntryID: older.olderCursor)) else {
+            Issue.record("expected oldest page"); return
+        }
+        #expect(oldest.messages.count == 22 && oldest.olderCursor == nil && oldest.messages.first?.entryID == "c:u0")
+        #expect(try await h.request(.subagentTranscript(expectedSessionID: s.piSessionID, runID: "native-1", beforeEntryID: "c:gone")).isFailure(code: "stale_cursor"))
+        #expect(try await h.request(.subagentTranscript(expectedSessionID: s.piSessionID, runID: "native-2")).isFailure(code: "unknown_run"))
+
+        // The children connection going away fails the command instead of hanging it.
+        async let orphan = h.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
+                                                         runID: "native-3", action: .resume))
+        _ = try children.readReply()
+        children.closeConnection()
+        #expect(try await orphan.isFailure(code: "child_command_failed"))
+        #expect(try await h.request(.subagentCommand(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
+                                                     runID: "native-3", action: .resume)).isFailure(code: "child_command_failed"))
     }
 }
 

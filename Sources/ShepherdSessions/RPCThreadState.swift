@@ -22,7 +22,9 @@ final class RPCThreadState {
     static let widgetTitleBytes = 256
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
-    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages"]
+    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents"]
+    /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
+    static let transcriptReadLimit = 8 * 1024 * 1024
 
     private struct Provisional {
         let key: Int
@@ -48,6 +50,11 @@ final class RPCThreadState {
     private(set) var thinking: String?
     private(set) var stats: NativeThreadStats?
     private(set) var commands: [NativeCommand]?
+    /// Native child runs as last published by the children extension over the socket.
+    private(set) var subagents: [NativeSubagent] = []
+    /// Installed by SessionServer: writes a childCommand to the children extension and answers
+    /// with its error text (nil on success). Runs on the server queue.
+    var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
     private var history: [NativeThreadMessage] = []
     private var provisional: [Provisional] = []
     private var sequence = 0
@@ -134,6 +141,12 @@ final class RPCThreadState {
         commit()
     }
 
+    /// Server queue: full replacement from a setAgentChildren publish.
+    func setSubagents(_ rows: [ChildRun]) {
+        subagents = rows
+        commit()
+    }
+
     // MARK: - Requests (server queue)
 
     func handle(_ request: NativeThreadRequest, completion: @escaping (NativeThreadResult) -> Void) {
@@ -153,11 +166,22 @@ final class RPCThreadState {
                 return
             }
             completion(snapshot(beforeEntryID: beforeEntryID))
+        case .subagentTranscript(let expectedSessionID, let runID, let beforeEntryID):
+            guard expectedSessionID == piSessionID else {
+                completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
+                return
+            }
+            guard let run = subagents.first(where: { $0.runID == runID }), let file = run.sessionFile else {
+                completion(.failure(code: "unknown_run", message: "That subagent is no longer listed."))
+                return
+            }
+            completion(Self.transcript(runID: runID, file: file, beforeEntryID: beforeEntryID))
         case .send(let expectedSessionID, let generation, let operationID, _, _, _),
              .abort(let expectedSessionID, let generation, let operationID),
              .answer(let expectedSessionID, let generation, let operationID, _, _),
              .setModel(let expectedSessionID, let generation, let operationID, _),
-             .setThinking(let expectedSessionID, let generation, let operationID, _):
+             .setThinking(let expectedSessionID, let generation, let operationID, _),
+             .subagentCommand(let expectedSessionID, let generation, let operationID, _, _, _, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
@@ -263,9 +287,66 @@ final class RPCThreadState {
             session.send(command)
             dialogs.remove(at: index)
             completion(session.isAlive ? accepted : dispatchFailed)
-        case .snapshot:
+        case .subagentCommand(_, _, _, let runID, let action, let text, let mode):
+            // Unknown runs and empty replies never reach the socket; the dispatch itself is the
+            // server's (it owns the children extension's connection).
+            guard subagents.contains(where: { $0.runID == runID }) else {
+                completion(.failure(code: "unknown_run", message: "That subagent is no longer listed."))
+                return
+            }
+            if action == .message, (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || (text ?? "").utf8.count > Self.textLimit {
+                completion(.failure(code: "invalid", message: "A subagent message needs text up to 16 KiB."))
+                return
+            }
+            guard let dispatchSubagentCommand else { completion(dispatchFailed); return }
+            dispatchSubagentCommand(runID, action, text, mode) { error in
+                completion(error.map { .failure(code: "child_command_failed", message: $0) } ?? accepted)
+            }
+        case .snapshot, .subagentTranscript:
             completion(dispatchFailed)
         }
+    }
+
+    // MARK: - Subagent transcript
+
+    /// One page of a child's pi session JSONL, projected with the same rules as history.
+    /// Entry ids are the session entry ids ("c:<id>"); a stale cursor fails like history paging.
+    static func transcript(runID: String, file: String, beforeEntryID: String?) -> NativeThreadResult {
+        guard let handle = FileHandle(forReadingAtPath: file) else {
+            return .failure(code: "transcript_unavailable", message: "The subagent's session file is not readable.")
+        }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()).map(Int.init) ?? 0
+        let start = max(0, size - transcriptReadLimit)
+        try? handle.seek(toOffset: UInt64(start))
+        var data = (try? handle.readToEnd()) ?? Data()
+        if start > 0, let newline = data.firstIndex(of: UInt8(ascii: "\n")) { data = data[data.index(after: newline)...] }
+        struct Entry: Decodable { let type: String; let id: String?; let message: RPCMessage? }
+        let decoder = JSONDecoder()
+        var entries: [(id: String, message: RPCMessage)] = []
+        for line in data.split(separator: UInt8(ascii: "\n")) {
+            guard let entry = try? decoder.decode(Entry.self, from: line), entry.type == "message", let id = entry.id, let message = entry.message else { continue }
+            if message.role == "custom" && message.display != true { continue }
+            entries.append((id, message))
+        }
+        var arguments: [String: JSONValue] = [:]
+        for entry in entries where entry.message.role == "assistant" {
+            for case .toolCall(let id, _, let args) in entry.message.content { if let args { arguments[id] = args } }
+        }
+        var end = entries.count
+        if let beforeEntryID {
+            guard let index = entries.firstIndex(where: { "c:\($0.id)" == beforeEntryID }) else {
+                return .failure(code: "stale_cursor", message: "History changed. Refresh the recent page.")
+            }
+            end = index
+        }
+        let pageStart = max(0, end - pageSize)
+        let page = entries[pageStart..<end].map { entry in
+            let args = entry.message.role == "toolResult" ? entry.message.toolCallId.flatMap { arguments[$0] } : nil
+            return project(entryID: "c:\(entry.id)", message: entry.message, args: args)
+        }
+        return .transcript(value: NativeSubagentTranscript(
+            runID: runID, messages: page, olderCursor: pageStart > 0 ? page.first?.entryID : nil, earlierCount: pageStart))
     }
 
     // MARK: - Refresh
@@ -529,6 +610,7 @@ final class RPCThreadState {
         hasher.combine(piSessionID)
         hasher.combine(stats)
         hasher.combine(commands)
+        hasher.combine(subagents)
         let next = hasher.finalize()
         if next != signature {
             signature = next
@@ -553,7 +635,7 @@ final class RPCThreadState {
             dialogs: dialogs, widgets: widgets.map(\.value), messages: [],
             provisional: provisional.map(\.value) + tools.map(\.value),
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
-            runtime: "rpc", stats: stats, commands: commands
+            runtime: "rpc", stats: stats, commands: commands, subagents: subagents
         )
         // Keep active output bounded before filling the remaining budget with history.
         while Self.bytes(value) > Self.activeLimit, !value.provisional.isEmpty {

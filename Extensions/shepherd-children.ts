@@ -2,6 +2,7 @@
 // Execution belongs to this extension. shepherd-subagents.ts is the only sidebar publisher.
 import { spawn, execFileSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as net from "node:net";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
@@ -22,6 +23,25 @@ const clip = (text, limit = MAX_TEXT) => {
   return Buffer.byteLength(value) <= limit ? value : Buffer.from(value).subarray(0, limit).toString("utf8").replace(/\uFFFD$/, "");
 };
 const result = (data) => ({ content: [{ type: "text", text: JSON.stringify(data) }], details: data });
+// Same rule as the desktop tool row preview: an obvious action field first, then the first result line.
+export function toolPreview(args, resultText) {
+  const first = (value) => typeof value === "string" && value.trim() ? value.split("\n")[0].slice(0, 120) : undefined;
+  return first(args?.path) ?? first(args?.command) ?? first(args?.pattern) ?? first(args?.url) ?? first(args?.query)
+    ?? first((resultText ?? "").split("\n").find((line) => line.trim()));
+}
+// Multiset line difference per edit, so moved lines cancel (mirrors NativeDiffStat).
+export function editDiff(args) {
+  const edits = Array.isArray(args?.edits) ? args.edits : typeof args?.oldText === "string" && typeof args?.newText === "string" ? [args] : [];
+  let added = 0, removed = 0;
+  for (const edit of edits) {
+    if (typeof edit?.oldText !== "string" || typeof edit?.newText !== "string") continue;
+    const counts = new Map();
+    for (const line of edit.oldText ? edit.oldText.split("\n") : []) counts.set(line, (counts.get(line) ?? 0) + 1);
+    for (const line of edit.newText ? edit.newText.split("\n") : []) counts.set(line, (counts.get(line) ?? 0) - 1);
+    for (const value of counts.values()) { if (value > 0) removed += value; else added -= value; }
+  }
+  return edits.length ? { added, removed } : undefined;
+}
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== "ESRCH"; } };
 const signalPID = (pid, signal) => { try { process.kill(pid, signal); } catch (e) { if (e.code !== "ESRCH") throw e; } };
 
@@ -132,8 +152,8 @@ export default function shepherdChildren(pi) {
     pi.registerTool({
       name: "shepherd_parent_message", label: "message parent",
       description: "Send a bounded progress message or question to your parent. For a question, set needsReply and finish this turn; the parent can continue your session with an answer.",
-      parameters: Type.Object({ message: textSchema, needsReply: Type.Optional(Type.Boolean()) }),
-      async execute(_id, params) { return result({ shepherdParentMessage: params.message, needsReply: params.needsReply === true }); },
+      parameters: Type.Object({ message: textSchema, needsReply: Type.Optional(Type.Boolean()), options: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 6 })) }),
+      async execute(_id, params) { return result({ shepherdParentMessage: params.message, needsReply: params.needsReply === true, options: params.needsReply === true ? params.options : undefined }); },
     });
     return;
   }
@@ -152,16 +172,31 @@ export default function shepherdChildren(pi) {
   } catch { /* Unknown distributions must establish the supported Pi version. */ }
   const current = (run) => active && run.owner === owner;
   const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
-    workflowId: run.workflowId, settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight });
+    workflowId: run.workflowId, settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
+    turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: [...(run.files ?? [])], added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
+  // Card projection for the native thread (docs/design-spec/subagent-card-states.png). Every field
+  // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
+  function card(run) {
+    const workflow = run.workflowId ? workflows.get(run.workflowId) : undefined;
+    return {
+      runID: run.id, label: `${run.role}: ${clip(run.task, 100)}`, state: run.state,
+      startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool,
+      needsAttention: run.needsReply === true, attentionText: run.needsReply ? clip(run.questionText ?? run.output, 160) : undefined, asyncDir: run.dir,
+      role: run.role, model: run.model, thinking: run.thinking, context: workflow?.async ? "async" : "background",
+      step: workflow && run.stepIndex ? { index: run.stepIndex, total: Math.max(workflow.claims.size, run.stepIndex) } : undefined,
+      turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, lastActivity: run.lastActivity,
+      question: run.needsReply ? { text: run.questionText ?? clip(run.output, 600), options: run.questionOptions } : undefined,
+      result: run.state === "complete" ? { files: run.files?.size ?? 0, added: run.added ?? 0, removed: run.removed ?? 0, tools: run.toolCalls ?? 0, tokens: run.tokens ?? 0 } : undefined,
+      exitReason: run.state === "failed" ? [run.exitCode ? `exit ${run.exitCode}` : undefined, clip(run.error, 200)].filter(Boolean).join(" · ") : undefined,
+      toolCallID: run.toolCallID, task: clip(run.task, 600), output: run.state === "complete" ? clip(run.output, 600) : undefined,
+      sessionFile: run.sessionFile,
+    };
+  }
   function publish() {
     if (!active) return;
     pi.events.emit(EVENT, { owner, children: [...runs.values()].sort((a, b) =>
       Number(b.state === "running" || b.state === "queued") - Number(a.state === "running" || a.state === "queued")
-      || Number(b.needsReply === true) - Number(a.needsReply === true) || b.startedAt - a.startedAt).slice(0, 20).map((run) => ({
-      runID: run.id, label: `${run.role}: ${clip(run.task, 100)}`, state: run.state,
-      startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool,
-      needsAttention: run.needsReply === true, attentionText: run.needsReply ? clip(run.output, 160) : undefined, asyncDir: run.dir,
-    })) });
+      || Number(b.needsReply === true) - Number(a.needsReply === true) || b.startedAt - a.startedAt).slice(0, 20).map(card) });
   }
   function save(run) {
     try {
@@ -226,6 +261,7 @@ export default function shepherdChildren(pi) {
     clearTimeout(run.drainTimer);
     for (const pending of run.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error("Child exited")); }
     run.pending.clear();
+    run.exitCode = code ?? undefined;
     if (run.cancelled) run.state = "stopped";
     else if (!run.settled || run.error || (code !== 0 && code !== null) || signal) {
       run.state = "failed";
@@ -249,14 +285,25 @@ export default function shepherdChildren(pi) {
         event.success ? pending.resolve(event.data) : pending.reject(new Error(clip(event.error)));
       }
     } else if (event.type === "tool_execution_start") {
-      run.currentTool = clip(event.toolName, 160); run.latestTool = run.currentTool; save(run);
+      run.currentTool = clip(event.toolName, 160); run.latestTool = run.currentTool;
+      if (event.toolCallId) run.toolArgs.set(event.toolCallId, event.args);
+      save(run);
     } else if (event.type === "tool_execution_end") {
       run.currentTool = undefined;
+      run.toolCalls = (run.toolCalls ?? 0) + 1;
+      const args = run.toolArgs.get(event.toolCallId); run.toolArgs.delete(event.toolCallId);
+      const text = (event.result?.content ?? []).filter((p) => p.type === "text").map((p) => p.text).join("\n");
+      const diff = event.toolName === "edit" && !event.isError ? editDiff(args) : undefined;
+      if (diff) { run.added = (run.added ?? 0) + diff.added; run.removed = (run.removed ?? 0) + diff.removed; }
+      if (["edit", "write"].includes(event.toolName) && !event.isError && typeof args?.path === "string") run.files.add(args.path);
+      run.lastActivity = { kind: "tool", tool: clip(event.toolName, 80), preview: toolPreview(args, text), diff, at: Date.now() };
       if (event.toolName === "shepherd_parent_message") {
         const details = event.result?.details;
         if (typeof details?.shepherdParentMessage === "string") {
           run.needsReply = details.needsReply === true;
+          run.questionOptions = run.needsReply && Array.isArray(details.options) ? details.options.filter((o) => typeof o === "string").slice(0, 6) : undefined;
           run.output = clip(details.shepherdParentMessage);
+          run.questionText = run.needsReply ? clip(run.output, 600) : undefined;
           notify(run, `${run.needsReply ? "Needs reply: " : ""}${run.output}`);
         }
       }
@@ -266,6 +313,13 @@ export default function shepherdChildren(pi) {
       run.output = clip((message.content ?? []).filter((p) => p.type === "text").map((p) => p.text).join("\n"));
       run.error = ["error", "aborted"].includes(message.stopReason) ? clip(message.errorMessage || message.stopReason) : undefined;
       run.lastStop = message.stopReason;
+      run.turns = (run.turns ?? 0) + 1;
+      if (Number.isFinite(message.usage?.totalTokens)) run.tokens = (run.tokens ?? 0) + message.usage.totalTokens;
+      // Context fill is the child's own estimate; best-effort, the card renders without it.
+      command(run, "get_session_stats", {}, 2000).then((stats) => {
+        if (Number.isFinite(stats?.contextUsage?.percent)) { run.contextPercent = stats.contextUsage.percent; save(run); }
+      }).catch(() => {});
+      save(run);
     } else if (event.type === "extension_ui_request" && event.method === "notify") {
       try { const data = JSON.parse(event.message); if (Array.isArray(data.shepherdChildTools)) run.availableTools = data.shepherdChildTools; } catch {}
     } else if (event.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(event.method)) {
@@ -295,7 +349,8 @@ export default function shepherdChildren(pi) {
     atomic(path.join(leaseDir, "owner.json"), { pid: process.pid, token: run.token });
     run.pending = new Map(); run.exited = false; run.cancelled = false; run.settled = false;
     run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
-    run.needsReply = false; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
+    run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
+    run.toolArgs = new Map(); run.files ??= new Set();
     run.closed = new Promise((resolve) => { run.resolveClosed = resolve; });
     const env = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("SHEPHERD_") || key.startsWith("PI_SUBAGENT") || ["PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL"].includes(key)) delete env[key];
@@ -387,8 +442,42 @@ export default function shepherdChildren(pi) {
     } catch { /* The inspector may not have created an inbox yet. */ }
     finally { run.controlBusy = false; }
   }
+  // The app's native thread cards drive children over the extension socket: Shepherd sends
+  // childCommand frames, this replies childCommandResult, calling the same functions the tools use.
+  // The parent model is never involved. Failures reconnect; nothing here can throw into pi.
+  let control, controlRetry;
+  async function childCommand(frame) {
+    const run = get(String(frame.runID ?? ""));
+    const text = typeof frame.text === "string" ? frame.text : "";
+    if (frame.action === "cancel") { await stop(run); return; }
+    if (frame.action === "resume") { await resume(run, run.task, undefined, sessionContext); return; }
+    if (frame.action !== "message") throw new Error("Unsupported child command");
+    if (!text.trim() || text.length > MAX_TEXT) throw new Error("Invalid child message");
+    await messageChild(run, text, frame.mode === "followUp" ? "followUp" : "steer", sessionContext);
+  }
+  function connectControl() {
+    if (!active || control) return;
+    try {
+      const s = net.createConnection(process.env.SHEPHERD_SOCKET);
+      control = s; s.unref();
+      s.on("connect", () => { try { s.write(JSON.stringify({ type: "helloChildren", agentID: process.env.SHEPHERD_AGENT_ID }) + "\n"); } catch { s.destroy(); } });
+      s.on("data", jsonLines((frame) => {
+        if (frame?.type !== "childCommand" || !Number.isSafeInteger(frame.id)) return;
+        childCommand(frame).then(() => undefined, (error) => clip(error.message, 500)).then((error) => {
+          if (control === s) { try { s.write(JSON.stringify({ type: "childCommandResult", id: frame.id, error }) + "\n"); } catch {} }
+        });
+      }, () => s.destroy()));
+      s.on("error", () => {});
+      s.on("close", () => {
+        if (control !== s) return;
+        control = undefined;
+        if (active) { controlRetry = setTimeout(connectControl, 2000); controlRetry.unref(); }
+      });
+    } catch { control = undefined; }
+  }
   pi.on("session_start", (_event, ctx) => {
     owner = ctx.sessionManager.getSessionId(); active = true; sessionContext = ctx;
+    connectControl();
     missions = missionStore(path.join(path.dirname(root), "shepherd-native"), ctx.cwd);
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
     for (const entry of ctx.sessionManager.getEntries()) {
@@ -415,6 +504,8 @@ export default function shepherdChildren(pi) {
         }
         runs.set(data.id, { ...data, dir, sessionFile: path.join(dir, "session.jsonl"), output: clip(status.output), error: status.error,
           needsReply: status.needsReply === true, lastStop: status.stopReason,
+          turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
+          files: new Set(Array.isArray(status.files) ? status.files : []), lastActivity: status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, exitCode: status.exitCode,
           tools: Array.isArray(status.tools) ? data.tools.filter((name) => status.tools.includes(name)) : data.tools,
           missionId: status.missionId ?? data.missionId,
           state: ["complete", "failed", "stopped"].includes(status.state) ? status.state : "stopped", startedAt: status.startedAt ?? data.startedAt, endedAt: status.endedAt, latestTool: status.latestTool });
@@ -433,7 +524,8 @@ export default function shepherdChildren(pi) {
     registerCommands();
   });
   pi.on("session_shutdown", async () => {
-    active = false; clearInterval(timer);
+    active = false; clearInterval(timer); clearTimeout(controlRetry);
+    const socket = control; control = undefined; socket?.destroy();
     for (const workflow of workflows.values()) workflow.controller.abort();
     await Promise.all([...workflows.values()].map((w) => w.done));
     await Promise.all([...runs.values()].map((run) => stop(run, "Parent session ended")));
@@ -461,7 +553,7 @@ export default function shepherdChildren(pi) {
     if (resolved.error || !resolved.model) throw Error(resolved.error || "Select a model in the parent first");
     return resolved;
   }
-  async function start(params, signal, ctx, workflowId) {
+  async function start(params, signal, ctx, workflowId, toolCallID, stepIndex) {
       params = checked(startSchema, params);
       if (!active) throw new Error("No active parent session");
       if (!supported) throw new Error("Shepherd native children require Pi 0.85.1 or newer");
@@ -492,7 +584,8 @@ export default function shepherdChildren(pi) {
         context: params.context ?? profile.context ?? defaults.context,
         requiresProjectTrust: profile.requiresProjectTrust || (targetContext.isProjectTrusted() && (profile.inheritSkills || profile.skills?.length)), profileSource: profile.source, systemPromptMode: profile.systemPromptMode, inheritProjectContext: profile.inheritProjectContext,
         extensions: profile.extensions ?? [], skills: childSkills(profile, targetContext), workflowId, ...missionFor(params, params.task),
-        tools: requestedTools.filter((name) => pi.getActiveTools().includes(name)), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "" };
+        tools: requestedTools.filter((name) => pi.getActiveTools().includes(name)), state: "queued", startedAt: Date.now(), sessionFile: path.join(dir, "session.jsonl"), output: "",
+        toolCallID: typeof toolCallID === "string" ? toolCallID : undefined, stepIndex, turns: 0, toolCalls: 0, tokens: 0, added: 0, removed: 0, files: new Set() };
       runs.set(id, run);
       try {
         if (run.context === "fork") Object.assign(run, forkSession(ctx.sessionManager, cwd, run.sessionFile));
@@ -501,7 +594,7 @@ export default function shepherdChildren(pi) {
           fs.writeFileSync(run.sessionFile, JSON.stringify(sm.getHeader()) + "\n", { mode: 0o600 });
         }
         fs.writeFileSync(path.join(dir, "prompt.md"), `You are a Shepherd child, not the parent. ${profile.prompt}\nWork only on the delegated task. No nested helpers, workflows, schedules, or worktree management. Use shepherd_parent_message for progress or questions. For a question set needsReply and finish your turn. Your parent can resume with an answer.\n`, { mode: 0o600 });
-        const { dir: _dir, output: _output, ...descriptor } = run;
+        const { dir: _dir, output: _output, files: _files, ...descriptor } = run;
         pi.appendEntry("shepherd-child", descriptor);
         return await launch(run, params.task, signal);
       } catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
@@ -510,7 +603,7 @@ export default function shepherdChildren(pi) {
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
     description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Completion wakes the parent. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
-    async execute(_id, p, signal, _update, ctx) { return result(await start(p, signal, ctx)); } });
+    async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
   pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end.",
     parameters: Type.Object({ id: idSchema, message: textSchema, mode: Type.Optional(StringEnum(["steer", "followUp"])) }),
     async execute(_id, p) { return result(await send(get(p.id), p.message, p.mode)); } });
@@ -597,8 +690,8 @@ export default function shepherdChildren(pi) {
     children: [...w.keys].map(([key, run]) => ({ key, id: run.id, state: run.state })) });
   pi.registerTool({ name: "shepherd_workflow", label: "workflow", parameters: workflowSchema,
     description: "Start a background JavaScript statement body with runs.run(key,{agent,task,...}), runs.all([{key,agent,task,...}]), runs.steer(key,message,{mode}), runs.status(key), runs.cancel(key). Await or return calls. Use ordinary sequencing/branching; no imports, process or filesystem API. This is restricted execution, NOT an OS sandbox. Children retain their normal tools. Default 30-minute deadline and enclosing mission; mission:false disables persistence and state.get/set. async:false waits. status/wait/cancel target this parent's workflow id. No automatic retries, worktrees or scheduling.",
-    async execute(_id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx); } });
-  async function runWorkflow(params, signal, ctx, onSlashComplete) {
+    async execute(id, params, signal, _update, ctx) { return runWorkflow(params, signal, ctx, undefined, id); } });
+  async function runWorkflow(params, signal, ctx, onSlashComplete, toolCallID) {
       const p = checked(workflowSchema, params), action = p.action ?? "start";
       if (!active) throw Error("No active parent session");
       signal?.throwIfAborted();
@@ -613,7 +706,7 @@ export default function shepherdChildren(pi) {
       }
       if (!p.workflowScript) throw Error("workflowScript is required");
       if (workflows.size >= 32 || [...workflows.values()].filter((w) => w.state === "running").length >= 4) throw Error("Workflow limit reached: four active, 32 retained per parent");
-      const w = { id: `workflow-${randomUUID()}`, owner, state: "running", keys: new Map(), claims: new Set(), starts: new Set(), controller: new AbortController(),
+      const w = { id: `workflow-${randomUUID()}`, owner, state: "running", async: p.async !== false, keys: new Map(), claims: new Set(), starts: new Set(), controller: new AbortController(),
         ...missionFor(p, p.task ?? "Scripted workflow") };
       workflows.set(w.id, w);
       pi.appendEntry("shepherd-workflow", { id: w.id, owner, ownerPID: process.pid, missionId: w.missionId });
@@ -632,7 +725,7 @@ export default function shepherdChildren(pi) {
           await new Promise((r) => setTimeout(r, 50)); guard();
         }
         guard();
-        const promise = start({ ...params, ...(w.missionId ? { missionId: w.missionId } : { mission: false }) }, w.controller.signal, ctx, w.id);
+        const promise = start({ ...params, ...(w.missionId ? { missionId: w.missionId } : { mission: false }) }, w.controller.signal, ctx, w.id, toolCallID, w.claims.size);
         w.starts.add(promise);
         let receipt;
         try { receipt = await promise; } finally { w.starts.delete(promise); }

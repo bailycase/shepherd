@@ -178,6 +178,54 @@ struct ProtocolTests {
         }
     }
 
+    /// The card fields the children extension publishes (docs/design-spec/subagent-card-states.png)
+    /// decode from its exact JSON.stringify shape, and every one is optional: pi-subagents rows
+    /// (no card fields) and old hosts keep decoding.
+    @Test func childCardFieldsDecodeAndRoundTrip() throws {
+        let wire = Data(#"{"type":"setAgentChildren","agentID":"a","children":[{"runID":"native-1","label":"worker: restyle","state":"running","startedAt":1,"needsAttention":false,"asyncDir":"/tmp/c","role":"worker","model":"anthropic/claude-fable-5-1","thinking":"high","context":"background","step":{"index":1,"total":1},"turns":78,"toolCalls":82,"tokens":922000,"contextPercent":62,"lastActivity":{"kind":"tool","tool":"edit","preview":"Sources/A.swift","diff":{"added":31,"removed":0},"at":2},"toolCallID":"call_1","task":"Restyle","sessionFile":"/tmp/c/session.jsonl"},{"runID":"native-2","label":"reviewer: check","state":"running","needsAttention":true,"attentionText":"Two names collide","question":{"text":"Two names collide","options":["Replace everywhere","Rename new ones"]}},{"runID":"native-3","label":"tests: run","state":"complete","needsAttention":false,"result":{"files":2,"added":96,"removed":3,"tools":19,"tokens":118000},"output":"Added 6 tests."},{"runID":"native-4","label":"docs: write","state":"failed","needsAttention":false,"exitReason":"exit 1 · context limit reached after 41 turns"}]}"#.utf8)
+        guard case .setAgentChildren(_, let rows) = try NDJSON.decode(ExtensionMessage.self, from: wire) else {
+            Issue.record("expected setAgentChildren"); return
+        }
+        #expect(rows[0].role == "worker" && rows[0].context == "background" && rows[0].step == ChildStep(index: 1, total: 1))
+        #expect(rows[0].turns == 78 && rows[0].toolCalls == 82 && rows[0].tokens == 922000 && rows[0].contextPercent == 62)
+        #expect(rows[0].lastActivity == ChildActivity(tool: "edit", preview: "Sources/A.swift", diff: ChildDiff(added: 31, removed: 0), at: 2))
+        #expect(rows[0].toolCallID == "call_1" && rows[0].sessionFile == "/tmp/c/session.jsonl")
+        #expect(rows[1].question == ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"]))
+        #expect(rows[2].result == ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118000) && rows[2].output == "Added 6 tests.")
+        #expect(rows[3].exitReason == "exit 1 · context limit reached after 41 turns" && rows[3].question == nil && rows[3].result == nil)
+        for row in rows {
+            #expect(try NDJSON.decode(ChildRun.self, from: NDJSON.encode(row).dropLast()) == row)
+        }
+        // Absent card fields never appear on the wire.
+        let bare = try #require(JSONSerialization.jsonObject(with: NDJSON.encode(ChildRun(runID: "r", label: "l", state: "running"))) as? [String: Any])
+        #expect(bare["role"] == nil && bare["question"] == nil && bare["result"] == nil && bare["lastActivity"] == nil)
+    }
+
+    /// App → children extension control channel: hello, command, result.
+    @Test func childCommandMessagesRoundTrip() throws {
+        let replies: [ExtensionReply] = [
+            .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
+            .childCommand(id: 2, runID: "native-1", action: .cancel, text: nil, mode: nil),
+            .childCommand(id: 3, runID: "native-1", action: .resume, text: nil, mode: nil),
+        ]
+        for reply in replies {
+            let line = try NDJSON.encode(reply)
+            #expect(try NDJSON.decode(ExtensionReply.self, from: line.dropLast()) == reply)
+        }
+        let messages: [ExtensionMessage] = [
+            .helloChildren(agentID: AgentID()),
+            .childCommandResult(id: 1, error: nil),
+            .childCommandResult(id: 2, error: "Child is not running"),
+        ]
+        for message in messages {
+            let line = try NDJSON.encode(message)
+            #expect(try NDJSON.decode(ExtensionMessage.self, from: line.dropLast()) == message)
+        }
+        // The extension writes these by hand (JSON.stringify drops undefined).
+        #expect(try NDJSON.decode(ExtensionMessage.self, from: Data(#"{"type":"childCommandResult","id":7}"#.utf8)) == .childCommandResult(id: 7, error: nil))
+        #expect(try NDJSON.decode(ExtensionMessage.self, from: Data(#"{"type":"helloChildren","agentID":"a1"}"#.utf8)) == .helloChildren(agentID: AgentID(rawValue: "a1")))
+    }
+
     /// Pane control is request/reply, so both directions must survive the
     /// wire: the extension's requests and the app's answers.
     @Test func paneMessagesRoundTrip() throws {
