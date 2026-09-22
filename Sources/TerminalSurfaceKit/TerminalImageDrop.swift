@@ -224,9 +224,11 @@ public enum TerminalImageDrop {
             bitmapDataPlanes: nil,
             pixelsWide: target.width,
             pixelsHigh: target.height,
+            // RGBA for both outputs: a 24-bit RGB bitmap cannot back a graphics context, so
+            // JPEGs were silently never resized. JPEG encoding drops the (opaque) alpha.
             bitsPerSample: 8,
-            samplesPerPixel: isJPEG ? 3 : 4,
-            hasAlpha: !isJPEG,
+            samplesPerPixel: 4,
+            hasAlpha: true,
             isPlanar: false,
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,

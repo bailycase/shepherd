@@ -88,11 +88,8 @@ struct TerminalImageDropTests {
         #expect(rep.pixelsWide == 2000 && rep.pixelsHigh == 3)
     }
 
-    @Test(.disabled("""
-        bug: normalize draws JPEG output into a 24-bpp RGB (no alpha) NSBitmapImageRep, for which \
-        NSGraphicsContext(bitmapImageRep:) returns nil, so oversized JPEG drops pass through un-resized
-        """))
-    func oversizedJPEGIsDownscaledAndStaysJPEG() throws {
+    /// JPEG output once drew into a bitmap that could not back a graphics context.
+    @Test func oversizedJPEGIsDownscaledAndStaysJPEG() throws {
         let (output, outputType) = TerminalImageDrop.normalize(try Images.encoded(width: 4, height: 2400, as: .jpeg), type: .jpeg)
         #expect(outputType == .jpeg)
         #expect(Array(output.prefix(2)) == [0xFF, 0xD8])
