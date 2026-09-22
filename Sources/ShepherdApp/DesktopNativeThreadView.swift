@@ -98,8 +98,7 @@ struct DesktopNativeThreadView: View {
                 // scrollTo; detaching only ever happens on user scroll intent (see observe below).
                 .defaultScrollAnchor(follower.sticky ? .bottom : nil, for: .sizeChanges)
                 .onScrollGeometryChange(for: ScrollProbe.self) { geometry in
-                    ScrollProbe(distance: geometry.contentSize.height + geometry.contentInsets.bottom
-                                    - geometry.contentOffset.y - geometry.containerSize.height,
+                    ScrollProbe(distance: Self.distanceFromBottom(geometry),
                                 content: geometry.contentSize.height, container: geometry.containerSize.height,
                                 inset: geometry.contentInsets.bottom)
                 } action: { old, new in
@@ -116,8 +115,7 @@ struct DesktopNativeThreadView: View {
                     // re-sticks immediately via the geometry it lands on.
                     follower.userScrolling = phase == .interacting
                     if phase == .idle {
-                        let g = context.geometry
-                        follower.observe(distanceFromBottom: g.contentSize.height + g.contentInsets.bottom - g.contentOffset.y - g.containerSize.height)
+                        follower.observe(distanceFromBottom: Self.distanceFromBottom(context.geometry))
                     }
                 }
                 .onChange(of: store.snapshot) { _, snapshot in clock.observe(snapshot) }
@@ -196,6 +194,17 @@ struct DesktopNativeThreadView: View {
         }
     }
 
+    /// How far the visible bottom sits above the end of the content. `containerSize` is the
+    /// viewport minus both insets (the 28pt top margin and the composer's safe area), and the
+    /// offset runs from `-top` to `content + bottom - frame`, so at the tail this is exactly 0.
+    /// The old formula added the bottom inset and ignored the top one, reading every true
+    /// bottom as ~119pt away: the view never re-stuck after scrolling down, the jump pill
+    /// stayed up at the bottom, and every layout change fired another scroll-to-bottom.
+    /// Content that fits the viewport reads negative.
+    static func distanceFromBottom(_ geometry: ScrollGeometry) -> CGFloat {
+        geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height - geometry.contentInsets.top
+    }
+
     private struct ScrollProbe: Equatable {
         var distance: CGFloat
         var content: CGFloat
@@ -212,7 +221,11 @@ struct DesktopNativeThreadView: View {
     /// arrive in separate callbacks, so "moved up without a size change" misfires on every
     /// provisional→history swap.
     private func observe(old: ScrollProbe, new: ScrollProbe) {
-        let intent = Date() <= wheelIntentUntil
+        // Detach only when the user moved the view up: a live gesture or recent wheel tick, the
+        // distance grew, and the layout did not change in the same callback. Rows re-measuring
+        // (LazyVStack estimates) or streaming growth during a gesture are not the user.
+        let gesture = Date() <= wheelIntentUntil || follower.userScrolling
+        let intent = gesture && new.distance > old.distance && !new.layoutDiffers(from: old)
         // Content that fits the viewport has a negative "distance"; growth from there is
         // layout, never the user, and must not register as unseen content.
         let grew = new.content > old.content && old.distance > 0
