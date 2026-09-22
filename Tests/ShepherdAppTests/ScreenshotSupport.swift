@@ -8,12 +8,15 @@ import Testing
 @MainActor
 func renderScreenshot<V: View>(_ view: V, size: CGSize, name: String, dark: Bool, settle: Duration = .milliseconds(250)) async throws {
     _ = NSApplication.shared
-    let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled], backing: .buffered, defer: false)
+    // Far off every screen: the window must be ordered in for SwiftUI to lay out and draw,
+    // but never where it could flash over someone's work.
+    let window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -30_000, y: -30_000), size: size),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
     window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
     let host = NSHostingView(rootView: view.environment(\.colorScheme, dark ? .dark : .light))
     host.appearance = window.appearance
     window.contentView = host
-    window.orderFront(nil)
+    window.orderBack(nil)
     defer { window.orderOut(nil); window.contentView = nil }
     try await Task.sleep(for: settle)
     host.layoutSubtreeIfNeeded()
