@@ -205,7 +205,7 @@ extension ShepherdViewModel {
                 do {
                     let target = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
                     if case .search(let snippet?) = try await remoteHosts.agentQuery(target, query: .search(query: query)) {
-                        rows.append(PaletteItem(id: "fuzzy.\(id)", kind: .remoteAgent(hostID: connection.id, agentID: agent.id), section: .fuzzyMatches, title: agent.name, subtitle: "agent · ⌁ \(connection.config.name)", contentSnippet: snippet))
+                        rows.append(PaletteItem(id: "fuzzy.\(id)", kind: .remoteAgent(hostID: connection.id, agentID: agent.id), section: .conversations, title: agent.name, subtitle: connection.config.name, icon: "text.magnifyingglass", contentSnippet: snippet))
                     }
                 } catch {
                     if Task.isCancelled { return [] }

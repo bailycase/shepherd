@@ -197,16 +197,9 @@ public struct ShepherdMacApp: App {
                     ForEach(Array(vm.activeMachineAgents.prefix(9).enumerated()), id: \.element.id) { index, agent in
                         Button(agent.name) {
                             let digit = index + 1
-                            // The chord stays permanently wired (conditional
-                            // nil shortcuts left menus flaky after palette
-                            // close); the action routes to the palette's
-                            // quick-pick while it is open.
                             Task { @MainActor in
-                                if vm.showCommandPalette {
-                                    vm.runPaletteQuickPick(digit)
-                                } else {
-                                    vm.selectAgentDigit(digit)
-                                }
+                                vm.showCommandPalette = false
+                                vm.selectAgentDigit(digit)
                             }
                         }
                         .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
