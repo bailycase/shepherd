@@ -49,10 +49,10 @@ struct FinalizeWorktreeSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(headerTitle)
-                    .font(Fonts.mono(13.5, .semibold))
-                    .foregroundStyle(Tokens.textPrimary)
+                    .font(Fonts.title)
+                    .foregroundStyle(Tokens.text)
                 Text(headerSubtitle)
-                    .font(Fonts.mono(11.5))
+                    .font(Fonts.labelRegular)
                     .foregroundStyle(Tokens.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineSpacing(2)
@@ -75,16 +75,17 @@ struct FinalizeWorktreeSheet: View {
             }
         }
         .frame(width: 560)
-        .background(Tokens.workspaceBg)
+        .background(Tokens.bgSurface)
+        .buttonStyle(ShepherdButtonStyle(.secondary))
         .task { await initialChecks() }
     }
 
     private var headerTitle: String {
         switch phase {
-        case .setup: return "Set Up Worktree Finalize"
-        case .done: return "Worktree Finalized"
-        case .failed: return "Finalize Stopped"
-        default: return "Finalize Worktree"
+        case .setup: return "Set up Finalize"
+        case .done: return "Worktree finalized"
+        case .failed: return "Finalize stopped"
+        default: return "Finalize worktree"
         }
     }
 
@@ -109,9 +110,9 @@ struct FinalizeWorktreeSheet: View {
 
     private var checkingBody: some View {
         HStack(spacing: 8) {
-            Circle().fill(Tokens.statusWorking).frame(width: 6, height: 6)
-            Text("probing git, origin, and GitHub CLI…")
-                .font(Fonts.mono(11))
+            Circle().fill(Tokens.success).frame(width: 6, height: 6)
+            Text("Checking git, origin and the GitHub CLI…")
+                .font(Fonts.caption)
                 .foregroundStyle(Tokens.textTertiary)
             Spacer(minLength: 0)
         }
@@ -140,12 +141,12 @@ struct FinalizeWorktreeSheet: View {
     private var setupFooter: some View {
         HStack(spacing: 10) {
             if setup.allPassed {
-                Text("✓ all set — ready to finalize")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.statusDone)
+                Text("All set — ready to finalize")
+                    .font(Fonts.caption)
+                    .foregroundStyle(Tokens.accent)
             }
             Spacer(minLength: 12)
-            Button(setup.running ? "Checking…" : "Re-run Checks") {
+            Button(setup.running ? "Checking…" : "Re-run checks") {
                 Task { await setup.runAll() }
             }
             .disabled(setup.running)
@@ -159,8 +160,7 @@ struct FinalizeWorktreeSheet: View {
                 }
             }
             .keyboardShortcut(.defaultAction)
-            .buttonStyle(.borderedProminent)
-            .tint(Tokens.accentButton)
+            .buttonStyle(ShepherdButtonStyle(.primary))
             .disabled(!setup.allPassed)
         }
         .padding(EdgeInsets(top: 14, leading: 20, bottom: 16, trailing: 20))
@@ -227,72 +227,72 @@ struct FinalizeWorktreeSheet: View {
 
     private var inputBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SheetRow("worktree") {
+            SheetRow("Worktree") {
                 Text(worktreePath)
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.textDim)
+                    .font(Fonts.code)
+                    .foregroundStyle(Tokens.textMuted)
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .help(worktreePath)
             }
-            SheetRow("branch") {
+            SheetRow("Branch") {
                 Text(branch)
-                    .font(Fonts.mono(11))
+                    .font(Fonts.code)
                     .foregroundStyle(Tokens.textSecondary)
             }
-            SheetRow("base") {
+            SheetRow("Base") {
                 HStack(spacing: 8) {
                     TextField("", text: $base)
                         .textFieldStyle(.plain)
-                        .font(Fonts.mono(11.5))
+                        .font(Fonts.code)
                         .foregroundStyle(Tokens.textSecondary)
                         .frame(maxWidth: 200)
                         .onSubmit { Task { await refreshIncludedCommits() } }
                     if let count = includedCommits {
                         // > 20 commits from a disposable worktree usually
                         // means the base is wrong — shout, don't block.
-                        Text("will include \(count) commit\(count == 1 ? "" : "s")")
-                            .font(Fonts.mono(10.5))
-                            .foregroundStyle(count > 20 ? Tokens.statusBlocked : Tokens.textDim)
+                        Text("Will include \(count) commit\(count == 1 ? "" : "s")")
+                            .font(Fonts.caption)
+                            .foregroundStyle(count > 20 ? Tokens.warningText : Tokens.textMuted)
                             .help("Commits on \(branch) that are not on the base branch — what the pull request will contain")
                     }
                 }
             }
             .onChange(of: base) { Task { await refreshIncludedCommits() } }
-            SheetRow("title") {
+            SheetRow("Title") {
                 TextField("", text: $title,
-                          prompt: Text("pull request title").foregroundStyle(Tokens.textDim))
+                          prompt: Text("pull request title").foregroundStyle(Tokens.textMuted))
                     .textFieldStyle(.plain)
-                    .font(Fonts.mono(11.5))
+                    .font(Fonts.labelRegular)
                     .foregroundStyle(Tokens.textSecondary)
             }
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text("description")
-                        .font(Fonts.mono(10.5, .semibold))
+                    Text("Description")
+                        .font(Fonts.label)
                         .tracking(0.74)
-                        .foregroundStyle(Tokens.textDim)
+                        .foregroundStyle(Tokens.textMuted)
                     Spacer(minLength: 8)
                     if generatingDescription {
-                        Text("generating…")
-                            .font(Fonts.mono(10.5))
+                        Text("Generating…")
+                            .font(Fonts.caption)
                             .foregroundStyle(Tokens.textTertiary)
                     } else if vm.settings.worktreeGeneratePRDescription {
-                        SheetLinkButton(label: descriptionPrepared ? "regenerate…" : "generate…") {
+                        SheetLinkButton(label: descriptionPrepared ? "Regenerate…" : "Generate…") {
                             Task { await generateDescriptionIfNeeded(force: true) }
                         }
                     }
                 }
                 TextEditor(text: $prBody)
-                    .font(Fonts.mono(11.5))
-                    .foregroundStyle(Tokens.textPrimary)
+                    .font(Fonts.bodySmall)
+                    .foregroundStyle(Tokens.text)
                     .frame(height: 66)
                     .scrollContentBackground(.hidden)
                     .padding(6)
                     .background(Color.black.opacity(0.25))
                     .overlay(
                         RoundedRectangle(cornerRadius: 5)
-                            .stroke(Tokens.chipBorder, lineWidth: 1)
+                            .stroke(Tokens.border, lineWidth: 1)
                     )
                     .clipShape(RoundedRectangle(cornerRadius: 5))
             }
@@ -301,14 +301,13 @@ struct FinalizeWorktreeSheet: View {
             HStack(spacing: 10) {
                 // Back into the wizard: prerequisite status plus the
                 // recommended per-repo GitHub settings live there.
-                SheetLinkButton(label: "repo setup…") { phase = .setup }
+                SheetLinkButton(label: "Repo setup…") { phase = .setup }
                 Spacer(minLength: 12)
                 Button("Cancel") { vm.finalizeRequest = nil }
                     .keyboardShortcut(.cancelAction)
                 Button("Finalize") { start() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Tokens.accentButton)
+                    .buttonStyle(ShepherdButtonStyle(.primary))
                     .disabled(generatingDescription
                         || title.trimmingCharacters(in: .whitespaces).isEmpty
                         || base.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -360,14 +359,14 @@ struct FinalizeWorktreeSheet: View {
                 stepRow(step)
             }
             if phase == .done, let url = finalizer.prURL {
-                SheetRow("pull request") {
+                SheetRow("Pull request") {
                     HStack(spacing: 8) {
                         Text(url)
-                            .font(Fonts.mono(11))
+                            .font(Fonts.code)
                             .foregroundStyle(Tokens.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        SheetLinkButton(label: "open…") {
+                        SheetLinkButton(label: "Open…") {
                             if let link = URL(string: url) { NSWorkspace.shared.open(link) }
                         }
                     }
@@ -378,8 +377,8 @@ struct FinalizeWorktreeSheet: View {
                 Spacer(minLength: 12)
                 switch phase {
                 case .running:
-                    Text("working…")
-                        .font(Fonts.mono(10.5))
+                    Text("Working…")
+                        .font(Fonts.caption)
                         .foregroundStyle(Tokens.textTertiary)
                 case .failed:
                     Button("Close") { vm.finalizeRequest = nil }
@@ -387,8 +386,7 @@ struct FinalizeWorktreeSheet: View {
                 case .done:
                     Button("Done") { finishAndRetire() }
                         .keyboardShortcut(.defaultAction)
-                        .buttonStyle(.borderedProminent)
-                        .tint(Tokens.accentButton)
+                        .buttonStyle(ShepherdButtonStyle(.primary))
                 default:
                     EmptyView()
                 }
@@ -405,11 +403,11 @@ struct FinalizeWorktreeSheet: View {
                     .fill(stepColor(state))
                     .frame(width: 6, height: 6)
                 Text(step.label)
-                    .font(Fonts.mono(11.5))
+                    .font(Fonts.labelRegular)
                     .foregroundStyle(stepTextColor(state))
                 Spacer(minLength: 8)
                 Text(stepDetail(state))
-                    .font(Fonts.mono(10.5))
+                    .font(Fonts.caption)
                     .foregroundStyle(stepDetailColor(state))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -417,26 +415,26 @@ struct FinalizeWorktreeSheet: View {
             }
             .padding(.horizontal, 20)
             .frame(minHeight: 30)
-            Rectangle().fill(Tokens.separator).frame(height: 1)
+            Rectangle().fill(Tokens.borderSubtle).frame(height: 1)
                 .padding(.leading, 20)
         }
     }
 
     private func stepColor(_ state: WorktreeFinalizer.StepState) -> Color {
         switch state {
-        case .pending: return Tokens.textDim.opacity(0.4)
-        case .running: return Tokens.statusWorking
-        case .done, .skipped: return Tokens.statusDone
-        case .failed: return Tokens.statusBlocked
+        case .pending: return Tokens.textMuted.opacity(0.4)
+        case .running: return Tokens.success
+        case .done, .skipped: return Tokens.accent
+        case .failed: return Tokens.dangerText
         }
     }
 
     private func stepTextColor(_ state: WorktreeFinalizer.StepState) -> Color {
         switch state {
-        case .pending: return Tokens.textDim
-        case .running: return Tokens.textPrimary
+        case .pending: return Tokens.textMuted
+        case .running: return Tokens.text
         case .done, .skipped: return Tokens.textSecondary
-        case .failed: return Tokens.statusBlocked
+        case .failed: return Tokens.dangerText
         }
     }
 
@@ -451,8 +449,8 @@ struct FinalizeWorktreeSheet: View {
     }
 
     private func stepDetailColor(_ state: WorktreeFinalizer.StepState) -> Color {
-        if case .failed = state { return Tokens.statusBlocked }
-        return Tokens.textMetadata
+        if case .failed = state { return Tokens.dangerText }
+        return Tokens.textMuted
     }
 
     /// Success dialog closed: dismiss first, then retire the agent (same
@@ -489,11 +487,11 @@ struct WorktreeSetupChecklist: View {
                             .fill(color(state))
                             .frame(width: 6, height: 6)
                         Text(check.label)
-                            .font(Fonts.mono(11.5))
-                            .foregroundStyle(state.passed ? Tokens.textSecondary : Tokens.textPrimary)
+                            .font(Fonts.labelRegular)
+                            .foregroundStyle(state.passed ? Tokens.textSecondary : Tokens.text)
                         Spacer(minLength: 8)
                         Text(detail(state))
-                            .font(Fonts.mono(10.5))
+                            .font(Fonts.caption)
                             .foregroundStyle(detailColor(state))
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -505,7 +503,7 @@ struct WorktreeSetupChecklist: View {
                         remedy(for: check)
                             .padding(EdgeInsets(top: 0, leading: 36, bottom: 8, trailing: 20))
                     }
-                    Rectangle().fill(Tokens.separator).frame(height: 1)
+                    Rectangle().fill(Tokens.borderSubtle).frame(height: 1)
                         .padding(.leading, 20)
                 }
             }
@@ -520,10 +518,10 @@ struct WorktreeSetupChecklist: View {
     /// blocks Continue; that's why off renders dim, not blocked-red.
     private var repoSettingsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("recommended · github repo settings")
-                .font(Fonts.mono(10.5, .semibold))
+            Text("Recommended GitHub repo settings".uppercased())
+                .font(Fonts.sectionSmall)
                 .tracking(0.74)
-                .foregroundStyle(Tokens.textDim)
+                .foregroundStyle(Tokens.textMuted)
                 .padding(EdgeInsets(top: 12, leading: 20, bottom: 6, trailing: 20))
             ForEach(WorktreeRepoSetting.allCases) { setting in
                 let state = model.repoSettings[setting] ?? .unknown
@@ -533,16 +531,16 @@ struct WorktreeSetupChecklist: View {
                             .fill(repoColor(state))
                             .frame(width: 6, height: 6)
                         Text(setting.label)
-                            .font(Fonts.mono(11.5))
+                            .font(Fonts.labelRegular)
                             .foregroundStyle(Tokens.textSecondary)
                         Spacer(minLength: 8)
                         Text(repoDetail(state))
-                            .font(Fonts.mono(10.5))
-                            .foregroundStyle(Tokens.textMetadata)
+                            .font(Fonts.caption)
+                            .foregroundStyle(Tokens.textMuted)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         if state == .disabled {
-                            SheetLinkButton(label: "enable…") {
+                            SheetLinkButton(label: "Enable…") {
                                 Task { await model.enableRepoSetting(setting) }
                             }
                         }
@@ -550,11 +548,11 @@ struct WorktreeSetupChecklist: View {
                     .padding(.horizontal, 20)
                     .frame(minHeight: 30)
                     Text(setting.explanation)
-                        .font(Fonts.mono(10.5))
+                        .font(Fonts.caption)
                         .foregroundStyle(Tokens.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(EdgeInsets(top: 0, leading: 36, bottom: 8, trailing: 20))
-                    Rectangle().fill(Tokens.separator).frame(height: 1)
+                    Rectangle().fill(Tokens.borderSubtle).frame(height: 1)
                         .padding(.leading, 20)
                 }
             }
@@ -563,10 +561,10 @@ struct WorktreeSetupChecklist: View {
 
     private func repoColor(_ state: WorktreeRepoSettingState) -> Color {
         switch state {
-        case .unknown: return Tokens.textDim.opacity(0.4)
-        case .checking: return Tokens.statusWorking
-        case .enabled: return Tokens.statusDone
-        case .disabled, .unavailable: return Tokens.textDim
+        case .unknown: return Tokens.textMuted.opacity(0.4)
+        case .checking: return Tokens.success
+        case .enabled: return Tokens.accent
+        case .disabled, .unavailable: return Tokens.textMuted
         }
     }
 
@@ -586,62 +584,62 @@ struct WorktreeSetupChecklist: View {
         case .git:
             HStack(spacing: 8) {
                 Text(model.remoteAction == nil ? "Apple's installer opens outside Shepherd." : "Apple's installer opens on the host Mac.")
-                    .font(Fonts.mono(10.5))
+                    .font(Fonts.caption)
                     .foregroundStyle(Tokens.textTertiary)
-                SheetLinkButton(label: "install command line tools…") {
+                SheetLinkButton(label: "Install command line tools…") {
                     model.installCommandLineTools()
                 }
             }
         case .identity:
             HStack(spacing: 8) {
                 TextField("", text: $identityName,
-                          prompt: Text("name").foregroundStyle(Tokens.textDim))
+                          prompt: Text("name").foregroundStyle(Tokens.textMuted))
                     .textFieldStyle(.plain)
-                    .font(Fonts.mono(11))
+                    .font(Fonts.labelRegular)
                     .frame(maxWidth: 140)
                 TextField("", text: $identityEmail,
-                          prompt: Text("email").foregroundStyle(Tokens.textDim))
+                          prompt: Text("email").foregroundStyle(Tokens.textMuted))
                     .textFieldStyle(.plain)
-                    .font(Fonts.mono(11))
+                    .font(Fonts.labelRegular)
                     .frame(maxWidth: 200)
-                SheetLinkButton(label: model.remoteAction == nil ? "apply" : "apply on host") {
+                SheetLinkButton(label: model.remoteAction == nil ? "Apply" : "Apply on host") {
                     Task { await model.applyIdentity(name: identityName, email: identityEmail) }
                 }
             }
         case .remote:
             Text("Add an `origin` remote to \(model.repoPath) and make sure you can push to it from a terminal.")
-                .font(Fonts.mono(10.5))
+                .font(Fonts.caption)
                 .foregroundStyle(Tokens.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         case .gh:
             HStack(spacing: 8) {
                 Text("brew install gh")
-                    .font(Fonts.mono(10.5))
+                    .font(Fonts.micro)
                     .foregroundStyle(Tokens.textSecondary)
-                SheetLinkButton(label: "copy") {
+                SheetLinkButton(label: "Copy") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString("brew install gh", forType: .string)
                 }
-                Text("then re-run checks")
-                    .font(Fonts.mono(10.5))
+                Text("Then re-run the checks.")
+                    .font(Fonts.caption)
                     .foregroundStyle(Tokens.textTertiary)
             }
         case .ghAuth:
             HStack(spacing: 8) {
-                Text("Sign in with GitHub in a Shepherd shell, then come back.")
-                    .font(Fonts.mono(10.5))
+                Text("Sign in with GitHub in a terminal pane beside the thread, then come back.")
+                    .font(Fonts.caption)
                     .foregroundStyle(Tokens.textTertiary)
-                SheetLinkButton(label: "open login shell…", action: openLoginShell)
+                SheetLinkButton(label: "Open a terminal for gh login…", action: openLoginShell)
             }
         }
     }
 
     private func color(_ state: WorktreeCheckState) -> Color {
         switch state {
-        case .pending: return Tokens.textDim.opacity(0.4)
-        case .checking: return Tokens.statusWorking
-        case .pass: return Tokens.statusDone
-        case .fail: return Tokens.statusBlocked
+        case .pending: return Tokens.textMuted.opacity(0.4)
+        case .checking: return Tokens.success
+        case .pass: return Tokens.accent
+        case .fail: return Tokens.dangerText
         }
     }
 
@@ -655,7 +653,7 @@ struct WorktreeSetupChecklist: View {
     }
 
     private func detailColor(_ state: WorktreeCheckState) -> Color {
-        if case .fail = state { return Tokens.statusBlocked }
-        return Tokens.textMetadata
+        if case .fail = state { return Tokens.dangerText }
+        return Tokens.textMuted
     }
 }

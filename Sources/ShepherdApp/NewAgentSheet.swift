@@ -29,11 +29,12 @@ private struct ModelField: View {
     }
 
     var body: some View {
-        TextField("", text: $model, prompt: Text("pi default").foregroundStyle(Tokens.textDim))
+        TextField("", text: $model, prompt: Text("pi's default").foregroundStyle(Tokens.textMuted))
             .textFieldStyle(.plain)
-            .font(Fonts.mono(11.5))
-            .foregroundStyle(Tokens.textSecondary)
+            .font(Fonts.code)
+            .foregroundStyle(Tokens.text)
             .focused($focused)
+            .shepherdField(focused: focused, mono: true)
             .onChange(of: focused) { showSuggestions = focused && !options.isEmpty }
             .onChange(of: model) { if focused { showSuggestions = !options.isEmpty } }
             .popover(isPresented: $showSuggestions, arrowEdge: .bottom) {
@@ -46,15 +47,16 @@ private struct ModelField: View {
                             }
                         }
                         if matches.isEmpty {
-                            Text("no matching models")
-                                .font(Fonts.mono(10.5))
-                                .foregroundStyle(Tokens.textDim)
+                            Text("No matching models")
+                                .font(Fonts.caption)
+                                .foregroundStyle(Tokens.textMuted)
                                 .padding(8)
                         }
                     }
                 }
-                .frame(width: 380, height: min(CGFloat(max(matches.count, 1)) * 26 + 8, 220))
-                .background(Tokens.paletteBg)
+                .padding(4)
+                .frame(width: Metrics.modelPickerWidth, height: min(CGFloat(max(matches.count, 1)) * 30 + 8, 260))
+                .background(Tokens.bgRaised)
             }
     }
 }
@@ -66,37 +68,26 @@ private struct ModelSuggestionRow: View {
 
     var body: some View {
         Text(id)
-            .font(Fonts.mono(11))
-            .foregroundStyle(hovering ? Tokens.textPrimary : Tokens.textSecondary)
+            .font(Fonts.code)
+            .foregroundStyle(Tokens.text)
             .lineLimit(1)
             .padding(.horizontal, 10)
-            .frame(height: 26)
+            .frame(height: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(hovering ? Tokens.rowHover : Color.clear)
+            .background(hovering ? Tokens.bgHover : Color.clear, in: RoundedRectangle(cornerRadius: Radius.sm))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .onTapGesture(perform: action)
     }
 }
 
-/// Quiet inline action ("add space…", "choose…") styled like palette rows
-/// rather than a bordered AppKit button.
+/// Quiet inline action in a sheet row ("Add space…", "Choose…"): a ghost button.
 struct SheetLinkButton: View {
     let label: String
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
-        Text(label)
-            .font(Fonts.mono(11))
-            .foregroundStyle(hovering ? Tokens.textPrimary : Tokens.textTertiary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(hovering ? Tokens.rowHover : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .contentShape(Rectangle())
-            .onHover { hovering = $0 }
-            .onTapGesture(perform: action)
+        Button(label, action: action).buttonStyle(ShepherdButtonStyle(.ghost, size: .small))
     }
 }
 
@@ -208,134 +199,132 @@ struct NewAgentSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("New Agent")
-                    .font(Fonts.mono(13.5, .semibold))
-                    .foregroundStyle(Tokens.textPrimary)
-                Text("Starts a Pi process in an app-owned PTY that stops when Shepherd quits. Pi names the agent from your first prompt.")
-                    .font(Fonts.mono(11.5))
-                    .foregroundStyle(Tokens.textSecondary)
+                Text("New agent")
+                    .font(Fonts.title)
+                    .foregroundStyle(Tokens.text)
+                Text("Starts pi as a native thread that runs until Shepherd quits. Pi names the agent from your first prompt.")
+                    .font(Fonts.labelRegular)
+                    .foregroundStyle(Tokens.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 6, trailing: 20))
+            .padding(EdgeInsets(top: 20, leading: 20, bottom: 8, trailing: 20))
 
             VStack(spacing: 0) {
                 if !connectedHosts.isEmpty {
-                    SheetRow("host") {
-                        Picker("", selection: $targetHostID) {
-                            Text("this mac").tag(UUID?.none)
+                    SheetRow("Machine") {
+                        PopupMenu(remoteConnection?.config.name ?? "This Mac", minWidth: 180) {
+                            Button("This Mac") { targetHostID = nil }
                             ForEach(connectedHosts) { connection in
-                                Text("⌁ \(connection.config.name)").tag(Optional(connection.id))
+                                Button(connection.config.name) { targetHostID = connection.id }
                             }
                         }
-                        .labelsHidden()
-                        .frame(maxWidth: 220)
                     }
                 }
 
-                SheetRow("space") {
+                SheetRow("Space") {
                     HStack(spacing: 8) {
                         if targetSpaces.isEmpty {
-                            Text("no spaces yet")
-                                .font(Fonts.mono(11.5))
+                            Text("No spaces yet")
+                                .font(Fonts.labelRegular)
                                 .foregroundStyle(Tokens.textTertiary)
                         } else {
-                            Picker("", selection: $spaceID) {
+                            PopupMenu(selectedSpace?.name ?? "Choose a space", minWidth: 180) {
                                 ForEach(targetSpaces) { space in
-                                    Text(space.name).tag(Optional(space.id))
+                                    Button(space.name) { spaceID = space.id }
                                 }
                             }
-                            .labelsHidden()
-                            .frame(maxWidth: 180)
                         }
                         Spacer(minLength: 0)
-                        SheetLinkButton(label: "add space…") { addSpaceInline() }
+                        SheetLinkButton(label: "Add space…") { addSpaceInline() }
                     }
                 }
 
-                SheetRow("directory") {
+                SheetRow("Directory") {
                     HStack(spacing: 8) {
                         TextField("", text: $workingDirectory)
                             .textFieldStyle(.plain)
-                            .font(Fonts.mono(11.5))
-                            .foregroundStyle(Tokens.textSecondary)
-                        SheetLinkButton(label: "choose…") { remotePicking = .cwd }
+                            .font(Fonts.code)
+                            .foregroundStyle(Tokens.text)
+                            .shepherdField(mono: true)
+                        SheetLinkButton(label: "Choose…") { remotePicking = .cwd }
                     }
                 }
 
                 // Repository probes and worktree creation run on the chosen machine.
                 if targetHostID != nil || GitWorktree.isRepo(workingDirectory) {
-                    SheetRow("worktree") {
-                        HStack(spacing: 8) {
-                            Toggle("", isOn: $worktree)
-                                .toggleStyle(.checkbox)
+                    SheetRow("Worktree") {
+                        HStack(spacing: 10) {
+                            Toggle("Worktree", isOn: $worktree)
+                                .toggleStyle(.shepherdSwitch)
                                 .labelsHidden()
                                 .disabled(targetHostID != nil && remoteConnection?.supportsWorktreeCreation != true)
                             if worktree {
                                 TextField("", text: $worktreeBranch,
-                                          prompt: Text("branch name").foregroundStyle(Tokens.textDim))
+                                          prompt: Text("branch name").foregroundStyle(Tokens.textMuted))
                                     .textFieldStyle(.plain)
-                                    .font(Fonts.mono(11.5))
-                                    .foregroundStyle(Tokens.textSecondary)
+                                    .font(Fonts.code)
+                                    .foregroundStyle(Tokens.text)
+                                    .shepherdField(mono: true)
                             } else {
-                                Text("isolate the agent on its own branch")
-                                    .font(Fonts.mono(11))
-                                    .foregroundStyle(Tokens.textDim)
+                                Text("Isolate the agent on its own branch")
+                                    .font(Fonts.caption)
+                                    .foregroundStyle(Tokens.textTertiary)
                             }
                         }
                     }
                 }
 
                 if worktree {
-                    SheetRow("base") {
+                    SheetRow("Base") {
                         VStack(alignment: .leading, spacing: 4) {
-                            TextField("base branch", text: $worktreeBase)
-                            Text(resolvingBase ? "resolving on target…" : baseNote)
-                                .font(Fonts.mono(10.5)).foregroundStyle(Tokens.textMetadata)
+                            TextField("", text: $worktreeBase, prompt: Text("base branch").foregroundStyle(Tokens.textMuted))
+                                .textFieldStyle(.plain)
+                                .font(Fonts.code)
+                                .foregroundStyle(Tokens.text)
+                                .shepherdField(mono: true)
+                            Text(resolvingBase ? "Resolving on the target…" : baseNote)
+                                .font(Fonts.caption).foregroundStyle(Tokens.textMuted)
                         }
+                        .padding(.vertical, 6)
                     }
-                    SheetRow("fetch") {
-                        HStack {
-                            Toggle("Fetch origin before creating", isOn: $fetchFirst).toggleStyle(.checkbox)
-                            SheetLinkButton(label: "resolve base…") { Task { await resolveBase(fetch: fetchFirst) } }
+                    SheetRow("Fetch") {
+                        HStack(spacing: 10) {
+                            Toggle("Fetch origin before creating", isOn: $fetchFirst).toggleStyle(.shepherdSwitch).labelsHidden()
+                            Text("Fetch origin before creating").font(Fonts.caption).foregroundStyle(Tokens.textTertiary)
+                            Spacer(minLength: 0)
+                            SheetLinkButton(label: "Resolve base…") { Task { await resolveBase(fetch: fetchFirst) } }
                         }
                     }
                 }
 
-                SheetRow("model") {
+                SheetRow("Model") {
                     ModelField(model: Binding(get: { defaults.model }, set: { defaults.model = $0; defaults.modelEdited = true }), options: modelOptions)
                 }
 
-                SheetRow("thinking") {
-                    Picker("", selection: Binding(get: { defaults.thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true })) {
-                        ForEach(ThinkingLevel.allCases, id: \.self) { level in
-                            Text(level.rawValue).tag(level)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(maxWidth: 300)
+                SheetRow("Thinking") {
+                    SegmentedControl(selection: Binding(get: { defaults.thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
+                                     options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
                 }
 
 
                 // Prompt: full-width editor under its label, no row chrome —
                 // this is the field you actually type into.
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("prompt")
-                        .font(Fonts.mono(10.5, .semibold))
-                        .tracking(0.74)
-                        .foregroundStyle(Tokens.textDim)
+                    Text("Prompt")
+                        .font(Fonts.label)
+                        .foregroundStyle(Tokens.textSecondary)
                     TextEditor(text: $initialPrompt)
                         .focused($promptFocused)
-                        .font(Fonts.mono(11.5))
-                        .foregroundStyle(Tokens.textPrimary)
-                        .frame(height: 84)
+                        .font(Fonts.bodySmall)
+                        .foregroundStyle(Tokens.text)
+                        .frame(height: 96)
                         .scrollContentBackground(.hidden)
-                        .padding(6)
-                        .background(Color.black.opacity(0.25))
+                        .padding(8)
+                        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.lg))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(promptFocused ? Tokens.focusAccent.opacity(0.4) : Tokens.chipBorder, lineWidth: 1)
+                            RoundedRectangle(cornerRadius: Radius.lg)
+                                .strokeBorder(promptFocused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1)
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 5))
                 }
                 .padding(EdgeInsets(top: 12, leading: 20, bottom: 4, trailing: 20))
             }
@@ -343,25 +332,25 @@ struct NewAgentSheet: View {
 
             HStack(spacing: 10) {
                 if !defaults.ready && !defaults.loading {
-                    Button("Retry defaults") { loadModels() }
+                    Button("Retry defaults") { loadModels() }.buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
                 }
-                Text(errorText ?? (defaults.loading ? "loading host defaults…" : sessionCaption))
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(errorText == nil ? Tokens.textTertiary : Tokens.statusBlocked)
+                Text(errorText ?? (defaults.loading ? "Loading host defaults…" : sessionCaption))
+                    .font(Fonts.caption)
+                    .foregroundStyle(errorText == nil ? Tokens.textTertiary : Tokens.dangerText)
                     .lineLimit(2)
                 Spacer(minLength: 12)
                 Button("Cancel") { vm.showNewAgentSheet = false }
+                    .buttonStyle(ShepherdButtonStyle(.secondary))
                     .keyboardShortcut(.cancelAction)
-                Button(starting ? "Starting…" : "Start Agent") { start() }
+                Button(starting ? "Starting…" : "Start agent") { start() }
+                    .buttonStyle(ShepherdButtonStyle(.primary))
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Tokens.accentButton)
                     .disabled(!canStart)
             }
-            .padding(EdgeInsets(top: 4, leading: 20, bottom: 16, trailing: 20))
+            .padding(EdgeInsets(top: 8, leading: 20, bottom: 20, trailing: 20))
         }
         .frame(width: 560)
-        .background(Tokens.workspaceBg)
+        .background(Tokens.bgSurface)
         .onAppear {
             if let preselect = vm.newAgentPreselect {
                 // Opened from a remote space header's `+`.
@@ -407,7 +396,7 @@ struct NewAgentSheet: View {
             loadModels()
         }
         .task(id: targetHostID) {
-            sessionCaption = targetHostID == nil ? await vm.sessionCaption() : "session runs on the host"
+            sessionCaption = targetHostID == nil ? await vm.sessionCaption() : "The agent runs on the host."
         }
         .sheet(item: $remotePicking) { target in
             // One picker for both machines: the listing source is the only

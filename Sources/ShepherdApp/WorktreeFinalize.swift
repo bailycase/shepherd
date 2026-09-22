@@ -135,11 +135,11 @@ enum WorktreeSetupCheck: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .git: return "git installed"
-        case .identity: return "git identity"
-        case .remote: return "origin reachable"
+        case .git: return "Git installed"
+        case .identity: return "Git identity"
+        case .remote: return "Origin reachable"
         case .gh: return "GitHub CLI"
-        case .ghAuth: return "gh authenticated"
+        case .ghAuth: return "GitHub CLI signed in"
         }
     }
 }
@@ -154,8 +154,8 @@ enum WorktreeRepoSetting: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .deleteBranchOnMerge: return "auto-delete merged branches"
-        case .allowAutoMerge: return "allow auto-merge"
+        case .deleteBranchOnMerge: return "Auto-delete merged branches"
+        case .allowAutoMerge: return "Allow auto-merge"
         }
     }
 

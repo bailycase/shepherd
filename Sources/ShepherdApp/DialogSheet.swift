@@ -1,9 +1,8 @@
 import SwiftUI
 import ShepherdDesign
 
-/// One flat labeled row shared by every sheet and dialog: dim mono label
-/// column, control on the right, hairline separator underneath. This is the
-/// sheet look (see DESIGN.md) — no Form chrome, no grouped boxes.
+/// One flat labeled row shared by every sheet and dialog: a label column, the control on the
+/// right, a hairline underneath (DESIGN.md "Dialogs") — no Form chrome, no grouped boxes.
 struct SheetRow<Content: View>: View {
     let label: String
     @ViewBuilder var control: () -> Content
@@ -17,16 +16,15 @@ struct SheetRow<Content: View>: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text(label)
-                    .font(Fonts.mono(10.5, .semibold))
-                    .tracking(0.74)
-                    .foregroundStyle(Tokens.textDim)
-                    .frame(width: 84, alignment: .leading)
+                    .font(Fonts.label)
+                    .foregroundStyle(Tokens.textSecondary)
+                    .frame(width: 96, alignment: .leading)
                 control()
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 20)
-            .frame(minHeight: 38)
-            Rectangle().fill(Tokens.separator).frame(height: 1)
+            .frame(minHeight: 44)
+            Tokens.borderSubtle.frame(height: 1)
                 .padding(.leading, 20)
         }
     }
@@ -53,10 +51,9 @@ struct DialogAction: Identifiable {
     }
 }
 
-/// The app's modal dialog: replaces NSAlert-style `.alert()` everywhere.
-/// Same anatomy as the creation sheets — mono title block, optional labeled
-/// rows, footer buttons — so a confirmation reads like the rest of Shepherd
-/// instead of a system alert with text crushed into a narrow column.
+/// The app's modal dialog: replaces NSAlert-style `.alert()` everywhere. Same anatomy as the
+/// creation sheets — title and explanation, optional labeled rows, footer buttons — so a
+/// confirmation reads like the rest of Shepherd instead of a system alert.
 struct DialogSheet<Content: View>: View {
     let title: String
     var subtitle: String?
@@ -82,30 +79,30 @@ struct DialogSheet<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(Fonts.mono(13.5, .semibold))
-                    .foregroundStyle(Tokens.textPrimary)
+                    .font(Fonts.title)
+                    .foregroundStyle(Tokens.text)
                 if let subtitle {
                     Text(subtitle)
-                        .font(Fonts.mono(11.5))
-                        .foregroundStyle(Tokens.textSecondary)
+                        .font(Fonts.labelRegular)
+                        .foregroundStyle(Tokens.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .lineSpacing(2)
                 }
             }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 10, trailing: 20))
+            .padding(EdgeInsets(top: 20, leading: 20, bottom: 12, trailing: 20))
 
             content()
 
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Spacer(minLength: 12)
                 ForEach(actions) { action in
                     button(for: action)
                 }
             }
-            .padding(EdgeInsets(top: 14, leading: 20, bottom: 16, trailing: 20))
+            .padding(EdgeInsets(top: 16, leading: 20, bottom: 20, trailing: 20))
         }
         .frame(width: width)
-        .background(Tokens.workspaceBg)
+        .background(Tokens.bgSurface)
     }
 
     @ViewBuilder
@@ -113,18 +110,18 @@ struct DialogSheet<Content: View>: View {
         switch action.kind {
         case .cancel:
             Button(action.label, action: action.action)
+                .buttonStyle(ShepherdButtonStyle(.secondary))
                 .keyboardShortcut(.cancelAction)
         case .normal:
             Button(action.label, action: action.action)
+                .buttonStyle(ShepherdButtonStyle(.secondary))
         case .prominent:
             Button(action.label, action: action.action)
+                .buttonStyle(ShepherdButtonStyle(.primary))
                 .keyboardShortcut(.defaultAction)
-                .buttonStyle(.borderedProminent)
-                .tint(Tokens.accentButton)
         case .destructive:
             Button(action.label, action: action.action)
-                .buttonStyle(.borderedProminent)
-                .tint(Tokens.destructive)
+                .buttonStyle(ShepherdButtonStyle(.destructive))
         }
     }
 }
@@ -136,20 +133,19 @@ extension DialogSheet where Content == EmptyView {
     }
 }
 
-/// The attention strip inside a dialog: work that a destructive action would
-/// destroy. Status-colored text behind a 2px bar of the same color — the
-/// sidebar's blocked language, not a yellow system triangle.
+/// The attention strip inside a dialog: work that a destructive action would destroy, in the
+/// warning role behind a 2pt bar of the same color — not a yellow system triangle.
 struct DialogWarning: View {
     let text: String
 
     var body: some View {
         HStack(spacing: 10) {
             Rectangle()
-                .fill(Tokens.statusBlocked)
+                .fill(Tokens.warning)
                 .frame(width: 2)
             Text(text)
-                .font(Fonts.mono(11))
-                .foregroundStyle(Tokens.statusBlocked)
+                .font(Fonts.caption)
+                .foregroundStyle(Tokens.warningText)
                 .fixedSize(horizontal: false, vertical: true)
                 .lineSpacing(2)
             Spacer(minLength: 0)
@@ -160,7 +156,7 @@ struct DialogWarning: View {
     }
 }
 
-/// Shared rename dialog: one focused mono field, ↩ confirms, ⎋ cancels.
+/// Shared rename dialog: one focused field, ↩ confirms, ⎋ cancels.
 struct RenameDialog: View {
     let title: String
     var caption: String? = nil
@@ -181,17 +177,11 @@ struct RenameDialog: View {
         ) {
             TextField("", text: $text)
                 .textFieldStyle(.plain)
-                .font(Fonts.mono(11.5))
-                .foregroundStyle(Tokens.textPrimary)
+                .font(Fonts.labelRegular)
+                .foregroundStyle(Tokens.text)
                 .focused($focused)
                 .onSubmit(onRename)
-                .padding(8)
-                .background(Color.black.opacity(0.25))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5)
-                        .stroke(focused ? Tokens.focusAccent.opacity(0.4) : Tokens.chipBorder, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .shepherdField(focused: focused)
                 .padding(.horizontal, 20)
         }
         .onAppear { focused = true }
