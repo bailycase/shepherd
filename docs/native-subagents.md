@@ -1,6 +1,6 @@
 # Native subagents
 
-Enable **native subagents** in Settings > Pi for newly launched agents. It is off by default and separate from **subagent display**. Existing pi-subagents tools, settings and mission records remain unchanged. Pi 0.85.1 or newer with public npm package APIs is required. No additional npm dependencies are installed.
+**Native subagents** are on by default (Settings > Pi) for newly launched agents and separate from **subagent display**; turn them off to fall back to pi-subagents. Existing pi-subagents tools, settings and mission records remain unchanged. Pi 0.85.1 or newer with public npm package APIs is required. No additional npm dependencies are installed.
 
 The parent extension owns child `pi --mode rpc` processes. Swift installs the extension modules and displays their reports. There is no daemon, scheduler, watchdog, automatic goal loop, nested delegation or automatic worktree management. No mission or workflow grants permission to commit, merge, deploy or mutate a repository.
 
