@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import { SessionManager, createBashTool, getPackageDir, resolveCliModel } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, thinkingLevels } from "./shepherd-children-config.ts";
+import { bundledAgents as ROLES, childDefaults, discoverChildAgents, childSkills, childTargetContext, defaultChildTools, childUserExtensions, thinkingLevels } from "./shepherd-children-config.ts";
 import { executeWorkflow } from "./shepherd-workflow.ts";
 import { missionStore } from "./shepherd-missions.ts";
 import { registerNativeCommands } from "./shepherd-children-ui.ts";
@@ -151,11 +151,32 @@ const idSchema = Type.String({ minLength: 1, maxLength: 80 });
 
 export default function shepherdChildren(pi) {
   if (process.env.SHEPHERD_CHILD === "1") {
+    // Cooperative pause at the next model-request boundary. In-flight tools finish normally;
+    // the RPC reader remains available for continue/cancel while the context hook waits.
+    let paused = false, releasePause;
+    const continueRun = () => { paused = false; releasePause?.(); releasePause = undefined; };
+    pi.registerCommand("shepherd-child-pause", { description: "Pause before the next model request", handler: async () => { paused = true; } });
+    pi.registerCommand("shepherd-child-continue", { description: "Continue a paused child", handler: async () => { continueRun(); } });
+    pi.on("context", async (_event, ctx) => {
+      if (!paused) return;
+      await new Promise((resolve) => {
+        const done = () => { ctx.signal?.removeEventListener("abort", done); resolve(); };
+        releasePause = done;
+        if (ctx.signal?.aborted) done(); else ctx.signal?.addEventListener("abort", done, { once: true });
+      });
+    });
+    pi.on("session_shutdown", continueRun);
     pi.registerTool(createBashTool(process.cwd(), { operations: childBashOperations() }));
     if (process.env.SHEPHERD_CHILD_TOOLS) {
       const allowed = new Set(JSON.parse(process.env.SHEPHERD_CHILD_TOOLS));
       pi.on("tool_call", (event) => allowed.has(event.toolName) ? undefined : { block: true, reason: "Tool exceeds the parent child allowlist" });
-      pi.on("session_start", (_event, ctx) => ctx.ui.notify(JSON.stringify({ shepherdChildTools: pi.getActiveTools() }), "info"));
+      const constrainTools = () => {
+        const selected = pi.getActiveTools().filter((name) => allowed.has(name));
+        pi.setActiveTools(selected);
+        return selected;
+      };
+      pi.on("session_start", (_event, ctx) => ctx.ui.notify(JSON.stringify({ shepherdChildTools: constrainTools() }), "info"));
+      pi.on("before_agent_start", () => { constrainTools(); });
     }
     pi.registerTool({
       name: "shepherd_parent_message", label: "message parent",
@@ -205,6 +226,7 @@ export default function shepherdChildren(pi) {
       role: run.role, model: run.model, thinking: run.thinking, context: workflow?.async ? "async" : "background",
       step: workflow && run.stepIndex ? { index: run.stepIndex, total: Math.max(workflow.claims.size, run.stepIndex) } : undefined,
       turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, lastActivity: run.lastActivity,
+      paused: run.paused === true,
       question: run.needsReply ? { text: run.questionText ?? clip(run.output, 600), options: run.questionOptions } : undefined,
       result: run.state === "complete" ? { files: run.files?.size ?? 0, added: run.added ?? 0, removed: run.removed ?? 0, tools: run.toolCalls ?? 0, tokens: run.tokens ?? 0 } : undefined,
       exitReason: run.state === "failed" ? [run.exitCode ? `exit ${run.exitCode}` : undefined, clip(run.error, 200)].filter(Boolean).join(" · ") : undefined,
@@ -259,7 +281,7 @@ export default function shepherdChildren(pi) {
   async function stop(run, reason = "Cancelled") {
     if (run.stopping) return run.stopping;
     if (!run.proc) return;
-    run.cancelled = true; run.error = reason; run.state = "running";
+    run.cancelled = true; run.paused = false; run.error = reason; run.state = "running";
     run.stopping = (async () => {
       try { await command(run, "clear_queue", {}, 500); await command(run, "abort", {}, 1000); } catch { /* Escalate below. */ }
       if (!run.exited) {
@@ -290,7 +312,7 @@ export default function shepherdChildren(pi) {
       run.state = "failed";
       run.error ||= `Child exited before clean settlement (${signal ?? code}): ${run.stderr}`;
     } else run.state = "complete";
-    run.endedAt = Date.now(); run.currentTool = undefined;
+    run.endedAt = Date.now(); run.currentTool = undefined; run.paused = false;
     try {
       const lease = JSON.parse(fs.readFileSync(path.join(run.dir, "writer", "owner.json"), "utf8"));
       if (lease.token === run.token) { fs.unlinkSync(path.join(run.dir, "writer", "owner.json")); fs.rmdirSync(path.join(run.dir, "writer")); }
@@ -363,6 +385,8 @@ export default function shepherdChildren(pi) {
   }
   async function launch(run, message, signal) {
     signal?.throwIfAborted();
+    const inherited = await childUserExtensions(run.cwd);
+    signal?.throwIfAborted();
     const leaseDir = path.join(run.dir, "writer");
     try { fs.mkdirSync(leaseDir, { mode: 0o700 }); }
     catch (error) {
@@ -374,6 +398,7 @@ export default function shepherdChildren(pi) {
     run.token = randomUUID();
     atomic(path.join(leaseDir, "owner.json"), { pid: process.pid, token: run.token });
     run.pending = new Map(); run.exited = false; run.cancelled = false; run.settled = false;
+    run.paused = false;
     run.stopping = undefined; run.output = ""; run.error = undefined; run.stderr = ""; run.lastStop = undefined; run.availableTools = undefined;
     run.needsReply = false; run.questionOptions = undefined; run.questionText = undefined; run.exitCode = undefined; run.endedAt = undefined; run.startedAt = Date.now(); run.state = "running";
     run.toolArgs = new Map(); run.files ??= new Map();
@@ -388,7 +413,11 @@ export default function shepherdChildren(pi) {
       run.systemPromptMode === "replace" ? "--system-prompt" : "--append-system-prompt", path.join(run.dir, "prompt.md")];
     if (run.inheritProjectContext === false) args.push("--no-context-files");
     for (const skill of run.skills ?? []) args.push("--skill", skill);
-    for (const extension of run.extensions ?? []) args.push("-e", extension);
+    // Resolve at each launch, including resume, so Pi resource enable/disable changes apply.
+    // No provider-specific lookup or credential export: Pi loads its own provider extensions.
+    for (const extension of new Set([...inherited, ...(run.extensions ?? [])])) {
+      if (fs.realpathSync(extension) !== fs.realpathSync(bridge)) args.push("-e", extension);
+    }
     const script = path.join(getPackageDir(), "dist", "cli.js");
     const executable = /^(node|bun)(\.exe)?$/i.test(path.basename(process.execPath)) ? process.execPath : "pi";
     run.proc = spawn(executable, executable === process.execPath ? [script, ...args] : args,
@@ -416,7 +445,7 @@ export default function shepherdChildren(pi) {
       if (missingTools.length) throw Error(`Tools unavailable in child Pi: ${missingTools.join(", ")}. Supply their explicit local extension providers.`);
       if (!state?.model || `${state.model.provider}/${state.model.id}` !== run.model
         || !catalog?.models?.some((model) => `${model.provider}/${model.id}` === run.model)) {
-        throw new Error(`Model ${run.model} is unavailable in isolated Pi. Choose a built-in or models.json provider; parent extension-only providers are not inherited.`);
+        throw new Error(`Model ${run.model} is unavailable in isolated Pi. Check the model id and enabled Pi user extensions; project or CLI-only providers require an explicit profile extension.`);
       }
       if (!current(run) || signal?.aborted) throw new Error("Parent session ended or dispatch cancelled");
       await command(run, "prompt", { message });
@@ -477,6 +506,12 @@ export default function shepherdChildren(pi) {
     const text = typeof frame.text === "string" ? frame.text : "";
     if (frame.action === "cancel") { await stop(run); return; }
     if (frame.action === "resume") { await resume(run, run.task, undefined, sessionContext); return; }
+    if (frame.action === "pause" || frame.action === "continue") {
+      if (!run.proc || run.exited || run.settled || run.cancelled) throw Error("Child is not running");
+      await command(run, "prompt", { message: `/shepherd-child-${frame.action}`, streamingBehavior: "steer" });
+      if (!run.exited && !run.settled) { run.paused = frame.action === "pause"; save(run); }
+      return;
+    }
     if (frame.action !== "message") throw new Error("Unsupported child command");
     if (!text.trim() || text.length > MAX_TEXT) throw new Error("Invalid child message");
     await messageChild(run, text, frame.mode === "followUp" ? "followUp" : "steer", sessionContext);

@@ -144,7 +144,6 @@ struct RemoteHostBlock: View {
                 )
                 if !vm.isRemoteSpaceCollapsed(hostID: connection.id, spaceID: space.id) {
                     ForEach(agents) { agent in
-                        RemoteChildRows(vm: vm, connection: connection, agent: agent) {
                         AgentRow(
                             agent: agent,
                             selected: vm.selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: agent.id),
@@ -188,39 +187,9 @@ struct RemoteHostBlock: View {
                         .id(RemoteAgentRef(hostID: connection.id, agentID: agent.id))
                         .opacity(connection.phase == .connected ? 1 : 0.45)
                         .disabled(connection.phase != .connected)
-                        }
                     }
                 }
             }
         }
-    }
-}
-
-private struct RemoteChildRows<Content: View>: View {
-    var vm: ShepherdViewModel
-    @ObservedObject var connection: RemoteHostStore.Connection
-    let agent: Agent
-    @ViewBuilder let content: () -> Content
-    private var children: [ShepherdProtocol.ChildRun] { connection.children[agent.id] ?? [] }
-    @State private var expanded = false
-
-    var body: some View {
-        content()
-        if !children.isEmpty {
-            Button(expanded ? "▾ subagents" : "▸ \(children.count) subagents") { expanded.toggle() }
-                .buttonStyle(.plain)
-                .font(NativeFonts.sidebarMeta)
-                .foregroundStyle(children.contains(where: \.needsAttention) ? NativeTokens.warningText : NativeTokens.textMuted)
-                .accessibilityLabel("\(children.count) subagents, \(children.filter(\.needsAttention).count) waiting")
-                .padding(.leading, NativeMetrics.sidebarPadding + 8 + 2 * NativeMetrics.sidebarIndent)
-            if expanded {
-                ForEach(children) { child in
-                    ChildRunRow(child: child, depth: 0) {
-                        vm.openRemoteChild(RemoteAgentRef(hostID: connection.id, agentID: agent.id), child: child)
-                    }
-                }
-            }
-        }
-
     }
 }

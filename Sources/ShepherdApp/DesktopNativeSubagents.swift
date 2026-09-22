@@ -4,8 +4,7 @@ import ShepherdRemote
 
 // Subagent cards and the RunsStrip (docs/design-spec/subagent-card-states.png). A subagent is a
 // turn inside a turn: the card sits in the ToolGroup where its shepherd_child_start row was.
-// Pause is absent on purpose: the children runtime has abort but no pause, and a button that
-// cannot do what it says is a fake affordance.
+// Pause waits at the child's next model-request boundary; Continue releases that wait.
 
 /// What a card can ask the thread to do. `inspect` opens the side panel for the run.
 struct NativeSubagentActions {
@@ -21,7 +20,7 @@ struct NativeBranchGlyph: View {
     let color: Color
     var size: CGFloat = NativeMetrics.subagentGlyph
     var body: some View {
-        Image(systemName: "arrow.turn.down.right")
+        Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
             .font(.system(size: size * 0.8, weight: .semibold))
             .foregroundStyle(color)
             .frame(width: size, height: size)
@@ -58,6 +57,7 @@ struct NativeSubagentCard: View {
         let color = nativeSubagentColor(state)
         VStack(alignment: .leading, spacing: NativeMetrics.subagentCardRowSpacing) {
             header
+                .padding(.bottom, state == .needsYou ? 4 : 0)
             if !isCollapsed {
                 switch state {
                 case .running: runningBody
@@ -69,6 +69,12 @@ struct NativeSubagentCard: View {
         }
         .padding(NativeMetrics.subagentCardPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .top) {
+            if state == .needsYou {
+                NativeTokens.warningBg.frame(height: NativeMetrics.subagentCardHeaderHeight + NativeMetrics.subagentCardPadding * 2)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
         .background(state == .failed ? NativeTokens.dangerBg : NativeTokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
         .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(border(color), lineWidth: 1))
         .contentShape(Rectangle())
@@ -76,10 +82,12 @@ struct NativeSubagentCard: View {
         .onTapGesture { actions.inspect(run) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(nativeSubagentAccessibilityLabel(run, now: clock.now))
+        .accessibilityAction(named: "Inspect") { actions.inspect(run) }
     }
 
     private func border(_ color: Color) -> Color {
-        switch state {
+        if actions.inspectedRunID == run.runID { return NativeTokens.accent }
+        return switch state {
         case .running, .needsYou: color.opacity(0.5)
         case .done: NativeTokens.border
         case .failed: NativeTokens.danger.opacity(0.5)
@@ -91,7 +99,7 @@ struct NativeSubagentCard: View {
     private var header: some View {
         HStack(spacing: 8) {
             NativeBranchGlyph(color: nativeSubagentColor(state))
-            Text(role).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1)
+            Text(role).font(NativeFonts.label).fontWeight(.semibold).foregroundStyle(NativeTokens.text).lineLimit(1)
             if state == .failed {
                 Text(run.exitReason ?? run.state).font(NativeFonts.micro).foregroundStyle(NativeTokens.dangerText).lineLimit(1).truncationMode(.tail)
             } else if isCollapsed, state == .done, let summary = doneSummary.first {
@@ -120,8 +128,9 @@ struct NativeSubagentCard: View {
         switch state {
         case .running:
             HStack(spacing: 6) {
-                NativeSpinner(color: NativeTokens.accent, size: 11)
-                Text("Running" + (elapsed.map { " · \($0)" } ?? "")).font(NativeFonts.captionMedium).foregroundStyle(NativeTokens.accentText).monospacedDigit()
+                if run.paused == true { Image(systemName: "pause.fill").foregroundStyle(NativeTokens.textMuted) }
+                else { NativeSpinner(color: NativeTokens.accent, size: 11) }
+                Text((run.paused == true ? "Pause requested" : "Running") + (elapsed.map { " · \($0)" } ?? "")).font(NativeFonts.captionMedium).foregroundStyle(NativeTokens.accentText).monospacedDigit()
             }
             .fixedSize()
         case .needsYou:
@@ -204,6 +213,13 @@ struct NativeSubagentCard: View {
                     .buttonStyle(NativeButtonStyle(.secondary, size: NativeMetrics.subagentCardButton))
                     .disabled(!actions.enabled)
                     .accessibilityLabel("Steer \(role)")
+                Button(run.paused == true ? "Continue" : "Pause") {
+                    actions.command(run, run.paused == true ? .continue : .pause, nil, nil)
+                }
+                .buttonStyle(NativeButtonStyle(.secondary, size: NativeMetrics.subagentCardButton))
+                .disabled(!actions.enabled)
+                .help("Pause before the next model request; current tools finish normally")
+                .accessibilityLabel("\(run.paused == true ? "Continue" : "Pause") \(role)")
                 Spacer(minLength: 0)
                 Button("Stop") { actions.command(run, .cancel, nil, nil) }
                     .buttonStyle(.plain).font(NativeFonts.label).foregroundStyle(NativeTokens.dangerText)
@@ -224,7 +240,7 @@ struct NativeSubagentCard: View {
                 Capsule().fill(NativeTokens.accent).frame(width: geo.size.width * fraction)
             }
         }
-        .frame(maxWidth: NativeMetrics.subagentProgressWidth)
+        .frame(maxWidth: .infinity)
         .frame(height: NativeMetrics.subagentProgressHeight)
         .accessibilityLabel("Context \(Int((run.contextPercent ?? 0).rounded())) percent")
     }
@@ -235,9 +251,10 @@ struct NativeSubagentCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(NativeProse.inline(run.question?.text ?? run.attentionText ?? ""))
                 .font(NativeFonts.bodySmall).lineSpacing(NativeFonts.bodySmallLeading).foregroundStyle(NativeTokens.text)
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             if replying { replyField(placeholder: "Reply to \(role)…", mode: .steer) }
-            HStack(spacing: 6) {
+            NativeFlow(spacing: 6) {
                 ForEach(Array((run.question?.options ?? []).enumerated()), id: \.offset) { index, option in
                     Button(option) { actions.command(run, .message, option, .steer) }
                         .buttonStyle(NativeButtonStyle(index == 0 ? .primary : .secondary, size: NativeMetrics.subagentCardButton))
@@ -248,7 +265,6 @@ struct NativeSubagentCard: View {
                     .buttonStyle(NativeButtonStyle(.secondary, size: NativeMetrics.subagentCardButton))
                     .disabled(!actions.enabled)
                     .accessibilityLabel("Reply to \(role)")
-                Spacer(minLength: 0)
             }
         }
     }
@@ -325,7 +341,7 @@ struct NativeRunsStrip: View {
     var body: some View {
         let summary = nativeRunsStripSummary(runs, now: clock.now)
         let ordered = runs.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             NativeBranchGlyph(color: NativeTokens.accent)
             Text("\(summary.count) subagents").font(NativeFonts.label).foregroundStyle(NativeTokens.text).fixedSize()
             HStack(spacing: NativeMetrics.runsStripCellGap) {
@@ -341,7 +357,8 @@ struct NativeRunsStrip: View {
             }
             Text(summary.states).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).lineLimit(1)
             Spacer(minLength: 8)
-            Text(summary.totals).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit().fixedSize()
+            Text(summary.totals).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit().lineLimit(1)
+                .layoutPriority(-1)
             Button { expanded.toggle() } label: {
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .medium)).foregroundStyle(NativeTokens.textMuted)
                     .rotationEffect(.degrees(expanded ? 90 : 0)).frame(width: 16, height: 16).contentShape(Rectangle())
@@ -362,8 +379,8 @@ struct NativeRunsStrip: View {
 // MARK: Ledger (completed group)
 
 /// One bordered card for a finished spawn group: a 36pt header (↳ · "3 subagents" · state
-/// cells · "all done · 45m wall · 1.5m tok" · "+318 −64 · 7 files") and one 36pt row per child in
-/// spawn order. Rows are the click target; the inspected row wears the accent border.
+/// cells · "all done · 45m wall · 1.5m tok" · "+318 −64 · 7 files") and one 56pt row per child in
+/// spawn order. The inspected row has a tinted fill and trailing accent stripe.
 struct NativeSubagentLedgerCard: View {
     let runs: [ChildRun]
     let actions: NativeSubagentActions
@@ -428,25 +445,30 @@ struct NativeSubagentLedgerRow: View {
             HStack(spacing: 10) {
                 Image(systemName: glyph).font(.system(size: 11, weight: .semibold)).foregroundStyle(nativeSubagentColor(row.state))
                     .frame(width: NativeMetrics.subagentGlyph)
-                Text(row.run.role ?? row.run.label).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1).fixedSize()
+                Text(row.run.role ?? row.run.label).font(NativeFonts.label).fontWeight(.semibold)
+                    .foregroundStyle(NativeTokens.text).lineLimit(1)
+                    .frame(width: NativeMetrics.subagentLedgerRoleWidth, alignment: .leading)
                 Text(row.summary).font(NativeFonts.bodySmall).foregroundStyle(row.state == .failed ? NativeTokens.dangerText : NativeTokens.textSecondary)
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 8)
                 Text(row.meta).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit().lineLimit(1).fixedSize()
-                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(NativeTokens.textMuted)
+                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(selected ? NativeTokens.accent : NativeTokens.textMuted)
             }
             .padding(.horizontal, NativeMetrics.subagentCardPadding)
-            .frame(height: NativeMetrics.runsStripHeight)
+            .frame(height: NativeMetrics.subagentLedgerRowHeight)
             .frame(maxWidth: .infinity)
-            .background(hovering ? NativeTokens.bgHover : .clear)
-            // The board draws the selected row's accent border inside the card.
-            .overlay(RoundedRectangle(cornerRadius: Radius.sm).strokeBorder(selected ? NativeTokens.accent : .clear, lineWidth: 1).padding(1))
+            .background(selected ? NativeTokens.accentBg : hovering ? NativeTokens.bgHover : .clear)
+            .overlay(alignment: .trailing) {
+                if selected { NativeTokens.accent.frame(width: NativeMetrics.subagentSelectionWidth) }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel("\(row.run.role ?? row.run.label), \(row.state == .failed ? "failed" : "done"), \(row.summary)")
         .accessibilityHint("Opens the run in the inspector")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -501,6 +523,9 @@ func nativeToolSegments(_ group: [NativeThreadMessage], placement: NativeSubagen
     var rows: [NativeThreadMessage] = []
     var stripPlaced = false
     for message in group {
+        // Once real cards represent these children, bookkeeping tools have no second UI.
+        // Keep unassociated calls visible so errors and unsupported runtimes aren't hidden.
+        if !all.isEmpty, ["shepherd_child_wait", "shepherd_child_result"].contains(message.toolName ?? "") { continue }
         guard let id = message.toolCallID, let runs = placement.byToolCall[id] else { rows.append(message); continue }
         if !rows.isEmpty { segments.append(.rows(rows)); rows = [] }
         if strip {

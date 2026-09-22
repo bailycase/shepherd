@@ -439,6 +439,8 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
     public var sessionID: String?
     /// The directory the child ran in; file links resolve against it.
     public var cwd: String?
+    /// A cooperative pause is requested; the next provider request waits for Continue.
+    public var paused: Bool?
 
     public var id: String { childIndex.map { "\(runID)#\($0)" } ?? runID }
 
@@ -479,7 +481,8 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         files: [ChildFileChange]? = nil,
         summary: String? = nil,
         sessionID: String? = nil,
-        cwd: String? = nil
+        cwd: String? = nil,
+        paused: Bool? = nil
     ) {
         self.runID = runID
         self.childIndex = childIndex
@@ -512,6 +515,7 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         self.summary = summary
         self.sessionID = sessionID
         self.cwd = cwd
+        self.paused = paused
     }
 }
 
@@ -566,7 +570,7 @@ public struct ChildResultSummary: Codable, Hashable, Sendable {
 }
 
 /// App → children extension: drive one native child run. Mirrors the tool functions.
-public enum ChildCommandAction: String, Codable, Hashable, Sendable { case message, cancel, resume }
+public enum ChildCommandAction: String, Codable, Hashable, Sendable { case message, cancel, resume, pause, `continue` }
 
 /// One top-level agent thread as reported to peers (agent_list).
 public struct AgentPeerInfo: Codable, Hashable, Sendable {

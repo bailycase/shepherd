@@ -214,9 +214,9 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     baseUrl: `http://127.0.0.1:${server.address().port}/v1`, api: "openai-completions", apiKey: "local-fixture-not-secret",
     models: [{ id: "fixture", name: "fixture", reasoning: false, input: ["text"], contextWindow: 64000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
   } } }));
-  // Ambient extension must never execute in children.
-  fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "extensions"));
-  fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "extensions", "poison.ts"), `throw new Error("ambient discovery escaped");`);
+  // User extensions are inherited through Pi's filters; project extensions stay isolated.
+  fs.mkdirSync(path.join(dir, ".pi", "extensions"), { recursive: true });
+  fs.writeFileSync(path.join(dir, ".pi", "extensions", "poison.ts"), `throw new Error("project discovery escaped");`);
   // Stand-in for Shepherd's extension socket: accepts the children control channel (helloChildren)
   // and lets the test drive childCommand frames the way the native thread cards do.
   const control = { sockets: [], frames: [] };
@@ -237,6 +237,31 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     h = await harness(dir);
     await until(() => control.sockets.length === 1);
     assert.equal(control.frames[0].agentID, "fixture");
+    // An arbitrary provider exists only in a configured user extension. Children must load
+    // it without granting the unrelated tool that the same extension registers.
+    const extensionDir = path.join(process.env.PI_CODING_AGENT_DIR, "extensions");
+    fs.mkdirSync(extensionDir, { recursive: true });
+    const providerFile = path.join(extensionDir, "provider.ts");
+    fs.writeFileSync(providerFile, `export default function(pi) {
+      pi.registerProvider("extension-fixture", {baseUrl:"http://127.0.0.1:${server.address().port}/v1",api:"openai-completions",apiKey:"local-fixture-not-secret",
+        models:[{id:"extension-model",name:"extension-model",reasoning:false,input:["text"],contextWindow:64000,maxTokens:1024,cost:{input:0,output:0,cacheRead:0,cacheWrite:0}}]});
+      pi.registerTool({name:"unexpected_tool",label:"unexpected",description:"Must not reach the child model",parameters:{type:"object",properties:{}},async execute(){throw Error("tool leaked");}});
+    }`);
+    const originalCatalog = h.ctx.modelRegistry.getAll;
+    h.ctx.modelRegistry.getAll = () => [...originalCatalog(), {provider:"extension-fixture",id:"extension-model"}];
+    const extensionChild = await h.call("start", {task:"extension provider child",role:"scout",model:"extension-fixture/extension-model"});
+    const extensionDone = await h.call("wait", {ids:[extensionChild.id],all:true,timeoutSeconds:30});
+    assert.equal(extensionDone[0].state, "complete");
+    assert.match(extensionDone[0].output, /reply:extension provider child/);
+    const extensionRequests = requests.filter((r) => r.model === "extension-model");
+    assert(extensionRequests.length > 0, "extension-only provider was not called");
+    assert(extensionRequests.every((r) => (r.tools ?? []).every((t) => ["read","grep","find","ls","shepherd_parent_message"].includes(t.function.name))), "extension tools exceeded the allowlist");
+    await h.call("resume", {id:extensionChild.id,message:"resume extension provider child"});
+    const extensionResumed = await h.call("wait", {ids:[extensionChild.id],all:true,timeoutSeconds:30});
+    assert.equal(extensionResumed[0].state, "complete");
+    fs.unlinkSync(providerFile);
+    h.ctx.modelRegistry.getAll = originalCatalog;
+    h.messages.length = 0;
     h.ctx.mode = "rpc"; h.ctx.hasUI = true; h.ctx.ui = { notify() {}, confirm: async () => false };
     assert(h.commands.has("run"));
     await h.commands.get("run").handler("scout slash foreground --fork", h.ctx);
@@ -303,7 +328,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal((await h.call("result", { id: ask.id })).needsReply, false);
     assert.match((await childCommand({ runID: "native-missing", action: "cancel" })).error, /Unknown child id/);
     assert.match((await childCommand({ runID: ask.id, action: "message", text: "   " })).error, /Invalid child message/);
-    assert.match((await childCommand({ runID: ask.id, action: "pause" })).error, /Unsupported/);
+    assert.match((await childCommand({ runID: ask.id, action: "unsupported" })).error, /Unsupported/);
     let fleet;
     const fleetContext = { ...h.ctx, mode: "tui", hasUI: true, ui: { custom: async (factory) => {
       fleet = factory({ terminal: { rows: 36 }, requestRender() {} }, { fg: (_c, text) => text }, { matches: () => false, getKeys: () => ["esc"] }, () => {});
@@ -367,6 +392,24 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const priorRuns = (await h.call("result", {})).length;
     await assert.rejects(h.call("start", { task: "never dispatched" }, aborted.signal));
     assert.equal((await h.call("result", {})).length, priorRuns);
+    // Pause waits at the next provider-request boundary without cancelling the current tool.
+    const pausing = await h.call("start", { task: "SHELL:sleep 1; echo pause-boundary", role: "worker" });
+    const pauseReceipt = await childCommand({ runID: pausing.id, action: "pause" });
+    assert.equal(pauseReceipt.error, undefined);
+    await until(() => h.projections.at(-1).children.some((c) => c.runID === pausing.id && c.paused));
+    await sleep(1500);
+    const held = await h.call("result", { id: pausing.id });
+    assert.equal(held.state, "running", "pause must not complete or kill the child");
+    const continueReceipt = await childCommand({ runID: pausing.id, action: "continue" });
+    assert.equal(continueReceipt.error, undefined);
+    const unpaused = await h.call("wait", { ids: [pausing.id], all: true, timeoutSeconds: 30 });
+    assert.equal(unpaused[0].state, "complete");
+    const cancelPaused = await h.call("start", { task: "SHELL:sleep 1; echo cancel-paused", role: "worker" });
+    assert.equal((await childCommand({ runID: cancelPaused.id, action: "pause" })).error, undefined);
+    await sleep(1500);
+    assert.equal((await childCommand({ runID: cancelPaused.id, action: "cancel" })).error, undefined);
+    assert.equal((await h.call("result", { id: cancelPaused.id })).state, "stopped");
+
     const busy = await Promise.all(Array.from({ length: 4 }, (_, i) => h.call("start", { task: `SHELL:sleep 30 >/dev/null 2>&1 & echo $! > '${dir}/busy-${i}'`, role: "worker" })));
     await until(() => fs.existsSync(path.join(dir, "busy-3")));
     await assert.rejects(h.call("start", { task: "over capacity" }), /Four children/);
@@ -374,12 +417,12 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "cap.json"), JSON.stringify({ message: "cap must reject" }));
     await until(() => askStatus().controlRequestID === "cap" && askStatus().controlNotice === "control failed: Four children are already active; wait or cancel first");
     // Card Stop goes through the same channel and waits for exit.
-    assert.deepEqual(await childCommand({ runID: busy[0].id, action: "cancel" }), { type: "childCommandResult", id: 5 });
+    assert.deepEqual(await childCommand({ runID: busy[0].id, action: "cancel" }), { type: "childCommandResult", id: controlSequence });
     assert.equal((await h.call("result", { id: busy[0].id })).state, "stopped");
     await Promise.all(busy.slice(1).map((r) => h.call("cancel", { id: r.id })));
     for (let i = 0; i < 4; i++) await until(() => !live(Number(fs.readFileSync(path.join(dir, `busy-${i}`)))));
     // Card Retry resumes with the original task.
-    assert.deepEqual(await childCommand({ runID: limited.id, action: "resume" }), { type: "childCommandResult", id: 6 });
+    assert.deepEqual(await childCommand({ runID: limited.id, action: "resume" }), { type: "childCommandResult", id: controlSequence });
     await h.call("wait", { ids: [limited.id], timeoutSeconds: 30 });
     const userTurns = fs.readFileSync(partial.sessionFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.message?.role === "user");
     assert(userTurns.length >= 2 && JSON.stringify(userTurns.at(-1).message.content).includes("TOKEN_LIMIT"), `resume re-sends the original task: ${JSON.stringify(userTurns.at(-1))}`);

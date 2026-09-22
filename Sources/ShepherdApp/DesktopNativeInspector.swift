@@ -27,8 +27,8 @@ final class NativeInspectorState {
     }
 }
 
-/// Thread on the left, inspector on the right, a drag handle between. The inspector takes 60%
-/// by default (min 420) and remembers its width.
+/// Thread on the left, inspector on the right, a drag handle between. The inspector takes 44%
+/// by default (min 420) and remembers user resizing.
 struct NativeInspectorSplit<Thread: View, Inspector: View>: View {
     @Bindable var state: NativeInspectorState
     let showInspector: Bool
@@ -85,6 +85,8 @@ struct NativeSubagentInspector: View {
     /// Ids of the turns currently intersecting the viewport, for "turn 4 of 11".
     @State private var visibleTurns: Set<String> = []
     @State private var moreBelow = false
+    @State private var userScrolling = false
+    @State private var copying = false
     @FocusState private var composing: Bool
 
     private var run: ChildRun? { store.subagents.first { $0.runID == runID } }
@@ -100,17 +102,23 @@ struct NativeSubagentInspector: View {
             if terminal, run != nil { result }
             NativeTokens.border.frame(height: 1)
             transcriptView
-            if terminal { turnLine }
+            if terminal { turnLine } else { liveTranscriptFooter }
             if terminal { terminalBar } else { composer }
         }
         .font(NativeFonts.body)
         .foregroundStyle(NativeTokens.text)
         .background(NativeTokens.bgSurface)
-        .task(id: "\(runID):\(active)") {
+        .task(id: "\(runID):\(active):\(run?.startedAt ?? 0)") {
             guard active else { return }
             await transcript.follow(store: store, runID: runID) { run?.isTerminal != true }
         }
         .onChange(of: store.snapshot) { _, snapshot in clock.observe(snapshot) }
+        .onChange(of: runID) { _, _ in
+            draft = ""
+            forkError = nil
+            visibleTurns = []
+            moreBelow = false
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Inspector for \(role)")
     }
@@ -156,6 +164,13 @@ struct NativeSubagentInspector: View {
                         .accessibilityLabel("Next subagent")
                 }
                 if let run, !run.isTerminal {
+                    Button(run.paused == true ? "Continue" : "Pause") {
+                        Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
+                    }
+                    .buttonStyle(NativeButtonStyle(.secondary, size: NativeMetrics.subagentCardButton))
+                    .disabled(!canAct)
+                    .help("Pause before the next model request; current tools finish normally")
+                    .accessibilityLabel("\(run.paused == true ? "Continue" : "Pause") \(role)")
                     Button("Stop") { Task { await store.subagentCommand(runID: runID, action: .cancel) } }
                         .buttonStyle(NativeButtonStyle(.destructive, size: NativeMetrics.subagentCardButton))
                         .disabled(!canAct)
@@ -226,8 +241,20 @@ struct NativeSubagentInspector: View {
     }
 
     private func copyTranscript() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(transcriptText, forType: .string)
+        guard !copying else { return }
+        copying = true
+        let target = runID
+        Task {
+            await transcript.loadAll(store: store, runID: target)
+            defer { copying = false }
+            guard target == runID else { return }
+            guard transcript.earlierCount == 0 else {
+                forkError = "Couldn't load the full transcript. Nothing was copied."
+                return
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(transcriptText, forType: .string)
+        }
     }
 
     // MARK: Result (terminal runs)
@@ -235,7 +262,8 @@ struct NativeSubagentInspector: View {
     private var result: some View {
         let run = run!
         return VStack(alignment: .leading, spacing: 6) {
-            Text("RESULT").font(NativeFonts.section).tracking(0.6).foregroundStyle(NativeTokens.textTertiary)
+            Text("RESULT").font(NativeFonts.section).tracking(0.6)
+                .foregroundStyle(run.state == "failed" ? NativeTokens.dangerText : NativeTokens.successText)
             if let summary = run.summary ?? run.output, !summary.isEmpty {
                 Text(NativeProse.inline(summary)).font(NativeFonts.bodySmall).lineSpacing(NativeFonts.bodySmallLeading)
                     .foregroundStyle(NativeTokens.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
@@ -263,8 +291,8 @@ struct NativeSubagentInspector: View {
         }
         .padding(NativeMetrics.inspectorGoalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(NativeTokens.bgSurface)
-        .overlay(alignment: .top) { NativeTokens.borderSubtle.frame(height: 1) }
+        .background(NativeTokens.bgMuted)
+        .overlay(alignment: .bottom) { NativeTokens.borderSubtle.frame(height: 1) }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Result")
     }
@@ -303,7 +331,7 @@ struct NativeSubagentInspector: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: NativeMetrics.turnSpacing) {
-                    if transcript.earlierCount > 0 {
+                    if terminal, transcript.earlierCount > 0 {
                         HStack(spacing: 6) {
                             Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
                             Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store, runID: runID) } }
@@ -333,7 +361,7 @@ struct NativeSubagentInspector: View {
                         }
                     }
                     if let run, !run.isTerminal {
-                        NativeWorkingRow(label: run.currentTool.map { "Running \($0)…" } ?? "Thinking…")
+                        NativeWorkingRow(label: run.paused == true ? "Pause requested" : run.currentTool.map { "Running \($0)…" } ?? "Thinking…")
                     }
                     Color.clear.frame(height: 1).id("inspector-bottom")
                 }
@@ -346,17 +374,34 @@ struct NativeSubagentInspector: View {
             .defaultScrollAnchor(transcript.following && !terminal ? .bottom : nil, for: .sizeChanges)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height > 4
-            } action: { _, below in moreBelow = below }
-            .onChange(of: transcript.messages.count) { _, _ in
+            } action: { _, below in
+                moreBelow = below
+                if !below { transcript.setFollowing(true) }
+                else if userScrolling { transcript.setFollowing(false) }
+            }
+            .onScrollPhaseChange { _, phase in userScrolling = phase == .interacting || phase == .decelerating }
+            .onChange(of: transcript.messages)  { _, _ in
                 if transcript.following, !terminal { proxy.scrollTo("inspector-bottom", anchor: .bottom) }
             }
         }
-        .overlay(alignment: .bottomTrailing) {
-            if run?.isTerminal == false {
-                Text("Following live").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
-                    .padding(.horizontal, NativeMetrics.subagentCardPadding).padding(.bottom, 6)
+    }
+
+    private var liveTranscriptFooter: some View {
+        HStack(spacing: 6) {
+            if transcript.earlierCount > 0 {
+                Text("\(transcript.earlierCount) earlier messages")
+                Button(transcript.loadingOlder ? "Loading…" : "Show all") {
+                    Task { await transcript.loadAll(store: store, runID: runID) }
+                }
+                .buttonStyle(.plain).foregroundStyle(NativeTokens.accentText)
+                .disabled(transcript.loadingOlder)
             }
+            Spacer()
+            Text(transcript.following ? "Following live" : "Reading earlier output")
         }
+        .font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
+        .padding(.horizontal, NativeMetrics.subagentCardPadding)
+        .frame(height: NativeMetrics.statusLineHeight)
     }
 
     /// "10:58 · from parent" under a steer bubble; the time is omitted when pi gave none.
@@ -402,7 +447,7 @@ struct NativeSubagentInspector: View {
                 }
                 Button("Copy transcript") { copyTranscript() }
                     .buttonStyle(NativeButtonStyle(.secondary, size: NativeMetrics.subagentCardButton))
-                    .disabled(transcript.messages.isEmpty)
+                    .disabled(transcript.messages.isEmpty || copying)
                     .accessibilityLabel("Copy \(role) transcript")
                 Spacer(minLength: 8)
                 Text("kept with the thread").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
@@ -450,8 +495,11 @@ struct NativeSubagentInspector: View {
     private func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canAct, !text.isEmpty else { return }
-        draft = ""
-        Task { await store.subagentCommand(runID: runID, action: .message, text: text, mode: .steer) }
+        let target = runID
+        Task {
+            await store.subagentCommand(runID: target, action: .message, text: text, mode: .steer)
+            if target == runID, store.notice == nil, draft.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft = "" }
+        }
     }
 }
 
@@ -493,26 +541,38 @@ final class NativeSubagentTranscriptModel: ObservableObject {
     @Published private(set) var loaded = false
     @Published private(set) var loadingOlder = false
     /// Set while the newest page is at the tail; "Show all" keeps the reader's place instead.
-    private(set) var following = true
+    @Published private(set) var following = true
     private var olderCursor: String?
     private var runID: String?
+    private var generation = UUID()
+    private var reloadTicket = UUID()
+
+    func setFollowing(_ value: Bool) { following = value }
 
     func follow(store: NativeThreadStore, runID: String, live: @escaping () -> Bool) async {
-        if self.runID != runID { reset(runID: runID) }
+        reset(runID: runID)
+        let epoch = generation
         // The thread must be connected first: the transcript request carries its session id.
         while !Task.isCancelled, store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        guard !Task.isCancelled, generation == epoch else { return }
         await reload(store: store, runID: runID)
-        while !Task.isCancelled {
+        while !Task.isCancelled, generation == epoch {
             try? await Task.sleep(for: store.pollInterval)
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, generation == epoch else { return }
             await reload(store: store, runID: runID)
             if !live() { break }
         }
     }
 
     func reload(store: NativeThreadStore, runID: String) async {
-        guard let page = await store.subagentTranscript(runID: runID) else { loaded = true; return }
-        guard self.runID == runID else { return }
+        let epoch = generation
+        let ticket = UUID()
+        reloadTicket = ticket
+        guard let page = await store.subagentTranscript(runID: runID) else {
+            if generation == epoch, self.runID == runID { loaded = true }
+            return
+        }
+        guard !Task.isCancelled, generation == epoch, reloadTicket == ticket, self.runID == runID else { return }
         // Keep older pages the reader already loaded: splice the fresh newest page over its overlap.
         if let first = page.messages.first, let overlap = messages.firstIndex(where: { $0.entryID == first.entryID }) {
             messages = Array(messages[..<overlap]) + page.messages
@@ -521,18 +581,21 @@ final class NativeSubagentTranscriptModel: ObservableObject {
             olderCursor = page.olderCursor
             earlierCount = page.earlierCount
         }
-        if page.olderCursor == nil { earlierCount = 0 }
+        if page.olderCursor == nil { earlierCount = 0; olderCursor = nil }
         loaded = true
     }
 
     /// Pages backwards until the first entry.
     func loadAll(store: NativeThreadStore, runID: String) async {
         guard !loadingOlder else { return }
+        let epoch = generation
         loadingOlder = true
         following = false
-        defer { loadingOlder = false }
-        while let cursor = olderCursor, self.runID == runID {
-            guard let page = await store.subagentTranscript(runID: runID, beforeEntryID: cursor) else { break }
+        defer { if generation == epoch { loadingOlder = false } }
+        while !Task.isCancelled, let cursor = olderCursor, self.runID == runID, generation == epoch {
+            guard let page = await store.subagentTranscript(runID: runID, beforeEntryID: cursor),
+                  !Task.isCancelled, generation == epoch, self.runID == runID else { break }
+            guard page.olderCursor != cursor else { break }
             let ids = Set(messages.map(\.entryID))
             messages = page.messages.filter { !ids.contains($0.entryID) } + messages
             olderCursor = page.olderCursor
@@ -542,6 +605,8 @@ final class NativeSubagentTranscriptModel: ObservableObject {
 
     private func reset(runID: String) {
         self.runID = runID
+        generation = UUID()
+        loadingOlder = false
         messages = []
         earlierCount = 0
         olderCursor = nil

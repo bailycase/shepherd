@@ -86,6 +86,8 @@ struct RemoteProtocolTests {
             .nativeThread(id: 86, agentID: AgentID(), request: .setThinking(expectedSessionID: "s", generation: "g", operationID: UUID(), level: "high")),
             .nativeThread(id: 87, agentID: AgentID(), request: .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer)),
             .nativeThread(id: 88, agentID: AgentID(), request: .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .cancel)),
+            .nativeThread(id: 90, agentID: AgentID(), request: .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .pause)),
+            .nativeThread(id: 91, agentID: AgentID(), request: .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .continue)),
             .nativeThread(id: 89, agentID: AgentID(), request: .subagentTranscript(expectedSessionID: "s", runID: "native-1", beforeEntryID: "c:abc")),
         ]
         for request in requests {

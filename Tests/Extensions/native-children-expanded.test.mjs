@@ -23,6 +23,28 @@ const { missionStore } = await jiti.import(path.join(root, "Extensions/shepherd-
 const { ProjectTrustStore } = await import(path.join(pkg, "dist/index.js"));
 const put = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
 
+test("child user extensions respect Pi filters and exclude project resources", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-extension-inheritance-"));
+  const old = process.env.PI_CODING_AGENT_DIR;
+  const agentDir = path.join(dir, "pi"), cwd = path.join(dir, "project"), packageDir = path.join(dir, "package");
+  process.env.PI_CODING_AGENT_DIR = agentDir;
+  fs.mkdirSync(cwd);
+  const provider = path.join(packageDir, "provider.ts"), disabled = path.join(packageDir, "disabled.ts");
+  put(path.join(packageDir, "package.json"), JSON.stringify({ name: "arbitrary-user-package", pi: { extensions: ["*.ts"] } }));
+  put(provider, 'throw Error("resolution must not execute code")');
+  put(disabled, 'throw Error("disabled extension executed")');
+  put(path.join(cwd, ".pi/extensions/project.ts"), 'throw Error("project extension executed")');
+  put(path.join(agentDir, "settings.json"), JSON.stringify({ packages: [{source: packageDir, extensions: ["provider.ts"]}] }));
+  try {
+    assert.deepEqual(await config.childUserExtensions(cwd), [fs.realpathSync(provider)]);
+    put(path.join(agentDir, "settings.json"), JSON.stringify({ packages: [{source: packageDir, extensions: []}] }));
+    assert.deepEqual(await config.childUserExtensions(cwd), []);
+  } finally {
+    if (old === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = old;
+    fs.rmSync(dir, {recursive: true, force: true});
+  }
+});
+
 test("discovery honors configured Pi dir, project precedence, trust, YAML lists, diagnostics and source files", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-profiles-")), old = process.env.PI_CODING_AGENT_DIR, oldHome = process.env.HOME, oldExtra = process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;
   process.env.HOME = dir; delete process.env.PI_SUBAGENT_EXTRA_AGENT_DIRS;

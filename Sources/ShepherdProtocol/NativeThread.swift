@@ -74,7 +74,7 @@ public enum NativeThreadDelivery: String, Codable, Hashable, Sendable { case fol
 
 /// Card and inspector actions on a subagent run. Pause is deliberately absent: the children
 /// runtime has no pause (only abort), and the board's Pause button would be a fake affordance.
-public enum NativeSubagentAction: String, Codable, Hashable, Sendable { case message, cancel, resume }
+public enum NativeSubagentAction: String, Codable, Hashable, Sendable { case message, cancel, resume, pause, `continue` }
 
 /// One native child run projected into the RPC thread (v2, additive). Same shape as
 /// `ChildRun` so the server can hand the extension's rows straight through.

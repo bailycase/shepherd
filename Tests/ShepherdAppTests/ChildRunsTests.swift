@@ -10,20 +10,11 @@ struct ChildRunsTests {
         ChildRun(runID: id, label: id, state: state, needsAttention: attention)
     }
 
-    @Test @MainActor func terminalAgentStatusesHideSubagentsAndOverrideBadges() {
-        #expect(!AgentRow.showsSubagents(for: .done))
-        #expect(!AgentRow.showsSubagents(for: .blocked))
-        #expect(AgentRow.showsSubagents(for: .working))
-        #expect(AgentRow.showsSubagents(for: .idle))
-        #expect(AgentRow.trailingAccessory(status: .done, badge: 1, subCount: 2) == .status("done"))
-        #expect(AgentRow.trailingAccessory(status: .blocked, badge: 1, subCount: 2) == .status("blocked"))
-        #expect(AgentRow.trailingAccessory(status: .working, badge: 1, subCount: 2) == .badge(1))
-        #expect(AgentRow.trailingAccessory(status: .working, badge: nil, subCount: 2) == .subagents(2))
-    }
-
-    @Test @MainActor func backgroundChildrenRemainAccessibleAfterParentSettlesOrBlocks() {
-        #expect(AgentRow.showsSubagents(for: .done, hasActiveChildren: true))
-        #expect(AgentRow.showsSubagents(for: .blocked, hasActiveChildren: true))
+    @Test @MainActor func agentRowsShowOnlyStatusOrKeyboardBadges() {
+        #expect(AgentRow.trailingAccessory(status: .done, badge: 1) == .status("done"))
+        #expect(AgentRow.trailingAccessory(status: .blocked, badge: 1) == .status("blocked"))
+        #expect(AgentRow.trailingAccessory(status: .working, badge: 1) == .badge(1))
+        #expect(AgentRow.trailingAccessory(status: .working, badge: nil) == .none)
     }
 
     @Test func publishReplacesRowsWholesale() {
@@ -92,6 +83,30 @@ struct ChildRunsTests {
         runs.apply(agentID: agent, children: [question], now: t0.addingTimeInterval(214))
         let expiredPublisher = runs.sweep(now: t0.addingTimeInterval(335))
         #expect(expiredPublisher)
+        #expect(runs.children(of: agent).isEmpty)
+    }
+
+    @Test func finishedNativeTranscriptsRemainInspectableUntilRemoved() {
+        var runs = ChildRuns()
+        let agent = AgentID()
+        let t0 = Date()
+        let completed = ChildRun(runID: "native", label: "worker", state: "complete", sessionFile: "/tmp/child.jsonl")
+        let failed = ChildRun(runID: "failed", label: "reviewer", state: "failed", sessionFile: "/tmp/failed.jsonl")
+        runs.apply(agentID: agent, children: [completed, failed, run("legacy", state: "complete"), run("live")], now: t0)
+        // A fresh publish after the legacy terminal TTL must keep the finished native rows.
+        runs.apply(agentID: agent, children: [completed, failed, run("legacy", state: "complete"), run("live")],
+                   now: t0.addingTimeInterval(301))
+        #expect(runs.children(of: agent).map(\.runID) == ["native", "failed", "live"])
+        // No further updates: stale live rows go away, finished transcripts stay clickable.
+        let staleChanged = runs.sweep(now: t0.addingTimeInterval(500))
+        #expect(staleChanged)
+        #expect(runs.children(of: agent).map(\.runID) == ["native", "failed"])
+        let laterChanged = runs.sweep(now: t0.addingTimeInterval(1_000))
+        #expect(!laterChanged)
+        // A publisher's explicit removal and parent shutdown still clear retained rows.
+        runs.apply(agentID: agent, children: [completed], now: t0.addingTimeInterval(1_001))
+        #expect(runs.children(of: agent).map(\.runID) == ["native"])
+        runs.clear(agent: agent)
         #expect(runs.children(of: agent).isEmpty)
     }
 
