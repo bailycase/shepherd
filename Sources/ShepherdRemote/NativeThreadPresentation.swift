@@ -524,12 +524,13 @@ public func nativeSubagentSiblings(of runID: String, in subagents: [ChildRun], t
     return group.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
 }
 
-/// "11:09 AM" from milliseconds since epoch.
-public func nativeClockText(_ milliseconds: Double, timeZone: TimeZone = .current) -> String {
+/// "11:09 AM" from milliseconds since epoch; `meridiem: false` gives the board's bare "11:09"
+/// (inspector header, from-parent captions).
+public func nativeClockText(_ milliseconds: Double, meridiem: Bool = true, timeZone: TimeZone = .current) -> String {
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.timeZone = timeZone
-    formatter.dateFormat = "h:mm a"
+    formatter.dateFormat = meridiem ? "h:mm a" : "h:mm"
     return formatter.string(from: Date(timeIntervalSince1970: milliseconds / 1000))
 }
 

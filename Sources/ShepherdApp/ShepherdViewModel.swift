@@ -34,6 +34,9 @@ struct NewAgentConfig {
     /// the panes extension withholds the automation_* tools (a watcher must
     /// never create watchers).
     var isAutomation = false
+    /// Resume an existing pi session (a forked subagent transcript already in the cwd's
+    /// session directory) instead of a fresh one keyed by the agent id.
+    var piSessionID: String?
 }
 
 struct AgentStartFailure: Error, CustomStringConvertible {

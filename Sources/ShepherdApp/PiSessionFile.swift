@@ -119,6 +119,45 @@ enum PiSessionFile {
         }
     }
 
+    struct ForkFailure: Error, CustomStringConvertible {
+        let message: String
+        var description: String { message }
+    }
+
+    /// Copy a session file (a native child's transcript) into `cwd`'s project directory under a
+    /// fresh session id so `pi --session-id` resumes it as a first-class agent. Every entry is
+    /// kept; only the header's id, cwd, and timestamp change. Returns the new id.
+    static func fork(
+        sessionFile: String,
+        cwd: String,
+        sessionsRoot: URL = defaultSessionsRoot
+    ) throws -> String {
+        guard let data = FileManager.default.contents(atPath: sessionFile), !data.isEmpty else {
+            throw ForkFailure(message: "The subagent's session file is missing or unreadable.")
+        }
+        guard let newline = data.firstIndex(of: UInt8(ascii: "\n")),
+              var header = try? JSONSerialization.jsonObject(with: data[..<newline]) as? [String: Any],
+              header["type"] as? String == "session" else {
+            throw ForkFailure(message: "The subagent's session file has no pi session header.")
+        }
+        let sessionID = UUID().uuidString.lowercased()
+        let now = Date()
+        header["id"] = sessionID
+        header["cwd"] = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).resolvingSymlinksInPath().path
+        header["timestamp"] = isoTimestamp.string(from: now)
+        header.removeValue(forKey: "parentSession")
+        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        let url = directory.appendingPathComponent("\(fileTimestamp.string(from: now))_\(sessionID).jsonl")
+        do {
+            let headerData = try JSONSerialization.data(withJSONObject: header, options: [.sortedKeys])
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try (headerData + data[newline...]).write(to: url, options: .atomic)
+        } catch {
+            throw ForkFailure(message: "Could not copy the transcript: \(error.localizedDescription)")
+        }
+        return sessionID
+    }
+
     /// `2026-08-22T01:34:01.750Z`
     private static let isoTimestamp: DateFormatter = {
         let formatter = DateFormatter()

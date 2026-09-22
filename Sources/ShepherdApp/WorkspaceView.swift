@@ -334,9 +334,11 @@ struct PaneLeafView: View {
                     )
                 } inspector: {
                     if let inspecting {
-                        NativeSubagentInspector(store: store, runID: inspecting, active: visible) {
+                        NativeSubagentInspector(store: store, runID: inspecting, active: visible, close: {
                             vm.subagentInspector.runByAgent.removeValue(forKey: agent.id)
-                        }
+                        }, select: { vm.subagentInspector.runByAgent[agent.id] = $0.runID }, fork: { run in
+                            do { try await vm.forkSubagent(agentID: agent.id, run: run); return nil } catch { return String(describing: error) }
+                        })
                         .id(inspecting)
                     }
                 }

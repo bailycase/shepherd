@@ -670,6 +670,8 @@ struct NativeThreadHeader: View {
 
 struct NativeUserTurn: View {
     let messages: [NativeThreadMessage]
+    /// Micro caption under the bubble ("10:58 · from parent" in a child's transcript).
+    var caption: String? = nil
     var body: some View {
         VStack(alignment: .trailing, spacing: 6) {
             ForEach(messages, id: \.entryID) { message in
@@ -688,10 +690,13 @@ struct NativeUserTurn: View {
                                                                               bottomTrailingRadius: Radius.xs, topTrailingRadius: Radius.xl))
                 .frame(maxWidth: NativeMetrics.userMaxWidth, alignment: .trailing)
             }
+            if let caption {
+                Text(caption).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("You")
+        .accessibilityLabel(caption == nil ? "You" : "Parent")
     }
 }
 

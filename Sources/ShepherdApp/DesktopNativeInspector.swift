@@ -65,28 +65,43 @@ struct NativeInspectorSplit<Thread: View, Inspector: View>: View {
     }
 }
 
-/// Everything below the header, following the run live while it runs.
+/// Everything below the header, following the run live while it runs. A terminal run is
+/// read-only: RESULT block, from-parent captions, and a Re-run / Fork / Copy bar instead of
+/// the steer composer.
 struct NativeSubagentInspector: View {
     @ObservedObject var store: NativeThreadStore
     let runID: String
     let active: Bool
     let close: () -> Void
+    /// Step to a sibling run (‹ ›); nil hides the buttons.
+    var select: ((ChildRun) -> Void)? = nil
+    /// Fork the finished run into a new agent; the string is an error to show, nil on success.
+    var fork: ((ChildRun) async -> String?)? = nil
     @StateObject private var clock = NativeThreadClock()
     @StateObject private var transcript = NativeSubagentTranscriptModel()
     @State private var draft = ""
+    @State private var forkError: String?
+    @State private var forking = false
+    /// Ids of the turns currently intersecting the viewport, for "turn 4 of 11".
+    @State private var visibleTurns: Set<String> = []
+    @State private var moreBelow = false
     @FocusState private var composing: Bool
 
     private var run: ChildRun? { store.subagents.first { $0.runID == runID } }
     private var role: String { run?.role ?? run?.label ?? "subagent" }
     private var canAct: Bool { active && store.supports("subagents") }
+    private var terminal: Bool { run?.isTerminal == true }
+    private var siblings: [ChildRun] { nativeSubagentSiblings(of: runID, in: store.subagents, turns: nativeTurns(store.displayedMessages)) }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             goal
+            if terminal, run != nil { result }
             NativeTokens.border.frame(height: 1)
             transcriptView
-            composer
+            if terminal { turnLine }
+            if terminal { terminalBar } else { composer }
         }
         .font(NativeFonts.body)
         .foregroundStyle(NativeTokens.text)
@@ -104,14 +119,42 @@ struct NativeSubagentInspector: View {
 
     private var header: some View {
         let state = run.map(nativeSubagentState) ?? .done
+        let siblings = siblings
+        let position = siblings.firstIndex { $0.runID == runID }
         return HStack(alignment: .top, spacing: 8) {
             NativeBranchGlyph(color: nativeSubagentColor(state)).padding(.top, 2)
             VStack(alignment: .leading, spacing: 2) {
-                Text(role).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1)
-                Text(meta).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).lineLimit(1).truncationMode(.tail)
+                HStack(spacing: 6) {
+                    Text(role).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1)
+                    if let position, siblings.count > 1 {
+                        Text("· \(position + 1) of \(siblings.count)").font(NativeFonts.label).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
+                    }
+                }
+                HStack(spacing: 0) {
+                    Text(meta).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).lineLimit(1).truncationMode(.tail)
+                    if let run, run.isTerminal {
+                        Text(meta.isEmpty ? "" : " · ").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
+                        Text(stateWord(run)).font(NativeFonts.micro).foregroundStyle(state == .done ? NativeTokens.successText : NativeTokens.dangerText)
+                        if let ended = run.endedAt {
+                            Text(" \(nativeClockText(ended, meridiem: false))").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
+                        }
+                    }
+                }
             }
             Spacer(minLength: 8)
             HStack(spacing: 6) {
+                if let select, let position, siblings.count > 1 {
+                    Button { select(siblings[position - 1]) } label: { Image(systemName: "chevron.left").font(.system(size: 11, weight: .medium)) }
+                        .buttonStyle(NativeGhostIconStyle(size: NativeMetrics.subagentCardButton))
+                        .disabled(position == 0)
+                        .help("Previous subagent")
+                        .accessibilityLabel("Previous subagent")
+                    Button { select(siblings[position + 1]) } label: { Image(systemName: "chevron.right").font(.system(size: 11, weight: .medium)) }
+                        .buttonStyle(NativeGhostIconStyle(size: NativeMetrics.subagentCardButton))
+                        .disabled(position == siblings.count - 1)
+                        .help("Next subagent")
+                        .accessibilityLabel("Next subagent")
+                }
                 if let run, !run.isTerminal {
                     Button("Stop") { Task { await store.subagentCommand(runID: runID, action: .cancel) } }
                         .buttonStyle(NativeButtonStyle(.destructive, size: NativeMetrics.subagentCardButton))
@@ -121,15 +164,20 @@ struct NativeSubagentInspector: View {
                 }
                 Menu {
                     if let run, run.isTerminal {
-                        Button("Resume with original task") { Task { await store.subagentCommand(runID: runID, action: .resume) } }.disabled(!canAct)
-                    }
-                    if let file = run?.sessionFile {
-                        Button("Copy session file path") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(file, forType: .string)
+                        Button("Copy transcript") { copyTranscript() }
+                        if let file = run.sessionFile {
+                            Button("Open session file in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: file)]) }
                         }
+                        Button("Re-run") { Task { await store.subagentCommand(runID: runID, action: .resume) } }.disabled(!canAct)
+                    } else {
+                        if let file = run?.sessionFile {
+                            Button("Copy session file path") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(file, forType: .string)
+                            }
+                        }
+                        Button("Refresh transcript") { Task { await transcript.reload(store: store, runID: runID) } }
                     }
-                    Button("Refresh transcript") { Task { await transcript.reload(store: store, runID: runID) } }
                 } label: {
                     Image(systemName: "ellipsis").font(.system(size: 12, weight: .medium)).foregroundStyle(NativeTokens.textSecondary)
                         .frame(width: NativeMetrics.subagentCardButton, height: NativeMetrics.subagentCardButton)
@@ -158,10 +206,67 @@ struct NativeSubagentInspector: View {
         var parts: [String] = []
         if let context = run.context { parts.append(context) }
         if let model = run.model { parts.append(nativeModelShortName(model)) }
-        if let thinking = run.thinking, thinking != "off" { parts.append("thinking \(thinking)") }
+        if let thinking = run.thinking, thinking != "off", !run.isTerminal { parts.append("thinking \(thinking)") }
         let counters = nativeSubagentCounters(run)
         if !counters.isEmpty { parts.append(counters) }
         return parts.joined(separator: " · ")
+    }
+
+    /// "done" / "failed" / "stopped" for the terminal header.
+    private func stateWord(_ run: ChildRun) -> String {
+        run.state == "complete" ? "done" : run.state
+    }
+
+    private var transcriptText: String {
+        transcript.messages.compactMap { message -> String? in
+            if let tool = message.toolName { return "[\(tool)] " + message.blocks.map(\.text).joined(separator: "\n") }
+            let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+            return text.isEmpty ? nil : "\(message.role): \(text)"
+        }.joined(separator: "\n\n")
+    }
+
+    private func copyTranscript() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(transcriptText, forType: .string)
+    }
+
+    // MARK: Result (terminal runs)
+
+    private var result: some View {
+        let run = run!
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("RESULT").font(NativeFonts.section).tracking(0.6).foregroundStyle(NativeTokens.textTertiary)
+            if let summary = run.summary ?? run.output, !summary.isEmpty {
+                Text(NativeProse.inline(summary)).font(NativeFonts.bodySmall).lineSpacing(NativeFonts.bodySmallLeading)
+                    .foregroundStyle(NativeTokens.text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            } else if let reason = run.exitReason {
+                Text(reason).font(NativeFonts.bodySmall).foregroundStyle(NativeTokens.dangerText).frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let files = run.files, !files.isEmpty {
+                NativeFlow(spacing: 10) {
+                    ForEach(files, id: \.path) { file in
+                        Button {
+                            let url = URL(fileURLWithPath: file.path, relativeTo: run.cwd.map { URL(fileURLWithPath: $0, isDirectory: true) }).absoluteURL
+                            NSWorkspace.shared.activateFileViewerSelecting([url])
+                        } label: {
+                            (Text(file.path).foregroundStyle(NativeTokens.accentText)
+                             + Text(" +\(file.added)").foregroundStyle(NativeTokens.successText)
+                             + Text(" −\(file.removed)").foregroundStyle(NativeTokens.dangerText))
+                                .font(NativeFonts.micro).monospacedDigit().lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Reveal in Finder")
+                        .accessibilityLabel("Reveal \(file.path) in Finder, \(file.added) added, \(file.removed) removed")
+                    }
+                }
+            }
+        }
+        .padding(NativeMetrics.inspectorGoalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NativeTokens.bgSurface)
+        .overlay(alignment: .top) { NativeTokens.borderSubtle.frame(height: 1) }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Result")
     }
 
     // MARK: Goal
@@ -210,11 +315,21 @@ struct NativeSubagentInspector: View {
                     if transcript.messages.isEmpty, transcript.loaded {
                         Text(run == nil ? "This run is no longer listed." : "No transcript yet.").font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
                     }
-                    ForEach(nativeTurns(transcript.messages)) { turn in
+                    let turns = nativeTurns(transcript.messages)
+                    ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
                         if turn.isUser {
-                            NativeUserTurn(messages: turn.messages).id(turn.id)
+                            // In the child's session every user message after the first is the
+                            // parent (a steer or the resume text); the first is the task itself.
+                            let fromParent = terminal && index > 0
+                            NativeUserTurn(messages: turn.messages, caption: fromParent ? parentCaption(turn) : nil).id(turn.id)
+                                .onScrollVisibilityChange(threshold: 0.01) { visible in
+                                    if visible { visibleTurns.insert(turn.id) } else { visibleTurns.remove(turn.id) }
+                                }
                         } else {
                             NativeAgentTurn(messages: turn.messages, running: run?.isTerminal == false, clock: clock, showTerminal: nil).id(turn.id)
+                                .onScrollVisibilityChange(threshold: 0.01) { visible in
+                                    if visible { visibleTurns.insert(turn.id) } else { visibleTurns.remove(turn.id) }
+                                }
                         }
                     }
                     if let run, !run.isTerminal {
@@ -227,10 +342,13 @@ struct NativeSubagentInspector: View {
             }
             // Content that fits sits at the top (the board shows the first rows under GOAL);
             // a long transcript still opens at the tail and follows live from there.
-            .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .defaultScrollAnchor(transcript.following ? .bottom : nil, for: .sizeChanges)
+            .defaultScrollAnchor(terminal ? .top : .bottom, for: .initialOffset)
+            .defaultScrollAnchor(transcript.following && !terminal ? .bottom : nil, for: .sizeChanges)
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height > 4
+            } action: { _, below in moreBelow = below }
             .onChange(of: transcript.messages.count) { _, _ in
-                if transcript.following { proxy.scrollTo("inspector-bottom", anchor: .bottom) }
+                if transcript.following, !terminal { proxy.scrollTo("inspector-bottom", anchor: .bottom) }
             }
         }
         .overlay(alignment: .bottomTrailing) {
@@ -239,6 +357,62 @@ struct NativeSubagentInspector: View {
                     .padding(.horizontal, NativeMetrics.subagentCardPadding).padding(.bottom, 6)
             }
         }
+    }
+
+    /// "10:58 · from parent" under a steer bubble; the time is omitted when pi gave none.
+    private func parentCaption(_ turn: NativeTurn) -> String {
+        if let at = turn.messages.first?.timestamp { return "\(nativeClockText(at, meridiem: false)) · from parent" }
+        return "from parent"
+    }
+
+    // MARK: Terminal footer + bar
+
+    /// "turn 4 of 11" (the topmost turn in the viewport) · "Scroll for the rest".
+    private var turnLine: some View {
+        let turns = nativeTurns(transcript.messages)
+        let top = turns.firstIndex { visibleTurns.contains($0.id) }
+        return HStack {
+            if let top { Text("turn \(top + 1) of \(turns.count)").monospacedDigit() }
+            Spacer()
+            if moreBelow { Text("Scroll for the rest") }
+        }
+        .font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
+        .padding(.horizontal, NativeMetrics.subagentCardPadding)
+        .frame(height: NativeMetrics.statusLineHeight)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var terminalBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Button("Re-run") { Task { await store.subagentCommand(runID: runID, action: .resume) } }
+                    .buttonStyle(NativeButtonStyle(.secondary, size: NativeMetrics.subagentCardButton))
+                    .disabled(!canAct)
+                    .help("Resume \(role) with its original task")
+                    .accessibilityLabel("Re-run \(role)")
+                if let fork, let run {
+                    Button(forking ? "Forking…" : "Fork as new agent") {
+                        forking = true
+                        Task { forkError = await fork(run); forking = false }
+                    }
+                    .buttonStyle(NativeButtonStyle(.secondary, size: NativeMetrics.subagentCardButton))
+                    .disabled(!active || forking || run.sessionFile == nil)
+                    .help("Start a new agent that continues this transcript")
+                    .accessibilityLabel("Fork \(role) as new agent")
+                }
+                Button("Copy transcript") { copyTranscript() }
+                    .buttonStyle(NativeButtonStyle(.secondary, size: NativeMetrics.subagentCardButton))
+                    .disabled(transcript.messages.isEmpty)
+                    .accessibilityLabel("Copy \(role) transcript")
+                Spacer(minLength: 8)
+                Text("kept with the thread").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
+            }
+            if let notice = forkError ?? store.notice {
+                Text(notice).font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
+            }
+        }
+        .padding(NativeMetrics.subagentCardPadding)
+        .overlay(alignment: .top) { NativeTokens.border.frame(height: 1) }
     }
 
     // MARK: Composer
@@ -278,6 +452,35 @@ struct NativeSubagentInspector: View {
         guard canAct, !text.isEmpty else { return }
         draft = ""
         Task { await store.subagentCommand(runID: runID, action: .message, text: text, mode: .steer) }
+    }
+}
+
+/// Left-to-right wrapping row for the RESULT block's file links.
+struct NativeFlow: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        place(in: proposal.width ?? .infinity, subviews: subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, origin) in zip(subviews, place(in: bounds.width, subviews: subviews).origins) {
+            subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
+        }
+    }
+
+    private func place(in width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
+        var origins: [CGPoint] = []
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width { x = 0; y += rowHeight + 4; rowHeight = 0 }
+            origins.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+            maxX = max(maxX, x - spacing)
+        }
+        return (CGSize(width: maxX, height: y + rowHeight), origins)
     }
 }
 

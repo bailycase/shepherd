@@ -72,6 +72,44 @@ struct PiSessionFileTests {
         #expect(PiSessionFile.hasRuntimeState(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot))
     }
 
+    /// Forking a child transcript copies every entry under a fresh id in the cwd's project
+    /// directory (where `pi --session-id` looks), rewriting only the header.
+    @Test func forkCopiesTheTranscriptUnderAFreshResolvableID() throws {
+        let cwd = try makeScratchCwd()
+        let sessionsRoot = try makeScratchSessionsRoot()
+        defer { cleanUp(cwd: cwd, sessionsRoot: sessionsRoot) }
+        let child = URL(fileURLWithPath: cwd).appendingPathComponent("session.jsonl")
+        try """
+        {"type":"session","version":3,"id":"child-id","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/elsewhere","parentSession":"/p.jsonl"}
+        {"type":"message","id":"m1","message":{"role":"user","content":"hello child"}}
+        {"type":"message","id":"m2","message":{"role":"assistant","content":[{"type":"text","text":"hi parent"}]}}
+
+        """.write(to: child, atomically: true, encoding: .utf8)
+
+        let id = try PiSessionFile.fork(sessionFile: child.path, cwd: cwd, sessionsRoot: sessionsRoot)
+        #expect(id != "child-id")
+        #expect(PiSessionFile.exists(sessionID: id, cwd: cwd, sessionsRoot: sessionsRoot))
+        #expect(PiSessionFile.hasRuntimeState(sessionID: id, cwd: cwd, sessionsRoot: sessionsRoot))
+        let copy = try String(contentsOf: try #require(seededFile(sessionID: id, cwd: cwd, sessionsRoot: sessionsRoot)), encoding: .utf8)
+        let lines = copy.split(separator: "\n")
+        #expect(lines.count == 3)
+        let header = try #require(try JSONSerialization.jsonObject(with: Data(lines[0].utf8)) as? [String: Any])
+        #expect(header["id"] as? String == id && header["parentSession"] == nil)
+        #expect(header["cwd"] as? String == URL(fileURLWithPath: cwd).resolvingSymlinksInPath().path)
+        #expect(lines[1].contains("hello child") && lines[2].contains("hi parent"))
+        // The child's file is untouched; a second fork gets its own id.
+        #expect(try String(contentsOf: child, encoding: .utf8).contains("\"id\":\"child-id\""))
+        #expect(try PiSessionFile.fork(sessionFile: child.path, cwd: cwd, sessionsRoot: sessionsRoot) != id)
+
+        // Missing file or a file without a session header: an error, nothing written.
+        let before = try sessionFiles(cwd: cwd, sessionsRoot: sessionsRoot).count
+        #expect(throws: PiSessionFile.ForkFailure.self) { try PiSessionFile.fork(sessionFile: cwd + "/missing.jsonl", cwd: cwd, sessionsRoot: sessionsRoot) }
+        let bare = URL(fileURLWithPath: cwd).appendingPathComponent("bare.jsonl")
+        try "{\"type\":\"message\"}\n".write(to: bare, atomically: true, encoding: .utf8)
+        #expect(throws: PiSessionFile.ForkFailure.self) { try PiSessionFile.fork(sessionFile: bare.path, cwd: cwd, sessionsRoot: sessionsRoot) }
+        #expect(try sessionFiles(cwd: cwd, sessionsRoot: sessionsRoot).count == before)
+    }
+
     // MARK: helpers
 
     private func sessionsDirectory(cwd: String, sessionsRoot: URL) -> URL {

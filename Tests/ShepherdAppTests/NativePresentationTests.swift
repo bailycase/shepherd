@@ -242,6 +242,7 @@ struct NativePresentationTests {
                      result: ChildResultSummary(files: 2, added: 118, removed: 4, tools: 19, tokens: 118_000), toolCallID: "spawn-tests",
                      task: "Add presentation tests for the restyle and run the suites on macOS and iOS.",
                      output: "Added 6 presentation tests (preview text per tool kind, DiffStat, duration formatting). All 14 pass on macOS and iOS simulators.",
+                     sessionFile: "/tmp/tests.jsonl",
                      files: [ChildFileChange(path: "Tests/ShepherdAppTests/NativePresentationTests.swift", added: 96, removed: 3),
                              ChildFileChange(path: "Tests/ShepherdIOSChecks/ThreadStoreCheck.swift", added: 22, removed: 1)],
                      summary: "Added 6 presentation tests (preview text per tool kind, DiffStat, duration formatting). All 14 pass on macOS and iOS simulators.",
@@ -289,6 +290,7 @@ struct NativePresentationTests {
         #expect(nativeFirstSentence("") == "")
         let utc = TimeZone(identifier: "UTC")!
         #expect(nativeClockText(1_758_539_340_000, timeZone: utc) == "11:09 AM")
+        #expect(nativeClockText(1_758_539_340_000, meridiem: false, timeZone: utc) == "11:09")
         #expect(nativeTurnTimeText(startedAt: nil, endedAt: 5) == nil)
         let start = Date().timeIntervalSince1970 * 1000
         let text = try? #require(nativeTurnTimeText(startedAt: start, endedAt: start + (45 * 60 + 12) * 1000))
@@ -908,6 +910,54 @@ struct NativePresentationTests {
         window.layoutIfNeeded()
         try capture(host, name: "subagents-done")
         #expect(nativeSubagentGroupIsTerminal(store.subagents))
+    }
+
+    /// Screenshot-only: the read-only inspector on the finished "tests" run: RESULT block with
+    /// file links, a from-parent bubble, the turn line, and the Re-run / Fork / Copy bar.
+    @Test func subagentDoneInspectorRendersTheBoard() async throws {
+        guard ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_DIR"] != nil else { return }
+        let store = NativeThreadStore()
+        let snapshot = Self.doneSnapshot()
+        let end = snapshot.subagents![2].endedAt!
+        func tool(_ id: String, _ name: String, _ args: String, _ output: String) -> NativeThreadMessage {
+            NativeThreadMessage(entryID: "c:\(id)", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: output)],
+                                toolName: name, toolCallID: id, argumentsText: args, status: "complete", isError: false)
+        }
+        let page = NativeSubagentTranscript(runID: "native-tests", messages: [
+            NativeThreadMessage(entryID: "c:u1", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Add presentation tests for the restyle and run the suites on macOS and iOS.")], timestamp: end - 4 * 60_000),
+            NativeThreadMessage(entryID: "c:a1", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Reading the current suite to match its fixtures.")]),
+            tool("r1", "read", #"{"path":"Tests/ShepherdAppTests/NativePresentationTests.swift","offset":1,"limit":120}"#, Array(repeating: "x", count: 120).joined(separator: "\n")),
+            tool("e1", "edit", #"{"path":"Tests/ShepherdAppTests/NativePresentationTests.swift","edits":[{"oldText":"a","newText":"a\nb\nc"}]}"#, "Successfully replaced 1 block(s)"),
+            NativeThreadMessage(entryID: "c:u2", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Also cover the iOS thread store check.")], timestamp: end - 2 * 60_000),
+            NativeThreadMessage(entryID: "c:a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Added the iOS check alongside.")]),
+            tool("b1", "bash", #"{"command":"swift test --filter NativePresentationTests"}"#, "14 tests passed"),
+            NativeThreadMessage(entryID: "c:a3", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Added 6 presentation tests (preview text per tool kind, DiffStat, duration formatting). All 14 pass on macOS and iOS simulators.")], timestamp: end),
+        ], olderCursor: nil, earlierCount: 0)
+        let request: NativeThreadStore.Request = { value in
+            if case .subagentTranscript = value { return .transcript(value: page) }
+            return .snapshot(value: snapshot)
+        }
+        let inspector = NativeInspectorState()
+        inspector.runByAgent[AgentID(rawValue: "a")] = "native-tests"
+        let content = NativeInspectorSplit(state: inspector, showInspector: true) {
+            VStack(spacing: 0) {
+                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities", native: .constant(true), showTerminal: nil)
+                DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: nil, agentName: "Investigate",
+                                        inspectSubagent: { _ in }, inspectedRunID: "native-tests")
+            }
+        } inspector: {
+            NativeSubagentInspector(store: store, runID: "native-tests", active: true, close: {}, select: { _ in }, fork: { _ in nil })
+        }
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1370, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await waitFor { store.ready }
+        try await Task.sleep(for: .milliseconds(600))
+        window.layoutIfNeeded()
+        try capture(host, name: "subagents-done-inspector")
     }
 
     /// Screenshot-only: the thread with the worker open in the side-panel inspector, its
