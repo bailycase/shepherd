@@ -11,15 +11,6 @@ import ShepherdRemote
 @Suite("Desktop native presentation", .serialized)
 @MainActor
 struct NativePresentationTests {
-    @Test func toolPreviewPrefersActionAndFallsBackToSavedOutput() throws {
-        var message = try JSONDecoder().decode(NativeThreadMessage.self, from: Data(#"{"entryID":"t","role":"toolResult","toolName":"bash","argumentsText":"{\"command\":\"swift test\"}","blocks":[{"kind":"text","text":"Build complete\nAll tests passed"}],"truncated":false}"#.utf8))
-        #expect(desktopNativeToolPreview(message) == "swift test")
-        message.argumentsText = nil
-        #expect(desktopNativeToolPreview(message) == "Build complete")
-        message.blocks = []
-        #expect(desktopNativeToolPreview(message) == nil)
-    }
-
     private func message(_ fields: [String: Any]) -> NativeThreadMessage {
         var json = fields
         json["entryID"] = json["entryID"] ?? UUID().uuidString
@@ -94,7 +85,7 @@ struct NativePresentationTests {
         #expect(nativeAgentPill(running: false, awaitingAnswer: true, error: false, stopped: true) == .needsApproval)
         #expect(nativeAgentPill(running: true, awaitingAnswer: false, error: false, stopped: true) == .running)
         #expect(nativeAgentPill(running: false, awaitingAnswer: false, error: true, stopped: true) == .error)
-        #expect(NativeAgentPill.needsApproval.label == "Needs approval")
+        #expect(NativeAgentPill.needsApproval.label == "Needs you")
         #expect([NativeAgentPill.idle, .running, .error, .stopped].map(\.label) == ["Idle", "Running", "Error", "Stopped"])
     }
 
@@ -112,7 +103,7 @@ struct NativePresentationTests {
         #expect(nativeHeadTruncated(path, max: 20) == "…iveThreadView.swift")
         #expect(nativeHeadTruncated(path, max: 20).count == 20)
         #expect(nativeHeadTruncated(path, max: path.count) == path)
-        #expect(nativeHeadTruncated(path, max: path.count - 1).hasSuffix("DesktopNativeThreadView.swift"))
+        #expect(nativeHeadTruncated(path, max: path.count - 1).hasSuffix("ThreadView.swift"))
         #expect(nativeHeadTruncated("", max: 5) == "")
         // Degenerate widths leave the string alone rather than returning a bare ellipsis.
         #expect(nativeHeadTruncated("abc", max: 1) == "abc")
@@ -225,7 +216,7 @@ struct NativePresentationTests {
                      result: ChildResultSummary(files: 5, added: 200, removed: 60, tools: 118, tokens: 922_000), toolCallID: "spawn-worker",
                      task: "Restyle desktop native thread view and iOS app to match the spec.",
                      output: "Restyled desktop thread, sidebar, composer and iOS to the spec; system fonts at spec sizes throughout. Nothing else touched.",
-                     files: [ChildFileChange(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", added: 120, removed: 40),
+                     files: [ChildFileChange(path: "Sources/ShepherdApp/ThreadView.swift", added: 120, removed: 40),
                              ChildFileChange(path: "Sources/ShepherdApp/SidebarView.swift", added: 30, removed: 10),
                              ChildFileChange(path: "Sources/ShepherdApp/DesktopNativeComposer.swift", added: 20, removed: 5),
                              ChildFileChange(path: "App/iOS/ThreadView.swift", added: 25, removed: 5),
@@ -362,13 +353,13 @@ struct NativePresentationTests {
         #expect(placements[turns[3].id]?.byToolCall == ["spawn-b": [runB]])
         #expect(placements[turns[3].id]?.trailing == [orphan, bare])
         // The group splits around the spawn row: rows before, the card, rows after.
-        let segments = nativeToolSegments([a, read], placement: placements[turns[1].id]!)
+        let segments = toolSegments([a, read], placement: placements[turns[1].id]!)
         #expect(segments == [.subagents([runA]), .rows([read])])
-        #expect(nativeToolSegments([read, a], placement: placements[turns[1].id]!) == [.rows([read]), .subagents([runA])])
-        #expect(nativeToolSegments([read], placement: NativeSubagentPlacement()) == [.rows([read])])
+        #expect(toolSegments([read, a], placement: placements[turns[1].id]!) == [.rows([read]), .subagents([runA])])
+        #expect(toolSegments([read], placement: NativeSubagentPlacement()) == [.rows([read])])
         let wait = tool("shepherd_child_wait", args: nil, output: "internal run report")
-        #expect(nativeToolSegments([a, wait, read], placement: placements[turns[1].id]!) == [.subagents([runA]), .rows([read])])
-        #expect(nativeToolSegments([wait], placement: NativeSubagentPlacement()) == [.rows([wait])])
+        #expect(toolSegments([a, wait, read], placement: placements[turns[1].id]!) == [.subagents([runA]), .rows([read])])
+        #expect(toolSegments([wait], placement: NativeSubagentPlacement()) == [.rows([wait])])
         // Above the threshold, every spawn row folds into one strip at the first spawn's position.
         var many = NativeSubagentPlacement()
         var rows: [NativeThreadMessage] = []
@@ -377,15 +368,15 @@ struct NativePresentationTests {
             rows.append(spawn)
             many.byToolCall["s\(i)"] = [ChildRun(runID: "m\(i)", label: "l", state: "complete", toolCallID: "s\(i)")]
         }
-        let folded = nativeToolSegments([read] + rows + [read], placement: many)
+        let folded = toolSegments([read] + rows + [read], placement: many)
         #expect(folded.count == 3)
         if case .subagents(let runs) = folded[1] { #expect(runs.count == 5) } else { Issue.record("expected one strip segment") }
         // A finished group of any size folds the same way, into the ledger at the first spawn row.
         var done = NativeSubagentPlacement()
         for run in Self.doneRuns { done.byToolCall[run.toolCallID!] = [run] }
         let spawns = ["spawn-worker", "spawn-reviewer", "spawn-tests"].map { id -> NativeThreadMessage in var s = spawnA; s.toolCallID = id; return s }
-        #expect(nativeSubagentGroupFolds(done) && !nativeSubagentGroupFolds(placements[turns[1].id]!))
-        let ledger = nativeToolSegments(spawns + [read], placement: done)
+        #expect(subagentGroupFolds(done) && !subagentGroupFolds(placements[turns[1].id]!))
+        let ledger = toolSegments(spawns + [read], placement: done)
         #expect(ledger.count == 2)
         if case .subagents(let runs) = ledger[0] { #expect(runs.count == 3) } else { Issue.record("expected one ledger segment") }
     }
@@ -449,15 +440,6 @@ struct NativePresentationTests {
         #expect(primaryAgent(in: tab, pane: primary, agents: [agent]) == nil)
     }
 
-    @Test func markdownKeepsCodeLiteralAndUnclosedFences() {
-        let parts = desktopNativeMarkdown("**prose**\n````swift\nlet x = \"```\"\n```\n````\nlast")
-        #expect(parts.map(\.code) == [false, true, false])
-        #expect(parts.map(\.text) == ["**prose**", "let x = \"```\"\n```", "last"])
-        #expect(desktopNativeMarkdown("```\npartial").last?.code == true)
-        #expect(desktopNativeMarkdown("```\npartial").last?.text == "partial")
-        #expect(desktopNativeMarkdown("ordinary `inline` text").first?.code == false)
-    }
-
     @Test func blockParserHandlesHeadingsListsQuotesRulesAndFencesInLists() {
         let text = """
         # Plan
@@ -496,7 +478,7 @@ struct NativePresentationTests {
         // A fence indented under an item belongs to it, and its body stays literal (the dash line is code).
         #expect(blocks[3] == .list(ordered: true, start: 1, items: [
             .init(text: "one"),
-            .init(text: "two", children: [.code("let x = \"```\"\n- not a list")]),
+            .init(text: "two", children: [.code("let x = \"```\"\n- not a list", language: "swift")]),
         ]))
         #expect(blocks[4] == .quote("quoted\nmore"))
         #expect(blocks[5] == .rule)
@@ -507,7 +489,7 @@ struct NativePresentationTests {
         // Ordered lists keep their start number; an unclosed fence runs to the end; "#" without
         // a space and a lone dash are plain text.
         #expect(nativeMarkdownBlocks("3) c\n4) d") == [.list(ordered: true, start: 3, items: [.init(text: "c"), .init(text: "d")])])
-        #expect(nativeMarkdownBlocks("```\npartial") == [.code("partial")])
+        #expect(nativeMarkdownBlocks("```\npartial") == [.code("partial", language: nil)])
         #expect(nativeMarkdownBlocks("#hashtag and -dash") == [.paragraph("#hashtag and -dash")])
         #expect(nativeMarkdownBlocks("") == [])
         // A blank line ends a list unless the next line is indented under an item.
@@ -631,7 +613,7 @@ struct NativePresentationTests {
          "messages":[
           {"entryID":"u","role":"user","blocks":[{"kind":"text","text":"Check the native desktop presentation without starting a second pi process."}],"truncated":false},
           {"entryID":"a","role":"assistant","blocks":[{"kind":"thinking","text":"Check focus and exact dialog values."},{"kind":"text","text":"**The same agent is still running.** This is a native transcript, not parsed terminal output.\n\n```swift\nlet mode = presentation.isNative(agent.id)\n```"}],"truncated":false},
-          {"entryID":"t1","role":"toolResult","toolName":"read","toolCallID":"c1","status":"complete","argumentsText":"{\"path\":\"Sources/ShepherdApp/DesktopNativeThreadView.swift\",\"offset\":237,\"limit\":160}","blocks":[{"kind":"text","text":"struct DesktopNativeThreadView: View {\n    @ObservedObject var store: NativeThreadStore\n}"}],"truncated":false},
+          {"entryID":"t1","role":"toolResult","toolName":"read","toolCallID":"c1","status":"complete","argumentsText":"{\"path\":\"Sources/ShepherdApp/ThreadView.swift\",\"offset\":237,\"limit\":160}","blocks":[{"kind":"text","text":"struct ThreadView: View {\n    @ObservedObject var store: NativeThreadStore\n}"}],"truncated":false},
           {"entryID":"t2","role":"toolResult","toolName":"edit","toolCallID":"c2","status":"complete","argumentsText":"{\"path\":\"App/iOS/ThreadView.swift\",\"edits\":[{\"oldText\":\"a\\nb\\nc\\nd\",\"newText\":\"a\"}]}","blocks":[{"kind":"text","text":"Successfully replaced 1 block(s) in App/iOS/ThreadView.swift."}],"truncated":false},
           {"entryID":"t3","role":"toolResult","toolName":"grep","toolCallID":"c3","status":"complete","argumentsText":"{\"pattern\":\"speakerLabel\",\"path\":\"Sources/\"}","blocks":[{"kind":"text","text":"Sources/A.swift:12: speakerLabel\nSources/B.swift:40: speakerLabel\nSources/C.swift:7: speakerLabel"}],"truncated":false},
           {"entryID":"t4","role":"toolResult","toolName":"bash","toolCallID":"c4","status":"complete","argumentsText":"{\"command\":\"swift test --filter toolPreviewPrefersActionAndFallsBackToSavedOutput\"}","blocks":[{"kind":"text","text":"Build complete! (10.20 sec)\n◇ Suite \"Desktop native presentation\" started.\n◆ Test run with 1 test in 1 suite passed after 0.001 seconds.\n1 test passed"}],"truncated":false},
@@ -651,8 +633,8 @@ struct NativePresentationTests {
         // Header + thread, the way the workspace composes them for a native agent.
         func content(active: Bool) -> some View {
             VStack(spacing: 0) {
-                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
-                DesktopNativeThreadView(store: store, active: active, isFocused: active, request: request)
+                ThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+                ThreadView(store: store, active: active, isFocused: active, request: request)
             }
         }
         _ = NSApplication.shared
@@ -700,8 +682,8 @@ struct NativePresentationTests {
         let height = env["SHEPHERD_NATIVE_SCREENSHOT_HEIGHT"].flatMap(Double.init) ?? 1300
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: VStack(spacing: 0) {
-            NativeThreadHeader(store: store, project: "Shepherd", title: "Real session")
-            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request)
+            ThreadHeader(store: store, project: "Shepherd", title: "Real session")
+            ThreadView(store: store, active: true, isFocused: true, request: request)
         }.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
         window.orderFront(nil)
@@ -748,7 +730,7 @@ struct NativePresentationTests {
         let polling = Task { await store.run(request: request) }
         defer { polling.cancel(); store.stop() }
         try await waitFor { store.ready }
-        let model = NativeSubagentTranscriptModel()
+        let model = SubagentTranscriptModel()
         let following = Task { await model.follow(store: store, runID: "native-tests") { false } }
         defer { following.cancel() }
         try await waitFor { model.loaded }
@@ -762,9 +744,7 @@ struct NativePresentationTests {
 
     @Test func subagentAllStatesRenderTheBoard() async throws {
         guard ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_DIR"] != nil else { return }
-        let clock = NativeThreadClock()
-        clock.now = Self.boardNow
-        let actions = NativeSubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true)
+        let actions = SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true)
         let runs = Self.boardRuns
         let many = (0..<12).map { index -> ChildRun in
             var run = runs[index < 7 ? 2 : index < 10 ? 0 : index == 10 ? 1 : 3]
@@ -774,10 +754,10 @@ struct NativePresentationTests {
         }
         let content = VStack(alignment: .leading, spacing: 22) {
             ForEach(runs, id: \.id) { run in
-                NativeSubagentCard(run: run, clock: clock, actions: actions)
+                SubagentCard(run: run, actions: actions)
             }
             Text("MANY PARALLEL RUNS").font(NativeFonts.section).foregroundStyle(NativeTokens.textMuted)
-            NativeRunsStrip(runs: many, clock: clock, actions: actions, expanded: .constant(false))
+            RunsStrip(runs: many, actions: actions, expanded: .constant(false))
         }
         .padding(32).frame(width: 760, alignment: .topLeading).background(NativeTokens.bgSurface)
         _ = NSApplication.shared
@@ -810,8 +790,8 @@ struct NativePresentationTests {
         var inspected: [ChildRun] = []
         let request: NativeThreadStore.Request = { _ in .snapshot(value: snapshot) }
         let content = VStack(spacing: 0) {
-            NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
-            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request,
+            ThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+            ThreadView(store: store, active: true, isFocused: true, request: request,
                                     agentName: "Investigate", inspectSubagent: { inspected.append($0) })
         }
         _ = NSApplication.shared
@@ -858,8 +838,8 @@ struct NativePresentationTests {
         let snapshot = Self.doneSnapshot()
         let request: NativeThreadStore.Request = { _ in .snapshot(value: snapshot) }
         let content = VStack(spacing: 0) {
-            NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
-            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request,
+            ThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+            ThreadView(store: store, active: true, isFocused: true, request: request,
                                     agentName: "Investigate", inspectSubagent: { _ in }, inspectedRunID: "native-tests")
         }
         _ = NSApplication.shared
@@ -900,16 +880,16 @@ struct NativePresentationTests {
             if case .subagentTranscript = value { return .transcript(value: page) }
             return .snapshot(value: snapshot)
         }
-        let inspector = NativeInspectorState()
+        let inspector = RightPaneState()
         inspector.runByAgent[AgentID(rawValue: "a")] = "native-tests"
-        let content = NativeInspectorSplit(state: inspector, showInspector: true) {
+        let content = RightPaneSplit(state: inspector, showPane: true) {
             VStack(spacing: 0) {
-                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
-                DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, agentName: "Investigate",
+                ThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+                ThreadView(store: store, active: true, isFocused: true, request: request, agentName: "Investigate",
                                         inspectSubagent: { _ in }, inspectedRunID: "native-tests")
             }
-        } inspector: {
-            NativeSubagentInspector(store: store, runID: "native-tests", active: true, close: {}, select: { _ in }, fork: { _ in nil })
+        } pane: {
+            SubagentInspector(store: store, runID: "native-tests", active: true, close: {}, select: { _ in }, fork: { _ in nil })
         }
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1370, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
@@ -944,7 +924,7 @@ struct NativePresentationTests {
         }
         let page = NativeSubagentTranscript(runID: "native-worker", messages: [
             NativeThreadMessage(entryID: "c:a1", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Tokens landed. Now moving the tool-row derivations into a shared presentation file so macOS and iOS use the same previews.")]),
-            tool("r1", "read", #"{"path":"Sources/ShepherdApp/DesktopNativeThreadView.swift","offset":1,"limit":420}"#, Array(repeating: "x", count: 420).joined(separator: "\n")),
+            tool("r1", "read", #"{"path":"Sources/ShepherdApp/ThreadView.swift","offset":1,"limit":420}"#, Array(repeating: "x", count: 420).joined(separator: "\n")),
             tool("w1", "write", #"{"path":"Sources/ShepherdRemote/NativeThreadPresentation.swift"}"#, "wrote 142 lines"),
             tool("e1", "edit", #"{"path":"Sources/ShepherdRemote/NativeThreadPresentation.swift","edits":[{"oldText":"a\nb","newText":"a\nB\nc"}]}"#, "Successfully replaced 1 block(s)"),
             tool("b1", "bash", #"{"command":"swift build --target ShepherdRemote"}"#, "", running: true),
@@ -954,15 +934,15 @@ struct NativePresentationTests {
             if case .subagentTranscript = value { return .transcript(value: page) }
             return .snapshot(value: snapshot)
         }
-        let inspector = NativeInspectorState()
+        let inspector = RightPaneState()
         inspector.runByAgent[AgentID(rawValue: "a")] = "native-worker"
-        let content = NativeInspectorSplit(state: inspector, showInspector: true) {
+        let content = RightPaneSplit(state: inspector, showPane: true) {
             VStack(spacing: 0) {
-                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
-                DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, agentName: "Investigate", inspectSubagent: { _ in })
+                ThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+                ThreadView(store: store, active: true, isFocused: true, request: request, agentName: "Investigate", inspectSubagent: { _ in })
             }
-        } inspector: {
-            NativeSubagentInspector(store: store, runID: "native-worker", active: true, close: {})
+        } pane: {
+            SubagentInspector(store: store, runID: "native-worker", active: true, close: {})
         }
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1370, height: 900), styleMask: [.titled], backing: .buffered, defer: false)

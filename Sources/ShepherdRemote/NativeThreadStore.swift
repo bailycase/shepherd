@@ -210,6 +210,15 @@ public final class NativeThreadStore: ObservableObject {
                       operation: operation, current: current, sentText: text)
     }
 
+    /// Send `text` as a new user message without touching the draft (a turn's Retry).
+    public func send(text: String) async {
+        guard supports("send"), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let current = snapshot else { return }
+        let operation = UUID()
+        await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
+                            operationID: operation, text: text, delivery: delivery),
+                      operation: operation, current: current, sentText: text)
+    }
+
     /// "provider/id"; gated by `setModel` in `supportedActions`.
     public func setModel(_ model: String) async {
         guard supports("setModel"), let current = snapshot, current.model != model else { return }

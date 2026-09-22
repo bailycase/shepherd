@@ -32,4 +32,19 @@ struct PiModelCatalogTests {
         #expect(PiModelCatalog.parse("").isEmpty)
         #expect(PiModelCatalog.parse("provider model\n").isEmpty)
     }
+
+    @Test func entriesCarryContextAndReasoning() {
+        let output = """
+        provider      model                            context  max-out  thinking  images
+        anthropic     claude-opus-4-6                  1M       128K     yes       yes
+        cpa           ~anthropic/claude-opus-latest    128K     16.4K    no        no
+        """
+        #expect(PiModelCatalog.parseEntries(output) == [
+            .init(id: "anthropic/claude-opus-4-6", context: "1M", reasoning: true),
+            .init(id: "cpa/~anthropic/claude-opus-latest", context: "128K", reasoning: false),
+        ])
+        #expect(PiModelCatalog.parseEntries(output).last?.provider == "cpa")
+        // Without a header the columns are unknown; reasoning is assumed.
+        #expect(PiModelCatalog.parseEntries("openai gpt-5 400K") == [.init(id: "openai/gpt-5")])
+    }
 }

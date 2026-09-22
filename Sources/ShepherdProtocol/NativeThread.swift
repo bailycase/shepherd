@@ -179,10 +179,17 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     public var truncated: Bool
     /// Milliseconds since epoch, when pi stamped the message (turn footers, from-parent captions).
     public var timestamp: Double?
+    /// Tool results: milliseconds since epoch when the call began (the issuing assistant
+    /// message, or when the host first saw the execution). Absent from older hosts.
+    public var startedAt: Double?
+    /// Assistant messages: how long the model thought before answering, when the host
+    /// observed it streaming. Absent from older hosts and for history it never saw live.
+    public var thinkingSeconds: Double?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
-        argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil
+        argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
+        startedAt: Double? = nil, thinkingSeconds: Double? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -194,6 +201,8 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.isError = isError
         self.truncated = truncated
         self.timestamp = timestamp
+        self.startedAt = startedAt
+        self.thinkingSeconds = thinkingSeconds
     }
 }
 

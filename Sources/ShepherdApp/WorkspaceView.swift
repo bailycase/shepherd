@@ -4,6 +4,7 @@ import AppKit
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 
 struct WorkspaceView: View {
     var vm: ShepherdViewModel
@@ -304,20 +305,23 @@ struct PaneLeafView: View {
                 // pane: thread left, inspector right.
                 let store = vm.threadStores.store(for: agent.id)
                 let inspecting = vm.subagentInspector.runByAgent[agent.id]
-                NativeInspectorSplit(state: vm.subagentInspector, showInspector: inspecting != nil) {
+                RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil) {
                     AgentThreadPane(
                         session: vm.sessions.session(for: pane, in: tab),
                         store: store,
                         active: visible,
                         isFocused: focused && inspecting == nil,
                         request: { try await vm.server.nativeThread(agentID: agent.id, request: $0) },
+                        commandKey: ThreadCommandCenter.key(local: agent.id),
                         agentName: agent.name,
+                        workingDirectory: pane.cwd,
                         inspectSubagent: { vm.toggleSubagentInspector(agentID: agent.id, runID: $0.runID) },
-                        inspectedRunID: inspecting
+                        inspectedRunID: inspecting,
+                        review: { _ in vm.selectAgent(agent.id); vm.openUserReview() }
                     )
-                } inspector: {
+                } pane: {
                     if let inspecting {
-                        NativeSubagentInspector(store: store, runID: inspecting, active: visible, close: {
+                        SubagentInspector(store: store, runID: inspecting, active: visible, close: {
                             vm.subagentInspector.runByAgent.removeValue(forKey: agent.id)
                         }, select: { vm.subagentInspector.runByAgent[agent.id] = $0.runID }, fork: { run in
                             do { try await vm.forkSubagent(agentID: agent.id, run: run); return nil } catch { return String(describing: error) }
@@ -348,15 +352,19 @@ struct AgentThreadPane: View {
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request
+    var commandKey: String?
     let agentName: String
+    var workingDirectory: String?
     var inspectSubagent: ((ChildRun) -> Void)? = nil
     var inspectedRunID: String? = nil
+    var review: ((String) -> Void)? = nil
 
     var body: some View {
         switch session.phase {
         case .connecting, .live:
-            DesktopNativeThreadView(store: store, active: active, isFocused: isFocused, request: request,
-                                    agentName: agentName, inspectSubagent: inspectSubagent, inspectedRunID: inspectedRunID)
+            ThreadView(store: store, active: active, isFocused: isFocused, request: request, commandKey: commandKey,
+                       agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
+                       inspectedRunID: inspectedRunID, review: review)
         case .failed(let reason):
             PanePlaceholder(text: "session unavailable · \(reason)")
         case .exited(let code):
@@ -572,12 +580,13 @@ private struct RemoteAgentThreadPane: View {
     var body: some View {
         let store = vm.remoteThreadStores.store(for: ref)
         let inspecting = vm.subagentInspector.remoteRuns[ref]
-        NativeInspectorSplit(state: vm.subagentInspector, showInspector: inspecting != nil) {
-            DesktopNativeThreadView(
+        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil) {
+            ThreadView(
                 store: store,
                 active: true,
                 isFocused: isFocused && inspecting == nil,
                 request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
+                commandKey: ThreadCommandCenter.key(remote: ref),
                 agentName: agentName,
                 inspectSubagent: { run in
                     if vm.subagentInspector.remoteRuns[ref] == run.runID {
@@ -586,11 +595,15 @@ private struct RemoteAgentThreadPane: View {
                         vm.subagentInspector.remoteRuns[ref] = run.runID
                     }
                 },
-                inspectedRunID: inspecting
+                inspectedRunID: inspecting,
+                listModels: {
+                    let ids = (try? await vm.remoteHosts.listModels(hostID: ref.hostID).models) ?? []
+                    return ids.map { PiModelCatalog.Entry(id: $0) }
+                }
             )
-        } inspector: {
+        } pane: {
             if let inspecting {
-                NativeSubagentInspector(store: store, runID: inspecting, active: true, close: {
+                SubagentInspector(store: store, runID: inspecting, active: true, close: {
                     vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
                 }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil)
                 .id(inspecting)

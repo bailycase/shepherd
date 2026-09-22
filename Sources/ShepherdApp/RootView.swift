@@ -15,31 +15,39 @@ struct RootView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Left column: flat sidebar surface runs continuously behind the
-            // traffic lights and the tree. No vibrancy material — the design
-            // is flat color everywhere.
-            VStack(spacing: 0) {
-                Color.clear
-                    .frame(height: Metrics.trafficLightHeight)
-                    .contentShape(Rectangle())
-                    .gesture(WindowDragGesture())
-                SidebarView(vm: vm)
-            }
-            .frame(width: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
-            // Spec bg.canvas: the sidebar surface the restyled rows are designed on.
-            .background(NativeTokens.bgCanvas.ignoresSafeArea())
+            // Left column: the flat canvas runs continuously behind the traffic lights and the
+            // tree. ⌘⇧S hides it; a right pane narrows it to the compact form (spec §9).
+            if !vm.sidebarHidden {
+                VStack(spacing: 0) {
+                    Color.clear
+                        .frame(height: Metrics.trafficLightHeight)
+                        .contentShape(Rectangle())
+                        .gesture(WindowDragGesture())
+                    SidebarView(vm: vm)
+                }
+                .frame(width: vm.isRightPaneOpen ? Metrics.sidebarCompactWidth : CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
+                .background(Tokens.bgCanvas.ignoresSafeArea())
 
-            sidebarResizeHandle
+                sidebarResizeHandle
+            }
 
             VStack(spacing: 0) {
                 WorkspaceHeaderView(vm: vm)
                 WorkspaceView(vm: vm)
             }
-            .background(Tokens.workspaceBg)
+            .frame(minWidth: Metrics.mainColumnMinWidth)
+            .background(Tokens.bgSurface)
         }
         .coordinateSpace(name: "root-layout")
         .overlay {
-            if vm.showSettings {
+            if vm.showComponentGallery {
+                ComponentGallery()
+                    .overlay(alignment: .topTrailing) {
+                        Button("Close") { vm.showComponentGallery = false }
+                            .buttonStyle(ShepherdButtonStyle(.secondary)).padding(20)
+                    }
+                    .zIndex(11)
+            } else if vm.showSettings {
                 SettingsView(vm: vm)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .zIndex(10)
@@ -54,6 +62,7 @@ struct RootView: View {
                 }
             }
         }
+        .environment(\.threadCommands, vm.threadCommands)
         .frame(minWidth: Metrics.windowMinWidth, minHeight: Metrics.windowMinHeight)
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
@@ -327,7 +336,7 @@ struct RootView: View {
     }
 
     private var sidebarResizeHandle: some View {
-        Tokens.separator
+        Tokens.border
             .frame(width: 1)
             .overlay {
                 Color.clear
@@ -343,6 +352,8 @@ struct RootView: View {
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("root-layout"))
                             .onChanged { value in
+                                // The compact width is fixed while a right pane is open.
+                                guard !vm.isRightPaneOpen else { return }
                                 liveSidebarWidth = AppSettings.clampSidebarWidth(Double(value.location.x))
                             }
                             .onEnded { _ in
@@ -364,94 +375,36 @@ struct RootView: View {
 /// identity line — the window has no other title.
 struct WorkspaceHeaderView: View {
     var vm: ShepherdViewModel
-    /// Re-render on density/text-scale changes; never `.id`-keyed — that
-    /// would remount, which is harmless here but banned near terminal panes.
-    @ObservedObject private var appearance = AppSettings.shared
+
+    /// With the sidebar hidden the header runs under the traffic lights.
+    private var inset: CGFloat { vm.sidebarHidden ? 64 : 0 }
 
     var body: some View {
-        // An agent (local or remote) gets the spec's 52pt thread header.
-        if let remote = vm.selectedRemoteAgent, vm.remoteInspectingAgent != remote,
-           let connection = vm.remoteHosts.connections.first(where: { $0.id == remote.hostID }),
-           let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
-            NativeThreadHeader(store: vm.remoteThreadStores.store(for: remote),
-                               project: "⌁ \(connection.config.name)", title: agent.name)
-                .contentShape(Rectangle())
-                .gesture(WindowDragGesture())
-        } else if vm.selectedRemoteAgent == nil, vm.selectedShellID == nil, let agent = vm.selectedAgent,
-                  vm.activeTabID == agent.tabID,
-                  let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
-            NativeThreadHeader(store: vm.threadStores.store(for: agent.id), project: space.name, title: agent.name)
-                .contentShape(Rectangle())
-                .gesture(WindowDragGesture())
-        } else {
-            terminalHeader
-        }
-    }
-
-    private var terminalHeader: some View {
-        HStack(spacing: 8) {
+        Group {
             if let remote = vm.selectedRemoteAgent,
-               let connection = vm.remoteHosts.connections.first(where: { $0.id == remote.hostID }) {
-                let agent = connection.state.agents.first { $0.id == remote.agentID }
-                breadcrumb(space: "⌁ \(connection.config.name)", leaf: agent?.name ?? "agent")
-                Spacer(minLength: 0)
-                reviewButton
-            } else if let shellID = vm.selectedShellID,
-               let shell = vm.state.tabs.first(where: { $0.id == shellID }) {
-                breadcrumb(space: "shells", leaf: ShepherdViewModel.shellLabel(shell))
-                Spacer(minLength: 0)
-            } else if let agent = vm.selectedAgent,
-               let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
-                breadcrumb(space: space.name, leaf: agent.name)
-                Spacer(minLength: 0)
-                reviewButton
+               let connection = vm.remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+               let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
+                if vm.remoteInspectingAgent == remote {
+                    PlainHeader(project: "⌁ \(connection.config.name)", title: "\(agent.name) · terminal", leadingInset: inset)
+                } else {
+                    ThreadHeader(store: vm.remoteThreadStores.store(for: remote), project: "⌁ \(connection.config.name)",
+                                 title: agent.name, leadingInset: inset, paneOpen: vm.isRightPaneOpen,
+                                 togglePane: { vm.toggleRightPane() }, rename: { vm.remoteRenameTarget = remote })
+                }
+            } else if let shellID = vm.selectedShellID, let shell = vm.state.tabs.first(where: { $0.id == shellID }) {
+                PlainHeader(project: "Shells", title: ShepherdViewModel.shellLabel(shell), leadingInset: inset)
+            } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
+                      let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
+                ThreadHeader(store: vm.threadStores.store(for: agent.id), project: space.name, title: agent.name,
+                             leadingInset: inset, paneOpen: vm.isRightPaneOpen,
+                             togglePane: { vm.toggleRightPane() }, rename: { vm.agentRenameTarget = agent.id })
             } else if let space = vm.selectedSpace {
-                breadcrumb(space: space.name, leaf: "shell")
-                Spacer(minLength: 0)
+                PlainHeader(project: space.name, title: "Shell", leadingInset: inset)
             } else {
-                Spacer(minLength: 0)
+                PlainHeader(project: "Shepherd", title: "No agent selected", leadingInset: inset)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: Metrics.headerHeight)
-        .frame(maxWidth: .infinity)
-        .background(Tokens.workspaceBg)
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
     }
-
-    /// Toggles the native diff-review pane for the selected agent.
-    private var reviewButton: some View {
-        let open = vm.selectedRemoteAgent.map { vm.remoteReviews[$0] != nil }
-            ?? (vm.selectedAgentID.map { id in vm.reviewSessions.values.contains { $0.agentID == id } } ?? false)
-        return Button {
-            vm.openUserReview()
-        } label: {
-            Image(systemName: "plus.forwardslash.minus")
-                .font(.system(size: 11))
-                .foregroundStyle(open ? Tokens.focusAccent : Tokens.textSecondary)
-        }
-        .buttonStyle(.plain)
-        .help(open ? "Close the diff review" : "Review the working-tree diff and send comments to this agent")
-        .contextMenu {
-            Button("Review Uncommitted Changes") { vm.openUserReview() }
-            Button("Review PR Changes") { vm.openUserPRReview() }
-        }
-    }
-
-    private func breadcrumb(space: String, leaf: String) -> some View {
-        HStack(spacing: 5) {
-            Text(space)
-                .font(Fonts.mono(12.5))
-                .foregroundStyle(Tokens.textSecondary)
-            Text("/")
-                .font(Fonts.mono(12.5))
-                .foregroundStyle(Tokens.textDim)
-            Text(leaf)
-                .font(Fonts.mono(12.5, .semibold))
-                .foregroundStyle(Tokens.textPrimary)
-        }
-        .lineLimit(1)
-    }
-
 }

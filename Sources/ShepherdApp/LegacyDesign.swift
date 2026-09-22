@@ -85,8 +85,6 @@ extension Metrics {
 }
 
 extension Tokens {
-    /// Diff-review syntax colors (tree-sitter highlights).
-    static var codeHighlightStyle: CodeHighlight.Style {
-        CodeHighlight.Style(palette: ThemeManager.shared.current.terminal.palette)
-    }
+    @available(*, deprecated, message: "Use CodeHighlight.Style.theme")
+    static var codeHighlightStyle: CodeHighlight.Style { .theme }
 }

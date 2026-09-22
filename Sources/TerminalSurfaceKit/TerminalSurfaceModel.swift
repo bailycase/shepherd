@@ -500,8 +500,10 @@ extension TerminalConfiguration {
         // from being silently swallowed.
         "shift+cmd+right_bracket", "shift+cmd+left_bracket",
         "alt+cmd+left", "alt+cmd+right",
-        // ⌘↑/↓: previous/next agent in sidebar tree order.
-        "cmd+up", "cmd+down",
+        // ⌘↑/↓: previous/next agent in sidebar tree order. ⌥⌘↑/↓: turn jumps.
+        "cmd+up", "cmd+down", "alt+cmd+up", "alt+cmd+down",
+        // ⇧⌘S sidebar · ⇧⌘B review pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.
+        "shift+cmd+s", "shift+cmd+b", "shift+cmd+m", "cmd+period", "cmd+i",
         // ⌘1–9: agent selection in sidebar tree order.
         "cmd+one", "cmd+two", "cmd+three", "cmd+four", "cmd+five",
         "cmd+six", "cmd+seven", "cmd+eight", "cmd+nine",

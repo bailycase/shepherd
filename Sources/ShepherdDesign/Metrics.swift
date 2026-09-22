@@ -31,10 +31,11 @@ public enum Metrics {
     /// While a right pane (review or inspector) is open.
     public static let sidebarCompactWidth: CGFloat = 184
     public static let sidebarPadding: CGFloat = 8
-    @MainActor public static var sidebarRowHeight: CGFloat { (32 * density).rounded() }
-    @MainActor public static var sidebarRowHeightCompact: CGFloat { (26 * density).rounded() }
-    public static let sidebarIndent: CGFloat = 22
-    public static let sidebarIndentCompact: CGFloat = 16
+    // Denser than the mock's 32pt/22pt: a real fleet needs the rows (user feedback).
+    @MainActor public static var sidebarRowHeight: CGFloat { (26 * density).rounded() }
+    @MainActor public static var sidebarRowHeightCompact: CGFloat { (22 * density).rounded() }
+    public static let sidebarIndent: CGFloat = 16
+    public static let sidebarIndentCompact: CGFloat = 12
     public static let statusDot: CGFloat = 7
     public static let statusDotCompact: CGFloat = 6
 
