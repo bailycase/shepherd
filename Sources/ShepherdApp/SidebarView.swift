@@ -32,10 +32,6 @@ struct SidebarView: View {
                                 SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth, compact: compact)
                                     .id(group.space.id)
                             }
-                            if let hint = vm.agentsHintText {
-                                Text(hint).font(Fonts.caption).foregroundStyle(Tokens.textMuted)
-                                    .padding(.horizontal, 8).padding(.vertical, 6)
-                            }
                         }
                         ForEach(vm.remoteHosts.connections) { connection in
                             RemoteHostBlock(vm: vm, connection: connection, compact: compact)
@@ -58,11 +54,13 @@ struct SidebarView: View {
                 }
             }
 
-            Tokens.border.frame(height: 1)
-            VStack(alignment: .leading, spacing: 1) {
-                AutomationsSection(vm: vm, compact: compact)
+            if !vm.state.automations.isEmpty {
+                Tokens.border.frame(height: 1)
+                VStack(alignment: .leading, spacing: 1) {
+                    AutomationsSection(vm: vm, compact: compact)
+                }
+                .padding(Metrics.sidebarPadding)
             }
-            .padding(Metrics.sidebarPadding)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

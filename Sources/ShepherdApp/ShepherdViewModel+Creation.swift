@@ -264,11 +264,6 @@ extension ShepherdViewModel {
         return stem.trimmingCharacters(in: .whitespaces) + "…"
     }
 
-    /// Quiet hint under the tree when there are spaces but no agents.
-    var agentsHintText: String? {
-        guard state.agents.isEmpty, !state.spaces.isEmpty else { return nil }
-        return "no agents yet · \(keybindings.display(.newAgent))"
-    }
 
     // MARK: New agent
 
