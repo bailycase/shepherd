@@ -98,7 +98,7 @@ struct RemoteSettings: View {
                     ))
                 }
                 PathRow(title: "Token",
-                        subtitle: "Paste this into the other Mac's Token field. Delete the file to revoke every client.",
+                        subtitle: "Paste this into the other Mac's Token field. To revoke every client, delete the file and turn the listener off and on.",
                         url: ShepherdPaths.remoteTokenURL())
             }
         }

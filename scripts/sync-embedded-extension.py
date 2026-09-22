@@ -4,7 +4,7 @@
 usage: sync-embedded-extension.py <swift-file> <static-name> <canonical-file>
 
 The literal is a raw multi-line string (#\"\"\" … \"\"\"#) indented by 8 spaces;
-PiThemeTests enforces byte identity, so this is the only sane way to edit one.
+ShepherdAppUnitTests (EmbeddedExtensionTests) enforces byte identity, so this is the only sane way to edit one.
 """
 import re
 import sys
