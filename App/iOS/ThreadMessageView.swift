@@ -60,6 +60,8 @@ struct MobileAgentTurn: View {
                     MobileToolGroup(messages: group)
                 case .note(let text):
                     Text(text).font(MobileTokens.caption12).foregroundStyle(tokens.textMuted)
+                case .error(let text, let count):
+                    Text(count > 1 ? "\(text) · ×\(count)" : text).font(MobileTokens.caption12).foregroundStyle(tokens.dangerText)
                 }
             }
             // No timestamps or durations from the bridge; only the tool count is real, and it is
