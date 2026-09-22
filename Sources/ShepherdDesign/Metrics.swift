@@ -2,9 +2,8 @@ import SwiftUI
 
 /// Sizes from the design handoff (§3 layout, §5 tool rows, §9 review pane, §10 subagents, §12
 /// palette and settings). Row heights scale with the density setting; everything else is fixed.
-@MainActor
 public enum Metrics {
-    private static var density: CGFloat { ThemeStore.shared.density }
+    @MainActor private static var density: CGFloat { ThemeStore.shared.density }
 
     // Spacing (2pt base): inside a row 8–12, between rows 2, between turns 28, panels 12–16.
     public static let space2: CGFloat = 2
@@ -32,8 +31,8 @@ public enum Metrics {
     /// While a right pane (review or inspector) is open.
     public static let sidebarCompactWidth: CGFloat = 184
     public static let sidebarPadding: CGFloat = 8
-    public static var sidebarRowHeight: CGFloat { (32 * density).rounded() }
-    public static var sidebarRowHeightCompact: CGFloat { (26 * density).rounded() }
+    @MainActor public static var sidebarRowHeight: CGFloat { (32 * density).rounded() }
+    @MainActor public static var sidebarRowHeightCompact: CGFloat { (26 * density).rounded() }
     public static let sidebarIndent: CGFloat = 22
     public static let sidebarIndentCompact: CGFloat = 16
     public static let statusDot: CGFloat = 7
@@ -114,7 +113,7 @@ public enum Metrics {
     public static let settingsNavWidth: CGFloat = 232
     public static let settingsContentWidth: CGFloat = 720
     public static let settingsTop: CGFloat = 44
-    public static var settingsRowMinHeight: CGFloat { (52 * density).rounded() }
+    @MainActor public static var settingsRowMinHeight: CGFloat { (52 * density).rounded() }
 }
 
 public enum Radius {

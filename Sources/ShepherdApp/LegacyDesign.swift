@@ -50,9 +50,9 @@ extension Fonts {
 }
 
 extension Metrics {
-    @available(*, deprecated) static var sidebarWidth: CGFloat { CGFloat(AppSettings.shared.sidebarWidth) }
+    @available(*, deprecated) @MainActor static var sidebarWidth: CGFloat { CGFloat(AppSettings.shared.sidebarWidth) }
     @available(*, deprecated) static let statusLineHeight: CGFloat = 22
-    @available(*, deprecated) static var rowHeight: CGFloat { (23 * CGFloat(AppSettings.shared.uiDensity)).rounded() }
+    @available(*, deprecated) @MainActor static var rowHeight: CGFloat { (23 * CGFloat(AppSettings.shared.uiDensity)).rounded() }
     @available(*, deprecated) static let paneFrameInset: CGFloat = 2
     @available(*, deprecated) static let spacing2: CGFloat = 2
     @available(*, deprecated) static let spacing5: CGFloat = 5
