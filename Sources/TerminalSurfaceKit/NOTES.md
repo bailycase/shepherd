@@ -2,7 +2,9 @@
 
 Adapter over `GhosttyTerminal` (libghostty-spm 1.3.x) exposing the frozen
 `TerminalSurfaceModel` / `TerminalSurfaceView` API. No PTY is spawned; the
-host-managed I/O backend carries app-owned PTY bytes both ways.
+host-managed I/O backend carries app-owned PTY bytes both ways. Shepherd uses it
+for shell panes only (global shells, a space's shell, panes beside a thread);
+agents render as native threads and never get a surface.
 
 ## GhosttyTerminal API used (from .build/checkouts/libghostty-spm)
 
@@ -51,14 +53,16 @@ Config renders to a ghostty.conf; ordering is base(.default) → terminalConfigu
 
 - terminalConfiguration: configured font family/size, `font-thicken = true`, and
   Shepherd's pane padding.
-- theme: the resolved Basalt background, foreground, cursor, selection, and ANSI palette.
-  Shepherd has already resolved system/light/dark mode, so `TerminalTheme` receives the same
-  config for both nested Ghostty schemes.
+- theme: the resolved variant's `TerminalColors` (ShepherdDesign) — background (the theme's
+  `bgSurface`), foreground, cursor, selection, and the 16-color ANSI palette. Shepherd has
+  already resolved system/light/dark mode, so `TerminalTheme` receives the same config for
+  both nested Ghostty schemes.
 
 `TerminalSurfaceModel.updateAppearance` calls Ghostty's live `setTheme` mutation. Appearance
 changes therefore keep the existing NSView, grid, scrollback, and attachment. Never rebuild or
-replay a surface just to recolor it: Pi repaints at the same time, and replaying that transition
-can preserve stale per-cell colors or duplicate the prompt layout.
+replay a surface just to recolor it: a TUI in the shell (pi run by hand, an editor) repaints at
+the same time, and replaying that transition can preserve stale per-cell colors or duplicate
+the prompt layout.
 
 ## Adapter design decisions
 
@@ -92,8 +96,8 @@ modules would need qualification; ShepherdApp should import TerminalSurfaceKit o
 
 ## Hidden-pane rendering (`setRenderingActive`)
 
-Every agent layout stays mounted; hidden panes are `opacity(0)` with their
-surfaces alive. `TerminalSurfaceModel.setRenderingActive` drives
+Every mounted layout stays in the view tree; hidden shell panes are
+`opacity(0)` with their surfaces alive (until cold parking drops them). `TerminalSurfaceModel.setRenderingActive` drives
 `AppTerminalView.setSurfaceVisible` → `core.setDisplayVisible` → ghostty
 occlusion + display-link stop/immediate-tick.
 
@@ -118,9 +122,6 @@ Two rules, learned from our own switching artifacts:
 - "SF Mono" resolves via CoreText only if registered on the system (Terminal/Xcode
   ship it; it is not a public system family everywhere). Ghostty falls back to its
   bundled default font silently if lookup fails — no config diagnostic.
-- No terminal selection color specified for panes in the design README; ghostty
-  default selection rendering is kept. The 16-color ANSI palette is likewise left
-  at ghostty defaults (README's "ANSI-ish" tokens are semantic hints, not a palette).
 - Surface confirmation retries for 500 ms after a view appears. A surface that
   cannot attach in that interval keeps buffering rather than dropping bytes;
   normal layout and window attachment complete well inside this bound.

@@ -70,49 +70,75 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the dependency and runtime map.
 Sources/
   ShepherdCore/          Pure models: typed IDs, AgentStatus + transition table, PaneNode
                       (binary split tree), Space/Tab/Agent/ShepherdState, state validation.
-                      Agent carries model, thinkingLevel, nameIsFinal, piSessionID; Tab
-                      carries name/restoreCommand (global shells) and inspectorFor
-                      (ephemeral subagent-inspector layouts). No dependencies.
+                      Agent carries model, thinkingLevel, nameIsFinal, piSessionID (and
+                      ignores a persisted `runtime` key); Tab carries name/restoreCommand
+                      (global shells) and inspectorFor (ephemeral host-side utility
+                      layouts, purged at startup). No dependencies.
   ShepherdProtocol/      Wire contracts: ExtensionMessage/ExtensionReply (local extension
                       socket), RemoteRequest/RemoteReply + RemoteProtocol (TCP remote
-                      protocol, version + capabilities), NDJSON framing (1 MiB payload cap),
-                      LineBuffer, ShepherdPaths (incl. remote-token path).
-  ShepherdRemote/        Remote client: RemoteHostClient (nonblocking TCP,
-                      NDJSON, reconnect/backoff, bounded write queue).
+                      protocol, version + capabilities), NativeThread (the native thread's
+                      requests, results, and NativeThreadSnapshot), RPCWire (pi's
+                      `--mode rpc` JSONL, decoded leniently), NDJSON framing (1 MiB payload
+                      cap), LineBuffer, ShepherdPaths (incl. remote-token path).
+  ShepherdRemote/        Remote client: RemoteHostClient (nonblocking TCP, NDJSON,
+                      reconnect/backoff, bounded write queue). Also the platform-neutral
+                      thread client shared by local, remote, and iOS views: NativeThreadStore
+                      (polling, paging, optimistic echoes, settled running state) and
+                      NativeThreadPresentation (pure derivations: turns, tool rows, DiffStat,
+                      durations, pill state, subagent cards/ledger, scroll following).
+  ShepherdDesign/        The design system (SwiftUI only, no app state): ThemeDefinition
+                      (light/dark ThemeVariant: role colors, syntax, terminal, pi colors),
+                      Basalt (the one shipped theme), ThemeStore (selected theme, text
+                      scale, density), Tokens, Fonts, Metrics/Radius, and Components/
+                      (buttons, controls, status, chips, containers).
   ShepherdSessions/      In-process session server: SessionServer (state mutations + PTY
-                      sessions + the extension socket + the optional remote TCP listener),
-                      PTYSession (forkpty), SessionScreen (headless SwiftTerm screen model,
-                      ANSI snapshot/replay), StateStore (persisted JSON), PiModelCatalog,
-                      ShepherdLog.
+                      and RPC sessions + the extension socket + the optional remote TCP
+                      listener), RPCSession (`pi --mode rpc` on pipes), RPCThreadState (pi's
+                      event stream → NativeThreadSnapshot), PTYSession (forkpty),
+                      SessionScreen (headless SwiftTerm screen model, ANSI snapshot/replay),
+                      StateStore (persisted JSON), PiModelCatalog, PiConfig, ShepherdLog.
   TerminalSurfaceKit/   Ghostty adapter: TerminalSurfaceModel/View over GhosttyTerminal's
                       host-managed IO backend, appearance, image/file drops, URL opening.
-                      See its NOTES.md.
+                      Shells only. See its NOTES.md.
   ShepherdApp/           The Mac app: ShepherdViewModel (split across base, Navigation,
-                      Creation, Workspace, Palette, Reorder, Shells, ChildInspector),
-                      TerminalSessionStore (pane→session lifecycle), sidebar/workspace views,
-                      command palette, KeybindingsStore, Themes/DesignTokens, Settings
-                      (Appearance/Terminal/Agents/Remote/Keyboard/Advanced), NewAgentSheet +
-                      directory browser, the six *Extension.swift embeds, TerminalHost
-                      (ghostty bridge), RemoteHostStore + remote sidebar/panes.
+                      Creation, Workspace, Palette, Reorder, Shells, ChildInspector,
+                      RightPane, Review, Automations, Remote*), Thread/ (ThreadView,
+                      Composer, ThreadTurns, ThreadTools, ThreadMarkdown, Subagents,
+                      SubagentInspector + RightPaneSplit), ThreadHeader, SidebarView,
+                      DiffReviewView (the review pane), TerminalSessionStore (pane→session
+                      lifecycle), command palette, KeybindingsStore, Themes (ThemeManager:
+                      appearance mode, Ghostty + pi theme file), LegacyDesign (deprecated
+                      aliases, being deleted), ComponentGallery (Debug menu), Settings
+                      (Appearance/Terminal/Agents/Worktrees/Pi/Remote/Keyboard/Advanced),
+                      creation/worktree sheets + directory browser, the eight
+                      *Extension.swift embeds, TerminalHost (ghostty bridge),
+                      RemoteHostStore + remote sidebar/panes.
+  shepherd-cli/          `shepherd-cli --import herdr`: imports herdr workspaces into
+                      state.json while Shepherd is not running.
 Extensions/
   shepherd-status.ts     Reports agent lifecycle status + active pi session ID.
   shepherd-namer.ts      Titles an agent from its opening prompt (setAgentName).
-  shepherd-panes.ts      Gives an agent pane_open/run/read/focus/close tools.
+  shepherd-panes.ts      Gives an agent pane_* tools, agent_list/send/spawn peers,
+                         automation_* management, and notify.
+  shepherd-review.ts     Gives an agent review_diff, which opens the review pane.
   shepherd-theme.ts      Syncs the theme of a pi run by hand in a shell pane (shells only).
   shepherd-subagents.ts  Merges native and pi-subagents child display (setAgentChildren).
-  shepherd-children.ts   Opt-in extension-owned RPC helpers; see docs/native-subagents.md.
-  shepherd-inspect.mjs   View helpers imported by the children extension's in-pi fleet view.
+  shepherd-children.ts   Native subagents (on by default): extension-owned RPC children, plus
+  shepherd-children-config.ts / -ui.ts, shepherd-workflow.ts, shepherd-missions.ts
+                         its modules; see docs/native-subagents.md.
+  shepherd-inspect.mjs   View helpers imported by the children UI (and a standalone viewer).
 ```
 
 There is no tab UI: navigation is the sidebar (agent row → that agent's pane layout; space row
 → the space's shell workspace; shell row → a global shell). Server-side "tabs" survive purely
 as layout containers: per-agent, per-space-main, and global shells (`spaceID == nil`). Tabs
 with `inspectorFor` are host-side utility terminals opened for a remote client (a remote
-`gh auth login`) and are purged at startup. Subagents open in the native inspector inside the
-parent's own workspace.
+`gh auth login`) and are purged at startup. Subagents open in the right pane beside the
+parent's thread (the subagent inspector), never as a layout of their own.
 
 Data flow: the **in-process SessionServer is the single source of truth** for
-spaces/tabs/agents/layouts (persisted to state.json) and owns every PTY. The local GUI calls it
+spaces/tabs/agents/layouts (persisted to state.json) and owns every PTY and RPC process. The
+local GUI calls it
 directly (no socket) and adopts `onStateChanged` broadcasts; it owns only view state
 (selection, focus, grouping, sheets, theme, keybindings). Remote clients reach the same server
 over the TCP remote protocol instead. On app quit the server kills every session; on relaunch
@@ -130,6 +156,8 @@ opening prompt is the first native `send`, not a positional argument. The status
 reports `setAgentStatus` (fire-and-forget): `session_start→idle`, `agent_start→working`,
 `agent_settled→done`, ask/question-style `tool_execution_*` → `blocked`,
 `session_shutdown→idle`. It also reports `setAgentSession` with the live pi session ID.
+[docs/native-thread.md](docs/native-thread.md) walks the whole thread pipeline, from pi's
+events to `ThreadView`.
 
 ## Automations
 
@@ -157,8 +185,10 @@ contract rules as panes.
   design assumes a VPN/trusted network is the transport boundary. Never describe the listener
   as internet-safe; the token only keeps other devices on that network honest.
 - The protocol is version-checked NDJSON (`RemoteMessage.swift`): state fetch + pushed
-  `stateChanged`, attach/detach, input, debounced resize, scroll, acknowledged paste, pane
-  open/close/split-resize, host directory listing, model listing, addSpace, createAgent.
+  `stateChanged`, native thread requests (snapshots, sends, answers, model/thinking, subagent
+  commands and transcripts), attach/detach, input, debounced resize, scroll, acknowledged
+  paste, pane open/close/split-resize, host directory listing, model listing, addSpace,
+  createAgent.
   Capabilities gate newer features; the client falls back (raw bracketed paste) or rejects
   (pane control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB
   NDJSON cap.
@@ -187,33 +217,43 @@ init/encode arms + a test row in `ProtocolTests` (replies too — `ExtensionRepl
 shape). Remote messages need the same in `RemoteProtocolTests`. New SessionServer mutations
 need a test in `StateManagementTests`.
 
-**Embedded extensions have one canonical copy.** All six `Extensions/*` files are canonical
-sources, but pi loads the copies that the matching `Sources/ShepherdApp/*Extension.swift` write
-to Application Support from embedded Swift string literals (`installedPath()` rewrites the
-installed copy whenever content differs, so drift ships bugs). `Tests/ShepherdAppTests`
-(PiThemeTests) enforces byte-identity for every pair — status, theme, namer, panes, subagents,
-and inspect. Editing a `.ts`/`.mjs` file means updating its Swift literal in the same change.
+**Embedded extensions have one canonical copy.** All twelve `Extensions/*` files are canonical
+sources, but pi loads the copies that the eight `Sources/ShepherdApp/*Extension.swift` files
+write to Application Support from embedded Swift string literals (`installedPath()` rewrites
+the installed copy whenever content differs, so drift ships bugs; `ChildrenExtension.swift`
+carries the children, children-config, children-ui, workflow, and missions modules).
+`Tests/ShepherdAppTests` (PiThemeTests) enforces byte-identity for every pair. Editing a
+`.ts`/`.mjs` file means updating its Swift literal in the same change.
 Extensions must stay dependency-free, inert without their env vars, and must never throw into
 pi or keep the process alive (unref'd socket/timers). The panes extension speaks the
 request/reply half of `ExtensionMessage`/`ExtensionReply` — extend both enums plus
 `SessionServer.handleLine` and the protocol tests together.
 
-**Design tokens.** Never hardcode a color in a view. Solid colors come from `Tokens.*`, which
-resolves against `ThemeManager.shared.current`; sizes from `Metrics` (density-scaled); fonts
-from `Fonts` (text-scale-aware). Adding a color means adding a field to `ShepherdTheme` (every
-theme must fill it — the compiler enforces this) and a computed accessor in `Tokens`.
-Hairlines/hover fills are alpha-white and theme-agnostic. Read the "Palette" section of
-DESIGN.md before touching themes — Basalt Standard is the only palette.
+**Design tokens.** Never hardcode a color, font size, or dimension in a view. Everything comes
+from `ShepherdDesign`: colors from `Tokens.*` (dynamic colors from `ThemeStore.shared`'s theme
+that resolve against each view's own light/dark appearance), fonts from `Fonts`
+(text-scale-aware), sizes from `Metrics` (row heights density-scaled) and `Radius`. Use a
+shared component from `ShepherdDesign/Components` before hand-rolling chrome. Adding a color
+means adding a role to `ThemeColors`, filling it in both variants of every theme (the
+memberwise initializers make the compiler enforce this), and a `Tokens` accessor; roles that
+carry text get a contrast rule in `Tests/ShepherdDesignTests`, which enforce WCAG 4.5:1 for text
+and the `…Text`-on-`…Bg` pairing. Borders and hover fills are theme roles too (`border*`,
+`bgHover*`), never ad-hoc alphas. `ThemeManager` (app) only holds the System/Light/Dark mode and
+pushes the resolved variant to Ghostty and the pi theme file. Basalt is the only shipped theme.
+`Sources/ShepherdApp/LegacyDesign.swift` holds deprecated aliases for the old token names
+(`NativeTokens`, `textDim`, `sidebarBg`, …); never add call sites to it — migrate them, and
+delete the file with the last one. Read the "Theme model" section of DESIGN.md before touching
+themes.
 
-**Keybindings resolve through the store.** Menus, palette hints, status-line hints, and the
+**Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 ghostty unbind list all read `KeybindingsStore`; hardcoding a chord in a view is a bug.
 Rebindable chords must include ⌘ except the deliberate shell-digit exception (default ⌃1–9).
 ⌘1–9 (agents), ⌃⇧1–9 (machine jumps), and ⌘, are reserved. Rebinding reconfigures live
 terminal surfaces in place (a ghostty config update, like theme changes) so focused panes
 release the old chord with no remount, replay, or blank frame.
 
-**Server concurrency.** One serial queue owns all server state; every PTYSession's internal
-queue *targets* it, so session callbacks, extension handlers, and remote connections are
+**Server concurrency.** One serial queue owns all server state; every PTYSession's and
+RPCSession's internal queue *targets* it, so session callbacks, extension handlers, and remote connections are
 mutually exclusive without locks. Never `.sync` between these queues (deadlock). Attach must
 stay atomic: snapshot the screen, register the attachment, and capture the output watermark in
 one queue turn — that's what makes replay exact for local and remote viewers alike. Callbacks
@@ -244,7 +284,8 @@ logs table violations — keep it that way; real process lifecycles are messier 
 the previous app run, so stale statuses must not survive a relaunch. Startup also purges
 utility-terminal (`inspectorFor`) tabs (ephemeral by contract).
 
-**Dropped images are resized on the way in.** `TerminalImageDrop` clamps the longest edge to
+**Dropped images are resized on the way in.** `TerminalImageDrop` (reached through
+`AppImageDrop` for the composer's attachments) clamps the longest edge to
 2000px and re-encodes — JPEG sources stay JPEG, everything else becomes PNG. This is not a
 rendering optimization: pi writes an attached image into its session transcript, so an
 oversized screenshot is re-emitted as inline graphics on every later load of that conversation.
@@ -259,9 +300,10 @@ server owns PTYs but not layouts, so pane requests are forwarded to the GUI via
 `PaneControl.swift` is the only place that serves them. Load-bearing rules there: an agent may
 only touch panes in its **own** layout, it can never close or type into the pane running its
 own pi process, and the last pane in a layout cannot be closed. Shepherd does not nest agents —
-pi extensions own subagent execution; the opt-in bundled native helpers run as RPC child
-processes. The app only *projects* them (sidebar child
-rows via `shepherd-subagents.ts`, the native inspector from the thread snapshot). Child runs are
+pi extensions own subagent execution; the bundled native helpers (on by default, Settings ▸
+Pi) run as RPC child processes. The app only *projects* them (sidebar child
+rows via `shepherd-subagents.ts`, cards and the right-pane subagent inspector from the thread
+snapshot). Child runs are
 ephemeral display state, never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps
@@ -320,11 +362,15 @@ decode as final so their existing names survive.
 Swift Testing (`import Testing`, `#expect`, `@Suite`) — not XCTest. Core-logic coverage:
 PaneNode operations, status transitions, protocol + remote-protocol round-trips, server
 behavior, remote listener/stream behavior, screen snapshots, keybindings, palette search,
-child runs, shell restore, sidebar reorder. Server E2E tests drive a real in-process
+child runs, shell restore, sidebar reorder, native thread presentation (`NativePresentationTests`),
+theme validity and contrast (`ShepherdDesignTests`: every built-in variant must meet WCAG 4.5:1
+for text and the semantic pairing rules). Server E2E tests drive a real in-process
 `SessionServer` on scratch paths (`TestSupport.swift`: `makeScratchDirectory`, `waitUntil`,
 `ExtensionClient` for the extension socket), in `.serialized` suites; make tests reliable over
 fast (generous timeouts, poll with `waitUntil`). UI/rendering is verified by building +
-running, not unit tests. Everything must pass via plain `swift test`.
+running, the Debug menu's Component Gallery, and offscreen renders (`renderScreenshot` in
+`Tests/ShepherdAppTests/ScreenshotSupport.swift`, which writes PNGs when
+`SHEPHERD_NATIVE_SCREENSHOT_DIR` is set) — not by asserting on pixels. Everything must pass via plain `swift test`.
 
 ## Git
 

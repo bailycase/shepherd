@@ -1,7 +1,8 @@
 # Contributing to Shepherd
 
 Shepherd is an opinionated macOS app for supervising coding agents. Changes should
-keep the product focused on agent supervision and real terminal workflows.
+keep the product focused on agent supervision: native agent threads, with real
+terminals for shells.
 
 ## Before changing code
 
@@ -9,7 +10,8 @@ Read the documents relevant to your change:
 
 - [`AGENTS.md`](AGENTS.md) contains build instructions, architecture rules, and known traps.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) defines dependency direction and state ownership.
-- [`DESIGN.md`](DESIGN.md) governs UI and interaction. Read it before changing UI.
+- [`DESIGN.md`](DESIGN.md) governs UI and interaction. Read it before changing UI; the
+  original design handoff and boards are in [`docs/design-spec/`](docs/design-spec/).
 
 For large features or behavior changes, open an issue before writing the implementation.
 
@@ -39,7 +41,8 @@ xcodebuild \
 ```
 
 The GUI runs through the Xcode project, not `swift run`. Exercise UI and terminal
-changes in the app before submitting them.
+changes in the app before submitting them, in both light and dark appearance. Debug
+builds have a Component Gallery (Debug menu) showing every shared component.
 
 ## Project rules
 
@@ -48,7 +51,9 @@ changes in the app before submitting them.
 - Add focused tests for changed behavior.
 - Add round-trip tests when changing protocol messages.
 - Update canonical extension sources and their embedded Swift copies together.
-- Use design tokens instead of hardcoded colors or dimensions.
+- Use the `ShepherdDesign` tokens (`Tokens`, `Fonts`, `Metrics`, `Radius`) and shared
+  components instead of hardcoded colors, fonts, or dimensions. New color roles must
+  pass the contrast tests in `Tests/ShepherdDesignTests`.
 - Do not commit credentials, tokens, sessions, logs, caches, or local runtime state.
 
 `AGENTS.md` contains the complete contracts for protocols, concurrency, PTYs,
