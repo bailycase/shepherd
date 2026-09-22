@@ -651,11 +651,11 @@ struct NativePresentationTests {
         _ = NSApplication.shared
         // SHEPHERD_NATIVE_SCREENSHOT_WIDTH lets the screenshot pass check narrow windows.
         let width = ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_WIDTH"].flatMap(Double.init) ?? 1180
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 1000),
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: width, height: 1000),
                               styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: content(active: true).preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
-        window.orderFront(nil)
+        window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         try await waitFor { store.ready }
         #expect(store.snapshot?.widgets?.map(\.kind) == [.status, .text])
@@ -691,13 +691,13 @@ struct NativePresentationTests {
         _ = NSApplication.shared
         let width = env["SHEPHERD_NATIVE_SCREENSHOT_WIDTH"].flatMap(Double.init) ?? 1500
         let height = env["SHEPHERD_NATIVE_SCREENSHOT_HEIGHT"].flatMap(Double.init) ?? 1300
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: width, height: height), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: VStack(spacing: 0) {
             ThreadHeader(store: store, project: "Shepherd", title: "Real session")
             ThreadView(store: store, active: true, isFocused: true, request: request)
         }.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
-        window.orderFront(nil)
+        window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         try await waitFor { store.ready }
         try await Task.sleep(for: .milliseconds(400))
@@ -772,10 +772,10 @@ struct NativePresentationTests {
         }
         .padding(32).frame(width: 760, alignment: .topLeading).background(NativeTokens.bgSurface)
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 820), styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 760, height: 820), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
-        window.orderFront(nil)
+        window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         try await Task.sleep(for: .milliseconds(300))
         window.layoutIfNeeded()
@@ -806,10 +806,10 @@ struct NativePresentationTests {
                                     agentName: "Investigate", inspectSubagent: { inspected.append($0) })
         }
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 770, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 770, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
-        window.orderFront(nil)
+        window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         try await waitFor { store.ready }
         try await Task.sleep(for: .milliseconds(400))
@@ -854,10 +854,10 @@ struct NativePresentationTests {
                                     agentName: "Investigate", inspectSubagent: { _ in }, inspectedRunID: "native-tests")
         }
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 770, height: 760), styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 770, height: 760), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
-        window.orderFront(nil)
+        window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         try await waitFor { store.ready }
         try await Task.sleep(for: .milliseconds(400))
@@ -903,10 +903,10 @@ struct NativePresentationTests {
             SubagentInspector(store: store, runID: "native-tests", active: true, close: {}, select: { _ in }, fork: { _ in nil })
         }
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1370, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 1370, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
-        window.orderFront(nil)
+        window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         try await waitFor { store.ready }
         try await Task.sleep(for: .milliseconds(600))
@@ -956,10 +956,10 @@ struct NativePresentationTests {
             SubagentInspector(store: store, runID: "native-worker", active: true, close: {})
         }
         _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1370, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 1370, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
-        window.orderFront(nil)
+        window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         try await waitFor { store.ready }
         try await Task.sleep(for: .milliseconds(600))
@@ -1014,12 +1014,12 @@ struct NativePresentationTests {
         vm.applyAgentChildren(agents[6].id, Self.doneRuns)
         // An unreachable second machine makes the tree show its THIS MAC / host structure.
         vm.remoteHosts.addHost(name: "Horizon", host: "127.0.0.1", port: 1, token: "x")
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 256, height: 640),
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 256, height: 640),
                               styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: SidebarView(vm: vm).frame(width: 256, height: 640)
             .background(NativeTokens.bgCanvas).preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
-        window.orderFront(nil)
+        window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }
         try await Task.sleep(for: .milliseconds(300))
         window.layoutIfNeeded()
