@@ -19,9 +19,8 @@ struct HexColorTests {
         #expect(HexColor(string) == nil)
     }
 
-    /// `UInt32(_:radix:)` accepts a leading sign, so a six-character "+FFFFF" slips through.
-    @Test(.disabled("bug: HexColor accepts a sign prefix (\"#+FFFFF\") because UInt32(_:radix:) parses it"))
-    func rejectsASignPrefix() {
+    /// `UInt32(_:radix:)` accepts a leading sign; a six-character "+FFFFF" must not parse.
+    @Test func rejectsASignPrefix() {
         #expect(HexColor("#+FFFFF") == nil)
         #expect(HexColor("-00000") == nil)
     }
