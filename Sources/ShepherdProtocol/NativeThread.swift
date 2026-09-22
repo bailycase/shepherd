@@ -177,10 +177,12 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     public var status: String?
     public var isError: Bool?
     public var truncated: Bool
+    /// Milliseconds since epoch, when pi stamped the message (turn footers, from-parent captions).
+    public var timestamp: Double?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
-        argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false
+        argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -191,6 +193,7 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.status = status
         self.isError = isError
         self.truncated = truncated
+        self.timestamp = timestamp
     }
 }
 

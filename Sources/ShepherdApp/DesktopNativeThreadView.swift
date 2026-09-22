@@ -18,6 +18,8 @@ struct DesktopNativeThreadView: View {
     var agentName: String? = nil
     /// Opens a subagent in the side-panel inspector (RPC agents with native children).
     var inspectSubagent: ((ChildRun) -> Void)? = nil
+    /// The run currently open in the inspector; the ledger marks its row.
+    var inspectedRunID: String? = nil
     @ObservedObject private var appearance = AppSettings.shared
     @FocusState private var composing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -47,7 +49,8 @@ struct DesktopNativeThreadView: View {
         NativeSubagentActions(
             inspect: { run in inspectSubagent?(run) },
             command: { run, action, text, mode in Task { await store.subagentCommand(runID: run.runID, action: action, text: text, mode: mode) } },
-            enabled: active && store.supports("subagents"))
+            enabled: active && store.supports("subagents"),
+            inspectedRunID: inspectedRunID)
     }
 
     var body: some View {
@@ -64,12 +67,13 @@ struct DesktopNativeThreadView: View {
                             .disabled(!active || !store.ready || store.loadingOlder)
                         }
                         if turns.isEmpty { emptyState }
-                        ForEach(turns) { turn in
+                        ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
                             if turn.isUser {
                                 NativeUserTurn(messages: turn.messages).id(turn.id)
                             } else {
                                 NativeAgentTurn(messages: turn.messages, running: running, clock: clock, showTerminal: showTerminal,
-                                                subagents: placements[turn.id] ?? NativeSubagentPlacement(), subagentActions: subagentActions)
+                                                subagents: placements[turn.id] ?? NativeSubagentPlacement(), subagentActions: subagentActions,
+                                                startedAt: index > 0 && turns[index - 1].isUser ? turns[index - 1].messages.first?.timestamp : nil)
                                     .id(turn.id)
                             }
                         }
@@ -700,6 +704,8 @@ struct NativeAgentTurn: View {
     /// Subagent cards for this turn, keyed by the spawn call they replace.
     var subagents = NativeSubagentPlacement()
     var subagentActions: NativeSubagentActions? = nil
+    /// Timestamp (ms) of the user message that opened this turn; the footer's time and duration.
+    var startedAt: Double? = nil
 
     @State private var hovering = false
 
@@ -727,12 +733,13 @@ struct NativeAgentTurn: View {
             // Runs with no spawn row in this turn render after it. In strip mode the group already
             // folded them into the strip, unless there was no spawn row to fold them into.
             if let subagentActions, !subagents.trailing.isEmpty,
-               subagents.byToolCall.isEmpty || subagents.all.count <= NativeRunsStripSummary.collapseThreshold {
+               subagents.byToolCall.isEmpty || !nativeSubagentGroupFolds(subagents) {
                 NativeSubagentStack(runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing, clock: clock, actions: subagentActions)
             }
             if !streaming {
                 // Spawn rows the cards replaced are not tool calls the reader can see.
-                NativeTurnFooter(messages: messages.filter { $0.toolCallID.map { subagents.byToolCall[$0] == nil } ?? true })
+                NativeTurnFooter(messages: messages.filter { $0.toolCallID.map { subagents.byToolCall[$0] == nil } ?? true },
+                                 startedAt: startedAt, subagents: subagents.all, inspect: subagentActions?.inspect)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -794,13 +801,20 @@ struct NativeThinkingDisclosure: View {
     }
 }
 
-/// Copy + "N tool calls". The bridge has no timestamps or turn durations and no
-/// retry action, so those spec slots stay empty rather than showing fake values.
+/// Copy · "11:09 AM · 45m 12s · 9 tool calls · 3 subagents". Time and duration come from pi's
+/// message timestamps (omitted when absent); "3 subagents" is an accent link to the first child.
+/// No retry action exists for a parent turn, so that spec slot is omitted rather than faked.
 struct NativeTurnFooter: View {
     let messages: [NativeThreadMessage]
+    var startedAt: Double? = nil
+    var subagents: [ChildRun] = []
+    var inspect: ((ChildRun) -> Void)? = nil
+
     var body: some View {
         let tools = messages.count { $0.toolName != nil || $0.role == "toolResult" }
         let prose = messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text)
+        let time = nativeTurnTimeText(startedAt: startedAt, endedAt: messages.compactMap(\.timestamp).max())
+        let ordered = subagents.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
         HStack(spacing: 4) {
             Button {
                 NSPasteboard.general.clearContents()
@@ -809,9 +823,20 @@ struct NativeTurnFooter: View {
             .buttonStyle(NativeGhostIconStyle())
             .help("Copy the agent’s reply")
             .accessibilityLabel("Copy reply")
-            if tools > 0 {
-                Text("\(tools) tool call\(tools == 1 ? "" : "s")").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).padding(.leading, 4)
+            HStack(spacing: 0) {
+                if let time { Text(time).monospacedDigit() }
+                if tools > 0 {
+                    if time != nil { Text(" · ") }
+                    Text("\(tools) tool call\(tools == 1 ? "" : "s")")
+                }
+                if let first = ordered.first, let inspect {
+                    if time != nil || tools > 0 { Text(" · ") }
+                    Button("\(ordered.count) subagent\(ordered.count == 1 ? "" : "s")") { inspect(first) }
+                        .buttonStyle(.plain).foregroundStyle(NativeTokens.accentText)
+                        .accessibilityLabel("Open \(first.role ?? first.label) in the inspector")
+                }
             }
+            .font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).padding(.leading, 4)
         }
     }
 }

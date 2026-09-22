@@ -12,6 +12,8 @@ struct NativeSubagentActions {
     var inspect: (ChildRun) -> Void
     var command: (ChildRun, NativeSubagentAction, String?, NativeThreadDelivery?) -> Void
     var enabled: Bool
+    /// The run open in the inspector (the ledger highlights its row).
+    var inspectedRunID: String? = nil
 }
 
 /// The ↳ branch glyph in the run's state colour.
@@ -357,7 +359,99 @@ struct NativeRunsStrip: View {
     }
 }
 
-/// The cards for one turn: at the spawn rows when few, the strip (plus needs-you cards) when many.
+// MARK: Ledger (completed group)
+
+/// One bordered card for a finished spawn group: a 36pt header (↳ · "3 subagents" · state
+/// cells · "all done · 45m wall · 1.5m tok" · "+318 −64 · 7 files") and one 36pt row per child in
+/// spawn order. Rows are the click target; the inspected row wears the accent border.
+struct NativeSubagentLedgerCard: View {
+    let runs: [ChildRun]
+    let actions: NativeSubagentActions
+    /// The run open in the inspector, if any (accent border on its row).
+    var selectedRunID: String? = nil
+
+    var body: some View {
+        let ledger = nativeSubagentLedger(runs)
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                NativeBranchGlyph(color: NativeTokens.accent)
+                Text(ledger.title).font(NativeFonts.label).foregroundStyle(NativeTokens.text).fixedSize()
+                HStack(spacing: NativeMetrics.runsStripCellGap) {
+                    ForEach(ledger.rows, id: \.run.id) { row in
+                        RoundedRectangle(cornerRadius: 1.5).fill(nativeSubagentColor(row.state))
+                            .frame(width: NativeMetrics.runsStripCell, height: NativeMetrics.runsStripCell)
+                    }
+                }
+                .accessibilityHidden(true)
+                Text(ledger.status).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit().lineLimit(1)
+                Spacer(minLength: 8)
+                if let files = ledger.diffText {
+                    (Text("+\(ledger.added)").foregroundStyle(NativeTokens.successText)
+                     + Text(" −\(ledger.removed)").foregroundStyle(NativeTokens.dangerText)
+                     + Text(" · \(files)").foregroundStyle(NativeTokens.textMuted))
+                        .font(NativeFonts.micro).monospacedDigit().fixedSize()
+                }
+            }
+            .padding(.horizontal, NativeMetrics.subagentCardPadding)
+            .frame(height: NativeMetrics.runsStripHeight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(ledger.title), \(ledger.status)")
+            ForEach(ledger.rows, id: \.run.id) { row in
+                NativeTokens.borderSubtle.frame(height: 1)
+                NativeSubagentLedgerRow(row: row, selected: row.run.runID == selectedRunID) { actions.inspect(row.run) }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .background(NativeTokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(NativeTokens.border, lineWidth: 1))
+        .accessibilityElement(children: .contain)
+    }
+}
+
+struct NativeSubagentLedgerRow: View {
+    let row: NativeSubagentLedger.Row
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    private var glyph: String {
+        switch row.state {
+        case .failed: "xmark"
+        case .needsYou: "exclamationmark.triangle"
+        default: "checkmark"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: glyph).font(.system(size: 11, weight: .semibold)).foregroundStyle(nativeSubagentColor(row.state))
+                    .frame(width: NativeMetrics.subagentGlyph)
+                Text(row.run.role ?? row.run.label).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1).fixedSize()
+                Text(row.summary).font(NativeFonts.bodySmall).foregroundStyle(row.state == .failed ? NativeTokens.dangerText : NativeTokens.textSecondary)
+                    .lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 8)
+                Text(row.meta).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit().lineLimit(1).fixedSize()
+                Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(NativeTokens.textMuted)
+            }
+            .padding(.horizontal, NativeMetrics.subagentCardPadding)
+            .frame(height: NativeMetrics.runsStripHeight)
+            .frame(maxWidth: .infinity)
+            .background(hovering ? NativeTokens.bgHover : .clear)
+            // The board draws the selected row's accent border inside the card.
+            .overlay(RoundedRectangle(cornerRadius: Radius.sm).strokeBorder(selected ? NativeTokens.accent : .clear, lineWidth: 1).padding(1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .accessibilityLabel("\(row.run.role ?? row.run.label), \(row.state == .failed ? "failed" : "done"), \(row.summary)")
+        .accessibilityHint("Opens the run in the inspector")
+    }
+}
+
+/// The cards for one turn: at the spawn rows when few, the strip (plus needs-you cards) when
+/// many, the ledger once every run in the group is terminal.
 struct NativeSubagentStack: View {
     let runs: [ChildRun]
     /// Whether any sibling in the turn (not only this stack) is still live; finished cards fold.
@@ -370,7 +464,9 @@ struct NativeSubagentStack: View {
         let ordered = runs.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
         let live = turnLive || ordered.contains { !$0.isTerminal }
         VStack(alignment: .leading, spacing: NativeMetrics.blockSpacing) {
-            if ordered.count > NativeRunsStripSummary.collapseThreshold {
+            if !live, nativeSubagentGroupIsTerminal(ordered) {
+                NativeSubagentLedgerCard(runs: ordered, actions: actions, selectedRunID: actions.inspectedRunID)
+            } else if ordered.count > NativeRunsStripSummary.collapseThreshold {
                 NativeRunsStrip(runs: ordered, clock: clock, actions: actions, expanded: $stripExpanded)
                 ForEach(ordered.filter { stripExpanded || $0.needsAttention }, id: \.id) { run in
                     NativeSubagentCard(run: run, hasLiveSiblings: live, clock: clock, actions: actions)
@@ -391,11 +487,16 @@ enum NativeToolSegment: Equatable {
     case subagents([ChildRun])
 }
 
+/// A turn's runs fold into one stack (the strip, or the ledger once every run is terminal).
+func nativeSubagentGroupFolds(_ placement: NativeSubagentPlacement) -> Bool {
+    placement.all.count > NativeRunsStripSummary.collapseThreshold || nativeSubagentGroupIsTerminal(placement.all)
+}
+
 func nativeToolSegments(_ group: [NativeThreadMessage], placement: NativeSubagentPlacement) -> [NativeToolSegment] {
-    // With a strip (more than the threshold in this turn) every spawn row folds into one stack
-    // at the first spawn's position, so the strip is the turn's single subagent surface.
+    // With a strip (more than the threshold in this turn) or a finished group, every spawn row
+    // folds into one stack at the first spawn's position: one surface for the turn's subagents.
     let all = placement.all
-    let strip = all.count > NativeRunsStripSummary.collapseThreshold
+    let strip = nativeSubagentGroupFolds(placement)
     var segments: [NativeToolSegment] = []
     var rows: [NativeThreadMessage] = []
     var stripPlaced = false
