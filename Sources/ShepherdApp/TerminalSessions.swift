@@ -487,7 +487,7 @@ final class TerminalSessionStore: ObservableObject {
                 ? try Self.rpcAgentCommand(for: agent, cwd: cwd, isAutomation: isAutomation)
                 : try Self.agentCommand(for: agent, cwd: cwd, initialPrompt: initialPrompt, isAutomation: isAutomation)
             // Give pi a session to find, so --session-id does not warn.
-            PiSessionFile.seedIfMissing(sessionID: agent.id.rawValue, cwd: cwd)
+            PiSessionFile.seedIfMissing(sessionID: agent.effectivePiSessionID, cwd: cwd)
             // Spawn at the surface's real grid: pi paints its TUI once, at the
             // right size, instead of drawing at 80×24 and visibly reflowing on
             // the first resize. An RPC agent has no grid to wait for.
@@ -755,7 +755,7 @@ final class TerminalSessionStore: ObservableObject {
                     : try Self.agentCommand(for: agent, cwd: cwd, initialPrompt: nil)
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
-                PiSessionFile.seedIfMissing(sessionID: agent.id.rawValue, cwd: cwd)
+                PiSessionFile.seedIfMissing(sessionID: agent.effectivePiSessionID, cwd: cwd)
             } else {
                 let settings = AppSettings.shared
                 command = try ShellIntegration.command(

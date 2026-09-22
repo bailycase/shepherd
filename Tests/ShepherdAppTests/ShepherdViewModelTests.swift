@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Testing
 import ShepherdCore
@@ -1329,5 +1330,57 @@ struct ShepherdViewModelTests {
         #expect(overridden.mode == .dark)
         #expect(overridden.current.id == "basalt-dark")
         #expect(overridden.resetToDefault().id == "basalt-dark")
+    }
+
+    /// "Fork as new agent": the child's transcript lands under a fresh pi session id in the
+    /// cwd's session directory and a provisional "<role> (fork)" RPC agent starts on it; a
+    /// missing transcript creates nothing.
+    @Test func forkingASubagentStartsAnRPCAgentOnACopyOfItsTranscript() async throws {
+        _ = NSApplication.shared
+        let fixture = try Fixture()
+        defer { fixture.tearDown() }
+        let space = Space(name: "s", path: fixture.dir.path)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: fixture.dir.path)))
+        let parent = Agent(name: "parent", spaceID: space.id, tabID: tab.id, paneID: tab.layout.firstLeaf.id, runtime: .rpc)
+        try await fixture.server.putState(.init(spaces: [space], tabs: [tab], agents: [parent]))
+        let vm = ShepherdViewModel(server: fixture.server)
+        #expect(await waitUntil { vm.state.agents.count == 1 })
+        // The copy lands in pi's real sessions root (homeDirectoryForCurrentUser ignores HOME);
+        // the scratch cwd's project directory is removed afterwards. The stub stands in for pi.
+        let directory = PiSessionFile.projectDirectory(forCwd: fixture.dir.path)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let bin = fixture.dir.appendingPathComponent("bin")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let stub = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("ShepherdSessionsTests/Fixtures/stub-pi.py").path
+        try "#!/bin/sh\nexec /usr/bin/env python3 '\(stub)'\n".write(to: bin.appendingPathComponent("pi"), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bin.appendingPathComponent("pi").path)
+        let oldPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        setenv("PATH", "\(bin.path):\(oldPath)", 1); setenv("ZDOTDIR", fixture.dir.path, 1)
+        defer { setenv("PATH", oldPath, 1); unsetenv("ZDOTDIR") }
+
+        let child = fixture.dir.appendingPathComponent("child.jsonl")
+        try """
+        {"type":"session","version":3,"id":"child-id","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/elsewhere"}
+        {"type":"message","id":"m1","message":{"role":"user","content":"hello from the parent task"}}
+
+        """.write(to: child, atomically: true, encoding: .utf8)
+        let run = ChildRun(runID: "native-1", label: "tests: run", state: "complete", role: "tests", model: "anthropic/claude-sonnet", thinking: "low",
+                           sessionFile: child.path, sessionID: "child-id", cwd: fixture.dir.path)
+        let forked = try await vm.forkSubagent(agentID: parent.id, run: run)
+        let agent = try #require(vm.state.agents.first { $0.id == forked })
+        #expect(agent.name == "tests (fork)" && !agent.nameIsFinal && agent.runtime == .rpc && agent.spaceID == space.id)
+        #expect(agent.model == "anthropic/claude-sonnet" && agent.thinkingLevel == .low)
+        let sessionID = try #require(agent.piSessionID)
+        #expect(sessionID != "child-id" && agent.effectivePiSessionID == sessionID)
+        let name = try #require(try FileManager.default.contentsOfDirectory(atPath: directory.path).first { $0.hasSuffix("_\(sessionID).jsonl") })
+        let copy = try String(contentsOf: directory.appendingPathComponent(name), encoding: .utf8)
+        #expect(copy.contains("hello from the parent task") && copy.contains("\"id\":\"\(sessionID)\""))
+        #expect(vm.state.tabs.first { $0.id == agent.tabID }?.layout.firstLeaf.cwd == fixture.dir.path)
+
+        // No transcript: the error surfaces and nothing is created.
+        var missing = run; missing.sessionFile = fixture.dir.appendingPathComponent("gone.jsonl").path
+        await #expect(throws: PiSessionFile.ForkFailure.self) { try await vm.forkSubagent(agentID: parent.id, run: missing) }
+        #expect(vm.state.agents.count == 2)
     }
 }

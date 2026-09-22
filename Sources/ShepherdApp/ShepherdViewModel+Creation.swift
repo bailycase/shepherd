@@ -319,6 +319,7 @@ extension ShepherdViewModel {
             // or was typed into the TUI afterwards (⌘N). With auto-naming off
             // the provisional name is what the agent keeps, so it is final.
             nameIsFinal: !settings.autoNameAgents,
+            piSessionID: config.piSessionID,
             worktreeBranch: config.worktreeBranch,
             worktreeBase: config.worktreeBase,
             worktreePath: config.worktreePath,
