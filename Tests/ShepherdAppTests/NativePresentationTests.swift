@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import Testing
 import ShepherdCore
+import ShepherdDesign
 import ShepherdProtocol
 import ShepherdRemote
 @testable import ShepherdSessions
@@ -767,10 +768,10 @@ struct NativePresentationTests {
             ForEach(runs, id: \.id) { run in
                 SubagentCard(run: run, actions: actions)
             }
-            Text("MANY PARALLEL RUNS").font(NativeFonts.section).foregroundStyle(NativeTokens.textMuted)
+            Text("MANY PARALLEL RUNS").font(Fonts.section).foregroundStyle(Tokens.textMuted)
             RunsStrip(runs: many, actions: actions, expanded: .constant(false))
         }
-        .padding(32).frame(width: 760, alignment: .topLeading).background(NativeTokens.bgSurface)
+        .padding(32).frame(width: 760, alignment: .topLeading).background(Tokens.bgSurface)
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 760, height: 820), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
@@ -1016,7 +1017,7 @@ struct NativePresentationTests {
         let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: 256, height: 640),
                               styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: SidebarView(vm: vm).frame(width: 256, height: 640)
-            .background(NativeTokens.bgCanvas).preferredColorScheme(ThemeManager.shared.mode.colorScheme))
+            .background(Tokens.bgCanvas).preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
         window.orderBack(nil)
         defer { window.orderOut(nil); window.contentView = nil }

@@ -51,11 +51,11 @@ struct WorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Tokens.workspaceBg)
+            .background(Tokens.bgSurface)
         }
         // Every path that changes the active tab lands here: keep parking bookkeeping current.
         .onChange(of: vm.activeTabID, initial: true) { vm.noteActiveTabVisited() }
-        .background(Tokens.workspaceBg)
+        .background(Tokens.bgSurface)
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
         // layouts (see TerminalDropOverlay.swift).
@@ -232,10 +232,10 @@ struct PaneTreeView: View {
     private func separatorColor(for split: PaneNode) -> Color {
         guard let focused = vm.focusedPaneID,
               case .split(_, _, let first, let second) = split else {
-            return Tokens.paneBorder
+            return Tokens.border
         }
         let bordersFocused = first.contains(focused) || second.contains(focused)
-        return bordersFocused ? Tokens.focusAccent.opacity(0.34) : Tokens.paneBorder
+        return bordersFocused ? Tokens.accent.opacity(0.34) : Tokens.border
     }
 }
 
@@ -348,7 +348,7 @@ struct PaneLeafView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Tokens.terminalBg)
+        .background(Tokens.bgSurface)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.focusedPaneID = pane.id })
     }
@@ -549,7 +549,7 @@ private struct RemotePaneSplitView: View {
     }
 
     private func separator(axis: SplitAxis, size: CGSize) -> some View {
-        Tokens.paneBorder
+        Tokens.border
             .frame(width: axis == .vertical ? 1 : nil, height: axis == .horizontal ? 1 : nil)
             .overlay {
                 Color.clear
@@ -633,7 +633,7 @@ private struct RemoteTerminalPane: View {
                     PanePlaceholder(text: "attaching…").allowsHitTesting(false)
                 }
             }
-            .background(Tokens.terminalBg)
+            .background(Tokens.bgSurface)
         case .failed(let reason):
             PanePlaceholder(text: "remote session unavailable · \(reason)")
         case .exited(let code):
@@ -648,7 +648,7 @@ struct PanePlaceholder: View {
     var body: some View {
         Text(text)
             .font(Fonts.mono(10.5))
-            .foregroundStyle(Tokens.textDim)
+            .foregroundStyle(Tokens.textMuted)
             .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
