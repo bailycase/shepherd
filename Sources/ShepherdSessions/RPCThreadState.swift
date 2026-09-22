@@ -4,11 +4,10 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The native-thread view of one `RPCSession`, fed by pi's event stream. This
-/// is the server-side port of `Extensions/shepherd-native.ts`: same
-/// projection rules, limits, error codes, and operation idempotency, so
-/// desktop and iOS clients cannot tell an RPC agent from a terminal one.
-/// Confined to the session queue (which targets the server queue).
+/// The native-thread view of one `RPCSession`, fed by pi's event stream: projection rules,
+/// limits, error codes, and operation idempotency behind `SessionServer.nativeThread`, served
+/// alike to the desktop, remote, and iOS clients. Confined to the session queue (which targets
+/// the server queue).
 final class RPCThreadState {
     static let textLimit = 16 * 1024
     static let snapshotLimit = 240 * 1024
@@ -717,7 +716,7 @@ final class RPCThreadState {
         (try? encoder.encode(value).count) ?? Int.max
     }
 
-    // MARK: - Projection (port of project() in shepherd-native.ts)
+    // MARK: - Projection
 
     static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil) -> NativeThreadMessage {
         var remaining = textLimit

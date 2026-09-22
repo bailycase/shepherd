@@ -347,9 +347,8 @@ struct RootView: View {
 
 // MARK: Workspace header
 
-/// The 42pt strip above the pane frame: `space / agent` breadcrumb and
-/// trailing `status ⟨age⟩` in the status color. This is the selected agent's
-/// identity line — the window has no other title.
+/// The 52pt header over the workspace: the thread header for the agent on screen (local or
+/// remote), else a breadcrumb. The window has no other title.
 struct WorkspaceHeaderView: View {
     var vm: ShepherdViewModel
 

@@ -216,7 +216,7 @@ export default function shepherdChildren(pi) {
   const summary = (run) => ({ id: run.id, role: run.role, state: run.state, task: run.task, startedAt: run.startedAt, endedAt: run.endedAt, currentTool: run.currentTool, latestTool: run.latestTool, model: run.model, cwd: run.cwd,
     workflowId: run.workflowId, settled: run.settled, missionId: run.missionId, missionWarning: run.missionWarning, thinking: run.thinking, context: run.context, tools: run.tools, sessionFile: run.sessionFile, output: run.output, error: run.error, needsReply: run.needsReply, stopReason: run.lastStop, omittedInFlight: run.omittedInFlight,
     turns: run.turns, toolCalls: run.toolCalls, tokens: run.tokens, contextPercent: run.contextPercent, files: fileChanges(run), added: run.added, removed: run.removed, lastActivity: run.lastActivity, questionOptions: run.questionOptions, questionText: run.questionText, exitCode: run.exitCode, toolCallID: run.toolCallID, stepIndex: run.stepIndex });
-  // Card projection for the native thread (docs/design-spec/subagent-card-states.png). Every field
+  // Card projection for the native thread (docs/design-spec/boards/09-subagent-cards.png). Every field
   // past asyncDir is optional on the Swift side; undefined keys vanish in JSON.stringify.
   function card(run) {
     const workflow = run.workflowId ? workflows.get(run.workflowId) : undefined;

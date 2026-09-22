@@ -72,8 +72,8 @@ public struct NativeCommand: Codable, Hashable, Sendable {
 
 public enum NativeThreadDelivery: String, Codable, Hashable, Sendable { case followUp, steer }
 
-/// Card and inspector actions on a subagent run. Pause is deliberately absent: the children
-/// runtime has no pause (only abort), and the board's Pause button would be a fake affordance.
+/// Card and inspector actions on a subagent run. Pause and continue suspend and resume a run
+/// that is still in progress.
 public enum NativeSubagentAction: String, Codable, Hashable, Sendable { case message, cancel, resume, pause, `continue` }
 
 /// One native child run projected into the RPC thread (v2, additive). Same shape as
@@ -128,7 +128,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var olderCursor: String?
     public var provisional: [NativeThreadMessage]
     public var clipped: Bool
-    /// v2: "terminal" or "rpc". nil from older bridges (terminal).
+    /// v2: "rpc" for every agent. "terminal" or nil came from the removed terminal-agent bridge;
+    /// kept on the wire for older hosts.
     public var runtime: String?
     /// v2: RPC agents only.
     public var stats: NativeThreadStats?
