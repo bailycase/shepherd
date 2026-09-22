@@ -345,7 +345,9 @@ lives in the agent's right pane beside the thread, sharing the slot with the sub
 inspector (inspector wins; opening a review closes it). It never touches the persisted layout;
 startup purges `isReview` leaves left by older builds, and remote clients still render such a
 leaf from older hosts. Request changes / Commit send the agent a follow-up turn and close the
-review only once the send succeeds, so comments survive a failed send.
+review only once the send succeeds, so comments survive a failed send. A review an agent opens on a host
+is that host's view state: remote viewers are deliberately not notified and open their own
+review of the agent (⇧⌘B) when they want one.
 
 **Agent names are generated, and settle once.** A new agent wears its opening prompt (truncated
 by `ShepherdViewModel.provisionalName`) with `nameIsFinal == false`. Only such agents launch pi
