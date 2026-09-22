@@ -537,13 +537,17 @@ struct RPCAgentThreadTests {
         let asking = ChildRun(runID: "native-2", label: "reviewer: check", state: "running", needsAttention: true, attentionText: "Two names collide",
                               role: "reviewer", question: ChildQuestion(text: "Two names collide", options: ["Replace everywhere", "Rename new ones"]))
         let done = ChildRun(runID: "native-3", label: "tests: run", state: "complete", startedAt: 1000, endedAt: 243_000, role: "tests",
-                            result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118_000), output: "Added 6 presentation tests.")
+                            result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118_000), output: "Added 6 presentation tests.",
+                            files: [ChildFileChange(path: "Tests/A.swift", added: 96, removed: 3)], summary: "Added 6 presentation tests.", sessionID: "child", cwd: "/tmp")
         try children.send(.setAgentChildren(agentID: h.agent.id, children: [running, asking, done]))
         let withCards = try await h.snapshot { $0.subagents?.count == 3 }
         #expect(withCards.revision > s.revision)
         #expect(withCards.subagents?.first?.toolCallID == "call_abc123")
         #expect(withCards.subagents?[1].question?.options == ["Replace everywhere", "Rename new ones"])
         #expect(withCards.subagents?[2].result?.added == 96)
+        // Completed-run fields ride the same publish into the snapshot (ledger rows, RESULT block, Fork).
+        #expect(withCards.subagents?[2].files == [ChildFileChange(path: "Tests/A.swift", added: 96, removed: 3)])
+        #expect(withCards.subagents?[2].summary == "Added 6 presentation tests." && withCards.subagents?[2].sessionID == "child" && withCards.subagents?[2].cwd == "/tmp")
 
         // Answering a needs-you card: validated by the thread state, dispatched to the children
         // extension as a childCommand, and only accepted once the extension answers.
