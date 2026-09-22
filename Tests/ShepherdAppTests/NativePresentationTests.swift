@@ -25,6 +25,17 @@ struct NativePresentationTests {
         return message(fields)
     }
 
+    @Test func touchedPathsAreTheCurrentTurnsEditsWhileRunning() {
+        let earlier = tool("edit", args: #"{"path":"old.swift"}"#, output: "")
+        let user = message(["role": "user", "blocks": [["kind": "text", "text": "go"]]])
+        let edit = tool("edit", args: #"{"path":"/repo/a.swift"}"#, output: "", status: "running")
+        let write = tool("write", args: #"{"path":"b.swift","content":"x"}"#, output: "")
+        let read = tool("read", args: #"{"path":"c.swift"}"#, output: "x")
+        let messages = [earlier, user, edit, write, read]
+        #expect(nativeTouchedPaths(messages, running: true) == ["/repo/a.swift", "b.swift"])
+        #expect(nativeTouchedPaths(messages, running: false).isEmpty)
+    }
+
     @Test func toolRowsPreviewPerToolKind() {
         let read = NativeToolRow(tool("read", args: #"{"path":"Sources/A.swift","offset":237,"limit":160}"#, output: Array(repeating: "x", count: 160).joined(separator: "\n")))
         #expect(read.preview == "Sources/A.swift" && read.previewSuffix == ":237–396")

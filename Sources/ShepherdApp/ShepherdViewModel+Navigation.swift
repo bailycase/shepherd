@@ -503,7 +503,7 @@ extension ShepherdViewModel {
     func focusAdjacentPane(_ delta: Int) {
         if let remote = selectedRemoteAgent,
            let layout = remoteVisibleTab(remote)?.layout {
-            let leaves = layout.leaves + (remoteInspectingAgent == remote ? [] : remoteReviews[remote].flatMap { $0.hostReviewPane ? nil : [LeafPane(id: $0.paneID, cwd: $0.cwd)] } ?? [])
+            let leaves = layout.leaves
             guard leaves.count > 1 else { return }
             let currentIndex = leaves.firstIndex { $0.id == remoteFocusedPaneID } ?? 0
             remoteFocusedPaneID = leaves[(currentIndex + delta + leaves.count) % leaves.count].id

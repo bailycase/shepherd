@@ -141,7 +141,6 @@ extension ShepherdViewModel {
         let session = remoteReviews[target] ?? ReviewSession(agentID: target.agentID, paneID: PaneID(), cwd: cwd, reference: nil)
         session.isPRMode = pullRequest
         remoteReviews[target] = session
-        if selectedRemoteAgent == target, remoteInspectingAgent != target { remoteFocusedPaneID = session.paneID }
         loadRemoteReview(target, session: session, pullRequest: pullRequest, hostModeOverride: session.hostReviewPane ? pullRequest : nil)
     }
 

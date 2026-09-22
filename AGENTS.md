@@ -295,8 +295,17 @@ and Finalize Worktree (WorktreeFinalize.swift: commit → push → gh PR → opt
 local branch; every step gates the next, destruction only after the clean
 gate, and the remote branch is never deleted — doing so closes an open PR). The finalize
 sheet's setup wizard probes prerequisites (git, identity, origin, gh, gh auth) through a
-login shell and fixes them in-app. No other path mutates repositories or removes worktrees. Nothing else in the app mutates repository state, and Shepherd
-never removes or prunes worktrees — cleanup is the user's.
+login shell and fixes them in-app. The one other repository mutation is the review pane's
+per-file Revert (`GitDiff.revert`, confirmed first, local reviews only): tracked files return
+to HEAD, new files move to the Trash — never deleted. Nothing else mutates repository state,
+and Shepherd never removes or prunes worktrees — cleanup is the user's.
+
+**Reviews dock, they don't split.** A review (`ReviewSession`, `ShepherdViewModel+Review.swift`)
+lives in the agent's right pane beside the thread, sharing the slot with the subagent
+inspector (inspector wins; opening a review closes it). It never touches the persisted layout;
+startup purges `isReview` leaves left by older builds, and remote clients still render such a
+leaf from older hosts. Request changes / Commit send the agent a follow-up turn and close the
+review only once the send succeeds, so comments survive a failed send.
 
 **Agent names are generated, and settle once.** A new agent wears its opening prompt (truncated
 by `ShepherdViewModel.provisionalName`) with `nameIsFinal == false`. Only such agents launch pi
