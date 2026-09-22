@@ -81,6 +81,7 @@ struct Composer: View {
             if menu == .models {
                 ModelPicker(current: store.snapshot?.model, models: models, agentName: agentName) { model in
                     menu = nil
+                    composing.wrappedValue = true
                     RecentModels.record(model, thread: agentName)
                     Task { await store.setModel(model) }
                 } close: { menu = nil; composing.wrappedValue = true }
