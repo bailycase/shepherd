@@ -16,6 +16,8 @@ struct DesktopNativeThreadView: View {
     let showTerminal: (() -> Void)?
     /// Composer placeholder before the first turn: "Message <agent>…".
     var agentName: String? = nil
+    /// Opens a subagent in the side-panel inspector (RPC agents with native children).
+    var inspectSubagent: ((ChildRun) -> Void)? = nil
     @ObservedObject private var appearance = AppSettings.shared
     @FocusState private var composing: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -40,6 +42,13 @@ struct DesktopNativeThreadView: View {
 
     private var running: Bool { store.loadError == nil && store.settledRunning }
     private var turns: [NativeTurn] { nativeTurns(store.displayedMessages) }
+    private var placements: [String: NativeSubagentPlacement] { nativeSubagentPlacements(store.subagents, turns: turns) }
+    private var subagentActions: NativeSubagentActions {
+        NativeSubagentActions(
+            inspect: { run in inspectSubagent?(run) },
+            command: { run, action, text, mode in Task { await store.subagentCommand(runID: run.runID, action: action, text: text, mode: mode) } },
+            enabled: active && store.supports("subagents"))
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -59,7 +68,8 @@ struct DesktopNativeThreadView: View {
                             if turn.isUser {
                                 NativeUserTurn(messages: turn.messages).id(turn.id)
                             } else {
-                                NativeAgentTurn(messages: turn.messages, running: running, clock: clock, showTerminal: showTerminal)
+                                NativeAgentTurn(messages: turn.messages, running: running, clock: clock, showTerminal: showTerminal,
+                                                subagents: placements[turn.id] ?? NativeSubagentPlacement(), subagentActions: subagentActions)
                                     .id(turn.id)
                             }
                         }
@@ -146,6 +156,14 @@ struct DesktopNativeThreadView: View {
             }
             NativeComposer(store: store, clock: clock, active: active, agentName: agentName,
                            hasTurns: !turns.isEmpty, gutter: gutter, showTerminal: showTerminal, composing: $composing)
+                // ⌘I opens the first live subagent (the card's own Inspect button targets a specific run).
+                .background {
+                    if let first = store.subagents.first(where: { !$0.isTerminal }) ?? store.subagents.first, inspectSubagent != nil {
+                        Button("Inspect subagent") { inspectSubagent?(first) }
+                            .keyboardShortcut("i", modifiers: .command)
+                            .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+                    }
+                }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         }
         .font(NativeFonts.body)
@@ -661,6 +679,9 @@ struct NativeAgentTurn: View {
     @ObservedObject var clock: NativeThreadClock
     /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
     let showTerminal: (() -> Void)?
+    /// Subagent cards for this turn, keyed by the spawn call they replace.
+    var subagents = NativeSubagentPlacement()
+    var subagentActions: NativeSubagentActions? = nil
 
     @State private var hovering = false
 
@@ -676,7 +697,8 @@ struct NativeAgentTurn: View {
                 case .prose(let text):
                     NativeProse(text: text)
                 case .tools(let group):
-                    NativeToolGroup(messages: group, clock: clock, showTerminal: showTerminal)
+                    NativeToolGroup(messages: group, clock: clock, showTerminal: showTerminal,
+                                    subagents: subagents, subagentActions: subagentActions)
                 case .note(let text):
                     HStack(spacing: 8) {
                         Text(text).font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
@@ -684,8 +706,15 @@ struct NativeAgentTurn: View {
                     }
                 }
             }
+            // Runs with no spawn row in this turn render after it. In strip mode the group already
+            // folded them into the strip, unless there was no spawn row to fold them into.
+            if let subagentActions, !subagents.trailing.isEmpty,
+               subagents.byToolCall.isEmpty || subagents.all.count <= NativeRunsStripSummary.collapseThreshold {
+                NativeSubagentStack(runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing, clock: clock, actions: subagentActions)
+            }
             if !streaming {
-                NativeTurnFooter(messages: messages)
+                // Spawn rows the cards replaced are not tool calls the reader can see.
+                NativeTurnFooter(messages: messages.filter { $0.toolCallID.map { subagents.byToolCall[$0] == nil } ?? true })
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -870,14 +899,32 @@ struct NativeToolGroup: View {
     @ObservedObject var clock: NativeThreadClock
     /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
     let showTerminal: (() -> Void)?
+    /// Subagent cards replace their spawning shepherd_child_start rows.
+    var subagents = NativeSubagentPlacement()
+    var subagentActions: NativeSubagentActions? = nil
 
     var body: some View {
         // 40pt fits pi's builtins (read/edit/bash/grep); longer extension tool names widen the
         // column for the whole group, capped so a silly name cannot eat the preview.
         let longest = messages.compactMap(\.toolName).map(\.count).max() ?? 4
         let nameWidth = min(120, max(40, CGFloat(longest) * 7.6 + 4))
+        let segments = subagentActions == nil ? [NativeToolSegment.rows(messages)] : nativeToolSegments(messages, placement: subagents)
+        VStack(alignment: .leading, spacing: NativeMetrics.blockSpacing) {
+            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
+                switch segment {
+                case .rows(let rows): rowGroup(rows, nameWidth: nameWidth)
+                case .subagents(let runs):
+                    if let subagentActions {
+                        NativeSubagentStack(runs: runs, turnLive: subagents.all.contains { !$0.isTerminal }, clock: clock, actions: subagentActions)
+                    }
+                }
+            }
+        }
+    }
+
+    private func rowGroup(_ rows: [NativeThreadMessage], nameWidth: CGFloat) -> some View {
         VStack(spacing: 0) {
-            ForEach(Array(messages.enumerated()), id: \.element.entryID) { index, message in
+            ForEach(Array(rows.enumerated()), id: \.element.entryID) { index, message in
                 if index > 0 { NativeTokens.borderSubtle.frame(height: 1) }
                 NativeToolRowView(row: NativeToolRow(message), nameColumnWidth: nameWidth,
                                   duration: clock.toolDuration(message.toolCallID, now: clock.now), showTerminal: showTerminal)

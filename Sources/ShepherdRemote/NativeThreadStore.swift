@@ -55,9 +55,13 @@ public final class NativeThreadStore: ObservableObject {
         message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Live subagents keep the fast cadence too: their cards tick counters and activity.
     public var pollInterval: Duration {
-        snapshot?.running == true || snapshot?.dialogs.isEmpty == false ? .milliseconds(500) : .seconds(2)
+        snapshot?.running == true || snapshot?.dialogs.isEmpty == false || hasLiveSubagents ? .milliseconds(500) : .seconds(2)
     }
+
+    public var subagents: [NativeSubagent] { snapshot?.subagents ?? [] }
+    public var hasLiveSubagents: Bool { subagents.contains { !$0.isTerminal } }
 
     public func supports(_ action: String) -> Bool {
         ready && !busy && snapshot?.supportedActions.contains(action) == true
@@ -220,6 +224,21 @@ public final class NativeThreadStore: ObservableObject {
         let operation = UUID()
         await perform(.setThinking(expectedSessionID: current.piSessionID, generation: current.generation,
                                    operationID: operation, level: level), operation: operation, current: current)
+    }
+
+    /// Card and inspector actions on one subagent run. Gated by `subagents` in `supportedActions`.
+    public func subagentCommand(runID: String, action: NativeSubagentAction, text: String? = nil, mode: NativeThreadDelivery? = nil) async {
+        guard supports("subagents"), let current = snapshot else { return }
+        let operation = UUID()
+        await perform(.subagentCommand(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                                       runID: runID, action: action, text: text, mode: mode), operation: operation, current: current)
+    }
+
+    /// One transcript page for the inspector; nil when the thread is not ready or the host refused.
+    public func subagentTranscript(runID: String, beforeEntryID: String? = nil) async -> NativeSubagentTranscript? {
+        guard let request, let current = snapshot else { return nil }
+        guard case .transcript(let page)? = try? await request(.subagentTranscript(expectedSessionID: current.piSessionID, runID: runID, beforeEntryID: beforeEntryID)) else { return nil }
+        return page
     }
 
     public func abort() async {
