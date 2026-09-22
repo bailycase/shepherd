@@ -251,7 +251,8 @@ At startup the server then:
   tabs no agent owns)
 - purges host-side utility terminals (`inspectorFor` tabs)
 - removes review leaves left in layouts by older builds
-- clears every automation's `agentID`
+- drops the previous run's automation agents and their layouts (`automationRunAgentIDs`) and
+  clears every automation's `agentID`
 
 `LegacyTerminalAgents` also clears the old per-agent view preferences from UserDefaults.
 
