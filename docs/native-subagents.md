@@ -1,100 +1,159 @@
 # Native subagents
 
-**Native subagents** are on by default (Settings > Pi) for newly launched agents and separate from **subagent display**; turn them off to fall back to pi-subagents. Existing pi-subagents tools, settings and mission records remain unchanged. Pi 0.85.1 or newer with public npm package APIs is required. No additional npm dependencies are installed.
+Shepherd bundles a subagent runtime as pi extensions. A parent agent can start child
+`pi --mode rpc` processes, steer them, wait for them, and script them into workflows. Shepherd
+itself does not run subagents. The parent's extension owns every child process, and the app
+installs the extension modules and displays what they report. There is no daemon, scheduler,
+watchdog, automatic goal loop, nested delegation, or automatic worktree management. No mission
+or workflow grants permission to commit, merge, deploy, or otherwise mutate a repository.
 
-The parent extension owns child `pi --mode rpc` processes. Swift installs the extension modules and displays their reports. There is no daemon, scheduler, watchdog, automatic goal loop, nested delegation or automatic worktree management. No mission or workflow grants permission to commit, merge, deploy or mutate a repository.
+Requires pi 0.85.1 or newer. No npm dependencies are installed.
 
-## Settings and agent files
+## Two switches
 
-Settings > Pi exposes concurrency, model, thinking, fresh/fork context and discovery scope. These apply on the next parent launch. Concurrency is shared across direct calls and workflows, defaults to four and permits 1–16 children. Up to 64 child records and 32 workflows are retained per parent; at most four workflows run concurrently.
+Settings ▸ Pi ▸ Bundled extensions has two independent switches. Both are on by default, and
+both apply when an agent next launches.
 
-For model, thinking and context, precedence is explicit call, then agent file, then Shepherd Settings, then parent model/thinking. A thinking suffix on the selected model is used before a separate profile thinking default. Explicit `thinking` wins over the suffix. `model: inherit` selects the current parent model. Other model forms use Pi's public CLI resolver, including unqualified IDs and `provider/model:thinking`. Pi resolves ambiguity and errors; children check the exact resolved model against their own catalog before accepting the task. Provider IDs stay opaque to Shepherd. At every child launch and resume, Pi's resource resolver supplies enabled user extensions, respecting package filters and skipping missing packages without installing anything. Children load those paths explicitly under `--no-extensions`, so extension-registered providers use Pi's own configuration and authentication. This inherits user extension hooks as well as providers; it is not a provider-only sandbox. Project and parent CLI-only extensions still require explicit profile `extensions` entries.
+- **Native subagents** loads `shepherd-children.ts` together with its modules:
+  `shepherd-children-config.ts`, `shepherd-children-ui.ts`, `shepherd-workflow.ts`,
+  `shepherd-missions.ts`, and the `shepherd-inspect.mjs` view helpers. It sets
+  `SHEPHERD_NATIVE_CHILDREN=1` and the `SHEPHERD_CHILD_*` defaults below. Turning it off stops
+  Shepherd loading the runtime; it does not install anything else. If you have installed the
+  pi-subagents package yourself, it keeps working as before.
+- **Subagent display** loads `shepherd-subagents.ts`, the only publisher of `setAgentChildren`.
+  It merges native children with pi-subagents reports into the rows behind the sidebar, the
+  thread's cards, the ledger, and the inspector. With display off, children still run but none
+  of that UI appears, and card commands fail because the server only accepts runs that were
+  published.
 
-`shepherd_child_agents` lists effective profiles, provenance and diagnostics. Agent Markdown stays the source of truth; Shepherd never edits it. Pi's configured agent directory comes from `getAgentDir()`, including `PI_CODING_AGENT_DIR`.
+**Native subagent defaults** appear only while Native subagents is on. They apply on the next
+parent launch.
 
-Discovery precedence, low to high:
+| Setting | Values | Default |
+| --- | --- | --- |
+| Concurrency | 1–16 (stepper) | 4 |
+| Model | Inherit parent, or a model ID | Inherit parent |
+| Thinking | Inherit parent, Off, Minimal, Low, Medium, High, Xhigh, Max | Inherit parent |
+| Context | Fresh, Fork | Fresh |
+| Agent discovery | User + project, User, Project, Bundled only | User + project |
 
-1. Shepherd's bundled scout, reviewer, planner and worker defaults.
-2. Agent directories declared by **configured, already installed** Pi packages using `pi-subagents.agents` or `pi.subagents.agents`. No installation or registry scan occurs.
-3. `PI_SUBAGENT_EXTRA_AGENT_DIRS`, then `<Pi agent dir>/agents`, then `~/.agents`. This global legacy-last ordering matches installed pi-subagents 0.51.0.
-4. The nearest project configuration root's `.agents`, then `.pi/agents`. `.pi/agents` wins within that project. Pi's `CONFIG_DIR_NAME` replaces `.pi` on rebranded distributions.
+Concurrency is shared across direct calls and workflows. A parent retains up to 64 child records
+and 32 workflows, and runs at most four workflows at once.
 
-Scope is user, project, both or bundled only. Package scope follows the same selection. Discovery recursively reads Markdown, excluding `.chain.md`, skill directories, `.git`, node_modules and nested `.pi`/`.agents` project roots. Directory symlinks are not followed. Project file symlinks that escape their agent directory are rejected. Files are capped at 128 KiB and traversal at 16 directories deep.
+## Profiles and discovery
 
-Project profiles require active Pi trust for the current canonical cwd. A different child cwd requires an explicit saved Pi trust decision for that cwd or an ancestor, read through `ProjectTrustStore`. A parent's temporary trust does not authorize another cwd. Native discovery deliberately does not treat the absence of Pi's usual trust-requiring resources as approval to load agent files. A skipped project root produces a diagnostic. Child runtime still uses `--no-approve`; trusting discovery does not enable ambient project extensions.
+For model, thinking, and context, the most specific source wins: the explicit call, then the
+agent file, then Shepherd's settings, then the parent's model and thinking.
 
-### Supported profile subset
+- A thinking suffix on the model (`provider/model:thinking`) is used before a separate thinking
+  default. An explicit `thinking` still wins over the suffix.
+- `model: inherit` selects the parent's current model. Other forms go through pi's own model
+  resolver, including unqualified IDs. Provider IDs stay opaque to Shepherd.
+- Each child checks the exact resolved model against its own catalog before accepting the task.
+
+At every child launch and resume, pi's resource resolver supplies the user's enabled
+extensions. It respects package filters and skips missing packages without installing anything.
+Children load those paths explicitly under `--no-extensions`, so extension-registered providers
+keep pi's own configuration and authentication. This also inherits user extension hooks, so it
+is not a provider-only sandbox. Project and parent CLI-only extensions still need explicit
+profile `extensions` entries.
+
+`shepherd_child_agents` lists effective profiles, where each came from, and any diagnostics.
+Agent Markdown files stay the source of truth, and Shepherd never edits them. Pi's agent
+directory comes from `getAgentDir()`, which honors `PI_CODING_AGENT_DIR`.
+
+Discovery order, from lowest to highest precedence:
+
+1. Shepherd's bundled scout, reviewer, planner, and worker profiles.
+2. Agent directories declared by configured, already installed pi packages
+   (`pi-subagents.agents` or `pi.subagents.agents`). Nothing is installed and no registry is
+   scanned.
+3. `PI_SUBAGENT_EXTRA_AGENT_DIRS`, then `<pi agent dir>/agents`, then `~/.agents`.
+4. The nearest project root's `.agents`, then `.pi/agents` (`.pi/agents` wins within the
+   project). Pi's `CONFIG_DIR_NAME` replaces `.pi` on rebranded distributions.
+
+The Agent discovery setting selects user, project, both, or bundled only; package scope follows
+the same choice.
+
+- **What is read:** Markdown files, recursively. `.chain.md`, skill directories, `.git`,
+  `node_modules`, and nested project roots are skipped.
+- **Limits:** directory symlinks are not followed. A project file symlink that escapes its agent
+  directory is rejected. Files are capped at 128 KiB and traversal at 16 levels.
+- **Trust:** project profiles require pi's saved trust for the current directory. A child
+  working in a different directory needs a saved trust decision for that directory or an
+  ancestor; the parent's temporary trust does not carry over. A skipped project root produces a
+  diagnostic. Children still run with `--no-approve`, and trusting discovery does not enable
+  ambient project extensions.
+
+### Supported profile fields
 
 | Field | Behavior |
 | --- | --- |
-| `name`, `description`, Markdown body | Required identity metadata; body supplies instructions. `prompt` or `systemPrompt` can replace the body. |
-| `package` | Namespaces the runtime name as `package.name`. |
-| `aliases` / `alias` | Comma-separated or YAML list. Exact names win; ambiguous aliases fail. |
-| `model`, `thinking` | Pi model resolution; thinking accepts Pi levels. `thinking: false` means off. |
-| `tools` | Explicit names are intersected with the parent's active allowlist. Omitted uses Pi's normal global builtin defaults, not parent pane/automation tools. Empty or false means no ordinary tools. |
-| `systemPromptMode` | append or replace. Custom profiles default to replace; delegate defaults to append. |
-| `inheritProjectContext` | Controls ordinary AGENTS.md/CLAUDE.md discovery. Custom profiles default false; delegate defaults true. |
-| `defaultContext` / `context` | fresh or fork. |
-| `skills` / `skill`, `skillPath`, `inheritSkills` | Pi's public skill loader resolves named or explicit local skills. User paths and trusted target project paths are considered. Explicit skillPath skills are included. No package-skill registry discovery. |
-| `extensions`, `subagentOnlyExtensions` | Explicit local files resolved relative to the agent file. No package strings or directories. These files execute with the user's permissions and must be trusted. |
-| `disabled` | Refuses launch. |
+| `name`, `description`, body | Required. The body is the instructions; `prompt` or `systemPrompt` can replace it. |
+| `package` | Namespaces the name as `package.name`. |
+| `aliases` / `alias` | Comma-separated or a YAML list. Exact names win; an ambiguous alias fails. |
+| `model`, `thinking` | Pi model resolution and thinking levels. `thinking: false` means off. |
+| `tools` | Intersected with the parent's active allowlist. Omitted means pi's normal built-in tools, not the parent's pane or automation tools. Empty or `false` means no ordinary tools. |
+| `systemPromptMode` | `append` or `replace`. Custom profiles default to replace. |
+| `inheritProjectContext` | Controls normal AGENTS.md/CLAUDE.md discovery. Custom profiles default to false. |
+| `defaultContext` / `context` | `fresh` or `fork`. |
+| `skills` / `skill`, `skillPath`, `inheritSkills` | Pi's skill loader resolves named or explicit local skills. There is no package-skill registry discovery. |
+| `extensions`, `subagentOnlyExtensions` | Local files, resolved relative to the agent file. They run with the user's permissions. |
+| `disabled` | Refuses to launch. |
 
-Unknown fields fail the profile rather than silently weakening it. This includes runner, permissions, budgets, acceptance policies, fallbackModels, memory, automatic outputs/defaultReads, timeouts and recursion policies. `tools: inherit` is rejected; use omitted tools for normal builtins, or list tool names and their explicit extension files. A requested custom tool without an explicit extension fails; startup also checks that every permitted tool is actually registered. User extension hooks are inherited, but tools are intersected with the parent allowlist on startup and before each prompt, and disallowed calls are blocked. Nested delegation tools remain forbidden. `shepherd_parent_message` is always available.
+- **Unknown fields fail the profile**, rather than silently weakening it. This includes runner,
+  permissions, budgets, fallback models, memory, timeouts, and recursion policies.
+- **`tools: inherit` is rejected.**
+- **Custom tools:** a requested custom tool without an explicit extension fails. Startup checks
+  that every permitted tool is actually registered.
+- **Tool enforcement:** tools are intersected with the parent allowlist at startup and before
+  each prompt, and disallowed calls are blocked. Nested delegation tools stay forbidden.
+  `shepherd_parent_message` is always available.
 
-Supported `subagents.agentOverrides` fields fill fields omitted by custom files, with project override entries taking priority over user entries. Explicit custom file fields still win. Overrides on Shepherd bundled defaults fail closed and name the affected agent; define a user agent file instead. `disableBuiltins` is honored. Other pi-subagents settings produce diagnostics and are not imported. Shepherd Settings own native defaults. This is not full pi-subagents configuration parity: unmanaged package scans, git-root discovery policy, ambient extensions, package-skill resolution and the reference's management UI are not implemented.
+`subagents.agentOverrides` entries fill fields that a custom file leaves out; project entries
+beat user entries, and explicit file fields still win. Overrides on Shepherd's bundled profiles
+fail closed and name the affected agent. `disableBuiltins` is honored. Other pi-subagents
+settings produce diagnostics and are not imported. This is not full pi-subagents parity.
 
-## Slash commands
+## Child tools
 
-Commands call the native runtime directly. They do not ask the parent model to invoke a tool. Shepherd agents run pi in RPC mode, so in Shepherd these commands (typed in the composer or picked from its `/` menu) produce text reports; the pickers and the fleet overlay below appear only when the extension runs in pi's interactive TUI.
-
-| Command | Behavior |
+| Tool | Behavior |
 | --- | --- |
-| `/subagents [agent]` | Read-only profile list, details, source file and discovery diagnostics. No argument opens a picker in TUI mode. Names and aliases resolve like child launch. |
-| `/run <agent> <task...> [--bg] [--fork]` | One-child scripted workflow. Foreground by default with `async:false`; `--bg` uses `async:true`. `--fork` selects fork context. Without it, profile and Settings context still apply. |
-| `/subagents-fleet [id]` | Live list and selected transcript for this parent's retained children. An ID preselects that child. |
-| `/subagents-stop [id]` | Select one active child or name its ID, then confirm stopping its owned process tree. Workflow ownership is shown before confirmation because stopping one workflow child may cancel its siblings. It never targets unrelated children. |
-| `/subagents-models [agent]` | Effective configured/resolved models from the local parent catalog, including inherited models. No network probes. Isolated-child availability is checked again at launch. |
-| `/subagents-doctor` | Pi version support, installed bridge, project trust, defaults, discovery errors, retained counts and actual command names. No repairs. |
-| `/missions [id]` | Read-only native mission list or full record. A record is not a running process. |
-| `/workflows [id]` | Read-only retained workflow list or status/output. Previous-parent workflows are not replayed. |
+| `shepherd_child_start` | Starts a background child and returns its run ID. `agent` selects a profile (`role` is an alias). `mission:false` opts out of the default mission record. |
+| `shepherd_child_message` | Steering or follow-up input. Acceptance is not completion. |
+| `shepherd_child_wait` | Waits for any or all of up to 16 children, for up to 60 s (default 30 s). Cancelling a wait does not cancel the children. |
+| `shepherd_child_result` | Lists retained runs or reads one result: up to 16 KiB of text per child, 4 KiB inside a wait. `sessionFile` holds the full conversation. |
+| `shepherd_child_cancel` | Clears queues, aborts, and terminates the child, waiting for the process to exit. |
+| `shepherd_child_resume` | Continues an exited child with its saved profile, model, cwd, and transcript. Tools can only narrow across a resume. |
+| `shepherd_child_agents` | Lists profiles, where they came from, and diagnostics. |
+| `shepherd_workflow` | Runs a script (below). |
+| `shepherd_mission` | Manages mission records (below). |
 
-`/run` strips only trailing standalone `--bg` and `--fork` flags, repeatedly. Flags inside task text remain task text. Task text is JSON-encoded into the existing workflow runner, never interpolated as JavaScript. Inline bracket configuration such as `worker[model=...]` is rejected explicitly. Use the supported agent-file fields instead. Slash workflow completion reports do not trigger a parent model turn. Existing LLM workflow tools keep their notification behavior.
+**Questions.** Children use `shepherd_parent_message` for progress or questions. For a question
+the child sets `needsReply`, finishes its turn, and waits for an explicit continuation. Completion
+and messages wake the parent. Delivery is not durable, and not exactly-once across a crash.
 
-Command registration happens at `session_start`, after extension factories load. If an existing command name conflicts, or the pi-subagents `subagent` tool is registered, the entire native command family uses `shepherd-` names, for example `/shepherd-run`, `/shepherd-subagents-fleet`, `/shepherd-missions`. Existing commands remain untouched. Further prefixing avoids an already occupied native alias. Doctor lists the actual names. This deliberately avoids Pi's ambiguous numeric duplicate-name suffixes; a third-party extension that registers a conflicting command later at runtime still requires a reload after resolving that configuration.
+**Context.** Fresh context is the default unless a profile or setting chooses fork. Fork copies
+the selected branch up to the last complete tool batch, using a separate `SessionManager`. It
+leaves out in-flight tool calls and never branches the parent's live session.
 
-Custom UI opens only when `ctx.mode === "tui"`. RPC receives text notifications, with supported basic confirmation dialogs for stop. Print/JSON receive text reports without triggering a turn; stop refuses without interactive confirmation. TUI reports use custom entries outside model context. Print/JSON fallback custom messages remain in the session context for a later turn.
+**Child processes.** Children run with `PI_OFFLINE=1` and with `SHEPHERD_*`, `PI_SUBAGENT*`, and
+session and model variables stripped. They get `--no-skills --no-prompt-templates --no-themes
+--no-approve`, plus `--no-context-files` when the profile doesn't inherit project context.
 
-### Fleet interaction (pi TUI only)
+**Artifacts.** Each child gets `<support dir>/children/native-<uuid>/`, holding the transcript,
+prompt, status, inspector controls, and a writer lease.
 
-The overlay is a flat, stacked list and transcript, with no cards, meters or permanent panel. Rows show state, task, elapsed duration and latest tool. Reply-required children come first, then running/queued children, then failed children, then complete/stopped history. Selection tracks the child ID when sorting changes. Terminal duration freezes at the recorded end; `?` means older artifacts lack an end timestamp.
-
-- Up/down or j/k selects a child. Page up/down scrolls its transcript. End resumes following. Each child keeps its scroll anchor while switching selection. Scrolling pauses transcript movement, not lifecycle or control updates. `paused · N new` counts newly rendered lines.
-- Tools collapse by default. `e` toggles full text output, including errors. Failed results have an explicit error label. Expanded output still obeys the viewer's 2 MiB input and 8,000-line tail limits. Omission notices identify bounded output. `p` toggles a wrapped, scrollable saved transcript path for the full evidence. Non-text attachments are not rendered.
-- `s` composes with a visible recipient and short run ID. Running children use `steer` or `followUp`; Tab changes mode. Settled or exited children show `reply · resumes <id>` and continue their saved session with the answer after observed exit. Enter sends; Escape keeps that child's draft. Trust, active workflow ownership, concurrency, transcript and writer-lease failures appear with their runtime reason and keep the draft. Navigation shortcuts do not steal draft text. The reply says `accepted or queued` only after the runtime acknowledgement; it never claims delivery or completion.
-- `x` asks to stop the named child. The confirmation names its owning workflow, if any, and warns that workflow cleanup may cancel siblings. Only `y` confirms. Escape cancels. Escape or Ctrl+C closes the overlay without stopping children.
-
-Status uses a colored dot beside a neutral word. Fleet dots use existing Pi theme names: `success` for running/queued green, `accent` for needs-reply orange, `dim` for idle, and `mdLink` for completed slate blue. Failed and stopped dots also use orange. The standalone viewer (`shepherd-inspect.mjs`, below) reads the same four colors from Shepherd's active pi theme JSON on each refresh and emits 24-bit ANSI dots. If the file or a role's hex color is unavailable, it falls back to ANSI palette indices 107, 173, 240 and 103 for those roles. All other content stays neutral. Optional metadata truncates before the short run ID; hints occupy two lines at 80 columns. Transcripts remove bold, inline-code and link markers and wrap at word boundaries, with hard breaks for long tokens.
-
-Shared selection/submit/cancel/tab hints follow Pi's injected keybinding manager. Fleet-only letter and transcript-navigation keys are local to the overlay.
-
-## Child tools and continuation
-
-- `shepherd_child_start` returns a background run ID. `agent` selects a profile; `role` remains an alias for existing callers. `mission:false` opts out of the default mission record.
-- `shepherd_child_message` accepts steering or follow-up input. Acceptance is not completion.
-- `shepherd_child_wait` waits for any or all selected children, at most 16 IDs and 60 seconds. Cancelling a wait does not cancel the children.
-- `shepherd_child_result` lists retained runs or reads a result. Text is capped at 16 KiB per child, 4 KiB in wait. `sessionFile` contains the full conversation.
-- `shepherd_child_cancel` clears queues, aborts and terminates the owned child. It waits for observed process exit.
-- `shepherd_child_resume` continues an exited child's saved profile, model, cwd and transcript. It does not adopt edits to the profile. Tools only narrow, including across parent reload. A live workflow retains ownership through cleanup; rejected resume cannot detach its child.
-
-Children use `shepherd_parent_message` for progress or questions. For a question they set `needsReply`, finish the turn, and await an explicit parent continuation. This is not pi-subagents' blocking contact_supervisor protocol. Completion and messages wake the originating parent; delivery is not durable or exactly once across a crash.
-
-Fresh context is the default unless a profile or Settings chooses fork. Fork copies the selected branch through the last complete tool batch using a separate public `SessionManager`; it omits in-flight tool calls and partial sibling results. It never branches the parent's live manager. The receipt reports omitted entries.
-
-Artifacts live beside the socket under `children/native-<uuid>`, with transcript, prompt, status, inspector controls and writer lease. IDs, not user task text, form paths. Session metadata records descriptors. A writer lease rejects concurrent writers and is not automatically reclaimed after a hard crash. Verify that the old process is gone before manually removing an interrupted lease. No artifacts are automatically deleted.
+- Paths come from IDs, never task text.
+- The writer lease rejects a second writer and is not reclaimed automatically after a hard
+  crash. Check that the old process is gone before removing an interrupted lease by hand.
+- Nothing is deleted automatically.
 
 ## Scripted workflows
 
-`shepherd_workflow` starts asynchronously by default, or waits with `async:false`. `action: status|wait|cancel` targets a workflow ID owned by this parent. Wait is capped at 60 seconds. Each execution has a deadline of at most 30 minutes, configurable downward with `timeoutSeconds`.
+`shepherd_workflow` starts asynchronously by default, or waits with `async:false`.
+`action: status|wait|cancel` targets a workflow this parent owns. Waits are capped at 60 s, and
+each run has a deadline of at most 30 minutes (`timeoutSeconds` can lower it).
 
 ```js
 {
@@ -110,56 +169,218 @@ Artifacts live beside the socket under `children/native-<uuid>`, with transcript
 }
 ```
 
-`runs.run(key, params)` resolves after clean child exit or rejects on failure. `runs.all` validates its batch and returns ordered per-child success/failure outcomes without failing siblings for ordinary child errors. Fanout queues against the shared child limit. Results include key, run ID, state, output and error; successful runs also expose `ok` and `agent`.
+- **`runs.run(key, params)`** resolves after the child exits cleanly, or rejects on failure. A
+  result has `key`, `id`/`runId`, `agent`, `ok`, `state`, `output`, and `error`.
+- **`runs.all([...])`** runs a batch of at most 16. It returns per-child outcomes in order,
+  without failing siblings on ordinary errors. A failed item carries only `key`, `ok:false`,
+  `state:"failed"`, and `error`.
+- **`runs.steer(key, message, {mode})`**, **`runs.status(key)`**, and **`runs.cancel(key)`**
+  address a child by its key. Steering accepts or queues input; it does not prove the model
+  complied.
+- **Pending work:** a normal return while calls or children are still pending fails and cancels
+  them.
+- **Keys:** duplicate keys are rejected. A key starts with a letter or digit and may contain
+  letters, digits, `.`, `_`, and `-`, up to 128 characters.
+- **Size limits:** a workflow may create at most 64 children and make 512 bridge calls. The
+  script may be up to 32 KiB and its result up to 64 KiB.
+- **Not supported:** nested workflows, worktree, gate, and output-schema options, and
+  workflow-level resume. `shepherd_child_resume` still works after the workflow finishes.
 
-Ordinary JavaScript handles sequencing, branching, Promise.all and Promise.race. `runs.steer(key,message,{mode})` accepts steer, follow_up, followUp or auto. It targets a host-owned stable key, never a script-supplied artifact path. `runs.status(key)` and `runs.cancel(key)` use the same mapping. Start a promise, await evidence, steer the running child, then await the original promise. Steering accepts or queues input; it does not prove model compliance.
+**Cancellation** closes admission, terminates the evaluator, waits for in-flight starts, and stops
+only the children that workflow owns. Child completions inside a workflow do not start their own
+parent turns; the workflow sends one completion notification. Workflows never restart or replay
+on reload.
 
-Await or return calls. A normal return while calls or children are pending fails and cancels them. This is a pending-work rule, not the reference's complete promise-observation analysis: a fire-and-forget operation that already finished before return is not detected. Duplicate keys reject, even with identical parameters. Keys support letters, digits, dot, underscore and hyphen, up to 128 characters. Batch size is at most 16; a workflow can create at most 64 children and issue 512 bridge calls. Nested workflows, worktree/gate/outputSchema options and workflow-level child resume are rejected. Explicit `shepherd_child_resume` remains available after workflow cleanup.
-
-Cancellation closes admission before cleanup, terminates the evaluator, waits for in-flight child starts and stops only children owned by that workflow. Shutdown suppresses notifications to the old parent. Child completions inside a workflow do not trigger independent model turns; the workflow sends one completion notification. Workflows do not restart or replay on reload. Missions retain recovery data, not executable scripts or runtime authority.
-
-### Actual execution boundary
-
-A dedicated Node Worker contains a VM context. API functions, promises, decoded replies and errors are created **inside** the VM. Only bounded JSON strings cross its mailbox. The script has no host callbacks, process, require, filesystem or network API. Imports and string/Wasm code generation are disabled. Serialization stays inside the worker. An outer deadline terminates synchronous loops, post-await loops and never-settling promises independently of host dispatch.
-
-This is restricted execution, **not an OS sandbox**. Node does not promise that vm contains hostile code, and Worker heap limits are not a complete process-memory quota. Approved children still use their normal tools with the user's account permissions. Explicit extension files also run with full permissions. Run untrusted work in an OS-contained environment.
+**Execution boundary.** The script runs in a VM context inside a dedicated Node Worker. Only
+bounded JSON strings cross its mailbox. The script has no host callbacks, `process`, `require`,
+filesystem, or network access, and imports and code generation are disabled. An outer deadline
+stops synchronous loops, loops after an `await`, and promises that never settle. This is
+restricted execution, **not an OS sandbox**: children still use their normal tools with the
+user's permissions, and explicit extension files run with full permissions.
 
 ## Missions
 
-`shepherd_mission` supports create, list, show, update, close, attach-run and attachment. Records persist under `<Shepherd support>/shepherd-native/missions/<sha256 canonical parent cwd>/mission-<uuid>.json`. They never read or mutate pi-subagents mission data. Parent cwd determines the mission namespace even when a child works elsewhere.
+`shepherd_mission` supports create, list, show, update, close, attach-run, and attachment. Records
+live at `<support dir>/shepherd-native/missions/<sha256 of the parent cwd>/mission-<uuid>.json`
+and never touch pi-subagents' mission data.
 
-Records include title, objective, status, summary, run links, descriptive attachments and bounded JSON state. Status values are planned, active, waiting, needs_decision, complete and cancelled. Close defaults to complete and does not cancel processes. A successful workflow moves an open mission to waiting, not complete; explicit closure records the human or parent conclusion. Failure requests attention. Attach-run accepts only this parent's retained child IDs; attachment stores `{title,uri}` without reading or executing its target.
+- **Contents:** a title, objective, status (planned, active, waiting, needs_decision, complete,
+  or cancelled), summary, run links, descriptive attachments, and bounded JSON state.
+- **Size:** a record is capped at 256 KiB and 64 attachments.
+- **Listing:** shows up to 200 records.
+- **Writes:** each update takes an exclusive lock, rereads, and atomically replaces the file
+  (mode 0600).
 
-Normal children and workflows create a mission unless `mission:false`. A workflow creates one enclosing mission, not one per child. `missionId` attaches an existing open mission; `mission:{title,objective?}` creates an explicit one. Automatic creation failures return missionWarning and allow the run; explicit requests fail before launch. Later ledger-write failures are visible warnings and do not claim durable success.
+**Mission lifecycle:**
 
-Mission workflows expose `state.get(key)` and `state.set(key,value)`. Missing keys return undefined. State is data only; no key changes process permissions or paths. Reserved prototype keys are rejected. Each update exclusively locks, rereads and atomically replaces the record with mode 0600 under private directories. The entire record is capped at 256 KiB, attachments at 64, list output at 200 records. Lock contention fails with retry guidance; crash locks require manual verification. There is no global pointer index, goal budget, automatic coordination loop or cross-parent resume authority.
+- Closing a mission records a conclusion; it does not cancel processes.
+- Direct children never move a mission past `active` on their own.
+- A successful workflow moves its open mission to `waiting`, and a failure requests attention.
 
-On parent restoration, retained nonterminal children without a live writer lease are marked stopped and their mission links reconciled as interrupted. A live lease is treated conservatively and is not overwritten merely because another parent is inspecting the mission. Old missions can be listed from a new parent in the same canonical cwd, but their run links do not authorize that parent to steer or resume another parent's process.
+**Which runs get a mission:**
 
-## Process lifetime, sidebar and inspector
+- A child or workflow creates a mission unless given `mission:false`. A workflow creates one
+  mission for all its children.
+- `missionId` attaches an existing mission, and `mission:{title,objective}` creates one.
+- If automatic creation fails, the run still happens and returns a warning. If an explicit
+  request fails, the run doesn't start.
 
-Normal RPC completion waits for `agent_settled`, closes stdin and observes exit. Provider errors, token exhaustion, malformed protocol, unsupported blocking dialogs and unexpected exit fail the run. Token-limited answers remain available for explicit continuation.
+Workflows can read and write mission state with `state.get(key)` and `state.set(key, value)`.
+State is data only.
 
-The bundled child bash adapter uses public `createBashTool` and keeps ordinary commands in Shepherd's PTY process group. An EXIT trap waits for background jobs, preserving ancestry for cancellation. Cancellation snapshots descendants of the owned child, never the shared group. Hard owner death closes RPC stdin; app shutdown kills its group. Programs that deliberately daemonize, replace traps or escape ancestry remain outside this guarantee. Cwd is not a filesystem sandbox; coordinate one writer per checkout.
+**On parent restore,** only children from the same pi session are restored. A nonterminal child
+without a live writer lease is marked stopped, and its mission link is marked interrupted. A
+parent in the same directory can list old missions, but it cannot steer or resume another
+parent's processes.
 
-`shepherd-subagents.ts` remains the sole sidebar publisher and merges native children with legacy reports. Active rows have priority. Finished native rows with a session file do not expire on the sidebar's legacy five-minute timer. They remain inspectable until the publisher removes them or the parent exits; stale live or attention rows still clear when the publisher goes quiet. Native rows carry the card fields (`role`, `model`, `thinking`, `context`, `step`, `turns`, `toolCalls`, `tokens`, `contextPercent`, `lastActivity`, `question`, `result`, `exitReason`, `toolCallID`, `task`, `sessionFile`); every one is optional so pi-subagents rows and older hosts still decode.
+## Slash commands
 
-**RPC agents** get the rows in their native thread snapshot (`NativeThreadSnapshot.subagents`) and render each run as a card where its `shepherd_child_start` row was ([card states board](design-spec/boards/09-subagent-cards.png)). Card buttons and the right-pane inspector's composer send `subagentCommand` through the server to a `helloChildren` control connection the children extension opens on the Shepherd socket; the extension answers `childCommandResult` after calling the same functions the tools use (message → `shepherd_child_message`/resume, cancel → `shepherd_child_cancel`, resume → `shepherd_child_resume` with the original task). The parent model is never involved. Pause and Continue use child-only commands over the child's RPC stdin. Pause holds at the next provider-request boundary after the current tools finish; it does not send OS stop signals, kill the child, or replay its task. The card says "Pause requested" and offers Continue until released. Stop can still abort a paused child. The inspector pages the child's session JSONL 50 entries at a time (`subagentTranscript`) with the thread's own projection. It detaches live following when the reader scrolls up. Switching children invalidates pending page requests, and Copy transcript loads earlier pages before copying. Failed steering keeps the draft.
+These call the runtime directly, without a model turn. In Shepherd (RPC mode), typing one in the
+composer or choosing it from the `/` menu produces a text report. The pickers and fleet overlay
+appear only when the same extension runs in pi's interactive TUI.
 
-Once every run in a turn's spawn group is terminal (and none is asking), the per-run cards fold into one **ledger card** at the first spawn's position: a header (`↳ 3 subagents`, one 8×8 cell per run, `all done · 45m wall · 1.5m tok` or `2 done · 1 failed …`, `+318 −64 · 7 files`) and one row per child in spawn order (✓/✗ · role · first sentence of the final output · `5 files · 118 tools · 41m` · chevron). Each 44pt row is clickable across its full width and opens the inspector. The inspected row has an accent-tinted fill and a 3pt trailing accent stripe. The inspector opens in the right pane beside the thread (600pt by default, at least 480pt, at most half the window; a resized width is remembered) and shares that slot with the review pane. While any sibling is live the pass-one cards stay. The turn footer reads `11:09 AM · 45m 12s · 9 tool calls · 3 subagents` from pi's message timestamps (`NativeThreadMessage.timestamp`; time and duration are omitted when pi gave none) with the subagent count linking to the first child. The card publishes `files: [{path, added, removed}]` (edit/write calls aggregated per path, 32 max), `summary` (first two sentences, ≤ 240 chars), `sessionID` (the child's pi session id) and `cwd` for this.
+| Command | Behavior |
+| --- | --- |
+| `/subagents [agent]` | Profile list or one profile's details, source file, and diagnostics. |
+| `/run <agent> <task…> [--bg] [--fork]` | A one-child workflow. Foreground by default (it blocks the command until done); `--bg` runs it in the background, `--fork` uses fork context. Only trailing standalone flags are stripped. Task text is JSON-encoded, never interpolated. |
+| `/subagents-fleet [id]` | Live list and transcript of this parent's children. |
+| `/subagents-stop [id]` | Stops one active child after confirmation, naming its workflow if stopping it may cancel siblings. |
+| `/subagents-models [agent]` | Effective models from the local catalog, with no network probes. |
+| `/subagents-doctor` | Pi version, project trust, defaults, discovery errors, retained counts, and the actual command names. It makes no repairs. |
+| `/missions [id]` | Mission list or one full record. |
+| `/workflows [id]` | Workflow list or one status and output. |
 
-The inspector on a finished run is read-only: header `tests · 3 of 3` with `async · claude-sonnet · 11 turns · 19 tools · 118k tok · done 11:09`, `‹ ›` stepping through spawn-order siblings, a `⋯` menu (Copy Transcript, Show Session File in Finder, Refresh Transcript); a RESULT block under GOAL (summary plus per-file `path +96 −3` links that open the file in the review pane, or reveal it in Finder when no review is available); parent→child messages (every user message after the first) as trailing bubbles captioned `10:58 · from parent`; a `turn 4 of 11 · Scroll for the rest` line; and a bottom bar `[Re-run] [Fork as new agent] [Copy transcript] · kept with the thread` instead of the steer composer. Re-run is `shepherd_child_resume` with the original task. Fork copies the child's `session.jsonl` into the cwd's pi session directory under a fresh id (`PiSessionFile.fork`, header rewritten, every entry kept) and starts an RPC agent on it (`NewAgentConfig.piSessionID`) named `<role> (fork)` provisionally so the namer can retitle it; a missing or unreadable transcript shows the error in the bar and creates nothing. Subagents also nest under their parent in the sidebar (depth 2, branch glyph in the state color, elapsed / "needs you" / duration trailing). A group stays expanded while any run is live; once every run has finished it gets a disclosure header, expanded for the selected thread and folded for others (whose agent row then shows "n sub"). Selecting a subagent row selects the parent and opens that run in the right-pane inspector, as do the thread's cards, completed ledger, and footer links. Disabling display (Settings ▸ Pi ▸ Subagent display) does not disable execution.
+If a command name is already taken, or the pi-subagents `subagent` tool is registered, the whole
+family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-missions`, …).
+`/subagents-doctor` lists the actual names.
 
-The standalone viewer, `shepherd-inspect.mjs`, is a terminal program Shepherd no longer launches (it served the removed terminal agents); its view helpers remain in use by the children UI, and it can still be run by hand in a shell pane: `node shepherd-inspect.mjs --async-dir <dir> --run-id <id> [--index N] [--theme-path <file>]` (or `SHEPHERD_PI_THEME_PATH`). It reads status/transcript and submits steering or stop control files. Closing with Ctrl+C never stops work.
+## How Shepherd shows them
 
-The viewer uses the same bounded transcript reader and stable scroll anchors as the fleet. Its header refreshes while paused and reserves state and duration before the task. Needs-reply text, run errors and control failures stay visible. The composer keeps mode and recipient above a horizontally scrolled draft tail and insertion marker. Buffered stdin decoding handles split UTF-8 and escape sequences, coalesced text plus Enter, and bracketed paste. Pasted newlines stay in the draft; pasted confirmation letters never authorize stop. Completed duration uses the recorded end, or says `duration unavailable` for older records without one. Up/down and page up/down scroll; End or Escape follows. Type `:tools` to expand/collapse tool output, `:path` to show the full saved transcript path, and `:stop` to request confirmation. Stop is explicitly **entire run**, including all lanes when inspecting one lane of a legacy parallel run. `y` confirms and Escape cancels. Bare `stop` is ordinary steering text. For native settled or exited runs, the same steer file resumes the saved session with the typed answer; legacy controls keep their existing steer behavior. File writes report only `request written · awaiting runtime`. The native runtime publishes the message request ID together with its outcome after dispatch returns: `accepted or queued` acknowledges Pi's prompt command, not model delivery or completion. For stop, it publishes the request ID with `stop accepted · <state>` after the owned process exits, or with a control failure. An already exited run keeps its terminal state. Intermediate launch and exit status writes retain the previous request ID, so a previous acknowledgement cannot hide a newer pending request or failed write. Status retains only the latest outcome; a runtime exit, failed status write or later request can leave an inspector waiting. Legacy runtimes without request IDs use changed notices as a best-effort acknowledgement. No durable or exactly-once acknowledgement is implied.
+**Control path.**
+
+- **Publishing:** the children extension publishes up to 20 children, active and needs-reply
+  first. `shepherd-subagents.ts` merges them with any pi-subagents reports (also capped at 20)
+  and sends `setAgentChildren`. The rows ride the thread snapshot as `subagents` (see
+  [native-thread.md](native-thread.md)). Older retained runs drop out of the UI.
+- **Commands:** card buttons and the inspector's composer send `subagentCommand` through the
+  server to the children extension's `helloChildren` control connection on the Shepherd socket.
+  The extension answers `childCommandResult` after calling the same functions the tools use:
+  message, cancel, and resume. The parent model is never involved.
+- **Errors:** a command times out after 15 s. If the extension is not connected, the command
+  fails with "children extension not connected"; the extension reconnects every 2 s.
+- **Pause and Continue** are child-only commands. Pause holds the child at its next
+  provider-request boundary, after the current tools finish. It sends no OS signals and never
+  replays the task. Stop can still abort a paused child.
+
+**Cards.**
+
+- **Placement:** a child's card renders where its `shepherd_child_start` row was. Workflow
+  children (including `/run`) sit at the `shepherd_workflow` row. Children with no tool call
+  (slash commands, pi-subagents rows) trail the last agent turn.
+- **Controls by state:**
+  - Running: Inspect (⌘I), Steer…, Pause or Continue, Stop. A paused card reads "Paused ·
+    elapsed".
+  - Needs you: the child's options as buttons, plus Reply….
+  - Failed: Retry (resume with the original task) and Transcript.
+- **Grouping:** more than three siblings fold into a runs strip. Needs-you cards stay visible.
+- **Ledger:** once every run in a spawn group has finished, the cards become one ledger at the
+  first spawn's position. The header shows the state cells, "all done · wall · tokens" (or
+  "n done · m failed …"), and the combined DiffStat and file count. Below it, one 44pt row per
+  child in spawn order: glyph, role, a one-line summary (or the exit reason), "files · tools ·
+  duration". Diff counts come from `edit` calls; `write` lists the file at +0/−0.
+- **Turn footer:** reads "time · duration · N tool calls · n subagents". The subagent count
+  links to the first child.
+
+**Inspector.** It opens in the right pane beside the thread (`RightPaneSplit`: 600pt default, at
+least 480pt, at most half the window, with the width remembered). It shares that slot with the
+review, and the inspector wins when both are open. Clicking the inspected card or ledger row again
+closes it; sidebar rows always open it.
+
+- **Header:** role, "k of n", and a state word, above a line with context, model, thinking (live
+  runs only), turns, tools, and tokens. Live runs have Pause/Continue and Stop.
+- **⋯ menu:** Refresh Transcript (live runs); Copy Transcript and Show Session File in Finder
+  (finished runs).
+- **Transcript:** pages the child's session file (its last 8 MiB) 50 entries at a time, using the
+  thread's own projection. "N earlier turns · Show all" loads more. Scrolling up stops following
+  a live run. Switching children invalidates pending pages, and Copy Transcript loads every page
+  first.
+- **Live runs** end in a Steer composer addressed to the child ("to: worker · not the parent").
+  A failed send keeps the draft.
+- **Finished runs** are read-only:
+  - ‹ › step through siblings.
+  - A Result block shows the summary and touched files (the file links reveal the file in
+    Finder).
+  - Messages from the parent appear as bubbles captioned "from parent".
+  - The bottom bar has Re-run, Fork as new agent, Copy transcript, and "kept with the thread".
+- **Re-run** is `shepherd_child_resume` with the original task.
+- **Fork as new agent** copies the child's session into pi's session directory under a fresh ID
+  (`PiSessionFile.fork`: header rewritten, every entry kept). It starts an RPC agent on it
+  (`NewAgentConfig.piSessionID`), provisionally named `<role> (fork)` until the namer retitles
+  it. It uses the run's cwd and model, falling back to the parent's. A missing transcript shows
+  an error and creates nothing. Remote agents have no Fork.
+
+**Sidebar.** Children nest under their parent with a branch glyph in the state color, and elapsed
+time, "needs you", "failed", or a duration trailing. A group stays expanded while any run is live.
+Once all are finished it gets a disclosure header ("n subagents · done h:mm"). The header is
+expanded for the selected thread and folded for the others, whose agent row then shows "n sub".
+Selecting a child selects its parent and opens the inspector.
+
+Child runs are display state reported by the extension. Shepherd never persists them.
+
+## The fleet view in pi's TUI
+
+When the extension runs in an interactive pi session instead of under Shepherd, `/subagents-fleet`
+opens an overlay: a flat list and transcript, reply-required children first, then running,
+failed, and finished.
+
+| Key | Action |
+| --- | --- |
+| ↑/↓ or j/k | Select a child |
+| Page up/down, End | Scroll the transcript; End follows it again |
+| `e` | Toggle full tool output |
+| `p` | Show the transcript path |
+| `s` | Compose a steer or follow-up (Tab switches mode) |
+| `x`, then `y` | Stop the child |
+| Esc or Ctrl+C | Close the overlay; the children keep running |
+
+`shepherd-inspect.mjs` holds the overlay's view helpers. Shepherd installs it beside the children
+extension but never launches it. You can still run it by hand in a terminal pane to watch one
+run:
+
+```sh
+node shepherd-inspect.mjs --async-dir <dir> --run-id <id> [--index N] [--theme-path <file>]
+```
+
+Colors come from the pi theme JSON passed with `--theme-path` (or `SHEPHERD_PI_THEME_PATH`).
+Without one, it falls back to the 256-color palette.
+
+## Process lifetime
+
+- **Completion:** a normal RPC completion waits for `agent_settled`, closes stdin, and observes
+  the exit. Provider errors, token exhaustion, malformed protocol, unsupported blocking dialogs,
+  and unexpected exits fail the run.
+- **Bash:** the bundled child bash tool keeps ordinary commands in Shepherd's PTY process group,
+  and an EXIT trap waits for background jobs.
+- **Cancellation:** stops the owned child's descendants, never the shared group. App shutdown
+  kills the group.
+- **Limits:** programs that deliberately daemonize or escape their process ancestry are outside
+  this guarantee. A cwd is not a filesystem sandbox, so coordinate one writer per checkout.
 
 ## Validation
 
 ```sh
-PI_PACKAGE_DIR=/path/to/pi-coding-agent node --test Tests/Extensions/native-children.test.mjs Tests/Extensions/native-children-expanded.test.mjs
-env -u SHEPHERD_SUPPORT_DIR swift test --filter 'AppSettingsTests|AgentSessionTests|PiThemeTests|ChildRunsTests'
-xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' build
+PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" \
+  node --test Tests/Extensions/*.test.mjs
 ```
 
-Node tests isolate HOME, Pi settings and extra discovery roots. Real Pi RPC uses a loopback provider only. Coverage includes discovery/trust/precedence, package profiles, overrides, omitted tools under a Shepherd parent, model/default propagation, persisted resume ceilings, mission isolation/interruption, workflow sequencing/all/steering/errors/cancel, malformed API requests, constructor/import probes, thenables and bounded evaluator loops. Command and renderer checks cover flag stripping, safe script encoding, collision aliases, RPC fallback, explicit stop confirmation, attention ordering, Unicode width, stable paused anchors, error expansion and omission notices. A standalone inspector subprocess checks live header updates while paused, run-wide confirmation, literal stop steering, coalesced input, bracketed paste, second-request acknowledgements, failed writes and Ctrl+C exit. Real local-provider checks cover fleet and inspector replies, active steering, concurrency and lease rejection, and stopping one of two workflow children with sibling cleanup. Swift tests cover default persistence, launch environment and byte identity of all embedded modules. No external model request is needed.
+- **Isolation:** the node tests isolate `HOME`, pi settings, and discovery roots, and use a local
+  fake provider. No model request is made.
+- **Coverage:** discovery, trust and precedence, profile fields and overrides, model and default
+  propagation, resume, mission isolation and interruption, workflow sequencing, steering,
+  errors and cancellation, evaluator limits, command-name collisions, the RPC fallbacks, and the
+  inspector's input handling.
+- **Real-model smoke test:** opt-in and uses your existing authentication:
+  `PI_SMOKE_MODEL=<provider/model> node Tests/Extensions/native-children.smoke.mjs`.
+
+The Swift unit tests check that every embedded module is byte-identical to its
+`Extensions/` source and that the settings reach the launch environment.
