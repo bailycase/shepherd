@@ -6,14 +6,13 @@ import ShepherdProtocol
 import ShepherdRemote
 import UniformTypeIdentifiers
 
-/// The sidebar (spec §3, Components board, §9 compact form, §10 subagent nesting): THIS MAC and
+/// The sidebar (spec §3, Components board, §10 subagent nesting): THIS MAC and
 /// each remote host as sections, spaces as disclosure rows with their agents nested beneath,
 /// subagents nested under their agent, then Automations behind a border.
 struct SidebarView: View {
     var vm: ShepherdViewModel
 
     var body: some View {
-        let compact = vm.isRightPaneOpen
         VStack(alignment: .leading, spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
@@ -23,18 +22,17 @@ struct SidebarView: View {
                             detail: .count(vm.state.agents.filter { agent in vm.visibleSpaces.contains { $0.id == agent.spaceID } }.count),
                             collapsed: vm.localMachineCollapsed,
                             keycap: vm.remoteHosts.connections.isEmpty ? nil : vm.machineKeycap(forHost: nil),
-                            compact: compact,
                             onToggle: { vm.localMachineCollapsed.toggle() },
                             plus: SidebarPlus(help: "New Space…") { vm.addSpaceFromPanel() }
                         )
                         if !vm.localMachineCollapsed {
                             ForEach(vm.spaceTree, id: \.space.id) { group in
-                                SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth, compact: compact)
+                                SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth)
                                     .id(group.space.id)
                             }
                         }
                         ForEach(vm.remoteHosts.connections) { connection in
-                            RemoteHostBlock(vm: vm, connection: connection, compact: compact)
+                            RemoteHostBlock(vm: vm, connection: connection)
                         }
                     }
                     .padding(.horizontal, Metrics.sidebarPadding)
@@ -57,7 +55,7 @@ struct SidebarView: View {
             if !vm.state.automations.isEmpty {
                 Tokens.border.frame(height: 1)
                 VStack(alignment: .leading, spacing: 1) {
-                    AutomationsSection(vm: vm, compact: compact)
+                    AutomationsSection(vm: vm)
                 }
                 .padding(Metrics.sidebarPadding)
             }
@@ -72,7 +70,6 @@ struct SidebarView: View {
 /// button semantics. Rows are tap views rather than `Button`s so they can also be dragged.
 private struct SidebarRowChrome: ViewModifier {
     let selected: Bool
-    let compact: Bool
     var leading: CGFloat = 8
     var interactive = true
     let action: () -> Void
@@ -82,9 +79,9 @@ private struct SidebarRowChrome: ViewModifier {
         content
             .padding(.leading, leading)
             .padding(.trailing, 6)
-            .frame(height: compact ? Metrics.sidebarRowHeightCompact : Metrics.sidebarRowHeight)
+            .frame(height: Metrics.sidebarRowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .rowBackground(selected: selected, hovering: hovering && interactive, radius: compact ? 5 : Radius.sm)
+            .rowBackground(selected: selected, hovering: hovering && interactive, radius: Radius.sm)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .onTapGesture(perform: action)
@@ -94,9 +91,9 @@ private struct SidebarRowChrome: ViewModifier {
 }
 
 extension View {
-    fileprivate func sidebarRow(selected: Bool = false, compact: Bool, leading: CGFloat = 8, interactive: Bool = true,
+    fileprivate func sidebarRow(selected: Bool = false, leading: CGFloat = 8, interactive: Bool = true,
                                 action: @escaping () -> Void) -> some View {
-        modifier(SidebarRowChrome(selected: selected, compact: compact, leading: leading, interactive: interactive, action: action))
+        modifier(SidebarRowChrome(selected: selected, leading: leading, interactive: interactive, action: action))
     }
 }
 
@@ -129,14 +126,13 @@ struct SidebarSection: View {
     let detail: Detail
     var collapsed = false
     var keycap: String?
-    let compact: Bool
     var onToggle: (() -> Void)?
     var plus: SidebarPlus?
     @State private var hovering = false
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(title).sectionStyle(compact ? Fonts.sans(10, .semibold) : Fonts.section)
+            Text(title).sectionStyle(Fonts.section)
                 .opacity(collapsed ? 0.7 : 1)
                 .lineLimit(1)
             Spacer(minLength: 4)
@@ -154,7 +150,7 @@ struct SidebarSection: View {
             if hovering, let plus { plus }
         }
         .padding(.horizontal, 8)
-        .padding(.top, compact ? 6 : 10)
+        .padding(.top, 10)
         .padding(.bottom, 2)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -173,15 +169,13 @@ struct SpaceSection: View {
     let agents: [Agent]
     /// 0 for a root space; deeper spaces are projects nested by path containment.
     var depth: Int = 0
-    let compact: Bool
 
     private var collapsed: Bool { vm.collapsedSpaces.contains(space.id) }
-    private var indent: CGFloat { compact ? Metrics.sidebarIndentCompact : Metrics.sidebarIndent }
+    private var indent: CGFloat { Metrics.sidebarIndent }
 
     var body: some View {
         SpaceRow(name: space.name, collapsed: collapsed, count: agents.count,
-                 blocked: agents.count { $0.status == .blocked }, worktrees: agents.count { $0.worktreeBranch != nil },
-                 compact: compact, leading: 8 + CGFloat(depth) * indent,
+                 blocked: agents.count { $0.status == .blocked }, worktrees: agents.count { $0.worktreeBranch != nil }, leading: 8 + CGFloat(depth) * indent,
                  onToggle: { vm.toggleSpaceCollapsed(space.id) },
                  onNewAgent: { vm.quickCreateAgent(in: space.id) })
             .onDrag { NSItemProvider(object: ShepherdViewModel.dragPayload(space: space.id) as NSString) }
@@ -198,7 +192,7 @@ struct SpaceSection: View {
             }
         if !collapsed {
             ForEach(agents) { agent in
-                LocalAgentRows(vm: vm, agent: agent, depth: depth, compact: compact)
+                LocalAgentRows(vm: vm, agent: agent, depth: depth)
                     .id(agent.id)
             }
         }
@@ -211,7 +205,6 @@ struct SpaceRow: View {
     let count: Int
     var blocked = 0
     var worktrees = 0
-    let compact: Bool
     var leading: CGFloat = 8
     let onToggle: () -> Void
     var onNewAgent: (() -> Void)?
@@ -224,9 +217,9 @@ struct SpaceRow: View {
                 .rotationEffect(.degrees(collapsed ? 0 : 90))
                 .foregroundStyle(Tokens.textTertiary)
                 .frame(width: 10)
-            Text(name).font(compact ? Fonts.sans(12, .medium) : Fonts.label).foregroundStyle(Tokens.text).lineLimit(1)
+            Text(name).font(Fonts.label).foregroundStyle(Tokens.text).lineLimit(1)
             Spacer(minLength: 4)
-            if worktrees > 0, !compact {
+            if worktrees > 0 {
                 Text("⎇\(worktrees)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
                     .help("\(worktrees) worktree agent\(worktrees == 1 ? "" : "s")")
             }
@@ -239,7 +232,7 @@ struct SpaceRow: View {
             }
         }
         .onHover { hovering = $0 }
-        .sidebarRow(compact: compact, leading: leading, action: onToggle)
+        .sidebarRow(leading: leading, action: onToggle)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(name), \(count) agents, \(collapsed ? "collapsed" : "expanded")")
     }
@@ -250,13 +243,12 @@ struct LocalAgentRows: View {
     var vm: ShepherdViewModel
     let agent: Agent
     let depth: Int
-    let compact: Bool
 
     var body: some View {
         let selected = vm.selectedAgentID == agent.id && vm.selectedRemoteAgent == nil
         let children = vm.children(of: agent.id)
         let folded = SubagentFolding.folded(children: children, selected: selected, unfolded: vm.unfoldedSubagentGroups.contains(agent.id))
-        AgentRow(agent: agent, selected: selected, compact: compact, depth: depth,
+        AgentRow(agent: agent, selected: selected, depth: depth,
                  badge: vm.shortcutBadge(for: agent.id), statusSince: vm.statusSince[agent.id],
                  subagentCount: folded ? children.count : nil) {
             vm.selectAgent(agent.id)
@@ -276,7 +268,7 @@ struct LocalAgentRows: View {
             }
         }
         if !children.isEmpty {
-            SubagentRows(children: children, depth: depth, compact: compact, folded: folded,
+            SubagentRows(children: children, depth: depth, folded: folded,
                          inspected: vm.subagentInspector.runByAgent[agent.id],
                          toggleFold: {
                              if vm.unfoldedSubagentGroups.contains(agent.id) { vm.unfoldedSubagentGroups.remove(agent.id) }
@@ -300,7 +292,6 @@ enum SubagentFolding {
 struct AgentRow: View {
     let agent: Agent
     let selected: Bool
-    let compact: Bool
     var depth = 0
     var badge: Int?
     var statusSince: Date?
@@ -309,22 +300,22 @@ struct AgentRow: View {
     let action: () -> Void
 
     var body: some View {
-        let indent = compact ? Metrics.sidebarIndentCompact : Metrics.sidebarIndent
+        let indent = Metrics.sidebarIndent
         HStack(spacing: 8) {
-            StatusDot(Tokens.statusDot(agent.status, isCurrent: selected), size: compact ? Metrics.statusDotCompact : Metrics.statusDot)
+            StatusDot(Tokens.statusDot(agent.status, isCurrent: selected), size: Metrics.statusDot)
             if agent.worktreeBranch != nil {
                 Text("⎇").font(Fonts.micro).foregroundStyle(Tokens.textTertiary)
             }
             Text(agent.name)
-                .font(compact ? Fonts.sans(12, selected ? .medium : .regular) : (selected ? Fonts.label : Fonts.labelRegular))
+                .font(selected ? Fonts.label : Fonts.labelRegular)
                 .foregroundStyle(Tokens.text)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name)
             Spacer(minLength: 4)
-            if !compact || selected { trailing }
+            trailing
         }
-        .sidebarRow(selected: selected, compact: compact, leading: 8 + indent + CGFloat(depth) * indent, action: action)
+        .sidebarRow(selected: selected, leading: 8 + indent + CGFloat(depth) * indent, action: action)
         .opacity(dimmed ? 0.55 : 1)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(Self.statusWord(agent.status))")
@@ -372,14 +363,13 @@ enum SidebarTime {
 struct SubagentRows: View {
     let children: [ChildRun]
     let depth: Int
-    let compact: Bool
     let folded: Bool
     let inspected: String?
     let toggleFold: () -> Void
     let open: (ChildRun) -> Void
 
     var body: some View {
-        let indent = compact ? Metrics.sidebarIndentCompact : Metrics.sidebarIndent
+        let indent = Metrics.sidebarIndent
         let leading = 8 + indent * CGFloat(depth + 1) + 10
         let finished = children.allSatisfy(\.isTerminal)
         if finished {
@@ -389,12 +379,12 @@ struct SubagentRows: View {
                     .foregroundStyle(Tokens.textMuted)
                 Text(SubagentRows.groupLabel(children)).font(Fonts.micro).foregroundStyle(Tokens.textMuted).lineLimit(1)
             }
-            .sidebarRow(compact: compact, leading: leading, action: toggleFold)
+            .sidebarRow(leading: leading, action: toggleFold)
             .accessibilityLabel("\(children.count) subagents, \(folded ? "collapsed" : "expanded")")
         }
         if !finished || !folded {
             ForEach(children, id: \.id) { run in
-                SubagentRow(run: run, compact: compact, selected: inspected == run.runID, leading: leading) { open(run) }
+                SubagentRow(run: run, selected: inspected == run.runID, leading: leading) { open(run) }
             }
         }
     }
@@ -408,7 +398,6 @@ struct SubagentRows: View {
 
 struct SubagentRow: View {
     let run: ChildRun
-    let compact: Bool
     let selected: Bool
     let leading: CGFloat
     let action: () -> Void
@@ -418,17 +407,15 @@ struct SubagentRow: View {
         HStack(spacing: 6) {
             // Tree line: the rows hang off their agent.
             Tokens.border.frame(width: 1).frame(maxHeight: .infinity).padding(.trailing, 2)
-            BranchGlyph(SubagentStyle.color(state), size: compact ? 12 : 13)
-            Text(run.role ?? run.label).font(compact ? Fonts.sans(12) : Fonts.labelRegular).foregroundStyle(Tokens.text).lineLimit(1)
+            BranchGlyph(SubagentStyle.color(state), size: 13)
+            Text(run.role ?? run.label).font(Fonts.labelRegular).foregroundStyle(Tokens.text).lineLimit(1)
             Spacer(minLength: 4)
-            if !compact || selected {
-                TimelineView(.periodic(from: .now, by: 5)) { context in
-                    let (text, color) = SubagentStyle.trailing(run, state: state, now: context.date)
-                    Text(text).font(Fonts.micro).foregroundStyle(color).fixedSize()
-                }
+            TimelineView(.periodic(from: .now, by: 5)) { context in
+                let (text, color) = SubagentStyle.trailing(run, state: state, now: context.date)
+                Text(text).font(Fonts.micro).foregroundStyle(color).fixedSize()
             }
         }
-        .sidebarRow(selected: selected, compact: compact, leading: leading, action: action)
+        .sidebarRow(selected: selected, leading: leading, action: action)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(run.role ?? run.label), subagent, \(SubagentStyle.word(state))")
     }
@@ -469,40 +456,28 @@ enum SubagentStyle {
 
 // MARK: Automations
 
-/// AUTOMATIONS: saved watch prompts run by ordinary agents. Hidden while empty. Compact form is
-/// one row with the count.
+/// AUTOMATIONS: saved watch prompts run by ordinary agents. Hidden while empty.
 struct AutomationsSection: View {
     var vm: ShepherdViewModel
-    let compact: Bool
 
     var body: some View {
         let automations = vm.state.automations
         if !automations.isEmpty {
-            if compact {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(Tokens.success).frame(width: 10)
-                    Text("Automations").font(Fonts.sans(12)).foregroundStyle(Tokens.text)
-                    Spacer(minLength: 4)
-                    Text("\(automations.count)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+            SidebarSection(title: "Automations", detail: .count(automations.count))
+            ForEach(automations) { automation in
+                let agent = vm.automationAgent(automation)
+                AutomationRow(automation: automation, agent: agent,
+                              selected: agent != nil && vm.selectedAgentID == agent?.id) {
+                    if let agent { vm.selectAgent(agent.id) }
                 }
-                .sidebarRow(compact: true, interactive: false) {}
-            } else {
-                SidebarSection(title: "Automations", detail: .count(automations.count), compact: false)
-                ForEach(automations) { automation in
-                    let agent = vm.automationAgent(automation)
-                    AutomationRow(automation: automation, agent: agent,
-                                  selected: agent != nil && vm.selectedAgentID == agent?.id) {
-                        if let agent { vm.selectAgent(agent.id) }
+                .contextMenu {
+                    if automation.agentID == nil {
+                        Button("Run Now") { Task { @MainActor in try? await vm.startAutomation(automation.id) } }
+                    } else {
+                        Button("Stop") { vm.stopAutomation(automation.id) }
                     }
-                    .contextMenu {
-                        if automation.agentID == nil {
-                            Button("Run Now") { Task { @MainActor in try? await vm.startAutomation(automation.id) } }
-                        } else {
-                            Button("Stop") { vm.stopAutomation(automation.id) }
-                        }
-                        Divider()
-                        Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation.id) }
-                    }
+                    Divider()
+                    Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation.id) }
                 }
             }
         }
@@ -542,7 +517,7 @@ struct AutomationRow: View {
             Text(stateWord).font(Fonts.micro)
                 .foregroundStyle(agent?.status == .blocked ? Tokens.warningText : Tokens.textMuted)
         }
-        .sidebarRow(selected: selected, compact: false, interactive: agent != nil, action: action)
+        .sidebarRow(selected: selected, interactive: agent != nil, action: action)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(automation.name), automation, \(stateWord)")
     }

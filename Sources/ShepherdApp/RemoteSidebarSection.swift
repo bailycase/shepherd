@@ -10,7 +10,6 @@ import ShepherdProtocol
 struct RemoteHostBlock: View {
     var vm: ShepherdViewModel
     @ObservedObject var connection: RemoteHostStore.Connection
-    let compact: Bool
 
     private var detail: SidebarSection.Detail {
         switch connection.phase {
@@ -31,7 +30,6 @@ struct RemoteHostBlock: View {
             detail: detail,
             collapsed: vm.collapsedHosts.contains(connection.id),
             keycap: vm.machineKeycap(forHost: connection.id),
-            compact: compact,
             onToggle: { vm.toggleHostCollapsed(connection.id) },
             plus: connected ? SidebarPlus(help: "New Space on \(connection.config.name)") { vm.remoteSpacePickerHostID = connection.id } : nil
         )
@@ -52,7 +50,6 @@ struct RemoteHostBlock: View {
                     collapsed: spaceCollapsed,
                     count: agents.count,
                     blocked: agents.count { $0.status == .blocked },
-                    compact: compact,
                     onToggle: { vm.toggleRemoteSpaceCollapsed(hostID: connection.id, spaceID: space.id) },
                     onNewAgent: connected ? { vm.showNewAgentSheetForRemote(hostID: connection.id, spaceID: space.id) } : nil
                 )
@@ -73,7 +70,7 @@ struct RemoteHostBlock: View {
         let badge = vm.showAgentShortcutBadges && vm.selectedRemoteAgent?.hostID == connection.id
             ? vm.remoteOrderedAgents(hostID: connection.id).firstIndex(where: { $0.id == agent.id }).flatMap { $0 < 9 ? $0 + 1 : nil }
             : nil
-        AgentRow(agent: agent, selected: selected, compact: compact, badge: badge, dimmed: !connected) {
+        AgentRow(agent: agent, selected: selected, badge: badge, dimmed: !connected) {
             if connected { vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id) }
         }
         .onDrag { NSItemProvider(object: ShepherdViewModel.dragPayload(remote: ref) as NSString) }
@@ -99,7 +96,7 @@ struct RemoteHostBlock: View {
         .id(ref)
         let children = connection.children[agent.id] ?? []
         if !children.isEmpty {
-            SubagentRows(children: children, depth: 0, compact: compact,
+            SubagentRows(children: children, depth: 0,
                          folded: SubagentFolding.folded(children: children, selected: selected, unfolded: false),
                          inspected: vm.subagentInspector.remoteRuns[ref], toggleFold: {},
                          open: { vm.openRemoteChild(ref, child: $0) })
