@@ -252,6 +252,11 @@ final class ShepherdViewModel {
     /// row toggles this); the row shows an `n sub` chip instead. Ephemeral,
     /// like all child-run display state.
     var collapsedChildren: Set<AgentID> = []
+    /// Agents whose finished subagent group is unfolded in the sidebar. A completed group
+    /// folds to one "↳ 3 SUBAGENTS" row by default; the choice persists per agent.
+    var unfoldedSubagentGroups: Set<AgentID> = [] {
+        didSet { sidebarDefaults.set(unfoldedSubagentGroups.map(\.rawValue).sorted(), forKey: "shepherd.unfoldedSubagentGroups") }
+    }
     @ObservationIgnored private var childSweepTimer: Timer?
     /// Focus is recorded per layout on every change (clicks, ⌥⌘←/→, splits),
     /// so returning to an agent restores the pane you were last working in.
@@ -370,6 +375,9 @@ final class ShepherdViewModel {
         // Restore persisted sidebar collapse state. Stale IDs are pruned on
         // the first server snapshot (`adopt`).
         let defaults = sidebarDefaults
+        if let raw = defaults.stringArray(forKey: "shepherd.unfoldedSubagentGroups") {
+            unfoldedSubagentGroups = Set(raw.map(AgentID.init(rawValue:)))
+        }
         if let raw = defaults.stringArray(forKey: "shepherd.collapsedSpaces") {
             collapsedSpaces = Set(raw.map(SpaceID.init(rawValue:)))
         }

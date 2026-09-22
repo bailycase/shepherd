@@ -179,7 +179,9 @@ struct SpaceSection: View {
             if !collapsed {
                 ForEach(agents) { agent in
                     let children = vm.children(of: agent.id)
-                    let showsSubagents = AgentRow.showsSubagents(for: agent.status, hasActiveChildren: children.contains { !$0.isTerminal || $0.needsAttention })
+                    let finished = nativeSubagentGroupIsTerminal(children)
+                    // A finished group has its own fold row; the agent row's chip and re-click fold are for live groups.
+                    let showsSubagents = !finished && AgentRow.showsSubagents(for: agent.status, hasActiveChildren: children.contains { !$0.isTerminal || $0.needsAttention })
                     let childrenHidden = vm.collapsedChildren.contains(agent.id)
                     AgentRow(
                         agent: agent,
@@ -247,13 +249,22 @@ struct SpaceSection: View {
                     // Clicking opens the run's inspector dashboard in a pane
                     // beside the agent (steer/stop at its prompt; closing the
                     // pane never touches the run).
-                    if showsSubagents, !childrenHidden {
+                    // A finished group folds into one "↳ 3 SUBAGENTS · done 11:09" row (board: completed
+                    // sidebar); clicking it toggles the child rows. Live groups keep the nested rows.
+                    let showsRows = finished ? vm.unfoldedSubagentGroups.contains(agent.id) : (showsSubagents && !childrenHidden)
+                    if finished {
+                        SubagentGroupRow(children: children, expanded: showsRows, depth: depth) {
+                            if showsRows { vm.unfoldedSubagentGroups.remove(agent.id) } else { vm.unfoldedSubagentGroups.insert(agent.id) }
+                        }
+                    }
+                    if showsRows {
                         ForEach(children) { child in
                             ChildRunRow(
                                 child: child,
                                 selected: (vm.inspectingAgentID == agent.id && vm.inspectedChild[agent.id] == child.id)
                                     || (vm.selectedAgentID == agent.id && vm.subagentInspector.runByAgent[agent.id] == child.runID),
-                                depth: depth
+                                depth: depth,
+                                inFinishedGroup: finished
                             ) {
                                 vm.openChildInspector(agentID: agent.id, child: child)
                             }
@@ -524,6 +535,9 @@ struct ChildRunRow: View {
     /// True while this child's inspector is what the workspace shows.
     var selected = false
     var depth: Int = 0
+    /// Under a finished group row the right slot is the run's duration ("41m"), as the completed
+    /// board draws it; in a live group a finished sibling still reads "done".
+    var inFinishedGroup = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -540,8 +554,9 @@ struct ChildRunRow: View {
     /// Right slot: "needs you" / "done" / the failure state, or the live elapsed "37m".
     private var trailing: String {
         if child.needsAttention { return "needs you" }
-        if child.isTerminal { return child.state == "complete" ? "done" : child.state }
-        return nativeSubagentElapsed(child, now: Date()).map(nativeSubagentShortDuration) ?? ""
+        let elapsed = nativeSubagentElapsed(child, now: Date()).map(nativeSubagentShortDuration)
+        if child.isTerminal { return child.state == "complete" ? (inFinishedGroup ? elapsed ?? "done" : "done") : child.state }
+        return elapsed ?? ""
     }
 
     var body: some View {
@@ -583,6 +598,53 @@ struct ChildRunRow: View {
         .accessibilityAction { action() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(child.role ?? child.label), subagent, \(child.needsAttention ? "needs you" : child.state)")
+    }
+}
+
+/// One row for a finished subagent group: section caps "↳ 3 SUBAGENTS" with the accent glyph,
+/// right "done 11:09" (or "1 failed" in danger). Clicking toggles the child rows.
+struct SubagentGroupRow: View {
+    let children: [ChildRun]
+    let expanded: Bool
+    var depth: Int = 0
+    let action: () -> Void
+    @State private var hovering = false
+
+    static func trailing(_ children: [ChildRun]) -> (text: String, failed: Bool) {
+        let failed = children.count { nativeSubagentState($0) == .failed }
+        if failed > 0 { return ("\(failed) failed", true) }
+        if let ended = children.compactMap(\.endedAt).max() { return ("done \(nativeClockText(ended, meridiem: false))", false) }
+        return ("done", false)
+    }
+
+    var body: some View {
+        let trailing = Self.trailing(children)
+        HStack(spacing: 8) {
+            NativeBranchGlyph(color: NativeTokens.accent, size: 12)
+                .overlay(alignment: .leading) {
+                    NativeTokens.border.frame(width: 1).padding(.vertical, -NativeMetrics.sidebarRowHeight / 2).offset(x: -8)
+                }
+            Text("\(children.count) SUBAGENT\(children.count == 1 ? "" : "S")")
+                .font(NativeFonts.sidebarSection).tracking(0.6).foregroundStyle(NativeTokens.textTertiary).lineLimit(1)
+            Spacer(minLength: 0)
+            Text(trailing.text).font(NativeFonts.sidebarMeta).monospacedDigit()
+                .foregroundStyle(trailing.failed ? NativeTokens.dangerText : NativeTokens.textMuted)
+        }
+        .clipped()
+        .padding(.leading, 8 + CGFloat(depth + 2) * NativeMetrics.sidebarIndent)
+        .padding(.trailing, 8)
+        .frame(height: NativeMetrics.sidebarRowHeight)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(hovering ? NativeTokens.bgHoverStrong : Color.clear, in: RoundedRectangle(cornerRadius: Radius.xs))
+        .padding(.horizontal, NativeMetrics.sidebarPadding)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: action)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(children.count) subagents, \(trailing.text)")
+        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
     }
 }
 

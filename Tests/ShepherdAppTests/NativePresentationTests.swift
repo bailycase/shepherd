@@ -298,6 +298,17 @@ struct NativePresentationTests {
         #expect(nativeTurnTimeText(startedAt: start, endedAt: nil) == nativeClockText(start))
     }
 
+    @Test func sidebarGroupRowReadsDoneTimeOrFailures() {
+        let runs = Self.doneRuns
+        let utc = TimeZone(identifier: "UTC")!
+        let ended = runs.compactMap(\.endedAt).max()!
+        #expect(SubagentGroupRow.trailing(runs) == ("done \(nativeClockText(ended, meridiem: false))", false))
+        #expect(nativeClockText(ended, meridiem: false, timeZone: utc) == "2:46")
+        var failed = runs[0]; failed.state = "failed"
+        #expect(SubagentGroupRow.trailing([failed, runs[1]]) == ("1 failed", true))
+        #expect(SubagentGroupRow.trailing([ChildRun(runID: "x", label: "l", state: "complete")]) == ("done", false))
+    }
+
     @Test func siblingsStepInSpawnOrderWithinTheGroup() {
         let runs = Self.doneRuns
         let spawn = { (id: String) -> NativeThreadMessage in
@@ -1057,6 +1068,10 @@ struct NativePresentationTests {
             run.endedAt = run.endedAt.map { $0 + shift }
             return run
         })
+        // A finished group under another agent folds to "↳ 3 SUBAGENTS · done 11:09"; unfolded here
+        // so the shot shows the child rows with their durations (board: completed sidebar).
+        vm.applyAgentChildren(agents[6].id, Self.doneRuns)
+        vm.unfoldedSubagentGroups.insert(agents[6].id)
         // An unreachable second machine makes the tree show its THIS MAC / host structure.
         vm.remoteHosts.addHost(name: "Horizon", host: "127.0.0.1", port: 1, token: "x")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 256, height: 640),
