@@ -137,6 +137,17 @@ public extension NativeToolRow {
             if !failed, lineCount > 0 { results.append(Result("\(lineCount) file\(lineCount == 1 ? "" : "s")", tone: .muted)) }
         case "ls":
             preview = string("path") ?? "."
+        case "subagent":
+            // pi-subagents: the output is launch boilerplate ("Run fan-out: 0/32 used…"); the
+            // agent and its task say what the call did.
+            let task = string("task").flatMap { $0.split(whereSeparator: \.isNewline).first.map(String.init) }
+            if let agent = string("agent") {
+                preview = task.map { "\(agent) · \($0)" } ?? agent
+            } else if args?["workflowScript"] != nil {
+                preview = "workflow"
+            } else {
+                preview = string("action") ?? firstLine
+            }
         default:
             // Spec §5 says unknown tools show the first output line; we prefer an obvious action
             // field first (a URL beats "<html>") and fall back to output. The 120-char cap is the spec's.
@@ -201,7 +212,12 @@ public struct NativeTurn: Identifiable, Equatable, Sendable {
 
 public func nativeTurns(_ messages: [NativeThreadMessage]) -> [NativeTurn] {
     var turns: [NativeTurn] = []
-    for message in messages {
+    // pi's system entries (prompt-section updates) and blank messages have nothing to read; kept,
+    // they render as stray notes and stretch the turn's duration to the next system update.
+    // User messages always stay: they are the turn boundaries.
+    for message in messages where message.role == "user" || (message.role != "system" && (message.toolName != nil
+        || message.role == "toolResult" || message.truncated || message.status == "error"
+        || message.blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.kind == .unsupportedImage })) {
         let isUser = message.role == "user"
         if let last = turns.last, last.isUser == isUser {
             turns[turns.count - 1].messages.append(message)
@@ -220,6 +236,8 @@ public enum NativeTurnItem: Equatable, Sendable {
     case tools([NativeThreadMessage])
     /// Compaction and branch summaries, or an image that cannot render natively.
     case note(String)
+    /// A failed provider request (pi's `stopReason: "error"`); consecutive identical ones fold into a count.
+    case error(String, count: Int)
 }
 
 public func nativeTurnItems(_ messages: [NativeThreadMessage]) -> [NativeTurnItem] {
@@ -231,6 +249,12 @@ public func nativeTurnItems(_ messages: [NativeThreadMessage]) -> [NativeTurnIte
             } else {
                 items.append(.tools([message]))
             }
+            continue
+        }
+        if message.role == "assistant", message.status == "error" {
+            let text = message.blocks.filter { $0.kind == .text }.map(\.text).last ?? "Request failed"
+            if case .error(let last, let count) = items.last, last == text { items[items.count - 1] = .error(text, count: count + 1) }
+            else { items.append(.error(text, count: 1)) }
             continue
         }
         for block in message.blocks {
@@ -539,7 +563,7 @@ public func nativeClockText(_ milliseconds: Double, meridiem: Bool = true, timeZ
 public func nativeTurnTimeText(startedAt: Double?, endedAt: Double?) -> String? {
     guard let startedAt else { return nil }
     var parts = [nativeClockText(startedAt)]
-    if let endedAt, endedAt >= startedAt { parts.append(nativeDurationText((endedAt - startedAt) / 1000, live: true)) }
+    if let endedAt, endedAt - startedAt >= 1000 { parts.append(nativeDurationText((endedAt - startedAt) / 1000, live: true)) }
     return parts.joined(separator: " · ")
 }
 

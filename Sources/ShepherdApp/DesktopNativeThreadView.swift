@@ -612,14 +612,13 @@ struct NativeThreadHeader: View {
                     .fixedSize()
             }
             Spacer(minLength: 12)
-            // "3 subagents · 1.6m tok": stays even when the inspector narrows the header (board),
-            // wrapping to two lines like the board rather than yielding.
+            // "3 subagents · 1.6m tok"; a narrow header (inspector open) keeps one line and drops
+            // the token count to the tooltip rather than wrapping.
             if let rollup = nativeSubagentRollup(store.subagents) {
-                Text(rollup)
+                Text(wide ? rollup : "\(store.subagents.count) subagent\(store.subagents.count == 1 ? "" : "s")")
                     .font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
-                    .lineLimit(wide ? 1 : 2).fixedSize(horizontal: wide, vertical: true)
-                    .frame(maxWidth: wide ? nil : 96, alignment: .trailing)
-                    .multilineTextAlignment(.trailing)
+                    .lineLimit(1).fixedSize()
+                    .help(rollup)
                     .accessibilityLabel(rollup)
             }
             // Context size comes from pi's session stats (RPC agents only); the terminal bridge has none.
@@ -711,8 +710,6 @@ struct NativeAgentTurn: View {
     /// Timestamp (ms) of the user message that opened this turn; the footer's time and duration.
     var startedAt: Double? = nil
 
-    @State private var hovering = false
-
     var body: some View {
         let items = nativeTurnItems(messages)
         let streaming = running && messages.contains { $0.status == "streaming" || $0.status == "running" }
@@ -725,8 +722,19 @@ struct NativeAgentTurn: View {
                 case .prose(let text):
                     NativeProse(text: text)
                 case .tools(let group):
+                    // Groups get extra air so they read as blocks between paragraphs, not glued to them.
                     NativeToolGroup(messages: group, clock: clock, showTerminal: showTerminal,
                                     subagents: subagents, subagentActions: subagentActions)
+                        .padding(.vertical, 6)
+                case .error(let text, let count):
+                    // A failed request is a status line, not prose: pi retries and the next reply follows.
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle").font(.system(size: 10, weight: .semibold))
+                        Text("Request failed · \(text)").lineLimit(1).truncationMode(.tail)
+                        if count > 1 { Text("×\(count)").monospacedDigit().foregroundStyle(NativeTokens.textMuted) }
+                    }
+                    .font(NativeFonts.caption).foregroundStyle(NativeTokens.dangerText)
+                    .help(text)
                 case .note(let text):
                     HStack(spacing: 8) {
                         Text(text).font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
@@ -740,35 +748,16 @@ struct NativeAgentTurn: View {
                subagents.byToolCall.isEmpty || !nativeSubagentGroupFolds(subagents) {
                 NativeSubagentStack(runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing, clock: clock, actions: subagentActions)
             }
-            if !streaming {
+            if !streaming, !items.isEmpty {
                 // Spawn rows the cards replaced are not tool calls the reader can see.
                 NativeTurnFooter(messages: messages.filter { $0.toolCallID.map { subagents.byToolCall[$0] == nil } ?? true },
                                  startedAt: startedAt, subagents: subagents.all, inspect: subagentActions?.inspect)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        // bb MessageActionBar: a ghost Copy at the turn's top-right on hover, completed turns only (F10).
-        .overlay(alignment: .topTrailing) {
-            if hovering, !streaming, !prose.isEmpty {
-                Button { copy() } label: { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(NativeGhostIconStyle(size: 24))
-                    .help("Copy this reply as Markdown")
-                    .accessibilityLabel("Copy reply")
-            }
-        }
-        .onHover { hovering = $0 }
+        // Copy lives in the footer; a hover copy at the top-right collided with tool-row chevrons.
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Agent")
-    }
-
-    private var prose: String {
-        messages.filter { $0.toolName == nil && $0.role != "toolResult" }
-            .flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n\n")
-    }
-
-    private func copy() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(prose, forType: .string)
     }
 }
 
@@ -821,13 +810,15 @@ struct NativeTurnFooter: View {
         let time = nativeTurnTimeText(startedAt: startedAt, endedAt: messages.compactMap(\.timestamp).max())
         let ordered = subagents.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
         HStack(spacing: 4) {
-            Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(prose.joined(separator: "\n\n"), forType: .string)
-            } label: { Image(systemName: "doc.on.doc") }
-            .buttonStyle(NativeGhostIconStyle())
-            .help("Copy the agent’s reply")
-            .accessibilityLabel("Copy reply")
+            if !prose.isEmpty {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(prose.joined(separator: "\n\n"), forType: .string)
+                } label: { Image(systemName: "doc.on.doc") }
+                .buttonStyle(NativeGhostIconStyle())
+                .help("Copy the agent’s reply")
+                .accessibilityLabel("Copy reply")
+            }
             HStack(spacing: 0) {
                 if let time { Text(time).monospacedDigit() }
                 if tools > 0 {
@@ -952,10 +943,9 @@ struct NativeToolGroup: View {
     var subagentActions: NativeSubagentActions? = nil
 
     var body: some View {
-        // 40pt fits pi's builtins (read/edit/bash/grep); longer extension tool names widen the
-        // column for the whole group, capped so a silly name cannot eat the preview.
-        let longest = messages.compactMap(\.toolName).map(\.count).max() ?? 4
-        let nameWidth = min(120, max(40, CGFloat(longest) * 7.6 + 4))
+        // One fixed column for every group so previews line up down the whole thread; it fits
+        // "subagent"/"websearch", longer names truncate in the middle (full name on hover).
+        let nameWidth = 72 * CGFloat(AppSettings.shared.uiTextScale)
         let segments = subagentActions == nil ? [NativeToolSegment.rows(messages)] : nativeToolSegments(messages, placement: subagents)
         VStack(alignment: .leading, spacing: NativeMetrics.blockSpacing) {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
@@ -1011,6 +1001,7 @@ struct NativeToolRowView: View {
                     // lumen_review); anything longer truncates rather than pushing the preview.
                     Text(row.name).font(NativeFonts.code).foregroundStyle(NativeTokens.textTertiary)
                         .frame(width: nameColumnWidth, alignment: .leading).lineLimit(1).truncationMode(.middle)
+                        .help(row.name)
                     (Text(row.preview).foregroundStyle(NativeTokens.text) + Text(row.previewSuffix ?? "").foregroundStyle(NativeTokens.textMuted))
                         .font(NativeFonts.code).lineLimit(1).truncationMode(.tail)
                     Spacer(minLength: 8)

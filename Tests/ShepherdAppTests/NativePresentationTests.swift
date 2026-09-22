@@ -4,7 +4,7 @@ import Testing
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
-import ShepherdSessions
+@testable import ShepherdSessions
 @testable import ShepherdApp
 @testable import TerminalSurfaceKit
 
@@ -296,6 +296,30 @@ struct NativePresentationTests {
         let text = try? #require(nativeTurnTimeText(startedAt: start, endedAt: start + (45 * 60 + 12) * 1000))
         #expect(text?.hasSuffix(" · 45m 12s") == true)
         #expect(nativeTurnTimeText(startedAt: start, endedAt: nil) == nativeClockText(start))
+        // A sub-second turn shows only its clock time, not "0s".
+        #expect(nativeTurnTimeText(startedAt: start, endedAt: start + 400) == nativeClockText(start))
+    }
+
+    /// Real sessions carry pi system entries, blank assistant messages, and repeated provider
+    /// failures; none of them should become prose.
+    @Test func realSessionNoiseIsDroppedOrFolded() {
+        let user = message(["entryID": "u", "role": "user", "blocks": [["kind": "text", "text": "go"]]])
+        let system = message(["entryID": "s", "role": "system", "blocks": [["kind": "text", "text": ""]]])
+        let blank = message(["entryID": "b", "role": "assistant", "blocks": []])
+        let failed = { (id: String) in message(["entryID": id, "role": "assistant", "status": "error", "blocks": [["kind": "text", "text": "503 no available server"]]]) }
+        let reply = message(["entryID": "r", "role": "assistant", "blocks": [["kind": "text", "text": "Done."]]])
+        let turns = nativeTurns([system, user, blank, failed("e1"), failed("e2"), reply])
+        #expect(turns.map(\.isUser) == [true, false])
+        #expect(nativeTurnItems(turns[1].messages) == [.error("503 no available server", count: 2), .prose("Done.")])
+        // An empty user message still opens a turn.
+        #expect(nativeTurns([message(["entryID": "u0", "role": "user", "blocks": []]), reply]).count == 2)
+    }
+
+    @Test func subagentToolPreviewNamesTheAgentNotTheLaunchBoilerplate() {
+        let boiler = "Run fan-out: 0/32 used, 32 remaining\nAsync workflow [x]"
+        #expect(NativeToolRow(tool("subagent", args: #"{"agent":"delegate","task":"Say hello\nmore"}"#, output: boiler)).preview == "delegate · Say hello")
+        #expect(NativeToolRow(tool("subagent", args: #"{"workflowScript":"return 1"}"#, output: boiler)).preview == "workflow")
+        #expect(NativeToolRow(tool("subagent", args: #"{"action":"status"}"#, output: boiler)).preview == "status")
     }
 
     @Test func siblingsStepInSpawnOrderWithinTheGroup() {
@@ -808,6 +832,36 @@ struct NativePresentationTests {
         try await waitFor { store.ready && requests.count > stoppedCount }
         #expect(requests.last == .snapshot())
         #expect(store.draft == "draft stays native")
+    }
+
+    /// Renders a real pi session (SHEPHERD_REAL_SESSION=<jsonl>) through the native projection so
+    /// the visual pass sees real output, not fixtures. Skipped when the env var is unset.
+    @Test func realSessionRenders() async throws {
+        let env = ProcessInfo.processInfo.environment
+        guard let file = env["SHEPHERD_REAL_SESSION"] else { return }
+        guard case .transcript(let page) = RPCThreadState.transcript(runID: "real", file: file, beforeEntryID: nil) else {
+            Issue.record("unreadable session \(file)"); return
+        }
+        let snapshot = NativeThreadSnapshot(piSessionID: "real", generation: "g", revision: 1, running: false,
+                                            supportedActions: ["send", "abort", "answer"], dialogsSupported: true, dialogs: [],
+                                            messages: page.messages, provisional: [], clipped: false)
+        let store = NativeThreadStore()
+        let request: NativeThreadStore.Request = { _ in .snapshot(value: snapshot) }
+        _ = NSApplication.shared
+        let width = env["SHEPHERD_NATIVE_SCREENSHOT_WIDTH"].flatMap(Double.init) ?? 1500
+        let height = env["SHEPHERD_NATIVE_SCREENSHOT_HEIGHT"].flatMap(Double.init) ?? 1300
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: VStack(spacing: 0) {
+            NativeThreadHeader(store: store, project: "Shepherd", title: "Real session", native: .constant(true), showTerminal: {})
+            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: {})
+        }.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await waitFor { store.ready }
+        try await Task.sleep(for: .milliseconds(400))
+        window.layoutIfNeeded()
+        try capture(host, name: "real-session")
     }
 
     /// The board's thread (docs/design-spec/subagents-with-inspector.png): a user turn, the

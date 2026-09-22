@@ -129,23 +129,20 @@ struct NativeSubagentInspector: View {
         let state = run.map(nativeSubagentState) ?? .done
         let siblings = siblings
         let position = siblings.firstIndex { $0.runID == runID }
-        return HStack(alignment: .top, spacing: 8) {
-            NativeBranchGlyph(color: nativeSubagentColor(state)).padding(.top, 2)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(role).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1)
-                    if let position, siblings.count > 1 {
-                        Text("· \(position + 1) of \(siblings.count)").font(NativeFonts.label).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
-                    }
+        // Two rows: identity + controls, then the metadata across the full panel width so it
+        // is not squeezed between the role and the buttons.
+        return VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 8) {
+            NativeBranchGlyph(color: nativeSubagentColor(state))
+            HStack(spacing: 6) {
+                Text(role).font(NativeFonts.label).foregroundStyle(NativeTokens.text).lineLimit(1)
+                if let position, siblings.count > 1 {
+                    Text("· \(position + 1) of \(siblings.count)").font(NativeFonts.label).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
                 }
-                HStack(spacing: 0) {
-                    Text(meta).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).lineLimit(1).truncationMode(.tail)
-                    if let run, run.isTerminal {
-                        Text(meta.isEmpty ? "" : " · ").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
-                        Text(stateWord(run)).font(NativeFonts.micro).foregroundStyle(state == .done ? NativeTokens.successText : NativeTokens.dangerText)
-                        if let ended = run.endedAt {
-                            Text(" \(nativeClockText(ended, meridiem: false))").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
-                        }
+                if let run, run.isTerminal {
+                    Text(stateWord(run)).font(NativeFonts.micro).foregroundStyle(state == .done ? NativeTokens.successText : NativeTokens.dangerText)
+                    if let ended = run.endedAt {
+                        Text(nativeClockText(ended, meridiem: false)).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).monospacedDigit()
                     }
                 }
             }
@@ -210,8 +207,14 @@ struct NativeSubagentInspector: View {
                 .accessibilityLabel("Close inspector")
             }
         }
+        if !meta.isEmpty {
+            Text(meta).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).lineLimit(1).truncationMode(.tail)
+                .padding(.leading, 22).help(meta)
+        }
+        }
         .padding(.horizontal, NativeMetrics.subagentCardPadding)
-        .frame(height: NativeMetrics.inspectorHeaderHeight)
+        .padding(.vertical, 10)
+        .frame(minHeight: NativeMetrics.inspectorHeaderHeight)
         .frame(maxWidth: .infinity)
     }
 

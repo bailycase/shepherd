@@ -105,8 +105,9 @@ struct NativeScrollTests {
         try await f.layout()
         try await Task.sleep(for: .milliseconds(300))
         try await f.layout()
-        // Opens pinned to the tail.
-        #expect(f.distanceFromBottom < 2, "expected to open at the bottom, distance \(f.distanceFromBottom)")
+        // Opens pinned to the tail, within the follower's own "at the bottom" threshold (text layout
+        // at some column widths lands a fractional point off).
+        #expect(f.distanceFromBottom <= NativeScrollFollower.threshold, "expected to open at the bottom, distance \(f.distanceFromBottom)")
         // No trailing space: the document ends where the last turn ends (the composer is a
         // safe-area inset on the scroll view, not padding inside the content).
         let document = f.scrollView.documentView!
