@@ -437,6 +437,111 @@ public func nativeRunsStripSummary(_ runs: [ChildRun], now: Date) -> NativeRunsS
                                   totals: totals.joined(separator: " · "), cells: states)
 }
 
+// MARK: Completed spawn group (the ledger card)
+
+/// The ledger replaces the per-run cards once every run in a turn's group is terminal.
+public struct NativeSubagentLedger: Equatable, Sendable {
+    public struct Row: Equatable, Sendable {
+        public var run: ChildRun
+        public var state: NativeSubagentState
+        /// First sentence of the child's final output, tail-truncated to `summaryLimit`.
+        public var summary: String
+        /// "5 files · 118 tools · 41m" (zero/absent parts omitted).
+        public var meta: String
+        public init(run: ChildRun, state: NativeSubagentState, summary: String, meta: String) {
+            self.run = run; self.state = state; self.summary = summary; self.meta = meta
+        }
+    }
+    public static let summaryLimit = 72
+    public var rows: [Row]
+    /// "3 subagents"
+    public var title: String
+    /// "all done · 45m wall · 1.5m tok" or "2 done · 1 failed · 45m wall · 1.5m tok".
+    public var status: String
+    public var added: Int
+    public var removed: Int
+    public var files: Int
+    public init(rows: [Row], title: String, status: String, added: Int, removed: Int, files: Int) {
+        self.rows = rows; self.title = title; self.status = status; self.added = added; self.removed = removed; self.files = files
+    }
+    /// "+318 −64 · 7 files" right slot (nil when the group touched nothing).
+    public var diffText: String? { files > 0 ? "\(files) file\(files == 1 ? "" : "s")" : nil }
+}
+
+/// True when a spawn group has finished: every run terminal and none still asking.
+public func nativeSubagentGroupIsTerminal(_ runs: [ChildRun]) -> Bool {
+    !runs.isEmpty && runs.allSatisfy { $0.isTerminal && !$0.needsAttention }
+}
+
+/// First sentence of `text`, tail-truncated with an ellipsis at `limit` characters.
+public func nativeFirstSentence(_ text: String, limit: Int = NativeSubagentLedger.summaryLimit) -> String {
+    let flat = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    var sentence = Substring(flat)
+    var cursor = flat.startIndex
+    while let end = flat[cursor...].firstIndex(where: { ".!?".contains($0) }) {
+        let after = flat.index(after: end)
+        // "v1.2 shipped." ends at the second period: punctuation must precede a space or the end.
+        if after == flat.endIndex || flat[after].isWhitespace { sentence = flat[...end]; break }
+        cursor = after
+    }
+    guard sentence.count > limit else { return String(sentence) }
+    return String(sentence.prefix(limit - 1)).trimmingCharacters(in: .whitespaces) + "…"
+}
+
+public func nativeSubagentLedger(_ runs: [ChildRun]) -> NativeSubagentLedger {
+    let ordered = runs.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
+    let rows = ordered.map { run -> NativeSubagentLedger.Row in
+        let state = nativeSubagentState(run)
+        let summary: String
+        switch state {
+        case .failed: summary = run.exitReason ?? run.state
+        default: summary = nativeFirstSentence(run.summary ?? run.output ?? "")
+        }
+        var meta: [String] = []
+        if let files = run.result?.files, files > 0 { meta.append("\(files) file\(files == 1 ? "" : "s")") }
+        if let tools = run.toolCalls, tools > 0 { meta.append("\(tools) tool\(tools == 1 ? "" : "s")") }
+        if let seconds = nativeSubagentElapsed(run, now: Date()) { meta.append(nativeSubagentShortDuration(seconds)) }
+        return NativeSubagentLedger.Row(run: run, state: state, summary: summary, meta: meta.joined(separator: " · "))
+    }
+    let failed = rows.count { $0.state == .failed }
+    var status: [String] = failed == 0 ? ["all done"] : ["\(rows.count - failed) done", "\(failed) failed"]
+    if let first = ordered.compactMap(\.startedAt).min(), let last = ordered.compactMap(\.endedAt).max(), last >= first {
+        status.append(nativeSubagentShortDuration((last - first) / 1000) + " wall")
+    }
+    let tokens = ordered.compactMap(\.tokens).reduce(0, +)
+    if tokens > 0 { status.append("\(nativeCompactTokens(tokens)) tok") }
+    let files = ordered.flatMap { $0.files ?? [] }
+    return NativeSubagentLedger(rows: rows, title: "\(rows.count) subagent\(rows.count == 1 ? "" : "s")", status: status.joined(separator: " · "),
+                                added: ordered.compactMap { $0.result?.added }.reduce(0, +), removed: ordered.compactMap { $0.result?.removed }.reduce(0, +),
+                                files: Set(files.map(\.path)).count)
+}
+
+/// Sibling runs of `runID` in spawn order (the group that shares its spawn turn, else all),
+/// for the inspector's ‹ › stepping and "3 of 3".
+public func nativeSubagentSiblings(of runID: String, in subagents: [ChildRun], turns: [NativeTurn]) -> [ChildRun] {
+    let placements = nativeSubagentPlacements(subagents, turns: turns)
+    let group = placements.values.first { $0.all.contains { $0.runID == runID } }?.all ?? subagents
+    return group.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
+}
+
+/// "11:09 AM" from milliseconds since epoch.
+public func nativeClockText(_ milliseconds: Double, timeZone: TimeZone = .current) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = timeZone
+    formatter.dateFormat = "h:mm a"
+    return formatter.string(from: Date(timeIntervalSince1970: milliseconds / 1000))
+}
+
+/// Turn footer time slot: "11:09 AM · 45m 12s" from the user message that opened the turn
+/// to the turn's last message. nil when pi gave no timestamps.
+public func nativeTurnTimeText(startedAt: Double?, endedAt: Double?) -> String? {
+    guard let startedAt else { return nil }
+    var parts = [nativeClockText(startedAt)]
+    if let endedAt, endedAt >= startedAt { parts.append(nativeDurationText((endedAt - startedAt) / 1000, live: true)) }
+    return parts.joined(separator: " · ")
+}
+
 /// Header rollup: "3 subagents · 1.6m tok" and the pill override "1 subagent needs you".
 public func nativeSubagentRollup(_ runs: [ChildRun]) -> String? {
     guard !runs.isEmpty else { return nil }

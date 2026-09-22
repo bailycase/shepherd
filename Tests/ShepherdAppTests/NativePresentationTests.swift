@@ -216,6 +216,101 @@ struct NativePresentationTests {
         #expect(nativeSubagentRunningLabel([board[2]], now: Self.boardNow) == nil)
     }
 
+    /// The completed group on the board: worker / reviewer / tests, all done, 45m wall.
+    private static var doneRuns: [ChildRun] {
+        let t0 = boardNow.timeIntervalSince1970 * 1000 - 45 * 60_000
+        return [
+            ChildRun(runID: "native-worker", label: "worker: restyle", state: "complete", startedAt: t0, endedAt: t0 + 41 * 60_000, role: "worker",
+                     model: "anthropic/claude-fable-5-1", context: "background", turns: 78, toolCalls: 118, tokens: 922_000,
+                     result: ChildResultSummary(files: 5, added: 200, removed: 60, tools: 118, tokens: 922_000), toolCallID: "spawn-worker",
+                     task: "Restyle desktop native thread view and iOS app to match the spec.",
+                     output: "Restyled desktop thread, sidebar, composer and iOS to the spec; system fonts at spec sizes throughout. Nothing else touched.",
+                     files: [ChildFileChange(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", added: 120, removed: 40),
+                             ChildFileChange(path: "Sources/ShepherdApp/SidebarView.swift", added: 30, removed: 10),
+                             ChildFileChange(path: "Sources/ShepherdApp/DesktopNativeComposer.swift", added: 20, removed: 5),
+                             ChildFileChange(path: "App/iOS/ThreadView.swift", added: 25, removed: 5),
+                             ChildFileChange(path: "Sources/ShepherdApp/DesignTokens.swift", added: 5, removed: 0)],
+                     summary: "Restyled desktop thread, sidebar, composer and iOS to the spec; system fonts at spec sizes throughout. Nothing else touched.",
+                     sessionID: "child-worker", cwd: "/tmp"),
+            ChildRun(runID: "native-reviewer", label: "reviewer: check", state: "complete", startedAt: t0 + 60_000, endedAt: t0 + 13 * 60_000, role: "reviewer",
+                     model: "anthropic/claude-opus", context: "async", turns: 6, toolCalls: 24, tokens: 460_000,
+                     result: ChildResultSummary(files: 0, added: 0, removed: 0, tools: 24, tokens: 460_000), toolCallID: "spawn-reviewer",
+                     task: "Check each step against the spec.", output: "Two token collisions fixed by renaming; everything else matches the spec.",
+                     summary: "Two token collisions fixed by renaming; everything else matches the spec.", sessionID: "child-reviewer", cwd: "/tmp"),
+            ChildRun(runID: "native-tests", label: "tests: run", state: "complete", startedAt: t0 + 41 * 60_000, endedAt: t0 + 45 * 60_000 + 2000, role: "tests",
+                     model: "anthropic/claude-sonnet", context: "async", turns: 11, toolCalls: 19, tokens: 118_000,
+                     result: ChildResultSummary(files: 2, added: 118, removed: 4, tools: 19, tokens: 118_000), toolCallID: "spawn-tests",
+                     task: "Add presentation tests for the restyle and run the suites on macOS and iOS.",
+                     output: "Added 6 presentation tests (preview text per tool kind, DiffStat, duration formatting). All 14 pass on macOS and iOS simulators.",
+                     files: [ChildFileChange(path: "Tests/ShepherdAppTests/NativePresentationTests.swift", added: 96, removed: 3),
+                             ChildFileChange(path: "Tests/ShepherdIOSChecks/ThreadStoreCheck.swift", added: 22, removed: 1)],
+                     summary: "Added 6 presentation tests (preview text per tool kind, DiffStat, duration formatting). All 14 pass on macOS and iOS simulators.",
+                     sessionID: "child-tests", cwd: "/tmp"),
+        ]
+    }
+
+    @Test func ledgerSummarizesACompletedGroup() {
+        let runs = Self.doneRuns
+        #expect(nativeSubagentGroupIsTerminal(runs))
+        #expect(!nativeSubagentGroupIsTerminal(Self.boardRuns))
+        #expect(!nativeSubagentGroupIsTerminal([]))
+        var asking = runs[0]; asking.needsAttention = true
+        #expect(!nativeSubagentGroupIsTerminal([asking]))
+
+        let ledger = nativeSubagentLedger(runs.shuffled())
+        #expect(ledger.title == "3 subagents")
+        #expect(ledger.status == "all done · 45m wall · 1.5m tok")
+        #expect(ledger.added == 318 && ledger.removed == 64 && ledger.files == 7 && ledger.diffText == "7 files")
+        // Rows follow spawn order; the summary is the first sentence, tail-truncated.
+        #expect(ledger.rows.map { $0.run.role } == ["worker", "reviewer", "tests"])
+        #expect(ledger.rows[0].summary == "Restyled desktop thread, sidebar, composer and iOS to the spec; system…")
+        #expect(ledger.rows[2].summary == "Added 6 presentation tests (preview text per tool kind, DiffStat, durat…")
+        #expect(ledger.rows[1].summary == "Two token collisions fixed by renaming; everything else matches the spe…")
+        #expect(ledger.rows.allSatisfy { $0.summary.count <= NativeSubagentLedger.summaryLimit })
+        #expect(ledger.rows.map(\.meta) == ["5 files · 118 tools · 41m", "24 tools · 12m", "2 files · 19 tools · 4m"])
+        #expect(ledger.rows.map(\.state) == [.done, .done, .done])
+
+        // A failed sibling changes the header and the row's summary is its exit reason.
+        var failed = runs[2]; failed.state = "failed"; failed.exitReason = "exit 1 · context limit reached"; failed.result = nil; failed.files = nil
+        let mixed = nativeSubagentLedger([runs[0], runs[1], failed])
+        #expect(mixed.status == "2 done · 1 failed · 45m wall · 1.5m tok")
+        #expect(mixed.rows[2].state == .failed && mixed.rows[2].summary == "exit 1 · context limit reached")
+        #expect(mixed.added == 200 && mixed.files == 5)
+        // Nothing touched: no diff slot; no timing: no wall.
+        let bare = nativeSubagentLedger([ChildRun(runID: "x", label: "docs", state: "complete")])
+        #expect(bare.status == "all done" && bare.diffText == nil && bare.rows[0].meta == "" && bare.rows[0].summary == "")
+    }
+
+    @Test func firstSentenceAndTurnTimes() {
+        #expect(nativeFirstSentence("One. Two.") == "One.")
+        #expect(nativeFirstSentence("v1.2 shipped today. Next.") == "v1.2 shipped today.")
+        #expect(nativeFirstSentence("no  end\nhere") == "no end here")
+        #expect(nativeFirstSentence(String(repeating: "a", count: 100), limit: 10) == "aaaaaaaaa…")
+        #expect(nativeFirstSentence("") == "")
+        let utc = TimeZone(identifier: "UTC")!
+        #expect(nativeClockText(1_758_539_340_000, timeZone: utc) == "11:09 AM")
+        #expect(nativeTurnTimeText(startedAt: nil, endedAt: 5) == nil)
+        let start = Date().timeIntervalSince1970 * 1000
+        let text = try? #require(nativeTurnTimeText(startedAt: start, endedAt: start + (45 * 60 + 12) * 1000))
+        #expect(text?.hasSuffix(" · 45m 12s") == true)
+        #expect(nativeTurnTimeText(startedAt: start, endedAt: nil) == nativeClockText(start))
+    }
+
+    @Test func siblingsStepInSpawnOrderWithinTheGroup() {
+        let runs = Self.doneRuns
+        let spawn = { (id: String) -> NativeThreadMessage in
+            NativeThreadMessage(entryID: "t-\(id)", role: "toolResult", blocks: [], toolName: "shepherd_child_start", toolCallID: id, status: "complete")
+        }
+        let user = message(["entryID": "u", "role": "user", "blocks": []])
+        let other = ChildRun(runID: "native-other", label: "docs", state: "complete", startedAt: 0, toolCallID: "spawn-other")
+        let turns = nativeTurns([user, spawn("spawn-other"), user, spawn("spawn-tests"), spawn("spawn-worker"), spawn("spawn-reviewer")])
+        let siblings = nativeSubagentSiblings(of: "native-tests", in: runs.reversed() + [other], turns: turns)
+        #expect(siblings.map(\.runID) == ["native-worker", "native-reviewer", "native-tests"])
+        #expect(nativeSubagentSiblings(of: "native-other", in: runs + [other], turns: turns).map(\.runID) == ["native-other"])
+        // With no spawn rows loaded every run is a sibling, still in spawn order.
+        #expect(nativeSubagentSiblings(of: "native-tests", in: runs.reversed(), turns: []).map(\.runID) == ["native-worker", "native-reviewer", "native-tests"])
+    }
+
     @Test func subagentsSitAtTheirSpawnCallOrTrailTheLastTurn() {
         let spawnA = tool("shepherd_child_start", args: #"{"task":"a"}"#, output: "{}")
         let spawnB = tool("shepherd_child_start", args: #"{"task":"b"}"#, output: "{}")
@@ -250,6 +345,14 @@ struct NativePresentationTests {
         let folded = nativeToolSegments([read] + rows + [read], placement: many)
         #expect(folded.count == 3)
         if case .subagents(let runs) = folded[1] { #expect(runs.count == 5) } else { Issue.record("expected one strip segment") }
+        // A finished group of any size folds the same way, into the ledger at the first spawn row.
+        var done = NativeSubagentPlacement()
+        for run in Self.doneRuns { done.byToolCall[run.toolCallID!] = [run] }
+        let spawns = ["spawn-worker", "spawn-reviewer", "spawn-tests"].map { id -> NativeThreadMessage in var s = spawnA; s.toolCallID = id; return s }
+        #expect(nativeSubagentGroupFolds(done) && !nativeSubagentGroupFolds(placements[turns[1].id]!))
+        let ledger = nativeToolSegments(spawns + [read], placement: done)
+        #expect(ledger.count == 2)
+        if case .subagents(let runs) = ledger[0] { #expect(runs.count == 3) } else { Issue.record("expected one ledger segment") }
     }
 
     @Test func sparsePreferencesAndAgentDraftsSurviveToggles() throws {
@@ -761,6 +864,50 @@ struct NativePresentationTests {
         let placements = nativeSubagentPlacements(store.subagents, turns: nativeTurns(store.displayedMessages))
         #expect(placements.values.first?.byToolCall.keys.sorted() == ["spawn-reviewer", "spawn-tests", "spawn-worker"])
         #expect(inspected.isEmpty)
+    }
+
+    /// The completed board: the same thread once every run is terminal, with pi timestamps so the
+    /// footer reads "11:09 AM · 45m 12s · 3 subagents" and the ledger replaces the cards.
+    private static func doneSnapshot() -> NativeThreadSnapshot {
+        var snapshot = subagentSnapshot(running: false)
+        let end = Date().timeIntervalSince1970 * 1000
+        let start = end - (45 * 60 + 12) * 1000
+        snapshot.messages[0].timestamp = start
+        for index in 1..<snapshot.messages.count { snapshot.messages[index].timestamp = start + Double(index) * 1000 }
+        snapshot.messages[snapshot.messages.count - 1].timestamp = end
+        snapshot.messages[snapshot.messages.count - 1].blocks = [NativeThreadBlock(kind: .text, text: "All three handed off. Integrated the restyle; the suites are green on both platforms.")]
+        let shift = end - boardNow.timeIntervalSince1970 * 1000
+        snapshot.subagents = doneRuns.map { run in
+            var run = run
+            run.startedAt = run.startedAt.map { $0 + shift }
+            run.endedAt = run.endedAt.map { $0 + shift }
+            return run
+        }
+        return snapshot
+    }
+
+    /// Screenshot-only: the completed group as a ledger card with the turn footer beneath it.
+    @Test func subagentLedgerRendersTheBoard() async throws {
+        guard ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_DIR"] != nil else { return }
+        let store = NativeThreadStore()
+        let snapshot = Self.doneSnapshot()
+        let request: NativeThreadStore.Request = { _ in .snapshot(value: snapshot) }
+        let content = VStack(spacing: 0) {
+            NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities", native: .constant(true), showTerminal: nil)
+            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: nil,
+                                    agentName: "Investigate", inspectSubagent: { _ in }, inspectedRunID: "native-tests")
+        }
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 770, height: 760), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await waitFor { store.ready }
+        try await Task.sleep(for: .milliseconds(400))
+        window.layoutIfNeeded()
+        try capture(host, name: "subagents-done")
+        #expect(nativeSubagentGroupIsTerminal(store.subagents))
     }
 
     /// Screenshot-only: the thread with the worker open in the side-panel inspector, its

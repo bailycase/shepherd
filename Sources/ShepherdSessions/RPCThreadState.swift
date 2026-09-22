@@ -713,6 +713,7 @@ final class RPCThreadState {
         }
         if let isError = message.isError { result.isError = isError }
         if let stop = message.stopReason, !stop.isEmpty { result.status = clip(stop) }
+        result.timestamp = message.timestamp
         result.truncated = truncated
         return result
     }

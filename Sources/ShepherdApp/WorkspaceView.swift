@@ -329,7 +329,8 @@ struct PaneLeafView: View {
                         isFocused: focused && inspecting == nil,
                         request: { try await vm.server.nativeThread(agentID: agent.id, request: $0) },
                         agentName: agent.name,
-                        inspectSubagent: { vm.toggleSubagentInspector(agentID: agent.id, runID: $0.runID) }
+                        inspectSubagent: { vm.toggleSubagentInspector(agentID: agent.id, runID: $0.runID) },
+                        inspectedRunID: inspecting
                     )
                 } inspector: {
                     if let inspecting {
@@ -401,12 +402,13 @@ struct RPCAgentPane: View {
     let request: NativeThreadStore.Request
     let agentName: String
     var inspectSubagent: ((ChildRun) -> Void)? = nil
+    var inspectedRunID: String? = nil
 
     var body: some View {
         switch session.phase {
         case .connecting, .live:
             DesktopNativeThreadView(store: store, active: active, isFocused: isFocused, request: request,
-                                    showTerminal: nil, agentName: agentName, inspectSubagent: inspectSubagent)
+                                    showTerminal: nil, agentName: agentName, inspectSubagent: inspectSubagent, inspectedRunID: inspectedRunID)
         case .failed(let reason):
             PanePlaceholder(text: "session unavailable · \(reason)")
         case .exited(let code):
