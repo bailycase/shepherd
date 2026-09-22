@@ -102,7 +102,7 @@ function fixtureServer() {
       const command = text.slice(text.indexOf("SHELL:") + 6);
       say({ tool_calls: [{ index: 0, id: "shell-call", type: "function", function: { name: "bash", arguments: JSON.stringify({ command }) } }] }, "tool_calls");
     } else if (last.role === "user" && text.includes("ASK_PARENT")) {
-      say({ tool_calls: [{ index: 0, id: "parent-call", type: "function", function: { name: "shepherd_parent_message", arguments: JSON.stringify({ message: "Need a decision", needsReply: true }) } }] }, "tool_calls");
+      say({ tool_calls: [{ index: 0, id: "parent-call", type: "function", function: { name: "shepherd_parent_message", arguments: JSON.stringify({ message: "Need a decision", needsReply: true, options: ["Replace everywhere", "Rename new ones"] }) } }] }, "tool_calls");
     } else {
       if (text.includes("SLOW")) await sleep(700);
       say({ content: last.role === "tool" ? "tool finished" : `reply:${text}` }, text.includes("TOKEN_LIMIT") ? "length" : "stop");
@@ -131,6 +131,19 @@ async function harness(dir, entries = []) {
     tool: async (name, p, signal) => (await tools.get(name).execute("call", p, signal, undefined, ctx)).details,
     shutdown: () => events.get("session_shutdown")() };
 }
+
+test("card helpers: tool preview follows the desktop rule and edit diffs cancel moved lines", () => {
+  assert.equal(mod.toolPreview({ path: "Sources/A.swift", offset: 1 }, "ignored"), "Sources/A.swift");
+  assert.equal(mod.toolPreview({ command: "swift build\necho done" }), "swift build");
+  assert.equal(mod.toolPreview({ pattern: "needle" }), "needle");
+  assert.equal(mod.toolPreview({}, "\n\nfirst useful line\nsecond"), "first useful line");
+  assert.equal(mod.toolPreview(undefined, ""), undefined);
+  assert.equal(mod.toolPreview({ path: "x".repeat(300) }).length, 120);
+  assert.deepEqual(mod.editDiff({ oldText: "a\nb", newText: "b\na" }), { added: 0, removed: 0 });
+  assert.deepEqual(mod.editDiff({ edits: [{ oldText: "a", newText: "a\nb\nc" }, { oldText: "x\ny", newText: "" }] }), { added: 2, removed: 2 });
+  assert.deepEqual(mod.editDiff({ oldText: "one\ntwo\nthree", newText: "one\n2\nthree\nfour" }), { added: 2, removed: 1 });
+  assert.equal(mod.editDiff({ command: "ls" }), undefined);
+});
 
 test("merged sidebar projection prioritizes active native and legacy runs before terminal attention and history", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-merge-"));
@@ -192,9 +205,26 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
   // Ambient extension must never execute in children.
   fs.mkdirSync(path.join(process.env.PI_CODING_AGENT_DIR, "extensions"));
   fs.writeFileSync(path.join(process.env.PI_CODING_AGENT_DIR, "extensions", "poison.ts"), `throw new Error("ambient discovery escaped");`);
+  // Stand-in for Shepherd's extension socket: accepts the children control channel (helloChildren)
+  // and lets the test drive childCommand frames the way the native thread cards do.
+  const control = { sockets: [], frames: [] };
+  const controlServer = net.createServer((socket) => {
+    socket.on("data", mod.jsonLines((frame) => { control.frames.push(frame); if (frame.type === "helloChildren") control.sockets.push(socket); }, () => {}));
+    socket.on("error", () => {});
+  });
+  await new Promise((r) => controlServer.listen(process.env.SHEPHERD_SOCKET, r));
+  let controlSequence = 0;
+  const childCommand = async (fields) => {
+    const id = ++controlSequence;
+    control.sockets.at(-1).write(JSON.stringify({ type: "childCommand", id, ...fields }) + "\n");
+    await until(() => control.frames.some((f) => f.type === "childCommandResult" && f.id === id));
+    return control.frames.find((f) => f.type === "childCommandResult" && f.id === id);
+  };
   let h;
   try {
     h = await harness(dir);
+    await until(() => control.sockets.length === 1);
+    assert.equal(control.frames[0].agentID, "fixture");
     h.ctx.mode = "rpc"; h.ctx.hasUI = true; h.ctx.ui = { notify() {}, confirm: async () => false };
     assert(h.commands.has("run"));
     await h.commands.get("run").handler("scout slash foreground --fork", h.ctx);
@@ -214,6 +244,14 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.notEqual(pair[0].id, pair[1].id);
     const done = await h.call("wait", { ids: pair.map((r) => r.id), all: true, timeoutSeconds: 30 });
     assert.deepEqual(done.map((r) => r.state), ["complete", "complete"], JSON.stringify(done));
+    // Card projection for a finished background child: counters, summary, spawn call id.
+    const doneCard = h.projections.at(-1).children.find((c) => c.runID === pair[0].id);
+    assert.equal(doneCard.state, "complete"); assert.equal(doneCard.role, "scout"); assert.equal(doneCard.context, "background");
+    assert.equal(doneCard.model, "fixture/fixture"); assert.equal(doneCard.toolCallID, "call"); assert.equal(doneCard.step, undefined);
+    assert.equal(doneCard.turns, 1); assert.equal(doneCard.toolCalls, 0); assert.equal(doneCard.tokens, 2);
+    assert.deepEqual(doneCard.result, { files: 0, added: 0, removed: 0, tools: 0, tokens: 2 });
+    assert.match(doneCard.output, /reply:/); assert.equal(doneCard.task, "SLOW one"); assert.equal(doneCard.sessionFile, pair[0].sessionFile);
+    assert.equal(doneCard.question, undefined); assert.equal(doneCard.exitReason, undefined);
     assert(requests.every((r) => !r.tools?.some((t) => ["bash", "write", "edit", "shepherd_child_start"].includes(t.function.name))));
     assert.equal(h.messages.length, 2); assert(h.messages.every((m) => m.options.triggerTurn && m.options.deliverAs === "followUp"));
     const firstFile = pair[0].sessionFile;
@@ -226,15 +264,31 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const limited = await h.call("start", { task: "TOKEN_LIMIT", role: "scout" });
     const partial = (await h.call("wait", { ids: [limited.id], timeoutSeconds: 30 }))[0];
     assert.equal(partial.state, "failed"); assert.equal(partial.stopReason, "length"); assert.match(partial.error, /Incomplete/);
+    const failedCard = h.projections.at(-1).children.find((c) => c.runID === limited.id);
+    assert.match(failedCard.exitReason, /^Incomplete answer/); assert.equal(failedCard.result, undefined);
     const ask = await h.call("start", { task: "ASK_PARENT", role: "scout" });
     const asked = (await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 }))[0];
     assert(asked.needsReply); assert(h.messages.some((m) => m.message.content.includes("Needs reply")));
+    const askCard = h.projections.at(-1).children.find((c) => c.runID === ask.id);
+    assert.deepEqual(askCard.question, { text: "Need a decision", options: ["Replace everywhere", "Rename new ones"] });
+    assert.equal(askCard.lastActivity.tool, "shepherd_parent_message"); assert.equal(askCard.toolCalls, 1);
+    assert(Number.isFinite(askCard.lastActivity.at));
     await h.shutdown();
     h = await harness(dir, h.entries);
     const restoredQuestion = await h.call("result", { id: ask.id });
     assert.equal(restoredQuestion.needsReply, true); assert.equal(restoredQuestion.stopReason, "stop");
     assert.equal((await h.call("result", { id: limited.id })).stopReason, "length");
     assert(h.projections.at(-1).children.some((c) => c.runID === ask.id && c.needsAttention));
+    assert.deepEqual(h.projections.at(-1).children.find((c) => c.runID === ask.id).question.options, ["Replace everywhere", "Rename new ones"], "question options survive a parent restart");
+    // The control channel reconnects with the new parent; a card answer resumes the settled child.
+    await until(() => control.sockets.length === 2);
+    assert.deepEqual(await childCommand({ runID: ask.id, action: "message", text: "card answer", mode: "steer" }), { type: "childCommandResult", id: 1 });
+    await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 });
+    assert(fs.readFileSync(asked.sessionFile, "utf8").includes("card answer"));
+    assert.equal((await h.call("result", { id: ask.id })).needsReply, false);
+    assert.match((await childCommand({ runID: "native-missing", action: "cancel" })).error, /Unknown child id/);
+    assert.match((await childCommand({ runID: ask.id, action: "message", text: "   " })).error, /Invalid child message/);
+    assert.match((await childCommand({ runID: ask.id, action: "pause" })).error, /Unsupported/);
     let fleet;
     const fleetContext = { ...h.ctx, mode: "tui", hasUI: true, ui: { custom: async (factory) => {
       fleet = factory({ terminal: { rows: 36 }, requestRender() {} }, { fg: (_c, text) => text }, { matches: () => false, getKeys: () => ["esc"] }, () => {});
@@ -265,6 +319,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     fs.rmSync(leaseDir,{recursive:true});
     const shell = await h.call("start", { task: `SHELL:printf '%s' "$SHEPHERD_AGENT_ID:$SHEPHERD_SOCKET:$SHEPHERD_CHILD" > '${dir}/env'; sleep 20`, role: "worker" });
     await until(() => fs.existsSync(path.join(dir, "env"))); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
+    const shellCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
+    assert.equal(shellCard.currentTool, "bash"); assert.equal(shellCard.state, "running");
     const receipt = await fleet.runtime.send(shell.id, "queued message", "followUp"); assert.equal(receipt.mode, "followUp"); assert.match(receipt.delivery, /accepted/);
     const timeout = await h.call("wait", { ids: [shell.id], timeoutSeconds: 0.05 }); assert.equal(timeout[0].state, "running");
     const runDir = path.dirname(shell.sessionFile);
@@ -272,6 +328,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => JSON.parse(fs.readFileSync(path.join(runDir, "status.json"))).controlNotice === "message accepted or queued");
     fs.writeFileSync(path.join(runDir, "control", "stop.json"), JSON.stringify({ id: "stop-fixture", type: "stop" }));
     const cancelled = (await h.call("wait", { ids: [shell.id], timeoutSeconds: 30 }))[0]; assert.equal(cancelled.state, "stopped");
+    const stoppedCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
+    assert.equal(stoppedCard.lastActivity.tool, "bash"); assert.match(stoppedCard.lastActivity.preview, /^printf/); assert.equal(stoppedCard.toolCalls, 1);
     const stopStatus = () => JSON.parse(fs.readFileSync(path.join(runDir, "status.json")));
     await until(() => stopStatus().controlRequestID === "stop-fixture");
     assert.equal(stopStatus().controlNotice, "stop accepted · stopped");
@@ -293,8 +351,16 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await assert.rejects(fleet.runtime.send(ask.id, "cap must reject", "steer"), /Four children are already active; wait or cancel first/);
     fs.writeFileSync(path.join(askDir, "control", "steer-requests", "cap.json"), JSON.stringify({ message: "cap must reject" }));
     await until(() => askStatus().controlRequestID === "cap" && askStatus().controlNotice === "control failed: Four children are already active; wait or cancel first");
-    await Promise.all(busy.map((r) => h.call("cancel", { id: r.id })));
+    // Card Stop goes through the same channel and waits for exit.
+    assert.deepEqual(await childCommand({ runID: busy[0].id, action: "cancel" }), { type: "childCommandResult", id: 5 });
+    assert.equal((await h.call("result", { id: busy[0].id })).state, "stopped");
+    await Promise.all(busy.slice(1).map((r) => h.call("cancel", { id: r.id })));
     for (let i = 0; i < 4; i++) await until(() => !live(Number(fs.readFileSync(path.join(dir, `busy-${i}`)))));
+    // Card Retry resumes with the original task.
+    assert.deepEqual(await childCommand({ runID: limited.id, action: "resume" }), { type: "childCommandResult", id: 6 });
+    await h.call("wait", { ids: [limited.id], timeoutSeconds: 30 });
+    const userTurns = fs.readFileSync(partial.sessionFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.message?.role === "user");
+    assert(userTurns.length >= 2 && JSON.stringify(userTurns.at(-1).message.content).includes("TOKEN_LIMIT"), `resume re-sends the original task: ${JSON.stringify(userTurns.at(-1))}`);
     const priorCatalog = h.ctx.modelRegistry.getAll;
     h.ctx.modelRegistry.getAll = () => [...priorCatalog(), { provider: "parent-only", id: "unavailable" }, { provider: "fixture", id: "parent-only-model" }];
     const beforeUnsupported = requests.length;
@@ -403,6 +469,10 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     ` });
     assert.equal(workflow.state, "complete", JSON.stringify(workflow));
     assert.equal(workflow.output.outputs.length, 2);
+    // Workflow children carry their step and the enclosing workflow call; a synchronous workflow is still "background".
+    const scanRun = await h.call("result", { id: workflow.children.find((k) => k.key === "scan").id });
+    assert.equal(scanRun.stepIndex, 1); assert.equal(scanRun.toolCallID, "call");
+    assert.equal((await h.call("result", { id: workflow.children.find((k) => k.key === "b").id })).stepIndex, 3);
     assert.match(workflow.output.stored, /workflow scan/);
     const mission = await h.tool("shepherd_mission", { action: "show", id: workflow.missionId });
     assert.equal(mission.runs.length, 3); assert.equal(mission.status, "waiting");
@@ -429,6 +499,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const slowWorkflow = await h.tool("shepherd_workflow", { mission: false, workflowScript: `return runs.run("slow", {agent:"worker", task:"SHELL:sleep 30"});` });
     await until(() => h.projections.at(-1).children.some((c) => c.label.includes("SHELL:sleep 30") && c.state === "running"));
     const owned = h.projections.at(-1).children.find((c) => c.label.includes("SHELL:sleep 30") && c.state === "running");
+    assert.equal(owned.context, "async"); assert.deepEqual(owned.step, { index: 1, total: 1 });
     const cancelling = h.tool("shepherd_workflow", { action: "cancel", id: slowWorkflow.id });
     await assert.rejects(h.call("resume", { id: owned.runID, message: "must reject without detaching" }), /owned|already active/);
     const stoppedWorkflow = await cancelling;
@@ -482,6 +553,8 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     console.log(`Real Pi ${JSON.parse(fs.readFileSync(path.join(pkg, "package.json"))).version}: ${requests.length} local-provider requests, zero external model calls`);
   } finally {
     await h?.shutdown(); server.closeAllConnections(); await new Promise((r) => server.close(r));
+    for (const socket of control.sockets) socket.destroy();
+    await new Promise((r) => controlServer.close(r));
     for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved);
     fs.rmSync(dir, { recursive: true, force: true });
   }

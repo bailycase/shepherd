@@ -103,6 +103,8 @@ public final class SessionServer: @unchecked Sendable {
         /// extension and accepts unsolicited message pushes.
         var agentID: AgentID?
         var nativeAgentID: AgentID?
+        /// Set by helloChildren: the children extension's control channel for that agent.
+        var childrenAgentID: AgentID?
         var lineBuffer = LineBuffer()
         var readSource: DispatchSourceRead?
         var writeSource: DispatchSourceWrite?
@@ -255,6 +257,8 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private var nativePending: [Int: NativePending] = [:]
+    /// childCommand frames awaiting their childCommandResult, by correlation id.
+    private var childCommandPending: [Int: (client: ExtensionConnection, completion: (String?) -> Void)] = [:]
 
     /// One child process per session, on a PTY (terminal agents, shells) or on
     /// pipes (`pi --mode rpc`). Terminal-only paths take `pty` and treat nil as
@@ -523,6 +527,31 @@ public final class SessionServer: @unchecked Sendable {
 
     private func finishNativeThread(_ correlation: Int, outcome: NativeOutcome) {
         nativePending.removeValue(forKey: correlation)?.completion(outcome)
+    }
+
+    /// Server queue. Writes a childCommand to the agent's children-extension connection and
+    /// answers with the extension's error text (nil on success). Same 10s ceiling as the
+    /// native bridge; a resume can take a few seconds while pi boots.
+    private func sendChildCommand(
+        agentID: AgentID, runID: String, action: NativeSubagentAction, text: String?, mode: NativeThreadDelivery?,
+        completion: @escaping (String?) -> Void
+    ) {
+        guard let client = clients.values.first(where: { $0.childrenAgentID == agentID }) else {
+            completion("Native subagents are unavailable for this agent (children extension not connected).")
+            return
+        }
+        nextNativeRequestID += 1
+        let correlation = nextNativeRequestID
+        childCommandPending[correlation] = (client, completion)
+        let childAction: ChildCommandAction = switch action {
+        case .message: .message
+        case .cancel: .cancel
+        case .resume: .resume
+        }
+        reply(.childCommand(id: correlation, runID: runID, action: childAction, text: text, mode: mode), to: client)
+        queue.asyncAfter(deadline: .now() + 15) { [weak self] in
+            self?.childCommandPending.removeValue(forKey: correlation)?.completion("Subagent command timed out. Refresh before acting; do not automatically retry.")
+        }
     }
 
     // MARK: - Remote listener (server queue)
@@ -1198,6 +1227,9 @@ public final class SessionServer: @unchecked Sendable {
         for (id, pending) in nativePending where pending.remote === client || pending.bridge === client {
             finishNativeThread(id, outcome: .failure(code: "outcome_unknown", message: "Native bridge disconnected. Refresh before acting; do not automatically retry."))
         }
+        for (id, pending) in childCommandPending where pending.client === client {
+            childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
+        }
         if client.isRemote {
             for sessionID in remoteAttachments.keys {
                 remoteAttachments[sessionID]?.remove(client.fd)
@@ -1249,7 +1281,19 @@ public final class SessionServer: @unchecked Sendable {
         case .setAgentSession(let agentID, let piSessionID):
             applyAgentSession(agentID: agentID, piSessionID: piSessionID)
         case .setAgentChildren(let agentID, let children):
+            // RPC agents also get the rows in their thread snapshot (cards); terminal agents
+            // keep the sidebar-only path through onAgentChildren.
+            rpcThread(forAgent: agentID)?.setSubagents(children)
             hopToMain { [weak self] in self?.onAgentChildren?(agentID, children) }
+        case .helloChildren(let agentID):
+            guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil, client.nativeAgentID == nil else { return }
+            for previous in Array(clients.values) where previous !== client && previous.childrenAgentID == agentID {
+                disconnect(previous)
+            }
+            client.childrenAgentID = agentID
+        case .childCommandResult(let id, let error):
+            guard let pending = childCommandPending[id], pending.client === client else { return }
+            childCommandPending.removeValue(forKey: id)?.completion(error)
         case .notify(let agentID, let title, let body):
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
         case .helloAgent(let agentID):
@@ -1448,7 +1492,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
-        case .nativeThreadCommand(let id, _), .ok(let id),
+        case .nativeThreadCommand(let id, _), .childCommand(let id, _, _, _, _), .ok(let id),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),
@@ -1963,6 +2007,11 @@ public final class SessionServer: @unchecked Sendable {
             }
             let sid = session.id
             let thread = RPCThreadState(session: session, queue: sessionQueue)
+            // Card actions go to the children extension's control channel, never the parent model.
+            thread.dispatchSubagentCommand = { [weak serverWeak] runID, action, text, mode, done in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
+                server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
+            }
             session.onEvent = { [weak thread] event in thread?.handle(event) }
             session.onStderr = { line in ShepherdLog.info("rpc session \(sid) stderr: \(line)") }
             session.onExit = { [weak serverWeak] code in
@@ -2314,6 +2363,22 @@ public final class SessionServer: @unchecked Sendable {
     /// queue order (the main queue preserves submission order).
     private func hopToMain(_ body: @escaping () -> Void) {
         DispatchQueue.main.async(execute: body)
+    }
+
+    /// Server queue: the agent whose own pane runs this session.
+    private func agentID(forSession sessionID: SessionID) -> AgentID? {
+        store.state.agents.first { agent in
+            guard let paneID = agent.paneID else { return false }
+            return store.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: paneID)?.sessionID == sessionID
+        }?.id
+    }
+
+    /// Server queue: the RPC thread state behind an agent's pane, if it is an RPC agent.
+    private func rpcThread(forAgent agentID: AgentID) -> RPCThreadState? {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }),
+              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
+              let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID else { return nil }
+        return sessions[sessionID]?.thread
     }
 
     // MARK: - Socket helpers

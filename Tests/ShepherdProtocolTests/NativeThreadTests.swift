@@ -93,6 +93,41 @@ struct NativeThreadTests {
         #expect(Set(try #require(unicode.widgets).map(\.id)).count == 2)
     }
 
+    /// Subagents are v2-additive: a snapshot without them decodes nil, the field stays off the
+    /// wire when nil, and the new request/result arms round-trip.
+    @Test func subagentArmsAreOptionalAndRoundTrip() throws {
+        let old = Data(#"{"piSessionID":"s","generation":"g","revision":1,"running":false,"supportedActions":[],"dialogsSupported":false,"dialogs":[],"messages":[],"provisional":[],"clipped":false}"#.utf8)
+        let legacy = try JSONDecoder().decode(NativeThreadSnapshot.self, from: old)
+        #expect(legacy.subagents == nil)
+        let encoded = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(legacy)) as? [String: Any])
+        #expect(encoded["subagents"] == nil)
+        var v2 = legacy
+        v2.subagents = [
+            NativeSubagent(runID: "native-1", label: "worker: restyle", state: "running", startedAt: 1, needsAttention: false,
+                           role: "worker", model: "p/m", context: "async", step: ChildStep(index: 1, total: 3), turns: 2, toolCalls: 3, tokens: 4,
+                           lastActivity: ChildActivity(tool: "bash", preview: "swift build", at: 5), toolCallID: "call_1", task: "Restyle", sessionFile: "/tmp/s.jsonl"),
+            NativeSubagent(runID: "native-2", label: "reviewer: check", state: "running", needsAttention: true, attentionText: "Which?",
+                           question: ChildQuestion(text: "Which?", options: ["A", "B"])),
+            NativeSubagent(runID: "native-3", label: "tests: run", state: "complete", result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118000), output: "All pass."),
+            NativeSubagent(runID: "native-4", label: "docs: write", state: "failed", exitReason: "exit 1 · context limit"),
+        ]
+        #expect(try JSONDecoder().decode(NativeThreadSnapshot.self, from: JSONEncoder().encode(v2)) == v2)
+        for request in [
+            NativeThreadRequest.subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .message, text: "A", mode: .steer),
+            .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .cancel),
+            .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .resume),
+            .subagentTranscript(expectedSessionID: "s", runID: "native-1"),
+            .subagentTranscript(expectedSessionID: "s", runID: "native-1", beforeEntryID: "c:9"),
+        ] {
+            #expect(try NDJSON.decode(NativeThreadRequest.self, from: NDJSON.encode(request)) == request)
+            #expect(request.images.isEmpty)
+        }
+        let page = NativeThreadResult.transcript(value: NativeSubagentTranscript(
+            runID: "native-1", messages: [NativeThreadMessage(entryID: "c:1", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "hi")])],
+            olderCursor: "c:1", earlierCount: 72))
+        #expect(try NDJSON.decode(NativeThreadResult.self, from: NDJSON.encode(page)) == page)
+    }
+
     @Test func allAnswersAndDeliveriesRoundTrip() throws {
         let answers: [NativeDialogAnswer] = [.select(value: "a"), .confirm(value: false), .input(value: ""), .editor(value: "draft\nnext"), .cancel]
         for answer in answers {

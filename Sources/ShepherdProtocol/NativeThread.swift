@@ -10,6 +10,11 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case setModel(expectedSessionID: String, generation: String, operationID: UUID, model: String)
     /// v2: off/low/medium/high. Gated by `setThinking` in `supportedActions`.
     case setThinking(expectedSessionID: String, generation: String, operationID: UUID, level: String)
+    /// v2 (RPC agents with native children): drive one subagent run. Routed to the children
+    /// extension, never to the parent model. `text` is the reply/steer for `.message`.
+    case subagentCommand(expectedSessionID: String, generation: String, operationID: UUID, runID: String, action: NativeSubagentAction, text: String? = nil, mode: NativeThreadDelivery? = nil)
+    /// v2: one page (50) of a subagent's transcript, newest first, from its session file.
+    case subagentTranscript(expectedSessionID: String, runID: String, beforeEntryID: String? = nil)
 
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images) = self { return images ?? [] }
@@ -67,6 +72,14 @@ public struct NativeCommand: Codable, Hashable, Sendable {
 
 public enum NativeThreadDelivery: String, Codable, Hashable, Sendable { case followUp, steer }
 
+/// Card and inspector actions on a subagent run. Pause is deliberately absent: the children
+/// runtime has no pause (only abort), and the board's Pause button would be a fake affordance.
+public enum NativeSubagentAction: String, Codable, Hashable, Sendable { case message, cancel, resume }
+
+/// One native child run projected into the RPC thread (v2, additive). Same shape as
+/// `ChildRun` so the server can hand the extension's rows straight through.
+public typealias NativeSubagent = ChildRun
+
 public enum NativeDialogAnswer: Codable, Hashable, Sendable {
     case select(value: String)
     case confirm(value: Bool)
@@ -81,6 +94,22 @@ public enum NativeThreadResult: Codable, Hashable, Sendable {
     /// Acknowledges synchronous API dispatch only, not persistence or completion.
     case accepted(operationID: UUID)
     case failure(code: String, message: String)
+    /// v2: one transcript page for `.subagentTranscript`. `olderCursor` is the first entry's id.
+    case transcript(value: NativeSubagentTranscript)
+}
+
+public struct NativeSubagentTranscript: Codable, Hashable, Sendable {
+    public var runID: String
+    public var messages: [NativeThreadMessage]
+    public var olderCursor: String?
+    /// Entries before the returned page (the "72 earlier turns" caption).
+    public var earlierCount: Int
+    public init(runID: String, messages: [NativeThreadMessage], olderCursor: String? = nil, earlierCount: Int = 0) {
+        self.runID = runID
+        self.messages = messages
+        self.olderCursor = olderCursor
+        self.earlierCount = earlierCount
+    }
 }
 
 public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
@@ -105,6 +134,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var stats: NativeThreadStats?
     /// v2: RPC agents only.
     public var commands: [NativeCommand]?
+    /// v2: native child runs (RPC agents with the children extension). nil from older hosts.
+    public var subagents: [NativeSubagent]?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -113,7 +144,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         thinking: String? = nil, supportedActions: [String], dialogsSupported: Bool, dialogs: [NativeThreadDialog],
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
-        commands: [NativeCommand]? = nil
+        commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -132,6 +163,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.runtime = runtime
         self.stats = stats
         self.commands = commands
+        self.subagents = subagents
     }
 }
 

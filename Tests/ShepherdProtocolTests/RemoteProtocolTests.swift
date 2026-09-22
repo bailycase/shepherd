@@ -84,6 +84,9 @@ struct RemoteProtocolTests {
             .nativeThread(id: 84, agentID: AgentID(), request: .answer(expectedSessionID: "s", generation: "g", operationID: UUID(), dialogID: "d", answer: .editor(value: "x"))),
             .nativeThread(id: 85, agentID: AgentID(), request: .setModel(expectedSessionID: "s", generation: "g", operationID: UUID(), model: "anthropic/claude")),
             .nativeThread(id: 86, agentID: AgentID(), request: .setThinking(expectedSessionID: "s", generation: "g", operationID: UUID(), level: "high")),
+            .nativeThread(id: 87, agentID: AgentID(), request: .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer)),
+            .nativeThread(id: 88, agentID: AgentID(), request: .subagentCommand(expectedSessionID: "s", generation: "g", operationID: UUID(), runID: "native-1", action: .cancel)),
+            .nativeThread(id: 89, agentID: AgentID(), request: .subagentTranscript(expectedSessionID: "s", runID: "native-1", beforeEntryID: "c:abc")),
         ]
         for request in requests {
             let line = try NDJSON.encode(request)
@@ -148,6 +151,15 @@ struct RemoteProtocolTests {
             .nativeThread(id: 84, result: .snapshot(value: NativeThreadSnapshot(
                 piSessionID: "s", generation: "g", revision: 1, running: false, supportedActions: ["send"], dialogsSupported: false,
                 dialogs: [], messages: [], provisional: [], clipped: true))),
+            .nativeThread(id: 85, result: .snapshot(value: NativeThreadSnapshot(
+                piSessionID: "s", generation: "g", revision: 2, running: true, supportedActions: ["send", "subagents"], dialogsSupported: true,
+                dialogs: [], messages: [], provisional: [], clipped: false, runtime: "rpc",
+                subagents: [ChildRun(runID: "native-1", label: "worker: restyle", state: "running", startedAt: 1, needsAttention: false, asyncDir: "/tmp/c",
+                                     role: "worker", model: "p/m", thinking: "high", context: "background", turns: 3, toolCalls: 4, tokens: 500,
+                                     lastActivity: ChildActivity(tool: "edit", preview: "A.swift", diff: ChildDiff(added: 1, removed: 0), at: 2), toolCallID: "call_1", task: "Restyle")]))),
+            .nativeThread(id: 86, result: .transcript(value: NativeSubagentTranscript(
+                runID: "native-1", messages: [NativeThreadMessage(entryID: "c:1", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "task")])],
+                olderCursor: "c:1", earlierCount: 72))),
         ]
         for reply in replies {
             let line = try NDJSON.encode(reply)
