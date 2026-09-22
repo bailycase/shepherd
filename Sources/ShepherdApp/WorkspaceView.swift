@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 
 struct WorkspaceView: View {
@@ -316,15 +317,28 @@ struct PaneLeafView: View {
                 }
             } else if rpc, let agent = nativeAgent {
                 // No terminal behind an RPC agent (D2): the thread is the pane. The session
-                // binding still goes through the store so exits close the pane.
-                RPCAgentPane(
-                    session: vm.sessions.session(for: pane, in: tab),
-                    store: vm.nativePresentation.store(for: agent.id),
-                    active: visible,
-                    isFocused: focused,
-                    request: { try await vm.server.nativeThread(agentID: agent.id, request: $0) },
-                    agentName: agent.name
-                )
+                // binding still goes through the store so exits close the pane. A subagent
+                // under inspection splits the pane: thread left, inspector right.
+                let store = vm.nativePresentation.store(for: agent.id)
+                let inspecting = vm.subagentInspector.runByAgent[agent.id]
+                NativeInspectorSplit(state: vm.subagentInspector, showInspector: inspecting != nil) {
+                    RPCAgentPane(
+                        session: vm.sessions.session(for: pane, in: tab),
+                        store: store,
+                        active: visible,
+                        isFocused: focused && inspecting == nil,
+                        request: { try await vm.server.nativeThread(agentID: agent.id, request: $0) },
+                        agentName: agent.name,
+                        inspectSubagent: { vm.toggleSubagentInspector(agentID: agent.id, runID: $0.runID) }
+                    )
+                } inspector: {
+                    if let inspecting {
+                        NativeSubagentInspector(store: store, runID: inspecting, active: visible) {
+                            vm.subagentInspector.runByAgent.removeValue(forKey: agent.id)
+                        }
+                        .id(inspecting)
+                    }
+                }
             } else {
                 ZStack {
                     LiveTerminalPane(
@@ -386,12 +400,13 @@ struct RPCAgentPane: View {
     let isFocused: Bool
     let request: NativeThreadStore.Request
     let agentName: String
+    var inspectSubagent: ((ChildRun) -> Void)? = nil
 
     var body: some View {
         switch session.phase {
         case .connecting, .live:
             DesktopNativeThreadView(store: store, active: active, isFocused: isFocused, request: request,
-                                    showTerminal: nil, agentName: agentName)
+                                    showTerminal: nil, agentName: agentName, inspectSubagent: inspectSubagent)
         case .failed(let reason):
             PanePlaceholder(text: "session unavailable · \(reason)")
         case .exited(let code):

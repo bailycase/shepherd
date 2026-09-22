@@ -763,6 +763,59 @@ struct NativePresentationTests {
         #expect(inspected.isEmpty)
     }
 
+    /// Screenshot-only: the thread with the worker open in the side-panel inspector, its
+    /// transcript served from a synthetic page. Compare with docs/design-spec/subagents-with-inspector.png.
+    @Test func subagentInspectorRendersTheBoard() async throws {
+        guard ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_DIR"] != nil else { return }
+        let store = NativeThreadStore()
+        let shift = Date().timeIntervalSince1970 * 1000 - Self.boardNow.timeIntervalSince1970 * 1000
+        var snapshot = Self.subagentSnapshot(running: true)
+        snapshot.subagents = snapshot.subagents?.map { run in
+            var run = run
+            run.startedAt = run.startedAt.map { $0 + shift }
+            run.endedAt = run.endedAt.map { $0 + shift }
+            run.lastActivity?.at += shift
+            if run.runID == "native-worker" { run.currentTool = "bash" }
+            return run
+        }
+        func tool(_ id: String, _ name: String, _ args: String, _ output: String, running: Bool = false) -> NativeThreadMessage {
+            NativeThreadMessage(entryID: "c:\(id)", role: "toolResult", blocks: output.isEmpty ? [] : [NativeThreadBlock(kind: .text, text: output)],
+                                toolName: name, toolCallID: id, argumentsText: args, status: running ? "running" : "complete", isError: false)
+        }
+        let page = NativeSubagentTranscript(runID: "native-worker", messages: [
+            NativeThreadMessage(entryID: "c:a1", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Tokens landed. Now moving the tool-row derivations into a shared presentation file so macOS and iOS use the same previews.")]),
+            tool("r1", "read", #"{"path":"Sources/ShepherdApp/DesktopNativeThreadView.swift","offset":1,"limit":420}"#, Array(repeating: "x", count: 420).joined(separator: "\n")),
+            tool("w1", "write", #"{"path":"Sources/ShepherdRemote/NativeThreadPresentation.swift"}"#, "wrote 142 lines"),
+            tool("e1", "edit", #"{"path":"Sources/ShepherdRemote/NativeThreadPresentation.swift","edits":[{"oldText":"a\nb","newText":"a\nB\nc"}]}"#, "Successfully replaced 1 block(s)"),
+            tool("b1", "bash", #"{"command":"swift build --target ShepherdRemote"}"#, "", running: true),
+            NativeThreadMessage(entryID: "c:a2", role: "assistant", blocks: [NativeThreadBlock(kind: .thinking, text: "Checking the build output.")], status: "streaming"),
+        ], olderCursor: "c:a1", earlierCount: 72)
+        let request: NativeThreadStore.Request = { value in
+            if case .subagentTranscript = value { return .transcript(value: page) }
+            return .snapshot(value: snapshot)
+        }
+        let inspector = NativeInspectorState()
+        inspector.runByAgent[AgentID(rawValue: "a")] = "native-worker"
+        let content = NativeInspectorSplit(state: inspector, showInspector: true) {
+            VStack(spacing: 0) {
+                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities", native: .constant(true), showTerminal: nil)
+                DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: nil, agentName: "Investigate", inspectSubagent: { _ in })
+            }
+        } inspector: {
+            NativeSubagentInspector(store: store, runID: "native-worker", active: true, close: {})
+        }
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1370, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await waitFor { store.ready }
+        try await Task.sleep(for: .milliseconds(600))
+        window.layoutIfNeeded()
+        try capture(host, name: "subagents-inspector")
+    }
+
     /// Screenshot-only: renders the restyled sidebar against a scratch server so the
     /// artboard comparison covers real rows (sections, dots, right slots, bottom block).
     @Test func sidebarRendersSpecRows() async throws {

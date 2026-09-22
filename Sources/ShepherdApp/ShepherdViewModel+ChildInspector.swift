@@ -12,7 +12,23 @@ import ShepherdProtocol
 /// agent's terminal untouched.
 @MainActor
 extension ShepherdViewModel {
+    /// RPC agents inspect native children in the side panel inside their own workspace; the
+    /// inspector-tab flow below stays for terminal agents.
     func openChildInspector(agentID: AgentID, child: ChildRun) {
+        if state.agents.first(where: { $0.id == agentID })?.runtime == .rpc {
+            selectAgent(agentID)
+            subagentInspector.runByAgent[agentID] = child.runID
+            return
+        }
+        openChildInspectorTab(agentID: agentID, child: child)
+    }
+
+    /// Toggle the side panel for a run (card click, ⌘I, × on the panel).
+    func toggleSubagentInspector(agentID: AgentID, runID: String) {
+        subagentInspector.toggle(agentID: agentID, runID: runID)
+    }
+
+    private func openChildInspectorTab(agentID: AgentID, child: ChildRun) {
         guard let asyncDir = child.asyncDir,
               let agent = state.agents.first(where: { $0.id == agentID }),
               let runner = try? InspectExtension.installedPath() else {
