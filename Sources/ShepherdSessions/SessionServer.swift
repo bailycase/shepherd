@@ -335,6 +335,16 @@ public final class SessionServer: @unchecked Sendable {
         return Set(state.tabs.filter { $0.inspectorFor == nil && ($0.spaceID == nil || !agentTabs.contains($0.id)) }.map(\.id))
     }
 
+    /// Automation run agents from the previous app run: every agent in the reserved hidden
+    /// space (runs only ever live there) plus any agent an automation still points at. Runs are
+    /// ephemeral; enabled automations start fresh ones after adoption. Keeping the old agents
+    /// relaunched their pi on every start and piled up one per launch.
+    static func automationRunAgentIDs(in state: ShepherdState) -> Set<AgentID> {
+        let hiddenSpaces = Set(state.spaces.filter(\.hidden).map(\.id))
+        return Set(state.agents.filter { hiddenSpaces.contains($0.spaceID) }.map(\.id))
+            .union(state.automations.compactMap(\.agentID))
+    }
+
     private func startOnQueue() throws {
         let stale = store.state.agents.filter { $0.status != .idle }.map(\.id)
         let deadInspectors = store.state.tabs.contains { $0.inspectorFor != nil }
@@ -343,7 +353,8 @@ public final class SessionServer: @unchecked Sendable {
         }
         let staleRuns = store.state.automations.contains { $0.agentID != nil }
         let shellTabs = Self.shellTabIDs(in: store.state)
-        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty {
+        let runAgents = Self.automationRunAgentIDs(in: store.state)
+        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty || !runAgents.isEmpty {
             do {
                 try store.update { state in
                     for id in stale {
@@ -374,7 +385,10 @@ public final class SessionServer: @unchecked Sendable {
                         state.tabs[i].layout = layout
                     }
                     // Automation runs died with the previous app run; enabled
-                    // ones restart through the GUI after adoption.
+                    // ones restart through the GUI after adoption. Their agents and layouts go.
+                    let runTabs = Set(state.agents.filter { runAgents.contains($0.id) }.map(\.tabID))
+                    state.agents.removeAll { runAgents.contains($0.id) }
+                    state.tabs.removeAll { runTabs.contains($0.id) || $0.inspectorFor.map(runAgents.contains) == true }
                     for i in state.automations.indices {
                         state.automations[i].agentID = nil
                     }

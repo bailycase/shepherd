@@ -252,8 +252,10 @@ The user's rc files and pi settings are never edited, and agent-only variables a
 - **Management:** agent requests arrive as `AutomationRequest` through
   `SessionServer.onAutomationRequest` and are served by `ShepherdViewModel+Automations.swift`.
   The Automations sidebar section is their only surface.
-- **At startup:** every automation's `agentID` is cleared, and enabled automations restart once
-  the workspace is adopted.
+- **At startup:** the previous run's agents and their layouts are dropped
+  (`SessionServer.automationRunAgentIDs`: every agent in the hidden space, plus any agent an
+  automation still points at), every automation's `agentID` is cleared, and enabled automations
+  start fresh runs once the workspace is adopted. Never keep a run agent across launches.
 - **Changing them** touches `ShepherdCore`, the extension-message enums, `SessionServer`, the
   panes extension (canonical and embedded), and their tests.
 
