@@ -104,6 +104,6 @@ struct ThemeContrastTests {
     }
 }
 
-extension ThemeDefinition: @retroactive CustomTestStringConvertible {
+extension ThemeDefinition: CustomTestStringConvertible {
     public var testDescription: String { id }
 }
