@@ -15,6 +15,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case commandPalette, nextAgent, previousAgent
     case splitVertical, splitHorizontal, closePane, deleteAgent
     case focusNextPane, focusPreviousPane
+    case toggleSidebar, toggleRightPane, modelPicker, stopAgent, previousTurn, nextTurn, inspectSubagent
 
     var id: String { rawValue }
 
@@ -35,6 +36,13 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .deleteAgent: return "Delete Agent"
         case .focusNextPane: return "Focus Next Pane"
         case .focusPreviousPane: return "Focus Previous Pane"
+        case .toggleSidebar: return "Show or Hide Sidebar"
+        case .toggleRightPane: return "Show or Hide Review Pane"
+        case .modelPicker: return "Choose Model…"
+        case .stopAgent: return "Stop Agent"
+        case .previousTurn: return "Previous Turn"
+        case .nextTurn: return "Next Turn"
+        case .inspectSubagent: return "Inspect Subagent"
         }
     }
 
@@ -55,6 +63,14 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .deleteAgent: return KeyChord(key: "w", command: true, shift: true)
         case .focusNextPane: return KeyChord(key: "right", command: true, option: true)
         case .focusPreviousPane: return KeyChord(key: "left", command: true, option: true)
+        case .toggleSidebar: return KeyChord(key: "s", command: true, shift: true)
+        case .toggleRightPane: return KeyChord(key: "b", command: true, shift: true)
+        // The spec's ⌘M is the system Minimize chord (reserved), so the picker takes ⇧⌘M.
+        case .modelPicker: return KeyChord(key: "m", command: true, shift: true)
+        case .stopAgent: return KeyChord(key: ".", command: true)
+        case .previousTurn: return KeyChord(key: "up", command: true, option: true)
+        case .nextTurn: return KeyChord(key: "down", command: true, option: true)
+        case .inspectSubagent: return KeyChord(key: "i", command: true)
         }
     }
 }

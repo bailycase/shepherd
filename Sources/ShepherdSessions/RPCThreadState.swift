@@ -60,6 +60,12 @@ final class RPCThreadState {
     private var sequence = 0
     private var currentAssistant: Int?
     private var tools: [(id: String, value: NativeThreadMessage)] = []
+    /// When each tool execution was first seen (ms), for durations of live calls.
+    private var toolStarts: [String: Double] = [:]
+    /// Live thinking spans per provisional assistant message (ms), and the finished ones keyed
+    /// by the message's pi timestamp so history projected later keeps "Thought for Ns".
+    private var thinkingSpans: [Int: (start: Double, end: Double?)] = [:]
+    private var thinkingByTimestamp: [Double: Double] = [:]
     private var dialogs: [NativeThreadDialog] = []
     private var widgets: [(id: String, value: NativeThreadWidget)] = []
     private var operations: [(id: String, operation: Operation)] = []
@@ -330,8 +336,12 @@ final class RPCThreadState {
             entries.append((id, message))
         }
         var arguments: [String: JSONValue] = [:]
+        var callTimes: [String: Double] = [:]
         for entry in entries where entry.message.role == "assistant" {
-            for case .toolCall(let id, _, let args) in entry.message.content { if let args { arguments[id] = args } }
+            for case .toolCall(let id, _, let args) in entry.message.content {
+                if let args { arguments[id] = args }
+                if let time = entry.message.timestamp { callTimes[id] = time }
+            }
         }
         var end = entries.count
         if let beforeEntryID {
@@ -343,7 +353,9 @@ final class RPCThreadState {
         let pageStart = max(0, end - pageSize)
         let page = entries[pageStart..<end].map { entry in
             let args = entry.message.role == "toolResult" ? entry.message.toolCallId.flatMap { arguments[$0] } : nil
-            return project(entryID: "c:\(entry.id)", message: entry.message, args: args)
+            var value = project(entryID: "c:\(entry.id)", message: entry.message, args: args)
+            if entry.message.role == "toolResult" { value.startedAt = entry.message.toolCallId.flatMap { callTimes[$0] } }
+            return value
         }
         return .transcript(value: NativeSubagentTranscript(
             runID: runID, messages: page, olderCursor: pageStart > 0 ? page.first?.entryID : nil, earlierCount: pageStart))
@@ -379,8 +391,12 @@ final class RPCThreadState {
             // pi keeps a call's arguments on the assistant's toolCall block; the toolResult row
             // is what we show, so hand the arguments across by call id.
             var arguments: [String: JSONValue] = [:]
+            var callTimes: [String: Double] = [:]
             for message in messages where message.role == "assistant" {
-                for case .toolCall(let id, _, let args) in message.content { if let args { arguments[id] = args } }
+                for case .toolCall(let id, _, let args) in message.content {
+                    if let args { arguments[id] = args }
+                    if let time = message.timestamp { callTimes[id] = time }
+                }
             }
             self.history = messages.enumerated().compactMap { index, message in
                 if message.role == "custom" && message.display != true { return nil }
@@ -388,7 +404,12 @@ final class RPCThreadState {
                 // ledger, which own that information in the RPC thread; the TUI still shows them.
                 if message.role == "custom" && message.customType == "shepherd-child" { return nil }
                 let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
-                return Self.project(entryID: "m:\(index)", message: message, args: args)
+                var value = Self.project(entryID: "m:\(index)", message: message, args: args)
+                if let id = message.toolCallId, message.role == "toolResult" {
+                    value.startedAt = self.toolStarts[id] ?? callTimes[id]
+                }
+                if message.role == "assistant", let time = message.timestamp { value.thinkingSeconds = self.thinkingByTimestamp[time] }
+                return value
             }
             // message_end precedes persistence; a refresh means everything ended is now history.
             self.provisional.removeAll { $0.ended }
@@ -435,6 +456,9 @@ final class RPCThreadState {
         operations.removeAll()
         provisional.removeAll()
         tools.removeAll()
+        toolStarts.removeAll()
+        thinkingSpans.removeAll()
+        thinkingByTimestamp.removeAll()
         widgets.removeAll()
         history.removeAll()
         currentAssistant = nil
@@ -449,6 +473,26 @@ final class RPCThreadState {
         guard let key = currentAssistant else { return }
         var value = Self.project(entryID: "provisional:assistant:\(key)", message: raw)
         value.status = ended ? (raw.stopReason ?? "complete") : "streaming"
+        let now = Date().timeIntervalSince1970 * 1000
+        var hasThinking = false, answered = false
+        for block in raw.content {
+            switch block {
+            case .thinking: hasThinking = true
+            case .text(let text) where !text.isEmpty: answered = true
+            case .toolCall: answered = true
+            default: break
+            }
+        }
+        if hasThinking, thinkingSpans[key] == nil { thinkingSpans[key] = (now, nil) }
+        if var span = thinkingSpans[key], span.end == nil, answered || ended {
+            span.end = now
+            thinkingSpans[key] = span
+        }
+        if let span = thinkingSpans[key] {
+            let seconds = ((span.end ?? now) - span.start) / 1000
+            value.thinkingSeconds = seconds
+            if ended, let time = raw.timestamp { thinkingByTimestamp[time] = seconds }
+        }
         if let index = provisional.firstIndex(where: { $0.key == key }) {
             provisional[index] = Provisional(key: key, raw: raw, value: value, ended: ended)
         } else {
@@ -469,6 +513,9 @@ final class RPCThreadState {
         )
         if value.argumentsText == nil { value.argumentsText = previous?.argumentsText }
         value.status = status
+        if toolStarts[id] == nil { toolStarts[id] = Date().timeIntervalSince1970 * 1000 }
+        value.startedAt = toolStarts[id]
+        if status == "complete", value.timestamp == nil { value.timestamp = Date().timeIntervalSince1970 * 1000 }
         if let index = tools.firstIndex(where: { $0.id == id }) {
             tools[index].value = value
         } else {

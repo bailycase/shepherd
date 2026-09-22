@@ -421,8 +421,8 @@ struct KeybindingsTests {
     @Test func customChordsTranslateToGhosttySyntax() {
         let keys = KeybindingsStore(store: scratchDefaults())
         keys.assign(KeyChord(key: "]", command: true), to: .renameAgent)
-        keys.assign(KeyChord(key: "up", command: true, option: true), to: .focusNextPane)
-        #expect(keys.customGhosttyUnbinds == ["alt+cmd+up", "cmd+right_bracket"])
+        keys.assign(KeyChord(key: "up", command: true, option: true, control: true), to: .focusNextPane)
+        #expect(keys.customGhosttyUnbinds == ["cmd+right_bracket", "ctrl+alt+cmd+up"])
     }
 
     @Test func chordDisplayFollowsAppleModifierOrder() {

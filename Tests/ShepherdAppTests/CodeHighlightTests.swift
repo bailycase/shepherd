@@ -1,16 +1,22 @@
 import Testing
 import SwiftUI
+import ShepherdDesign
 @testable import ShepherdApp
 
 @MainActor
 @Suite("Code highlighting")
 struct CodeHighlightTests {
-    private let style = CodeHighlight.Style(palette: [
-        "#1A1B1D", "#B87D6E", "#A1C592", "#CEB370",
-        "#8892B5", "#A38FB5", "#8FB3AD", "#CDD0D7",
-        "#565758", "#C99284", "#B3D1A4", "#DCC48A",
-        "#9FA9C9", "#B8A6C9", "#A4C7C1", "#EDEDED",
-    ])
+    private let style = CodeHighlight.Style(
+        comment: Color(hex: "#565758"), string: Color(hex: "#A1C592"), number: Color(hex: "#CEB370"),
+        keyword: Color(hex: "#8892B5"), type: Color(hex: "#A38FB5"), function: Color(hex: "#8FB3AD")
+    )
+
+    @Test func fenceLanguagesPickAGrammar() {
+        #expect(CodeHighlight.path(forFenceLanguage: "Swift") == "fence.swift")
+        #expect(CodeHighlight.path(forFenceLanguage: "sh") == "fence.sh")
+        #expect(CodeHighlight.path(forFenceLanguage: "brainfuck") == nil)
+        #expect(CodeHighlight.path(forFenceLanguage: nil) == nil)
+    }
 
     private func runs(_ attributed: AttributedString) -> [(String, Color?)] {
         attributed.runs.map { run in

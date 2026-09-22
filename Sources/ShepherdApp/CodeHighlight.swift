@@ -19,6 +19,7 @@ private final class CodeHighlightBundleToken: NSObject {}
 
 @MainActor
 enum CodeHighlight {
+    /// Highlight colors, from the theme's syntax roles (dynamic: they follow light/dark).
     struct Style {
         let comment: Color
         let string: Color
@@ -27,19 +28,31 @@ enum CodeHighlight {
         let type: Color
         let function: Color
 
-        init(palette: [String]) {
-            let fallback = palette.first.map { Color(hex: $0) } ?? .clear
-            func color(at index: Int) -> Color {
-                palette.indices.contains(index) ? Color(hex: palette[index]) : fallback
-            }
-
-            comment = color(at: 8)
-            string = color(at: 2)
-            number = color(at: 3)
-            keyword = color(at: 4)
-            type = color(at: 5)
-            function = color(at: 6)
+        @MainActor static var theme: Style {
+            Style(comment: Tokens.syntax(\.comment), string: Tokens.syntax(\.string), number: Tokens.syntax(\.number),
+                  keyword: Tokens.syntax(\.keyword), type: Tokens.syntax(\.type), function: Tokens.syntax(\.function))
         }
+    }
+
+    /// A pseudo path whose extension picks the grammar for a Markdown fence's language word.
+    static func path(forFenceLanguage language: String?) -> String? {
+        guard let language = language?.lowercased() else { return nil }
+        let ext: String? = switch language {
+        case "swift": "swift"
+        case "python", "py": "py"
+        case "go", "golang": "go"
+        case "rust", "rs": "rs"
+        case "javascript", "js", "jsx", "mjs": "js"
+        case "typescript", "ts": "ts"
+        case "tsx": "tsx"
+        case "c", "h": "c"
+        case "cpp", "c++", "cc", "hpp": "cpp"
+        case "bash", "sh", "zsh", "shell", "console": "sh"
+        case "ruby", "rb": "rb"
+        case "json", "jsonc": "json"
+        default: nil
+        }
+        return ext.map { "fence.\($0)" }
     }
 
     private enum GrammarID: Hashable {

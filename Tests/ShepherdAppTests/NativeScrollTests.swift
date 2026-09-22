@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import ShepherdDesign
 import Testing
 import Vision
 import ShepherdProtocol
@@ -29,7 +30,7 @@ struct NativeScrollTests {
                 return .snapshot(value: self.snapshot)
             }
             host = NSHostingView(rootView: AnyView(
-                DesktopNativeThreadView(store: store, active: true, isFocused: false, request: request)
+                ThreadView(store: store, active: true, isFocused: false, request: request)
                     .preferredColorScheme(.light)))
             window.contentView = host
             window.orderFront(nil)
@@ -118,11 +119,13 @@ struct NativeScrollTests {
             .map { "\(type(of: $0)) \(Int($0.frame.minY))..\(Int($0.frame.maxY)) h=\(Int($0.frame.height))" }
         // Allowed trailing space: the bubble's own padding plus one turn spacing before the
         // 1pt bottom marker (the LazyVStack keeps the spacing before its last item).
-        let allowance = NativeMetrics.turnSpacing + 12 + 1 + NativeMetrics.turnSpacing
+        let allowance = Metrics.turnSpacing + 12 + 1 + Metrics.turnSpacing
         #expect(overflow <= allowance, "document \(Int(document.bounds.height)) has \(overflow)pt of blank space after the last turn; tail: \(tail); inset \(f.scrollView.contentInsets)")
         // Dragging further down cannot reveal blank space.
         let clip = f.scrollView.contentView
-        clip.scroll(to: NSPoint(x: 0, y: document.bounds.height))
+        // Clamp the target the way AppKit clamps a real scroll (`scroll(to:)` does not).
+        let target = clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: document.bounds.height), size: clip.bounds.size)).origin
+        clip.scroll(to: target)
         f.scrollView.reflectScrolledClipView(clip)
         try await f.layout()
         #expect(f.distanceFromBottom >= -1 && f.distanceFromBottom < 2, "after dragging past the end: \(f.distanceFromBottom)")

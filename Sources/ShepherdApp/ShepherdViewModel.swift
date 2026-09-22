@@ -68,6 +68,13 @@ final class ShepherdViewModel {
     /// leaves are persisted long enough for layout writes, then purged on the
     /// next app start by the session server.
     var reviewSessions: [PaneID: ReviewSession] = [:]
+    /// When each agent entered its current status this run: the sidebar's running elapsed
+    /// time. Ephemeral; an agent restored at launch counts from its first report.
+    var statusSince: [AgentID: Date] = [:]
+    /// ⌘⇧S hides the sidebar. Persisted, like the other sidebar disclosure choices.
+    var sidebarHidden = false {
+        didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
+    }
     /// Foreground process name per shell tab ("pi", "htop"), for row labels.
     var shellProcesses: [TabID: String] = [:]
     @ObservationIgnored var shellProcessTimer: Timer?
@@ -261,6 +268,8 @@ final class ShepherdViewModel {
     /// Last Settings category visited. View-model state survives closing the
     /// overlay but naturally resets when Shepherd restarts.
     var settingsSection: SettingsSection = .appearance
+    /// Debug builds: the component gallery over the workspace.
+    var showComponentGallery = false
     /// ⌘K command palette visibility.
     var showCommandPalette = false {
         didSet { if !showCommandPalette { paletteModifierHeld = false } }
@@ -283,8 +292,10 @@ final class ShepherdViewModel {
     /// Native thread state per local agent and per remote agent.
     let threadStores = NativeThreadStores<AgentID>()
     let remoteThreadStores = NativeThreadStores<RemoteAgentRef>()
+    /// Keyboard commands for the thread on screen.
+    let threadCommands = ThreadCommandCenter()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
-    let subagentInspector = NativeInspectorState()
+    let subagentInspector = RightPaneState()
     /// System notifications when an unwatched agent finishes or blocks.
     let notifications = AgentNotifications()
     let settings: AppSettings
@@ -372,6 +383,7 @@ final class ShepherdViewModel {
             collapsedHosts = Set(raw.compactMap(UUID.init(uuidString:)))
         }
         localMachineCollapsed = defaults.bool(forKey: "shepherd.localMachineCollapsed")
+        sidebarHidden = defaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedRemoteSpaces = Set(defaults.stringArray(forKey: "shepherd.collapsedRemoteSpaces") ?? [])
 
         sessions.onStateChanged = { [weak self] serverState in
@@ -717,6 +729,7 @@ final class ShepherdViewModel {
         if let index = state.agents.firstIndex(where: { $0.id == id }) {
             let old = state.agents[index].status
             state.agents[index].status = status
+            if old != status || statusSince[id] == nil { statusSince[id] = Date() }
             // Visible means the workspace is actually showing this agent's
             // layout — not a shell or a remote agent.
             let visible = selectedAgentID == id
@@ -763,15 +776,6 @@ final class ShepherdViewModel {
     /// Sidebar child rows for one agent.
     func children(of agentID: AgentID) -> [ChildRun] {
         childRuns.children(of: agentID)
-    }
-
-    /// Secondary line of the sidebar's waiting summary.
-    var waitingSummaryDetail: String {
-        let finished = state.agents.count { $0.status == .done }
-        var parts: [String] = []
-        if finished > 0 { parts.append("\(finished) finished") }
-        parts.append("\(blockedCount) blocked")
-        return parts.joined(separator: ", ")
     }
 
     // MARK: Remote listener (host role)

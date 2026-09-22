@@ -66,6 +66,21 @@ public struct ShepherdMacApp: App {
                     Task { @MainActor in vm.showCommandPalette.toggle() }
                 }
                 .keyboardShortcut(keys.shortcut(.commandPalette))
+                Button(vm.sidebarHidden ? "Show Sidebar" : "Hide Sidebar") {
+                    Task { @MainActor in vm.sidebarHidden.toggle() }
+                }
+                .keyboardShortcut(keys.shortcut(.toggleSidebar))
+                Button(vm.isRightPaneOpen ? "Close Pane" : "Review Changes") {
+                    Task { @MainActor in vm.toggleRightPane() }
+                }
+                .keyboardShortcut(keys.shortcut(.toggleRightPane))
+                .disabled(vm.visibleThread == nil)
+                #if DEBUG
+                Divider()
+                Button("Component Gallery") {
+                    Task { @MainActor in vm.showComponentGallery.toggle() }
+                }
+                #endif
             }
             CommandGroup(replacing: .saveItem) {
                 Button("Close Pane") {
@@ -134,6 +149,32 @@ public struct ShepherdMacApp: App {
                 }
                 .keyboardShortcut(keys.shortcut(.renameAgent))
                 .disabled(selected == nil)
+                Divider()
+                Button("Stop") {
+                    Task { @MainActor in vm.stopVisibleAgent() }
+                }
+                .keyboardShortcut(keys.shortcut(.stopAgent))
+                .disabled(vm.visibleThread == nil)
+                Button("Choose Model…") {
+                    Task { @MainActor in vm.sendThreadCommand(.modelPicker) }
+                }
+                .keyboardShortcut(keys.shortcut(.modelPicker))
+                .disabled(vm.visibleThread == nil)
+                Button("Inspect Subagent") {
+                    Task { @MainActor in vm.sendThreadCommand(.inspectSubagent) }
+                }
+                .keyboardShortcut(keys.shortcut(.inspectSubagent))
+                .disabled(vm.visibleThread == nil)
+                Button("Previous Turn") {
+                    Task { @MainActor in vm.sendThreadCommand(.previousTurn) }
+                }
+                .keyboardShortcut(keys.shortcut(.previousTurn))
+                .disabled(vm.visibleThread == nil)
+                Button("Next Turn") {
+                    Task { @MainActor in vm.sendThreadCommand(.nextTurn) }
+                }
+                .keyboardShortcut(keys.shortcut(.nextTurn))
+                .disabled(vm.visibleThread == nil)
                 Divider()
                 Button("Next Agent") {
                     Task { @MainActor in vm.selectAdjacentAgent(1) }

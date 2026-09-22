@@ -28,13 +28,29 @@ public struct NativeToolRow: Equatable, Sendable {
     /// Raw JSON arguments for the ⌥-click "Show call" popover; never shown inline.
     public var arguments: String?
     public var truncated: Bool
+    /// Milliseconds since epoch: when the call began, and when its result landed.
+    public var startedAt: Double?
+    public var endedAt: Double?
+    /// The file an edit or write touched, for the thread's "review ›" link.
+    public var reviewPath: String?
+
+    /// Spec §5: 1 decimal under a minute, then "48s"-style whole units; live while running.
+    /// Nil when the host reported no start time.
+    public func duration(now: Date) -> (text: String, live: Bool)? {
+        guard let startedAt else { return nil }
+        if state == .running {
+            return (nativeDurationText(now.timeIntervalSince1970 - startedAt / 1000, live: true), true)
+        }
+        guard let endedAt, endedAt >= startedAt else { return nil }
+        return (nativeDurationText((endedAt - startedAt) / 1000), false)
+    }
 
     public var expandable: Bool { !output.isEmpty }
 
     /// "read, DesktopNativeThreadView.swift, 160 lines, done"
     public var accessibilityLabel: String {
         var parts = [name, preview + (previewSuffix ?? "")]
-        if let diff { parts.append("+\(diff.added) −\(diff.removed)") }
+        if let diff { parts.append(nativeDiffText(added: diff.added, removed: diff.removed)) }
         parts += results.map(\.text)
         switch state {
         case .running: parts.append("running")
@@ -161,8 +177,15 @@ public extension NativeToolRow {
         // Internal tool ids read as noise when truncated ("shep…sage"); name them for people.
         let display = name == "shepherd_parent_message" ? "to parent" : name
         self.init(name: display, state: state, preview: String(preview.prefix(120)), previewSuffix: suffix, diff: diff,
-                  results: results, output: output, arguments: message.argumentsText, truncated: message.truncated)
+                  results: results, output: output, arguments: message.argumentsText, truncated: message.truncated,
+                  startedAt: message.startedAt, endedAt: state == .running ? nil : message.timestamp,
+                  reviewPath: (name == "edit" || name == "write") && !failed ? string("path") : nil)
     }
+}
+
+/// "+58 −41" with a true minus sign: the one spelling of a DiffStat as text.
+public func nativeDiffText(added: Int, removed: Int) -> String {
+    "+\(added) \u{2212}\(removed)"
 }
 
 /// First capture group of `pattern` in `text`, or nil.
@@ -194,7 +217,7 @@ public enum NativeAgentPill: Equatable, Sendable {
         switch self {
         case .idle: return "Idle"
         case .running: return "Running"
-        case .needsApproval: return "Needs approval"
+        case .needsApproval: return "Needs you"
         case .error: return "Error"
         case .stopped: return "Stopped"
         }
@@ -266,7 +289,7 @@ public func nativeTurnItems(_ messages: [NativeThreadMessage]) -> [NativeTurnIte
         for block in message.blocks {
             switch block.kind {
             case .thinking: items.append(.thinking(block.text))
-            case .unsupportedImage: items.append(.note("Image · open Terminal to view"))
+            case .unsupportedImage: items.append(.note("Image attached"))
             case .text:
                 if message.role == "assistant" || message.role == "user" {
                     items.append(.prose(block.text))
@@ -276,7 +299,7 @@ public func nativeTurnItems(_ messages: [NativeThreadMessage]) -> [NativeTurnIte
                 }
             }
         }
-        if message.truncated { items.append(.note("Output truncated · full text in Terminal")) }
+        if message.truncated { items.append(.note("Output truncated")) }
     }
     return items
 }
@@ -604,7 +627,8 @@ public func nativeSubagentRunningLabel(_ runs: [ChildRun], now: Date) -> String?
 /// bb's sticky-bottom rule as a value: follow the tail until the user scrolls away, re-stick
 /// once they return to within `threshold` of the bottom. Programmatic growth never detaches.
 public struct NativeScrollFollower: Equatable, Sendable {
-    public static let threshold: Double = 4
+    /// Spec §4: the tail follows while the reader is within 80pt of the bottom.
+    public static let threshold: Double = 80
     public var sticky = true
     /// Set for the duration of a wheel/drag gesture (or shortly after a wheel tick).
     public var userScrolling = false
@@ -649,7 +673,8 @@ public enum NativeMarkdownBlock: Equatable, Sendable {
     case paragraph(String)
     case list(ordered: Bool, start: Int, items: [NativeMarkdownListItem])
     case quote(String)
-    case code(String)
+    /// A fenced block; `language` is the fence's info word ("swift"), when given.
+    case code(String, language: String?)
     case rule
 }
 
@@ -724,7 +749,9 @@ public func nativeMarkdownBlocks(_ text: String) -> [NativeMarkdownBlock] {
                 body.append(String(lines[next].dropFirst(min(indent, lead))))
                 next += 1
             }
-            let code = NativeMarkdownBlock.code(body.joined(separator: "\n"))
+            let info = trimmed.dropFirst(fence.count).trimmingCharacters(in: .whitespaces)
+                .split(separator: " ").first.map(String.init)
+            let code = NativeMarkdownBlock.code(body.joined(separator: "\n"), language: info?.isEmpty == false ? info : nil)
             if list != nil, !list!.items.isEmpty, indent >= 2 {
                 // Indented under an item: the fence belongs to that item, contents stay literal.
                 flushChild()

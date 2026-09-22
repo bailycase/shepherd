@@ -10,11 +10,25 @@ struct ChildRunsTests {
         ChildRun(runID: id, label: id, state: state, needsAttention: attention)
     }
 
-    @Test @MainActor func agentRowsShowOnlyStatusOrKeyboardBadges() {
-        #expect(AgentRow.trailingAccessory(status: .done, badge: 1) == .status("done"))
-        #expect(AgentRow.trailingAccessory(status: .blocked, badge: 1) == .status("blocked"))
-        #expect(AgentRow.trailingAccessory(status: .working, badge: 1) == .badge(1))
-        #expect(AgentRow.trailingAccessory(status: .working, badge: nil) == .none)
+    @Test func sidebarElapsedIsCoarse() {
+        let start = Date(timeIntervalSince1970: 0)
+        #expect(SidebarTime.elapsed(since: start, now: start.addingTimeInterval(12)) == "12s")
+        #expect(SidebarTime.elapsed(since: start, now: start.addingTimeInterval(125)) == "2m")
+        #expect(SidebarTime.elapsed(since: start, now: start.addingTimeInterval(7_300)) == "2h")
+        #expect(SidebarTime.elapsed(since: start, now: start.addingTimeInterval(200_000)) == "2d")
+        #expect(SidebarTime.elapsed(since: start, now: start.addingTimeInterval(-5)) == "0s")
+    }
+
+    /// Spec §10: live groups are always expanded; a finished group folds for threads that are
+    /// not selected unless the user unfolded it.
+    @Test func finishedSubagentGroupsFoldOutsideTheSelectedThread() {
+        let live = [run("a", state: "complete"), run("b")]
+        let done = [run("a", state: "complete"), run("b", state: "failed")]
+        #expect(!SubagentFolding.folded(children: live, selected: false, unfolded: false))
+        #expect(SubagentFolding.folded(children: done, selected: false, unfolded: false))
+        #expect(!SubagentFolding.folded(children: done, selected: true, unfolded: false))
+        #expect(!SubagentFolding.folded(children: done, selected: false, unfolded: true))
+        #expect(!SubagentFolding.folded(children: [], selected: false, unfolded: false))
     }
 
     @Test func publishReplacesRowsWholesale() {

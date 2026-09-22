@@ -6,12 +6,31 @@ import Foundation
 /// from the user's PATH. Cached per process: the catalog changes on `pi
 /// update`, not mid-session.
 public enum PiModelCatalog {
+    /// One catalog row: `provider/model`, its context window as pi prints it ("200K", "1M"),
+    /// and whether it takes a thinking level.
+    public struct Entry: Equatable, Sendable {
+        public var id: String
+        public var context: String?
+        public var reasoning: Bool
+
+        public init(id: String, context: String? = nil, reasoning: Bool = true) {
+            self.id = id
+            self.context = context
+            self.reasoning = reasoning
+        }
+
+        public var provider: String { id.split(separator: "/", maxSplits: 1).first.map(String.init) ?? id }
+    }
+
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var cached: [String]?
+    nonisolated(unsafe) private static var cached: [Entry]?
 
     /// `provider/model` ids in catalog order; empty when pi is missing or
     /// errors. Blocking — call off the main thread and off the server queue.
-    public static func modelIDs() -> [String] {
+    public static func modelIDs() -> [String] { entries().map(\.id) }
+
+    /// Blocking, like `modelIDs()`.
+    public static func entries() -> [Entry] {
         lock.lock()
         if let cached {
             lock.unlock()
@@ -34,27 +53,36 @@ public enum PiModelCatalog {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { return [] }
 
-        let ids = parse(String(decoding: data, as: UTF8.self))
+        let entries = parseEntries(String(decoding: data, as: UTF8.self))
         lock.lock()
-        cached = ids
+        cached = entries
         lock.unlock()
-        return ids
+        return entries
     }
 
-    /// Parse the aligned table: header row, then `provider  model  …` — the
-    /// first two whitespace-separated fields form the id.
-    static func parse(_ output: String) -> [String] {
-        var ids: [String] = []
+    static func parse(_ output: String) -> [String] { parseEntries(output).map(\.id) }
+
+    /// Parse the aligned table: a header row naming the columns, then `provider  model
+    /// context  max-out  thinking  images`. The id is the first two fields; the other columns
+    /// are read by header position when present.
+    static func parseEntries(_ output: String) -> [Entry] {
+        var entries: [Entry] = []
         var seen = Set<String>()
+        var header: [String] = []
         for (index, line) in output.split(separator: "\n").enumerated() {
-            if index == 0, line.hasPrefix("provider") { continue }
-            let fields = line.split(separator: " ", omittingEmptySubsequences: true)
+            let fields = line.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+            if index == 0, line.hasPrefix("provider") {
+                header = fields
+                continue
+            }
             guard fields.count >= 2 else { continue }
             let id = "\(fields[0])/\(fields[1])"
-            if seen.insert(id).inserted {
-                ids.append(id)
+            guard seen.insert(id).inserted else { continue }
+            func column(_ name: String) -> String? {
+                header.firstIndex(of: name).flatMap { fields.indices.contains($0) ? fields[$0] : nil }
             }
+            entries.append(Entry(id: id, context: column("context"), reasoning: column("thinking").map { $0 != "no" } ?? true))
         }
-        return ids
+        return entries
     }
 }
