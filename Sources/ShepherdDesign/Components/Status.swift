@@ -54,7 +54,7 @@ public struct StatusPill: View {
     }
 }
 
-/// StatusDot (7pt, 6pt compact).
+/// StatusDot (7pt).
 public struct StatusDot: View {
     let color: Color
     var size: CGFloat

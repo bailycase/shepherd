@@ -16,7 +16,7 @@ struct TerminalSettings: View {
 
     var body: some View {
         SettingsPage(title: "Terminal", explanation: "Terminal panes beside a thread: their font and which shell they run.") {
-            SettingsGroup(title: "Font", footnote: "Font changes rebuild every terminal; running processes are untouched.") {
+            SettingsGroup(title: "Font", footnote: "Font changes apply to open terminals in place; running processes are untouched.") {
                 SettingsRow(title: "Font family",
                             subtitle: "Fixed-pitch families installed on this Mac. Ghostty falls back if a family can't be loaded.") {
                     PopupMenu(settings.terminalFontFamily == AppSettings.systemFontFamily ? "System font" : settings.terminalFontFamily,
