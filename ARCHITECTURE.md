@@ -1,6 +1,6 @@
 # Architecture
 
-Shepherd is a native macOS app with one in-process session server. The app owns the workspace, PTYs, persistence, extension socket, and terminal views, and can optionally serve the fleet to remote clients over an authenticated TCP listener. There is no daemon: quitting Shepherd ends every child process.
+Shepherd is a native macOS app with one in-process session server. The app owns the workspace, every agent's `pi --mode rpc` process, the shells' PTYs, persistence, the extension socket, and the views, and can optionally serve the fleet to remote clients over an authenticated TCP listener. There is no daemon: quitting Shepherd ends every child process.
 
 `DESIGN.md` governs visuals and interaction. This document governs code ownership, dependency direction, and mutation paths.
 
@@ -9,29 +9,35 @@ Shepherd is a native macOS app with one in-process session server. The app owns 
 ```text
 ShepherdCore ───────┐
                     ├── ShepherdRemote ── ShepherdSessions ── ShepherdApp
-ShepherdProtocol ───┘                                         ├── TerminalSurfaceKit
+ShepherdProtocol ───┘                                         ├── ShepherdDesign ── ShepherdCore
+                                                              ├── TerminalSurfaceKit
                                                               └── SwiftUI/AppKit
 
 TerminalSurfaceKit ── GhosttyTerminal
 ShepherdSessions ─── SwiftTerm
+shepherd-cli ─────── ShepherdCore, ShepherdProtocol
 ```
 
 - `ShepherdCore`: Codable workspace models, typed IDs, `PaneNode`, status transitions, and structural validation. No dependencies.
-- `ShepherdProtocol`: extension messages and replies, the remote request/reply protocol (version, capabilities, token path), NDJSON framing, and support-directory paths. Depends on Core where IDs or models cross the wire.
-- `ShepherdRemote`: the TCP remote client.
-- `ShepherdSessions`: the authoritative workspace store, PTY processes, terminal screen snapshots, persistence, the extension socket, and the optional remote TCP listener (token handshake, remote attachments, per-viewer minimum-grid PTY sizing, remote mutation handlers).
-- `TerminalSurfaceKit`: the libghostty adapter. It does not know about Shepherd workspaces or agents.
-- `ShepherdApp`: SwiftUI state, selection, pane presentation, settings, themes, and the bridge between layouts and sessions.
+- `ShepherdProtocol`: extension messages and replies, the remote request/reply protocol (version, capabilities, token path), the native thread contract (`NativeThreadRequest`/`NativeThreadResult`/`NativeThreadSnapshot`), pi's RPC wire types, NDJSON framing, and support-directory paths. Depends on Core where IDs or models cross the wire.
+- `ShepherdRemote`: the TCP remote client, plus the platform-neutral thread client (`NativeThreadStore`) and its pure presentation derivations (`NativeThreadPresentation`), shared by local, remote, and iOS views.
+- `ShepherdDesign`: the design system — theme model and Basalt, `ThemeStore`, `Tokens`, `Fonts`, `Metrics`/`Radius`, and the shared SwiftUI components. SwiftUI only: no AppKit views, no app state.
+- `ShepherdSessions`: the authoritative workspace store, agent RPC processes and their thread projection, shell PTY processes, terminal screen snapshots, persistence, the extension socket, and the optional remote TCP listener (token handshake, remote attachments, per-viewer minimum-grid PTY sizing, remote mutation handlers).
+- `TerminalSurfaceKit`: the libghostty adapter used for shell panes. It does not know about Shepherd workspaces or agents.
+- `ShepherdApp`: SwiftUI state, selection, the thread and pane presentation, settings, appearance, and the bridge between layouts and sessions.
+- `shepherd-cli`: a small offline tool (`--import herdr`) that writes `state.json` while the app is not running.
 
-Dependencies point inward. Core and Protocol must not import Sessions or App. Sessions must not import App or TerminalSurfaceKit.
+Dependencies point inward. Core and Protocol must not import Sessions or App. Sessions must not import App, Design, or TerminalSurfaceKit. Design must not import App or Sessions.
 
 ## State ownership
 
-`SessionServer` is the source of truth for persisted `ShepherdState` and live `PTYSession` objects. Its serial queue owns all server state. A PTY session has its own queue targeting that server queue, which preserves ordering without locks.
+`SessionServer` is the source of truth for persisted `ShepherdState` and every live session. Its serial queue owns all server state. Each session — a `PTYSession` for a shell, an `RPCSession` plus its `RPCThreadState` for an agent — has its own queue targeting that server queue, which preserves ordering without locks.
 
-`ShepherdViewModel` owns only app presentation state: current selection, focused pane, collapsed spaces, sheets, settings, and theme choice. It receives authoritative snapshots from `SessionServer`. Its persistence task tail keeps user mutations ordered; a rejected mutation reconciles the view model and `TerminalSessionStore` from `server.state`.
+`ShepherdViewModel` owns only app presentation state: current selection, focused pane, collapsed spaces, the right pane (subagent inspector or review), sheets, settings, and appearance. It receives authoritative snapshots from `SessionServer`. Its persistence task tail keeps user mutations ordered; a rejected mutation reconciles the view model and `TerminalSessionStore` from `server.state`.
 
-`TerminalSessionStore` owns the pane-to-session/view lifecycle. It creates or adopts sessions, attaches surfaces, handles early exits and rebuild races, and explicitly retires dead sessions after the final snapshot is no longer needed.
+`TerminalSessionStore` owns the pane-to-session lifecycle. It creates or adopts sessions (RPC for an agent's primary pane, a login shell otherwise), attaches shell surfaces, handles early exits and rebuild races, and explicitly retires dead sessions after the final snapshot is no longer needed. An agent's thread pane has no surface; `NativeThreadStores` keeps one `NativeThreadStore` per agent for the agent's lifetime so drafts, history pages, and scroll state survive switching and cold parking.
+
+`ThemeStore.shared` (ShepherdDesign) holds the theme, text scale, and density that views read; `ThemeManager` (app) holds the System/Light/Dark choice and pushes the resolved variant to Ghostty surfaces and the pi theme file.
 
 ## Workspace mutation paths
 
@@ -49,9 +55,22 @@ Use a named `SessionServer` mutation rather than editing `server.state` from the
 - State is validated before persistence. `StateStore` writes a candidate atomically before replacing in-memory state or publishing callbacks.
 - Invalid or corrupt startup state is quarantined. If quarantine fails, further writes are blocked rather than overwriting evidence.
 
-New persistent fields belong in `ShepherdCore`. Add validation only for invariants the type system and constructors do not already enforce. Include decoding coverage when changing stored JSON; old unknown keys are intentionally ignored.
+New persistent fields belong in `ShepherdCore`. Add validation only for invariants the type system and constructors do not already enforce. Include decoding coverage when changing stored JSON; old unknown keys are intentionally ignored. The terminal era's per-agent `runtime` key is one of them: `Agent` ignores it on decode (still encoding `"rpc"` for older remote clients), so those agents relaunch over RPC in their existing pi session.
 
-## PTY and terminal output flow
+## Agent thread flow
+
+```text
+pi --mode rpc (login shell, --session-id, -e extensions)
+  → RPCSession (stdin/stdout JSONL pipes, bounded)
+  → RPCThreadState (events → NativeThreadSnapshot; requests → RPC commands)
+  → SessionServer.nativeThread (local, direct)  |  RemoteRequest.nativeThread (TCP)
+  → NativeThreadStore (poll, page, echo, settle)
+  → ThreadView / Composer / SubagentInspector
+```
+
+`RPCSession` owns the child and its pipes; `RPCThreadState` projects pi's event stream into a bounded, revisioned `NativeThreadSnapshot` and serves requests (send, answer, abort, model/thinking, subagent commands and transcripts) with session/generation checks so a stale action can never land in a new pi session. The local GUI and remote clients use the same request path; only the transport differs. See [docs/native-thread.md](docs/native-thread.md).
+
+## PTY and terminal output flow (shells)
 
 ```text
 child process
@@ -95,25 +114,32 @@ This boundary keeps engine API changes local. App-owned keyboard chords must als
 - `ShepherdViewModel.swift`: observable state, dependencies, initialization, callbacks, teardown.
 - `ShepherdViewModel+Navigation.swift`: hierarchy lookups, sidebar ordering, selection, focus.
 - `ShepherdViewModel+Creation.swift`: ordered persistence, spaces, quick creation, new agents, settings reset.
-- `ShepherdViewModel+Workspace.swift`: panes, session exits, rename, deletion.
+- `ShepherdViewModel+Workspace.swift`: panes, session exits, rename, deletion, cold parking.
+- `ShepherdViewModel+RightPane.swift`, `+Review.swift`, `+ChildInspector.swift`, `ChildRuns.swift`: the right pane (review or subagent inspector), thread keyboard commands, review sessions, subagent rows and forks.
 - `ShepherdViewModel+Palette.swift`, `CommandPalette.swift`, `CommandPaletteView.swift`, `PaletteContentSearch.swift`: command palette model, view, and transcript search.
 - `ShepherdViewModel+Automations.swift`: automation lifecycle, hidden-space agents.
-- `ShepherdViewModel+ChildInspector.swift` and `ChildRuns.swift`: subagent child rows and the inspector.
+- `ShepherdViewModel+Remote*.swift`: remote agent actions, inspection queries, remote worktrees.
+- `RootView.swift`, `SidebarView.swift`, `ThreadHeader.swift`, `WorkspaceView.swift`, `WorkspaceSelection.swift`: the window shell, sidebar, header, pane trees, and mounted-layout identity and visibility rules.
+- `Thread/`: `ThreadView`, `Composer` (with the slash menu, model picker, question panel), `ThreadTurns`, `ThreadTools`, `ThreadMarkdown`, `Subagents` (cards, strip, ledger), `SubagentInspector` (plus `RightPaneSplit`). `NativeThreadStores.swift` keeps one store per agent.
+- `DiffReview.swift`, `DiffReviewView.swift`, `GitDiff.swift`, `CodeHighlight.swift`: the review pane and its diff/syntax model.
 - `Keybindings.swift`: `KeybindingsStore`, chord validation, ghostty unbinds.
-- `RemoteHostStore.swift`, `RemoteSidebarSection.swift`, `RemoteDirectoryPicker.swift`, `SettingsRemote.swift`: remote host configs, sidebar machine roots, remote pickers, listener settings.
-- `StatusExtension.swift`, `NamerExtension.swift`, `PanesExtension.swift`, `ThemeExtension.swift`, `SubagentsExtension.swift`, `InspectExtension.swift`: embedded copies of the canonical `Extensions/*` sources.
-- `TerminalSessions.swift`: pane/session adoption, attachment, surface rebuild, retirement.
+- `RemoteHostStore.swift`, `RemoteSidebarSection.swift`, `RemoteDirectoryPicker.swift`, `SettingsRemote.swift`: remote host configs, sidebar host sections, remote pickers, listener settings.
+- `StatusExtension.swift`, `NamerExtension.swift`, `PanesExtension.swift`, `ReviewExtension.swift`, `ThemeExtension.swift`, `SubagentsExtension.swift`, `ChildrenExtension.swift`, `InspectExtension.swift`: embedded copies of the canonical `Extensions/*` sources.
+- `TerminalSessions.swift`: pane/session adoption, agent launch commands, attachment, surface rebuild, retirement.
 - `PaneControl.swift`: extension-driven pane authorization and routing.
-- `WorkspaceSelection.swift`: mounted-layout identity and visibility rules.
-- `SettingsView.swift` and `SettingsComponents.swift`: settings shell and shared chrome.
-- `SettingsAppearance.swift`, `SettingsTerminal.swift`, `SettingsAgents.swift`, `SettingsKeyboard.swift`, `SettingsAdvanced.swift`: section-specific UI.
-- `Themes.swift` and `DesignTokens.swift`: theme values and view-facing tokens.
+- `SettingsView.swift`, `SettingsComponents.swift`, `Settings*.swift`: the in-window Settings surface and its pages.
+- `Themes.swift`, `ShepherdPiTheme.swift`: appearance mode, the resolved variant for Ghostty, the pi theme file and variant marker.
+- `LegacyDesign.swift`: deprecated aliases for pre-redesign token names; delete with the last call site.
+- `ComponentGallery.swift`: every shared component in every state (Debug menu).
+- `NewAgentSheet.swift`, `NewWorktreeSheet.swift`, `FinalizeWorktreeSheet.swift`, `GitWorktree.swift`, `WorktreeFinalize.swift`, `DialogSheet.swift`: creation, worktree, and confirmation flows.
 
 ## Where a new feature belongs
 
 - Pure model, ID, tree operation, or invariant: `ShepherdCore`.
 - Wire message or framing rule: `ShepherdProtocol` plus all consumers and round-trip tests.
-- Persisted mutation, process, PTY, socket, or screen behavior: `ShepherdSessions`.
+- Persisted mutation, process, PTY, RPC projection, socket, or screen behavior: `ShepherdSessions`.
+- Thread-client behavior or a pure presentation rule shared with remote/iOS: `ShepherdRemote`.
+- A color role, type token, size, or reusable control: `ShepherdDesign` (roles in every theme, contrast tests where text is involved).
 - Ghostty configuration or surface behavior: `TerminalSurfaceKit`, exposed through `TerminalHost.swift` if the app needs it.
 - Selection, presentation, settings, or user interaction: `ShepherdApp`, in the narrowest existing responsibility file.
 

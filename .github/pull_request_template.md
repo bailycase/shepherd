@@ -46,6 +46,6 @@ Call out risks, tradeoffs, unresolved questions, and where review should start.
 
 - [ ] I reviewed my own diff.
 - [ ] Focused tests cover the changed behavior, or I explained why no test applies.
-- [ ] UI changes follow `DESIGN.md` and include visual evidence.
+- [ ] UI changes follow `DESIGN.md`, use `ShepherdDesign` tokens and components, and include visual evidence in light and dark.
 - [ ] Protocol or extension changes update every consumer, embedded copy, and round-trip test.
 - [ ] User-facing documentation was updated where needed.

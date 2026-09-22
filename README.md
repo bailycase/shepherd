@@ -2,7 +2,7 @@
 
 A native macOS app for running and supervising many [pi](https://github.com/earendil-works/pi-coding-agent) coding agents at once.
 
-Shepherd organizes work around agents, not chat threads. Each agent is a real `pi` process in a real terminal (rendered by [libghostty](https://ghostty.org)), with a status, a name it gives itself, and a workspace it runs in. The sidebar is the supervision surface: status dots show who is working, who is blocked waiting on you, and who is done. Selecting an agent drops you into its live terminal.
+Shepherd organizes work around agents, not chat threads. Each agent is a real `pi` process (`pi --mode rpc`, owned by the app) with a status, a name it gives itself, and a workspace it runs in. Shepherd is pi's only UI: every agent renders as a native thread — transcript, tool calls, questions, and subagents — with a composer for follow-ups. The sidebar is the supervision surface: status dots show who is working, who needs you, and who is done. Plain shells beside an agent are real terminals rendered by [libghostty](https://ghostty.org).
 
 > Screenshot coming soon.
 
@@ -12,12 +12,13 @@ Shepherd is opinionated software. It's built around my workflow and preferences 
 ## What it does
 
 - Spaces group agents by project checkout; agents, shells, and split panes live inside them.
-- Agents run real `pi` TUIs in PTYs owned by the app. No daemon: quit Shepherd and every agent stops. Relaunch restores the workspace and respawns fresh processes.
+- Agents run `pi --mode rpc` processes owned by the app and render as native threads: one-line tool rows, thinking, questions answered in place, slash commands, model and thinking pickers, image attachments. No daemon: quit Shepherd and every agent stops. Relaunch restores the workspace and resumes each agent's pi session.
 - Agents name themselves from their opening prompt and report lifecycle status (`working`, `blocked`, `done`, `idle`) through bundled pi extensions.
-- Agents can open, run, read, and close their own terminal panes; pi subagents surface as child rows with a read-only inspector.
+- Agents can open, run, read, and close shell panes beside their thread. Subagents render as live cards in the thread and nest under their agent in the sidebar, with an inspector in a docked right pane.
+- A review pane docks beside the thread: the working tree or PR diff, inline comments, and "request changes" sent back to the agent.
 - Automations: saved monitoring prompts that run as dedicated agents and notify you when a condition is met.
 - Optional remote access: the app can serve its fleet over an authenticated TCP listener to another Mac. Off by default.
-- Command palette with fleet-wide transcript search, rebindable keyboard chords, light/dark Basalt theme synced into pi's TUI.
+- Command palette with fleet-wide transcript search, rebindable keyboard chords, and the light/dark Basalt theme (also applied to shells and to pi run by hand in a shell).
 
 ## Requirements
 
@@ -78,19 +79,15 @@ readable `.bash_profile`, `.bash_login`, or `.profile` through an interactive rc
 its `login_shell` flag is off and `.bash_logout` does not run automatically. Other
 configured shells keep their normal startup without automatic pi theming.
 
-## Native desktop preview
-
-Local agent panes can switch between native chat and the existing Ghostty terminal without restarting pi. Terminal remains the default; auxiliary panes stay unchanged. See [desktop setup and limits](docs/desktop-native.md) and the [extension text/status widget API](docs/native-ui-widgets.md).
-
 ## iOS MVP
 
-The `Shepherd iOS` scheme builds a native iOS 27 remote client for viewing live threads, sending messages, cancelling agents, and answering standard dialogs. See [iOS setup and limits](docs/ios/README.md). Mobile dialog answers currently require the included prototype pi source patch; it is not installed automatically.
+The `Shepherd iOS` scheme builds a native iOS 27 remote client for viewing live threads, sending messages, cancelling agents, and answering standard dialogs. See [iOS setup and limits](docs/ios/README.md). The iOS client predates the current design system; it adopts it after the Mac redesign.
 
 ## Remote access
 
 Settings ▸ Remote toggles a TCP listener (default port 7433) that serves the fleet to remote Shepherd clients. Auth is a shared bearer token generated in the support directory. **There is no TLS** — the listener binds on all interfaces and assumes a trusted network or VPN as the transport boundary. Do not expose it to the internet.
 
-Connected Macs can create, rename, reorder, and delete host agents; inspect subagents; search transcripts; and review diffs or PR changes. Worktree creation, setup, finalization, and confirmed deletion run on the host. File and image drops upload to the host, with a 32 MiB per-file limit. New remote features require a compatible host; ordinary agent creation and terminal access remain available with older hosts.
+Connected Macs can create, rename, reorder, and delete host agents; inspect subagents; search transcripts; and review diffs or PR changes. Worktree creation, setup, finalization, and confirmed deletion run on the host. File and image drops upload to the host, with a 32 MiB per-file limit. New remote features require a compatible host; ordinary agent creation and shell access remain available with older hosts.
 
 ## Scope
 
@@ -99,7 +96,9 @@ Shepherd supervises agents and provides explicit worktree creation, finalization
 ## Documentation
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — dependency direction, state ownership, PTY and protocol flow
-- [DESIGN.md](DESIGN.md) — the UI and interaction specification
+- [DESIGN.md](DESIGN.md) — the UI and interaction specification (condensed from the [design handoff](docs/design-spec/handoff.md))
+- [docs/native-thread.md](docs/native-thread.md) — how an agent's `pi --mode rpc` process becomes its thread
+- [docs/native-subagents.md](docs/native-subagents.md) — the bundled native subagent runtime
 - [AGENTS.md](AGENTS.md) — contributor guide (build, test, invariants, gotchas)
 
 ## License
