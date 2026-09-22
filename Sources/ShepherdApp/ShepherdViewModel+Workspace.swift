@@ -14,9 +14,7 @@ extension ShepherdViewModel {
             state: state,
             selectedSpaceID: selectedSpaceID,
             selectedAgentID: selectedAgentID,
-            selectedShellID: selectedShellID,
             remoteSelectionActive: selectedRemoteAgent != nil,
-            visitedTabIDs: visitedSpaceShellTabs,
             parkedTabIDs: parkedTabIDs
         )
     }
@@ -71,12 +69,9 @@ extension ShepherdViewModel {
         syncParkSweepTimer()
     }
 
-    /// Record the currently visible layout so it stays mounted after
-    /// selection moves on (space shell tabs mount lazily — see
-    /// `WorkspaceSelection`). Called by the workspace view on every
-    /// active-tab change, which covers all selection paths.
+    /// Called by the workspace view on every active-tab change, which covers all selection
+    /// paths: keeps cold-parking bookkeeping current.
     func noteActiveTabVisited() {
-        if let id = activeTabID { visitedSpaceShellTabs.insert(id) }
         noteActiveTabForParking()
     }
 
@@ -164,6 +159,22 @@ extension ShepherdViewModel {
         focusedPaneID = newPane.id
     }
 
+    /// Split a terminal pane off the agent's thread and type `command` into its fresh shell
+    /// (visible and cancelable, not a hidden exec).
+    func openTerminalPane(besideAgent agent: Agent, running command: String) {
+        guard let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return }
+        let anchor = agent.paneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
+        guard let leaf = tab.layout.leaf(withID: anchor) else { return }
+        let pane = LeafPane(cwd: leaf.cwd)
+        guard let layout = tab.layout.splitting(pane: anchor, axis: .vertical, newPane: pane) else { return }
+        setLayout(layout, forTab: tab.id)
+        focusedPaneID = pane.id
+        Task {
+            guard let session = await sessions.awaitSession(forPane: pane.id, timeout: .seconds(10)) else { return }
+            server.write(sessionID: session, data: Data((command + "\n").utf8))
+        }
+    }
+
     func closeFocusedPane() {
         if let remote = selectedRemoteAgent {
             if remoteInspectingAgent == remote, let tab = remoteVisibleTab(remote) {
@@ -206,14 +217,8 @@ extension ShepherdViewModel {
             NSSound.beep()
             return
         }
-        if closeLocalPane(focus) {
-            return
-        } else if tab.isShell {
-            // ⌘W on a shell's last pane closes the shell — that is what
-            // closing "the shell" means; there is no process worth guarding.
-            deleteShell(tab.id)
-        } else {
-            // A layout always keeps its last pane; exit the process instead.
+        if !closeLocalPane(focus) {
+            // A layout always keeps its last pane.
             NSSound.beep()
         }
     }

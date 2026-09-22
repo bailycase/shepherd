@@ -757,24 +757,6 @@ final class TerminalSessionStore: ObservableObject {
                     themePath: settings.piThemeExtension
                         ? try ShepherdPiTheme.installedPath(for: ThemeManager.shared.current) : nil
                 )
-                // A global shell that was running something when the app
-                // last quit restarts it: type the recorded command into the
-                // fresh shell (visible and cancelable, not a hidden exec).
-                if let restore = serverState?.tabs.first(where: {
-                    $0.isShell && $0.layout.firstLeaf.id == pane.id
-                })?.restoreCommand, !restore.isEmpty {
-                    let paneID = session.paneID
-                    Task { [weak self] in
-                        guard let self else { return }
-                        guard let sessionID = await self.awaitSession(forPane: paneID, timeout: .seconds(5)) else {
-                            return
-                        }
-                        // A beat for the shell to print its prompt and
-                        // install its own tty settings.
-                        try? await Task.sleep(for: .milliseconds(500))
-                        self.server.write(sessionID: sessionID, data: Data((restore + "\n").utf8))
-                    }
-                }
             }
             if !session.isRPC { await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds) }
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID),

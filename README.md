@@ -2,7 +2,7 @@
 
 A native macOS app for running and supervising many [pi](https://github.com/earendil-works/pi-coding-agent) coding agents at once.
 
-Shepherd organizes work around agents, not chat threads. Each agent is a real `pi` process (`pi --mode rpc`, owned by the app) with a status, a name it gives itself, and a workspace it runs in. Shepherd is pi's only UI: every agent renders as a native thread — transcript, tool calls, questions, and subagents — with a composer for follow-ups. The sidebar is the supervision surface: status dots show who is working, who needs you, and who is done. Plain shells beside an agent are real terminals rendered by [libghostty](https://ghostty.org).
+Shepherd organizes work around agents, not chat threads. Each agent is a real `pi` process (`pi --mode rpc`, owned by the app) with a status, a name it gives itself, and a workspace it runs in. Shepherd is pi's only UI: every agent renders as a native thread — transcript, tool calls, questions, and subagents — with a composer for follow-ups. The sidebar is the supervision surface: status dots show who is working, who needs you, and who is done. Terminal panes beside an agent's thread are real terminals rendered by [libghostty](https://ghostty.org).
 
 > Screenshot coming soon.
 
@@ -11,14 +11,14 @@ Shepherd is opinionated software. It's built around my workflow and preferences 
 
 ## What it does
 
-- Spaces group agents by project checkout; agents, shells, and split panes live inside them.
+- Spaces group agents by project checkout; each agent's thread can have terminal panes split beside it.
 - Agents run `pi --mode rpc` processes owned by the app and render as native threads: one-line tool rows, thinking, questions answered in place, slash commands, model and thinking pickers, image attachments. No daemon: quit Shepherd and every agent stops. Relaunch restores the workspace and resumes each agent's pi session.
 - Agents name themselves from their opening prompt and report lifecycle status (`working`, `blocked`, `done`, `idle`) through bundled pi extensions.
-- Agents can open, run, read, and close shell panes beside their thread. Subagents render as live cards in the thread and nest under their agent in the sidebar, with an inspector in a docked right pane.
+- Agents can open, run, read, and close terminal panes beside their thread. Subagents render as live cards in the thread and nest under their agent in the sidebar, with an inspector in a docked right pane.
 - A review pane docks beside the thread: the working tree or PR diff, inline comments, and "request changes" sent back to the agent.
 - Automations: saved monitoring prompts that run as dedicated agents and notify you when a condition is met.
 - Optional remote access: the app can serve its fleet over an authenticated TCP listener to another Mac. Off by default.
-- Command palette with fleet-wide transcript search, rebindable keyboard chords, and the light/dark Basalt theme (also applied to shells and to pi run by hand in a shell).
+- Command palette with fleet-wide transcript search, rebindable keyboard chords, and the light/dark Basalt theme (also applied to terminal panes and to pi run by hand in one).
 
 ## Requirements
 
@@ -62,13 +62,13 @@ swift test
 
 The GUI only runs through the Xcode project; `ShepherdApp` is a library product.
 
-## Pi in shell panes
+## Pi in terminal panes
 
 With the theme extension enabled, typing `pi` in a new zsh, bash, or fish pane loads
 Shepherd's theme for that run. Startup files live in Shepherd's support directory;
 Shepherd does not edit your shell rc files or pi settings. Existing `pi` aliases and
 functions take precedence. Absolute paths and `command pi` bypass the integration.
-Reopen existing shell panes after upgrading or changing the theme-extension toggle.
+Reopen existing terminal panes after upgrading or changing the theme-extension toggle.
 
 Shell-launched pi has no Shepherd agent identity, so agent-only pane, review,
 automation, and peer tools remain unavailable. Status, naming, and subagent reporting
@@ -87,7 +87,7 @@ The `Shepherd iOS` scheme builds a native iOS 27 remote client for viewing live 
 
 Settings ▸ Remote toggles a TCP listener (default port 7433) that serves the fleet to remote Shepherd clients. Auth is a shared bearer token generated in the support directory. **There is no TLS** — the listener binds on all interfaces and assumes a trusted network or VPN as the transport boundary. Do not expose it to the internet.
 
-Connected Macs can create, rename, reorder, and delete host agents; inspect subagents; search transcripts; and review diffs or PR changes. Worktree creation, setup, finalization, and confirmed deletion run on the host. File and image drops upload to the host, with a 32 MiB per-file limit. New remote features require a compatible host; ordinary agent creation and shell access remain available with older hosts.
+Connected Macs can create, rename, reorder, and delete host agents; inspect subagents; search transcripts; and review diffs or PR changes. Worktree creation, setup, finalization, and confirmed deletion run on the host. File and image drops upload to the host, with a 32 MiB per-file limit. New remote features require a compatible host; ordinary agent creation remains available with older hosts.
 
 ## Scope
 

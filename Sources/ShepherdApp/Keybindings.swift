@@ -7,11 +7,7 @@ import ShepherdDesign
 /// hold-⌘ badges, ⌘, Settings, ⏎/⎋ in sheets) are deliberately not here:
 /// they are structural conventions, not preferences.
 enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
-    case newAgent, newAgentOptions, newSpace, renameAgent, newShell
-    /// The digit row 1–9 selects shells with this chord's modifiers (the
-    /// recorded digit is representative; all nine follow). ⌘1–9 stays fixed
-    /// for agents, so shell digits use a different modifier combination.
-    case shellDigits
+    case newAgent, newAgentOptions, newSpace, renameAgent
     case commandPalette, nextAgent, previousAgent
     case splitVertical, splitHorizontal, closePane, deleteAgent
     case focusNextPane, focusPreviousPane
@@ -25,8 +21,6 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .newAgentOptions: return "New Agent with Options…"
         case .newSpace: return "New Space…"
         case .renameAgent: return "Rename Agent…"
-        case .newShell: return "New Shell"
-        case .shellDigits: return "Select Shell 1–9"
         case .commandPalette: return "Command Palette"
         case .nextAgent: return "Next Agent"
         case .previousAgent: return "Previous Agent"
@@ -55,8 +49,6 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .newAgentOptions: return KeyChord(key: "t", command: true, shift: true)
         case .newSpace: return KeyChord(key: "n", command: true, shift: true)
         case .renameAgent: return KeyChord(key: "r", command: true)
-        case .newShell: return KeyChord(key: "t", command: true)
-        case .shellDigits: return KeyChord(key: "1", control: true)
         case .commandPalette: return KeyChord(key: "k", command: true)
         case .nextAgent: return KeyChord(key: "down", command: true)
         case .previousAgent: return KeyChord(key: "up", command: true)
@@ -273,17 +265,9 @@ final class KeybindingsStore: ObservableObject {
     }
 
     func display(_ action: ShortcutAction) -> String {
-        // The recorded digit stands for the whole row.
-        if action == .shellDigits {
-            var chord = chord(for: action)
-            chord.key = "1–9"
-            return chord.display
-        }
-        return chord(for: action).display
+        chord(for: action).display
     }
 
-    /// Modifiers applied to the digit row for shell selection.
-    var shellDigitModifiers: EventModifiers { chord(for: .shellDigits).eventModifiers }
     func shortcut(_ action: ShortcutAction) -> KeyboardShortcut { chord(for: action).shortcut }
     func isDefault(_ action: ShortcutAction) -> Bool { overrides[action] == nil }
 
@@ -313,16 +297,6 @@ final class KeybindingsStore: ObservableObject {
     ]
 
     func validate(_ chord: KeyChord, for action: ShortcutAction) -> AssignmentError? {
-        if action == .shellDigits {
-            // Any modified digit works except plain ⌘digits (agents) and
-            // ⌃⇧digits (machine jumps). A bare digit remains terminal input.
-            guard let first = chord.key.first, first.isNumber,
-                  chord.shift || chord.option || chord.control else { return .reservedChord }
-            if chord.control && chord.shift && !chord.command && !chord.option {
-                return .reservedChord
-            }
-            return nil
-        }
         guard chord.command else { return .missingCommand }
         if let first = chord.key.first, first.isNumber { return .reservedChord }
         if !chord.shift && !chord.option && !chord.control,
@@ -372,20 +346,6 @@ final class KeybindingsStore: ObservableObject {
     /// a focused terminal lets the rebound shortcut reach the app. Default
     /// chords are already in TerminalSurfaceKit's own unbind list.
     var customGhosttyUnbinds: [String] {
-        var chords = overrides.map { action, chord -> [String] in
-            guard action == .shellDigits else { return [chord.ghosttyChord] }
-            // The recorded digit stands for the whole row: unbind all nine
-            // (both unicode and physical spellings, like the built-ins).
-            let names = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
-            var mods: [String] = []
-            if chord.control { mods.append("ctrl") }
-            if chord.option { mods.append("alt") }
-            if chord.shift { mods.append("shift") }
-            if chord.command { mods.append("cmd") }
-            let prefix = mods.joined(separator: "+")
-            return names.flatMap { ["\(prefix)+\($0)", "\(prefix)+physical:\($0)"] }
-        }.flatMap { $0 }
-        chords.sort()
-        return chords
+        overrides.values.map(\.ghosttyChord).sorted()
     }
 }

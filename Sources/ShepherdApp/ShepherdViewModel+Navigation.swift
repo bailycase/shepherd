@@ -219,7 +219,6 @@ extension ShepherdViewModel {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
-        selectedShellID = nil
         selectedRemoteAgent = nil
         selectionHistory.removeAll { $0 == id }
         selectionHistory.append(id)
@@ -230,7 +229,7 @@ extension ShepherdViewModel {
     }
 
     /// Reselect the most recently selected agent that still exists, after
-    /// `dying` goes away. Falls back to the space shell when history is empty.
+    /// `dying` goes away. Falls back to no selection (an empty workspace) when history is empty.
     func selectPreviousAgent(after dying: AgentID) {
         selectionHistory.removeAll { $0 == dying }
         while let candidate = selectionHistory.last {
@@ -249,10 +248,15 @@ extension ShepherdViewModel {
         return focusMemory.focus(enteringTab: tabID, layout: layout, fallback: fallback)
     }
 
-    /// A space's `shell` row shows the space's shell workspace.
+    /// Go to a space (palette, Space menu): its most recently selected agent, else its first
+    /// in sidebar order, else the space with no agent (an empty workspace offering New agent).
     func selectSpace(_ id: SpaceID) {
         guard state.spaces.contains(where: { $0.id == id }) else { return }
-        selectedShellID = nil
+        let agents = state.agents.filter { $0.spaceID == id }
+        if let recent = selectionHistory.last(where: { recent in agents.contains { $0.id == recent } }) ?? orderedAgents.first(where: { $0.spaceID == id })?.id {
+            selectAgent(recent)
+            return
+        }
         selectedRemoteAgent = nil
         selectedSpaceID = id
         selectedAgentID = nil
@@ -299,18 +303,17 @@ extension ShepherdViewModel {
     /// The sidebar row a selection change should scroll into view: the
     /// selected local agent's row, or its space's header row when the space
     /// is collapsed (the agent has no row then). Nil when nothing local is
-    /// on screen to reveal — a shell or remote agent owns the workspace, or
+    /// on screen to reveal — a remote agent owns the workspace, or
     /// the space has no visible row (hidden, or under a collapsed parent).
     /// Pure, separated for tests.
     static func sidebarRevealTarget(
         selectedAgentID: AgentID?,
         selectedSpaceID: SpaceID?,
-        shellSelected: Bool,
         remoteSelected: Bool,
         spaces: [Space],
         collapsed: Set<SpaceID>
     ) -> AnyHashable? {
-        guard !shellSelected, !remoteSelected, let spaceID = selectedSpaceID else { return nil }
+        guard !remoteSelected, let spaceID = selectedSpaceID else { return nil }
         let visible = visibleSpaceForest(spaces.filter { !$0.hidden }, collapsed: collapsed)
         guard visible.contains(where: { $0.space.id == spaceID }) else { return nil }
         if let selectedAgentID, !collapsed.contains(spaceID) { return AnyHashable(selectedAgentID) }
@@ -328,7 +331,6 @@ extension ShepherdViewModel {
         return Self.sidebarRevealTarget(
             selectedAgentID: selectedAgentID,
             selectedSpaceID: selectedSpaceID,
-            shellSelected: selectedShellID != nil,
             remoteSelected: selectedRemoteAgent != nil,
             spaces: state.spaces,
             collapsed: collapsedSpaces
@@ -339,7 +341,6 @@ extension ShepherdViewModel {
     func selectRemoteAgent(hostID: UUID, agentID: AgentID) {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
-        selectedShellID = nil
         selectedRemoteAgent = RemoteAgentRef(hostID: hostID, agentID: agentID)
         lastRemoteAgentByHost[hostID] = agentID
         // Same rule as the local tree: a selected row must not stay hidden

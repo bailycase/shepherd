@@ -344,8 +344,6 @@ struct KeybindingsTests {
         #expect(keys.display(.newSpace) == "⇧⌘N")
         #expect(keys.display(.nextAgent) == "⌘↓")
         #expect(keys.display(.previousAgent) == "⌘↑")
-        #expect(keys.display(.shellDigits) == "⌃1–9")
-        #expect(keys.chord(for: .shellDigits) == KeyChord(key: "1", control: true))
         #expect(keys.display(.splitVertical) == "⌘D")
         #expect(keys.display(.splitHorizontal) == "⇧⌘D")
         #expect(keys.display(.closePane) == "⌘W")
@@ -386,9 +384,13 @@ struct KeybindingsTests {
         #expect(keys.assign(KeyChord(key: "c", command: true, option: true), to: .closePane) == nil)
     }
 
-    @Test func machineDigitsAreReservedFromShellSelection() {
-        let keys = KeybindingsStore(store: scratchDefaults())
-        #expect(keys.assign(KeyChord(key: "1", shift: true, control: true), to: .shellDigits) == .reservedChord)
+    /// Shells were removed; overrides saved for their shortcuts must not break loading.
+    @Test func overridesForRemovedActionsAreIgnored() throws {
+        let store = scratchDefaults()
+        let saved = ["shellDigits": KeyChord(key: "1", option: true), "renameAgent": KeyChord(key: "k", command: true, shift: true)]
+        store.set(try JSONEncoder().encode(saved), forKey: KeybindingsStore.defaultsKey)
+        let keys = KeybindingsStore(store: store)
+        #expect(keys.overrides == [.renameAgent: KeyChord(key: "k", command: true, shift: true)])
     }
 
     @Test func conflictingChordsAreRejectedAcrossActions() {

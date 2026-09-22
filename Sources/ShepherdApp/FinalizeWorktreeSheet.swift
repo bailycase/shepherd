@@ -65,7 +65,7 @@ struct FinalizeWorktreeSheet: View {
             case .setup:
                 WorktreeSetupChecklist(model: setup) {
                     vm.finalizeRequest = nil
-                    vm.openGhLoginShell()
+                    vm.openGhLogin(besideAgent: agent.id)
                 }
                 setupFooter
             case .input:
@@ -474,7 +474,7 @@ struct FinalizeWorktreeSheet: View {
 /// visual verification pass.
 struct WorktreeSetupChecklist: View {
     @ObservedObject var model: WorktreeSetupModel
-    /// gh login needs a real terminal — Shepherd opens one of its own shells.
+    /// gh login needs a real terminal — Shepherd opens a pane beside the agent's thread.
     let openLoginShell: () -> Void
     @State private var identityName = ""
     @State private var identityEmail = ""

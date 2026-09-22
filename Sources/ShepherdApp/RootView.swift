@@ -196,30 +196,6 @@ struct RootView: View {
                 onCancel: { vm.spaceRenameTarget = nil }
             )
         }
-        .onChange(of: vm.shellRenameTarget) {
-            if let id = vm.shellRenameTarget,
-               let shell = vm.state.tabs.first(where: { $0.id == id }) {
-                renameDraft = ShepherdViewModel.shellLabel(shell)
-            }
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { vm.shellRenameTarget != nil },
-                set: { if !$0 { vm.shellRenameTarget = nil } }
-            )
-        ) {
-            RenameDialog(
-                title: "Rename Shell",
-                text: $renameDraft,
-                onRename: {
-                    if let id = vm.shellRenameTarget {
-                        vm.renameShell(id, to: renameDraft)
-                    }
-                    vm.shellRenameTarget = nil
-                },
-                onCancel: { vm.shellRenameTarget = nil }
-            )
-        }
         .sheet(
             isPresented: Binding(
                 get: { vm.agentRenameTarget != nil },
@@ -392,15 +368,13 @@ struct WorkspaceHeaderView: View {
                                  title: agent.name, leadingInset: inset, paneOpen: vm.isRightPaneOpen,
                                  togglePane: { vm.toggleRightPane() }, rename: { vm.remoteRenameTarget = remote })
                 }
-            } else if let shellID = vm.selectedShellID, let shell = vm.state.tabs.first(where: { $0.id == shellID }) {
-                PlainHeader(project: "Shells", title: ShepherdViewModel.shellLabel(shell), leadingInset: inset)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
                       let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
                 ThreadHeader(store: vm.threadStores.store(for: agent.id), project: space.name, title: agent.name,
                              leadingInset: inset, paneOpen: vm.isRightPaneOpen,
                              togglePane: { vm.toggleRightPane() }, rename: { vm.agentRenameTarget = agent.id })
             } else if let space = vm.selectedSpace {
-                PlainHeader(project: space.name, title: "Shell", leadingInset: inset)
+                PlainHeader(project: space.name, title: "No agent selected", leadingInset: inset)
             } else {
                 PlainHeader(project: "Shepherd", title: "No agent selected", leadingInset: inset)
             }

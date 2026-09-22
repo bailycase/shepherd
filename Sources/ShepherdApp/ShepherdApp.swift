@@ -56,10 +56,6 @@ public struct ShepherdMacApp: App {
                     Task { @MainActor in vm.addSpaceFromPanel() }
                 }
                 .keyboardShortcut(keys.shortcut(.newSpace))
-                Button("New Shell") {
-                    Task { @MainActor in vm.addShell() }
-                }
-                .keyboardShortcut(keys.shortcut(.newShell))
             }
             CommandGroup(after: .toolbar) {
                 Button("Command Palette") {
@@ -116,25 +112,6 @@ public struct ShepherdMacApp: App {
                             let id = space.id
                             Task { @MainActor in vm.selectSpace(id) }
                         }
-                    }
-                }
-                if !vm.shellTabs.isEmpty {
-                    Divider()
-                    // Shell selection digits 1–9; modifiers follow the
-                    // rebindable "Select Shell 1–9" chord (default ⌃).
-                    ForEach(Array(vm.shellTabs.prefix(9).enumerated()), id: \.element.id) { index, shell in
-                        Button(ShepherdViewModel.shellLabel(shell)) {
-                            let id = shell.id
-                            Task { @MainActor in vm.selectShell(id) }
-                        }
-                        // No palette suppression needed: shell chords always
-                        // carry a modifier beyond ⌘ (validation forbids plain
-                        // ⌘digits), so they cannot collide with the palette's
-                        // ⌘digit quick-pick.
-                        .keyboardShortcut(
-                            KeyEquivalent(Character("\(index + 1)")),
-                            modifiers: keys.shellDigitModifiers
-                        )
                     }
                 }
             }

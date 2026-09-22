@@ -60,7 +60,7 @@ public extension ShepherdState {
             guard tabIDs.insert(tab.id).inserted else {
                 throw ShepherdStateValidationError.duplicateID(kind: "tab", id: tab.id.rawValue)
             }
-            // Global shells (spaceID == nil) belong to no space by design.
+            // Tabs from older files may have no space (global shells); startup drops them.
             if let spaceID = tab.spaceID {
                 guard spaceIDs.contains(spaceID) else {
                     throw ShepherdStateValidationError.missingSpaceForTab(tabID: tab.id, spaceID: spaceID)

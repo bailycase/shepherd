@@ -508,7 +508,7 @@ struct RemoteSessionStreamTests {
         }
     }
 
-    @Test func remoteAddSpaceCreatesSpaceWithShellTab() async throws {
+    @Test func remoteAddSpaceCreatesSpaceWithoutALayout() async throws {
         let h = try Harness()
         defer { h.tearDown() }
 
@@ -521,7 +521,7 @@ struct RemoteSessionStreamTests {
         let spaceID = try await client.addSpace(path: dir.path)
         let state = h.server.state
         #expect(state.spaces.map(\.id) == [spaceID])
-        #expect(state.tabs.count { $0.spaceID == spaceID } == 1)
+        #expect(state.tabs.count { $0.spaceID == spaceID } == 0)
 
         // Duplicate and bogus paths are rejected with typed errors.
         await #expect(throws: RemoteHostClientError.self) {

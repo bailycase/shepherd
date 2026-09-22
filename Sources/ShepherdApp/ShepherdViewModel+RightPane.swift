@@ -18,7 +18,7 @@ extension ShepherdViewModel {
             if let run = subagentInspector.remoteRuns[remote] { return .inspector(runID: run) }
             return remoteReviews[remote] != nil ? .review : nil
         }
-        guard selectedShellID == nil, let agent = selectedAgent, activeTabID == agent.tabID else { return nil }
+        guard let agent = selectedAgent, activeTabID == agent.tabID else { return nil }
         if let run = subagentInspector.runByAgent[agent.id] { return .inspector(runID: run) }
         return reviewSessions.values.contains { $0.agentID == agent.id } ? .review : nil
     }
@@ -65,7 +65,7 @@ extension ShepherdViewModel {
         if let remote = selectedRemoteAgent, remoteInspectingAgent != remote {
             return (remoteThreadStores.store(for: remote), ThreadCommandCenter.key(remote: remote))
         }
-        guard selectedRemoteAgent == nil, selectedShellID == nil, let agent = selectedAgent, activeTabID == agent.tabID else { return nil }
+        guard selectedRemoteAgent == nil, let agent = selectedAgent, activeTabID == agent.tabID else { return nil }
         return (threadStores.store(for: agent.id), ThreadCommandCenter.key(local: agent.id))
     }
 

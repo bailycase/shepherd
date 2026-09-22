@@ -4,8 +4,8 @@ import ShepherdDesign
 
 // MARK: Terminal
 
-/// Settings ▸ Terminal: the shells Shepherd runs (global shells, space shells, panes beside a
-/// thread). Agents are native threads and never use these.
+/// Settings ▸ Terminal: the terminal panes opened beside a thread (⌘D, or by an agent).
+/// Agents are native threads and never use these.
 struct TerminalSettings: View {
     var vm: ShepherdViewModel
     @ObservedObject private var settings = AppSettings.shared
@@ -15,7 +15,7 @@ struct TerminalSettings: View {
     }
 
     var body: some View {
-        SettingsPage(title: "Terminal", explanation: "Shells and panes: their font and which shell they run.") {
+        SettingsPage(title: "Terminal", explanation: "Terminal panes beside a thread: their font and which shell they run.") {
             SettingsGroup(title: "Font", footnote: "Font changes rebuild every terminal; running processes are untouched.") {
                 SettingsRow(title: "Font family",
                             subtitle: "Fixed-pitch families installed on this Mac. Ghostty falls back if a family can't be loaded.") {
@@ -41,7 +41,7 @@ struct TerminalSettings: View {
             }
             SettingsGroup(title: "Shell", footnote: "A new shell applies to panes opened afterwards.") {
                 SettingsRow(title: "Shell",
-                            subtitle: "Used by global shells, space shells, ⌘D splits, and panes an agent opens.") {
+                            subtitle: "Used by ⌘D splits and the panes an agent opens.") {
                     PopupMenu(settings.shellPath, mono: true, minWidth: 180) {
                         ForEach(AppSettings.knownShells(including: settings.shellPath), id: \.self) { shell in
                             Button(shell) { settings.shellPath = shell }

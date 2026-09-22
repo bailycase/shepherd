@@ -2,7 +2,7 @@
 
 Shepherd is an opinionated macOS app for supervising coding agents. Changes should
 keep the product focused on agent supervision: native agent threads, with real
-terminals for shells.
+terminals for the panes beside a thread.
 
 ## Before changing code
 

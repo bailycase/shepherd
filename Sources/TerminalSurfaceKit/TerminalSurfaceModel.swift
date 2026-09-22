@@ -493,7 +493,7 @@ extension TerminalConfiguration {
     private static let appOwnedChords = [
         // ⌘N new agent · ⌘⇧T agent options · ⌘⇧N new space · ⌘W close
         // pane · ⌘⇧W delete agent · ⌘D/⌘⇧D split.
-        "cmd+n", "cmd+t", "shift+cmd+t", "shift+cmd+n", "cmd+w", "shift+cmd+w",
+        "cmd+n", "shift+cmd+t", "shift+cmd+n", "cmd+w", "shift+cmd+w",
         "cmd+d", "shift+cmd+d", "cmd+r",
         // ⇧⌘]/[ have no app binding, but ghostty's next_tab/previous_tab
         // defaults are no-ops in embedded libghostty — unbinding keeps them
@@ -510,12 +510,6 @@ extension TerminalConfiguration {
         "cmd+physical:one", "cmd+physical:two", "cmd+physical:three",
         "cmd+physical:four", "cmd+physical:five", "cmd+physical:six",
         "cmd+physical:seven", "cmd+physical:eight", "cmd+physical:nine",
-        // ⌃1–9: shell selection, mirroring the agent digits.
-        "ctrl+one", "ctrl+two", "ctrl+three", "ctrl+four", "ctrl+five",
-        "ctrl+six", "ctrl+seven", "ctrl+eight", "ctrl+nine",
-        "ctrl+physical:one", "ctrl+physical:two", "ctrl+physical:three",
-        "ctrl+physical:four", "ctrl+physical:five", "ctrl+physical:six",
-        "ctrl+physical:seven", "ctrl+physical:eight", "ctrl+physical:nine",
         // ⌃⇧1–9: machine jump (local + remote hosts in sidebar order).
         "ctrl+shift+one", "ctrl+shift+two", "ctrl+shift+three",
         "ctrl+shift+four", "ctrl+shift+five", "ctrl+shift+six",

@@ -5,7 +5,7 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The ⌘K command palette: agent and space lifecycle on the keyboard instead
-/// of a menu bar. Items are destinations (agents, spaces, shells, subagent
+/// of a menu bar. Items are destinations (agents, spaces, subagent
 /// runs) plus the commands the menus expose, fuzzy-filtered by PaletteSearch.
 @MainActor
 extension ShepherdViewModel {
@@ -34,8 +34,6 @@ extension ShepherdViewModel {
                                      title: "New space on \(connection.config.name)…", subtitle: "remote",
                                      icon: "dot.radiowaves.left.and.right"))
         }
-        items.append(PaletteItem(id: "action.newShell", kind: .action("newShell"), section: .commands,
-                                 title: "New shell", shortcut: keys.display(.newShell), icon: "terminal"))
         items.append(PaletteItem(id: "action.toggleSidebar", kind: .action("toggleSidebar"), section: .commands,
                                  title: sidebarHidden ? "Show sidebar" : "Hide sidebar",
                                  shortcut: keys.display(.toggleSidebar), icon: "sidebar.left"))
@@ -88,7 +86,7 @@ extension ShepherdViewModel {
             }
         }
 
-        // Destinations: agents in sidebar order, then remote agents, spaces, shells.
+        // Destinations: agents in sidebar order, then remote agents and spaces.
         for agent in orderedAgents {
             let space = state.spaces.first { $0.id == agent.spaceID }
             items.append(PaletteItem(id: "agent.\(agent.id.rawValue)", kind: .agent(agent.id), section: .agents,
@@ -106,10 +104,6 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "space.\(space.id.rawValue)", kind: .space(space.id), section: .spaces,
                                      title: space.name, subtitle: (space.path as NSString).abbreviatingWithTildeInPath,
                                      icon: "folder"))
-        }
-        for shell in shellTabs {
-            items.append(PaletteItem(id: "shell.\(shell.id.rawValue)", kind: .shell(shell.id), section: .shells,
-                                     title: Self.shellLabel(shell), icon: "terminal"))
         }
         return items
     }
@@ -173,8 +167,6 @@ extension ShepherdViewModel {
             selectAgent(id)
         case .space(let id):
             selectSpace(id)
-        case .shell(let id):
-            selectShell(id)
         case .child(let agentID, let child):
             openChildInspector(agentID: agentID, child: child)
         case .remoteAgent(let hostID, let agentID):
@@ -190,7 +182,6 @@ extension ShepherdViewModel {
             case "newAgent": quickCreateAgent()
             case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
-            case "newShell": addShell()
             case "rename": renameSelectedAgent()
             case "model": sendThreadCommand(.modelPicker)
             case "toggleSidebar": sidebarHidden.toggle()

@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 
 /// The sidebar (spec §3, Components board, §9 compact form, §10 subagent nesting): THIS MAC and
 /// each remote host as sections, spaces as disclosure rows with their agents nested beneath,
-/// subagents nested under their agent, then Automations and Shells behind a border.
+/// subagents nested under their agent, then Automations behind a border.
 struct SidebarView: View {
     var vm: ShepherdViewModel
 
@@ -61,7 +61,6 @@ struct SidebarView: View {
             Tokens.border.frame(height: 1)
             VStack(alignment: .leading, spacing: 1) {
                 AutomationsSection(vm: vm, compact: compact)
-                ShellsSection(vm: vm, compact: compact)
             }
             .padding(Metrics.sidebarPadding)
         }
@@ -256,7 +255,7 @@ struct LocalAgentRows: View {
     let compact: Bool
 
     var body: some View {
-        let selected = vm.selectedAgentID == agent.id && vm.selectedShellID == nil && vm.selectedRemoteAgent == nil
+        let selected = vm.selectedAgentID == agent.id && vm.selectedRemoteAgent == nil
         let children = vm.children(of: agent.id)
         let folded = SubagentFolding.folded(children: children, selected: selected, unfolded: vm.unfoldedSubagentGroups.contains(agent.id))
         AgentRow(agent: agent, selected: selected, compact: compact, depth: depth,
@@ -470,7 +469,7 @@ enum SubagentStyle {
     }
 }
 
-// MARK: Automations and shells
+// MARK: Automations
 
 /// AUTOMATIONS: saved watch prompts run by ordinary agents. Hidden while empty. Compact form is
 /// one row with the count.
@@ -494,7 +493,7 @@ struct AutomationsSection: View {
                 ForEach(automations) { automation in
                     let agent = vm.automationAgent(automation)
                     AutomationRow(automation: automation, agent: agent,
-                                  selected: agent != nil && vm.selectedAgentID == agent?.id && vm.selectedShellID == nil) {
+                                  selected: agent != nil && vm.selectedAgentID == agent?.id) {
                         if let agent { vm.selectAgent(agent.id) }
                     }
                     .contextMenu {
@@ -548,70 +547,6 @@ struct AutomationRow: View {
         .sidebarRow(selected: selected, compact: false, interactive: agent != nil, action: action)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(automation.name), automation, \(stateWord)")
-    }
-}
-
-/// SHELLS: global terminal workspaces outside every space. Compact form is one row.
-struct ShellsSection: View {
-    var vm: ShepherdViewModel
-    let compact: Bool
-
-    var body: some View {
-        let shells = vm.shellTabs
-        if compact {
-            let selected = shells.first { $0.id == vm.selectedShellID }
-            HStack(spacing: 8) {
-                Text("$").font(Fonts.mono(12)).foregroundStyle(Tokens.textMuted).frame(width: 10)
-                Text("Shells").font(Fonts.sans(12)).foregroundStyle(Tokens.text)
-                Spacer(minLength: 4)
-                Text("\(shells.count)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
-            }
-            .sidebarRow(selected: selected != nil, compact: true) {
-                if let first = shells.first { vm.selectShell(first.id) } else { vm.addShell() }
-            }
-            .help(shells.map { ShepherdViewModel.shellLabel($0) }.joined(separator: "\n"))
-        } else {
-            SidebarSection(title: "Shells", detail: .count(shells.count), compact: false,
-                           plus: SidebarPlus(help: "New Shell") { vm.addShell() })
-            ForEach(shells) { shell in
-                ShellRow(label: ShepherdViewModel.shellLabel(shell), selected: vm.selectedShellID == shell.id,
-                         process: vm.shellProcessLabel(for: shell.id), badge: vm.shellShortcutBadge(for: shell.id)) {
-                    vm.selectShell(shell.id)
-                }
-                .contextMenu {
-                    Button("Rename…") { vm.shellRenameTarget = shell.id }
-                    Divider()
-                    Button("Close Shell", role: .destructive) { vm.deleteShell(shell.id) }
-                }
-            }
-        }
-    }
-}
-
-struct ShellRow: View {
-    let label: String
-    let selected: Bool
-    /// Foreground process, when it isn't the login shell itself ("pi").
-    var process: String?
-    var badge: String?
-    let action: () -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Text("$").font(Fonts.mono(12)).foregroundStyle(selected ? Tokens.accent : Tokens.textMuted).frame(width: 10)
-            HStack(spacing: 0) {
-                Text(label).foregroundStyle(Tokens.text)
-                if let process { Text(" · \(process)").foregroundStyle(Tokens.textSecondary) }
-            }
-            .font(Fonts.mono(12))
-            .lineLimit(1)
-            .truncationMode(.middle)
-            Spacer(minLength: 4)
-            if let badge { Text(badge).font(Fonts.micro).foregroundStyle(Tokens.textMuted) }
-        }
-        .sidebarRow(selected: selected, compact: false, action: action)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label), shell")
     }
 }
 

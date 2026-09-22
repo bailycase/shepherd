@@ -92,16 +92,14 @@ extension ShepherdViewModel {
         startingCheckoutUsers[reservation] = path
         defer { startingCheckoutUsers.removeValue(forKey: reservation) }
         let space = Space(name: url.lastPathComponent, path: path)
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: path)))
         do {
-            try await server.addSpace(space, withTab: tab)
+            try await server.addSpace(space)
         } catch {
             NSLog("Shepherd: add space failed: \(error)")
             NSSound.beep()
             return nil
         }
-        // The atomic server mutation publishes one canonical snapshot. Adopt
-        // it here too because the callback may arrive after this await.
+        // Adopt the canonical snapshot here too: the callback may arrive after this await.
         let canonical = server.state
         sessions.stateDidChange(canonical)
         adopt(canonical)

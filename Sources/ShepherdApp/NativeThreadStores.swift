@@ -20,9 +20,9 @@ final class NativeThreadStores<Key: Hashable> {
     }
 }
 
-/// The agent whose pi runs in `pane` (its primary pane). Auxiliary panes are shells.
+/// The agent whose pi runs in `pane` (its primary pane). Other panes are terminals.
 func primaryAgent(in tab: Tab, pane: LeafPane, agents: [Agent]) -> Agent? {
-    guard !tab.isShell, pane.isReview != true, tab.inspectorFor == nil else { return nil }
+    guard tab.spaceID != nil, pane.isReview != true, tab.inspectorFor == nil else { return nil }
     return agents.first { $0.id == pane.agentID && $0.tabID == tab.id && $0.paneID == pane.id }
 }
 

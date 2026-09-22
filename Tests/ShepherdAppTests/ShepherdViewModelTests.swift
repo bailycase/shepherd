@@ -555,7 +555,8 @@ struct ShepherdViewModelTests {
         let vm = ShepherdViewModel(server: fixture.server)
         #expect(await waitUntil { vm.state.spaces == [space] && vm.state.tabs == [tab] })
         #expect(vm.selectedSpaceID == space.id)
-        #expect(vm.activeTabID == tab.id)
+        // No agent is selected, so no layout is on screen (spaces have no shell workspace).
+        #expect(vm.activeTabID == nil)
     }
 
     /// Cold parking end to end at the view-model seam: a layout hidden past
@@ -783,7 +784,7 @@ struct ShepherdViewModelTests {
         #expect(fixture.server.state.agents.isEmpty)
     }
 
-    @Test func addSpaceWithoutInitialAgentCreatesOneAtomicWorkspaceSnapshot() async throws {
+    @Test func addSpaceWithoutInitialAgentCreatesOnlyTheSpace() async throws {
         let fixture = try Fixture()
         defer { fixture.tearDown() }
         let vm = ShepherdViewModel(server: fixture.server)
@@ -793,9 +794,8 @@ struct ShepherdViewModelTests {
         let id = await vm.addSpace(at: path, createInitialAgent: false)
         #expect(id != nil)
         #expect(fixture.server.state.spaces.count == 1)
-        #expect(fixture.server.state.tabs.count == 1)
+        #expect(fixture.server.state.tabs.isEmpty)
         #expect(fixture.server.state.agents.isEmpty)
-        #expect(fixture.server.state.tabs.first?.spaceID == id)
         #expect(vm.selectedSpaceID == id)
     }
 

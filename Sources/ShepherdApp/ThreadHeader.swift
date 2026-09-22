@@ -119,7 +119,8 @@ func threadRunElapsed(_ store: NativeThreadStore, now: Date) -> String {
     return nativeDurationText(max(0, now.timeIntervalSince(start)), live: true)
 }
 
-/// Header for a shell or a space's shell workspace: the same 52pt strip, breadcrumb only.
+/// Header when no thread is on screen (or a remote utility terminal): the same 52pt strip,
+/// breadcrumb only.
 struct PlainHeader: View {
     let project: String
     let title: String

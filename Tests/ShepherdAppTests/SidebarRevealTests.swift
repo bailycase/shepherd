@@ -17,14 +17,12 @@ struct SidebarRevealTests {
     private func target(
         agent: AgentID? = nil,
         space: SpaceID?,
-        shell: Bool = false,
         remote: Bool = false,
         collapsed: Set<SpaceID> = []
     ) -> AnyHashable? {
         ShepherdViewModel.sidebarRevealTarget(
             selectedAgentID: agent,
             selectedSpaceID: space,
-            shellSelected: shell,
             remoteSelected: remote,
             spaces: [root, child, hidden],
             collapsed: collapsed
@@ -56,10 +54,8 @@ struct SidebarRevealTests {
         #expect(target(agent: AgentID(), space: child.id, collapsed: [root.id]) == nil)
     }
 
-    /// Shell and remote selections own the workspace; the local tree must not
-    /// scroll under them.
-    @Test func shellAndRemoteSelectionsSuppressScrolling() {
-        #expect(target(agent: AgentID(), space: root.id, shell: true) == nil)
+    /// A remote selection owns the workspace; the local tree must not scroll under it.
+    @Test func remoteSelectionSuppressesScrolling() {
         #expect(target(agent: AgentID(), space: root.id, remote: true) == nil)
     }
 
