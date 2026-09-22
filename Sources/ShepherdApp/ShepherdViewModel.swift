@@ -288,6 +288,8 @@ final class ShepherdViewModel {
 
     let sessions: TerminalSessionStore
     let nativePresentation: NativePresentation
+    /// Which native subagent an RPC agent's workspace is inspecting (the side panel).
+    let subagentInspector = NativeInspectorState()
     /// System notifications when an unwatched agent finishes or blocks.
     let notifications = AgentNotifications()
     let settings: AppSettings
