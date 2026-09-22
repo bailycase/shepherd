@@ -274,7 +274,7 @@ final class AppSettings: ObservableObject {
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
-        piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? false
+        piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
         childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
         childModel = store.string(forKey: Key.childModel) ?? ""
         let childReasoning = store.string(forKey: Key.childThinking) ?? ""
@@ -363,7 +363,7 @@ final class AppSettings: ObservableObject {
         piPanesExtension = true
         piReviewExtension = true
         piSubagentsExtension = true
-        piNativeSubagents = false
+        piNativeSubagents = true
         childConcurrency = 4
         childModel = ""
         childThinking = ""

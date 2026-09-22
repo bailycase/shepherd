@@ -612,8 +612,11 @@ struct NativeThreadHeader: View {
             // "3 subagents · 1.6m tok": stays even when the inspector narrows the header (board),
             // wrapping to two lines like the board rather than yielding.
             if let rollup = nativeSubagentRollup(store.subagents) {
-                Text(wide ? rollup : rollup.replacingOccurrences(of: " · ", with: " ·\n"))
-                    .font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).fixedSize().lineLimit(2)
+                Text(rollup)
+                    .font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
+                    .lineLimit(wide ? 1 : 2).fixedSize(horizontal: wide, vertical: true)
+                    .frame(maxWidth: wide ? nil : 96, alignment: .trailing)
+                    .multilineTextAlignment(.trailing)
                     .accessibilityLabel(rollup)
             }
             // Context size comes from pi's session stats (RPC agents only); the terminal bridge has none.

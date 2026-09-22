@@ -225,7 +225,10 @@ struct NativeSubagentInspector: View {
                 .padding(.horizontal, NativeMetrics.subagentCardPadding)
                 .padding(.vertical, NativeMetrics.subagentCardPadding)
             }
-            .defaultScrollAnchor(.bottom)
+            // Content that fits sits at the top (the board shows the first rows under GOAL);
+            // a long transcript still opens at the tail and follows live from there.
+            .defaultScrollAnchor(.bottom, for: .initialOffset)
+            .defaultScrollAnchor(transcript.following ? .bottom : nil, for: .sizeChanges)
             .onChange(of: transcript.messages.count) { _, _ in
                 if transcript.following { proxy.scrollTo("inspector-bottom", anchor: .bottom) }
             }
