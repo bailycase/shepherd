@@ -137,6 +137,10 @@ public extension NativeToolRow {
             if !failed, lineCount > 0 { results.append(Result("\(lineCount) file\(lineCount == 1 ? "" : "s")", tone: .muted)) }
         case "ls":
             preview = string("path") ?? "."
+        case "shepherd_parent_message":
+            // The child's message to its parent, not the JSON receipt.
+            preview = string("message") ?? firstLine
+            if args?["needsReply"] as? Bool == true { results.append(Result("asked", tone: .muted)) }
         case "subagent":
             // pi-subagents: the output is launch boilerplate ("Run fan-out: 0/32 used…"); the
             // agent and its task say what the call did.
@@ -154,7 +158,9 @@ public extension NativeToolRow {
             preview = ["command", "path", "query", "url", "pattern"].compactMap(string).first ?? firstLine
         }
         if failed, results.isEmpty { results.append(Result("failed", tone: .danger)) }
-        self.init(name: name, state: state, preview: String(preview.prefix(120)), previewSuffix: suffix, diff: diff,
+        // Internal tool ids read as noise when truncated ("shep…sage"); name them for people.
+        let display = name == "shepherd_parent_message" ? "to parent" : name
+        self.init(name: display, state: state, preview: String(preview.prefix(120)), previewSuffix: suffix, diff: diff,
                   results: results, output: output, arguments: message.argumentsText, truncated: message.truncated)
     }
 }
@@ -265,7 +271,8 @@ public func nativeTurnItems(_ messages: [NativeThreadMessage]) -> [NativeTurnIte
                 if message.role == "assistant" || message.role == "user" {
                     items.append(.prose(block.text))
                 } else {
-                    items.append(.note(message.role.replacingOccurrences(of: "_", with: " ") + " · " + block.text))
+                    // Extension messages ("custom") already say what they are; other roles name themselves.
+                    items.append(.note(message.role == "custom" ? block.text : message.role.replacingOccurrences(of: "_", with: " ") + " · " + block.text))
                 }
             }
         }

@@ -384,6 +384,9 @@ final class RPCThreadState {
             }
             self.history = messages.enumerated().compactMap { index, message in
                 if message.role == "custom" && message.display != true { return nil }
+                // Child reports ("Child native-… (worker): complete … Session: …") restate the card and
+                // ledger, which own that information in the RPC thread; the TUI still shows them.
+                if message.role == "custom" && message.customType == "shepherd-child" { return nil }
                 let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
                 return Self.project(entryID: "m:\(index)", message: message, args: args)
             }

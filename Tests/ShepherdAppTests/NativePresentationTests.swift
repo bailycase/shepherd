@@ -320,6 +320,12 @@ struct NativePresentationTests {
         #expect(NativeToolRow(tool("subagent", args: #"{"agent":"delegate","task":"Say hello\nmore"}"#, output: boiler)).preview == "delegate · Say hello")
         #expect(NativeToolRow(tool("subagent", args: #"{"workflowScript":"return 1"}"#, output: boiler)).preview == "workflow")
         #expect(NativeToolRow(tool("subagent", args: #"{"action":"status"}"#, output: boiler)).preview == "status")
+        // A child's question shows the question, under a readable name, not the JSON receipt.
+        let ask = NativeToolRow(tool("shepherd_parent_message", args: #"{"message":"Rename or replace?","needsReply":true}"#,
+                                     output: #"{"shepherdParentMessage":"Rename or replace?"}"#))
+        #expect(ask.name == "to parent" && ask.preview == "Rename or replace?" && ask.results.map(\.text) == ["asked"])
+        // Extension notes drop the "custom ·" role prefix.
+        #expect(nativeTurnItems([message(["entryID": "c", "role": "custom", "blocks": [["kind": "text", "text": "Workflow w1: done"]]])]) == [.note("Workflow w1: done")])
     }
 
     @Test func siblingsStepInSpawnOrderWithinTheGroup() {

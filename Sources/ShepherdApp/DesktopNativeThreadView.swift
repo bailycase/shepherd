@@ -736,10 +736,15 @@ struct NativeAgentTurn: View {
                     .font(NativeFonts.caption).foregroundStyle(NativeTokens.dangerText)
                     .help(text)
                 case .note(let text):
-                    HStack(spacing: 8) {
+                    // Extension/system notes are asides: a muted rule, at most three lines.
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(text).font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
+                            .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
                         NativeTerminalLink(action: showTerminal)
                     }
+                    .padding(.leading, 10)
+                    .overlay(alignment: .leading) { NativeTokens.border.frame(width: 2) }
+                    .frame(maxWidth: NativeMetrics.proseMaxWidth, alignment: .leading)
                 }
             }
             // Runs with no spawn row in this turn render after it. In strip mode the group already

@@ -152,6 +152,8 @@ test("card helpers: tool preview follows the desktop rule and edit diffs cancel 
   // Ledger/RESULT summary: first two sentences, whitespace flattened, 240-char cap with an ellipsis.
   assert.equal(mod.summarize("Restyled the thread.\nAll 14 pass on macOS. Third sentence."), "Restyled the thread. All 14 pass on macOS.");
   assert.equal(mod.summarize("no punctuation"), "no punctuation");
+  // A period inside a file name or version does not end the sentence.
+  assert.equal(mod.summarize("Rows render in ThreadView.swift (RowView). v1.2 shipped. Third."), "Rows render in ThreadView.swift (RowView). v1.2 shipped.");
   assert.equal(mod.summarize(""), undefined);
   const long = mod.summarize("x".repeat(300) + ". y.");
   assert.equal(long.length, 240); assert(long.endsWith("…"));
