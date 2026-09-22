@@ -133,6 +133,125 @@ struct NativePresentationTests {
         #expect(nativeTurns([user, prose, a, user]).map(\.isUser) == [true, false, true])
     }
 
+    // MARK: Subagent cards (docs/design-spec/subagent-card-states.png)
+
+    private static let boardNow = Date(timeIntervalSince1970: 10_000)
+    /// The four cards on the board, timed so the durations read as drawn.
+    private static var boardRuns: [ChildRun] {
+        let now = boardNow.timeIntervalSince1970 * 1000
+        return [
+            ChildRun(runID: "native-worker", label: "worker: restyle", state: "running", startedAt: now - (37 * 60 + 21) * 1000, needsAttention: false,
+                     role: "worker", model: "anthropic/claude-fable-5-1", thinking: "high", context: "background", step: ChildStep(index: 1, total: 1),
+                     turns: 78, toolCalls: 82, tokens: 922_000, contextPercent: 62,
+                     lastActivity: ChildActivity(tool: "edit", preview: "Sources/ShepherdRemote/NativeThreadPresentation.swift", diff: ChildDiff(added: 31, removed: 0), at: now - 4000),
+                     toolCallID: "spawn-worker", task: "Restyle desktop native thread view and iOS app to match the spec in Shepherd chat UI.html; no fake affordances; system fonts at spec sizes.", sessionFile: "/tmp/worker.jsonl"),
+            ChildRun(runID: "native-reviewer", label: "reviewer: check", state: "running", startedAt: now - (2 * 60 + 10) * 1000, needsAttention: true,
+                     attentionText: "Two token names collide", role: "reviewer", model: "anthropic/claude-opus", context: "async", turns: 3, tokens: 40_000,
+                     question: ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`. Rename the new ones to `text2`, or replace the old ones everywhere?",
+                                             options: ["Replace everywhere", "Rename new ones"]), toolCallID: "spawn-reviewer"),
+            ChildRun(runID: "native-tests", label: "tests: run", state: "complete", startedAt: now - 600_000, endedAt: now - 600_000 + (4 * 60 + 2) * 1000, needsAttention: false,
+                     role: "tests", model: "anthropic/claude-sonnet", context: "async", turns: 9, toolCalls: 19, tokens: 118_000,
+                     result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118_000), toolCallID: "spawn-tests",
+                     output: "Added 6 presentation tests (preview text per tool kind, DiffStat, duration formatting). All 14 pass on macOS and iOS simulators."),
+            ChildRun(runID: "native-docs", label: "docs: write", state: "failed", startedAt: now - 900_000, endedAt: now - 100_000, needsAttention: false,
+                     role: "docs", turns: 41, exitReason: "exit 1 · context limit reached after 41 turns", toolCallID: "spawn-docs"),
+        ]
+    }
+
+    @Test func subagentCardStateMapping() {
+        let runs = Self.boardRuns
+        #expect(runs.map(nativeSubagentState) == [.running, .needsYou, .done, .failed])
+        #expect(nativeSubagentState(ChildRun(runID: "q", label: "l", state: "queued")) == .running)
+        #expect(nativeSubagentState(ChildRun(runID: "s", label: "l", state: "stopped")) == .failed)
+        // Unknown future states stay live, like ChildRun.isTerminal.
+        #expect(nativeSubagentState(ChildRun(runID: "x", label: "l", state: "pondering")) == .running)
+        #expect(nativeSubagentCounters(runs[0]) == "78 turns · 82 tools · 922k tok")
+        #expect(nativeSubagentCounters(ChildRun(runID: "a", label: "l", state: "running", turns: 1, toolCalls: 1, tokens: 1_600_000)) == "1 turn · 1 tool · 1.6m tok")
+        #expect(nativeSubagentResultLine(runs[2].result!) == ["2 files", "+96 -3", "19 tools", "118k tok"])
+        #expect(nativeSubagentAccessibilityLabel(runs[0], now: Self.boardNow) == "worker, running, 37 minutes")
+        #expect(nativeSubagentAccessibilityLabel(runs[1], now: Self.boardNow) == "reviewer, needs you, 2 minutes")
+        #expect(nativeSubagentAccessibilityLabel(runs[2], now: Self.boardNow) == "tests, done, 4 minutes")
+        #expect(nativeSubagentAccessibilityLabel(runs[3], now: Self.boardNow).hasPrefix("docs, failed"))
+    }
+
+    @Test func subagentDurationsAndAges() {
+        let runs = Self.boardRuns
+        #expect(nativeSubagentElapsed(runs[0], now: Self.boardNow).map(nativeSubagentDurationText) == "37m 21s")
+        #expect(nativeSubagentElapsed(runs[1], now: Self.boardNow).map(nativeSubagentDurationText) == "2m 10s")
+        // Finished runs freeze at endedAt no matter how late "now" is.
+        #expect(nativeSubagentElapsed(runs[2], now: Self.boardNow.addingTimeInterval(9999)).map(nativeSubagentDurationText) == "4m 02s")
+        #expect(nativeSubagentElapsed(ChildRun(runID: "n", label: "l", state: "running"), now: Self.boardNow) == nil)
+        #expect(nativeSubagentShortDuration(37 * 60 + 21) == "37m")
+        #expect(nativeSubagentShortDuration(48) == "48s")
+        #expect(nativeSubagentShortDuration(7300) == "2h")
+        #expect(nativeAgeText(runs[0].lastActivity!.at, now: Self.boardNow) == "4s ago")
+        #expect(nativeAgeText(Self.boardNow.timeIntervalSince1970 * 1000 + 5000, now: Self.boardNow) == "0s ago")
+        #expect(nativeCompactTokens(581_000) == "581k" && nativeCompactTokens(1_600_000) == "1.6m" && nativeCompactTokens(2_000_000) == "2m" && nativeCompactTokens(999) == "999")
+    }
+
+    @Test func runsStripSummaryAndRollups() {
+        let now = Self.boardNow.timeIntervalSince1970 * 1000
+        var runs: [ChildRun] = []
+        for i in 0..<12 {
+            let state = i < 7 ? "complete" : i < 10 ? "running" : i == 10 ? "running" : "failed"
+            runs.append(ChildRun(runID: "r\(i)", label: "l", state: state, startedAt: now - 12 * 60_000 + Double(i) * 1000,
+                                 endedAt: state == "running" ? nil : now - 60_000, needsAttention: i == 10, tokens: i == 0 ? 581_000 : nil))
+        }
+        let summary = nativeRunsStripSummary(runs.shuffled(), now: Self.boardNow)
+        #expect(summary.count == 12)
+        #expect(summary.states == "7 done · 3 running · 1 needs you · 1 failed")
+        #expect(summary.totals == "581k tok · 12m")
+        // Cells follow spawn order, not the publish order.
+        #expect(summary.cells == Array(repeating: .done, count: 7) + Array(repeating: .running, count: 3) + [.needsYou, .failed])
+        #expect(nativeRunsStripSummary([], now: Self.boardNow) == NativeRunsStripSummary(count: 0, states: "", totals: "", cells: []))
+
+        let board = Self.boardRuns
+        #expect(nativeSubagentRollup(board) == "4 subagents · 1.1m tok")
+        #expect(nativeSubagentRollup(Array(board.prefix(3))) == "3 subagents · 1.1m tok")
+        #expect(nativeSubagentRollup([]) == nil)
+        #expect(nativeSubagentNeedsYouLabel(board) == "1 subagent needs you")
+        #expect(nativeSubagentNeedsYouLabel([board[1], board[1]]) == "2 subagents need you")
+        #expect(nativeSubagentNeedsYouLabel([board[0]]) == nil)
+        #expect(nativeSubagentRunningLabel(Array(board.prefix(3)), now: Self.boardNow) == "1 of 3 subagents running · 37m")
+        #expect(nativeSubagentRunningLabel([board[2]], now: Self.boardNow) == nil)
+    }
+
+    @Test func subagentsSitAtTheirSpawnCallOrTrailTheLastTurn() {
+        let spawnA = tool("shepherd_child_start", args: #"{"task":"a"}"#, output: "{}")
+        let spawnB = tool("shepherd_child_start", args: #"{"task":"b"}"#, output: "{}")
+        var a = spawnA; a.toolCallID = "spawn-a"
+        var b = spawnB; b.toolCallID = "spawn-b"
+        let read = tool("read", args: nil, output: "x")
+        let user = message(["entryID": "u", "role": "user", "blocks": []])
+        let prose = message(["entryID": "p", "role": "assistant", "blocks": [["kind": "text", "text": "Splitting."]]])
+        let turns = nativeTurns([user, prose, a, read, user, b])
+        let runA = ChildRun(runID: "ra", label: "l", state: "running", toolCallID: "spawn-a")
+        let runB = ChildRun(runID: "rb", label: "l", state: "running", toolCallID: "spawn-b")
+        let orphan = ChildRun(runID: "ro", label: "l", state: "complete", toolCallID: "gone")
+        let bare = ChildRun(runID: "rn", label: "l", state: "running")
+        let placements = nativeSubagentPlacements([runA, runB, orphan, bare], turns: turns)
+        #expect(placements[turns[1].id]?.byToolCall == ["spawn-a": [runA]])
+        #expect(placements[turns[1].id]?.trailing == [])
+        #expect(placements[turns[3].id]?.byToolCall == ["spawn-b": [runB]])
+        #expect(placements[turns[3].id]?.trailing == [orphan, bare])
+        // The group splits around the spawn row: rows before, the card, rows after.
+        let segments = nativeToolSegments([a, read], placement: placements[turns[1].id]!)
+        #expect(segments == [.subagents([runA]), .rows([read])])
+        #expect(nativeToolSegments([read, a], placement: placements[turns[1].id]!) == [.rows([read]), .subagents([runA])])
+        #expect(nativeToolSegments([read], placement: NativeSubagentPlacement()) == [.rows([read])])
+        // Above the threshold, every spawn row folds into one strip at the first spawn's position.
+        var many = NativeSubagentPlacement()
+        var rows: [NativeThreadMessage] = []
+        for i in 0..<5 {
+            var spawn = spawnA; spawn.toolCallID = "s\(i)"
+            rows.append(spawn)
+            many.byToolCall["s\(i)"] = [ChildRun(runID: "m\(i)", label: "l", state: "complete", toolCallID: "s\(i)")]
+        }
+        let folded = nativeToolSegments([read] + rows + [read], placement: many)
+        #expect(folded.count == 3)
+        if case .subagents(let runs) = folded[1] { #expect(runs.count == 5) } else { Issue.record("expected one strip segment") }
+    }
+
     @Test func sparsePreferencesAndAgentDraftsSurviveToggles() throws {
         let name = "native-test-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: name))
@@ -581,6 +700,67 @@ struct NativePresentationTests {
         try await waitFor { store.ready && requests.count > stoppedCount }
         #expect(requests.last == .snapshot())
         #expect(store.draft == "draft stays native")
+    }
+
+    /// The board's thread (docs/design-spec/subagents-with-inspector.png): a user turn, the
+    /// "Splitting into three" prose, three spawn calls that the cards replace, a closing line.
+    private static func subagentSnapshot(running: Bool) -> NativeThreadSnapshot {
+        func spawn(_ id: String, _ role: String) -> NativeThreadMessage {
+            NativeThreadMessage(entryID: "t-\(id)", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "{\"id\":\"native-\(role)\"}")],
+                                toolName: "shepherd_child_start", toolCallID: id, argumentsText: "{\"task\":\"\(role)\",\"role\":\"\(role)\"}", status: "complete")
+        }
+        return NativeThreadSnapshot(
+            piSessionID: "fixture", generation: "g", revision: 1, running: running, model: "anthropic/claude-fable-5-1", thinking: "high",
+            supportedActions: ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents"], dialogsSupported: true, dialogs: [],
+            messages: [
+                NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Restyle all of Shepherd's native UI to match the design spec. Split it up if that's faster.")]),
+                NativeThreadMessage(entryID: "a", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Splitting into three: a worker for the restyle itself, a reviewer that checks each step against the spec, and a tests run in parallel. I'll integrate when they hand off.")]),
+                spawn("spawn-worker", "worker"), spawn("spawn-reviewer", "reviewer"), spawn("spawn-tests", "tests"),
+                NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "*Waiting on worker and reviewer. Tests are integrated.*")]),
+            ],
+            provisional: [], clipped: false, runtime: "rpc",
+            stats: NativeThreadStats(contextTokens: 60_000, contextWindow: 200_000, contextPercent: 30, totalTokens: 1_600_000),
+            subagents: Array(boardRuns.prefix(3)))
+    }
+
+    /// Screenshot-only: the three cards on the board, with real timings (the clock runs from
+    /// startedAt), rendered as the workspace composes them. Compare with
+    /// docs/design-spec/subagents-with-inspector.png.
+    @Test func subagentCardsRenderTheBoard() async throws {
+        guard ProcessInfo.processInfo.environment["SHEPHERD_NATIVE_SCREENSHOT_DIR"] != nil else { return }
+        let store = NativeThreadStore()
+        // Re-time the board runs to "now" so the header durations read 37m 21s / 2m 10s / 4m 02s.
+        let shift = Date().timeIntervalSince1970 * 1000 - Self.boardNow.timeIntervalSince1970 * 1000
+        var snapshot = Self.subagentSnapshot(running: true)
+        snapshot.subagents = snapshot.subagents?.map { run in
+            var run = run
+            run.startedAt = run.startedAt.map { $0 + shift }
+            run.endedAt = run.endedAt.map { $0 + shift }
+            run.lastActivity?.at += shift
+            return run
+        }
+        var inspected: [ChildRun] = []
+        let request: NativeThreadStore.Request = { _ in .snapshot(value: snapshot) }
+        let content = VStack(spacing: 0) {
+            NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities", native: .constant(true), showTerminal: nil)
+            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: nil,
+                                    agentName: "Investigate", inspectSubagent: { inspected.append($0) })
+        }
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 770, height: 900), styleMask: [.titled], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: content.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.orderOut(nil); window.contentView = nil }
+        try await waitFor { store.ready }
+        try await Task.sleep(for: .milliseconds(400))
+        window.layoutIfNeeded()
+        try capture(host, name: "subagents")
+        // The three cards sit where their spawn calls were; the placement is what the view renders.
+        #expect(store.subagents.count == 3)
+        let placements = nativeSubagentPlacements(store.subagents, turns: nativeTurns(store.displayedMessages))
+        #expect(placements.values.first?.byToolCall.keys.sorted() == ["spawn-reviewer", "spawn-tests", "spawn-worker"])
+        #expect(inspected.isEmpty)
     }
 
     /// Screenshot-only: renders the restyled sidebar against a scratch server so the

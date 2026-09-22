@@ -232,6 +232,23 @@ enum NativeMetrics {
     static let chipHeight: CGFloat = 24
     /// Marker column for rendered Markdown lists.
     static let listMarker: CGFloat = 18
+    // Subagent cards (docs/design-spec/subagent-card-states.png).
+    static let subagentCardPadding: CGFloat = 12
+    static let subagentCardHeaderHeight: CGFloat = 20
+    static let subagentCardRowSpacing: CGFloat = 8
+    static let subagentCardButton: CGFloat = 28
+    static let subagentProgressHeight: CGFloat = 4
+    static let subagentProgressWidth: CGFloat = 240
+    static let subagentGlyph: CGFloat = 14
+    /// RunsStrip collapsed row and its 8×8 cells.
+    static let runsStripHeight: CGFloat = 36
+    static let runsStripCell: CGFloat = 8
+    static let runsStripCellGap: CGFloat = 3
+    // Subagent inspector panel.
+    static let inspectorMinWidth: CGFloat = 420
+    static let inspectorDefaultFraction: CGFloat = 0.6
+    static let inspectorHeaderHeight: CGFloat = 52
+    static let inspectorGoalPadding: CGFloat = 12
     /// Sidebar rows keep the pre-spec density (23pt rows, 12pt indent, density-scaled): the
     /// spec's 32/22 was tried and lost a third of the tree on real fleets.
     @MainActor static var sidebarRowHeight: CGFloat { Metrics.rowHeight }

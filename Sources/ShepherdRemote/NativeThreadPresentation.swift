@@ -282,6 +282,186 @@ public func nativeWorkingLabel(_ provisional: [NativeThreadMessage]) -> String {
     return "Working…"
 }
 
+// MARK: Subagent cards (docs/design-spec/subagent-card-states.png)
+
+/// The four card states. `running` covers queued; every non-complete terminal state
+/// (failed/stopped/rejected) renders as failed, since all of them end without a result.
+public enum NativeSubagentState: Equatable, Sendable { case running, needsYou, done, failed }
+
+public func nativeSubagentState(_ run: ChildRun) -> NativeSubagentState {
+    if run.needsAttention { return .needsYou }
+    switch run.state {
+    case "running", "queued": return .running
+    case "complete": return .done
+    default: return run.isTerminal ? .failed : .running
+    }
+}
+
+/// A turn's subagents placed where their spawn calls were: `byToolCall` keys the cards that
+/// replace their `shepherd_child_start` row; `trailing` are the turn's cards with no matching
+/// row (rendered after the turn's last item).
+public struct NativeSubagentPlacement: Equatable, Sendable {
+    public var byToolCall: [String: [ChildRun]] = [:]
+    public var trailing: [ChildRun] = []
+    public init(byToolCall: [String: [ChildRun]] = [:], trailing: [ChildRun] = []) {
+        self.byToolCall = byToolCall
+        self.trailing = trailing
+    }
+    public var all: [ChildRun] { byToolCall.values.flatMap { $0 } + trailing }
+    public var isEmpty: Bool { byToolCall.isEmpty && trailing.isEmpty }
+}
+
+/// Every subagent belongs to the turn whose tool rows contain its spawn call. Runs whose spawn
+/// call is in no loaded turn (older publishes, paged-out history) attach to the last agent
+/// turn as trailing cards, so nothing live is ever hidden.
+public func nativeSubagentPlacements(_ subagents: [ChildRun], turns: [NativeTurn]) -> [String: NativeSubagentPlacement] {
+    var placements: [String: NativeSubagentPlacement] = [:]
+    var owner: [String: String] = [:]
+    for turn in turns where !turn.isUser {
+        for id in turn.messages.compactMap(\.toolCallID) { owner[id] = turn.id }
+    }
+    let lastAgentTurn = turns.last { !$0.isUser }?.id
+    for run in subagents {
+        if let id = run.toolCallID, let turnID = owner[id] {
+            placements[turnID, default: NativeSubagentPlacement()].byToolCall[id, default: []].append(run)
+        } else if let lastAgentTurn {
+            placements[lastAgentTurn, default: NativeSubagentPlacement()].trailing.append(run)
+        }
+    }
+    return placements
+}
+
+/// "78 turns · 82 tools · 922k tok" (middle line of a running card).
+public func nativeSubagentCounters(_ run: ChildRun) -> String {
+    var parts: [String] = []
+    if let turns = run.turns { parts.append("\(turns) turn\(turns == 1 ? "" : "s")") }
+    if let tools = run.toolCalls { parts.append("\(tools) tool\(tools == 1 ? "" : "s")") }
+    if let tokens = run.tokens { parts.append("\(nativeCompactTokens(tokens)) tok") }
+    return parts.joined(separator: " · ")
+}
+
+/// "922k" / "1.6m" lower-case, as the board writes token counts.
+public func nativeCompactTokens(_ tokens: Int) -> String {
+    if tokens >= 1_000_000 {
+        let text = String(format: "%.1f", Double(tokens) / 1_000_000)
+        return (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + "m"
+    }
+    if tokens >= 1_000 { return "\(tokens / 1_000)k" }
+    return "\(tokens)"
+}
+
+/// "2 files  +96 -3  19 tools  118k tok" (done card footer).
+public func nativeSubagentResultLine(_ result: ChildResultSummary) -> [String] {
+    ["\(result.files) file\(result.files == 1 ? "" : "s")", "+\(result.added) -\(result.removed)",
+     "\(result.tools) tool\(result.tools == 1 ? "" : "s")", "\(nativeCompactTokens(result.tokens)) tok"]
+}
+
+/// "37m 21s" style durations for card headers and "37m" for sidebar rows. Live runs count
+/// from `startedAt` to now; finished runs freeze at `endedAt`.
+public func nativeSubagentElapsed(_ run: ChildRun, now: Date) -> Double? {
+    guard let started = run.startedAt else { return nil }
+    let end = run.isTerminal ? (run.endedAt ?? started) : now.timeIntervalSince1970 * 1000
+    return max(0, (end - started) / 1000)
+}
+
+/// Header duration: "37m 21s", "4m 02s", "48s", "1h 02m".
+public func nativeSubagentDurationText(_ seconds: Double) -> String {
+    nativeDurationText(seconds, live: true)
+}
+
+/// Sidebar right slot: "37m", "48s", "2h".
+public func nativeSubagentShortDuration(_ seconds: Double) -> String {
+    let whole = Int(max(0, seconds))
+    switch whole {
+    case ..<60: return "\(whole)s"
+    case ..<3600: return "\(whole / 60)m"
+    default: return "\(whole / 3600)h"
+    }
+}
+
+/// "4s ago" for the live activity line.
+public func nativeAgeText(_ atMilliseconds: Double, now: Date) -> String {
+    let seconds = max(0, now.timeIntervalSince1970 - atMilliseconds / 1000)
+    return nativeSubagentShortDuration(seconds) + " ago"
+}
+
+/// "worker, running, 37 minutes" for the card's combined accessibility label.
+public func nativeSubagentAccessibilityLabel(_ run: ChildRun, now: Date) -> String {
+    let state: String = switch nativeSubagentState(run) {
+    case .running: "running"
+    case .needsYou: "needs you"
+    case .done: "done"
+    case .failed: "failed"
+    }
+    var parts = [run.role ?? run.label, state]
+    if let seconds = nativeSubagentElapsed(run, now: now) {
+        let minutes = Int(seconds) / 60
+        parts.append(minutes >= 1 ? "\(minutes) minute\(minutes == 1 ? "" : "s")" : "\(Int(seconds)) seconds")
+    }
+    return parts.joined(separator: ", ")
+}
+
+/// RunsStrip collapsed form: more than 3 subagents in one turn fold into a strip;
+/// needs-you runs always keep their own card under it.
+public struct NativeRunsStripSummary: Equatable, Sendable {
+    public static let collapseThreshold = 3
+    public var count: Int
+    /// "7 done · 3 running · 1 needs you · 1 failed" (zero buckets omitted).
+    public var states: String
+    /// "581k tok · 12m" (tokens summed; duration = earliest start to latest end/now).
+    public var totals: String
+    public var cells: [NativeSubagentState]
+    public init(count: Int, states: String, totals: String, cells: [NativeSubagentState]) {
+        self.count = count; self.states = states; self.totals = totals; self.cells = cells
+    }
+}
+
+public func nativeRunsStripSummary(_ runs: [ChildRun], now: Date) -> NativeRunsStripSummary {
+    let ordered = runs.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
+    let states = ordered.map(nativeSubagentState)
+    var buckets: [(String, Int)] = []
+    for (label, state) in [("done", NativeSubagentState.done), ("running", .running), ("needs you", .needsYou), ("failed", .failed)] {
+        let n = states.count { $0 == state }
+        if n > 0 { buckets.append((label, n)) }
+    }
+    let tokens = ordered.compactMap(\.tokens).reduce(0, +)
+    var totals: [String] = []
+    if tokens > 0 { totals.append("\(nativeCompactTokens(tokens)) tok") }
+    if let first = ordered.compactMap(\.startedAt).min() {
+        let live = ordered.contains { !$0.isTerminal }
+        let end = live ? now.timeIntervalSince1970 * 1000 : (ordered.compactMap(\.endedAt).max() ?? first)
+        totals.append(nativeSubagentShortDuration((end - first) / 1000))
+    }
+    return NativeRunsStripSummary(count: ordered.count,
+                                  states: buckets.map { "\($0.1) \($0.0)" }.joined(separator: " · "),
+                                  totals: totals.joined(separator: " · "), cells: states)
+}
+
+/// Header rollup: "3 subagents · 1.6m tok" and the pill override "1 subagent needs you".
+public func nativeSubagentRollup(_ runs: [ChildRun]) -> String? {
+    guard !runs.isEmpty else { return nil }
+    var text = "\(runs.count) subagent\(runs.count == 1 ? "" : "s")"
+    let tokens = runs.compactMap(\.tokens).reduce(0, +)
+    if tokens > 0 { text += " · \(nativeCompactTokens(tokens)) tok" }
+    return text
+}
+
+public func nativeSubagentNeedsYouLabel(_ runs: [ChildRun]) -> String? {
+    let n = runs.count(where: \.needsAttention)
+    return n > 0 ? "\(n) subagent\(n == 1 ? "" : "s") need\(n == 1 ? "s" : "") you" : nil
+}
+
+/// Composer left slot while children run: "2 of 3 subagents running · 42m".
+public func nativeSubagentRunningLabel(_ runs: [ChildRun], now: Date) -> String? {
+    let running = runs.filter { nativeSubagentState($0) == .running }
+    guard !running.isEmpty else { return nil }
+    var text = "\(running.count) of \(runs.count) subagent\(runs.count == 1 ? "" : "s") running"
+    if let first = running.compactMap(\.startedAt).min() {
+        text += " · \(nativeSubagentShortDuration(now.timeIntervalSince1970 - first / 1000))"
+    }
+    return text
+}
+
 // MARK: Sticky scroll
 
 /// bb's sticky-bottom rule as a value: follow the tail until the user scrolls away, re-stick
