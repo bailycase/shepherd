@@ -18,103 +18,57 @@ struct AdvancedSettings: View {
     }
 
     var body: some View {
-        SettingsGroup(title: "Files") {
-            PathRow(
-                title: "Workspace State",
-                subtitle: "Spaces, agents, and pane layouts restored on relaunch.",
-                url: ShepherdPaths.stateURL(),
-                isFirst: true
-            )
-            PathRow(
-                title: "Extension Socket",
-                subtitle: "Where each pi process reports agent status and pane requests.",
-                url: ShepherdPaths.socketURL()
-            )
-        }
-
-        SettingsGroup(title: "Reset") {
-            SettingsRow(
-                title: "Reset Settings",
-                subtitle: "Restores appearance, font, agent, shell, and keyboard preferences. Spaces, agents, and layouts are untouched.",
-                isFirst: true
-            ) {
-                Button("Reset…") { confirmingReset = true }
+        SettingsPage(title: "Advanced", explanation: "Files, resets and app updates. Quitting Shepherd stops every agent.") {
+            SettingsGroup(title: "Files") {
+                PathRow(title: "Workspace state", subtitle: "Spaces, agents and pane layouts restored on relaunch.",
+                        url: ShepherdPaths.stateURL())
+                PathRow(title: "Extension socket", subtitle: "Where each pi process reports status and pane requests.",
+                        url: ShepherdPaths.socketURL())
             }
-        }
-
-        if updater.available {
             SettingsGroup(title: "Updates") {
-                SettingsRow(
-                    title: "Automatically Check for Updates",
-                    isFirst: true
-                ) {
-                    Toggle("", isOn: Binding(
-                        get: { updater.automaticallyChecks },
-                        set: { updater.automaticallyChecks = $0 }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                }
-                SettingsRow(
-                    title: "Update Channel",
-                    subtitle: "Stable: tagged releases only. Release Candidate and Beta also receive newer stable builds — riding a pre-release channel never strands you behind a hotfix. Nightly: every push, least tested."
-                ) {
-                    Picker("", selection: $updater.channel) {
-                        ForEach(UpdateChannel.allCases) { channel in
-                            Text(channel.label).tag(channel)
+                if updater.available {
+                    SettingsRow(title: "Check for updates automatically") {
+                        SettingsSwitch(label: "Check for updates automatically", isOn: Binding(
+                            get: { updater.automaticallyChecks },
+                            set: { updater.automaticallyChecks = $0 }
+                        ))
+                    }
+                    SettingsRow(title: "Update channel",
+                                subtitle: "Stable: tagged releases. Release Candidate and Beta also get newer stable builds. Nightly: every push, least tested.") {
+                        PopupMenu(updater.channel.label, minWidth: 120) {
+                            ForEach(UpdateChannel.allCases) { channel in
+                                Button(channel.label) { updater.channel = channel }
+                            }
                         }
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 180)
                 }
-                SettingsRow(title: "Check Now") {
-                    Button("Check for Updates…") { updater.checkForUpdates() }
+                SettingsRow(title: "Version \(version)") {
+                    if updater.available {
+                        Button("Check for updates") { updater.checkForUpdates() }
+                            .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    }
+                }
+            }
+            SettingsGroup(title: "Reset") {
+                SettingsRow(title: "Reset settings",
+                            subtitle: "Restores appearance, font, agent, shell and keyboard preferences. Spaces, agents and layouts are untouched.") {
+                    Button("Reset…") { confirmingReset = true }
+                        .buttonStyle(ShepherdButtonStyle(.destructive, size: .small))
                 }
             }
         }
-
-        SettingsGroup(title: "About") {
-            SettingsRow(title: "Version", isFirst: true) {
-                Text(version)
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-            }
-        }
-        SettingsNote(text: "sessions live and die with the app · quitting Shepherd stops every agent")
-            .sheet(isPresented: $confirmingReset) {
-                DialogSheet(
-                    title: "Reset Settings to Defaults?",
-                    subtitle: "Your spaces, agents, and pane layouts are not affected.",
-                    actions: [
-                        DialogAction("Cancel", kind: .cancel) { confirmingReset = false },
-                        DialogAction("Reset", kind: .destructive) {
-                            confirmingReset = false
-                            vm.resetSettings()
-                        },
-                    ]
-                )
-            }
-    }
-}
-
-struct PathRow: View {
-    let title: String
-    let subtitle: String
-    let url: URL
-    var isFirst = false
-
-    var body: some View {
-        SettingsRow(title: title, subtitle: subtitle, isFirst: isFirst) {
-            HStack(spacing: 8) {
-                Text(url.lastPathComponent)
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-                    .help(url.path)
-                Button("Reveal") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                }
-            }
+        .sheet(isPresented: $confirmingReset) {
+            DialogSheet(
+                title: "Reset settings to defaults?",
+                subtitle: "Your spaces, agents and pane layouts are not affected.",
+                actions: [
+                    DialogAction("Cancel", kind: .cancel) { confirmingReset = false },
+                    DialogAction("Reset", kind: .destructive) {
+                        confirmingReset = false
+                        vm.resetSettings()
+                    },
+                ]
+            )
         }
     }
 }

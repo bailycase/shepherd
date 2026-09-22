@@ -46,6 +46,9 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    /// The title in sentence case, for Settings rows ("Show or hide sidebar").
+    var sentenceTitle: String { title.prefix(1) + title.dropFirst().lowercased() }
+
     var defaultChord: KeyChord {
         switch self {
         case .newAgent: return KeyChord(key: "n", command: true)

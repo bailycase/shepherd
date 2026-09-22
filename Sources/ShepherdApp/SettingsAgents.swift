@@ -12,29 +12,24 @@ struct AgentSettings: View {
     private var piDefaultModel: String { PiConfig.defaultModel() ?? "pi's own default" }
 
     var body: some View {
-        SettingsGroup(title: "New Agents") {
-            SettingsRow(
-                title: "Default Model",
-                subtitle: "Applied by ⌘N and preselected in the New Agent sheet. \"Use pi's default\" passes no --model at all.",
-                isFirst: true
-            ) {
-                Picker("", selection: $settings.defaultModel) {
-                    Text("Use pi's default (\(piDefaultModel))").tag("")
-                    ForEach(modelOptions, id: \.self) { id in
-                        Text(id).tag(id)
+        SettingsPage(title: "Agents",
+                     explanation: "Defaults for agents you create with ⌘N or the New Agent sheet. Existing agents keep their settings.") {
+            SettingsGroup(title: "New agents") {
+                SettingsRow(title: "Default model",
+                            subtitle: "Preselected in the New Agent sheet. “Use pi's default” passes no --model at all.") {
+                    PopupMenu(settings.defaultModel.isEmpty ? "Use pi's default · \(piDefaultModel)" : settings.defaultModel,
+                              mono: !settings.defaultModel.isEmpty, minWidth: 220) {
+                        Button("Use pi's default · \(piDefaultModel)") { settings.defaultModel = "" }
+                        Divider()
+                        ForEach(modelOptions, id: \.self) { id in
+                            Button(id) { settings.defaultModel = id }
+                        }
                     }
                 }
-                .labelsHidden()
-            }
-            SettingsRow(title: "Default Thinking Level") {
-                Picker("", selection: $settings.defaultThinking) {
-                    ForEach(ThinkingLevel.allCases, id: \.self) { level in
-                        Text(level.rawValue.capitalized).tag(level)
-                    }
+                SettingsRow(title: "Default thinking level", subtitle: "Can be changed per agent from the composer.") {
+                    SegmentedControl(selection: $settings.defaultThinking,
+                                     options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
                 }
-                .labelsHidden()
-                .pickerStyle(.segmented)
-                .frame(width: 240)
             }
         }
         .task { modelOptions = PiConfig.modelIDs() }

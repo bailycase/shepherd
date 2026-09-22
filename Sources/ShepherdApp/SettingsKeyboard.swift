@@ -13,6 +13,7 @@ struct KeyboardSettings: View {
     /// The action currently recording, if any — one recorder at a time.
     @State private var recording: ShortcutAction?
     @State private var errorText: String?
+    @State private var errorAction: ShortcutAction?
 
     private static let groups: [(title: String, actions: [ShortcutAction])] = [
         ("Agents", [.newAgent, .newAgentOptions, .newSpace, .newShell, .shellDigits, .renameAgent, .nextAgent, .previousAgent, .deleteAgent, .commandPalette]),
@@ -22,74 +23,61 @@ struct KeyboardSettings: View {
     ]
 
     var body: some View {
-        ForEach(Self.groups, id: \.title) { group in
-            SettingsGroup(title: group.title) {
-                ForEach(Array(group.actions.enumerated()), id: \.element) { index, action in
-                    SettingsRow(title: action.title, isFirst: index == 0) {
-                        HStack(spacing: 6) {
-                            if !keys.isDefault(action) {
-                                Button("Reset") {
-                                    keys.reset(action)
-                                    vm.rebuildSurfaces()
-                                    errorText = nil
+        SettingsPage(title: "Keyboard", explanation: "Click a shortcut to record a new one. Shortcuts must include ⌘.") {
+            ForEach(Self.groups, id: \.title) { group in
+                SettingsGroup(title: group.title) {
+                    ForEach(group.actions, id: \.self) { action in
+                        SettingsRow(title: action.sentenceTitle, problem: errorAction == action ? errorText : nil) {
+                            HStack(spacing: 8) {
+                                if !keys.isDefault(action) {
+                                    Button("Reset") {
+                                        keys.reset(action)
+                                        vm.rebuildSurfaces()
+                                        clearError()
+                                    }
+                                    .buttonStyle(LinkButtonStyle(color: Tokens.accentText, font: Fonts.caption))
                                 }
-                                .buttonStyle(.plain)
-                                .font(Fonts.mono(10.5))
-                                .foregroundStyle(Tokens.textTertiary)
-                            }
-                            ShortcutRecorder(
-                                action: action,
-                                isRecording: recording == action,
-                                chordText: keys.display(action)
-                            ) {
-                                errorText = nil
-                                recording = recording == action ? nil : action
-                            } onChord: { chord in
-                                recording = nil
-                                if let error = keys.assign(chord, to: action) {
-                                    errorText = "\(chord.display): \(error)"
-                                } else {
-                                    errorText = nil
-                                    // Custom chords must fall through focused
-                                    // terminals — rebuild surfaces so ghostty
-                                    // picks up the new unbind list.
-                                    vm.rebuildSurfaces()
+                                ShortcutRecorder(action: action, isRecording: recording == action, chordText: keys.display(action)) {
+                                    clearError()
+                                    recording = recording == action ? nil : action
+                                } onChord: { chord in
+                                    recording = nil
+                                    if let error = keys.assign(chord, to: action) {
+                                        errorAction = action
+                                        errorText = "\(chord.display): \(error)"
+                                    } else {
+                                        clearError()
+                                        // Custom chords must fall through focused terminals — rebuild
+                                        // surfaces so ghostty picks up the new unbind list.
+                                        vm.rebuildSurfaces()
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
-        if let errorText {
-            Text(errorText)
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.statusBlocked)
+            SettingsGroup(title: "Fixed", footnote: "Changes apply immediately, everywhere a shortcut is shown.") {
+                SettingsRow(title: "Select agent 1–9", subtitle: "Sidebar order; hold ⌘ to see the numbers.") { Keycaps(["⌘", "1–9"]) }
+                SettingsRow(title: "Settings") { Keycaps(chord: "⌘,") }
+                SettingsRow(title: "Confirm or cancel in sheets") { Keycaps(["⏎", "⎋"]) }
+                SettingsRow(title: "Reset all shortcuts") {
+                    Button("Reset all") {
+                        keys.resetAll()
+                        vm.rebuildSurfaces()
+                        clearError()
+                    }
+                    .buttonStyle(ShepherdButtonStyle(.destructive, size: .small))
+                    .disabled(keys.overrides.isEmpty)
+                }
+            }
         }
+    }
 
-        SettingsGroup(title: "Fixed") {
-            SettingsRow(title: "Select Agent 1–9", subtitle: "Sidebar tree order; hold ⌘ to see the numbers.", isFirst: true) {
-                Keycap(text: "⌘1–9")
-            }
-            SettingsRow(title: "Settings") {
-                Keycap(text: "⌘,")
-            }
-            SettingsRow(title: "Confirm / Cancel in Sheets") {
-                Keycap(text: "⏎ / ⎋")
-            }
-        }
-
-        HStack {
-            Spacer()
-            Button("Reset All Shortcuts") {
-                keys.resetAll()
-                vm.rebuildSurfaces()
-                errorText = nil
-            }
-            .disabled(keys.overrides.isEmpty)
-        }
-        SettingsNote(text: "shortcuts must include ⌘ · changes apply immediately, everywhere a hint is shown")
+    private func clearError() {
+        errorText = nil
+        errorAction = nil
     }
 }
 
@@ -105,16 +93,20 @@ private struct ShortcutRecorder: View {
 
     var body: some View {
         Button(action: onToggle) {
-            Text(isRecording ? "press keys…" : chordText)
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(isRecording ? Tokens.focusAccent : Tokens.textSecondary)
-                .padding(.vertical, 2)
-                .padding(.horizontal, 6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 3)
-                        .stroke(isRecording ? Tokens.focusAccent.opacity(0.6) : Tokens.keycapBorder, lineWidth: 1)
-                )
-                .contentShape(Rectangle())
+            Group {
+                if isRecording {
+                    Text("Press keys…")
+                        .font(Fonts.caption)
+                        .foregroundStyle(Tokens.accentText)
+                        .padding(.horizontal, 8)
+                        .frame(height: 22)
+                        .background(Tokens.accentBg, in: RoundedRectangle(cornerRadius: Radius.xs))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.xs).strokeBorder(Tokens.accent, lineWidth: 1))
+                } else {
+                    Keycaps(chord: chordText)
+                }
+            }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(isRecording ? "Press the new shortcut — ⎋ cancels" : "Click, then press the new shortcut")
@@ -149,20 +141,3 @@ private struct ShortcutRecorder: View {
         }
     }
 }
-
-private struct Keycap: View {
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(Fonts.mono(10.5))
-            .foregroundStyle(Tokens.textSecondary)
-            .padding(.vertical, 2)
-            .padding(.horizontal, 6)
-            .overlay(
-                RoundedRectangle(cornerRadius: 3)
-                    .stroke(Tokens.keycapBorder, lineWidth: 1)
-            )
-    }
-}
-
