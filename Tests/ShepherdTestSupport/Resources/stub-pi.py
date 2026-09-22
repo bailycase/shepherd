@@ -19,6 +19,8 @@
 set_model / set_thinking_level update STATE (unknown provider -> error).
 A prompt carrying images also logs {"type": "stub-images", "count": N}.
 
+$STUB_PI_HISTORY_BYTES seeds that many bytes of prior history (see below).
+
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
 """
@@ -80,6 +82,20 @@ MESSAGES = [
      "api": "anthropic-messages", "provider": "anthropic", "model": "claude-sonnet-4-20250514",
      "stopReason": "stop", "timestamp": 1733234567891},
 ]
+
+# STUB_PI_HISTORY_BYTES seeds a long session: a user turn, then tool results big enough that
+# get_messages answers with one multi-megabyte record, as pi does for long real sessions.
+_history_bytes = int(os.environ.get("STUB_PI_HISTORY_BYTES", "0") or 0)
+if _history_bytes > 0:
+    MESSAGES.append({"role": "user", "content": "seeded long session"})
+    chunk = 512 * 1024
+    for i in range(max(1, _history_bytes // chunk)):
+        MESSAGES.append({"role": "assistant", "stopReason": "toolUse",
+                         "content": [{"type": "toolCall", "id": f"seed_{i}", "name": "bash", "arguments": {"command": "cat big"}}]})
+        MESSAGES.append({"role": "toolResult", "toolCallId": f"seed_{i}", "toolName": "bash",
+                         "content": [{"type": "text", "text": "x" * chunk}], "isError": False})
+    MESSAGES.append({"role": "assistant", "content": [{"type": "text", "text": "seeded reply"}], "stopReason": "stop"})
+
 
 COMMANDS = [
     {"name": "session-name", "description": "Set or clear session name", "source": "extension"},
