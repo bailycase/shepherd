@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdDesign
 import ShepherdCore
 
 struct RootView: View {
@@ -27,10 +28,6 @@ struct RootView: View {
             .frame(width: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
             // Spec bg.canvas: the sidebar surface the restyled rows are designed on.
             .background(NativeTokens.bgCanvas.ignoresSafeArea())
-            // Rebuild chrome (not terminal panes) when density/text scale
-            // change; fonts and metrics are read inside row bodies where
-            // SwiftUI's input diffing cannot see them.
-            .id(appearance.appearanceKey)
 
             sidebarResizeHandle
 

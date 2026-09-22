@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "ShepherdCore", targets: ["ShepherdCore"]),
         .library(name: "ShepherdProtocol", targets: ["ShepherdProtocol"]),
         .library(name: "ShepherdRemote", targets: ["ShepherdRemote"]),
+        .library(name: "ShepherdDesign", targets: ["ShepherdDesign"]),
         .library(name: "ShepherdSessions", targets: ["ShepherdSessions"]),
         .library(name: "TerminalSurfaceKit", targets: ["TerminalSurfaceKit"]),
         .library(name: "ShepherdApp", targets: ["ShepherdApp"]),
@@ -39,6 +40,13 @@ let package = Package(
             dependencies: ["ShepherdCore", "ShepherdProtocol"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // Theme model (roles, light/dark variants), tokens, type ramp, metrics, and shared
+        // SwiftUI components. SwiftUI only: no AppKit/UIKit views, no app state.
+        .target(
+            name: "ShepherdDesign",
+            dependencies: ["ShepherdCore"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
         .target(
             name: "ShepherdSessions",
             dependencies: [
@@ -58,7 +66,7 @@ let package = Package(
         .target(
             name: "ShepherdApp",
             dependencies: [
-                "ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "TerminalSurfaceKit",
+                "ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "ShepherdDesign", "TerminalSurfaceKit",
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "SwiftTreeSitter", package: "swift-tree-sitter"),
                 .product(name: "TreeSitterSwift", package: "tree-sitter-swift"),
@@ -86,6 +94,7 @@ let package = Package(
             name: "ShepherdRemoteTests",
             dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote"]
         ),
+        .testTarget(name: "ShepherdDesignTests", dependencies: ["ShepherdDesign"]),
         .testTarget(name: "ShepherdSessionsTests", dependencies: ["ShepherdSessions"], exclude: ["Fixtures"]),
         .testTarget(name: "TerminalSurfaceKitTests", dependencies: ["TerminalSurfaceKit"]),
         .testTarget(name: "ShepherdAppTests", dependencies: ["ShepherdApp"]),

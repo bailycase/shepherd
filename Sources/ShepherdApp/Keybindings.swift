@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import ShepherdDesign
 
 /// The app shortcuts a user may rebind. Fixed chords (⌘1–9 agent selection,
 /// hold-⌘ badges, ⌘, Settings, ⏎/⎋ in sheets) are deliberately not here:

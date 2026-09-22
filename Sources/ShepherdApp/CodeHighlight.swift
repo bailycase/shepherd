@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import ShepherdDesign
 import SwiftTreeSitter
 import TreeSitterSwift
 import TreeSitterPython

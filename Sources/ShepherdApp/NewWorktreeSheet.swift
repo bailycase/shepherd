@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdDesign
 import ShepherdCore
 
 /// The space context menu's "New Worktree…": create a git worktree beside

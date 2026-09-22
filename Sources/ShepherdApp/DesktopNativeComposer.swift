@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdDesign
 import UniformTypeIdentifiers
 import ShepherdProtocol
 import ShepherdRemote

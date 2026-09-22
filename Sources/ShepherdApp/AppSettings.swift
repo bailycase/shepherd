@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import ShepherdDesign
 import ShepherdCore
 
 /// What a new worktree branches from (Settings ▸ Worktrees).
@@ -26,7 +27,22 @@ enum WorktreeMergeMethod: String, CaseIterable {
 /// behavior; a preference nothing reads is a bug, not a placeholder.
 @MainActor
 final class AppSettings: ObservableObject {
-    static let shared = AppSettings()
+    static let shared: AppSettings = {
+        let settings = AppSettings()
+        settings.drivesDesignScale = true
+        settings.publishDesignScale()
+        return settings
+    }()
+
+    /// Only the app's own settings object feeds the design system's text scale and density;
+    /// isolated instances in tests must not restyle anything.
+    private var drivesDesignScale = false
+
+    private func publishDesignScale() {
+        guard drivesDesignScale else { return }
+        ThemeStore.shared.textScale = CGFloat(uiTextScale)
+        ThemeStore.shared.density = CGFloat(uiDensity)
+    }
 
     enum Key {
         static let terminalFontFamily = "shepherd.terminal.fontFamily"
@@ -179,13 +195,19 @@ final class AppSettings: ObservableObject {
     /// Row-height multiplier for app chrome (sidebar rows, headers). 1.0 is
     /// the designed density; smaller packs more agents on screen.
     @Published var uiDensity: Double {
-        didSet { store.set(uiDensity, forKey: Key.uiDensity) }
+        didSet {
+            store.set(uiDensity, forKey: Key.uiDensity)
+            publishDesignScale()
+        }
     }
 
     /// Multiplier on every chrome font size (never the terminal's — that is
     /// `terminalFontSize`).
     @Published var uiTextScale: Double {
-        didSet { store.set(uiTextScale, forKey: Key.uiTextScale) }
+        didSet {
+            store.set(uiTextScale, forKey: Key.uiTextScale)
+            publishDesignScale()
+        }
     }
 
     @Published var sidebarWidth: Double {
@@ -310,14 +332,6 @@ final class AppSettings: ObservableObject {
         min(max(width, sidebarWidthRange.lowerBound), sidebarWidthRange.upperBound)
     }
 
-    /// Chrome identity key: views wrap their appearance-sensitive subtrees in
-    /// `.id(settings.appearanceKey)` so a slider drag rebuilds rows whose
-    /// SwiftUI inputs did not change (fonts and metrics are read inside
-    /// `body`, invisible to struct diffing). Never applied around terminal
-    /// panes — chrome only, so surfaces are not torn down.
-    var appearanceKey: String {
-        "\(uiDensity)-\(uiTextScale)"
-    }
 
     // MARK: Derived values
 
