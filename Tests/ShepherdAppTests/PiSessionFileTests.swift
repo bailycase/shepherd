@@ -15,6 +15,15 @@ struct PiSessionFileTests {
         #expect(PiSessionFile.mangled("/Users/dev/") == "Users-dev")
     }
 
+    /// pi uses realpath: /tmp and /var live under /private, and Foundation's symlink
+    /// resolution would drop that prefix and look in the wrong project directory.
+    @Test func mangledPathKeepsThePrivatePrefixLikeRealpath() throws {
+        let cwd = try makeScratchCwd()
+        defer { try? FileManager.default.removeItem(atPath: cwd) }
+        #expect(PiSessionFile.mangled("/tmp") == "private-tmp")
+        #expect(PiSessionFile.mangled(cwd).hasPrefix("private-"))
+    }
+
     @Test func seedingCreatesAResolvableSessionThenNoOps() throws {
         // A real (temporary) cwd, so the seeded file lands in the same place
         // pi would look for it.
@@ -40,7 +49,7 @@ struct PiSessionFileTests {
         #expect(object["type"] as? String == "session")
         #expect(object["id"] as? String == sessionID)
         #expect(object["version"] as? Int == 3)
-        #expect(object["cwd"] as? String == URL(fileURLWithPath: cwd).resolvingSymlinksInPath().path)
+        #expect(object["cwd"] as? String == PiSessionFile.realPath(cwd))
 
         // Seeding again must not add a second file for the same id (that would
         // make pi's "latest session" ambiguous).
@@ -95,7 +104,7 @@ struct PiSessionFileTests {
         #expect(lines.count == 3)
         let header = try #require(try JSONSerialization.jsonObject(with: Data(lines[0].utf8)) as? [String: Any])
         #expect(header["id"] as? String == id && header["parentSession"] == nil)
-        #expect(header["cwd"] as? String == URL(fileURLWithPath: cwd).resolvingSymlinksInPath().path)
+        #expect(header["cwd"] as? String == PiSessionFile.realPath(cwd))
         #expect(lines[1].contains("hello child") && lines[2].contains("hi parent"))
         // The child's file is untouched; a second fork gets its own id.
         #expect(try String(contentsOf: child, encoding: .utf8).contains("\"id\":\"child-id\""))

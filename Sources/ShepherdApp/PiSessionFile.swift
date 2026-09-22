@@ -26,6 +26,15 @@ enum PiSessionFile {
             .appendingPathComponent(".pi/agent/sessions", isDirectory: true)
     }
 
+    /// The path as pi sees it: `realpath(3)`, like Node's `fs.realpathSync`. Foundation's
+    /// `resolvingSymlinksInPath` is not a substitute: it maps /private/tmp back to /tmp.
+    static func realPath(_ path: String) -> String {
+        let expanded = (path as NSString).expandingTildeInPath
+        guard let resolved = realpath(expanded, nil) else { return (expanded as NSString).standardizingPath }
+        defer { free(resolved) }
+        return String(cString: resolved)
+    }
+
     /// `sessionsRoot/<mangled cwd>/` — pi derives the directory name from the
     /// absolute cwd, replacing each path separator with `-` and wrapping the
     /// result in `--`.
@@ -36,10 +45,7 @@ enum PiSessionFile {
     /// Pi resolves the real path first (so /tmp and /private/tmp agree), then
     /// mangles it.
     static func mangled(_ cwd: String) -> String {
-        let resolved = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath)
-            .resolvingSymlinksInPath()
-            .path
-        return resolved
+        realPath(cwd)
             .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
             .replacingOccurrences(of: "/", with: "-")
     }
@@ -92,9 +98,7 @@ enum PiSessionFile {
     ) -> Bool {
         guard !exists(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return true }
 
-        let resolvedCwd = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath)
-            .resolvingSymlinksInPath()
-            .path
+        let resolvedCwd = realPath(cwd)
         let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
         let now = Date()
 
@@ -143,7 +147,7 @@ enum PiSessionFile {
         let sessionID = UUID().uuidString.lowercased()
         let now = Date()
         header["id"] = sessionID
-        header["cwd"] = URL(fileURLWithPath: (cwd as NSString).expandingTildeInPath).resolvingSymlinksInPath().path
+        header["cwd"] = realPath(cwd)
         header["timestamp"] = isoTimestamp.string(from: now)
         header.removeValue(forKey: "parentSession")
         let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
