@@ -248,7 +248,7 @@ struct RootView: View {
                     },
                 ]
             ) {
-                SheetRow("worktree") {
+                SheetRow("Worktree") {
                     Text(path)
                         .font(Fonts.mono(11))
                         .foregroundStyle(Tokens.textSecondary)
@@ -256,7 +256,7 @@ struct RootView: View {
                         .truncationMode(.middle)
                         .help(path)
                 }
-                SheetRow("branch") {
+                SheetRow("Branch") {
                     Text(branch)
                         .font(Fonts.mono(11))
                         .foregroundStyle(Tokens.textSecondary)

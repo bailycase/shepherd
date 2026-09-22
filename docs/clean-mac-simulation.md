@@ -29,7 +29,7 @@ restore.
 
 Exercises 4 of the 5 failure rows and every remedy except the CLT installer.
 
-### 1. Set up the shim directory (breaks `git installed` and `GitHub CLI` rows)
+### 1. Set up the shim directory (breaks the `Git installed` and `GitHub CLI` rows)
 
 ```sh
 mkdir -p ~/.shepherd-clean-sim/bin
@@ -56,7 +56,7 @@ git config --global --unset user.name
 git config --global --unset user.email
 ```
 
-### 3. Break `gh authenticated` (do this *before* step 1's gh shim, or temporarily
+### 3. Break `GitHub CLI signed in` (do this *before* step 1's gh shim, or temporarily
 remove the shim — the logout needs the real gh)
 
 ```sh
@@ -91,14 +91,14 @@ Open a worktree agent's context menu → **Finalize Worktree…** with everythin
 
 | Row | Expected failure text | Remedy shown | Remedy verification |
 | --- | --- | --- | --- |
-| git installed | "git not found on PATH" | "install command line tools…" button | Button fires `xcode-select --install` (Apple GUI appears; cancel it — CLT is already present here) |
-| git identity | "git user.name / user.email are not set" | inline name/email fields + apply | Fill both, apply → row re-probes and turns green with `name · email` |
-| origin reachable | "origin remote missing or unreachable" (or the git stderr tail) | explanation text | `git remote add origin <real repo>` in the scratch repo, Re-run Checks → green |
-| GitHub CLI | "GitHub CLI not installed" | `brew install gh` + copy button | Copy puts the command on the clipboard (on this machine, restore = remove shim instead) |
-| gh authenticated | "not authenticated — run gh auth login" | "open login shell…" | Opens a Shepherd shell named `gh login` with `gh auth login` pre-typed; complete it (needs the shim removed so real gh resolves), come back, Re-run Checks → green |
+| Git installed | "git not found on PATH" | "Install command line tools…" button | Button fires `xcode-select --install` (Apple GUI appears; cancel it — CLT is already present here) |
+| Git identity | "git user.name / user.email are not set" | inline name/email fields + Apply | Fill both, apply → row re-probes and turns green with `name · email` |
+| Origin reachable | "origin remote missing or unreachable" (or the git stderr tail) | explanation text | `git remote add origin <real repo>` in the scratch repo, Re-run checks → green |
+| GitHub CLI | "GitHub CLI not installed" | `brew install gh` + Copy button | Copy puts the command on the clipboard (on this machine, restore = remove shim instead) |
+| GitHub CLI signed in | "not authenticated — run gh auth login" | "Open a terminal for gh login…" | Closes the sheet and opens a terminal pane beside the agent's thread with `gh auth login` pre-typed; complete it (needs the shim removed so real gh resolves), reopen Finalize, Re-run checks → green |
 
-Then the **verification pass**: with everything repaired, "Re-run Checks" must animate every
-row pending → checking → green, show "✓ all set — ready to finalize", and enable **Continue**.
+Then the **verification pass**: with everything repaired, "Re-run checks" must animate every
+row pending → checking → green, show "All set — ready to finalize", and enable **Continue**.
 Continue must land on the input phase with base pre-filled from `origin/HEAD` (or `main`).
 
 Finally run one real finalize against a scratch **GitHub** repo (create a throwaway repo,

@@ -34,43 +34,46 @@ struct NewWorktreeSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("New Worktree")
-                    .font(Fonts.mono(13.5, .semibold))
-                    .foregroundStyle(Tokens.textPrimary)
+                Text("New worktree")
+                    .font(Fonts.title)
+                    .foregroundStyle(Tokens.text)
                 Text("Creates a git worktree beside \(space.name) on a new branch and starts an agent in it.")
-                    .font(Fonts.mono(11.5))
-                    .foregroundStyle(Tokens.textSecondary)
+                    .font(Fonts.labelRegular)
+                    .foregroundStyle(Tokens.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 6, trailing: 20))
+            .padding(EdgeInsets(top: 20, leading: 20, bottom: 8, trailing: 20))
 
             VStack(spacing: 0) {
-                SheetRow("branch") {
+                SheetRow("Branch") {
                     TextField("", text: $branch,
-                              prompt: Text("branch name").foregroundStyle(Tokens.textDim))
+                              prompt: Text("branch name").foregroundStyle(Tokens.textMuted))
                         .textFieldStyle(.plain)
-                        .font(Fonts.mono(11.5))
-                        .foregroundStyle(Tokens.textSecondary)
+                        .font(Fonts.code)
+                        .foregroundStyle(Tokens.text)
+                        .shepherdField(focused: branchFocused, mono: true)
                         .focused($branchFocused)
                         .onSubmit(create)
                 }
-                SheetRow("base") {
+                SheetRow("Base") {
                     HStack(spacing: 8) {
                         TextField("", text: $base,
-                                  prompt: Text("resolving…").foregroundStyle(Tokens.textDim))
+                                  prompt: Text("resolving…").foregroundStyle(Tokens.textMuted))
                             .textFieldStyle(.plain)
-                            .font(Fonts.mono(11.5))
-                            .foregroundStyle(Tokens.textSecondary)
+                            .font(Fonts.code)
+                            .foregroundStyle(Tokens.text)
+                            .shepherdField(mono: true)
                             .frame(maxWidth: 200)
                         Text(baseNote)
-                            .font(Fonts.mono(10.5))
-                            .foregroundStyle(Tokens.textDim)
+                            .font(Fonts.caption)
+                            .foregroundStyle(Tokens.textMuted)
                             .lineLimit(1)
                     }
                 }
-                SheetRow("checkout") {
+                SheetRow("Checkout") {
                     Text(destination)
-                        .font(Fonts.mono(11))
-                        .foregroundStyle(Tokens.textDim)
+                        .font(Fonts.code)
+                        .foregroundStyle(Tokens.textMuted)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -79,22 +82,22 @@ struct NewWorktreeSheet: View {
 
             HStack(spacing: 10) {
                 Text(errorText ?? "")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.statusBlocked)
+                    .font(Fonts.caption)
+                    .foregroundStyle(Tokens.dangerText)
                     .lineLimit(2)
                 Spacer(minLength: 12)
                 Button("Cancel") { vm.worktreeSheetTarget = nil }
                     .keyboardShortcut(.cancelAction)
-                Button(creating ? "Creating…" : "Create & Open") { create() }
+                Button(creating ? "Creating…" : "Create and open") { create() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Tokens.accentButton)
+                    .buttonStyle(ShepherdButtonStyle(.primary))
                     .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
             }
-            .padding(EdgeInsets(top: 12, leading: 20, bottom: 16, trailing: 20))
+            .padding(EdgeInsets(top: 16, leading: 20, bottom: 20, trailing: 20))
         }
         .frame(width: 520)
-        .background(Tokens.workspaceBg)
+        .background(Tokens.bgSurface)
+        .buttonStyle(ShepherdButtonStyle(.secondary))
         .onAppear { branchFocused = true }
         .task { await resolveBase() }
     }

@@ -93,15 +93,16 @@ struct RemoteDirectoryPicker: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("\(title) on \(hostName)")
-                    .font(Fonts.mono(13.5, .semibold))
-                    .foregroundStyle(Tokens.textPrimary)
+                    .font(Fonts.title)
+                    .foregroundStyle(Tokens.text)
                 // The path is editable: typing filters the listing to what's
                 // under the typed path, and ⏎ chooses it in one go.
                 TextField("", text: $pathDraft)
                     .textFieldStyle(.plain)
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.textSecondary)
+                    .font(Fonts.code)
+                    .foregroundStyle(Tokens.text)
                     .focused($pathFocused)
+                    .shepherdField(focused: pathFocused, mono: true)
                     .onChange(of: pathDraft) { draftChanged() }
                     .onSubmit { submit() }
                     .onKeyPress(.tab) {
@@ -109,9 +110,9 @@ struct RemoteDirectoryPicker: View {
                         return .handled
                     }
             }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 10, trailing: 20))
+            .padding(EdgeInsets(top: 20, leading: 20, bottom: 12, trailing: 20))
 
-            Rectangle().fill(Tokens.separator).frame(height: 1)
+            Rectangle().fill(Tokens.borderSubtle).frame(height: 1)
 
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
@@ -124,40 +125,40 @@ struct RemoteDirectoryPicker: View {
                         }
                     }
                     if !loading, visibleDirs.isEmpty {
-                        Text("no subdirectories")
-                            .font(Fonts.mono(10.5))
-                            .foregroundStyle(Tokens.textDim)
+                        Text("No subdirectories")
+                            .font(Fonts.caption)
+                            .foregroundStyle(Tokens.textMuted)
                             .padding(12)
                     }
                 }
             }
             .frame(height: 260)
-            .background(Tokens.workspaceBg)
+            .background(Tokens.bgSurface)
 
-            Rectangle().fill(Tokens.separator).frame(height: 1)
+            Rectangle().fill(Tokens.borderSubtle).frame(height: 1)
 
             HStack(spacing: 10) {
-                Text(errorText ?? (loading ? "loading…" : "\(visibleDirs.count) directories"))
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(errorText == nil ? Tokens.textTertiary : Tokens.statusBlocked)
+                Text(errorText ?? (loading ? "Loading…" : "\(visibleDirs.count) directories"))
+                    .font(Fonts.caption)
+                    .foregroundStyle(errorText == nil ? Tokens.textTertiary : Tokens.dangerText)
                     .lineLimit(1)
                 Spacer(minLength: 12)
-                Toggle("hidden", isOn: $showHidden)
-                    .toggleStyle(.checkbox)
-                    .font(Fonts.mono(10.5))
+                Toggle("Show hidden", isOn: $showHidden)
+                    .toggleStyle(.shepherdSwitch)
+                    .font(Fonts.caption)
                     .foregroundStyle(Tokens.textTertiary)
                 Button("Cancel", action: cancel)
                     .keyboardShortcut(.cancelAction)
                 Button(actionTitle) { submit() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
-                    .tint(Tokens.accentButton)
+                    .buttonStyle(ShepherdButtonStyle(.primary))
                     .disabled(path.isEmpty || loading)
             }
-            .padding(EdgeInsets(top: 10, leading: 20, bottom: 16, trailing: 20))
+            .padding(EdgeInsets(top: 12, leading: 20, bottom: 20, trailing: 20))
         }
         .frame(width: 480)
-        .background(Tokens.workspaceBg)
+        .background(Tokens.bgSurface)
+        .buttonStyle(ShepherdButtonStyle(.secondary))
         .onAppear { load(startPath) }
     }
 
@@ -253,17 +254,17 @@ private struct RemoteDirRow: View {
         HStack(spacing: 8) {
             Image(systemName: "folder")
                 .font(.system(size: 10.5))
-                .foregroundStyle(isUp ? Tokens.textDim : Tokens.textTertiary)
+                .foregroundStyle(isUp ? Tokens.textMuted : Tokens.textTertiary)
             Text(label)
-                .font(Fonts.mono(12))
-                .foregroundStyle(isUp ? Tokens.textDim : Tokens.textSecondary)
+                .font(Fonts.labelRegular)
+                .foregroundStyle(isUp ? Tokens.textMuted : Tokens.text)
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .frame(height: Metrics.rowHeight)
+        .frame(height: Metrics.menuRowHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(hovering ? Tokens.rowHover : Color.clear)
+        .background(hovering ? Tokens.bgHover : Color.clear)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture(perform: action)
