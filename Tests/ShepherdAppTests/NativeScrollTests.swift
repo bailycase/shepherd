@@ -417,6 +417,6 @@ struct NativeScrollTests {
         #expect(f.distanceFromBottom < 2, "sending did not return to the tail: \(f.distanceFromBottom)")
         let document = f.scrollView.documentView!
         let lastVisible = document.subviews.flatMap { $0.subviews }.map { $0.frame.maxY }.max() ?? 0
-        #expect(document.bounds.height - lastVisible <= NativeMetrics.turnSpacing * 2 + 13)
+        #expect(document.bounds.height - lastVisible <= Metrics.turnSpacing * 2 + 13)
     }
 }

@@ -108,8 +108,8 @@ Sources/
                       SubagentInspector + RightPaneSplit), ThreadHeader, SidebarView,
                       DiffReviewView (the review pane), TerminalSessionStore (pane→session
                       lifecycle), command palette, KeybindingsStore, Themes (ThemeManager:
-                      appearance mode, Ghostty + pi theme file), LegacyDesign (deprecated
-                      aliases, being deleted), ComponentGallery (Debug menu), Settings
+                      appearance mode, Ghostty + pi theme file), ComponentGallery (Debug
+                      menu), Settings
                       (Appearance/Terminal/Agents/Worktrees/Pi/Remote/Keyboard/Advanced),
                       creation/worktree sheets + directory browser, the eight
                       *Extension.swift embeds, TerminalHost (ghostty bridge),
@@ -242,9 +242,8 @@ carry text get a contrast rule in `Tests/ShepherdDesignTests`, which enforce WCA
 and the `…Text`-on-`…Bg` pairing. Borders and hover fills are theme roles too (`border*`,
 `bgHover*`), never ad-hoc alphas. `ThemeManager` (app) only holds the System/Light/Dark mode and
 pushes the resolved variant to Ghostty and the pi theme file. Basalt is the only shipped theme.
-`Sources/ShepherdApp/LegacyDesign.swift` holds deprecated aliases for the old token names
-(`NativeTokens`, `textDim`, `sidebarBg`, …); never add call sites to it — migrate them, and
-delete the file with the last one. Read the "Theme model" section of DESIGN.md before touching
+The pre-redesign token names (`NativeTokens`, `textDim`, `sidebarBg`, …) are gone; don't
+reintroduce aliases for them. Read the "Theme model" section of DESIGN.md before touching
 themes.
 
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the

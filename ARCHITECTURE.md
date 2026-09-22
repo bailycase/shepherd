@@ -129,7 +129,6 @@ This boundary keeps engine API changes local. App-owned keyboard chords must als
 - `PaneControl.swift`: extension-driven pane authorization and routing.
 - `SettingsView.swift`, `SettingsComponents.swift`, `Settings*.swift`: the in-window Settings surface and its pages.
 - `Themes.swift`, `ShepherdPiTheme.swift`: appearance mode, the resolved variant for Ghostty, the pi theme file and variant marker.
-- `LegacyDesign.swift`: deprecated aliases for pre-redesign token names; delete with the last call site.
 - `ComponentGallery.swift`: every shared component in every state (Debug menu).
 - `NewAgentSheet.swift`, `NewWorktreeSheet.swift`, `FinalizeWorktreeSheet.swift`, `GitWorktree.swift`, `WorktreeFinalize.swift`, `DialogSheet.swift`: creation, worktree, and confirmation flows.
 
