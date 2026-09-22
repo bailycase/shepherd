@@ -34,7 +34,7 @@ struct RPCAgentThreadTests {
             sessionID = session.id
             let pane = LeafPane(sessionID: session.id, cwd: dir.path)
             let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-            agent = Agent(name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id, runtime: .rpc)
+            agent = Agent(name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
             try await server.addSpace(space)
             try await server.addAgent(agent, withTab: tab)
         }

@@ -46,32 +46,6 @@ extension ShepherdViewModel {
             }
     }
 
-    /// Fleet-wide status counts for the sidebar's dot strip, in a fixed
-    /// scan order (attention first). Absent statuses are omitted.
-    var statusCounts: [(status: AgentStatus, count: Int)] {
-        _ = remoteProjectionRevision
-        return [AgentStatus.blocked, .working, .done, .idle].compactMap { status in
-            let count = state.agents.count { $0.status == status }
-                + remoteHosts.connections.filter { $0.phase == .connected }.reduce(0) { $0 + $1.state.agents.count { $0.status == status } }
-            return count > 0 ? (status, count) : nil
-        }
-    }
-
-    /// Blocked queue position of the selected agent, for the status line's
-    /// `1 of 3 waiting`. Nil when nothing is blocked.
-    var waitingQueue: (position: Int?, total: Int)? {
-        _ = remoteProjectionRevision
-        let blocked: [(host: UUID?, agent: AgentID)] = agentsInForestOrder.filter { $0.status == .blocked }.map { (nil, $0.id) }
-            + remoteHosts.connections.filter { $0.phase == .connected }.flatMap { connection in
-                connection.state.agents.filter { $0.status == .blocked }.map { (connection.id, $0.id) }
-            }
-        guard !blocked.isEmpty else { return nil }
-        let position = blocked.firstIndex {
-            $0.host == selectedRemoteAgent?.hostID && $0.agent == (selectedRemoteAgent?.agentID ?? selectedAgentID)
-        }.map { $0 + 1 }
-        return (position, blocked.count)
-    }
-
     /// Every space with its agents, in sidebar (declaration) order. `depth`
     /// nests a space under the nearest space whose path contains its path —
     /// spaces are added explicitly, but the parent/child display is derived,
@@ -245,9 +219,6 @@ extension ShepherdViewModel {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
-        // Ordinary selection returns the workspace to the agent's terminal;
-        // openChildInspector re-raises the inspector after this call.
-        inspectingAgentID = nil
         selectedShellID = nil
         selectedRemoteAgent = nil
         selectionHistory.removeAll { $0 == id }
@@ -281,7 +252,6 @@ extension ShepherdViewModel {
     /// A space's `shell` row shows the space's shell workspace.
     func selectSpace(_ id: SpaceID) {
         guard state.spaces.contains(where: { $0.id == id }) else { return }
-        inspectingAgentID = nil
         selectedShellID = nil
         selectedRemoteAgent = nil
         selectedSpaceID = id
@@ -365,11 +335,10 @@ extension ShepherdViewModel {
         )
     }
 
-    /// A REMOTE row shows that agent's terminal, streamed from its host.
+    /// A REMOTE row shows that agent's thread, served by its host.
     func selectRemoteAgent(hostID: UUID, agentID: AgentID) {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
-        inspectingAgentID = nil
         selectedShellID = nil
         selectedRemoteAgent = RemoteAgentRef(hostID: hostID, agentID: agentID)
         lastRemoteAgentByHost[hostID] = agentID

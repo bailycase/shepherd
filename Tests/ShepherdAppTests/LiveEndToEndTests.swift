@@ -89,9 +89,9 @@ struct LiveEndToEndTests {
         // 1. A new RPC agent spawns three native children from its opening prompt.
         let agentID = try await vm.startAgent(NewAgentConfig(
             spaceID: space.id, workingDirectory: cwd.path, model: "e2e/e2e-model", thinking: .off,
-            initialPrompt: "E2E_START Restyle the native UI to the spec. Split it up if that's faster.", runtime: .rpc,
+            initialPrompt: "E2E_START Restyle the native UI to the spec. Split it up if that's faster.",
             initialName: "Restyle native UI"))
-        let store = vm.nativePresentation.store(for: agentID)
+        let store = vm.threadStores.store(for: agentID)
         func run(_ role: String) -> ChildRun? { store.subagents.first { $0.role == role } }
         try await waitFor("three children, reviewer asking", timeout: .seconds(90)) {
             store.subagents.count == 3 && run("reviewer")?.needsAttention == true && run("worker")?.isTerminal == false

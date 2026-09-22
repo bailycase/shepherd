@@ -38,30 +38,26 @@ struct AgentSessionTests {
             piSessionID: agent.effectivePiSessionID,
             socketPath: "/tmp/shepherd.sock",
             extensionPath: "/tmp/status.ts",
-            themeExtensionPath: "/tmp/theme.ts",
             panesExtensionPath: "/tmp/panes.ts",
             reviewExtensionPath: "/tmp/review.ts",
             subagentsExtensionPath: "/tmp/subagents.ts",
-            nativeExtensionPath: "/tmp/native.ts",
-            piThemePath: "/tmp/theme.json",
-            piThemeName: "shepherd",
             model: nil,
-            thinking: nil,
-            initialPrompt: nil
+            thinking: nil
         )
 
         let shell = command.argv[3]
         #expect(shell.contains("--session-id 'moved-session-id'"))
-        #expect(shell.contains("-e '/tmp/native.ts'"))
         #expect(!shell.contains("--session-id '\(agent.id.rawValue)'"))
         // The agent's identity is unchanged: status and naming still route by
         // agent id, only the conversation moved.
         #expect(command.env["SHEPHERD_AGENT_ID"] == agent.id.rawValue)
     }
 
-    @Test(arguments: 0..<64)
+    /// Agents run `pi --mode rpc` through a login shell, never with a positional prompt (RPC
+    /// mode ignores it; the app sends it as the first `prompt`) and never with a TUI theme.
+    @Test(arguments: 0..<32)
     func optionalExtensionsOnlyEnableTheirOwnLaunchFlags(enabled: Int) {
-        let paths = ["/tmp/theme.ts", "/tmp/panes.ts", "/tmp/review.ts", "/tmp/subagents.ts", "/tmp/namer.ts", "/tmp/children.ts"]
+        let paths = ["/tmp/panes.ts", "/tmp/review.ts", "/tmp/subagents.ts", "/tmp/namer.ts", "/tmp/children.ts"]
         let selected = paths.enumerated().map { index, path in
             enabled & (1 << index) != 0 ? path : nil
         }
@@ -71,47 +67,40 @@ struct AgentSessionTests {
                 piSessionID: "current-session",
                 socketPath: "/tmp/shepherd.sock",
                 extensionPath: "/tmp/status.ts",
-                themeExtensionPath: selected[0],
-                panesExtensionPath: selected[1],
-                reviewExtensionPath: selected[2],
-                subagentsExtensionPath: selected[3],
-                childrenExtensionPath: selected[5],
+                panesExtensionPath: selected[0],
+                reviewExtensionPath: selected[1],
+                subagentsExtensionPath: selected[2],
+                childrenExtensionPath: selected[4],
                 childEnvironment: ["SHEPHERD_CHILD_CONCURRENCY": "7", "SHEPHERD_CHILD_MODEL": "custom/model"],
-                namerExtensionPath: selected[4],
+                namerExtensionPath: selected[3],
                 needsName: true,
                 isAutomation: isAutomation,
-                piThemePath: "/tmp/theme file.json",
-                piThemeName: "shepherd",
                 model: "provider/model",
-                thinking: .high,
-                initialPrompt: "fix user's code"
+                thinking: .high
             )
+            #expect(command.argv.prefix(3) == ["/bin/zsh", "-l", "-c"])
             let shell = command.argv[3]
+            #expect(shell.hasPrefix("exec pi --mode rpc --session-id 'current-session'"))
             #expect(shell.contains(" -e '/tmp/status.ts'"))
-            #expect(shell.contains("--session-id 'current-session'"))
             #expect(shell.contains("--model 'provider/model'"))
             #expect(shell.contains("--thinking 'high'"))
-            #expect(shell.hasSuffix("'fix user'\"'\"'s code'"))
             for index in paths.indices {
                 #expect(shell.contains(" -e '\(paths[index])'") == (selected[index] != nil))
             }
             #expect(!shell.contains("--no-extensions"))
-            #expect(!shell.contains("shepherd-inspect"))
-            #expect(shell.contains("--theme '/tmp/theme file.json'") == (selected[0] != nil))
-            #expect(shell.contains("--use-theme 'shepherd'") == (selected[0] != nil))
+            #expect(!shell.contains("--theme") && !shell.contains("shepherd-inspect"))
             #expect(command.env["SHEPHERD_AGENT_ID"] == "agent-id")
             #expect(command.env["SHEPHERD_SOCKET"] == "/tmp/shepherd.sock")
             #expect(command.env["SHEPHERD_EXT_STATUS"] == "/tmp/status.ts")
-            #expect(command.env["SHEPHERD_EXT_THEME"] == selected[0])
-            #expect(command.env["SHEPHERD_PI_THEME_PATH"] == (selected[0] == nil ? nil : "/tmp/theme file.json"))
-            #expect(command.env["SHEPHERD_PI_THEME_NAME"] == (selected[0] == nil ? nil : "shepherd"))
-            #expect(command.env["SHEPHERD_EXT_PANES"] == selected[1])
-            #expect(command.env["SHEPHERD_EXT_CHILDREN"] == selected[5])
-            #expect(command.env["SHEPHERD_CHILD_CONCURRENCY"] == (selected[5] == nil ? nil : "7"))
-            #expect(command.env["SHEPHERD_CHILD_MODEL"] == (selected[5] == nil ? nil : "custom/model"))
-            #expect(command.env["SHEPHERD_NATIVE_CHILDREN"] == (selected[5] == nil ? nil : "1"))
-            #expect(command.env["SHEPHERD_NEEDS_NAME"] == (selected[4] == nil ? nil : "1"))
+            #expect(command.env["SHEPHERD_EXT_THEME"] == nil)
+            #expect(command.env["SHEPHERD_EXT_PANES"] == selected[0])
+            #expect(command.env["SHEPHERD_EXT_CHILDREN"] == selected[4])
+            #expect(command.env["SHEPHERD_CHILD_CONCURRENCY"] == (selected[4] == nil ? nil : "7"))
+            #expect(command.env["SHEPHERD_CHILD_MODEL"] == (selected[4] == nil ? nil : "custom/model"))
+            #expect(command.env["SHEPHERD_NATIVE_CHILDREN"] == (selected[4] == nil ? nil : "1"))
+            #expect(command.env["SHEPHERD_NEEDS_NAME"] == (selected[3] == nil ? nil : "1"))
             #expect(command.env["SHEPHERD_AUTOMATION"] == (isAutomation ? "1" : nil))
+            #expect(command.env["SHEPHERD_MODEL"] == "provider/model")
         }
     }
 
@@ -121,54 +110,20 @@ struct AgentSessionTests {
             piSessionID: "current-session",
             socketPath: "/tmp/shepherd.sock",
             extensionPath: "/tmp/status.ts",
-            themeExtensionPath: nil,
             panesExtensionPath: nil,
             reviewExtensionPath: nil,
             subagentsExtensionPath: nil,
             namerExtensionPath: "/tmp/namer.ts",
             needsName: false,
-            piThemePath: nil,
-            piThemeName: "shepherd",
             model: nil,
-            thinking: nil,
-            initialPrompt: nil
+            thinking: nil
         )
         #expect(command.argv[3].contains(" -e '/tmp/namer.ts'"))
         #expect(command.env["SHEPHERD_NEEDS_NAME"] == nil)
     }
 
-    /// An RPC agent launches `pi --mode rpc` through the same login shell with the same
-    /// socket env, but without the theme or native extension and without a positional
-    /// prompt (RPC mode ignores it; the app sends it as the first `prompt`).
-    @Test func rpcCommandMirrorsTerminalWiringWithoutTUIExtensions() {
-        let terminal = StatusExtension.command(
-            agentID: AgentID(rawValue: "agent-id"), piSessionID: "moved-session", socketPath: "/tmp/shepherd.sock",
-            extensionPath: "/tmp/status.ts", themeExtensionPath: "/tmp/theme.ts", panesExtensionPath: "/tmp/panes.ts",
-            reviewExtensionPath: "/tmp/review.ts", subagentsExtensionPath: "/tmp/subagents.ts", namerExtensionPath: "/tmp/namer.ts",
-            nativeExtensionPath: "/tmp/native.ts", needsName: true, isAutomation: true, piThemePath: "/tmp/theme.json",
-            piThemeName: "shepherd", model: "provider/model", thinking: .high, initialPrompt: "fix it"
-        )
-        let rpc = StatusExtension.rpcCommand(
-            agentID: AgentID(rawValue: "agent-id"), piSessionID: "moved-session", socketPath: "/tmp/shepherd.sock",
-            extensionPath: "/tmp/status.ts", panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: "/tmp/review.ts",
-            subagentsExtensionPath: "/tmp/subagents.ts", namerExtensionPath: "/tmp/namer.ts", needsName: true,
-            isAutomation: true, model: "provider/model", thinking: .high
-        )
-        #expect(rpc.argv.prefix(3) == terminal.argv.prefix(3))
-        let shell = rpc.argv[3]
-        #expect(shell.hasPrefix("exec pi --mode rpc --session-id 'moved-session'"))
-        #expect(!terminal.argv[3].contains("--mode rpc"))
-        #expect(shell.contains("--model 'provider/model'") && shell.contains("--thinking 'high'"))
-        for path in ["/tmp/status.ts", "/tmp/panes.ts", "/tmp/review.ts", "/tmp/subagents.ts", "/tmp/namer.ts"] {
-            #expect(shell.contains(" -e '\(path)'"))
-        }
-        #expect(!shell.contains("theme") && !shell.contains("native.ts") && !shell.contains("fix it"))
-        // Same env contract minus the theme keys.
-        let themeKeys: Set<String> = ["SHEPHERD_EXT_THEME", "SHEPHERD_PI_THEME_PATH", "SHEPHERD_PI_THEME_NAME"]
-        #expect(rpc.env == terminal.env.filter { !themeKeys.contains($0.key) })
-        #expect(rpc.env["SHEPHERD_AGENT_ID"] == "agent-id" && rpc.env["SHEPHERD_NEEDS_NAME"] == "1" && rpc.env["SHEPHERD_AUTOMATION"] == "1")
-
-        let bare = StatusExtension.rpcCommand(
+    @Test func bareCommandIsJustPiOverRPCWithStatus() {
+        let bare = StatusExtension.command(
             agentID: AgentID(), piSessionID: "s", socketPath: "/tmp/s", extensionPath: "/tmp/status.ts",
             panesExtensionPath: nil, reviewExtensionPath: nil, subagentsExtensionPath: nil, model: nil, thinking: nil
         )

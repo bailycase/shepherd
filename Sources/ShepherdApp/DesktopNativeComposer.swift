@@ -14,8 +14,6 @@ struct NativeComposer: View {
     let agentName: String?
     let hasTurns: Bool
     let gutter: CGFloat
-    /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
-    let showTerminal: (() -> Void)?
     var composing: FocusState<Bool>.Binding
     /// RPC agents: images attached to the next send (already resized per TerminalImageDrop).
     @State private var attachments: [NativeAttachment] = []
@@ -25,7 +23,6 @@ struct NativeComposer: View {
     /// Esc closes the menu for the draft as typed; typing more reopens it.
     @State private var dismissedQuery: String?
 
-    private var isRPC: Bool { store.snapshot?.isRPC == true }
     // One effective state, shared with the header pill: a lost connection wins over a
     // cached running snapshot (spec §6 maps error to Send + InlineError, never Stop).
     private var errored: Bool { store.loadError != nil }
@@ -37,9 +34,9 @@ struct NativeComposer: View {
     private var canAttach: Bool {
         store.supports("sendImages") || store.snapshot?.supportedActions.contains("sendImages") == true
     }
-    /// pi answers `/name` prompts itself under RPC; the list comes from get_commands. A
-    /// terminal agent has none, so "/" is just a character there.
-    private var commands: [NativeCommand] { isRPC ? (store.snapshot?.commands ?? []) : [] }
+    /// pi answers `/name` prompts itself; the list comes from get_commands. A host without
+    /// a command list (older Shepherd) leaves "/" as a plain character.
+    private var commands: [NativeCommand] { store.snapshot?.commands ?? [] }
     /// "/" at line start: the draft is one token starting with a slash.
     private var commandQuery: String? {
         guard !commands.isEmpty, store.draft.hasPrefix("/"), !store.draft.contains(where: \.isWhitespace),
@@ -66,7 +63,7 @@ struct NativeComposer: View {
             }
             if let error = store.loadError {
                 NativeInlineError(text: "Lost connection to the agent process · \(error)",
-                                  reconnect: { Task { await store.refresh(fresh: true) } }, showTerminal: showTerminal)
+                                  reconnect: { Task { await store.refresh(fresh: true) } })
             } else if let attachmentError {
                 Text(attachmentError).font(NativeFonts.caption).foregroundStyle(NativeTokens.dangerText).textSelection(.enabled)
             } else if let notice = store.notice {
@@ -114,8 +111,7 @@ struct NativeComposer: View {
             }
             if let dialog = dialogs.first, let snapshot = store.snapshot {
                 // The card swaps its field for the question so it can never scroll out of view.
-                NativeApprovalCard(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer"),
-                                   showTerminal: showTerminal) { answer in
+                NativeApprovalCard(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
                     Task {
                         await store.answer(dialogID: dialog.id, sessionID: snapshot.piSessionID,
                                            generation: snapshot.generation, answer: answer)
@@ -202,8 +198,7 @@ struct NativeComposer: View {
                 attach(providers)
             }
             .accessibilityLabel("Native message to agent")
-            .help(isRPC ? "Enter sends. Type / for pi’s commands; drop or paste images to attach them."
-                  : "Sent as literal text. Slash commands, images, and custom extension UI need Terminal.")
+            .help("Enter sends. Type / for pi’s commands; drop or paste images to attach them.")
     }
 
     /// One 28pt circle: Send when idle or when a draft exists during a run, Stop while running
@@ -434,16 +429,13 @@ struct NativeApprovalCard: View {
     /// Pending dialogs in total; the panel shows the first as "1/N".
     var count = 1
     let enabled: Bool
-    /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
-    let showTerminal: (() -> Void)?
     let answer: (NativeDialogAnswer) -> Void
     @State private var text: String
 
-    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, showTerminal: (() -> Void)?, answer: @escaping (NativeDialogAnswer) -> Void) {
+    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, answer: @escaping (NativeDialogAnswer) -> Void) {
         self.dialog = dialog
         self.count = count
         self.enabled = enabled
-        self.showTerminal = showTerminal
         self.answer = answer
         _text = State(initialValue: dialog.prefill ?? "")
     }
@@ -470,13 +462,10 @@ struct NativeApprovalCard: View {
                 .overlay(RoundedRectangle(cornerRadius: Radius.sm).strokeBorder(NativeTokens.border, lineWidth: 1))
             }
             if let unavailable = dialog.unavailable {
-                HStack(spacing: 8) {
-                    Text(unavailable == "external-editor"
-                         ? "An external editor is open · finish it in Terminal before answering here"
-                         : showTerminal == nil ? "This question is too large to show here" : "This question is unavailable natively · answer in Terminal")
-                        .font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
-                    NativeTerminalLink(action: showTerminal)
-                }
+                Text(unavailable == "external-editor"
+                     ? "An external editor is open · finish it before answering here"
+                     : "This question is too large to show here")
+                    .font(NativeFonts.caption).foregroundStyle(NativeTokens.textMuted)
             }
             Group {
                 switch dialog.kind {
@@ -537,24 +526,17 @@ struct NativeApprovalCard: View {
     }
 }
 
-/// Kept for callers that still reference the old name.
-typealias DesktopNativeDialog = NativeApprovalCard
-
 // MARK: Composer accessories
 
 struct NativeInlineError: View {
     let text: String
     let reconnect: () -> Void
-    /// nil for RPC agents: there is no terminal to show, so every handoff link is hidden.
-    let showTerminal: (() -> Void)?
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "xmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(NativeTokens.danger)
             Text(text).font(NativeFonts.caption).foregroundStyle(NativeTokens.dangerText).lineLimit(2)
             Spacer(minLength: 0)
             Button("Reconnect", action: reconnect).buttonStyle(.plain).font(NativeFonts.captionMedium).foregroundStyle(NativeTokens.dangerText).underline()
-            // Page 7 pairing rule: on dangerBg only dangerText, never accentText.
-            NativeTerminalLink(action: showTerminal, color: NativeTokens.dangerText)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(NativeTokens.dangerBg, in: RoundedRectangle(cornerRadius: Radius.md))

@@ -192,7 +192,7 @@ extension ShepherdViewModel {
         }
         let ownTabs = Set(server.state.agents.filter { $0.id == agentID }.map(\.tabID))
         let tabs = Dictionary((state.tabs + server.state.tabs).map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest }).values
-        for tab in tabs where !ownTabs.contains(tab.id) && tab.inspectorFor != agentID {
+        for tab in tabs where !ownTabs.contains(tab.id) {
             if tab.layout.leaves.contains(where: {
                 let cwd = URL(fileURLWithPath: ($0.cwd as NSString).expandingTildeInPath).resolvingSymlinksInPath().standardized.path
                 return cwd == path || cwd.hasPrefix(path + "/")
@@ -224,7 +224,7 @@ extension ShepherdViewModel {
         guard let agent = server.state.agents.first(where: { $0.id == agentID }) else {
             throw RemoteCreateAgentError("Agent no longer exists; checkout was kept")
         }
-        let sessionIDs = server.state.tabs.filter { $0.id == agent.tabID || $0.inspectorFor == agentID }
+        let sessionIDs = server.state.tabs.filter { $0.id == agent.tabID }
             .flatMap { $0.layout.leaves.compactMap(\.sessionID) }
         if let tail = persistenceTail { await tail.value }
         try await deleteAgentPersisted(agentID, worktreeOperation: true)

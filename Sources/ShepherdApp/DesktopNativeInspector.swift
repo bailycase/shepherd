@@ -13,6 +13,7 @@ import ShepherdRemote
 final class NativeInspectorState {
     static let widthKey = "shepherd.subagentInspectorWidth"
     var runByAgent: [AgentID: String] = [:]
+    var remoteRuns: [RemoteAgentRef: String] = [:]
     var width: CGFloat {
         didSet { UserDefaults.standard.set(Double(width), forKey: Self.widthKey) }
     }
@@ -359,7 +360,7 @@ struct NativeSubagentInspector: View {
                                     if visible { visibleTurns.insert(turn.id) } else { visibleTurns.remove(turn.id) }
                                 }
                         } else {
-                            NativeAgentTurn(messages: turn.messages, running: run?.isTerminal == false, clock: clock, showTerminal: nil).id(turn.id)
+                            NativeAgentTurn(messages: turn.messages, running: run?.isTerminal == false, clock: clock).id(turn.id)
                                 .onScrollVisibilityChange(threshold: 0.01) { visible in
                                     if visible { visibleTurns.insert(turn.id) } else { visibleTurns.remove(turn.id) }
                                 }

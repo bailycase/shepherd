@@ -149,7 +149,7 @@ struct SettingsView: View {
                 switch vm.settingsSection {
                 case .appearance: AppearanceSettings(vm: vm)
                 case .terminal: TerminalSettings(vm: vm)
-                case .agents: AgentSettings(presentation: vm.nativePresentation)
+                case .agents: AgentSettings()
                 case .pi: PiSettings()
                 case .worktrees: WorktreeSettings()
                 case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)

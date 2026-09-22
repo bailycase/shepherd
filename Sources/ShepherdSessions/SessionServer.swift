@@ -102,7 +102,6 @@ public final class SessionServer: @unchecked Sendable {
         /// Set by helloAgent: this connection belongs to that agent's panes
         /// extension and accepts unsolicited message pushes.
         var agentID: AgentID?
-        var nativeAgentID: AgentID?
         /// Set by helloChildren: the children extension's control channel for that agent.
         var childrenAgentID: AgentID?
         var lineBuffer = LineBuffer()
@@ -243,20 +242,12 @@ public final class SessionServer: @unchecked Sendable {
     /// The host GUI's own surface grid per session (fd -1 in the min).
     private var localViewports: [SessionID: (cols: Int, rows: Int)] = [:]
     private var clients: [Int32: ExtensionConnection] = [:]
-    private var nextNativeRequestID = 0
+    private var nextChildCommandID = 0
     private enum NativeOutcome {
         case result(NativeThreadResult)
         case failure(code: String, message: String)
     }
 
-    private struct NativePending {
-        let remote: ExtensionConnection?
-        let bridge: ExtensionConnection
-        // Invoked exactly once on the server queue; local completions hop to main.
-        let completion: (NativeOutcome) -> Void
-    }
-
-    private var nativePending: [Int: NativePending] = [:]
     /// childCommand frames awaiting their childCommandResult, by correlation id.
     private var childCommandPending: [Int: (client: ExtensionConnection, completion: (String?) -> Void)] = [:]
 
@@ -459,9 +450,9 @@ public final class SessionServer: @unchecked Sendable {
         stopRemoteListenerOnQueue()
     }
 
-    // MARK: - Native thread bridge
+    // MARK: - Native thread
 
-    /// Uses the running agent's extension, without TCP, authentication, or PTY input.
+    /// Answered from the agent's `RPCThreadState`, without TCP or authentication.
     /// Transport failures match RemoteHostClient.nativeThread: rejected or outcomeUnknown.
     /// Pi-level failures remain NativeThreadResult.failure. Cancellation does not undo
     /// dispatch; as with TCP, callers must ignore stale responses and never auto-retry.
@@ -485,53 +476,33 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Queue-owned dispatch shared by local and authenticated TCP callers. The bridge
+    /// Queue-owned dispatch shared by local and authenticated TCP callers. The thread state
     /// checks pi's current session/generation; persisted agent session IDs may lag /resume.
     private func dispatchNativeThread(
         agentID: AgentID,
         request: NativeThreadRequest,
         requestBytes: Int,
-        remote: ExtensionConnection? = nil,
         completion: @escaping (NativeOutcome) -> Void
     ) {
         guard let agent = store.state.agents.first(where: { $0.id == agentID }),
               let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
               let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID,
-              let session = sessions[sessionID], session.isAlive else {
-            completion(.failure(code: "native_unavailable", message: "Native bridge unavailable. Open or restart this agent on the host."))
+              let session = sessions[sessionID], session.isAlive, let thread = session.thread else {
+            completion(.failure(code: "native_unavailable", message: "The agent's pi process is not running. Restart it from the sidebar."))
             return
         }
         // Image sends (v2) carry base64 payloads; text requests keep the tight bound.
         let requestLimit = request.images.isEmpty ? 64 * 1024 : 12 * 1024 * 1024
-        guard requestBytes < requestLimit, nativePending.count < 128 else {
+        guard requestBytes < requestLimit else {
             completion(.failure(code: "native_limit", message: "Native request limit exceeded."))
             return
         }
-        // RPC agents have no extension bridge: the server owns the thread state.
-        if let thread = session.thread {
-            thread.handle(request) { completion(.result($0)) }
-            return
-        }
-        guard let bridge = clients.values.first(where: { $0.nativeAgentID == agentID }) else {
-            completion(.failure(code: "native_unavailable", message: "Native bridge unavailable. Open or restart this agent on the host."))
-            return
-        }
-        nextNativeRequestID += 1
-        let correlation = nextNativeRequestID
-        nativePending[correlation] = NativePending(remote: remote, bridge: bridge, completion: completion)
-        reply(.nativeThreadCommand(id: correlation, request: request), to: bridge)
-        queue.asyncAfter(deadline: .now() + 10) { [weak self] in
-            self?.finishNativeThread(correlation, outcome: .failure(code: "outcome_unknown", message: "Native bridge timed out. Refresh before acting; do not automatically retry."))
-        }
-    }
-
-    private func finishNativeThread(_ correlation: Int, outcome: NativeOutcome) {
-        nativePending.removeValue(forKey: correlation)?.completion(outcome)
+        thread.handle(request) { completion(.result($0)) }
     }
 
     /// Server queue. Writes a childCommand to the agent's children-extension connection and
-    /// answers with the extension's error text (nil on success). Same 10s ceiling as the
-    /// native bridge; a resume can take a few seconds while pi boots.
+    /// answers with the extension's error text (nil on success). A resume can take a few
+    /// seconds while pi boots, hence the 15s ceiling.
     private func sendChildCommand(
         agentID: AgentID, runID: String, action: NativeSubagentAction, text: String?, mode: NativeThreadDelivery?,
         completion: @escaping (String?) -> Void
@@ -540,8 +511,8 @@ public final class SessionServer: @unchecked Sendable {
             completion("Native subagents are unavailable for this agent (children extension not connected).")
             return
         }
-        nextNativeRequestID += 1
-        let correlation = nextNativeRequestID
+        nextChildCommandID += 1
+        let correlation = nextChildCommandID
         childCommandPending[correlation] = (client, completion)
         let childAction: ChildCommandAction = switch action {
         case .message: .message
@@ -731,7 +702,7 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .nativeThread(let id, let agentID, let request):
             guard !line.contains(13) else { disconnect(client); return }
-            dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, remote: client) { [weak self, weak client] outcome in
+            dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count) { [weak self, weak client] outcome in
                 guard let self, let client else { return }
                 switch outcome {
                 case .result(let result): self.send(.nativeThread(id: id, result: result), to: client)
@@ -1226,9 +1197,6 @@ public final class SessionServer: @unchecked Sendable {
         guard clients[client.fd] === client else { return }
         clients.removeValue(forKey: client.fd)
         client.upload = nil
-        for (id, pending) in nativePending where pending.remote === client || pending.bridge === client {
-            finishNativeThread(id, outcome: .failure(code: "outcome_unknown", message: "Native bridge disconnected. Refresh before acting; do not automatically retry."))
-        }
         for (id, pending) in childCommandPending where pending.client === client {
             childCommandPending.removeValue(forKey: id)?.completion("Children extension disconnected. Refresh before acting.")
         }
@@ -1260,22 +1228,6 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         switch message {
-        case .helloNativeAgent(let agentID):
-            guard !line.contains(13) else { disconnect(client); return }
-            guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil,
-                  client.nativeAgentID == nil || client.nativeAgentID == agentID else { return }
-            for previous in Array(clients.values) where previous !== client && previous.nativeAgentID == agentID {
-                disconnect(previous)
-            }
-            client.nativeAgentID = agentID
-        case .nativeThreadResult(let id, let result):
-            guard !line.contains(13) else { disconnect(client); return }
-            guard let pending = nativePending[id], pending.bridge === client else { return }
-            guard line.count < 256 * 1024 else {
-                finishNativeThread(id, outcome: .failure(code: "native_limit", message: "Native result exceeds snapshot limit."))
-                return
-            }
-            finishNativeThread(id, outcome: .result(result))
         case .setAgentStatus(let agentID, let status):
             applyAgentStatus(agentID: agentID, status: status)
         case .setAgentName(let agentID, let name):
@@ -1283,12 +1235,11 @@ public final class SessionServer: @unchecked Sendable {
         case .setAgentSession(let agentID, let piSessionID):
             applyAgentSession(agentID: agentID, piSessionID: piSessionID)
         case .setAgentChildren(let agentID, let children):
-            // RPC agents also get the rows in their thread snapshot (cards); terminal agents
-            // keep the sidebar-only path through onAgentChildren.
+            // Rows feed both the thread snapshot (cards) and the sidebar (onAgentChildren).
             rpcThread(forAgent: agentID)?.setSubagents(children)
             hopToMain { [weak self] in self?.onAgentChildren?(agentID, children) }
         case .helloChildren(let agentID):
-            guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil, client.nativeAgentID == nil else { return }
+            guard store.state.agents.contains(where: { $0.id == agentID }), client.agentID == nil else { return }
             for previous in Array(clients.values) where previous !== client && previous.childrenAgentID == agentID {
                 disconnect(previous)
             }
@@ -1299,7 +1250,6 @@ public final class SessionServer: @unchecked Sendable {
         case .notify(let agentID, let title, let body):
             hopToMain { [weak self] in self?.onNotify?(agentID, title, body) }
         case .helloAgent(let agentID):
-            guard client.nativeAgentID == nil else { return }
             client.agentID = agentID
         case .listAgents(let id, let agentID):
             routeAgentPeerRequest(.list(agentID: agentID), requestID: id, client: client)
@@ -1494,7 +1444,7 @@ public final class SessionServer: @unchecked Sendable {
 
     private func replyID(_ message: ExtensionReply) -> Int {
         switch message {
-        case .nativeThreadCommand(let id, _), .childCommand(let id, _, _, _, _), .ok(let id),
+        case .childCommand(let id, _, _, _, _), .ok(let id),
              .error(let id, _, _),
              .panes(let id, _),
              .paneOpened(let id, _),

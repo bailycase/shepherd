@@ -123,21 +123,6 @@ public struct ShepherdMacApp: App {
                 }
             }
             CommandMenu("Agent") {
-                // Both are terminal-agent switches; an RPC agent is native and has no terminal.
-                let switchable = vm.nativePresentationAgent.map { vm.nativePresentation.canSwitch($0) } ?? false
-                Button("Show Native Conversation") {
-                    if let agent = vm.nativePresentationAgent {
-                        vm.nativePresentation.setNative(true, for: agent)
-                    }
-                }
-                .disabled(!switchable)
-                Button("Show Terminal") {
-                    if let agent = vm.nativePresentationAgent {
-                        vm.nativePresentation.setNative(false, for: agent)
-                    }
-                }
-                .disabled(!switchable)
-                Divider()
                 let selected = vm.selectedRemoteAgent?.agentID ?? vm.selectedAgentID
                 Button("Focus") {
                     Task { @MainActor in vm.focusSelectedAgent() }

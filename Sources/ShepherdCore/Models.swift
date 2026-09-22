@@ -115,11 +115,11 @@ public struct Tab: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
-/// How an agent's pi process is driven. Fixed at creation: a TUI cannot be attached to an
-/// RPC process later, and an RPC client cannot read a TUI. See docs/rpc-agents-plan.md.
-public enum AgentRuntime: String, Codable, Hashable, Sendable {
-    /// `pi` in a PTY rendered by Ghostty; the native view reads it through an extension.
-    case terminal
+/// How a session's process is driven. Every agent runs `pi --mode rpc`; PTYs serve shells.
+/// Raw values are the wire spelling and must not change.
+public enum SessionRuntime: String, Codable, Hashable, Sendable {
+    /// A PTY rendered by Ghostty (shells and auxiliary panes).
+    case pty = "terminal"
     /// `pi --mode rpc` on pipes; Shepherd is the only UI.
     case rpc
 }
@@ -156,8 +156,6 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The actual checkout path. Shepherd-created worktrees can derive it
     /// from repo + branch; imported worktrees may use any directory name.
     public var worktreePath: String?
-    /// Decodes `.terminal` from state files written before RPC agents existed.
-    public var runtime: AgentRuntime
 
     public init(
         id: AgentID = AgentID(),
@@ -172,8 +170,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         piSessionID: String? = nil,
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
-        worktreePath: String? = nil,
-        runtime: AgentRuntime = .terminal
+        worktreePath: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -188,7 +185,6 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.worktreeBranch = worktreeBranch
         self.worktreeBase = worktreeBase
         self.worktreePath = worktreePath
-        self.runtime = runtime
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -222,7 +218,28 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
         worktreePath = try c.decodeIfPresent(String.self, forKey: .worktreePath)
-        runtime = try c.decodeIfPresent(AgentRuntime.self, forKey: .runtime) ?? .terminal
+        // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
+        // the same pi session, which is the whole migration.
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(spaceID, forKey: .spaceID)
+        try c.encode(tabID, forKey: .tabID)
+        try c.encodeIfPresent(paneID, forKey: .paneID)
+        try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(model, forKey: .model)
+        try c.encodeIfPresent(thinkingLevel, forKey: .thinkingLevel)
+        try c.encode(nameIsFinal, forKey: .nameIsFinal)
+        try c.encodeIfPresent(piSessionID, forKey: .piSessionID)
+        try c.encodeIfPresent(worktreeBranch, forKey: .worktreeBranch)
+        try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
+        try c.encodeIfPresent(worktreePath, forKey: .worktreePath)
+        // Older remote clients default a missing runtime to terminal and would try to attach a
+        // PTY that does not exist.
+        try c.encode(SessionRuntime.rpc, forKey: .runtime)
     }
 }
 

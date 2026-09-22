@@ -10,19 +10,9 @@ struct NativeThreadTests {
         let frames = try #require(JSONSerialization.jsonObject(with: data) as? [[String: Any]])
         for frame in frames {
             let json = try JSONSerialization.data(withJSONObject: frame, options: [.sortedKeys])
-            let encoded: Data
-            switch frame["type"] as? String {
-            case "helloNativeAgent", "nativeThreadResult":
-                encoded = try NDJSON.encode(JSONDecoder().decode(ExtensionMessage.self, from: json))
-            case "nativeThreadCommand":
-                encoded = try NDJSON.encode(JSONDecoder().decode(ExtensionReply.self, from: json))
-            default:
-                if frame["request"] != nil {
-                    encoded = try NDJSON.encode(JSONDecoder().decode(RemoteRequest.self, from: json))
-                } else {
-                    encoded = try NDJSON.encode(JSONDecoder().decode(RemoteReply.self, from: json))
-                }
-            }
+            let encoded = frame["request"] != nil
+                ? try NDJSON.encode(JSONDecoder().decode(RemoteRequest.self, from: json))
+                : try NDJSON.encode(JSONDecoder().decode(RemoteReply.self, from: json))
             let decoded = try #require(JSONSerialization.jsonObject(with: encoded) as? NSDictionary)
             #expect(decoded == frame as NSDictionary)
         }

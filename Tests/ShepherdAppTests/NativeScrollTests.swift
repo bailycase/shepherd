@@ -29,7 +29,7 @@ struct NativeScrollTests {
                 return .snapshot(value: self.snapshot)
             }
             host = NSHostingView(rootView: AnyView(
-                DesktopNativeThreadView(store: store, active: true, isFocused: false, request: request, showTerminal: {})
+                DesktopNativeThreadView(store: store, active: true, isFocused: false, request: request)
                     .preferredColorScheme(.light)))
             window.contentView = host
             window.orderFront(nil)

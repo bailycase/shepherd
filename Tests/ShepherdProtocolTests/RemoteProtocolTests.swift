@@ -34,7 +34,6 @@ struct RemoteProtocolTests {
             .agentQuery(id: 47, agentID: AgentID(), query: .worktreeDescription(base: "release", title: "fix")),
             .agentQuery(id: 30, agentID: AgentID(), query: .review(pullRequest: true)),
             .agentQuery(id: 31, agentID: AgentID(), query: .children),
-            .agentQuery(id: 32, agentID: AgentID(), query: .inspect(childID: "child")),
             .agentQuery(id: 33, agentID: AgentID(), query: .search(query: "prompt")),
             .agentQuery(id: 34, agentID: AgentID(), query: .worktreeInfo),
             .agentQuery(id: 35, agentID: AgentID(), query: .deleteWorktree(operationID: UUID(), confirmedWarning: "dirty")),

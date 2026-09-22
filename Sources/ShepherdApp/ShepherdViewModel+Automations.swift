@@ -103,7 +103,6 @@ extension ShepherdViewModel {
             model: settings.agentDefaults.model,
             thinking: settings.defaultThinking,
             initialPrompt: automation.prompt,
-            runtime: settings.defaultRuntime,
             isAutomation: true
         )
         let agentID = try await startAgent(config, selectAfter: false)

@@ -16,7 +16,6 @@ extension ShepherdViewModel {
 
     func selectShell(_ id: TabID) {
         guard state.tabs.contains(where: { $0.id == id && $0.isShell }) else { return }
-        inspectingAgentID = nil
         selectedRemoteAgent = nil
         selectedShellID = id
         focusedPaneID = restoredFocus(forTab: id, fallback: nil)
@@ -163,15 +162,12 @@ extension ShepherdViewModel {
         enqueuePersistence("rename space") { try await $0.updateSpace(space) }
     }
 
-    /// Delete a space and everything in it (agents, layouts, inspector
-    /// tabs, sessions). Spaces nested under it by path are independent
+    /// Delete a space and everything in it (agents, layouts, sessions). Spaces nested under it by path are independent
     /// entities and survive — they re-root in the sidebar's derived forest.
     func deleteSpace(_ id: SpaceID) {
         guard let index = state.spaces.firstIndex(where: { $0.id == id }) else { return }
         let doomedAgents = Set(state.agents.filter { $0.spaceID == id }.map(\.id))
-        let doomedTabs = state.tabs.filter { tab in
-            tab.spaceID == id || tab.inspectorFor.map(doomedAgents.contains) == true
-        }
+        let doomedTabs = state.tabs.filter { $0.spaceID == id }
 
         // Detach views before the server kills processes (same ordering as
         // deleteAgent: no exit callback may race a half-removed UI tree).
@@ -190,8 +186,7 @@ extension ShepherdViewModel {
             childRuns.clear(agent: agentID)
             selectionHistory.removeAll { $0 == agentID }
             collapsedChildren.remove(agentID)
-            inspectedChild.removeValue(forKey: agentID)
-            if inspectingAgentID == agentID { inspectingAgentID = nil }
+            subagentInspector.runByAgent.removeValue(forKey: agentID)
         }
         collapsedSpaces.remove(id)
         if selectedAgentID.map(doomedAgents.contains) == true {

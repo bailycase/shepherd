@@ -390,84 +390,34 @@ struct NativePresentationTests {
         if case .subagents(let runs) = ledger[0] { #expect(runs.count == 3) } else { Issue.record("expected one ledger segment") }
     }
 
-    @Test func sparsePreferencesAndAgentDraftsSurviveToggles() throws {
-        let name = "native-test-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
-        let presentation = NativePresentation(defaults: defaults)
+    @Test func threadStoresKeepDraftsPerAgentAndPruneTheGone() {
+        let stores = NativeThreadStores<AgentID>()
         let a = AgentID(), b = AgentID()
-        #expect(!presentation.isNative(a) && !presentation.isNative(b))
-        let draft = presentation.store(for: a)
-        draft.draft = "unsent native prompt"
+        let draft = stores.store(for: a)
+        draft.draft = "unsent prompt"
         draft.delivery = .steer
-        presentation.store(for: b).draft = "other agent"
-        for _ in 0..<3 {
-            presentation.setNative(true, for: a)
-            #expect(NativePresentation(defaults: defaults).isNative(a))
-            presentation.setNative(false, for: a)
-            #expect(defaults.dictionary(forKey: NativePresentation.defaultsKey)?.isEmpty == true)
-        }
-        #expect(presentation.store(for: a) === draft)
-        #expect(draft.draft == "unsent native prompt" && draft.delivery == .steer)
-        #expect(presentation.store(for: b).draft == "other agent")
-        presentation.setNative(true, for: a)
-        presentation.setNative(true, for: b)
-        presentation.prune(liveAgents: [a])
-        #expect(presentation.nativeAgents == [a])
-        #expect(presentation.store(for: a) === draft)
-        #expect(presentation.store(for: b).draft.isEmpty)
+        stores.store(for: b).draft = "other agent"
+        #expect(stores.store(for: a) === draft)
+        stores.prune(live: [a])
+        #expect(stores.store(for: a) === draft && draft.draft == "unsent prompt" && draft.delivery == .steer)
+        #expect(stores.store(for: b).draft.isEmpty)
     }
 
-    @Test func defaultViewAppliesUnlessTheAgentWasOverridden() throws {
+    /// Terminal-era Terminal/Native preferences are dropped on launch; nothing else is touched.
+    @Test func legacyPresentationPreferencesAreForgotten() throws {
         let name = "native-test-\(UUID())"
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
-        // A pre-default build's plain list still reads as native overrides.
-        let legacy = AgentID()
-        defaults.set([legacy.rawValue], forKey: NativePresentation.defaultsKey)
-        let presentation = NativePresentation(defaults: defaults)
-        #expect(presentation.isNative(legacy) && !presentation.defaultNative)
-
-        let pinnedTerminal = AgentID(), untouched = AgentID()
-        presentation.defaultNative = true
-        #expect(presentation.isNative(untouched) && presentation.isNative(legacy))
-        presentation.setNative(false, for: pinnedTerminal)
-        #expect(!presentation.isNative(pinnedTerminal))
-        // Re-choosing the default clears the override instead of pinning it.
-        presentation.setNative(true, for: legacy)
-        #expect(presentation.overrides[legacy] == nil)
-
-        let reloaded = NativePresentation(defaults: defaults)
-        #expect(reloaded.defaultNative && !reloaded.isNative(pinnedTerminal) && reloaded.isNative(untouched))
-        reloaded.defaultNative = false
-        #expect(!reloaded.isNative(untouched) && !reloaded.isNative(pinnedTerminal))
+        defaults.set(["agent": true], forKey: "shepherd.nativeAgents")
+        defaults.set(true, forKey: "shepherd.nativeDefault")
+        defaults.set("terminal", forKey: "shepherd.agent.defaultRuntime")
+        defaults.set(["space"], forKey: "shepherd.collapsedSpaces")
+        LegacyTerminalAgents.forgetPresentationPreferences(in: defaults)
+        for key in LegacyTerminalAgents.obsoleteKeys { #expect(defaults.object(forKey: key) == nil) }
+        #expect(defaults.stringArray(forKey: "shepherd.collapsedSpaces") == ["space"])
     }
 
-    /// D2: an RPC agent has no terminal, so it is native regardless of the default or any
-    /// override, and flipping it never persists anything.
-    @Test func rpcAgentsAreAlwaysNativeAndNeverRecordAnOverride() throws {
-        let name = "native-test-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
-        let presentation = NativePresentation(defaults: defaults)
-        let space = SpaceID()
-        let rpc = Agent(name: "rpc", spaceID: space, tabID: TabID(), runtime: .rpc)
-        let terminal = Agent(name: "tty", spaceID: space, tabID: TabID(), runtime: .terminal)
-        #expect(!presentation.defaultNative)
-        #expect(presentation.isNative(rpc) && !presentation.isNative(terminal))
-        #expect(!presentation.canSwitch(rpc) && presentation.canSwitch(terminal))
-        presentation.setNative(false, for: rpc)
-        #expect(presentation.isNative(rpc))
-        #expect(presentation.overrides[rpc.id] == nil)
-        #expect(defaults.dictionary(forKey: NativePresentation.defaultsKey) == nil)
-        // A stale override from when this id was a terminal agent cannot un-native it either.
-        presentation.setNative(false, for: rpc.id)
-        presentation.defaultNative = true
-        #expect(presentation.isNative(rpc))
-        presentation.setNative(false, for: terminal)
-        #expect(!presentation.isNative(terminal) && presentation.overrides[terminal.id] == false)
-        #expect(NativePresentation(defaults: defaults).isNative(rpc))
-        // Snapshot side: the view keys its RPC affordances on the runtime field.
+    @Test func tokenAndContextFormatting() {
         let snapshot = NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false, supportedActions: [],
                                             dialogsSupported: true, dialogs: [], messages: [], provisional: [], clipped: false, runtime: "rpc")
         #expect(snapshot.isRPC)
@@ -485,18 +435,18 @@ struct NativePresentationTests {
         let tab = Tab(spaceID: space.id, order: 0, layout: .split(axis: .vertical, ratio: 0.4,
             first: .leaf(auxiliary), second: .leaf(primary)))
         var agent = Agent(id: id, name: "fixture", spaceID: space.id, tabID: tab.id, paneID: primary.id)
-        #expect(NativePresentation.primaryAgent(in: tab, pane: primary, agents: [agent]) == agent)
-        #expect(NativePresentation.primaryAgent(in: tab, pane: auxiliary, agents: [agent]) == nil)
+        #expect(primaryAgent(in: tab, pane: primary, agents: [agent]) == agent)
+        #expect(primaryAgent(in: tab, pane: auxiliary, agents: [agent]) == nil)
         var review = primary
         review.isReview = true
-        #expect(NativePresentation.primaryAgent(in: tab, pane: review, agents: [agent]) == nil)
+        #expect(primaryAgent(in: tab, pane: review, agents: [agent]) == nil)
         var inspector = tab
         inspector.inspectorFor = id
-        #expect(NativePresentation.primaryAgent(in: inspector, pane: primary, agents: [agent]) == nil)
+        #expect(primaryAgent(in: inspector, pane: primary, agents: [agent]) == nil)
         let shell = Tab(spaceID: nil, order: 0, layout: .leaf(primary))
-        #expect(NativePresentation.primaryAgent(in: shell, pane: primary, agents: [agent]) == nil)
+        #expect(primaryAgent(in: shell, pane: primary, agents: [agent]) == nil)
         agent.paneID = nil
-        #expect(NativePresentation.primaryAgent(in: tab, pane: primary, agents: [agent]) == nil)
+        #expect(primaryAgent(in: tab, pane: primary, agents: [agent]) == nil)
     }
 
     @Test func markdownKeepsCodeLiteralAndUnclosedFences() {
@@ -672,115 +622,6 @@ struct NativePresentationTests {
         #expect(!store.settledRunning)
     }
 
-    /// Real leaf, real Ghostty NSView and PTY. Presentation changes must not attach again,
-    /// alter the split/mounted order, deliver native drafts as PTY input, or lose live output.
-    @Test func primaryLeafToggleKeepsTerminalSessionAndSurfaceMounted() async throws {
-        _ = NSApplication.shared
-        let dir = URL(fileURLWithPath: "/tmp/native-pane-\(UInt32.random(in: 0..<1_000_000))")
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let name = "native-test-\(UUID())"
-        let defaults = try #require(UserDefaults(suiteName: name))
-        defer { defaults.removePersistentDomain(forName: name) }
-        let server = SessionServer(socketPath: dir.appendingPathComponent("s").path, stateURL: dir.appendingPathComponent("state.json"))
-        try server.start()
-        defer { server.stop() }
-        let info = try await server.createSession(params: CreateSessionParams(cwd: dir.path, command: [
-            "/bin/sh", "-c", "stty -echo; printf 'ready-for-presentation\\n'; while IFS= read -r line; do printf '%s\\n' \"$line\"; done"
-        ]))
-        let space = Space(name: "fixture", path: dir.path)
-        let id = AgentID()
-        let pane = LeafPane(sessionID: info.id, cwd: dir.path, agentID: id)
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
-        let agent = Agent(id: id, name: "fixture", spaceID: space.id, tabID: tab.id, paneID: pane.id)
-        let state = ShepherdState(spaces: [space], tabs: [tab], agents: [agent])
-        try await server.putState(state)
-        let vm = ShepherdViewModel(server: server, settings: AppSettings(store: defaults),
-                                   keybindings: KeybindingsStore(store: defaults), remoteHosts: RemoteHostStore(defaults: defaults),
-                                   sidebarDefaults: defaults, themeInstaller: { _ in })
-        try await waitFor { vm.state.agents.count == 1 }
-        vm.selectedSpaceID = space.id
-        vm.selectedAgentID = id
-        vm.focusedPaneID = pane.id
-        let session = vm.sessions.session(for: pane, in: tab)
-        let thread = vm.nativePresentation.store(for: id)
-        thread.draft = "never send this draft to the PTY"
-        let mounted = vm.mountedTabs.map(\.id)
-        var attachments = 0
-        let attached = session.terminal.onSurfaceAttachmentChanged
-        session.terminal.onSurfaceAttachmentChanged = { generation in
-            attachments += 1
-            attached?(generation)
-        }
-        _ = NSApplication.shared
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 650),
-                              styleMask: [.titled], backing: .buffered, defer: false)
-        let host = NSHostingView(rootView: VStack(spacing: 0) {
-            WorkspaceHeaderView(vm: vm)
-            PaneLeafView(vm: vm, tab: tab, pane: pane)
-        }.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
-        window.contentView = host
-        defer { window.orderOut(nil); window.contentView = nil }
-        window.orderFront(nil)
-        window.layoutIfNeeded()
-        try await waitFor { session.phase == .live && !TerminalFirstResponder.surfaceViews(in: host).isEmpty }
-        let surface = try #require(TerminalFirstResponder.surfaceViews(in: host).first)
-        let initialAttachments = attachments
-        try await waitFor { window.firstResponder === surface }
-        try capture(host, name: "terminal-primary")
-        for i in 0..<3 {
-            vm.nativePresentation.setNative(true, for: id)
-            try await waitFor { !session.terminal.model.renderingActive }
-            try await waitFor { window.firstResponder is NSTextView }
-            #expect(window.firstResponder !== surface)
-            if i == 0 {
-                try await waitFor { thread.loadError != nil }
-                try capture(host, name: "native-unavailable")
-            }
-            var dropped = false
-            session.terminal.onFileDrop = { _ in dropped = true }
-            #expect(!session.terminal.model.sendDroppedFiles([dir.appendingPathComponent("image.png")]))
-            #expect(!dropped)
-            session.terminal.onFileDrop = nil
-            #expect(thread.draft == "never send this draft to the PTY")
-            server.write(sessionID: info.id, data: Data("hidden-\(i)\n".utf8))
-            try await waitFor { session.terminal.model.session.readViewportText()?.contains("hidden-\(i)") == true }
-            vm.nativePresentation.setNative(false, for: id)
-            try await waitFor { session.terminal.model.renderingActive && window.firstResponder === surface }
-            #expect(TerminalFirstResponder.surfaceViews(in: host).first === surface)
-            #expect(vm.sessions.session(for: pane, in: tab) === session)
-            #expect(vm.nativePresentation.store(for: id) === thread)
-            #expect(vm.mountedTabs.map(\.id) == mounted)
-            #expect(vm.activeTabID == tab.id && vm.state.tabs.first?.layout == tab.layout)
-            #expect(attachments == initialAttachments)
-            #expect(!thread.ready)
-            // Ordinary state refreshes also keep the store and terminal identity.
-            vm.adopt(server.state)
-        }
-        session.terminal.onInput?(Data("terminal-input-still-works\n".utf8))
-        try await waitFor { session.terminal.model.session.readViewportText()?.contains("terminal-input-still-works") == true }
-        #expect(await server.listSessions().map(\.id) == [info.id])
-        #expect(await server.sessionInfo(sessionID: info.id)?.isAlive == true)
-        #expect(await server.screenText(sessionID: info.id)?.contains(thread.draft) == false)
-        #expect(server.state.tabs.first?.layout == tab.layout)
-        // A half-typed terminal line is not the native draft and survives the switch.
-        session.terminal.onInput?(Data("terminal-draft-".utf8))
-        vm.focusedPaneID = nil
-        vm.nativePresentation.setNative(true, for: id)
-        try await waitFor { !session.terminal.model.renderingActive }
-        #expect(!(window.firstResponder is NSTextView))
-        vm.focusedPaneID = pane.id
-        try await waitFor { window.firstResponder is NSTextView }
-        vm.nativePresentation.setNative(false, for: id)
-        try await waitFor { window.firstResponder === surface }
-        session.terminal.onInput?(Data("retained\n".utf8))
-        try await waitFor { session.terminal.model.session.readViewportText()?.contains("terminal-draft-retained") == true }
-        #expect(thread.draft == "never send this draft to the PTY")
-        // Menu/header eligibility follows the active layout, not an old selected agent.
-        vm.selectedRemoteAgent = RemoteAgentRef(hostID: UUID(), agentID: id)
-        #expect(vm.nativePresentationAgent == nil)
-    }
-
     @Test func nativeWindowStopsPollingWhenHiddenAndRendersStandardQuestions() async throws {
         let store = NativeThreadStore()
         var snapshot = try JSONDecoder().decode(NativeThreadSnapshot.self, from: Data(#"""
@@ -810,9 +651,8 @@ struct NativePresentationTests {
         // Header + thread, the way the workspace composes them for a native agent.
         func content(active: Bool) -> some View {
             VStack(spacing: 0) {
-                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities",
-                                   native: .constant(true), showTerminal: {})
-                DesktopNativeThreadView(store: store, active: active, isFocused: active, request: request, showTerminal: {})
+                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+                DesktopNativeThreadView(store: store, active: active, isFocused: active, request: request)
             }
         }
         _ = NSApplication.shared
@@ -860,8 +700,8 @@ struct NativePresentationTests {
         let height = env["SHEPHERD_NATIVE_SCREENSHOT_HEIGHT"].flatMap(Double.init) ?? 1300
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled], backing: .buffered, defer: false)
         let host = NSHostingView(rootView: VStack(spacing: 0) {
-            NativeThreadHeader(store: store, project: "Shepherd", title: "Real session", native: .constant(true), showTerminal: {})
-            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: {})
+            NativeThreadHeader(store: store, project: "Shepherd", title: "Real session")
+            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request)
         }.preferredColorScheme(ThemeManager.shared.mode.colorScheme))
         window.contentView = host
         window.orderFront(nil)
@@ -970,8 +810,8 @@ struct NativePresentationTests {
         var inspected: [ChildRun] = []
         let request: NativeThreadStore.Request = { _ in .snapshot(value: snapshot) }
         let content = VStack(spacing: 0) {
-            NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities", native: .constant(true), showTerminal: nil)
-            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: nil,
+            NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request,
                                     agentName: "Investigate", inspectSubagent: { inspected.append($0) })
         }
         _ = NSApplication.shared
@@ -1018,8 +858,8 @@ struct NativePresentationTests {
         let snapshot = Self.doneSnapshot()
         let request: NativeThreadStore.Request = { _ in .snapshot(value: snapshot) }
         let content = VStack(spacing: 0) {
-            NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities", native: .constant(true), showTerminal: nil)
-            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: nil,
+            NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+            DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request,
                                     agentName: "Investigate", inspectSubagent: { _ in }, inspectedRunID: "native-tests")
         }
         _ = NSApplication.shared
@@ -1064,8 +904,8 @@ struct NativePresentationTests {
         inspector.runByAgent[AgentID(rawValue: "a")] = "native-tests"
         let content = NativeInspectorSplit(state: inspector, showInspector: true) {
             VStack(spacing: 0) {
-                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities", native: .constant(true), showTerminal: nil)
-                DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: nil, agentName: "Investigate",
+                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+                DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, agentName: "Investigate",
                                         inspectSubagent: { _ in }, inspectedRunID: "native-tests")
             }
         } inspector: {
@@ -1118,8 +958,8 @@ struct NativePresentationTests {
         inspector.runByAgent[AgentID(rawValue: "a")] = "native-worker"
         let content = NativeInspectorSplit(state: inspector, showInspector: true) {
             VStack(spacing: 0) {
-                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities", native: .constant(true), showTerminal: nil)
-                DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, showTerminal: nil, agentName: "Investigate", inspectSubagent: { _ in })
+                NativeThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+                DesktopNativeThreadView(store: store, active: true, isFocused: true, request: request, agentName: "Investigate", inspectSubagent: { _ in })
             }
         } inspector: {
             NativeSubagentInspector(store: store, runID: "native-worker", active: true, close: {})

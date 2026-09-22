@@ -188,26 +188,3 @@ struct ChildRunsTests {
         #expect(runs.children(of: secondAgent).map(\.runID) == ["same"])
     }
 }
-
-@Suite("Child inspector command")
-@MainActor
-struct ChildInspectorCommandTests {
-    @Test func quotesPathsAndTargetsChildIndex() {
-        let command = ShepherdViewModel.inspectorCommand(
-            runner: "/Users/x/Library/Application Support/Shepherd/shepherd-inspect.mjs",
-            asyncDir: "/tmp/dir with spaces/run-1",
-            runID: "run-1",
-            childIndex: 2,
-            themePath: "/tmp/theme's colors.json"
-        )
-        #expect(command == "node '/Users/x/Library/Application Support/Shepherd/shepherd-inspect.mjs' --async-dir '/tmp/dir with spaces/run-1' --run-id 'run-1' --index 2 --theme-path '/tmp/theme'\"'\"'s colors.json'")
-    }
-
-    @Test func omitsIndexForSingleRuns() {
-        let command = ShepherdViewModel.inspectorCommand(
-            runner: "/r.mjs", asyncDir: "/a", runID: "id", childIndex: nil
-        )
-        #expect(!command.contains("--index"))
-        #expect(!command.contains("--theme-path"))
-    }
-}

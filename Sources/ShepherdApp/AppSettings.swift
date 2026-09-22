@@ -34,7 +34,6 @@ final class AppSettings: ObservableObject {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let autoNameAgents = "shepherd.agent.autoName"
-        static let defaultRuntime = "shepherd.agent.defaultRuntime"
         static let piThemeExtension = "shepherd.pi.extension.theme"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
@@ -63,7 +62,7 @@ final class AppSettings: ObservableObject {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, autoNameAgents, defaultRuntime, shellPath,
+            defaultThinking, autoNameAgents, shellPath,
             piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth,
@@ -107,12 +106,6 @@ final class AppSettings: ObservableObject {
 
     @Published var defaultThinking: ThinkingLevel {
         didSet { store.set(defaultThinking.rawValue, forKey: Key.defaultThinking) }
-    }
-
-    /// How new agents run pi: a PTY + Ghostty terminal, or `pi --mode rpc` with
-    /// Shepherd as the only UI. Fixed per agent at creation (D1: terminal by default).
-    @Published var defaultRuntime: AgentRuntime {
-        didSet { store.set(defaultRuntime.rawValue, forKey: Key.defaultRuntime) }
     }
 
     /// Off means agents keep their provisional name (the truncated opening
@@ -269,7 +262,6 @@ final class AppSettings: ObservableObject {
         defaultThinking = store.string(forKey: Key.defaultThinking)
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
-        defaultRuntime = store.string(forKey: Key.defaultRuntime).flatMap(AgentRuntime.init(rawValue:)) ?? .terminal
         piThemeExtension = store.object(forKey: Key.piThemeExtension) as? Bool ?? true
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
@@ -294,7 +286,7 @@ final class AppSettings: ObservableObject {
         let textScale = store.double(forKey: Key.uiTextScale)
         uiTextScale = min(max(textScale == 0 ? 1 : textScale, Self.uiTextScaleRange.lowerBound), Self.uiTextScaleRange.upperBound)
         let width = store.double(forKey: Key.sidebarWidth)
-        sidebarWidth = Self.clampSidebarWidth(width == 0 ? 230 : width)
+        sidebarWidth = Self.clampSidebarWidth(width == 0 ? Self.defaultSidebarWidth : width)
         remoteListenerEnabled = store.bool(forKey: Key.remoteListenerEnabled)
         let port = store.integer(forKey: Key.remoteListenerPort)
         remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(RemoteSettingsDefaults.port)
@@ -312,6 +304,7 @@ final class AppSettings: ObservableObject {
     static let uiDensityRange: ClosedRange<Double> = 0.8...1.5
     static let uiTextScaleRange: ClosedRange<Double> = 0.85...1.3
     static let sidebarWidthRange: ClosedRange<Double> = 190...340
+    static let defaultSidebarWidth: Double = 256
 
     static func clampSidebarWidth(_ width: Double) -> Double {
         min(max(width, sidebarWidthRange.lowerBound), sidebarWidthRange.upperBound)
@@ -337,7 +330,7 @@ final class AppSettings: ObservableObject {
     /// What a ⌘N agent and the New Agent sheet start with.
     var agentDefaults: AgentDefaults {
         let trimmed = defaultModel.trimmingCharacters(in: .whitespaces)
-        return AgentDefaults(model: trimmed.isEmpty ? nil : trimmed, thinking: defaultThinking, runtime: defaultRuntime)
+        return AgentDefaults(model: trimmed.isEmpty ? nil : trimmed, thinking: defaultThinking)
     }
 
     /// argv for a plain (non-agent) pane. Login shell so the user's PATH and
@@ -358,7 +351,9 @@ final class AppSettings: ObservableObject {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
-        defaultRuntime = .terminal
+        uiDensity = 1
+        uiTextScale = 1
+        sidebarWidth = Self.defaultSidebarWidth
         piThemeExtension = true
         piPanesExtension = true
         piReviewExtension = true
@@ -436,7 +431,6 @@ final class AppSettings: ObservableObject {
 struct AgentDefaults: Equatable {
     var model: String?
     var thinking: ThinkingLevel
-    var runtime: AgentRuntime = .terminal
 
     static let piDefaults = AgentDefaults(model: nil, thinking: .medium)
 }

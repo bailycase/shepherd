@@ -1,18 +1,265 @@
 [
-  {"type":"nativeThread","id":1,"agentID":"agent","request":{"snapshot":{}}},
-  {"type":"nativeThread","id":2,"agentID":"agent","request":{"snapshot":{"expectedSessionID":"session","beforeEntryID":"entry","afterRevision":7}}},
-  {"type":"nativeThread","id":3,"agentID":"agent","request":{"send":{"expectedSessionID":"session","generation":"generation","operationID":"00000000-0000-0000-0000-000000000001","text":"Continue","delivery":"followUp"}}},
-  {"type":"nativeThread","id":4,"agentID":"agent","request":{"abort":{"expectedSessionID":"session","generation":"generation","operationID":"00000000-0000-0000-0000-000000000002"}}},
-  {"type":"nativeThread","id":5,"agentID":"agent","request":{"answer":{"expectedSessionID":"session","generation":"generation","operationID":"00000000-0000-0000-0000-000000000003","dialogID":"dialog","answer":{"confirm":{"value":true}}}}},
-  {"type":"nativeThread","id":6,"result":{"accepted":{"operationID":"00000000-0000-0000-0000-000000000001"}}},
-  {"type":"nativeThread","id":7,"result":{"unchanged":{"piSessionID":"session","generation":"generation","revision":7}}},
-  {"type":"nativeThread","id":8,"result":{"failure":{"code":"stale_session","message":"Refresh the thread before acting."}}},
-  {"type":"nativeThread","id":9,"result":{"snapshot":{"value":{"piSessionID":"session","generation":"generation","revision":7,"running":false,"model":"provider/model","thinking":"high","supportedActions":["send","abort","answer"],"dialogsSupported":true,"dialogs":[{"id":"dialog","kind":"select","title":"Choose","options":["a","b"]},{"id":"editor","kind":"editor","title":"Edit","prefill":"draft","unavailable":"external-editor"}],"messages":[{"entryID":"entry","role":"assistant","blocks":[{"kind":"text","text":"Hello"},{"kind":"thinking","text":"Think"},{"kind":"unsupportedImage","text":"Image unavailable"}],"truncated":false}],"olderCursor":"entry","provisional":[{"entryID":"provisional:tool:call","role":"toolResult","blocks":[],"toolName":"bash","toolCallID":"call","argumentsText":"{}","status":"running","isError":false,"truncated":false}],"clipped":false}}}},
-  {"type":"helloNativeAgent","agentID":"agent"},
-  {"type":"nativeThreadCommand","id":10,"request":{"snapshot":{}}},
-  {"type":"nativeThreadResult","id":10,"result":{"accepted":{"operationID":"00000000-0000-0000-0000-000000000001"}}},
-  {"type":"nativeThread","id":11,"agentID":"agent","request":{"setModel":{"expectedSessionID":"session","generation":"generation","operationID":"00000000-0000-0000-0000-000000000004","model":"provider/model"}}},
-  {"type":"nativeThread","id":12,"agentID":"agent","request":{"setThinking":{"expectedSessionID":"session","generation":"generation","operationID":"00000000-0000-0000-0000-000000000005","level":"low"}}},
-  {"type":"nativeThread","id":13,"agentID":"agent","request":{"send":{"expectedSessionID":"session","generation":"generation","operationID":"00000000-0000-0000-0000-000000000006","text":"see","delivery":"steer","images":[{"mimeType":"image/png","data":"iVBORw0KGgo="}]}}},
-  {"type":"nativeThread","id":14,"result":{"snapshot":{"value":{"piSessionID":"session","generation":"generation","revision":8,"running":false,"model":"provider/model","thinking":"low","supportedActions":["send","abort","answer","setModel","setThinking","sendImages"],"dialogsSupported":true,"dialogs":[],"messages":[],"provisional":[],"clipped":false,"runtime":"rpc","stats":{"contextTokens":42000,"contextWindow":200000,"contextPercent":21,"totalTokens":105000,"cost":0.45},"commands":[{"name":"fix-tests","description":"Fix failing tests","source":"prompt"},{"name":"bare"}]}}}}
+  {
+    "type": "nativeThread",
+    "id": 1,
+    "agentID": "agent",
+    "request": {
+      "snapshot": {}
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 2,
+    "agentID": "agent",
+    "request": {
+      "snapshot": {
+        "expectedSessionID": "session",
+        "beforeEntryID": "entry",
+        "afterRevision": 7
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 3,
+    "agentID": "agent",
+    "request": {
+      "send": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000001",
+        "text": "Continue",
+        "delivery": "followUp"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 4,
+    "agentID": "agent",
+    "request": {
+      "abort": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000002"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 5,
+    "agentID": "agent",
+    "request": {
+      "answer": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000003",
+        "dialogID": "dialog",
+        "answer": {
+          "confirm": {
+            "value": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 6,
+    "result": {
+      "accepted": {
+        "operationID": "00000000-0000-0000-0000-000000000001"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 7,
+    "result": {
+      "unchanged": {
+        "piSessionID": "session",
+        "generation": "generation",
+        "revision": 7
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 8,
+    "result": {
+      "failure": {
+        "code": "stale_session",
+        "message": "Refresh the thread before acting."
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 9,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 7,
+          "running": false,
+          "model": "provider/model",
+          "thinking": "high",
+          "supportedActions": [
+            "send",
+            "abort",
+            "answer"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [
+            {
+              "id": "dialog",
+              "kind": "select",
+              "title": "Choose",
+              "options": [
+                "a",
+                "b"
+              ]
+            },
+            {
+              "id": "editor",
+              "kind": "editor",
+              "title": "Edit",
+              "prefill": "draft",
+              "unavailable": "external-editor"
+            }
+          ],
+          "messages": [
+            {
+              "entryID": "entry",
+              "role": "assistant",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "text": "Hello"
+                },
+                {
+                  "kind": "thinking",
+                  "text": "Think"
+                },
+                {
+                  "kind": "unsupportedImage",
+                  "text": "Image unavailable"
+                }
+              ],
+              "truncated": false
+            }
+          ],
+          "olderCursor": "entry",
+          "provisional": [
+            {
+              "entryID": "provisional:tool:call",
+              "role": "toolResult",
+              "blocks": [],
+              "toolName": "bash",
+              "toolCallID": "call",
+              "argumentsText": "{}",
+              "status": "running",
+              "isError": false,
+              "truncated": false
+            }
+          ],
+          "clipped": false
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 11,
+    "agentID": "agent",
+    "request": {
+      "setModel": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000004",
+        "model": "provider/model"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 12,
+    "agentID": "agent",
+    "request": {
+      "setThinking": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000005",
+        "level": "low"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 13,
+    "agentID": "agent",
+    "request": {
+      "send": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000006",
+        "text": "see",
+        "delivery": "steer",
+        "images": [
+          {
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgo="
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 14,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 8,
+          "running": false,
+          "model": "provider/model",
+          "thinking": "low",
+          "supportedActions": [
+            "send",
+            "abort",
+            "answer",
+            "setModel",
+            "setThinking",
+            "sendImages"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc",
+          "stats": {
+            "contextTokens": 42000,
+            "contextWindow": 200000,
+            "contextPercent": 21,
+            "totalTokens": 105000,
+            "cost": 0.45
+          },
+          "commands": [
+            {
+              "name": "fix-tests",
+              "description": "Fix failing tests",
+              "source": "prompt"
+            },
+            {
+              "name": "bare"
+            }
+          ]
+        }
+      }
+    }
+  }
 ]

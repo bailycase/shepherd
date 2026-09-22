@@ -15,8 +15,6 @@ struct NewAgentConfig {
     var model: String?
     var thinking: ThinkingLevel
     var initialPrompt: String?
-    /// Terminal (PTY + Ghostty) or RPC (`pi --mode rpc`, no terminal). Fixed for the agent's life.
-    var runtime: AgentRuntime = .terminal
     /// A caller-chosen starting name (worktree agents wear their branch
     /// leaf). Provisional like a prompt-derived name: pi's namer retitles it
     /// from the agent's first prompt when auto-naming is on.
@@ -69,20 +67,6 @@ final class ShepherdViewModel {
     /// leaves are persisted long enough for layout writes, then purged on the
     /// next app start by the session server.
     var reviewSessions: [PaneID: ReviewSession] = [:]
-    /// Agents created this run whose pi is still booting. Creation selects
-    /// the agent optimistically — its pane shows before the process spawns —
-    /// and the pane wears an opaque launch overlay until pi's status
-    /// extension first reports, the spawn fails, or a timeout expires
-    /// (see `beginAgentLaunch`). Ephemeral, like all launch state.
-    var launchingAgents: Set<AgentID> = []
-    @ObservationIgnored var launchTimeouts: [AgentID: Task<Void, Never>] = [:]
-    /// The agent whose subagent-inspector layout the workspace is showing
-    /// (a subagent row is selected). Ordinary sidebar selection clears it.
-    var inspectingAgentID: AgentID?
-    /// Which child each agent's inspector pane is currently viewing, so a
-    /// re-click navigates instead of relaunching the viewer and the sidebar
-    /// can highlight the inspected row. Ephemeral.
-    var inspectedChild: [AgentID: String] = [:]
     /// Foreground process name per shell tab ("pi", "htop"), for row labels.
     var shellProcesses: [TabID: String] = [:]
     @ObservationIgnored var shellProcessTimer: Timer?
@@ -98,7 +82,6 @@ final class ShepherdViewModel {
     var remoteWorktreeSheet: RemoteAgentRef?
     var remoteWorktreeFinalize = false
     var remoteWorktreeOperationEndpoints: [RemoteAgentRef: UUID] = [:]
-    var remoteInspectionRequest = UUID()
     var remoteWorktreeOperationIDs: [RemoteAgentRef: UUID] = [:]
     var hostPRDescriptionGenerator = WorktreePRDescriptionGenerator()
     var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] = [:]
@@ -119,9 +102,12 @@ final class ShepherdViewModel {
         }.value
     }
     var remoteReviews: [RemoteAgentRef: ReviewSession] = [:]
+    /// Host-side utility terminals (a remote `gh auth login`) opened for a remote agent,
+    /// shown in place of the agent's own layout while `remoteInspectingAgent` is set.
     var hostRemoteInspectors: [String: TabID] = [:]
     var remoteInspectorTabs: [RemoteAgentRef: TabID] = [:]
     var remoteInspectingAgent: RemoteAgentRef?
+    var remoteInspectionRequest = UUID()
     var remoteRenameTarget: RemoteAgentRef?
     var remoteActionError: String?
 
@@ -223,8 +209,6 @@ final class ShepherdViewModel {
     /// Worktree agent pending delete confirmation (alert in RootView) —
     /// deleting may also remove the checkout, so it always confirms.
     var worktreeDeleteTarget: AgentID?
-    /// Agent pending a "Restart as Terminal / Native (RPC)" confirmation (sheet in RootView).
-    var runtimeRestartTarget: AgentID?
     /// A snapshot of the agent + space whose Finalize Worktree sheet is
     /// open. Copies, not IDs: the pipeline's last act retires the agent, and
     /// a live lookup would blank the sheet mid-success.
@@ -295,8 +279,10 @@ final class ShepherdViewModel {
     var showShellShortcutBadges = false
 
     let sessions: TerminalSessionStore
-    let nativePresentation: NativePresentation
-    /// Which native subagent an RPC agent's workspace is inspecting (the side panel).
+    /// Native thread state per local agent and per remote agent.
+    let threadStores = NativeThreadStores<AgentID>()
+    let remoteThreadStores = NativeThreadStores<RemoteAgentRef>()
+    /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = NativeInspectorState()
     /// System notifications when an unwatched agent finishes or blocks.
     let notifications = AgentNotifications()
@@ -362,7 +348,7 @@ final class ShepherdViewModel {
         self.server = server
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
-        self.nativePresentation = NativePresentation(defaults: sidebarDefaults)
+        LegacyTerminalAgents.forgetPresentationPreferences(in: sidebarDefaults)
         self.keybindings = keybindings ?? .shared
         self.themeManager = themeManager ?? .shared
         self.remoteHosts = remoteHosts ?? RemoteHostStore()
@@ -414,6 +400,9 @@ final class ShepherdViewModel {
         self.remoteHosts.onProjectionChanged = { [weak self] in
             guard let self else { return }
             self.remoteProjectionRevision &+= 1
+            self.remoteThreadStores.prune(live: Set(self.remoteHosts.connections.flatMap { connection in
+                connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
+            }))
             for (target, review) in self.remoteReviews where review.hostReviewPane {
                 guard let connection = self.remoteHosts.connections.first(where: { $0.id == target.hostID }),
                       connection.phase == .connected,
@@ -557,7 +546,6 @@ final class ShepherdViewModel {
     deinit {
         commandHoldTask?.cancel()
         persistenceTail?.cancel()
-        for task in launchTimeouts.values { task.cancel() }
         childSweepTimer?.invalidate()
         shellProcessTimer?.invalidate()
         parkSweepTimer?.invalidate()
@@ -690,7 +678,7 @@ final class ShepherdViewModel {
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         state = serverState
-        nativePresentation.prune(liveAgents: Set(state.agents.map(\.id)))
+        threadStores.prune(live: Set(state.agents.map(\.id)))
         pruneReviewSessions()
         syncShellProcessTimer()
         // First adoption of the restored workspace: stand the enabled
@@ -725,18 +713,14 @@ final class ShepherdViewModel {
     }
 
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus) {
-        // Any report means pi is up and painting its own TUI: the launch
-        // overlay's job is done.
-        endAgentLaunch(id)
         if let index = state.agents.firstIndex(where: { $0.id == id }) {
             let old = state.agents[index].status
             state.agents[index].status = status
             // Visible means the workspace is actually showing this agent's
-            // layout — not a shell, remote agent, or subagent inspector.
+            // layout — not a shell or a remote agent.
             let visible = selectedAgentID == id
                 && selectedShellID == nil
                 && selectedRemoteAgent == nil
-                && inspectingAgentID == nil
             notifications.agentStatusChanged(state.agents[index], from: old, isAgentVisible: visible)
         }
     }
