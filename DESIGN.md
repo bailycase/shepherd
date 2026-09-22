@@ -20,9 +20,10 @@ Agents name themselves — a short task title (`Fix plan mode`), never a persona
 sentence. A hand-typed rename is final. A remote host is a section in the same sidebar with the
 same rows and the same thread.
 
-Terminals still exist, but only for shells: global shells, a space's shell, and extra panes an
-agent or the user opens beside a thread (⌘D, `shepherd-panes` tools). They are real PTYs
-rendered by libghostty. No agent renders as a terminal, and there is no Terminal/Native switch.
+Terminals exist only as panes beside a thread: ones the user opens with ⌘D or an agent opens
+with its `shepherd-panes` tools. They are real PTYs rendered by libghostty. There are no global
+shells and no space shell workspaces; no agent renders as a terminal, and there is no
+Terminal/Native switch.
 
 ## Principles
 
@@ -97,7 +98,7 @@ the `shepherd-active-theme` variant marker that shell-launched pi and Neovim wat
 | Group | Role | Use |
 | --- | --- | --- |
 | Background | `bgCanvas` | Window and sidebar |
-| | `bgSurface` | Thread area, tool groups, settings cards, shell panes |
+| | `bgSurface` | Thread area, tool groups, settings cards, terminal panes |
 | | `bgRaised` | Composer, popovers, menus, the palette |
 | | `bgMuted` | Expanded tool output, sticky file headers, ledger header |
 | | `bgBubble` | User turns |
@@ -135,8 +136,8 @@ shipped theme. Surfaces, accents, and the terminal/pi palettes are Basalt's own 
 role steps Basalt does not name (raised, bubble, the semantic `.text`/`.bg` pairs) are derived
 from them to satisfy the contrast rules. Dark is near-black cool grey (`bgCanvas #0D0E10`,
 `bgSurface #111215`) with a muted slate accent; light is warm paper (`bgCanvas #E7E4DE`,
-`bgSurface #F3F1ED`) with a deeper slate accent. A shell's terminal background is the theme's
-`bgSurface`, so shells sit on the thread surface.
+`bgSurface #F3F1ED`) with a deeper slate accent. A terminal pane's background is the theme's
+`bgSurface`, so terminal panes sit on the thread surface.
 
 ### Contrast rules (enforced by `Tests/ShepherdDesignTests`)
 
@@ -252,13 +253,12 @@ chrome by hand; if a board shows a variant the library lacks, add it there. The 
 │ HOST  Unreach. │   └─────────────────────────┘ │           │                      │
 │────────────────│   ┌ composer card ──────────┐ │           │                      │
 │ AUTOMATIONS  1 │   └─────────────────────────┘ │           │                      │
-│ SHELLS       1 │                                           │                      │
 └────────────────┴───────────────────────────────────────────┴──────────────────────┘
 ```
 
 One window. The sidebar sits on `bgCanvas` (running behind the traffic lights), the main column
 on `bgSurface`. There is no tab bar and no status line. An agent's layout is its thread plus any
-shell panes split beside it; panes are separated by 1pt `border` dividers.
+terminal panes split beside it; panes are separated by 1pt `border` dividers.
 
 ## Surfaces
 
@@ -266,10 +266,12 @@ shell panes split beside it; panes are separated by 1pt `border` dividers.
 
 - 8pt padding. Sections: **THIS MAC** (agent count, hover `+` for New Space), then one section
   per remote host (count, "n need you", or "Unreachable" in `dangerText`), then — behind a 1pt
-  `border` — **AUTOMATIONS** (hidden while empty) and **SHELLS**. Section headers are
+  `border` — **AUTOMATIONS** (hidden while empty). Section headers are
   `.sectionStyle()` with a trailing count; clicking toggles the section.
-- Spaces are disclosure rows (chevron, name, agent count); nested projects indent by path
-  containment. Agents nest beneath their space.
+- Spaces are disclosure rows (chevron, name, agent count): clicking one expands or collapses
+  it, and a space has no view of its own. Nested projects indent by path containment. Agents
+  nest beneath their space. With no agent selected the workspace shows an empty state with
+  New agent.
 - **Rows:** 26pt (22pt compact), radius 6 (5 compact), 16pt indent per level (12 compact).
   Hover `bgHoverStrong`; selected `bgSelected`. A 7pt status dot (6pt compact) leads, `⎇` marks
   a worktree agent, the title truncates at the tail with the full title as a tooltip.
@@ -282,8 +284,8 @@ shell panes split beside it; panes are separated by 1pt `border` dividers.
   dot; trailing elapsed / "needs you" / duration. While any run is live the group is expanded.
   Once every run has finished the group gets a disclosure header, expanded for the selected
   thread and folded for others. Selecting a subagent row opens it in the inspector.
-- **Compact form** (while a right pane is open): 184pt, compact rows, Automations and Shells
-  collapse to one row each with a count, full titles in tooltips.
+- **Compact form** (while a right pane is open): 184pt, compact rows, Automations collapses to
+  one row with a count, full titles in tooltips.
 - Hidden with ⇧⌘S; the header then runs under the traffic lights. Rows are tap views with button
   traits and accessibility actions (so they can also be dragged to reorder); hover `+` glyphs are
   real labeled buttons. A disconnected host's rows dim; connection state lives on the section
@@ -295,8 +297,7 @@ shell panes split beside it; panes are separated by 1pt `border` dividers.
 tertiary, title in `title`, truncating) · `StatusPill` · spacer · "18 turns · 46k ctx"
 (`micro`, `textMuted`; the turn count appears once the whole history is loaded, the context
 tooltip carries details) · the right-pane toggle (accent-tinted while open) · the options menu
-(Refresh, Load Older, Rename…). Shells and a space's shell workspace get the same strip with the
-breadcrumb only. There is no Terminal/Native switch and no other window title.
+(Refresh, Load Older, Rename…). With no thread on screen the strip shows the breadcrumb only. There is no Terminal/Native switch and no other window title.
 
 ### Thread and turns
 
@@ -421,10 +422,10 @@ The thread keeps running beside it; a pane never replaces or splits the thread's
   comment, v viewed, ⌘⏎ send, esc back to the thread composer. Per-file Revert is the only
   repository mutation outside the worktree flows.
 
-### Shell panes
+### Terminal panes
 
-Plain shells render through libghostty on `bgSurface` (the theme's terminal colors). An
-agent's layout may hold shell panes beside its thread; the thread pane itself has no terminal.
+Terminal panes render through libghostty on `bgSurface` (the theme's terminal colors). An
+agent's layout may hold terminal panes beside its thread; the thread pane itself has no terminal.
 Pane dividers are 1pt `border`. A pane whose process died shows a quiet placeholder. The
 chrome never parses or restyles terminal output.
 
@@ -454,7 +455,7 @@ group are 12pt sans `textMuted`. Inline problems (e.g. the listener's bind error
 in `dangerText` under the description rather than replacing it.
 
 Pages: **Appearance** (mode System/Light/Dark; density, text size, sidebar width) ·
-**Terminal** (shell font and size, shell) · **Agents** (default model, default thinking level) ·
+**Terminal** (terminal pane font and size, shell) · **Agents** (default model, default thinking level) ·
 **Worktrees** (base, fetch, finalize defaults) · **Pi** (bundled extensions, native subagent
 defaults, pi updates) · **Remote** (hosts, add host, serve this Mac + token) · **Keyboard**
 (rebindable shortcuts) · **Advanced** (files, updates and channel, reset).
@@ -486,13 +487,11 @@ done `success`, failed `danger`.
 Keyboard is first-class and the fast path never requires a dialog. Rebindable chords live in
 `KeybindingsStore` (defaults in `ShortcutAction.defaultChord`); menus, palette keycaps, and the
 Ghostty unbind list all read it — hardcoding a chord in a view is a bug, and a hint is never
-shown for a chord that isn't wired. Rebindable chords must include ⌘ (except the shell-digit
-family).
+shown for a chord that isn't wired. Rebindable chords must include ⌘.
 
 | Default | Action |
 | --- | --- |
 | ⌘N · ⇧⌘T · ⇧⌘N | New agent in current checkout · with options… · new space… |
-| ⌘T · ⌃1–9 | New shell · select shell 1–9 |
 | ⌘R · ⇧⌘W | Rename agent · delete agent |
 | ⌘K | Command palette |
 | ⌘↓ · ⌘↑ | Next · previous agent |
@@ -513,7 +512,7 @@ the command list; esc closes a menu. Review-pane and menu keys are listed with t
 - Every control is a real `Button`, `Toggle`, or text field (or carries button traits and
   actions); icon-only buttons carry an `accessibilityLabel`.
 - Rows read as one element: agent rows "title, [worktree,] status word"; subagent rows "name,
-  subagent, state"; automation rows "name, automation, state"; shell rows "label, shell"; tool
+  subagent, state"; automation rows "name, automation, state"; tool
   rows "read, ThreadView.swift, 160 lines, done" with "Show call" as a named action.
 - Status color is always paired with a word or glyph shape.
 - Contrast follows the theme rules above; do not go lighter than `textMuted` for any text.

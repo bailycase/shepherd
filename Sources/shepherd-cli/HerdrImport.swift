@@ -61,11 +61,6 @@ enum HerdrImport {
                 let name = workspace.custom_name ?? (path as NSString).lastPathComponent
                 space = Space(name: name.isEmpty ? path : name, path: path)
                 state.spaces.append(space)
-                // Every visible space carries a main shell workspace.
-                state.tabs.append(
-                    Tab(spaceID: space.id, order: nextOrder, layout: .leaf(LeafPane(cwd: path)))
-                )
-                nextOrder += 1
                 summary.spacesAdded += 1
             }
 

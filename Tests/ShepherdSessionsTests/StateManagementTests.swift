@@ -162,20 +162,14 @@ struct StateManagementTests {
         #expect(h.server.state.tabs.first?.layout.leaves.count == 2)
     }
 
-    @Test func addSpaceWithTabPublishesOneAtomicSnapshot() async throws {
+    @Test func addSpacePublishesOneSnapshotWithNoLayout() async throws {
         let h = try Harness()
         defer { h.tearDown() }
 
         let space = Space(name: "demo", path: "/tmp/demo")
-        let tab = Tab(
-            spaceID: space.id,
-            order: 0,
-            layout: .leaf(LeafPane(cwd: space.path))
-        )
+        try await h.server.addSpace(space)
 
-        try await h.server.addSpace(space, withTab: tab)
-
-        let expected = ShepherdState(spaces: [space], tabs: [tab], agents: [])
+        let expected = ShepherdState(spaces: [space], tabs: [], agents: [])
         #expect(h.server.state == expected)
         try await waitUntil { h.stateChanged.current.count == 1 }
         #expect(h.stateChanged.current == [expected])
@@ -197,10 +191,9 @@ struct StateManagementTests {
         let agentTab = Tab(spaceID: parent.id, order: 1, layout: .leaf(agentPane))
         let agent = Agent(name: "worker", spaceID: parent.id, tabID: agentTab.id, paneID: agentPane.id)
         let inspectorTab = Tab(spaceID: parent.id, order: 2, layout: .leaf(LeafPane(cwd: parent.path)), inspectorFor: agent.id)
-        let shell = Tab(spaceID: nil, order: 0, layout: .leaf(LeafPane(cwd: "/tmp")), name: "~")
         try await h.server.putState(ShepherdState(
             spaces: [parent, nested],
-            tabs: [parentTab, nestedTab, agentTab, inspectorTab, shell],
+            tabs: [parentTab, nestedTab, agentTab, inspectorTab],
             agents: [agent]
         ))
 
@@ -209,7 +202,7 @@ struct StateManagementTests {
         let final = h.server.state
         #expect(final.spaces.map(\.id) == [nested.id])
         #expect(final.agents.isEmpty)
-        #expect(Set(final.tabs.map(\.id)) == [nestedTab.id, shell.id])
+        #expect(Set(final.tabs.map(\.id)) == [nestedTab.id])
     }
 
     @Test func addAgentWithTabPublishesOneAtomicSnapshot() async throws {
@@ -442,10 +435,12 @@ struct StateManagementTests {
             order: 1,
             layout: .leaf(LeafPane(cwd: space.path, isReview: true))
         )
+        // Owned by agents, so startup keeps the layouts (unowned ones were space shells).
+        let agents = [Agent(name: "a", spaceID: space.id, tabID: splitTab.id), Agent(name: "b", spaceID: space.id, tabID: loneTab.id)]
 
         let first = SessionServer(socketPath: socketPath, stateURL: stateURL)
         try first.start()
-        try await first.putState(ShepherdState(spaces: [space], tabs: [splitTab, loneTab], agents: []))
+        try await first.putState(ShepherdState(spaces: [space], tabs: [splitTab, loneTab], agents: agents))
         first.stop()
 
         let second = SessionServer(socketPath: socketPath, stateURL: stateURL)
@@ -457,6 +452,41 @@ struct StateManagementTests {
         #expect(final.tabs[0].layout.leaves.first?.isReview == nil)
         #expect(final.tabs[1].layout.leaves.count == 1)
         #expect(final.tabs[1].layout.leaves.first?.isReview == nil)
+    }
+
+    /// Global shells and space shell workspaces were removed: startup drops their layouts
+    /// from older state files and keeps every agent's layout.
+    @Test func startDropsGlobalShellsAndSpaceShellWorkspaces() async throws {
+        let dir = try makeScratchDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let stateURL = dir.appendingPathComponent("state.json")
+        let socketPath = dir.appendingPathComponent("d.sock").path
+
+        let space = Space(name: "repo", path: "/tmp/repo")
+        let spaceShell = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: space.path)))
+        let agentPane = LeafPane(cwd: space.path)
+        let agentTab = Tab(spaceID: space.id, order: 1, layout: .leaf(agentPane))
+        let agent = Agent(name: "worker", spaceID: space.id, tabID: agentTab.id, paneID: agentPane.id)
+        // A global shell as older builds wrote it, with its shell-only keys.
+        let legacy = """
+        {"spaces":[{"id":"\(space.id.rawValue)","name":"repo","path":"/tmp/repo"}],
+         "tabs":[{"id":"\(TabID().rawValue)","order":0,"name":"~","nameIsFinal":true,"restoreCommand":"htop",
+                  "layout":{"type":"leaf","pane":{"id":"\(PaneID().rawValue)","cwd":"/tmp"}}}],
+         "agents":[]}
+        """
+        let decoded = try JSONDecoder().decode(ShepherdState.self, from: Data(legacy.utf8))
+        let shell = try #require(decoded.tabs.first)
+
+        let first = SessionServer(socketPath: socketPath, stateURL: stateURL)
+        try first.start()
+        try await first.putState(ShepherdState(spaces: [space], tabs: [spaceShell, agentTab, shell], agents: [agent]))
+        first.stop()
+
+        let second = SessionServer(socketPath: socketPath, stateURL: stateURL)
+        try second.start()
+        defer { second.stop() }
+        #expect(second.state.tabs.map(\.id) == [agentTab.id])
+        #expect(second.state.agents == [agent])
     }
 
     @Test func killSessionTerminatesAndIsIdempotent() async throws {

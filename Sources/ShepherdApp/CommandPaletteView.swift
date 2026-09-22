@@ -6,7 +6,7 @@ import ShepherdRemote
 
 /// The ⌘K palette (spec §12): a 640pt card 120pt from the top over a scrim. A 56pt search row
 /// with All · Commands · Agents scope pills, then results grouped under caps headers —
-/// Commands, This thread, Subagents, and Agents/Spaces/Shells once there is a query. Rows show
+/// Commands, This thread, Subagents, and Agents/Spaces once there is a query. Rows show
 /// a stroke icon, the label, dim context, and the real shortcut as keycaps.
 ///
 /// Queries of 3+ characters also search agents' session transcripts in the background

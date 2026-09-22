@@ -1,6 +1,6 @@
 # Architecture
 
-Shepherd is a native macOS app with one in-process session server. The app owns the workspace, every agent's `pi --mode rpc` process, the shells' PTYs, persistence, the extension socket, and the views, and can optionally serve the fleet to remote clients over an authenticated TCP listener. There is no daemon: quitting Shepherd ends every child process.
+Shepherd is a native macOS app with one in-process session server. The app owns the workspace, every agent's `pi --mode rpc` process, the terminal panes' PTYs, persistence, the extension socket, and the views, and can optionally serve the fleet to remote clients over an authenticated TCP listener. There is no daemon: quitting Shepherd ends every child process.
 
 `DESIGN.md` governs visuals and interaction. This document governs code ownership, dependency direction, and mutation paths.
 
@@ -22,8 +22,8 @@ shepherd-cli ─────── ShepherdCore, ShepherdProtocol
 - `ShepherdProtocol`: extension messages and replies, the remote request/reply protocol (version, capabilities, token path), the native thread contract (`NativeThreadRequest`/`NativeThreadResult`/`NativeThreadSnapshot`), pi's RPC wire types, NDJSON framing, and support-directory paths. Depends on Core where IDs or models cross the wire.
 - `ShepherdRemote`: the TCP remote client, plus the platform-neutral thread client (`NativeThreadStore`) and its pure presentation derivations (`NativeThreadPresentation`), shared by local, remote, and iOS views.
 - `ShepherdDesign`: the design system — theme model and Basalt, `ThemeStore`, `Tokens`, `Fonts`, `Metrics`/`Radius`, and the shared SwiftUI components. SwiftUI only: no AppKit views, no app state.
-- `ShepherdSessions`: the authoritative workspace store, agent RPC processes and their thread projection, shell PTY processes, terminal screen snapshots, persistence, the extension socket, and the optional remote TCP listener (token handshake, remote attachments, per-viewer minimum-grid PTY sizing, remote mutation handlers).
-- `TerminalSurfaceKit`: the libghostty adapter used for shell panes. It does not know about Shepherd workspaces or agents.
+- `ShepherdSessions`: the authoritative workspace store, agent RPC processes and their thread projection, terminal-pane PTY processes, terminal screen snapshots, persistence, the extension socket, and the optional remote TCP listener (token handshake, remote attachments, per-viewer minimum-grid PTY sizing, remote mutation handlers).
+- `TerminalSurfaceKit`: the libghostty adapter used for terminal panes beside a thread. It does not know about Shepherd workspaces or agents.
 - `ShepherdApp`: SwiftUI state, selection, the thread and pane presentation, settings, appearance, and the bridge between layouts and sessions.
 - `shepherd-cli`: a small offline tool (`--import herdr`) that writes `state.json` while the app is not running.
 
@@ -31,7 +31,7 @@ Dependencies point inward. Core and Protocol must not import Sessions or App. Se
 
 ## State ownership
 
-`SessionServer` is the source of truth for persisted `ShepherdState` and every live session. Its serial queue owns all server state. Each session — a `PTYSession` for a shell, an `RPCSession` plus its `RPCThreadState` for an agent — has its own queue targeting that server queue, which preserves ordering without locks.
+`SessionServer` is the source of truth for persisted `ShepherdState` and every live session. Its serial queue owns all server state. Each session — a `PTYSession` for a terminal pane, an `RPCSession` plus its `RPCThreadState` for an agent — has its own queue targeting that server queue, which preserves ordering without locks.
 
 `ShepherdViewModel` owns only app presentation state: current selection, focused pane, collapsed spaces, the right pane (subagent inspector or review), sheets, settings, and appearance. It receives authoritative snapshots from `SessionServer`. Its persistence task tail keeps user mutations ordered; a rejected mutation reconciles the view model and `TerminalSessionStore` from `server.state`.
 
@@ -70,7 +70,7 @@ pi --mode rpc (login shell, --session-id, -e extensions)
 
 `RPCSession` owns the child and its pipes; `RPCThreadState` projects pi's event stream into a bounded, revisioned `NativeThreadSnapshot` and serves requests (send, answer, abort, model/thinking, subagent commands and transcripts) with session/generation checks so a stale action can never land in a new pi session. The local GUI and remote clients use the same request path; only the transport differs. See [docs/native-thread.md](docs/native-thread.md).
 
-## PTY and terminal output flow (shells)
+## PTY and terminal output flow (terminal panes)
 
 ```text
 child process

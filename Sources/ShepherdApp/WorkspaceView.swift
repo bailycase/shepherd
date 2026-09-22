@@ -17,8 +17,7 @@ struct WorkspaceView: View {
                 // Ghostty views and force a re-attach + full replay on every
                 // switch, which is what made switching flash. Hidden panes
                 // keep their surfaces, scrollback, and their process's real
-                // grid. Space shell layouts join the mounted set on first
-                // visit (see WorkspaceSelection).
+                // grid (see WorkspaceSelection).
                 let mounted = vm.mountedTabs
                 let visibleTabID = vm.activeTabID
                 ForEach(mounted) { tab in
@@ -47,15 +46,14 @@ struct WorkspaceView: View {
                         .id(remote)
                 }
 
-                if mounted.isEmpty, vm.selectedRemoteAgent == nil {
-                    EmptyWorkspaceHint(hasSpaces: !vm.state.spaces.isEmpty)
+                if visibleTabID == nil, vm.selectedRemoteAgent == nil {
+                    EmptyWorkspace(vm: vm)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Tokens.workspaceBg)
         }
-        // A lazily mounted space shell must stay mounted once shown;
-        // recording here catches every path that changes the active tab.
+        // Every path that changes the active tab lands here: keep parking bookkeeping current.
         .onChange(of: vm.activeTabID, initial: true) { vm.noteActiveTabVisited() }
         .background(Tokens.workspaceBg)
         // Window-level file/image drop routing for terminal panes; per-pane
@@ -65,22 +63,36 @@ struct WorkspaceView: View {
     }
 }
 
-/// Quiet centered hint for an empty workspace — no cards, no buttons.
-struct EmptyWorkspaceHint: View {
-    let hasSpaces: Bool
+/// No agent on screen: a space with no agents yet, or no spaces at all.
+struct EmptyWorkspace: View {
+    var vm: ShepherdViewModel
     @ObservedObject private var keys = KeybindingsStore.shared
 
     var body: some View {
-        let newAgent = keys.display(.newAgent)
-        return Text(
-            hasSpaces
-                ? "\(newAgent) to create an agent"
-                : "no spaces — + new space below, or \(newAgent) to create your first agent"
-        )
-        .font(Fonts.mono(11))
-        .foregroundStyle(Tokens.textDim)
+        VStack(spacing: 16) {
+            if let space = vm.selectedSpace {
+                EmptyState(Text("No agents in \(space.name)"), caption: "Start one to work in \(space.path.abbreviatingWithTilde).", framed: false)
+                HStack(spacing: 8) {
+                    Button("New agent") { vm.quickCreateAgent(in: space.id) }
+                        .buttonStyle(ShepherdButtonStyle(.primary))
+                    Keycaps(chord: keys.display(.newAgent))
+                }
+            } else if vm.state.spaces.isEmpty {
+                EmptyState(Text("No spaces yet"), caption: "A space is a project folder your agents work in.", framed: false)
+                Button("New space…") { vm.addSpaceFromPanel() }
+                    .buttonStyle(ShepherdButtonStyle(.primary))
+            } else {
+                EmptyState(Text("No agent selected"), caption: "Pick one in the sidebar, or start a new one.", framed: false)
+                Keycaps(chord: keys.display(.newAgent))
+            }
+        }
+        .frame(maxWidth: 420)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
+
+private extension String {
+    var abbreviatingWithTilde: String { (self as NSString).abbreviatingWithTildeInPath }
 }
 
 // MARK: Pane tree

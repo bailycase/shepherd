@@ -16,7 +16,7 @@ struct KeyboardSettings: View {
     @State private var errorAction: ShortcutAction?
 
     private static let groups: [(title: String, actions: [ShortcutAction])] = [
-        ("Agents", [.newAgent, .newAgentOptions, .newSpace, .newShell, .shellDigits, .renameAgent, .nextAgent, .previousAgent, .deleteAgent, .commandPalette]),
+        ("Agents", [.newAgent, .newAgentOptions, .newSpace, .renameAgent, .nextAgent, .previousAgent, .deleteAgent, .commandPalette]),
         ("Thread", [.stopAgent, .modelPicker, .previousTurn, .nextTurn, .inspectSubagent]),
         ("Window", [.toggleSidebar, .toggleRightPane]),
         ("Panes", [.splitVertical, .splitHorizontal, .closePane, .focusNextPane, .focusPreviousPane]),

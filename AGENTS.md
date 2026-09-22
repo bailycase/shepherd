@@ -2,10 +2,11 @@
 
 Shepherd is a native macOS app (SwiftUI, macOS 26+) for running and supervising many `pi` coding
 agents. Every agent is `pi --mode rpc` on pipes, owned in-process, and Shepherd is its only UI:
-the native thread (transcript, composer, questions, subagents). Plain shells — global shells,
-a space's shell, panes an agent or the user opens beside a thread — are real PTYs rendered with
-libghostty. There is no daemon process: sessions live and die with the app — close Shepherd and
-every agent stops. On relaunch the workspace (spaces, agents, shells, pane layouts) restores from
+the native thread (transcript, composer, questions, subagents). The only terminals are panes an
+agent or the user (⌘D) opens beside a thread — real PTYs rendered with libghostty; there are no
+global shells or space shell workspaces. There is no daemon process: sessions live and die with
+the app — close Shepherd and every agent stops. On relaunch the workspace (spaces, agents, pane
+layouts) restores from
 `state.json` and every pane respawns a fresh process (agents resume their pi session).
 There is no terminal agent anymore: `state.json` files from that era decode unchanged (the
 `runtime` key is ignored) and those agents relaunch over RPC in the same pi session.
@@ -71,9 +72,9 @@ Sources/
   ShepherdCore/          Pure models: typed IDs, AgentStatus + transition table, PaneNode
                       (binary split tree), Space/Tab/Agent/ShepherdState, state validation.
                       Agent carries model, thinkingLevel, nameIsFinal, piSessionID (and
-                      ignores a persisted `runtime` key); Tab carries name/restoreCommand
-                      (global shells) and inspectorFor (ephemeral host-side utility
-                      layouts, purged at startup). No dependencies.
+                      ignores a persisted `runtime` key); Tab carries inspectorFor
+                      (ephemeral host-side utility layouts, purged at startup). No
+                      dependencies.
   ShepherdProtocol/      Wire contracts: ExtensionMessage/ExtensionReply (local extension
                       socket), RemoteRequest/RemoteReply + RemoteProtocol (TCP remote
                       protocol, version + capabilities), NativeThread (the native thread's
@@ -99,9 +100,9 @@ Sources/
                       StateStore (persisted JSON), PiModelCatalog, PiConfig, ShepherdLog.
   TerminalSurfaceKit/   Ghostty adapter: TerminalSurfaceModel/View over GhosttyTerminal's
                       host-managed IO backend, appearance, image/file drops, URL opening.
-                      Shells only. See its NOTES.md.
+                      Terminal panes only. See its NOTES.md.
   ShepherdApp/           The Mac app: ShepherdViewModel (split across base, Navigation,
-                      Creation, Workspace, Palette, Reorder, Shells, ChildInspector,
+                      Creation, Workspace, Palette, Reorder, Spaces, ChildInspector,
                       RightPane, Review, Automations, Remote*), Thread/ (ThreadView,
                       Composer, ThreadTurns, ThreadTools, ThreadMarkdown, Subagents,
                       SubagentInspector + RightPaneSplit), ThreadHeader, SidebarView,
@@ -121,7 +122,7 @@ Extensions/
   shepherd-panes.ts      Gives an agent pane_* tools, agent_list/send/spawn peers,
                          automation_* management, and notify.
   shepherd-review.ts     Gives an agent review_diff, which opens the review pane.
-  shepherd-theme.ts      Syncs the theme of a pi run by hand in a shell pane (shells only).
+  shepherd-theme.ts      Syncs the theme of a pi run by hand in a terminal pane.
   shepherd-subagents.ts  Merges native and pi-subagents child display (setAgentChildren).
   shepherd-children.ts   Native subagents (on by default): extension-owned RPC children, plus
   shepherd-children-config.ts / -ui.ts, shepherd-workflow.ts, shepherd-missions.ts
@@ -129,10 +130,12 @@ Extensions/
   shepherd-inspect.mjs   View helpers imported by the children UI (and a standalone viewer).
 ```
 
-There is no tab UI: navigation is the sidebar (agent row → that agent's pane layout; space row
-→ the space's shell workspace; shell row → a global shell). Server-side "tabs" survive purely
-as layout containers: per-agent, per-space-main, and global shells (`spaceID == nil`). Tabs
-with `inspectorFor` are host-side utility terminals opened for a remote client (a remote
+There is no tab UI: navigation is the sidebar (agent row → that agent's thread and the panes
+beside it; a space row is a disclosure with no view of its own — no agent selected shows an
+empty workspace). Server-side "tabs" survive purely as per-agent layout containers. Global
+shells and space shell workspaces were removed: `SessionServer.start()` drops their tabs from
+older state files (`shellTabIDs`: no space, or no agent owns it), and `Tab` ignores their
+`name`/`nameIsFinal`/`restoreCommand` keys. Tabs with `inspectorFor` are host-side utility terminals opened for a remote client (a remote
 `gh auth login`) and are purged at startup. Subagents open in the right pane beside the
 parent's thread (the subagent inspector), never as a layout of their own.
 
@@ -143,8 +146,7 @@ directly (no socket) and adopts `onStateChanged` broadcasts; it owns only view s
 (selection, focus, grouping, sheets, theme, keybindings). Remote clients reach the same server
 over the TCP remote protocol instead. On app quit the server kills every session; on relaunch
 the workspace restores from state.json and each pane spawns a fresh process (`pi --mode rpc`
-for an agent's primary pane, a login shell otherwise — global shells replay a remembered
-foreground command).
+for an agent's primary pane, a login shell for a terminal pane).
 
 Agent sessions run `pi --mode rpc` through a login shell (`zsh -l -c "exec pi --mode rpc …"`
 so the user's PATH resolves) with `SHEPHERD_AGENT_ID`/`SHEPHERD_SOCKET` in the env, a stable `--session-id`
@@ -247,8 +249,7 @@ themes.
 
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 ghostty unbind list all read `KeybindingsStore`; hardcoding a chord in a view is a bug.
-Rebindable chords must include ⌘ except the deliberate shell-digit exception (default ⌃1–9).
-⌘1–9 (agents), ⌃⇧1–9 (machine jumps), and ⌘, are reserved. Rebinding reconfigures live
+Rebindable chords must include ⌘. ⌘1–9 (agents), ⌃⇧1–9 (machine jumps), and ⌘, are reserved. Rebinding reconfigures live
 terminal surfaces in place (a ghostty config update, like theme changes) so focused panes
 release the old chord with no remount, replay, or blank frame.
 
@@ -307,16 +308,14 @@ snapshot). Child runs are
 ephemeral display state, never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps
-every *mounted* local layout in the view tree — agent layouts and global shells always; a space's shell workspace joins on first visit (mounting spawns its login shell
-and surface, so a large space tree must not pay that per space at launch) and then never
-leaves; selection only changes which one is visible
+every *mounted* agent layout in the view tree; selection only changes which one is visible
 (`opacity`, hit-testing, and `isRendering` — ghostty occlusion stops hidden panes' render
 loops). Three things silently reintroduce the full-repaint lag if touched: reordering
 `mountedTabs` (ForEach identity), using a conditional-branch `.hidden()` instead of
 `opacity(0)` (ConditionalContent destroys the subtree), and applying `setRenderingActive`
 fire-and-forget (the model retries; see TerminalSurfaceKit/NOTES.md). The one deliberate
 unmount is cold parking: a layout hidden for 30s and outside the four most recently shown
-(`WorkspaceSelection.coldParkCandidates`) drops its shell panes' Ghostty surfaces via
+(`WorkspaceSelection.coldParkCandidates`) drops its terminal panes' Ghostty surfaces via
 `TerminalSessionStore.parkPane` while its processes and host-side screens keep running;
 reselecting it remounts from the server snapshot. An agent's thread pane has no surface; its
 binding survives parking and its `NativeThreadStore` keeps the draft and history. Measured in docs/benchmarks.
@@ -362,7 +361,7 @@ decode as final so their existing names survive.
 Swift Testing (`import Testing`, `#expect`, `@Suite`) — not XCTest. Core-logic coverage:
 PaneNode operations, status transitions, protocol + remote-protocol round-trips, server
 behavior, remote listener/stream behavior, screen snapshots, keybindings, palette search,
-child runs, shell restore, sidebar reorder, native thread presentation (`NativePresentationTests`),
+child runs, sidebar reorder, native thread presentation (`NativePresentationTests`),
 theme validity and contrast (`ShepherdDesignTests`: every built-in variant must meet WCAG 4.5:1
 for text and the semantic pairing rules). Server E2E tests drive a real in-process
 `SessionServer` on scratch paths (`TestSupport.swift`: `makeScratchDirectory`, `waitUntil`,

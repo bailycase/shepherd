@@ -251,7 +251,7 @@ public final class SessionServer: @unchecked Sendable {
     /// childCommand frames awaiting their childCommandResult, by correlation id.
     private var childCommandPending: [Int: (client: ExtensionConnection, completion: (String?) -> Void)] = [:]
 
-    /// One child process per session, on a PTY (terminal agents, shells) or on
+    /// One child process per session, on a PTY (terminal panes) or on
     /// pipes (`pi --mode rpc`). Terminal-only paths take `pty` and treat nil as
     /// "no terminal"; liveness, exit, and kill are shared.
     private enum ServerSession {
@@ -328,6 +328,13 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Lifecycle (server queue)
 
+    /// Tabs from before shells were removed: global shells (no space) and space shell
+    /// workspaces (a space's layout no agent owns). Utility terminals are purged separately.
+    static func shellTabIDs(in state: ShepherdState) -> Set<TabID> {
+        let agentTabs = Set(state.agents.map(\.tabID))
+        return Set(state.tabs.filter { $0.inspectorFor == nil && ($0.spaceID == nil || !agentTabs.contains($0.id)) }.map(\.id))
+    }
+
     private func startOnQueue() throws {
         let stale = store.state.agents.filter { $0.status != .idle }.map(\.id)
         let deadInspectors = store.state.tabs.contains { $0.inspectorFor != nil }
@@ -335,7 +342,8 @@ public final class SessionServer: @unchecked Sendable {
             tab.layout.leaves.contains { $0.isReview == true }
         }
         let staleRuns = store.state.automations.contains { $0.agentID != nil }
-        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns {
+        let shellTabs = Self.shellTabIDs(in: store.state)
+        if !stale.isEmpty || deadInspectors || deadReviews || staleRuns || !shellTabs.isEmpty {
             do {
                 try store.update { state in
                     for id in stale {
@@ -347,6 +355,9 @@ public final class SessionServer: @unchecked Sendable {
                     // processes died with the previous run, so restoring
                     // them would show empty shells.
                     state.tabs.removeAll { $0.inspectorFor != nil }
+                    // Global shells and space shell workspaces were removed from Shepherd;
+                    // their layouts (and the sessions they would respawn) go.
+                    state.tabs.removeAll { shellTabs.contains($0.id) }
                     // Review panes are session-scoped UI: their native viewer
                     // died with the previous run, so remove them from each
                     // layout. A lone review leaf keeps the tab usable.
@@ -943,12 +954,8 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         let space = Space(name: (expanded as NSString).lastPathComponent, path: expanded)
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: expanded)))
         do {
-            try mutateState {
-                $0.spaces.append(space)
-                $0.tabs.append(tab)
-            }
+            try mutateState { $0.spaces.append(space) }
         } catch {
             send(.error(id: id, code: "persist_failed", message: String(describing: error)), to: client)
             return
@@ -1662,28 +1669,8 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Add a space and its main layout in one persisted snapshot. The UI never
-    /// observes a space without the shell workspace that makes it usable.
-    public func addSpace(_ space: Space, withTab tab: ShepherdCore.Tab) async throws {
-        try await enqueue {
-            guard !self.store.state.spaces.contains(where: { $0.id == space.id }) else {
-                throw SessionServerError.conflict("space \(space.id) already exists")
-            }
-            guard !self.store.state.tabs.contains(where: { $0.id == tab.id }) else {
-                throw SessionServerError.conflict("tab \(tab.id) already exists")
-            }
-            guard tab.spaceID == space.id else {
-                throw SessionServerError.conflict("space and tab do not match")
-            }
-            try self.mutateState {
-                $0.spaces.append(space)
-                $0.tabs.append(tab)
-            }
-        }
-    }
-
     /// Remove a space with everything that lives in it: its agents, their
-    /// layouts and inspector tabs, its shell workspace, and every session
+    /// layouts and utility tabs, and every session
     /// running in any of them. Spaces nested by path are separate entities
     /// and are untouched — they simply stop rendering as children.
     public func deleteSpace(_ spaceID: SpaceID) async throws {
@@ -1729,11 +1716,11 @@ public final class SessionServer: @unchecked Sendable {
             guard !self.store.state.tabs.contains(where: { $0.id == tab.id }) else {
                 throw SessionServerError.conflict("tab \(tab.id) already exists")
             }
-            // Global shells (spaceID == nil) belong to no space.
-            if let spaceID = tab.spaceID {
-                guard self.store.state.spaces.contains(where: { $0.id == spaceID }) else {
-                    throw SessionServerError.noSuchSpace(spaceID)
-                }
+            guard let spaceID = tab.spaceID else {
+                throw SessionServerError.conflict("tab \(tab.id) belongs to no space")
+            }
+            guard self.store.state.spaces.contains(where: { $0.id == spaceID }) else {
+                throw SessionServerError.noSuchSpace(spaceID)
             }
             try self.mutateState { $0.tabs.append(tab) }
         }

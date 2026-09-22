@@ -994,7 +994,6 @@ struct NativePresentationTests {
             agent.status = status
             tabs.append(tab); agents.append(agent)
         }
-        tabs.append(Tab(spaceID: nil, order: 0, layout: .leaf(LeafPane(cwd: dir.path)), name: "~"))
         let automation = Automation(name: "Merge PR #24 after CI", prompt: "watch", cwd: dir.path, enabled: false)
         try await server.putState(ShepherdState(spaces: [space], tabs: tabs, agents: agents, automations: [automation]))
         let vm = ShepherdViewModel(server: server, settings: AppSettings(store: defaults),

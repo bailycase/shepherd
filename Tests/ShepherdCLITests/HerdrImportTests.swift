@@ -39,7 +39,7 @@ import Testing
         #expect(HerdrImport.sessionID(fromPath: "/a/notasession.txt") == nil)
     }
 
-    @Test func mergeCreatesSpaceShellAndAgent() throws {
+    @Test func mergeCreatesSpaceAndAgent() throws {
         let herdr = try JSONDecoder().decode(HerdrSession.self, from: Data(herdrJSON.utf8))
         var state = ShepherdState()
         let summary = HerdrImport.merge(herdr, into: &state) { _ in "My task" }
@@ -48,8 +48,8 @@ import Testing
         #expect(summary.agentsAdded == 1)
         #expect(state.spaces.count == 1)
         #expect(state.spaces[0].path == "/tmp/proj")
-        // One shell workspace + one agent tab.
-        #expect(state.tabs.count == 2)
+        // Just the agent's layout; spaces have no layout of their own.
+        #expect(state.tabs.count == 1)
         #expect(state.agents.count == 1)
         #expect(state.agents[0].piSessionID == "abc123")
         #expect(state.agents[0].name == "My task")

@@ -3,7 +3,7 @@
 Adapter over `GhosttyTerminal` (libghostty-spm 1.3.x) exposing the frozen
 `TerminalSurfaceModel` / `TerminalSurfaceView` API. No PTY is spawned; the
 host-managed I/O backend carries app-owned PTY bytes both ways. Shepherd uses it
-for shell panes only (global shells, a space's shell, panes beside a thread);
+for terminal panes only (the panes beside a thread);
 agents render as native threads and never get a surface.
 
 ## GhosttyTerminal API used (from .build/checkouts/libghostty-spm)
@@ -96,7 +96,7 @@ modules would need qualification; ShepherdApp should import TerminalSurfaceKit o
 
 ## Hidden-pane rendering (`setRenderingActive`)
 
-Every mounted layout stays in the view tree; hidden shell panes are
+Every mounted layout stays in the view tree; hidden terminal panes are
 `opacity(0)` with their surfaces alive (until cold parking drops them). `TerminalSurfaceModel.setRenderingActive` drives
 `AppTerminalView.setSurfaceVisible` → `core.setDisplayVisible` → ghostty
 occlusion + display-link stop/immediate-tick.

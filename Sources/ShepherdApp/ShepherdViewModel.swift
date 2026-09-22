@@ -44,9 +44,9 @@ struct AgentStartFailure: Error, CustomStringConvertible {
 }
 
 /// GUI-owned view state over the in-process session server's snapshot.
-/// Navigation is the sidebar: an agent row shows that agent's pane layout, a
-/// space row shows the space's shell workspace. Tabs exist only in persisted state as
-/// per-agent (and per-space-main) layout containers — there is no tab UI.
+/// Navigation is the sidebar: an agent row shows that agent's thread (and any terminal panes
+/// beside it); a space row is a disclosure. Tabs exist only in persisted state as per-agent
+/// layout containers — there is no tab UI.
 @MainActor
 @Observable
 final class ShepherdViewModel {
@@ -75,12 +75,6 @@ final class ShepherdViewModel {
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
     }
-    /// Foreground process name per shell tab ("pi", "htop"), for row labels.
-    var shellProcesses: [TabID: String] = [:]
-    @ObservationIgnored var shellProcessTimer: Timer?
-    /// The global shell the workspace is showing (a SHELLS row is selected);
-    /// wins over space/agent selection, cleared by ordinary selection.
-    var selectedShellID: TabID?
     /// The remote agent the workspace is showing (a REMOTE row is selected):
     /// host connection id + agent id on that host. Wins over every local
     /// selection; cleared by ordinary selection. Ephemeral, like all
@@ -204,8 +198,6 @@ final class ShepherdViewModel {
         newAgentPreselect = (hostID, spaceID)
         showNewAgentSheet = true
     }
-    /// Rename target for a global shell (sheet in RootView).
-    var shellRenameTarget: TabID?
     /// Space pending removal confirmation (alert in RootView) — removal
     /// kills the space's agents, so it always confirms.
     var spaceDeleteTarget: SpaceID?
@@ -235,10 +227,12 @@ final class ShepherdViewModel {
         finalizeRequest = FinalizeRequest(agent: agent, space: space)
     }
 
-    /// The setup wizard's gh-authentication step: a real terminal running
-    /// `gh auth login`, because the login flow is interactive by design.
-    func openGhLoginShell() {
-        addShell(named: "gh login", running: "gh auth login")
+    /// The setup wizard's gh-authentication step: a terminal pane beside the agent's thread
+    /// running `gh auth login`, because the login flow is interactive by design.
+    func openGhLogin(besideAgent agentID: AgentID) {
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
+        selectAgent(agentID)
+        openTerminalPane(besideAgent: agent, running: "gh auth login")
     }
     /// Agents whose subagent rows are hidden (clicking the selected agent
     /// row toggles this); the row shows an `n sub` chip instead. Ephemeral,
@@ -275,11 +269,6 @@ final class ShepherdViewModel {
     var agentRenameTarget: AgentID?
     /// True while ⌘ has been held ~250ms — sidebar rows show their ⌘1–9 keycaps.
     var showAgentShortcutBadges = false
-    /// True while the shell-digit chord's modifiers are held — shell rows
-    /// show their jump keycaps. Follows the user's configured binding
-    /// (⌥⌘ by default, ⌃ if rebound), so the hint can never advertise a
-    /// chord that isn't wired.
-    var showShellShortcutBadges = false
 
     let sessions: TerminalSessionStore
     /// Native thread state per local agent and per remote agent.
@@ -310,16 +299,9 @@ final class ShepherdViewModel {
     /// invalidate the views reading it; the inputs (`state`,
     /// `collapsedSpaces`) are themselves observed.
     @ObservationIgnored var sidebarDerivations = SidebarDerivations()
-    /// Space shell (space-main) tabs shown at least once this run. They
-    /// mount lazily — mounting spawns a login shell and a Ghostty surface,
-    /// and a large space tree must not pay that for spaces never opened —
-    /// and once mounted they stay mounted (see `WorkspaceSelection`).
-    /// @ObservationIgnored: it grows only in lockstep with observable
-    /// selection changes, so it never needs to invalidate views itself.
-    @ObservationIgnored var visitedSpaceShellTabs: Set<TabID> = []
     /// When each layout last stopped being the visible one; drives cold
-    /// parking (see `WorkspaceSelection`). @ObservationIgnored like
-    /// `visitedSpaceShellTabs`: it only changes alongside the active tab.
+    /// parking (see `WorkspaceSelection`). @ObservationIgnored: it only changes alongside
+    /// the active tab.
     @ObservationIgnored var tabHiddenSince: [TabID: Date] = [:]
     /// Layouts currently unmounted by cold parking. Observed: parking and
     /// unparking must re-evaluate `mountedTabs`.
@@ -553,7 +535,6 @@ final class ShepherdViewModel {
         commandHoldTask?.cancel()
         persistenceTail?.cancel()
         childSweepTimer?.invalidate()
-        shellProcessTimer?.invalidate()
         parkSweepTimer?.invalidate()
         if let flagsMonitor {
             NSEvent.removeMonitor(flagsMonitor)
@@ -571,7 +552,6 @@ final class ShepherdViewModel {
     /// a keystroke it shouldn't — is directly testable.
     enum NavigationKeyAction: Equatable {
         case agentDigit(Int)
-        case shellDigit(Int)
         case machineJump(Int)
         case adjacentAgent(Int)
     }
@@ -583,14 +563,12 @@ final class ShepherdViewModel {
         digit: Int?,
         chord: KeyChord?,
         modifiers: NSEvent.ModifierFlags,
-        shellModifiers: NSEvent.ModifierFlags,
         next: KeyChord,
         previous: KeyChord
     ) -> NavigationKeyAction? {
         if let digit {
             if modifiers == .command { return .agentDigit(digit) }
             if modifiers == [.control, .shift] { return .machineJump(digit) }
-            if !shellModifiers.isEmpty, modifiers == shellModifiers { return .shellDigit(digit) }
         }
         guard let chord else { return nil }
         if chord == next { return .adjacentAgent(1) }
@@ -598,8 +576,7 @@ final class ShepherdViewModel {
         return nil
     }
 
-    /// Fast path for the navigation chords (⌘↑/↓, ⌘1–9, shell digits,
-    /// ⌃⇧1–9 machine jumps): act directly instead of letting the event
+    /// Fast path for the navigation chords (⌘↑/↓, ⌘1–9, ⌃⇧1–9 machine jumps): act directly instead of letting the event
     /// reach the main menu. Consumes an event only when the menu's
     /// equivalent item would be live, so a dead chord falls through
     /// unchanged. Stands down while the Settings shortcut recorder is
@@ -610,7 +587,6 @@ final class ShepherdViewModel {
             digit: KeyChord.digit(keyCode: event.keyCode),
             chord: KeyChord(event: event),
             modifiers: event.modifierFlags.intersection([.command, .shift, .option, .control]),
-            shellModifiers: keybindings.chord(for: .shellDigits).modifierFlags,
             next: keybindings.chord(for: .nextAgent),
             previous: keybindings.chord(for: .previousAgent)
         )
@@ -620,10 +596,6 @@ final class ShepherdViewModel {
             guard activeMachineAgents.count >= digit else { return false }
             showCommandPalette = false
             selectAgentDigit(digit)
-            return true
-        case .shellDigit(let digit):
-            guard shellTabs.indices.contains(digit - 1) else { return false }
-            selectShell(shellTabs[digit - 1].id)
             return true
         case .machineJump(let digit):
             // ⌃⇧1 (local) is always live; host rows only while connected,
@@ -642,35 +614,19 @@ final class ShepherdViewModel {
         }
     }
 
-    /// Delayed reveal so ordinary chords don't flash the badges. Agent rows
-    /// reveal on plain ⌘ (their fixed ⌘1–9 row); shell rows reveal when
-    /// exactly the configured shell-digit modifiers are held.
+    /// Delayed reveal so ordinary chords don't flash the badges: agent rows show their ⌘1–9
+    /// keycaps once plain ⌘ has been held for a moment.
     private func modifierFlagsChanged(_ flags: NSEvent.ModifierFlags) {
-        // No digit badges over the ⌘K palette.
-        if showCommandPalette {
-            commandHoldTask?.cancel()
-            commandHoldTask = nil
-            showAgentShortcutBadges = false
-            showShellShortcutBadges = false
-            return
-        }
-        let held = flags.intersection([.command, .shift, .option, .control])
-        let shellModifiers = KeybindingsStore.shared.chord(for: .shellDigits).modifierFlags
-
-        let wantAgents = held == [.command]
-        let wantShells = !shellModifiers.isEmpty && held == shellModifiers
-
         commandHoldTask?.cancel()
         commandHoldTask = nil
+        // No digit badges over the ⌘K palette.
+        let wantAgents = !showCommandPalette && flags.intersection([.command, .shift, .option, .control]) == [.command]
         if !wantAgents { showAgentShortcutBadges = false }
-        if !wantShells { showShellShortcutBadges = false }
-        guard wantAgents || wantShells else { return }
-        guard (wantAgents && !showAgentShortcutBadges) || (wantShells && !showShellShortcutBadges) else { return }
+        guard wantAgents, !showAgentShortcutBadges else { return }
         commandHoldTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
-            if wantAgents { self?.showAgentShortcutBadges = true }
-            if wantShells { self?.showShellShortcutBadges = true }
+            self?.showAgentShortcutBadges = true
         }
     }
 
@@ -679,7 +635,6 @@ final class ShepherdViewModel {
         state = serverState
         threadStores.prune(live: Set(state.agents.map(\.id)))
         pruneReviewSessions()
-        syncShellProcessTimer()
         // First adoption of the restored workspace: stand the enabled
         // automation watches back up (their agents died with the last run).
         if !didAutoStartAutomations {
@@ -717,10 +672,8 @@ final class ShepherdViewModel {
             state.agents[index].status = status
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
             // Visible means the workspace is actually showing this agent's
-            // layout — not a shell or a remote agent.
-            let visible = selectedAgentID == id
-                && selectedShellID == nil
-                && selectedRemoteAgent == nil
+            // layout — not a remote agent.
+            let visible = selectedAgentID == id && selectedRemoteAgent == nil
             notifications.agentStatusChanged(state.agents[index], from: old, isAgentVisible: visible)
         }
     }

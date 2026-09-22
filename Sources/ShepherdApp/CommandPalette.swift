@@ -7,7 +7,6 @@ struct PaletteItem: Identifiable {
     enum Kind {
         case agent(AgentID)
         case space(SpaceID)
-        case shell(TabID)
         case child(agentID: AgentID, child: ChildRun)
         case remoteAgent(hostID: UUID, agentID: AgentID)
         case remoteSpace(hostID: UUID)
@@ -19,7 +18,7 @@ struct PaletteItem: Identifiable {
     /// Grouping header in the results list, in display order (spec §12: Commands, This thread,
     /// Subagents, and Agents when searching).
     enum Section: Int, CaseIterable {
-        case commands, thisThread, subagents, agents, spaces, shells, conversations
+        case commands, thisThread, subagents, agents, spaces, conversations
 
         var title: String {
             switch self {
@@ -28,7 +27,6 @@ struct PaletteItem: Identifiable {
             case .subagents: "Subagents"
             case .agents: "Agents"
             case .spaces: "Spaces"
-            case .shells: "Shells"
             case .conversations: "Found in conversations"
             }
         }
@@ -37,7 +35,7 @@ struct PaletteItem: Identifiable {
         /// appear once there is a query or the Agents scope is chosen.
         var isDestination: Bool {
             switch self {
-            case .agents, .spaces, .shells, .conversations: true
+            case .agents, .spaces, .conversations: true
             case .commands, .thisThread, .subagents: false
             }
         }

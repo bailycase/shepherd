@@ -11,7 +11,6 @@ import Testing
 struct NavigationKeyTests {
     private let next = ShortcutAction.nextAgent.defaultChord // ⌘↓
     private let previous = ShortcutAction.previousAgent.defaultChord // ⌘↑
-    private let shellModifiers: NSEvent.ModifierFlags = [.control] // default ⌃1–9
 
     private func classify(
         digit: Int? = nil,
@@ -22,7 +21,6 @@ struct NavigationKeyTests {
             digit: digit,
             chord: chord,
             modifiers: modifiers,
-            shellModifiers: shellModifiers,
             next: next,
             previous: previous
         )
@@ -38,20 +36,9 @@ struct NavigationKeyTests {
         #expect(classify(digit: 2, modifiers: [.control, .shift]) == .machineJump(2))
     }
 
-    @Test func shellModifierDigitIsShellSelect() {
-        #expect(classify(digit: 5, modifiers: [.control]) == .shellDigit(5))
-    }
-
-    @Test func rebindableShellModifiersAreHonored() {
-        let action = ShepherdViewModel.navigationKeyAction(
-            digit: 4,
-            chord: nil,
-            modifiers: [.option, .shift],
-            shellModifiers: [.option, .shift],
-            next: next,
-            previous: previous
-        )
-        #expect(action == .shellDigit(4))
+    /// ⌃1–9 selected shells; with shells gone it is terminal input again.
+    @Test func controlDigitFallsThroughToTheTerminal() {
+        #expect(classify(digit: 5, modifiers: [.control]) == nil)
     }
 
     /// A bare digit is terminal input; extra modifiers make it a different
@@ -76,19 +63,6 @@ struct NavigationKeyTests {
         #expect(classify(chord: KeyChord(key: "down", command: true, shift: true)) == nil)
         #expect(classify(chord: KeyChord(key: "a", command: true), modifiers: .command) == nil)
         #expect(classify() == nil)
-    }
-
-    /// An empty shell modifier set must never match unmodified digits.
-    @Test func emptyShellModifiersNeverMatch() {
-        let action = ShepherdViewModel.navigationKeyAction(
-            digit: 7,
-            chord: nil,
-            modifiers: [],
-            shellModifiers: [],
-            next: next,
-            previous: previous
-        )
-        #expect(action == nil)
     }
 
     // MARK: Physical digit mapping
