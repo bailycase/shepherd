@@ -16,7 +16,7 @@ struct RootView: View {
     var body: some View {
         HStack(spacing: 0) {
             // Left column: the flat canvas runs continuously behind the traffic lights and the
-            // tree. ⌘⇧S hides it; a right pane narrows it to the compact form (spec §9).
+            // tree. ⌘⇧S hides it. It keeps its width while a right pane is open.
             if !vm.sidebarHidden {
                 VStack(spacing: 0) {
                     Color.clear
@@ -25,7 +25,7 @@ struct RootView: View {
                         .gesture(WindowDragGesture())
                     SidebarView(vm: vm)
                 }
-                .frame(width: vm.isRightPaneOpen ? Metrics.sidebarCompactWidth : CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
+                .frame(width: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
                 .background(Tokens.bgCanvas.ignoresSafeArea())
 
                 sidebarResizeHandle
@@ -329,8 +329,6 @@ struct RootView: View {
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("root-layout"))
                             .onChanged { value in
-                                // The compact width is fixed while a right pane is open.
-                                guard !vm.isRightPaneOpen else { return }
                                 liveSidebarWidth = AppSettings.clampSidebarWidth(Double(value.location.x))
                             }
                             .onEnded { _ in

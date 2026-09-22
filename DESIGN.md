@@ -58,8 +58,8 @@ And the rules that follow from them:
 | --- | --- | --- |
 | IBM Plex Sans / JetBrains Mono | System faces: SF Pro (`.default`) and SF Mono (`.monospaced`) at the spec's sizes, weights, and line heights | No bundled fonts; the system faces render better at small sizes on macOS |
 | Mock palette from `tokens.json` | The same *roles*, filled by Basalt (light and dark) | Basalt is the product's palette; the roles are the contract |
-| Sidebar rows 32pt, indent 22pt; compact 26pt, indent 16pt | Rows **26pt**, indent 16pt; compact **22pt**, indent 12pt (density-scaled) | A real fleet lost a third of the tree at 32pt |
-| Sidebar fixed 256pt | Resizable (190–340pt, persisted) as on the Appearance board; 184pt compact form while a right pane is open | The Settings board carries a sidebar-width slider |
+| Sidebar rows 32pt, indent 22pt; compact 26pt, indent 16pt | Rows **26pt**, indent 16pt (density-scaled); no compact form | A real fleet lost a third of the tree at 32pt |
+| Sidebar fixed 256pt; 184pt compact form while a right pane is open | Resizable (190–340pt, persisted) as on the Appearance board, and it keeps its width when a right pane opens | Shrinking the sidebar on every pane toggle made the whole window jump |
 | ⌘M opens the model picker | **⇧⌘M** | ⌘M is the system Minimize chord |
 | Runtime (Terminal vs Native RPC) as a creation-time choice | Gone: every agent is RPC | Terminal agents were removed |
 | "Width persists per window" | The right-pane width persists app-wide | One main window |
@@ -222,7 +222,7 @@ chrome by hand; if a board shows a variant the library lacks, add it there. The 
 | `SearchField`, `.shepherdField(focused:mono:)` | Text entry: raised fill, strong border, accent border + ring while focused. |
 | `Keycaps` | A real, wired shortcut ("⇧⌘N" → caps). Never for an unwired chord. |
 | `StatusPill` (`AgentPillState`: idle · running · needsYou · error · stopped) | The header's agent state; dot or spinner + word on the state's tint. |
-| `StatusDot` (7pt, 6pt compact) | Sidebar agent state. |
+| `StatusDot` (7pt) | Sidebar agent state. |
 | `Spinner` | Running. A pulsing dot under Reduce Motion. |
 | `RunStateGlyph` | Tool-call and run state at 14pt: spinner, check, cross, warning. |
 | `BranchGlyph` | A subagent, in its run's state color. |
@@ -272,20 +272,18 @@ terminal panes split beside it; panes are separated by 1pt `border` dividers.
   it, and a space has no view of its own. Nested projects indent by path containment. Agents
   nest beneath their space. With no agent selected the workspace shows an empty state with
   New agent.
-- **Rows:** 26pt (22pt compact), radius 6 (5 compact), 16pt indent per level (12 compact).
-  Hover `bgHoverStrong`; selected `bgSelected`. A 7pt status dot (6pt compact) leads, `⎇` marks
+- **Rows:** 26pt, radius 6, 16pt indent per level.
+  Hover `bgHoverStrong`; selected `bgSelected`. A 7pt status dot leads, `⎇` marks
   a worktree agent, the title truncates at the tail with the full title as a tooltip.
 - **Trailing slot**, in priority order: the ⌘-digit badge while ⌘ is held · "needs you"
   (`warningText`) · "n sub" for a folded subagent group · elapsed time while working · "done".
-  In the compact form only the selected row shows a trailing slot.
 - **Status dot:** working `success` (green, "alive") · blocked `warning` · idle/done `dotIdle`,
   or `accent` for the open thread.
 - **Subagents** nest under their parent with the `BranchGlyph` in the state color instead of a
   dot; trailing elapsed / "needs you" / duration. While any run is live the group is expanded.
   Once every run has finished the group gets a disclosure header, expanded for the selected
   thread and folded for others. Selecting a subagent row opens it in the inspector.
-- **Compact form** (while a right pane is open): 184pt, compact rows, Automations collapses to
-  one row with a count, full titles in tooltips.
+- The sidebar keeps its width while a right pane is open.
 - Hidden with ⇧⌘S; the header then runs under the traffic lights. Rows are tap views with button
   traits and accessibility actions (so they can also be dragged to reorder); hover `+` glyphs are
   real labeled buttons. A disconnected host's rows dim; connection state lives on the section
@@ -397,7 +395,7 @@ wait/status dumps never appear.
 
 One docked slot to the right of the thread (`RightPaneSplit`), shared by the subagent
 inspector and the review. Default 600pt, min 480pt, at most half the window; the left edge is
-the drag handle and the width persists. While it is open the sidebar takes its compact form.
+the drag handle and the width persists. The sidebar keeps its width.
 ⇧⌘B or the header button toggles it (closing whatever is open, otherwise opening the review).
 The thread keeps running beside it; a pane never replaces or splits the thread's layout.
 
