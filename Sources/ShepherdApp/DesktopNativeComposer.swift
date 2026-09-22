@@ -126,10 +126,24 @@ struct NativeComposer: View {
                 field
             }
             HStack(spacing: 8) {
-                if canAttach { attachButton }
-                modelChips
-                if running { deliveryChip }
+                // While children run the left slot reads their count and age (board); the
+                // chips return once they are done.
+                if let label = nativeSubagentRunningLabel(store.subagents, now: clock.now) {
+                    HStack(spacing: 6) {
+                        NativeSpinner(color: NativeTokens.accent, size: 11)
+                        Text(label).font(NativeFonts.captionMedium).foregroundStyle(NativeTokens.accentText).monospacedDigit().lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                } else {
+                    if canAttach { attachButton }
+                    modelChips
+                    if running { deliveryChip }
+                }
                 Spacer(minLength: 0)
+                if running, !waiting, store.draft.isEmpty {
+                    Text("⌘. stop" + (store.hasLiveSubagents ? " all" : "")).font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted)
+                        .accessibilityHidden(true)
+                }
                 primary(waiting: waiting)
             }
         }
@@ -202,14 +216,14 @@ struct NativeComposer: View {
                 .help("Waiting for pi to accept the action")
                 .accessibilityLabel("Waiting for pi")
         } else if running, !waiting, store.draft.isEmpty {
-            Button { Task { await store.abort() } } label: {
+            Button { Task { await store.abortAll() } } label: {
                 Image(systemName: "stop.fill").font(.system(size: 10, weight: .medium))
             }
             // Page 7: a semantic fill only ever carries its matching .text; never white on danger.
             .buttonStyle(NativeIconButtonStyle(fill: NativeTokens.dangerBg, label: NativeTokens.dangerText))
             .keyboardShortcut(".", modifiers: .command)
             .disabled(!active || !store.supports("abort"))
-            .help("Stop the agent’s current turn (⌘.)")
+            .help(store.hasLiveSubagents ? "Stop the agent and every running subagent (⌘.)" : "Stop the agent’s current turn (⌘.)")
             .accessibilityLabel("Stop agent")
         } else {
             let enabled = canSend && !waiting
@@ -226,7 +240,7 @@ struct NativeComposer: View {
             .accessibilityLabel("Send message")
             // ⌘. still stops the run while the circle shows Send.
             if running {
-                Button("Stop agent") { Task { await store.abort() } }
+                Button("Stop agent") { Task { await store.abortAll() } }
                     .keyboardShortcut(".", modifiers: .command)
                     .disabled(!active || !store.supports("abort"))
                     .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)

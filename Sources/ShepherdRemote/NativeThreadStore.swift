@@ -248,6 +248,13 @@ public final class NativeThreadStore: ObservableObject {
                              operationID: operation), operation: operation, current: current)
     }
 
+    /// Stop the parent's turn and every live subagent (the composer's "⌘. stop all").
+    public func abortAll() async {
+        let live = subagents.filter { !$0.isTerminal }.map(\.runID)
+        for runID in live { await subagentCommand(runID: runID, action: .cancel) }
+        await abort()
+    }
+
     public func answer(dialogID: String, sessionID: String, generation: String, answer: NativeDialogAnswer) async {
         guard supports("answer"), let current = snapshot,
               current.piSessionID == sessionID, current.generation == generation,

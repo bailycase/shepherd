@@ -756,8 +756,9 @@ final class ShepherdViewModel {
         let isEmpty = childRuns.children(of: agentID).isEmpty
         if isEmpty {
             collapsedChildren.remove(agentID)
-        } else if wasEmpty {
-            // New batches start folded; the thread remains the primary row.
+        } else if wasEmpty, selectedAgentID != agentID {
+            // New batches under other agents start folded; the thread on screen shows its
+            // children nested (board: sidebar nesting).
             collapsedChildren.insert(agentID)
         }
         syncChildSweepTimer()

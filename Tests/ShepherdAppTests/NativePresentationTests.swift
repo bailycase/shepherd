@@ -852,6 +852,14 @@ struct NativePresentationTests {
         try await waitFor { vm.state.agents.count == rows.count }
         vm.selectedSpaceID = space.id
         vm.selectedAgentID = agents[4].id
+        // The board's nested children under the selected agent: worker 37m, reviewer needs you, tests done.
+        vm.applyAgentChildren(agents[4].id, Self.boardRuns.prefix(3).map { run in
+            var run = run
+            let shift = Date().timeIntervalSince1970 * 1000 - Self.boardNow.timeIntervalSince1970 * 1000
+            run.startedAt = run.startedAt.map { $0 + shift }
+            run.endedAt = run.endedAt.map { $0 + shift }
+            return run
+        })
         // An unreachable second machine makes the tree show its THIS MAC / host structure.
         vm.remoteHosts.addHost(name: "Horizon", host: "127.0.0.1", port: 1, token: "x")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 256, height: 640),

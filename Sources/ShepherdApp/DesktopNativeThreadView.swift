@@ -507,6 +507,8 @@ struct NativeTerminalLink: View {
 struct NativeAgentStatusPill: View {
     let pill: NativeAgentPill
     var elapsed: String?
+    /// Overrides the pill's own label ("1 subagent needs you").
+    var label: String?
 
     var body: some View {
         let (fill, text): (Color, Color) = switch pill {
@@ -520,13 +522,13 @@ struct NativeAgentStatusPill: View {
             if pill == .running { NativeSpinner(color: NativeTokens.accent, size: 10) } else {
                 Circle().fill(dot).frame(width: 6, height: 6)
             }
-            Text(pill.label + (elapsed.map { " · \($0)" } ?? "")).font(NativeFonts.caption)
+            Text((label ?? pill.label) + (elapsed.map { " · \($0)" } ?? "")).font(NativeFonts.caption)
         }
         .foregroundStyle(text)
         .padding(.horizontal, 8)
         .frame(height: 22)
         .background(fill, in: Capsule())
-        .accessibilityLabel("Status: \(pill.label)")
+        .accessibilityLabel("Status: \(label ?? pill.label)")
     }
 
     private var dot: Color {
@@ -592,15 +594,28 @@ struct NativeThreadHeader: View {
         // settledRunning holds through tool gaps (F6) so the pill does not flip per poll.
         let pill = nativeAgentPill(running: store.settledRunning, awaitingAnswer: snapshot?.dialogs.isEmpty == false,
                                    error: store.loadError != nil)
+        // A child waiting on the user outranks the parent's own running state in the pill.
+        let needsYou = nativeSubagentNeedsYouLabel(store.subagents)
         HStack(spacing: 8) {
             Text(project).font(NativeFonts.label).foregroundStyle(NativeTokens.textTertiary).lineLimit(1).fixedSize()
             Text("/").font(NativeFonts.labelRegular).foregroundStyle(NativeTokens.textDisabled)
             // Title gives way last: the pill, count and switch keep their size, the title truncates.
             Text(title).font(NativeFonts.title).foregroundStyle(NativeTokens.text).lineLimit(1).truncationMode(.tail)
                 .layoutPriority(-1)
-            NativeAgentStatusPill(pill: pill, elapsed: pill == .running ? clock.runElapsed(now: clock.now) : nil)
-                .fixedSize()
+            if let needsYou, pill != .error {
+                NativeAgentStatusPill(pill: .needsApproval, label: needsYou).fixedSize()
+            } else {
+                NativeAgentStatusPill(pill: pill, elapsed: pill == .running ? clock.runElapsed(now: clock.now) : nil)
+                    .fixedSize()
+            }
             Spacer(minLength: 12)
+            // "3 subagents · 1.6m tok": stays even when the inspector narrows the header (board),
+            // wrapping to two lines like the board rather than yielding.
+            if let rollup = nativeSubagentRollup(store.subagents) {
+                Text(wide ? rollup : rollup.replacingOccurrences(of: " · ", with: " ·\n"))
+                    .font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).fixedSize().lineLimit(2)
+                    .accessibilityLabel(rollup)
+            }
             // Context size comes from pi's session stats (RPC agents only); the terminal bridge has none.
             if let ctx = snapshot?.stats?.contextTokens, wide {
                 Text("\(nativeTokenCount(ctx)) ctx").font(NativeFonts.micro).foregroundStyle(NativeTokens.textMuted).fixedSize()

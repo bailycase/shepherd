@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import UniformTypeIdentifiers
 
 /// The sidebar tree: waiting summary, spaces with their agents nested under
@@ -250,8 +251,8 @@ struct SpaceSection: View {
                         ForEach(children) { child in
                             ChildRunRow(
                                 child: child,
-                                selected: vm.inspectingAgentID == agent.id
-                                    && vm.inspectedChild[agent.id] == child.id,
+                                selected: (vm.inspectingAgentID == agent.id && vm.inspectedChild[agent.id] == child.id)
+                                    || (vm.selectedAgentID == agent.id && vm.subagentInspector.runByAgent[agent.id] == child.runID),
                                 depth: depth
                             ) {
                                 vm.openChildInspector(agentID: agent.id, child: child)
@@ -526,7 +527,8 @@ struct ChildRunRow: View {
     let action: () -> Void
     @State private var hovering = false
 
-    private var dotColor: Color {
+    /// The branch glyph replaces the dot and carries the state colour (board: sidebar nesting).
+    private var glyphColor: Color {
         if child.needsAttention { return NativeTokens.warning }
         switch child.state {
         case "running", "queued": return NativeTokens.success
@@ -535,24 +537,21 @@ struct ChildRunRow: View {
         }
     }
 
+    /// Right slot: "needs you" / "done" / the failure state, or the live elapsed "37m".
     private var trailing: String {
-        if child.needsAttention { return "waiting" }
+        if child.needsAttention { return "needs you" }
         if child.isTerminal { return child.state == "complete" ? "done" : child.state }
-        guard let started = child.startedAt else { return "" }
-        let seconds = max(0, Int(Date().timeIntervalSince1970 - started / 1000))
-        switch seconds {
-        case ..<60: return "\(seconds)s"
-        case ..<3600: return "\(seconds / 60)m"
-        default: return "\(seconds / 3600)h"
-        }
+        return nativeSubagentElapsed(child, now: Date()).map(nativeSubagentShortDuration) ?? ""
     }
 
     var body: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 7, height: 7)
-            Text(child.label)
+            NativeBranchGlyph(color: glyphColor, size: 12)
+                // Tree line from the parent row down the nested children.
+                .overlay(alignment: .leading) {
+                    NativeTokens.border.frame(width: 1).padding(.vertical, -NativeMetrics.sidebarRowHeight / 2).offset(x: -8)
+                }
+            Text(child.role ?? child.label)
                 .font(NativeFonts.sidebarRow)
                 .foregroundStyle(
                     selected ? NativeTokens.text
@@ -565,10 +564,11 @@ struct ChildRunRow: View {
             // TimelineView keeps the elapsed age moving while the run lives.
             TimelineView(.periodic(from: .now, by: 1)) { _ in
                 Text(trailing)
-                    .font(NativeFonts.sidebarMeta)
-                    .foregroundStyle(child.needsAttention ? NativeTokens.warningText : NativeTokens.textMuted)
+                    .font(child.needsAttention ? NativeFonts.sidebarRowStrong : NativeFonts.sidebarMeta)
+                    .foregroundStyle(child.needsAttention ? NativeTokens.warningText : child.isTerminal ? NativeTokens.textMuted : NativeTokens.textSecondary)
             }
         }
+        .clipped()
         .padding(.leading, 8 + CGFloat(depth + 2) * NativeMetrics.sidebarIndent)
         .padding(.trailing, 8)
         .frame(height: NativeMetrics.sidebarRowHeight)
@@ -582,7 +582,7 @@ struct ChildRunRow: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { action() }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(child.label), subagent, \(child.state)")
+        .accessibilityLabel("\(child.role ?? child.label), subagent, \(child.needsAttention ? "needs you" : child.state)")
     }
 }
 
