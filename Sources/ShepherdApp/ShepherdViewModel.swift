@@ -271,14 +271,7 @@ final class ShepherdViewModel {
     /// Debug builds: the component gallery over the workspace.
     var showComponentGallery = false
     /// ⌘K command palette visibility.
-    var showCommandPalette = false {
-        didSet { if !showCommandPalette { paletteModifierHeld = false } }
-    }
-    /// ⌘ held while the palette is open — rows show ⌘1–9 pick hints.
-    var paletteModifierHeld = false
-    /// The palette's currently visible (filtered) rows, kept fresh by the
-    /// view so ⌘digit quick-pick targets what the user actually sees.
-    var paletteVisibleRows: [PaletteItem] = []
+    var showCommandPalette = false
     var agentRenameTarget: AgentID?
     /// True while ⌘ has been held ~250ms — sidebar rows show their ⌘1–9 keycaps.
     var showAgentShortcutBadges = false
@@ -623,14 +616,10 @@ final class ShepherdViewModel {
         )
         switch action {
         case .agentDigit(let digit):
-            // Mirrors the Agent menu's digit rows: live only for an existing
-            // sidebar index, routed to the palette's quick-pick while open.
-            guard (showCommandPalette ? paletteVisibleRows.count : activeMachineAgents.count) >= digit else { return false }
-            if showCommandPalette {
-                runPaletteQuickPick(digit)
-            } else {
-                selectAgentDigit(digit)
-            }
+            // Mirrors the Agent menu's digit rows: live only for an existing sidebar index.
+            guard activeMachineAgents.count >= digit else { return false }
+            showCommandPalette = false
+            selectAgentDigit(digit)
             return true
         case .shellDigit(let digit):
             guard shellTabs.indices.contains(digit - 1) else { return false }
@@ -657,17 +646,14 @@ final class ShepherdViewModel {
     /// reveal on plain ⌘ (their fixed ⌘1–9 row); shell rows reveal when
     /// exactly the configured shell-digit modifiers are held.
     private func modifierFlagsChanged(_ flags: NSEvent.ModifierFlags) {
-        // The ⌘K palette owns ⌘-digit hints while open; sidebar badges
-        // staying dark keeps one set of digit hints on screen at a time.
+        // No digit badges over the ⌘K palette.
         if showCommandPalette {
             commandHoldTask?.cancel()
             commandHoldTask = nil
             showAgentShortcutBadges = false
             showShellShortcutBadges = false
-            paletteModifierHeld = flags.contains(.command)
             return
         }
-        paletteModifierHeld = false
         let held = flags.intersection([.command, .shift, .option, .control])
         let shellModifiers = KeybindingsStore.shared.chord(for: .shellDigits).modifierFlags
 

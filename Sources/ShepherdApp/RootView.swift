@@ -51,15 +51,16 @@ struct RootView: View {
                 SettingsView(vm: vm)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .zIndex(10)
-            // ⌘K palette floats over everything; the dimmer click-dismisses.
+            // ⌘K palette floats over everything; the scrim click-dismisses.
             } else if vm.showCommandPalette {
                 ZStack(alignment: .top) {
-                    Color.black.opacity(0.25)
+                    Tokens.scrim
                         .ignoresSafeArea()
                         .onTapGesture { vm.showCommandPalette = false }
                     CommandPaletteView(vm: vm)
-                        .padding(.top, 90)
+                        .padding(.top, Metrics.paletteTop)
                 }
+                .zIndex(12)
             }
         }
         .environment(\.threadCommands, vm.threadCommands)
