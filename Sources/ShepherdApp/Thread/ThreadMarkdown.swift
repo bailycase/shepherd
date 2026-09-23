@@ -1,143 +1,119 @@
 import SwiftUI
-import AppKit
 import ShepherdUI
 import ShepherdRemote
 
-/// Agent prose: block Markdown on the spec's ramp, capped at the 680pt measure.
-struct Prose: View {
-    let text: String
-    var small = false
+/// Agent prose: the turn's parsed Markdown drawn by `NWAgentProse`, with fenced code
+/// highlighted. Blocks are parsed once per turn (`NativeTurnPresentation`); inline runs are
+/// styled once per text.
+struct Prose: View, Equatable {
+    let blocks: [NativeMarkdownBlock]
+    var maxWidth: CGFloat = AppLayout.proseMaxWidth
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: AppLayout.blockSpacing) {
-            MarkdownBlocksView(blocks: nativeMarkdownBlocks(text), small: small)
-        }
-        .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
+    init(blocks: [NativeMarkdownBlock], maxWidth: CGFloat = AppLayout.proseMaxWidth) {
+        self.blocks = blocks
+        self.maxWidth = maxWidth
     }
 
-    /// Inline Markdown: code runs take the code face on `bgHover`. A per-run border cannot be
-    /// expressed inside `Text`, so the fill alone marks the span.
-    @MainActor
-    static func inline(_ text: String) -> AttributedString {
-        guard var attributed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
-            return AttributedString(text)
+    init(text: String, maxWidth: CGFloat = AppLayout.proseMaxWidth) {
+        self.init(blocks: nativeMarkdownBlocks(text), maxWidth: maxWidth)
+    }
+
+    var body: some View {
+        NWAgentProse(Self.proseBlocks(blocks), maxWidth: maxWidth) { code, language in
+            HighlightedCodeBlock(code: code, language: language)
         }
+    }
+
+    static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [NWProseBlock] {
+        blocks.map { block in
+            switch block {
+            case .heading(let level, let text): .heading(level: level, text: inline(text))
+            case .paragraph(let text): .paragraph(inline(text))
+            case .quote(let text): .quote(inline(text))
+            case .code(let text, let language): .code(text, language: language)
+            case .rule: .rule
+            case .list(let ordered, let start, let items):
+                .list(ordered: ordered, start: start,
+                      items: items.map { NWProseListItem(text: inline($0.text), children: proseBlocks($0.children)) })
+            }
+        }
+    }
+
+    private struct InlineKey: Hashable {
+        var text: String
+        var scale: CGFloat
+    }
+
+    private static var inlineCache: [InlineKey: AttributedString] = [:]
+
+    /// Inline Markdown: code runs in mono 12, links in running blue. A per-run border cannot be
+    /// expressed inside `Text`, so a code span is filled with the board's border color
+    /// (`lineSubtle`) instead of `bgSunken` plus a line. Cached per text and text scale.
+    static func inline(_ text: String) -> AttributedString {
+        let key = InlineKey(text: text, scale: ThemeStore.shared.textScale)
+        if let cached = inlineCache[key] { return cached }
+        var attributed = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+            ?? AttributedString(text)
         for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            attributed[run.range].font = Font.nwMono(13)
-            attributed[run.range].backgroundColor = Color.nw.bgHover
+            attributed[run.range].font = Font.nwMono(12)
+            attributed[run.range].backgroundColor = Color.nw.lineSubtle
         }
         for run in attributed.runs where run.link != nil {
             attributed[run.range].foregroundColor = Color.nw.running
         }
+        if inlineCache.count > 2048 { inlineCache.removeAll(keepingCapacity: true) }
+        inlineCache[key] = attributed
         return attributed
     }
 }
 
-/// Headings 15/600, paragraphs body 15 ×1.6, lists with an 18pt marker column (one nested
-/// level), quotes on a 2pt rule, fenced code in `CodeBlockView`.
-struct MarkdownBlocksView: View {
-    let blocks: [NativeMarkdownBlock]
-    var small = false
-    var nested = false
+/// A fenced block, plain on its first frame and syntax colored once tree-sitter has run in the
+/// block's task. Results are cached, so a block that scrolls back in is colored at once.
+struct HighlightedCodeBlock: View {
+    let code: String
+    let language: String?
+    @State private var highlighted: AttributedString?
 
-    private var textFont: Font { small || nested ? Font.nw(.body) : Font.nw(.body) }
-    private var leading: CGFloat { small || nested ? NWTextStyle.body.lineSpacing : NWTextStyle.body.lineSpacing }
+    private var key: CodeHighlightCache.Key { CodeHighlightCache.Key(code: trimmed, language: language) }
+    private var trimmed: String { code.trimmingCharacters(in: .newlines) }
 
     var body: some View {
-        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-            switch block {
-            case .heading(let level, let text):
-                Text(Prose.inline(text)).font(level <= 2 ? Font.nwSans(small ? 15 : 17, .semibold) : Font.nw(.title))
-                    .foregroundStyle(Color.nw.textPrimary).lineSpacing(3).textSelection(.enabled)
-                    .padding(.top, nested ? 0 : 6)
-            case .paragraph(let text):
-                Text(Prose.inline(text)).font(textFont).foregroundStyle(Color.nw.textPrimary)
-                    .lineSpacing(leading).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            case .quote(let text):
-                Text(Prose.inline(text)).font(textFont).lineSpacing(leading).italic()
-                    .foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
-                    .padding(.leading, 12)
-                    .overlay(alignment: .leading) { Color.nw.lineSubtle.frame(width: 2) }
-            case .code(let text, let language):
-                CodeBlockView(text: text, language: language)
-            case .rule:
-                NWHairline().padding(.vertical, 4)
-            case .list(let ordered, let start, let items):
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                        HStack(alignment: .firstTextBaseline, spacing: 0) {
-                            Text(ordered ? "\(start + index)." : "•")
-                                .font(textFont).foregroundStyle(Color.nw.textSecondary).monospacedDigit()
-                                .frame(width: 18, alignment: .leading)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(Prose.inline(item.text)).font(textFont).foregroundStyle(Color.nw.textPrimary)
-                                    .lineSpacing(leading).textSelection(.enabled)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                MarkdownBlocksView(blocks: item.children, small: small, nested: true)
-                            }
-                        }
-                    }
-                }
+        NWCodeBlock(trimmed, language: language, highlighted: highlighted ?? CodeHighlightCache.cached(key))
+            .task(id: key) {
+                guard CodeHighlightCache.cached(key) == nil else { return }
+                // Let the plain block land first; highlighting a long block is not free.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                highlighted = CodeHighlightCache.highlight(key)
             }
-        }
     }
 }
 
-/// A fenced code block (Components board): 28pt header on `bgMuted` with the language and Copy,
-/// code at 12.5 mono ×1.55 on `bgSurface`, syntax colored when the language is known.
-struct CodeBlockView: View {
-    let text: String
-    var language: String?
-    @State private var copied = false
-
-    var body: some View {
-        let code = text.trimmingCharacters(in: .newlines)
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(language ?? "code").font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary)
-                Spacer()
-                Button(copied ? "Copied" : "Copy") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(code, forType: .string)
-                    copied = true
-                    Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-                }
-                .buttonStyle(NWLinkButtonStyle(color: Color.nw.textSecondary, font: Font.nw(.micro)))
-                .accessibilityLabel("Copy code")
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 28)
-            .background(Color.nw.bgSunken)
-            .overlay(alignment: .bottom) { NWHairline() }
-            ScrollView(.horizontal) {
-                highlighted(code)
-                    .font(Font.nw(.mono))
-                    .lineSpacing(NWTextStyle.code.lineSpacing)
-                    .foregroundStyle(Color.nw.textPrimary)
-                    .textSelection(.enabled)
-                    .fixedSize()
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-            }
-            .scrollIndicators(.hidden)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle, lineWidth: 1) }
+@MainActor
+enum CodeHighlightCache {
+    struct Key: Hashable {
+        var code: String
+        var language: String?
     }
 
-    private func highlighted(_ code: String) -> Text {
-        guard let path = CodeHighlight.path(forFenceLanguage: language) else { return Text(code) }
-        let lines = code.components(separatedBy: "\n")
+    private static var values: [Key: AttributedString] = [:]
+
+    static func cached(_ key: Key) -> AttributedString? { values[key] }
+
+    /// nil when the language has no grammar (the block stays plain).
+    static func highlight(_ key: Key) -> AttributedString? {
+        if let value = values[key] { return value }
+        guard let path = CodeHighlight.path(forFenceLanguage: key.language) else { return nil }
+        let lines = key.code.components(separatedBy: "\n")
         let colored = CodeHighlight.highlightLines(lines, path: path, style: .theme)
-        guard colored.count == lines.count else { return Text(code) }
+        guard colored.count == lines.count else { return nil }
         var joined = AttributedString()
         for (index, line) in colored.enumerated() {
             if index > 0 { joined += AttributedString("\n") }
             joined += line
         }
-        return Text(joined)
+        if values.count > 256 { values.removeAll(keepingCapacity: true) }
+        values[key] = joined
+        return joined
     }
 }

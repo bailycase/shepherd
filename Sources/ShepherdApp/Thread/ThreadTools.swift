@@ -4,187 +4,125 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Consecutive tool calls as one bordered group of one-line rows (spec §5). Subagent spawn
-/// calls are replaced by their cards where they happened.
-struct ToolGroup: View {
-    let messages: [NativeThreadMessage]
-    var small = false
-    var subagents = NativeSubagentPlacement()
-    var subagentActions: SubagentActions? = nil
-    /// Opens the review pane at a file an edit or write touched ("review ›").
-    var review: ((String) -> Void)? = nil
-
-    var body: some View {
-        let segments = subagentActions == nil ? [ToolSegment.rows(messages)] : toolSegments(messages, placement: subagents)
-        VStack(alignment: .leading, spacing: AppLayout.blockSpacing) {
-            ForEach(Array(segments.enumerated()), id: \.offset) { _, segment in
-                switch segment {
-                case .rows(let rows):
-                    rowGroup(rows.map(NativeToolRow.init))
-                case .subagents(let runs):
-                    if let subagentActions {
-                        SubagentStack(runs: runs, turnLive: subagents.all.contains { !$0.isTerminal }, actions: subagentActions)
-                    }
-                }
-            }
-        }
-    }
-
-    private func rowGroup(_ rows: [NativeToolRow]) -> some View {
-        // One name column per group so previews line up: the spec's 40pt, widened for longer
-        // names up to a limit (the rest truncate in the middle with the full name on hover).
-        let longest = rows.map(\.name.count).max() ?? 0
-        let nameWidth = min(76, max(AppLayout.toolNameWidth, CGFloat(longest) * 7.6)) * ThemeStore.shared.textScale
-        return VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                if index > 0 { NWHairline() }
-                ToolRowView(row: row, nameWidth: nameWidth, small: small, review: review)
-            }
-        }
-        .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle, lineWidth: 1) }
-    }
-}
-
-/// One call: status glyph · name · preview · result · duration · chevron (spec §5). Expands to
-/// its saved output (12 lines, then a sheet); ⌥-click shows the raw call.
-struct ToolRowView: View {
-    let row: NativeToolRow
-    var nameWidth: CGFloat = AppLayout.toolNameWidth
-    var small = false
-    var review: ((String) -> Void)? = nil
-    @State private var expanded = false
-    @State private var showCall = false
-    @State private var showOutput = false
-    @State private var hovering = false
+/// One burst of tool work as an activity line (NWThread board). Expanding it shows its calls on
+/// a rail; an edit or write opens the review pane at its file, any other call expands to its
+/// output. ⌥-click or the context menu shows the raw call.
+struct ActivityLineView: View, Equatable {
+    let burst: NativeActivityBurst
+    /// Opens the review pane at a file an edit or write touched.
+    var review: ((String) -> Void)?
+    @State private var expanded: Bool
+    @State private var expandedCalls: Set<String>
+    @State private var sheet: CallSheet?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// `expanded` and `expandedCalls` open the line, and calls in it, from the start.
+    init(burst: NativeActivityBurst, review: ((String) -> Void)? = nil, expanded: Bool = false, expandedCalls: Set<String> = []) {
+        self.burst = burst
+        self.review = review
+        _expanded = State(initialValue: expanded)
+        _expandedCalls = State(initialValue: expandedCalls)
+    }
+
+    static func == (lhs: ActivityLineView, rhs: ActivityLineView) -> Bool {
+        lhs.burst == rhs.burst && (lhs.review == nil) == (rhs.review == nil)
+    }
+
+    /// The full output, or the raw arguments, of one call.
+    private struct CallSheet: Identifiable {
+        let id = UUID()
+        let title: String
+        let text: String
+        let truncated: Bool
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            if expanded { output }
+        VStack(alignment: .leading, spacing: 0) {
+            NWActivityLine(kind: kind, label: burst.label, meta: burst.meta, status: status, isExpanded: expanded,
+                           accessibilityLabel: burst.accessibilityLabel,
+                           action: burst.expandable ? toggle : nil)
+            if expanded {
+                NWActivityCalls(burst.calls.map(row), onSelect: select, onShowAll: showOutput) { row in
+                    if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
+                }
+                .padding(.vertical, NW.Space.xxs)
+                .transition(.opacity)
+            }
         }
-        .background(expanded ? (row.state == .failed ? Color.nw.failedTint : Color.nw.bgSunken) : hovering ? Color.nw.bgHover : .clear)
-        .sheet(isPresented: $showOutput) {
-            ToolOutputSheet(title: "\(row.name) · \(row.preview)", output: row.output, truncated: row.truncated) { showOutput = false }
+        .sheet(item: $sheet) { sheet in
+            ToolOutputSheet(title: sheet.title, output: sheet.text, truncated: sheet.truncated) { self.sheet = nil }
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 10) {
-            NWStateGlyph(AgentState(row.state))
-            Text(row.name).font(Font.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
-                .frame(width: nameWidth, alignment: .leading).lineLimit(1).truncationMode(.middle)
-                .help(row.name)
-            Text("\(Text(row.preview).foregroundStyle(Color.nw.textPrimary))\(Text(row.previewSuffix ?? "").foregroundStyle(Color.nw.textTertiary))")
-                .font(Font.nw(.mono)).lineLimit(1).truncationMode(.tail)
-                .help(row.preview + (row.previewSuffix ?? ""))
-            Spacer(minLength: 8)
-            HStack(spacing: 8) {
-                if let diff = row.diff { NWDiffStat(added: diff.added, removed: diff.removed) }
-                ForEach(Array(row.results.enumerated()), id: \.offset) { _, result in
-                    Text(result.text).font(Font.nw(.micro)).foregroundStyle(tone(result.tone)).lineLimit(1)
-                }
-                if row.state == .running, row.results.isEmpty {
-                    Text("running").font(Font.nw(.micro)).foregroundStyle(Color.nw.running)
-                }
-                if let path = row.reviewPath, let review {
-                    Button("review ›") { review(path) }
-                        .buttonStyle(NWLinkButtonStyle(font: Font.nw(.micro)))
-                        .accessibilityLabel("Review \(path)")
-                }
-                duration
-                if row.expandable {
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
-                        .rotationEffect(.degrees(expanded ? 180 : 0)).foregroundStyle(Color.nw.textTertiary).frame(width: 12)
-                }
-            }
-            .fixedSize()
-        }
-        .padding(.horizontal, 12)
-        .frame(height: small ? AppLayout.toolRowHeightSmall : AppLayout.toolRowHeight)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 && row.expandable }
-        .onTapGesture {
-            if NSEvent.modifierFlags.contains(.option), row.arguments != nil { showCall = true; return }
-            guard row.expandable else { return }
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) { expanded.toggle() }
-        }
-        .contextMenu {
-            if row.arguments != nil { Button("Show Call") { showCall = true } }
-            if !row.output.isEmpty {
-                Button("Open Output") { showOutput = true }
-                Button("Copy Output") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(row.output, forType: .string)
-                }
-            }
-        }
-        .popover(isPresented: $showCall) {
-            ScrollView {
-                Text(row.arguments ?? "").font(Font.nw(.code)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-            }
-            .frame(width: 440, height: 260)
-            .background(Color.nw.bgRaised)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(row.accessibilityLabel)
-        .accessibilityValue(row.expandable ? (expanded ? "Expanded" : "Collapsed") : "")
-        .accessibilityAddTraits(row.expandable ? .isButton : [])
-        .accessibilityAction { if row.expandable { expanded.toggle() } }
-        .accessibilityAction(named: "Show call") { showCall = true }
-    }
-
-    @ViewBuilder private var duration: some View {
-        if row.state == .running {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                if let value = row.duration(now: context.date) {
-                    Text(value.text).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
-                }
-            }
-        } else if let value = row.duration(now: Date()) {
-            Text(value.text).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
+    private var kind: NWActivityLine.Kind {
+        switch burst.kind {
+        case .explore: .explore
+        case .edit: .edit
+        case .run: .run
+        case .subagents: .subagents
+        case .other: .other
         }
     }
 
-    private var output: some View {
-        let lines = row.output.split(separator: "\n", omittingEmptySubsequences: false)
-        // A running row streams its tail; a finished one shows its head.
-        let live = row.state == .running
-        let limit = AppLayout.toolOutputMaxLines
-        let shown = live ? lines.suffix(limit) : lines.prefix(limit)
-        return VStack(alignment: .leading, spacing: 6) {
-            if live, lines.count > limit {
-                Text("… \(lines.count - limit) earlier lines").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-            }
-            Text(shown.joined(separator: "\n"))
-                .font(Font.nw(.code)).lineSpacing(NWTextStyle.code.lineSpacing)
-                .foregroundStyle(row.state == .failed ? Color.nw.failed : Color.nw.textSecondary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-            if !live, lines.count > limit || row.truncated {
-                Button(lines.count > limit ? "… \(lines.count - limit) more lines" : "Output truncated · open") { showOutput = true }
-                    .buttonStyle(NWLinkButtonStyle(color: row.state == .failed ? Color.nw.failed : Color.nw.running))
-            }
+    private var status: NWActivityLine.Status {
+        switch burst.state {
+        case .done: .done
+        case .failed: .failed
+        case .running: .live(since: burst.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }, tail: burst.tail)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(EdgeInsets(top: 4, leading: AppLayout.toolOutputIndent, bottom: 12, trailing: 12))
     }
 
-    private func tone(_ tone: NativeToolRow.Tone) -> Color {
-        // On an expanded failed row only dangerText or neutral text may sit on dangerBg.
-        let onDanger = expanded && row.state == .failed
-        return switch tone {
-        case .success: onDanger ? Color.nw.textSecondary : Color.nw.done
-        case .danger: Color.nw.failed
-        case .muted: Color.nw.textTertiary
+    private func toggle() {
+        withAnimation(NW.Motion.pane.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
+    }
+
+    private func row(_ call: NativeActivityCall) -> NWActivityCallRow {
+        let open = expandedCalls.contains(call.id)
+        return NWActivityCallRow(
+            id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat, failed: call.failed,
+            output: open ? call.outputHead : [], moreLines: max(0, call.outputLineCount - call.outputHead.count),
+            isExpanded: open,
+            accessibilityLabel: [call.label, call.detail, call.stat, call.failed ? "failed" : nil].compactMap { $0 }.joined(separator: ", "))
+    }
+
+    private func select(_ id: String) {
+        guard let call = burst.calls.first(where: { $0.id == id }) else { return }
+        if NSEvent.modifierFlags.contains(.option), let arguments = call.arguments {
+            sheet = CallSheet(title: "\(call.name) · call", text: arguments, truncated: false)
+            return
+        }
+        if call.kind == .edit, let path = call.path, let review {
+            review(path)
+        } else if call.expandable {
+            withAnimation(NW.Motion.pane.animation(reduceMotion: reduceMotion)) {
+                if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
+            }
+        }
+    }
+
+    private func showOutput(_ id: String) {
+        guard let call = burst.calls.first(where: { $0.id == id }) else { return }
+        sheet = CallSheet(title: "\(call.name) · \(call.detail)", text: call.output, truncated: call.truncated)
+    }
+
+    @ViewBuilder private func menu(_ call: NativeActivityCall) -> some View {
+        if let arguments = call.arguments {
+            Button("Show Call") { sheet = CallSheet(title: "\(call.name) · call", text: arguments, truncated: false) }
+        }
+        if call.kind == .edit, let path = call.path, let review {
+            Button("Review \((path as NSString).lastPathComponent)") { review(path) }
+        }
+        if !call.output.isEmpty {
+            Button("Open Output") { showOutput(call.id) }
+            Button("Copy Output") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(call.output, forType: .string)
+            }
         }
     }
 }
 
-/// The full output of one call, from a row's "… n more lines".
+/// The full output of one call ("… n more lines", Open Output), or its raw arguments.
 struct ToolOutputSheet: View {
     let title: String
     let output: String
@@ -219,40 +157,4 @@ struct ToolOutputSheet: View {
         .frame(minWidth: 720, idealWidth: 860, minHeight: 480, idealHeight: 620)
         .background(Color.nw.bgWindow)
     }
-}
-
-/// A tool group split around its spawn rows: plain rows stay grouped, each spawn position
-/// becomes a card stack. Tool rows that spawned nothing visible stay tool rows.
-enum ToolSegment: Equatable {
-    case rows([NativeThreadMessage])
-    case subagents([ChildRun])
-}
-
-/// A turn's runs fold into one stack (the strip, or the ledger once every run is terminal).
-func subagentGroupFolds(_ placement: NativeSubagentPlacement) -> Bool {
-    placement.all.count > NativeRunsStripSummary.collapseThreshold || nativeSubagentGroupIsTerminal(placement.all)
-}
-
-func toolSegments(_ group: [NativeThreadMessage], placement: NativeSubagentPlacement) -> [ToolSegment] {
-    // With a strip or a finished group, every spawn row folds into one stack at the first
-    // spawn's position: one surface for the turn's subagents.
-    let all = placement.all
-    let folds = subagentGroupFolds(placement)
-    var segments: [ToolSegment] = []
-    var rows: [NativeThreadMessage] = []
-    var placed = false
-    for message in group {
-        // Once cards represent these children, their bookkeeping calls have no second surface;
-        // unassociated calls stay visible so errors are not hidden.
-        if !all.isEmpty, ["shepherd_child_wait", "shepherd_child_result"].contains(message.toolName ?? "") { continue }
-        guard let id = message.toolCallID, let runs = placement.byToolCall[id] else { rows.append(message); continue }
-        if !rows.isEmpty { segments.append(.rows(rows)); rows = [] }
-        if folds {
-            if !placed { segments.append(.subagents(all)); placed = true }
-        } else {
-            segments.append(.subagents(runs))
-        }
-    }
-    if !rows.isEmpty { segments.append(.rows(rows)) }
-    return segments
 }

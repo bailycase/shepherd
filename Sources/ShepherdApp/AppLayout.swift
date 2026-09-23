@@ -25,33 +25,7 @@ enum AppLayout {
     static let headerHeight: CGFloat = 52
     static let headerPadding: CGFloat = 20
 
-    // Thread
-    static let threadMaxWidth: CGFloat = 760
-    /// Agent prose stays ~85 characters even though the column is wider.
-    static let proseMaxWidth: CGFloat = 680
-    static let userMaxWidth: CGFloat = 600
-    static let gutter: CGFloat = 32
-    /// Gutter when the window is too narrow for the column plus the full gutter.
-    static let gutterCompact: CGFloat = 16
-    static let threadTop: CGFloat = 28
-    static let turnSpacing: CGFloat = 28
-    static let blockSpacing: CGFloat = 10
-    static let workingRowHeight: CGFloat = 28
-
-    // Tool rows
-    static let toolRowHeight: CGFloat = 36
-    /// Inside the subagent inspector the transcript is one step smaller.
-    static let toolRowHeightSmall: CGFloat = 34
-    static let toolNameWidth: CGFloat = 40
-    static let toolOutputIndent: CGFloat = 62
-    static let toolOutputMaxLines = 12
-
-    // Composer and its menus
-    static let composerMaxRows = 8
-    static let menuRowHeight: CGFloat = 36
-    static let menuMaxRows = 8
-    static let modelPickerWidth: CGFloat = 380
-    static let modelRowHeight: CGFloat = 40
+    // Thread, activity lines, and the composer: AppLayout+Thread.swift
 
     // Right pane (review and subagent inspector share the slot)
     static let paneDefaultWidth: CGFloat = 600

@@ -33,7 +33,7 @@ struct AppLayoutTests {
 
     @Test func densityLeavesFixedSizesAlone() {
         withDensity(1.3) {
-            #expect(AppLayout.toolRowHeight == 36)
+            #expect(AppLayout.threadMaxWidth == 760)
             #expect(AppLayout.headerHeight == 52)
         }
     }
