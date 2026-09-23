@@ -229,6 +229,12 @@ extension ShepherdViewModel {
             inspectedRunID: subagentInspector.runByAgent[agent.id]
         )
     }
+
+    /// Opens or folds a finished subagent group under an agent row (local or remote).
+    func toggleSubagentGroup(_ agentID: AgentID) {
+        if unfoldedSubagentGroups.contains(agentID) { unfoldedSubagentGroups.remove(agentID) }
+        else { unfoldedSubagentGroups.insert(agentID) }
+    }
 }
 
 /// An agent row plus, when it has subagents, their nested rows (or the folded group header).
@@ -262,10 +268,7 @@ struct LocalAgentRows: View, Equatable {
         if !model.children.isEmpty {
             SubagentRows(children: model.children, depth: model.depth + 1, folded: model.folded,
                          inspected: model.inspectedRunID,
-                         toggleFold: {
-                             if vm.unfoldedSubagentGroups.contains(agent.id) { vm.unfoldedSubagentGroups.remove(agent.id) }
-                             else { vm.unfoldedSubagentGroups.insert(agent.id) }
-                         },
+                         toggleFold: { vm.toggleSubagentGroup(agent.id) },
                          open: { vm.openChildInspector(agentID: agent.id, child: $0) })
         }
     }
