@@ -226,8 +226,7 @@ private struct NWShimmer: ViewModifier {
             content
         } else {
             TimelineView(.animation) { context in
-                let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.4) / 1.4
-                content.opacity(0.55 + 0.45 * (1 - cos(phase * 2 * .pi)) / 2)
+                content.opacity(NWPhase.shimmerOpacity(context.date))
             }
         }
     }
