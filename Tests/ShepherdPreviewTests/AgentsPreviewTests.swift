@@ -55,7 +55,7 @@ struct AgentsPreviewTests {
     @Test func subagentCardsInEveryState() async throws {
         let actions = actions
         let cards = Self.cardRuns
-        try await Preview.render("subagent-cards", size: CGSize(width: 760, height: 1240)) {
+        try await Preview.render("subagent-cards", size: CGSize(width: 760, height: 1480)) {
             VStack(alignment: .leading, spacing: NW.Space.xl) {
                 Text("Cards").nwSectionLabel()
                 VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
@@ -71,6 +71,15 @@ struct AgentsPreviewTests {
                     ledger.inspectedRunID = "native-tests"
                     return ledger
                 }())
+                // A thread at its narrowest: tags give way before names, totals before the tally.
+                Text("Narrow").nwSectionLabel()
+                VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
+                    ForEach(cards.suffix(2), id: \.id) { run in
+                        SubagentCard(run: run, selected: false, enabled: true, inspect: { _ in }, command: { _, _, _, _ in })
+                    }
+                    SubagentStack(runs: Self.manyRuns.filter { !$0.needsAttention }, turnLive: true, actions: actions)
+                }
+                .frame(width: 368)
                 Spacer(minLength: 0)
             }
             .padding(32)

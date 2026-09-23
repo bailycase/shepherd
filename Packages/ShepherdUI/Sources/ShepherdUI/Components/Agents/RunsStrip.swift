@@ -55,8 +55,16 @@ public struct NWRunsStrip: View, Equatable {
                 Text(summary.title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1).fixedSize()
                 NWStepStrip(summary.cells, segmentWidth: NWRunLayout.stripCellWidth).fixedSize()
                 Text(summary.states).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                    .layoutPriority(2)
                 Spacer(minLength: NW.Space.m)
-                totals.font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1).fixedSize()
+                // The tally ("1 needs you") outranks the totals: tokens go first, then the time.
+                ViewThatFits(in: .horizontal) {
+                    totals(tokens: summary.tokens)
+                    totals(tokens: nil)
+                    Color.clear.frame(width: 0, height: 0)
+                }
+                .font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                .layoutPriority(1)
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(nw.textTertiary)
                     .rotationEffect(.degrees(isExpanded ? 0 : -90))
@@ -74,13 +82,14 @@ public struct NWRunsStrip: View, Equatable {
         .accessibilityHint(isExpanded ? "Hides the cards" : "Shows every card")
     }
 
-    private var totals: some View {
+    private func totals(tokens: String?) -> some View {
         HStack(spacing: 0) {
-            if let tokens = summary.tokens { Text(tokens) }
+            if let tokens { Text(tokens) }
             if let since = summary.since {
-                if summary.tokens != nil { Text(" · ") }
+                if tokens != nil { Text(" · ") }
                 NWElapsedText(since: since, until: summary.until)
             }
         }
+        .fixedSize()
     }
 }

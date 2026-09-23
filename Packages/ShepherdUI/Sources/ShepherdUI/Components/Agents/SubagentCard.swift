@@ -148,8 +148,14 @@ public struct NWSubagentCard: View, Equatable {
             HStack(spacing: NW.Space.m) {
                 NWBranchGlyph(run.state, size: 13)
                 Text(run.name).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                if let role = run.role { NWTag(role) }
-                if let model = run.model { NWTag(model, mono: true) }
+                    .layoutPriority(2)
+                // In a narrow thread the tags give way (model first) before the name truncates.
+                ViewThatFits(in: .horizontal) {
+                    tags(role: run.role, model: run.model)
+                    tags(role: run.role, model: nil)
+                    Color.clear.frame(width: 0, height: 0)
+                }
+                .layoutPriority(1)
                 Spacer(minLength: NW.Space.m)
                 NWStatusPill(run.state, label: run.stateLabel)
             }
@@ -178,6 +184,13 @@ public struct NWSubagentCard: View, Equatable {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    private func tags(role: String?, model: String?) -> some View {
+        HStack(spacing: NW.Space.m) {
+            if let role { NWTag(role) }
+            if let model { NWTag(model, mono: true) }
+        }
     }
 
     private func questionBox(_ question: NWSubagentQuestion) -> some View {
