@@ -56,7 +56,8 @@ struct ShellLayoutTests {
         // Narrower, the pane overlays the thread instead of squeezing it.
         (880.0, nil, .overlay, 600.0, 880.0),
         (720.0, 480.0, .overlay, 480.0, 720.0),
-        (300.0, nil, .overlay, 300.0, 300.0),
+        // The overlaid pane and its 1pt edge fit the column exactly.
+        (300.0, nil, .overlay, 299.0, 300.0),
         (0.0, nil, .overlay, 0.0, 0.0),
     ])
     func theRightPaneDocksWhileTheThreadKeepsFourHundredPoints(column: Double, preferred: Double?, mode: ShellLayout.PaneMode,
@@ -70,7 +71,7 @@ struct ShellLayoutTests {
         for preferred in [nil, 0, 200, 600, 5000] as [Double?] {
             let pane = ShellLayout.rightPane(containerWidth: column, preferredWidth: preferred.map { CGFloat($0) })
             #expect(pane.width >= 0 && pane.contentWidth >= 0)
-            #expect(pane.width <= max(column, 0))
+            #expect(pane.width + 1 <= max(column, 1), "the pane and its edge stay inside the column")
             if pane.mode == .docked {
                 #expect(pane.contentWidth >= AppLayout.threadMinWidth)
                 #expect(pane.width + 1 + pane.contentWidth == CGFloat(column))
