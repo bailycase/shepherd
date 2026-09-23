@@ -10,7 +10,7 @@ import ShepherdSessions
 /// above it, the raised card with the field (or a pending question) and one action row:
 /// attach · / commands · model · thinking · Send or Stop. Menus open above the card.
 struct Composer: View {
-    @ObservedObject var store: NativeThreadStore
+    @Bindable var store: NativeThreadStore
     let active: Bool
     let agentName: String?
     let hasTurns: Bool

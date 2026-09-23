@@ -6,7 +6,7 @@ import ShepherdRemote
 /// The 52pt thread header (spec §3, §6): project / title (the title truncates) · status pill ·
 /// spacer · "n turns · 42k ctx" · the right-pane toggle · options.
 struct ThreadHeader: View {
-    @ObservedObject var store: NativeThreadStore
+    var store: NativeThreadStore
     let project: String
     let title: String
     var leadingInset: CGFloat = 0
@@ -67,7 +67,7 @@ struct ThreadHeader: View {
 /// Idle / Running · elapsed / Needs you / Error (a lost connection, drawn as `failed`), from the
 /// thread snapshot (spec §6). A subagent waiting on the user outranks the parent's own state.
 struct ThreadStatusPill: View {
-    @ObservedObject var store: NativeThreadStore
+    var store: NativeThreadStore
 
     var body: some View {
         let state = threadPillState(store)
@@ -91,7 +91,7 @@ struct ThreadStatusPill: View {
 
 /// "18 turns · 46k ctx" in micro; the turn count shows once the whole history is loaded.
 private struct ThreadCounters: View {
-    @ObservedObject var store: NativeThreadStore
+    var store: NativeThreadStore
 
     var body: some View {
         let parts = [

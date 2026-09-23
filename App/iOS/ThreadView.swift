@@ -10,7 +10,7 @@ import ShepherdRemote
 struct ThreadView: View {
     @ObservedObject var connection: HostConnection
     let agentID: AgentID
-    @StateObject private var store = NativeThreadStore()
+    @State private var store = NativeThreadStore()
     @Environment(\.colorScheme) private var scheme
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion

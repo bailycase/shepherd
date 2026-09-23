@@ -1,54 +1,103 @@
-import Combine
 import Foundation
+import Observation
 import ShepherdProtocol
 
+/// One turn as the thread lists it: the turn, and for a reply its presentation and the
+/// prompt that opened it. Equatable, so a row that did not change is not redrawn.
+public struct NativeThreadRow: Equatable, Identifiable, Sendable {
+    public var turn: NativeTurn
+    /// Replies only.
+    public var presentation: NativeTurnPresentation?
+    /// True while this reply is the one streaming.
+    public var live: Bool
+    /// The opening prompt's text (a reply's Retry) and time (its footer).
+    public var promptText: String?
+    public var startedAt: Double?
+
+    public var id: String { turn.id }
+    public var isUser: Bool { turn.isUser }
+}
+
+/// A native thread for one agent: polls the host's snapshots, keeps the optimistic echoes of
+/// sends, and derives what the thread draws (rows, subagent placements) once per change, so
+/// views read stored values and typing in the composer invalidates only the composer.
 @MainActor
-public final class NativeThreadStore: ObservableObject {
+@Observable
+public final class NativeThreadStore {
     public typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
 
-    @Published public private(set) var snapshot: NativeThreadSnapshot?
-    @Published public private(set) var messages: [NativeThreadMessage] = []
-    @Published public private(set) var olderCursor: String?
-    @Published public private(set) var loadingOlder = false
-    @Published public private(set) var ready = false
-    @Published public private(set) var busy = false
-    @Published public private(set) var loadError: String?
-    @Published public private(set) var notice: String?
-    @Published public private(set) var sentCount = 0
-    /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending").
-    /// Each one leaves once pi persists a user message with the same text, or when the session changes.
-    @Published public private(set) var pending: [NativeThreadMessage] = []
+    public private(set) var snapshot: NativeThreadSnapshot?
+    public private(set) var messages: [NativeThreadMessage] = []
+    public private(set) var olderCursor: String?
+    public private(set) var loadingOlder = false
+    public private(set) var ready = false
+    public private(set) var busy = false
+    public private(set) var loadError: String?
+    public private(set) var notice: String?
+    public private(set) var sentCount = 0
+    /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending",
+    /// or "queued" when sent as a follow-up while a turn ran). Each one leaves once pi persists
+    /// a user message with the same text, or when the session changes.
+    public private(set) var pending: [NativeThreadMessage] = []
     /// `snapshot.running` held true for 400 ms after it drops, so tool boundaries never flicker
     /// the pill, the tail indicator, or the Stop button.
-    @Published public private(set) var settledRunning = false
-    @Published public var draft = ""
-    @Published public var delivery: NativeThreadDelivery = .followUp
-
-    public init() {}
-
-    private var request: Request?
-    private var settleTask: Task<Void, Never>?
-    private var epoch = UUID()
-    private var recentRequest = UUID()
-    private var historyEpoch = UUID()
+    public private(set) var settledRunning = false
+    public var draft = ""
+    public var delivery: NativeThreadDelivery = .followUp
 
     /// History, then the optimistic user echo, then the live (provisional) reply to it. The echo
     /// must precede provisional rows: the reply to a sent message streams below it, and the
-    /// order must not flip once pi persists the message (that flip re-laid the whole tail).
-    public var displayedMessages: [NativeThreadMessage] {
-        let ids = Set(messages.map(\.entryID))
-        let toolIDs = Set(messages.compactMap(\.toolCallID))
-        return messages + pending + (snapshot?.provisional ?? []).filter {
-            !ids.contains($0.entryID) && ($0.toolCallID == nil || !toolIDs.contains($0.toolCallID!))
-        }
+    /// order must not flip once pi persists the message (that flip re-laid the whole tail). A
+    /// queued follow-up waits below the reply still streaming, which is not its answer.
+    public private(set) var displayedMessages: [NativeThreadMessage] = []
+    public private(set) var turns: [NativeTurn] = []
+    public private(set) var rows: [NativeThreadRow] = []
+    /// Each reply's subagents, where their spawn calls were (keyed by turn id).
+    public private(set) var placements: [String: NativeSubagentPlacement] = [:]
+    public private(set) var subagents: [NativeSubagent] = []
+
+    public init() {}
+
+    @ObservationIgnored private var request: Request?
+    @ObservationIgnored private var settleTask: Task<Void, Never>?
+    @ObservationIgnored private var epoch = UUID()
+    @ObservationIgnored private var recentRequest = UUID()
+    @ObservationIgnored private var historyEpoch = UUID()
+    /// Saved user entries → the echo they replaced, so the turn keeps its identity.
+    @ObservationIgnored private var aliases: [String: String] = [:]
+    @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
+    /// Calls parse their JSON and output once; a finished call never changes.
+    @ObservationIgnored private var callCache: [CallKey: NativeActivityCall] = [:]
+
+    private struct PresentationKey: Equatable {
+        var messages: [NativeThreadMessage]
+        var live: Bool
+        var cards: NativeCardLayout
+    }
+
+    private struct CallKey: Hashable {
+        var entryID: String
+        var status: String?
+        var isError: Bool?
+        var outputSize: Int
     }
 
     /// Reconcile echoes against a snapshot: gone when the real message landed or the session moved on.
     private func settlePending(_ value: NativeThreadSnapshot, sameSession: Bool) {
         guard !pending.isEmpty else { return }
-        guard sameSession else { pending = []; return }
-        let persisted = Set((value.messages + value.provisional).filter { $0.role == "user" }.map(Self.userText))
-        pending.removeAll { persisted.contains(Self.userText($0)) }
+        guard sameSession else { pending = []; aliases = [:]; return }
+        let persisted = (value.messages + value.provisional).filter { $0.role == "user" }
+        let texts = Set(persisted.map(Self.userText))
+        let landed = pending.filter { texts.contains(Self.userText($0)) }
+        guard !landed.isEmpty else { return }
+        for echo in landed {
+            let text = Self.userText(echo)
+            // The newest saved message with the echo's text is the one it became.
+            if let saved = persisted.last(where: { Self.userText($0) == text && aliases[$0.entryID] == nil }) {
+                aliases[saved.entryID] = echo.entryID
+            }
+        }
+        pending.removeAll { texts.contains(Self.userText($0)) }
     }
 
     private static func userText(_ message: NativeThreadMessage) -> String {
@@ -60,12 +109,75 @@ public final class NativeThreadStore: ObservableObject {
         snapshot?.running == true || snapshot?.dialogs.isEmpty == false || hasLiveSubagents ? .milliseconds(500) : .seconds(2)
     }
 
-    public var subagents: [NativeSubagent] { snapshot?.subagents ?? [] }
     public var hasLiveSubagents: Bool { subagents.contains { !$0.isTerminal } }
 
     public func supports(_ action: String) -> Bool {
         ready && !busy && snapshot?.supportedActions.contains(action) == true
     }
+
+    // MARK: Derived state
+
+    /// Recomputes what the thread draws. Values are assigned only when they changed, so an
+    /// unchanged poll invalidates nothing.
+    private func derive() {
+        let ids = Set(messages.map(\.entryID))
+        let toolIDs = Set(messages.compactMap(\.toolCallID))
+        let provisional = (snapshot?.provisional ?? []).filter {
+            !ids.contains($0.entryID) && ($0.toolCallID == nil || !toolIDs.contains($0.toolCallID!))
+        }
+        let displayed = messages + pending.filter { $0.status != "queued" } + provisional + pending.filter { $0.status == "queued" }
+        if displayed != displayedMessages { displayedMessages = displayed }
+        let turns = nativeTurns(displayed, aliases: aliases)
+        if turns != self.turns { self.turns = turns }
+        let runs = snapshot?.subagents ?? []
+        if runs != subagents { subagents = runs }
+        let placements = nativeSubagentPlacements(runs, turns: turns)
+        if placements != self.placements { self.placements = placements }
+
+        // The streaming reply is the last one, with only queued follow-ups below it.
+        let running = loadError == nil && settledRunning
+        let lastReply = turns.lastIndex { !$0.isUser }
+        let liveReply = running ? lastReply.flatMap { index in
+            turns[(index + 1)...].allSatisfy { $0.messages.allSatisfy { $0.status == "queued" } } ? index : nil
+        } : nil
+        var rows: [NativeThreadRow] = []
+        rows.reserveCapacity(turns.count)
+        var kept: Set<String> = []
+        for (index, turn) in turns.enumerated() {
+            if turn.isUser {
+                rows.append(NativeThreadRow(turn: turn, presentation: nil, live: false, promptText: nil, startedAt: nil))
+                continue
+            }
+            let isLive = index == liveReply
+            let opener = index > 0 && turns[index - 1].isUser ? turns[index - 1] : nil
+            let key = PresentationKey(messages: turn.messages, live: isLive, cards: NativeCardLayout(placements[turn.id]))
+            let presentation: NativeTurnPresentation
+            if let cached = presentationCache[turn.id], cached.key == key {
+                presentation = cached.value
+            } else {
+                presentation = nativeTurnPresentation(turn.messages, live: isLive, cards: key.cards, call: call)
+                presentationCache[turn.id] = (key, presentation)
+            }
+            kept.insert(turn.id)
+            let prompt = opener.map { $0.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n") }
+            rows.append(NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
+                                        startedAt: opener?.messages.first?.timestamp))
+        }
+        if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
+        if rows != self.rows { self.rows = rows }
+    }
+
+    private func call(_ message: NativeThreadMessage) -> NativeActivityCall {
+        let key = CallKey(entryID: message.entryID, status: message.status, isError: message.isError,
+                          outputSize: message.blocks.reduce(0) { $0 + $1.text.utf8.count })
+        if let cached = callCache[key] { return cached }
+        let value = NativeActivityCall(message)
+        if callCache.count > 4096 { callCache.removeAll(keepingCapacity: true) }
+        callCache[key] = value
+        return value
+    }
+
+    // MARK: Polling
 
     // The view's foreground task owns this loop. Reconnection always starts without a revision.
     public func run(request: @escaping Request) async {
@@ -95,24 +207,28 @@ public final class NativeThreadStore: ObservableObject {
         recentRequest = UUID()
         historyEpoch = UUID()
         request = nil
-        ready = false
-        busy = false
-        loadingOlder = false
+        if ready { ready = false }
+        if busy { busy = false }
+        if loadingOlder { loadingOlder = false }
         settleTask?.cancel()
         settleTask = nil
-        settledRunning = false
+        if settledRunning {
+            settledRunning = false
+            derive()
+        }
     }
 
     private func settleRunning(_ running: Bool) {
         settleTask?.cancel()
         settleTask = nil
         if running {
-            settledRunning = true
+            if !settledRunning { settledRunning = true }
         } else if settledRunning {
             settleTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(400))
                 guard !Task.isCancelled, let self, self.snapshot?.running != true else { return }
                 self.settledRunning = false
+                self.derive()
             }
         }
     }
@@ -139,37 +255,48 @@ public final class NativeThreadStore: ObservableObject {
                 if !resetHistory, sameSession, value.olderCursor != nil,
                    let first = value.messages.first,
                    let overlap = messages.firstIndex(where: { $0.entryID == first.entryID }) {
-                    messages = Array(messages[..<overlap]) + value.messages
+                    let merged = Array(messages[..<overlap]) + value.messages
+                    if merged != messages { messages = merged }
                 } else {
-                    messages = value.messages
-                    olderCursor = value.olderCursor
+                    if value.messages != messages { messages = value.messages }
+                    if olderCursor != value.olderCursor { olderCursor = value.olderCursor }
                     historyEpoch = UUID()
-                    loadingOlder = false
+                    if loadingOlder { loadingOlder = false }
                 }
-                snapshot = value
-                ready = true
-                loadError = nil
+                if value != snapshot { snapshot = value }
+                if !ready { ready = true }
+                if loadError != nil { loadError = nil }
+                derive()
             case .unchanged(let session, let generation, _):
                 if previous?.piSessionID != session || previous?.generation != generation || fresh {
                     ready = false
                     await refresh(fresh: true)
                 } else {
-                    ready = true
-                    loadError = nil
+                    if !ready { ready = true }
+                    if loadError != nil {
+                        loadError = nil
+                        derive()
+                    }
                 }
             case .failure(let code, let message):
                 ready = false
-                loadError = message
+                setLoadError(message)
                 if code == "stale_session", !fresh { await refresh(fresh: true) }
             default:
                 ready = false
-                loadError = "Unexpected thread response. Refresh to try again."
+                setLoadError("Unexpected thread response. Refresh to try again.")
             }
         } catch {
             guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
             ready = false
-            loadError = String(describing: error)
+            setLoadError(String(describing: error))
         }
+    }
+
+    private func setLoadError(_ message: String) {
+        guard loadError != message else { return }
+        loadError = message
+        derive()
     }
 
     public func loadOlder() async {
@@ -187,16 +314,20 @@ public final class NativeThreadStore: ObservableObject {
                 let ids = Set(messages.map(\.entryID))
                 messages = page.messages.filter { !ids.contains($0.entryID) } + messages
                 olderCursor = page.olderCursor
+                derive()
             case .failure(let code, let message):
                 loadError = message
+                derive()
                 if code == "stale_cursor" || code == "stale_session" { await refresh(fresh: true, resetHistory: true) }
             default: break
             }
         } catch {
             guard !Task.isCancelled, epoch == run, historyEpoch == history else { return }
-            loadError = String(describing: error)
+            setLoadError(String(describing: error))
         }
     }
+
+    // MARK: Actions
 
     /// `images` requires `sendImages` support (v2, RPC agents); they are dropped otherwise.
     public func send(images: [NativeImage] = []) async {
@@ -276,6 +407,8 @@ public final class NativeThreadStore: ObservableObject {
     private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil) async {
         guard let request else { return }
         let run = epoch
+        // A follow-up sent while a turn runs waits in pi's queue until the turn ends.
+        let queued = current.running && delivery == .followUp
         busy = true
         notice = nil
         do {
@@ -292,7 +425,9 @@ public final class NativeThreadStore: ObservableObject {
                     if draft == sentText { draft = "" }
                     sentCount += 1
                     pending.append(NativeThreadMessage(entryID: "pending:\(operation.uuidString)", role: "user",
-                                                       blocks: [NativeThreadBlock(kind: .text, text: sentText)], status: "pending"))
+                                                       blocks: [NativeThreadBlock(kind: .text, text: sentText)],
+                                                       status: queued ? "queued" : "pending"))
+                    derive()
                 }
                 // Success is visible in the thread itself; only failures earn a notice.
                 notice = nil

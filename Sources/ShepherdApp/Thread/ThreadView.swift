@@ -20,7 +20,7 @@ extension EnvironmentValues {
 /// An agent's thread (spec §3, §4): a 760pt column of turns in a scroll view that follows the
 /// tail, with the composer floating over its bottom edge.
 struct ThreadView: View {
-    @ObservedObject var store: NativeThreadStore
+    var store: NativeThreadStore
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request
