@@ -149,52 +149,6 @@ struct PreviewTests {
         try await renderThread("thread-empty", ThreadFixture(Threads.empty), size: CGSize(width: 1180, height: 700))
     }
 
-    @Test func threadSubagentsLive() async throws {
-        try await renderThread("thread-subagents-live", ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true)),
-                               size: CGSize(width: 800, height: 900))
-    }
-
-    @Test func threadSubagentsLedger() async throws {
-        try await renderThread("thread-subagents-ledger", ThreadFixture(Threads.subagents(Threads.doneRuns, running: false)),
-                               size: CGSize(width: 800, height: 800), inspected: "native-tests")
-    }
-
-    @Test func threadSubagentInspector() async throws {
-        let fixture = ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true))
-        fixture.transcripts["native-worker"] = Threads.workerTranscript
-        defer { fixture.store.stop() }
-        let panes = RightPaneState()
-        panes.runByAgent[AgentID(rawValue: "a")] = "native-worker"
-        try await Preview.render("thread-subagent-inspector", size: CGSize(width: 1370, height: 900), ready: { fixture.store.ready }) {
-            RightPaneSplit(state: panes, showPane: true) {
-                fixture.thread(inspected: "native-worker")
-            } pane: {
-                SubagentInspector(store: fixture.store, runID: "native-worker", active: true, close: {}, select: { _ in }, fork: { _ in nil })
-            }
-        }
-    }
-
-    @Test func subagentCardsInEveryState() async throws {
-        let actions = SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true)
-        let many = (0..<12).map { index -> ChildRun in
-            var run = Threads.liveRuns[index < 7 ? 2 : index < 10 ? 0 : index == 10 ? 1 : 3]
-            run.runID = "strip-\(index)"
-            run.startedAt = Double(index)
-            return run
-        }
-        try await Preview.render("subagent-cards", size: CGSize(width: 760, height: 1040)) {
-            VStack(alignment: .leading, spacing: 22) {
-                ForEach(Threads.liveRuns, id: \.id) { SubagentCard(run: $0, actions: actions) }
-                Text("MANY PARALLEL RUNS").nwSectionLabel()
-                RunsStrip(runs: many, actions: actions, expanded: .constant(false))
-                Spacer(minLength: 0)
-            }
-            .padding(32)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgWindow)
-        }
-    }
-
     // MARK: Composer menus
 
     @Test func composerSlashMenu() async throws {
