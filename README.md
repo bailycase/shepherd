@@ -22,7 +22,9 @@ coherent over covering every use case.
   Start an agent with ⌘N and describe the task. It names itself from your prompt and reports
   whether it is working, blocked on you, or done.
 - **Native threads.** Each agent is `pi --mode rpc` behind a SwiftUI thread:
-  - one-line tool rows that expand to their output
+  - activity lines: one quiet line per burst of tool work ("Explored 7 files", "Ran tests · 17
+    passed") that expands to its calls and their output
+  - a changes card at the end of every turn that edited files, one click from the review pane
   - timed thinking
   - questions answered in place
   - pi's slash commands
@@ -46,7 +48,8 @@ coherent over covering every use case.
   agents over an authenticated TCP listener, off by default, meant for a VPN or trusted network.
 - **Keyboard-first.** A command palette (⌘K) with transcript search across all your agents,
   plus rebindable shortcuts.
-- **Night Watch.** Light and dark, also applied to terminal panes and to pi run by hand in one.
+- **Night Watch.** Shepherd's design system, in light and dark, set in Geist and Geist Mono, and
+  also applied to terminal panes and to pi run by hand in one.
 
 Nothing runs in the background without the app. Quit Shepherd and every agent stops. Relaunch it
 and the workspace comes back, with each agent resumed in its pi session.
@@ -86,7 +89,8 @@ that a development build never shares state with your everyday copy:
 To build from the command line, and to build and test the libraries with SwiftPM:
 
 ```sh
-xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' build
+xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
+  -onlyUsePackageVersionsFromResolvedFile build
 swift build
 swift test --filter UnitTests          # fast
 swift test                             # everything
@@ -144,8 +148,8 @@ Shepherd agent when you want those.
   and test, the source map, and the rules that are easy to break.
 - [ARCHITECTURE.md](ARCHITECTURE.md): modules, runtime ownership, data flow, remote, and
   persistence.
-- [DESIGN.md](DESIGN.md): the UI and interaction specification, condensed from the
-  [design handoff](docs/design-spec/handoff.md).
+- [DESIGN.md](DESIGN.md): the UI and interaction specification: Night Watch, Shepherd's design
+  system, and every surface built on it.
 - [docs/native-thread.md](docs/native-thread.md): how an agent's `pi --mode rpc` process
   becomes its thread.
 - [docs/native-subagents.md](docs/native-subagents.md): the bundled subagent runtime.
