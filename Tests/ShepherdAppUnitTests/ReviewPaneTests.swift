@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 import SwiftUI
@@ -271,5 +272,51 @@ struct ReviewPaneModelTests {
             guard case .line(let line) = row else { return true }
             return line.text.runs.allSatisfy { $0.foregroundColor == nil }
         }, "stale colors never show on changed content")
+    }
+}
+
+@Suite("Review touched paths")
+@MainActor
+struct ReviewTouchedPathsTests {
+    private func message(_ id: String, _ role: String, tool: String? = nil, path: String? = nil) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: role, blocks: [], toolName: tool, argumentsText: path.map { #"{"path":"\#($0)"}"# })
+    }
+
+    private var turn: [NativeThreadMessage] {
+        [message("u1", "user"), message("t1", "toolResult", tool: "edit", path: "a.swift"),
+         message("t2", "toolResult", tool: "read", path: "b.swift"), message("t3", "toolResult", tool: "write", path: "c.swift")]
+    }
+
+    @Test func theRunningTurnsEditsAndWritesAreTouched() {
+        let touched = ReviewTouchedPaths()
+        #expect(touched.paths(turn, running: true) == nativeTouchedPaths(turn, running: true))
+        #expect(touched.paths(turn, running: true) == ["a.swift", "c.swift"])
+        #expect(touched.paths(turn, running: false).isEmpty)
+    }
+
+    /// The host re-renders on every thread publish; only a change to the turn's edit and write
+    /// calls reparses their arguments.
+    @Test func argumentsAreReparsedOnlyWhenTheTurnsEditsChange() {
+        var parses = 0
+        let touched = ReviewTouchedPaths { messages, running in
+            parses += 1
+            return nativeTouchedPaths(messages, running: running)
+        }
+        var messages = turn
+        _ = touched.paths(messages, running: true)
+        _ = touched.paths(messages, running: true)
+        messages.append(message("a1", "assistant"))
+        _ = touched.paths(messages, running: true)
+        #expect(parses == 1, "an unchanged turn, or new prose, reuses the paths")
+
+        messages.append(message("t4", "toolResult", tool: "edit", path: "d.swift"))
+        #expect(touched.paths(messages, running: true).contains("d.swift"))
+        messages[messages.count - 1].argumentsText = #"{"path":"e.swift"}"#
+        #expect(touched.paths(messages, running: true).contains("e.swift"))
+        #expect(parses == 3)
+
+        _ = touched.paths(messages, running: false)
+        _ = touched.paths(messages, running: true)
+        #expect(parses == 4, "a new run starts fresh")
     }
 }
