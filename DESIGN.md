@@ -270,9 +270,10 @@ leading from the face's real metrics); `.font(.nw(_:))` alone suits single lines
   `controlL 32`, which never scale; `touch 44` on iOS.
 - **Hairlines** are 1px, not 1pt: `NWHairline`, `.nwBorder(_:radius:)`, and
   `.nwBorder(_:in:dash:)` (any shape, optionally dashed) use `NW.hairline(displayScale)`. Every
-  border of a control, field, pill, keycap, banner, card, or bubble draws through them. Two
+  border of a control, field, pill, keycap, banner, card, or bubble draws through them. Three
   kinds of line stay in points: the layout's dividers (pane splits and the edges of the docked
-  sidebar and right pane, 1pt, because the window's arithmetic counts them) and the strokes of
+  sidebar and right pane, 1pt, because the window's arithmetic counts them), the checkbox's
+  1.5pt border (the Controls board draws it heavier than its 1px lines), and the strokes of
   status dots and glyphs.
 - **Elevation:**
   - `.nwCard()`: flat, a raised fill and a 1px line (`lineSubtle` unless given).
@@ -1022,9 +1023,10 @@ Review-pane and menu keys are listed with their surfaces.
 None open. When a change leaves code breaking this document, list the place here until it is
 fixed toward it.
 
-Deliberate exceptions stay with their rules rather than here: the layout's 1pt dividers and the
-strokes of status glyphs (see Hairlines), and one-off type sizes outside the ramp, set with
-`Font.nwSans`/`Font.nwMono` (the boards' in Typography, and the empty thread's path).
+Deliberate exceptions stay with their rules rather than here: the layout's 1pt dividers, the
+checkbox's 1.5pt border, and the strokes of status glyphs (see Hairlines), and one-off type
+sizes outside the ramp, set with `Font.nwSans`/`Font.nwMono` (the boards' in Typography, and
+the empty thread's path).
 
 ## iOS
 
