@@ -32,6 +32,7 @@ final class RightPaneState {
 /// Motion) whichever path opens it: ⇧⌘B, ⌘I, the toolbar, a thread link, an agent's
 /// `review_diff`, a finished review. Beside a docked pane the thread takes its new width at
 /// once, as the slide starts: a long thread relaid out on every frame of the slide drops frames.
+/// Docked or overlaid, nothing in the thread rides the slide.
 /// Resizing (the handle, a window resize, a docked ⇄ overlaid flip) never animates.
 struct RightPaneSplit<Content: View, Pane: View>: View {
     @Bindable var state: RightPaneState
@@ -51,6 +52,9 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                 content()
                     .frame(width: contentWidth, height: geo.size.height)
                     .animation(nil, value: contentWidth)
+                    // Under an overlaid pane the width holds, but what the thread changes in the
+                    // same update (a streamed row, the inspected card) must not ride the slide.
+                    .animation(nil, value: showPane)
                 if showPane {
                     HStack(spacing: 0) {
                         handle(total: total, width: layout.width)

@@ -20,15 +20,18 @@ struct RightPaneMotionTests {
         var showing: RightPaneShowing? = .inspector(runID: "a")
     }
 
-    /// White thread, black pane; the thread's width is logged by a hosted view.
+    /// White thread, black pane; the thread's width is logged by a hosted view. With
+    /// `threadFollows`, the thread turns gray as the pane opens (the inspected card's ring, focus
+    /// leaving the composer: what the thread itself changes in the same update).
     private struct Split: View {
         let model: Model
         let thread: WidthLog
+        var threadFollows = false
         let panes = RightPaneState()
 
         var body: some View {
             RightPaneSplit(state: panes, showPane: model.open) {
-                Color.white.background(Hosted(view: thread))
+                (threadFollows && model.open ? Color.gray : Color.white).background(Hosted(view: thread))
             } pane: {
                 RightPaneSlot(showing: model.showing) {
                     if case .inspector = model.showing {
@@ -45,9 +48,11 @@ struct RightPaneMotionTests {
 
     private static let height: CGFloat = 60
 
-    private func window(_ model: Model, width: CGFloat, thread: WidthLog = WidthLog(), reduceMotion: Bool = false) -> OffscreenWindow {
+    private func window(_ model: Model, width: CGFloat, thread: WidthLog = WidthLog(), threadFollows: Bool = false,
+                        reduceMotion: Bool = false) -> OffscreenWindow {
         OffscreenWindow(size: CGSize(width: width, height: Self.height), dark: false,
-                        Split(model: model, thread: thread).environment(\._accessibilityReduceMotion, reduceMotion))
+                        Split(model: model, thread: thread, threadFollows: threadFollows)
+                            .environment(\._accessibilityReduceMotion, reduceMotion))
     }
 
     private func strip(_ width: CGFloat) -> CGRect { CGRect(x: 0, y: Self.height / 2, width: width, height: 1) }
@@ -94,6 +99,21 @@ struct RightPaneMotionTests {
         } else {
             #expect(thread.widths.isEmpty, "\(thread.widths)")
         }
+    }
+
+    /// What the thread itself changes as the pane opens lands at once, docked or overlaid: the
+    /// pane's slide never animates the thread (a row arriving in the same update would otherwise
+    /// ease in with it).
+    @Test(arguments: [CGFloat(1200), CGFloat(820)])
+    func theThreadNeverRidesThePanesMotion(width: CGFloat) async {
+        let model = Model()
+        let window = window(model, width: width, threadFollows: true)
+        defer { window.close() }
+        let thread = CGRect(x: 0, y: Self.height / 2, width: 20, height: 1)
+        let recording = await MotionProbe.record(window, region: thread) { model.open = true }
+
+        #expect(recording.settled.lightness(x: 10) < 0.9, "the thread turned gray")
+        #expect(recording.inBetween.isEmpty, "at once: \(recording.inBetween.map { $0.lightness(x: 10) })")
     }
 
     /// Closing gives the thread its width back at once, under the pane as it leaves. (The slide
