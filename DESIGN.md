@@ -3,9 +3,10 @@
 This document is the authority on how Shepherd looks and behaves on macOS. Where anything
 disagrees with it, this document wins. It condenses the design handoff,
 [`docs/design-spec/handoff.md`](docs/design-spec/handoff.md) (boards in
-[`docs/design-spec/boards/`](docs/design-spec/boards/)), and records where Shepherd deliberately
-departs from it. All values live in the `ShepherdDesign` target, and the code is cited by type
-name so you can check it.
+[`docs/design-spec/boards/`](docs/design-spec/boards/)), and the Night Watch design system that
+supersedes its visual foundations, and records where Shepherd deliberately departs from them. All
+values live in the ShepherdUI package (`Packages/ShepherdUI`), and the code is cited by type name
+so you can check it.
 
 ## Mental model: agents, not chats
 
@@ -64,8 +65,8 @@ And the rules that follow from them:
 
 | Handoff | Shepherd | Why |
 | --- | --- | --- |
-| IBM Plex Sans and JetBrains Mono | System faces, SF Pro and SF Mono, at the handoff's sizes, weights, and line heights | No bundled fonts; the system faces render better at small sizes on macOS |
-| Mock palette from `tokens.json` | The same *roles*, filled by Basalt (light and dark) | Basalt is the product's palette; the roles are the contract |
+| IBM Plex Sans and JetBrains Mono | Geist and Geist Mono, bundled (SIL OFL), on Night Watch's ramp | Night Watch's faces |
+| Mock palette from `tokens.json` | Night Watch's roles and values (light and dark) | Night Watch is the product's palette; the roles are the contract |
 | Sidebar rows 32pt with a 22pt indent, plus a 26pt "compact form" while a right pane is open | Rows **26pt** (density-scaled) with a 16pt indent, always. No compact form | A real fleet lost a third of the tree at 32pt |
 | Sidebar fixed at 256pt, shrinking to 184pt while a right pane is open | Resizable (190–340pt, default 256, persisted), and it **keeps its width** when a right pane opens | Shrinking on every pane toggle made the whole window jump |
 | A SHELLS section, and Shells tabs | Removed. Terminals exist only as panes beside a thread | Global shells and space shell workspaces were removed |
@@ -85,205 +86,180 @@ Additions the handoff doesn't have:
 
 ## Theme model
 
-All design values live in `Sources/ShepherdDesign`. It is SwiftUI only and holds no app state.
-Views read colors from `Tokens`, fonts from `Fonts`, and sizes from `Metrics` and `Radius`.
-**Never hardcode a color, font size, or dimension in a view.**
+All design values live in the **ShepherdUI** package (`Packages/ShepherdUI`, module `ShepherdUI`),
+which implements **Night Watch**, the design system on the Night Watch boards (Foundations,
+Controls, Status, Swift). It is SwiftUI only and holds no app state. Views read colors from
+`Color.nw`, fonts from `Font.nw(_:)`, and sizes from `NW.Space`, `NW.Radius`, and `NW.Height`
+(plus the app's own surface dimensions in `AppLayout`). **Never hardcode a color, font size, or
+dimension in a view.**
 
-A theme is pure data (`ThemeDefinition`: hex strings, `Codable`), so built-in themes and future
+A theme is pure data (`ThemeDefinition`: hex strings, `Codable`), so the built-in theme and future
 user themes go through the same model:
 
 ```text
 ThemeDefinition { id, name, light: ThemeVariant, dark: ThemeVariant }
-ThemeVariant    { colors:   ThemeColors     // the UI roles below
+ThemeVariant    { colors:   ThemeColors     // the Night Watch roles below (#RRGGBB or #RRGGBBAA)
                   syntax:   SyntaxColors    // code blocks and diffs
                   terminal: TerminalColors  // Ghostty: background, foreground, cursor, selection, 16-color ANSI
                   pi:       PiColors }      // pi's TUI theme schema, for pi run by hand in a terminal pane
 ```
 
-- **`ThemeStore.shared`** holds the selected theme, text scale, and density.
-- **Colors are dynamic:** every `Tokens` color resolves against the appearance of the view
-  drawing it, so light and dark are never stored and never need a re-render.
+- **`ThemeStore.shared`** holds the selected theme, text scale, and density. It resolves each theme
+  once into an immutable `NWPalette` (every `Color` built when the theme changes) and each text
+  scale into an `NWTypeRamp`, so a token read is a stored-property load.
+- **Colors are dynamic:** every palette color resolves against the appearance of the view drawing
+  it, so light and dark are never stored and never need a re-render.
 - **`ThemeManager`** (app) owns only the appearance mode: System, Light, or Dark, set in
-  Settings ▸ Appearance or the Appearance menu. `SHEPHERD_THEME=basalt-dark|basalt-light` forces
-  one at launch.
+  Settings ▸ Appearance or the Appearance menu. `SHEPHERD_THEME=night-watch-dark|night-watch-light`
+  forces one at launch.
 - **What `ThemeManager` pushes:** the resolved variant goes to what cannot follow appearance on
   its own. That is Ghostty surfaces (a live `setTheme`, never a remount or replay) and the pi
-  theme file plus the `shepherd-active-theme` variant marker, which pi and editors run in a
-  terminal pane watch.
+  theme file plus the `shepherd-active-theme` variant marker (`night-watch-dark|light`), which pi
+  and editors run in a terminal pane watch.
+- **Fonts:** Geist and Geist Mono (SIL OFL, `Resources/Fonts/OFL.txt`) ship in the package bundle
+  and are registered for the process at launch (`NWFonts.register()`); no Info.plist entry.
+  Terminal panes keep their own font setting.
 
-### Roles (`ThemeColors`)
+### Roles (`ThemeColors`, read as `Color.nw.<role>`)
 
 | Group | Role | Use |
 | --- | --- | --- |
-| Background | `bgCanvas` | Window and sidebar |
-| | `bgSurface` | Thread, tool groups, settings cards, terminal panes |
-| | `bgRaised` | Composer, popovers, menus, the palette |
-| | `bgMuted` | Expanded tool output, sticky file headers, ledger header |
-| | `bgBubble` | User turns |
-| | `bgSelected` | Active sidebar row, selected chip |
-| | `bgHover` | Row hover on `bgSurface`; inline code; hunk headers |
-| | `bgHoverStrong` | Row hover on `bgCanvas` (sidebar) |
-| | `bgTrack` | Segmented control and slider track |
-| Border | `borderSubtle` | Between rows inside a group |
-| | `border` | Panels, groups, the header rule, pane dividers |
-| | `borderStrong` | Buttons, fields, the composer, menus |
-| Text | `text` | Prose, paths, labels |
-| | `textSecondary` | Tool output, inactive segments |
-| | `textTertiary` | Tool names, section headings, thinking |
-| | `textMuted` | Timestamps, counts, hints. The lightest text allowed on `bgSurface`/`bgCanvas` |
-| | `textDisabled` | Separators and disabled controls only |
-| Semantic | `accent` / `accentText` / `accentBg` | Current agent, running, links, focus |
-| | `success` / `successText` / `successBg` | Done, passed, alive, additions |
-| | `warning` / `warningText` / `warningBg` | Needs you, questions, warnings |
-| | `danger` / `dangerText` / `dangerBg` | Failed, exit ≠ 0, unreachable, removals, Stop |
-| Status | `dotIdle` | Status dot of an idle agent that is not the open thread |
+| Surfaces | `bgBase` | Sidebar, window chrome |
+| | `bgWindow` | Thread, panes, terminal panes |
+| | `bgRaised` | Cards, composer, menus, fields |
+| | `bgSunken` | Code, tool output, headers, segmented track |
+| | `bgBubble` | User messages |
+| | `bgHover` | Row hover (translucent) |
+| | `bgSelected` | Selected row (translucent) |
+| Lines | `lineSubtle` | Dividers, row separators, card borders |
+| | `lineStrong` | Control borders, popovers |
+| Text | `textPrimary` | Body, titles |
+| | `textSecondary` | Labels, previews, descriptions |
+| | `textTertiary` | Meta, timestamps, counts, section labels |
+| | `textOnLantern` | Text on a lantern fill |
+| Brand and state | `lantern` / `lanternText` / `lanternTint` | Brand, the primary action, needs you |
+| | `running` / `runningTint` | Running, links, focus |
+| | `done` / `doneTint` | Success, additions |
+| | `failed` / `failedTint` | Failure, deletions, destructive |
+| Syntax | `synKeyword`, `synType`, `synString`, `synNumber`, `synFunction`, `synComment` (+ `synVariable`, `synOperator`, `synPunctuation`) | Code |
 
-**Pairing rule.** A semantic fill (`…Bg`) only ever carries its own `…Text`, and `…Text` only
-sits on its `…Bg` or on `bgSurface`. The base semantic color is for dots, glyphs, spinners, bars,
-and fills, never body text. Never put white text on a semantic color.
+**Derived colors** live on `NWPalette`, not in the theme: `focusRing` (running at 60% dark /
+50% light), `popoverShadow` (the only shadow), `scrim`, `textOnFailed`, and the switch knob colors.
 
-**Derived tokens** are computed in `Tokens`, not stored in the theme:
+**Status is one enum.** `AgentState` (`running`, `attention`, `done`, `failed`, `stuck`, `queued`,
+`idle`) gives every status surface its color, tint, word, and glyph. The app maps its lifecycles
+onto it (`AgentStateMapping.swift`: agent status, subagent runs, tool calls). Only `attention`
+animates (a 1.6s glow).
 
-- `primaryFill` / `primaryLabel`: a primary button is the text color, labeled in the surface
-  color.
-- `focusRing`: accent at 18%, the 3pt ring around a focused field or selected card.
-- `scrim`: behind the palette.
-- `composerShadow`, `thumbShadow`, `menuShadow`.
-- `syntax(_:)` and `statusDot(_:isCurrent:)`.
+### Night Watch
 
-### Basalt
+`ThemeDefinition.nightWatch` (`NightWatch.swift`) is the only shipped theme. The UI and syntax
+roles are the Foundations board's values. The terminal and pi palettes are derived from the roles:
+the terminal sits on `bgWindow` with `textPrimary` text and a lantern cursor, and pi uses the same
+brand, state, and syntax colors, with translucent tints flattened onto `bgWindow`.
 
-[Basalt Standard](https://github.com/bailycase/basalt-standard) (`Basalt.swift`) is the only
-shipped theme. Its surfaces, accents, and terminal and pi palettes are Basalt's own values. Role
-steps Basalt does not name (raised, bubble, the semantic `…Text`/`…Bg` pairs) are derived from
-them to satisfy the contrast rules.
-
-- **Dark:** near-black cool grey (`bgCanvas #0D0E10`, `bgSurface #111215`) with a muted slate
-  accent (`#8892B5`).
-- **Light:** warm paper (`bgCanvas #E7E4DE`, `bgSurface #F3F1ED`) with a deeper slate accent
-  (`#526184`).
-
-A terminal pane's background is the theme's `bgSurface`, so panes sit on the thread surface.
+- **Dark:** near-black (`bgBase #0a0b0c`, `bgWindow #0d0e10`, `bgRaised #15171a`), lantern amber
+  `#f2a93b`, running blue `#7aa7ff`.
+- **Light:** paper white (`bgBase #f2f2f0`, `bgWindow #fbfbfa`, `bgRaised #ffffff`), lantern
+  `#e39a26`, running `#2f6fe0`.
 
 ### Contrast rules
 
-`ShepherdDesignUnitTests` checks every built-in variant:
+`ShepherdUIUnitTests` checks every built-in variant (translucent fills are painted over the
+surface they sit on):
 
-- `text`, `textSecondary`, `textTertiary`, and `textMuted` reach 4.5:1 on `bgSurface`,
-  `bgCanvas`, and `bgRaised`.
-- `text` reaches 4.5:1 on `bgSelected`.
-- Each `…Text` reaches 4.5:1 on its `…Bg` and on `bgSurface`.
-- The four base semantic colors reach 3:1 on `bgSurface` and stay distinguishable from each
-  other.
-- Surfaces and border strengths stay ordered.
-- Every color parses, the ANSI palette has 16 entries, the theme round-trips through JSON, and
-  the terminal background equals `bgSurface`.
+- `textPrimary` and `textSecondary` reach 4.5:1 on `bgBase`, `bgWindow`, and `bgRaised`, and
+  `textPrimary` on `bgSelected`.
+- `lanternText` on `lanternTint`, and `textOnLantern` on `lantern`, reach 4.5:1.
+- State colors reach 3:1 on `bgWindow` as dots and glyphs, and stay distinguishable.
+- **Documented exceptions** (the board's colors, kept; the test pins their measured ratios):
+  `textTertiary` meta text (dark 3.06–3.35, light 2.40–2.69), the light state pills' words on their
+  own tints (running 3.98, done 3.01, failed 3.71 over the window), the light lantern as a mark
+  (2.27), and white on `failed` (dark 3.18, light 4.33).
+- Every role parses, UI roles alone may be translucent, the ANSI palette has 16 entries, the
+  theme round-trips through JSON, and the terminal background equals `bgWindow`.
 
 ### Adding a theme or a role
 
 - **A theme:** write a `ThemeDefinition` that fills every field of `ThemeColors`,
-  `SyntaxColors`, `TerminalColors`, and `PiColors` for both variants. The memberwise initializers
-  make the compiler enforce completeness. Add it to the list the design unit tests iterate and fix
-  values until they pass. Then teach `ThemeManager` and the app's `ShepherdTheme` to resolve it
-  for Ghostty and the pi theme file; today they resolve Basalt only. The variant marker's
+  `SyntaxColors`, `TerminalColors`, and `PiColors` for both variants (the memberwise initializers
+  make the compiler enforce completeness). Add it to the list the ShepherdUI unit tests iterate and
+  fix values until they pass. Then teach `ThemeManager` and the app's `ShepherdTheme` to resolve it
+  for Ghostty and the pi theme file; today they resolve Night Watch only. The variant marker's
   `<theme>-dark|light` spelling is an external contract.
-- **A role:** add a field to `ThemeColors`, a value in every theme's light and dark variant, an
-  accessor in `Tokens`, and a contrast rule if it carries text.
+- **A role:** add a field to `ThemeColors`, a value in every theme's light and dark variant, a
+  property on `NWPalette`, and a contrast rule if it carries text.
 
 ## Typography
 
-System faces only: sans for prose and chrome, and monospace for anything the agent touched
-(paths, commands, code, output, counts, times). Every size scales with Settings ▸ Appearance ▸
-Text size (`ThemeStore.textScale`, 0.85–1.3). Line heights are applied as extra leading
-(`Fonts.bodyLeading` and so on).
+Geist for prose and chrome, Geist Mono for anything the agent touched (paths, commands, code,
+output, counts, times). Every size scales with Settings ▸ Appearance ▸ Text size
+(`ThemeStore.textScale`, 0.85–1.3). `.nwText(_:)` applies a style with its line height (extra
+leading from the face's real metrics); `.font(.nw(_:))` alone suits single lines.
 
-| Token | Spec | Use |
+| Style | Spec | Use |
 | --- | --- | --- |
-| `display` | 22/600 | Settings page titles |
-| `title` | 15/600 | Header thread title, sheet and dialog titles, the review header |
-| `body` | 15, ×1.6 | Agent prose |
-| `bodySmall` | 14, ×1.5 | User turns, the composer |
-| `rowTitle` | 13.5/500 | Settings row titles |
-| `label` (`labelRegular`, `labelStrong`) | 13/500 | Sidebar rows, breadcrumb, buttons |
-| `description` | 12.5 | Settings row descriptions |
-| `caption` (`captionMedium`) | 12 | Status pill, chips, captions |
-| `section` | 11/600 caps | Section headings. Apply with `.sectionStyle()` (uppercase, tracked, tertiary) |
-| `sectionSmall` | 10.5/600 caps | Palette group headers, settings group headings, hunk headers |
-| `code` (`codeMedium`) | 12.5 mono | Paths, commands, code |
-| `output` | 12 mono, ×1.55 | Tool output, diff lines |
-| `micro` (`microMedium`) | 11 mono | Timestamps, counts, durations |
+| `display` | Geist 28/600/1.15 | Empty states, onboarding, settings page titles |
+| `title` | Geist 15/600/1.3 | Thread and pane titles, sheet and dialog titles |
+| `headline` | Geist 13.5/600/1.35 | Card titles, section heads |
+| `body` | Geist 13.5/400/1.6 | Agent prose, bubbles |
+| `ui` | Geist 12.5/500/1.3 | Rows, buttons, controls |
+| `caption` | Geist 11.5/400/1.35 | Secondary info, descriptions |
+| `code` | Geist Mono 12/400/1.55 | Code blocks, output |
+| `mono` | Geist Mono 11.5/400/1.3 | Paths, commands, tool rows |
+| `micro` | Geist Mono 10.5/500/1.2 | Section labels (`.nwSectionLabel()`: uppercase, tracked, tertiary), counts, times |
 
-`Fonts.sans(_:_:)` and `Fonts.mono(_:_:)` exist for the few one-off sizes the boards call for:
-empty-state titles (15/600), Markdown headings (17/600 at levels 1–2), and inline code
-(13 mono). Prefer a named token. The terminal font (family and size) is its own setting in
-Settings ▸ Terminal and never follows the chrome's text scale.
+`Font.nw(_:weight:)` takes a weight for the rare emphasis the ramp lacks; `Font.nwSans(_:_:)` and
+`Font.nwMono(_:_:)` exist for the few one-off sizes (the empty-state title, the palette search).
+Prefer a ramp style. The terminal font (family and size) is its own setting in Settings ▸
+Terminal and never follows the chrome's text scale.
 
 ## Metrics, spacing, radii
 
-`Metrics` holds every size. Settings ▸ Appearance ▸ Density (`ThemeStore.density`, 0.8–1.5)
-scales the sidebar row and the settings row minimum; everything else is fixed.
-
-- **Spacing** (2pt base): `space2` through `space32`.
-  - Inside a row: 8–12. Between rows: 2. Between turns: 28.
-  - Panel padding: 12–16.
-  - Thread gutter: 32, or 16 when the window is too narrow for the column.
-- **Window:** minimum 1040×640, default 1440×900. The main column is never narrower than 720.
-- **Column widths:** thread 760, prose 680, user bubble 600, header 52 with 20 padding.
-- **Sidebar:** width 190–340 (default 256), rows 26 × density, indent 16, padding 8, dot 7.
-- **Right pane:** default 600, minimum 480, at most half the window.
-- **Radius** (`Radius`):
-
-  | Name | Value | Use |
-  | --- | --- | --- |
-  | `xs` | 4 | Inline code, keycaps |
-  | `sm` | 6 | Rows |
-  | `button` | 7 | Small and medium buttons |
-  | `md` | 8 | Large buttons, inline cards |
-  | `lg` | 10 | Tool groups, settings cards |
-  | `xl` | 12 | Composer, menus, bubbles |
-  | `xxl` | 14 | Palette |
-  | `bubbleTail` | 4 | |
-  | `pill` | | |
-
-- **Icons:** SF Symbols at 12, 14, or 16pt, regular or medium weight. Never filled glyphs for
-  status, never emoji.
+- **Space** (`NW.Space`, 4pt grid): `xxs 2`, `xs 4`, `s 6`, `m 8`, `l 12`, `xl 16`, `xxl 24`,
+  `xxxl 32`.
+- **Radius** (`NW.Radius`): `xs 4` pills, keycaps, chips · `s 6` buttons, fields, rows · `m 8`
+  cards, the composer, tool groups · `l 12` popovers, the palette, sheets.
+- **Height** (`NW.Height`): rows `rowCompact 22`, `row 28`, `rowComfortable 36` (scaled by
+  Settings ▸ Appearance ▸ Density, 0.8–1.5); controls `controlS 24`, `controlM 28`,
+  `controlL 32`; `touch 44` on iOS.
+- **Hairlines** are 1px, not 1pt: `NWHairline` and `.nwBorder(_:radius:)` use `1 / displayScale`.
+- **Elevation:** `.nwCard()` is flat (raised fill, 1px line); `.nwPopover()` carries the system's
+  only shadow; `.nwFocusRing()` is running blue, 2pt wide, 2pt outside, for keyboard focus only
+  (`.nwFocusRing(_ visible:)` for a field or card whose focus the caller tracks).
+- **Motion** (`NW.Motion`): glow 1.6s, spin 1s, hover 120ms, panes 180ms, sheets 240ms. Under
+  Reduce Motion the glow and spinner are static (they are clock-driven, so toggling Reduce Motion
+  on screen is safe) and panes cross-fade.
+- **Surface dimensions** are the app's (`AppLayout`): window minimum 1040×640 (default 1440×900),
+  main column at least 720, thread column 760, prose 680, user bubble 600, header 52 with 20
+  padding, sidebar 190–340 (default 256) with 26pt rows × density and a 16pt indent, right pane
+  600 (min 480, at most half the window).
+- **Icons:** SF Symbols (medium weight, 13–16pt), monochrome. Never filled glyphs for status,
+  never emoji.
 
 ## Components
 
-`Sources/ShepherdDesign/Components` is the shared library. Use a component before composing
-chrome by hand; if a board shows a variant the library lacks, add it there. Debug builds have a
-**Component Gallery** (View menu), which shows the shared components in their states in the
-current appearance.
+`Packages/ShepherdUI/Sources/ShepherdUI/Components` is the shared library, by domain (Controls,
+Status, Containers, Thread, Composer, Agents), with `#Preview`s of every component in both
+appearances in `Previews/`. Use a component before composing chrome by hand. Debug builds have a
+**Component Gallery** (command palette), which shows the components in their states.
 
 | Component | Use |
 | --- | --- |
-| `ShepherdButtonStyle` (primary, secondary, ghost, destructive; small 28, medium 30, large 32) | Every text button. One primary per surface. Destructive is danger text on a bordered button, never the ⏎ default. |
-| `IconButtonStyle` | Icon-only buttons, bordered or ghost. Always with an accessibility label. |
-| `ComposerActionButton` | The composer's single 32pt action: Send (arrow on the primary fill) or Stop (square on danger). |
-| `LinkButtonStyle` | Inline accent-text actions ("Show all", "review ›", "Reset"). |
-| `SegmentedControl` (regular 26, small 22) | 2–4 exclusive options. |
-| `ShepherdSwitchStyle` (`.shepherdSwitch`) | The 38×22 accent switch for booleans. |
-| `PopupMenu` / `PopupButtonLabel` | Longer option lists (raised, strong border, up/down chevrons). |
-| `ShepherdStepper`, `ValueSlider` | Integer steppers; sliders with a mono value (double-click resets). |
-| `SearchField`, `.shepherdField(focused:mono:)` | Text entry: raised fill and strong border, with an accent border and ring while focused. |
-| `Keycaps` | A real, wired shortcut ("⇧⌘N" as caps). Never for an unwired chord. |
-| `StatusPill` (`AgentPillState`: idle, running, needsYou, error, stopped) | The header's agent state: a dot or spinner, plus a word, on the state's tint. |
-| `StatusDot` (7pt) | Sidebar agent state. |
-| `Spinner` | Running. A pulsing dot under Reduce Motion. |
-| `RunStateGlyph` (`RunState`: queued, running, done, failed, needsYou) | Tool-call and run state at 14pt: hollow circle, spinner, check, cross, warning mark. |
-| `BranchGlyph` | A subagent, in its run's state color. |
-| `DiffStat` | "+58 −41" in success/danger micro mono (with a true minus sign). |
-| `RunCells`, `ProgressBar` | 8pt per-run state cells, and the 4pt progress bar on running subagent cards. |
-| `ComposerChipStyle`, `ChipChevron` | 32pt ghost chips in the composer's action row. |
-| `AttachmentChip` | An image queued with the next message, removable. |
-| `Tag` | A small bordered tag (a file status letter, a command source). |
-| `InlineCode` | Code in prose: mono on `bgHover`. |
-| `SectionHeader` | A caps heading with an optional trailing count or accessory (`small:` for 10.5pt). |
-| `GroupCard`, `CardRow` | Grouped cards (settings, tool groups) and the settings row (title, description, inline problem, trailing control). |
-| `InlineError` | A `dangerBg` banner with `dangerText` and an optional action (Reconnect). |
-| `EmptyState` | A title (optionally with a mono part) and one line of guidance, optionally in a dashed frame. |
-| `.menuSurface(radius:)` | Floating surfaces: raised fill, strong border, menu shadow. |
-| `.rowBackground(selected:hovering:)`, `RowButtonStyle` | Hover and selection fills for list rows. |
+| `.buttonStyle(.nw(_:size:))` (primary, secondary, ghost, danger, dangerFill; s 24, m 28, l 32) | Every text button, on a native `Button`. Primary (lantern) at most once per view; a destructive action is never the ⏎ default. |
+| `.buttonStyle(.nwIcon)` | Icon-only buttons: a 28pt circle (44 on iOS); bordered, or "on" (lantern tint) for a pane toggle while its pane is open. Always with an accessibility label. |
+| `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)` | Inline running-blue actions; hover and selection fills for rows. |
+| `.toggleStyle(.nwSwitch)`, `.toggleStyle(.nwCheckbox)` | Booleans that apply immediately; checks in lists. Native `Toggle`s. |
+| `NWSegmentedPicker`, `NWPopupMenu` | 2–4 exclusive options; longer lists (a native `Menu`). The segmented picker represents itself to accessibility as a native segmented `Picker`. |
+| `.textFieldStyle(.nw)`, `.nwField(focused:error:mono:)`, `NWSearchField` | Text entry (raised, strong line, focus ring, failed line in error). |
+| `NWStepper`, `NWValueSlider` | Integer steppers (accessible as a native `Stepper`); a lantern slider with a mono value (double-click resets). |
+| `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | A real, wired shortcut; counts (neutral, needs you, failed); roles, models, kinds; help with its shortcut. |
+| `NWStatusPill`, `NWStatusDot`, `NWStateGlyph`, `NWBranchGlyph` | State as a pill (headers, cards), a 6pt dot (rows), a 14pt glyph (tool rows, runs), a subagent glyph. |
+| `.progressViewStyle(.nwSpinner)`, `.progressViewStyle(.nwBar)`, `NWStepStrip`, `NWSparkline` | Running work, progress, one segment per step or run, activity. |
+| `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()` | Inline banners (never modal alerts for agent events), transient toasts, empty states, loading placeholders. |
+| `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline` | Section labels, grouped cards with 1px rules, the settings row. |
+| `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWComposerChipStyle`, `NWComposerActionButton`, `NWChipChevron` | Thread and composer parts (their domains' later phases own their final form). |
+| `NWWordmark`, `NWCrook` | The mark. |
 
 App-level building blocks sit on top of these:
 
@@ -291,6 +267,16 @@ App-level building blocks sit on top of these:
   (`SettingsComponents.swift`)
 - `DialogSheet`, `SheetRow`, `DialogAction`, `DialogWarning`, `RenameDialog` (`DialogSheet.swift`)
 - `CodeBlockView` for fenced code
+
+**Reading the surface sections below.** They predate Night Watch and still name the old roles.
+Read them through the mapping the migration applied: `bgCanvas`→`bgBase`, `bgSurface`→`bgWindow`,
+`bgMuted`/`bgTrack`→`bgSunken`, `bgHoverStrong`→`bgHover`, `borderSubtle`/`border`→`lineSubtle`,
+`borderStrong`→`lineStrong`, `text`→`textPrimary`, `textTertiary`→`textSecondary`,
+`textMuted`/`textDisabled`/`dotIdle`→`textTertiary`, `accent`/`accentText`→`running` (links,
+focus, running) or `lantern` (the primary action), `accentBg`→`runningTint`,
+`success…`→`done`/`doneTint`, `warning…`→`lantern`/`lanternText`/`lanternTint`,
+`danger…`→`failed`/`failedTint`, the old type ramp onto the nearest Night Watch style. The domain
+phases rewrite each surface section as they restyle it.
 
 ## Window structure
 
@@ -647,7 +633,7 @@ returns.
 
 | Page | Contents |
 | --- | --- |
-| **Appearance** | Theme (Basalt), mode (System/Light/Dark), density, text size, sidebar width |
+| **Appearance** | Theme (Night Watch), mode (System/Light/Dark), density, text size, sidebar width |
 | **Terminal** | Pane font family and size, a live preview, the shell |
 | **Agents** | Default model, default thinking level |
 | **Worktrees** | Base branch (Remote default / Current branch), fetch before creating, and finalize: commit remaining work, generate PR descriptions, delete local branch, merge automatically (+ method) |
@@ -740,14 +726,12 @@ These places in the code break this document and should be fixed toward it:
   failed agent action shows a system alert, and quitting with working agents shows an `NSAlert`.
 - **Hardcoded chords:** two hints hardcode a rebindable chord. The model picker's search row shows
   "⇧⌘M", and the subagent card shows "Inspect ⌘I".
-- **White on a semantic color:** the review's comment `+` and comment avatar are white on
-  `accent`.
-- **Component Gallery coverage:** it does not yet show `ValueSlider` or `ShepherdStepper`.
 
 ## iOS
 
 The iOS client (`App/iOS`, [docs/ios](docs/ios/README.md)) is deferred. It predates this system
-and keeps its own `MobileTokens`. It will adopt `ShepherdDesign` and the handoff's §8 rules later:
+and keeps its own `MobileTokens`. It will adopt ShepherdUI (which already builds for iOS 27) and
+the handoff's §8 rules later:
 navigation instead of the sidebar, 56pt agent rows, collapsed tool groups, the pill composer, and
 touch targets of at least 44pt.
 

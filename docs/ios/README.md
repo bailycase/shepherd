@@ -37,12 +37,12 @@ connecting. [VALIDATION.md](VALIDATION.md) covers the scripted checks.
 
 - **Target:** the `Shepherd iOS` Xcode target (iOS 27, iPhone and iPad) compiles the nine files
   in `App/iOS`. It links only `ShepherdCore`, `ShepherdProtocol`, and `ShepherdRemote`, not
-  `ShepherdDesign` or `ShepherdApp`.
+  ShepherdUI or `ShepherdApp`.
 - **Shared with the Mac:** `RemoteHostClient`, the `NativeThreadStore` thread client, and the
   `NativeThreadPresentation` derivations (turns, tool rows, pill state) are the same code the
   Mac uses.
 - **Tokens:** it keeps its own `MobileTokens`: colors, the phone type ramp, and status words.
-  These are not Basalt and no longer match the Mac.
+  These are not Night Watch and no longer match the Mac.
 
 ## What it does
 
@@ -91,7 +91,7 @@ connecting. [VALIDATION.md](VALIDATION.md) covers the scripted checks.
   missing.
 - **Multiple hosts:** only one is supported.
 - **Notifications:** none. The app disconnects in the background.
-- **Design system:** `ShepherdDesign` and the handoff's iOS rules
+- **Design system:** ShepherdUI (Night Watch) and the handoff's iOS rules
   ([handoff §8](../design-spec/handoff.md), boards in `docs/design-spec/boards/ios/`) are not
   adopted. The boards show attach, timestamps, "Thought for Ns", a context count, and
   Shells/Settings tabs. The app has none of these.

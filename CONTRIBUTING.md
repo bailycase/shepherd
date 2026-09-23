@@ -59,7 +59,7 @@ configuration, sessions, or a running Shepherd.
 - When you change a protocol message, update every consumer and its round-trip test.
 - Edit an `Extensions/` source and its embedded Swift literal together
   (`scripts/sync-embedded-extension.py`); a test enforces byte identity.
-- Use `ShepherdDesign` (`Tokens`, `Fonts`, `Metrics`, `Radius`) and its shared components, never
+- Use ShepherdUI (`Color.nw`, `Font.nw`, `NW.Space`/`Radius`/`Height`) and its shared components, never
   hardcoded colors, fonts, or sizes. A new color role must pass the contrast tests in both
   variants.
 - Check visible changes in both light and dark appearance, with previews and in the running app.
