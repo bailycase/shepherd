@@ -292,10 +292,10 @@ struct PaneSeparatorView: View {
         // split view used, without corrupted moving-view translations.
         DragGesture(minimumDistance: 1, coordinateSpace: .named(coordinateSpace))
             .onChanged { value in
-                let span = axis == .vertical ? max(1, containerRect.width) : max(1, containerRect.height)
+                let span = axis == .vertical ? containerRect.width : containerRect.height
                 let origin = axis == .vertical ? containerRect.minX : containerRect.minY
                 let position = (axis == .vertical ? value.location.x : value.location.y) - origin
-                liveRatio = min(0.85, max(0.15, position / span))
+                liveRatio = ShellLayout.splitRatio(position: position, span: span)
             }
             .onEnded { _ in
                 if let final = liveRatio {

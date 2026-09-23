@@ -36,6 +36,8 @@ extension AppLayout {
     static let paneMaxFraction: CGFloat = 0.5
     /// The thread keeps at least this beside a docked pane; narrower, the pane overlays it.
     static let threadMinWidth: CGFloat = 400
+    /// Dragging a split's divider leaves each side at least this long (when the split allows).
+    static let splitPaneMinSpan: CGFloat = 160
 
     // Palette
     static let paletteWidth: CGFloat = NWPaletteMetrics.width
@@ -103,5 +105,14 @@ enum ShellLayout {
             return Pane(mode: .docked, width: width, contentWidth: total - 1 - width)
         }
         return Pane(mode: .overlay, width: min(preferred, max(0, total - 1)), contentWidth: total)
+    }
+
+    /// The divider ratio for a drag at `position` along a split `span` long (its 1pt divider
+    /// included): 15–85%, and each side keeps `splitPaneMinSpan` (a split too short for both
+    /// stays centred).
+    static func splitRatio(position: CGFloat, span: CGFloat) -> Double {
+        let span = max(1, span)
+        let floor = min(0.5, AppLayout.splitPaneMinSpan / max(1, span - 1))
+        return min(min(0.85, 1 - floor), max(max(0.15, floor), position / span))
     }
 }
