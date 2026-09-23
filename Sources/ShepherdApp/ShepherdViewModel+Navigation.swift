@@ -15,12 +15,17 @@ struct SidebarDerivations {
 
     var forestInput: [Space]?
     var forest: [(space: Space, depth: Int)] = []
+    /// Whether each visible space's folder is a git checkout (its context menu offers
+    /// worktrees); probed once per change of the space list, never per render.
+    var repoBySpace: [SpaceID: Bool] = [:]
 
     var treeInput: TreeInput?
     var tree: [(space: Space, agents: [Agent], depth: Int)] = []
     var ordered: [Agent] = []
     /// ⌘1–9 badge numbers for the first nine ordered agents.
     var badges: [AgentID: Int] = [:]
+    /// Agents in visible spaces, collapsed or not: THIS MAC's count.
+    var visibleAgentCount = 0
 }
 
 extension ShepherdViewModel {
@@ -83,6 +88,8 @@ extension ShepherdViewModel {
             uniqueKeysWithValues: sidebarDerivations.ordered.prefix(9).enumerated()
                 .map { ($0.element.id, $0.offset + 1) }
         )
+        let visibleIDs = Set(input.spaces.map(\.id))
+        sidebarDerivations.visibleAgentCount = input.agents.count { visibleIDs.contains($0.spaceID) }
         sidebarDerivations.treeInput = input
         return sidebarDerivations
     }
@@ -91,9 +98,22 @@ extension ShepherdViewModel {
     private func cachedSpaceForest(_ spaces: [Space]) -> [(space: Space, depth: Int)] {
         if sidebarDerivations.forestInput != spaces {
             sidebarDerivations.forest = Self.spaceForest(spaces)
+            sidebarDerivations.repoBySpace = Dictionary(spaces.map { ($0.id, GitWorktree.isRepo($0.path)) }) { first, _ in first }
             sidebarDerivations.forestInput = spaces
         }
         return sidebarDerivations.forest
+    }
+
+    /// The visible spaces' containment forest (memoized).
+    var sidebarForest: [(space: Space, depth: Int)] { cachedSpaceForest(visibleSpaces) }
+
+    /// THIS MAC's agent count (memoized with the tree).
+    var localAgentCount: Int { refreshedSidebarDerivations().visibleAgentCount }
+
+    /// Whether `space` is a git checkout, from the memoized probe.
+    func spaceIsRepo(_ space: Space) -> Bool {
+        _ = cachedSpaceForest(visibleSpaces)
+        return sidebarDerivations.repoBySpace[space.id] ?? GitWorktree.isRepo(space.path)
     }
 
     /// A space's agents in sidebar order: worktree agents first — they read

@@ -75,6 +75,9 @@ final class ShepherdViewModel {
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
     }
+    /// The sidebar row being dragged, for drop validation while the drag hovers; the drag
+    /// payload itself never leaves the process.
+    @ObservationIgnored var sidebarDragPayload: String?
     /// The remote agent the workspace is showing (a REMOTE row is selected):
     /// host connection id + agent id on that host. Wins over every local
     /// selection; cleared by ordinary selection. Ephemeral, like all
@@ -158,6 +161,10 @@ final class ShepherdViewModel {
     }
     var localMachineCollapsed = false {
         didSet { sidebarDefaults.set(localMachineCollapsed, forKey: "shepherd.localMachineCollapsed") }
+    }
+    /// The sidebar footer's Automations list is open. Persisted.
+    var automationsExpanded = false {
+        didSet { sidebarDefaults.set(automationsExpanded, forKey: "shepherd.automationsExpanded") }
     }
     /// Remote space disclosure state, keyed by host + space so equal space IDs
     /// on different machines cannot collide. Persisted across relaunches.
@@ -358,6 +365,7 @@ final class ShepherdViewModel {
             collapsedHosts = Set(raw.compactMap(UUID.init(uuidString:)))
         }
         localMachineCollapsed = defaults.bool(forKey: "shepherd.localMachineCollapsed")
+        automationsExpanded = defaults.bool(forKey: "shepherd.automationsExpanded")
         sidebarHidden = defaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedRemoteSpaces = Set(defaults.stringArray(forKey: "shepherd.collapsedRemoteSpaces") ?? [])
 
