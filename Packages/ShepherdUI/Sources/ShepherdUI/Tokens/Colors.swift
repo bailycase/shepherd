@@ -53,7 +53,7 @@ public final class NWPalette: Sendable {
     public let focusRing: Color
     /// `.nwPopover()`'s shadow, the only shadow in the system.
     public let popoverShadow: Color
-    /// Behind the command palette.
+    /// Behind the command palette: black at 30% in both appearances (Composer board).
     public let scrim: Color
     /// Labels on a `failed` fill (the dangerFill button, the failed count badge).
     public let textOnFailed: Color
@@ -108,7 +108,8 @@ public final class NWPalette: Sendable {
                           dark: HexColor(red: runningDark.red, green: runningDark.green, blue: runningDark.blue, alpha: 0.6))
         popoverShadow = Color(light: HexColor(red: 20 / 255, green: 20 / 255, blue: 20 / 255, alpha: 0.12),
                               dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.55))
-        scrim = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.18), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.45))
+        let scrimBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)
+        scrim = Color(light: scrimBlack, dark: scrimBlack)
         textOnFailed = Color(light: "#ffffff", dark: "#ffffff")
         knobOn = Color(light: "#ffffff", dark: "#ffffff")
         knobOff = Color(light: "#ffffff", dark: "#c9ccd1")
