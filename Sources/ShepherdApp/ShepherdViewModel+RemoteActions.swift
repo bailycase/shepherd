@@ -27,14 +27,32 @@ extension ShepherdViewModel {
         "remoteAgent:\(target.hostID.uuidString):\(target.agentID.rawValue)"
     }
 
+    /// The host only moves an agent *before* another, so a drop below the last agent of a
+    /// group is two moves: above the target, then the target above it.
     @discardableResult
-    func dropRemoteAgent(payload: String, on target: RemoteAgentRef) -> Bool {
+    func dropRemoteAgent(payload: String, on target: RemoteAgentRef, edge: SidebarDropEdge = .above,
+                         validateOnly: Bool = false) -> Bool {
         let prefix = "remoteAgent:\(target.hostID.uuidString):"
-        guard payload.hasPrefix(prefix) else { return false }
+        guard payload.hasPrefix(prefix),
+              let agents = remoteHosts.connections.first(where: { $0.id == target.hostID })?.state.agents else { return false }
         let source = RemoteAgentRef(hostID: target.hostID, agentID: AgentID(rawValue: String(payload.dropFirst(prefix.count))))
-        guard source != target, let agent = remoteAgent(source), let other = remoteAgent(target),
-              agent.spaceID == other.spaceID else { return false }
-        performRemoteAction(source, action: .reorder(target: target.agentID))
+        guard let moved = Self.reorderedAgents(agents, moving: source.agentID, beside: target.agentID, edge: edge) else { return false }
+        guard !validateOnly else { return true }
+        let spaceID = agents.first { $0.id == target.agentID }?.spaceID
+        let group = moved.filter { $0.spaceID == spaceID && ($0.worktreeBranch != nil) == (remoteAgent(target)?.worktreeBranch != nil) }
+        let next = group.firstIndex { $0.id == source.agentID }.flatMap { group.indices.contains($0 + 1) ? group[$0 + 1].id : nil }
+        Task {
+            do {
+                if let next {
+                    try await remoteHosts.agentAction(source, action: .reorder(target: next))
+                } else {
+                    try await remoteHosts.agentAction(source, action: .reorder(target: target.agentID))
+                    try await remoteHosts.agentAction(target, action: .reorder(target: source.agentID))
+                }
+            } catch {
+                remoteActionError = String(describing: error)
+            }
+        }
         return true
     }
 }
