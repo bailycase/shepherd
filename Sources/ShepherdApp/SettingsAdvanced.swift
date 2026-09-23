@@ -35,17 +35,18 @@ struct AdvancedSettings: View {
                     }
                     SettingsRow(title: "Update channel",
                                 subtitle: "Stable: tagged releases. Release Candidate and Beta also get newer stable builds. Nightly: every push, least tested.") {
-                        NWPopupMenu(updater.channel.label, minWidth: 120) {
+                        NWPopupMenu(updater.channel.label, minWidth: AppLayout.settingsPopupWidth) {
                             ForEach(UpdateChannel.allCases) { channel in
                                 Button(channel.label) { updater.channel = channel }
                             }
                         }
+                        .accessibilityLabel("Update channel")
                     }
                 }
                 SettingsRow(title: "Version \(version)") {
                     if updater.available {
                         Button("Check for updates") { updater.checkForUpdates() }
-                            .buttonStyle(NWButtonStyle(.secondary, size: .s))
+                            .buttonStyle(.nw(.secondary, size: .s))
                     }
                 }
             }
@@ -53,22 +54,34 @@ struct AdvancedSettings: View {
                 SettingsRow(title: "Reset settings",
                             subtitle: "Restores appearance, font, agent, shell and keyboard preferences. Spaces, agents and layouts are untouched.") {
                     Button("Reset…") { confirmingReset = true }
-                        .buttonStyle(NWButtonStyle(.danger, size: .s))
+                        .buttonStyle(.nw(.danger, size: .s))
                 }
             }
         }
         .sheet(isPresented: $confirmingReset) {
-            DialogSheet(
-                title: "Reset settings to defaults?",
-                subtitle: "Your spaces, agents and pane layouts are not affected.",
-                actions: [
-                    DialogAction("Cancel", kind: .cancel) { confirmingReset = false },
-                    DialogAction("Reset", kind: .destructive) {
-                        confirmingReset = false
-                        vm.resetSettings()
-                    },
-                ]
-            )
+            ResetSettingsDialog {
+                confirmingReset = false
+                vm.resetSettings()
+            } cancel: {
+                confirmingReset = false
+            }
         }
+    }
+}
+
+/// Settings ▸ Advanced ▸ Reset: preferences only; the workspace is untouched.
+struct ResetSettingsDialog: View {
+    let reset: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        DialogSheet(
+            title: "Reset settings to defaults?",
+            subtitle: "Your spaces, agents and pane layouts are not affected.",
+            actions: [
+                DialogAction("Cancel", kind: .cancel, action: cancel),
+                DialogAction("Reset", kind: .destructive, action: reset),
+            ]
+        )
     }
 }

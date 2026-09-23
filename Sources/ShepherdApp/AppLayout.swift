@@ -19,10 +19,5 @@ enum AppLayout {
     static let diffCollapsedRunHeight: CGFloat = 24
     static let diffCollapseThreshold = 8
 
-    // Settings
-    static let settingsNavWidth: CGFloat = 232
-    static let settingsContentWidth: CGFloat = 720
-    static let settingsTop: CGFloat = 44
-    /// Density-scaled.
-    @MainActor static var settingsRowMinHeight: CGFloat { NW.Height.scaled(52) }
+    // Settings and sheets: AppLayout+Settings.swift
 }

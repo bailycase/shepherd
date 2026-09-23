@@ -56,13 +56,14 @@ struct RemoteSettings: View {
 
             SettingsGroup(title: editingID == nil ? "Add host" : "Edit host") {
                 SettingsRow(title: "Name", subtitle: "Shown as the sidebar section label.") {
-                    field("mac mini", text: $draftName)
+                    SettingsTextField(label: "Name", prompt: "mac mini", text: $draftName)
                 }
                 SettingsRow(title: "Address", subtitle: "VPN-reachable IP or hostname.") {
-                    field("100.x.y.z", text: $draftHost, mono: true)
+                    SettingsTextField(label: "Address", prompt: "100.x.y.z", text: $draftHost, mono: true)
                 }
                 SettingsRow(title: "Port") {
-                    field(String(RemoteSettingsDefaults.port), text: $draftPort, mono: true, width: 100)
+                    SettingsTextField(label: "Port", prompt: String(RemoteSettingsDefaults.port), text: $draftPort, mono: true,
+                                      width: AppLayout.settingsPortFieldWidth)
                         .onChange(of: draftPort) {
                             // Digits only: a pasted "7,433" must not silently become another port.
                             let digits = draftPort.filter(\.isNumber)
@@ -70,23 +71,16 @@ struct RemoteSettings: View {
                         }
                 }
                 SettingsRow(title: "Token", subtitle: "Contents of the host's remote-token file.") {
-                    SecureField("paste token", text: $draftToken)
-                        .textFieldStyle(.plain)
-                        .font(Font.nw(.mono))
-                        .nwField(mono: true)
-                        .frame(width: 240)
+                    SettingsTextField(label: "Token", prompt: "paste token", text: $draftToken, mono: true, secure: true)
                 }
-                HStack(spacing: 8) {
-                    Spacer()
+                SettingsActionRow {
                     if editingID != nil {
-                        Button("Cancel") { cancelEdit() }.buttonStyle(NWButtonStyle(.ghost, size: .s))
+                        Button("Cancel") { cancelEdit() }.buttonStyle(.nw(.ghost, size: .s))
                     }
                     Button(editingID == nil ? "Add host" : "Save") { save() }
-                        .buttonStyle(NWButtonStyle(.secondary, size: .s))
+                        .buttonStyle(.nw(.secondary, size: .s))
                         .disabled(!draftValid)
                 }
-                .padding(.horizontal, 16)
-                .frame(minHeight: AppLayout.settingsRowMinHeight)
             }
 
             SettingsGroup(title: "Serve this Mac",
@@ -102,14 +96,6 @@ struct RemoteSettings: View {
                         url: ShepherdPaths.remoteTokenURL())
             }
         }
-    }
-
-    private func field(_ placeholder: String, text: Binding<String>, mono: Bool = false, width: CGFloat = 240) -> some View {
-        TextField(placeholder, text: text)
-            .textFieldStyle(.plain)
-            .font(mono ? Font.nw(.mono) : Font.nw(.body))
-            .nwField(mono: mono)
-            .frame(width: width)
     }
 
     private func save() {
@@ -137,35 +123,38 @@ private struct RemoteHostRow: View {
     let reconnect: () -> Void
     let edit: () -> Void
 
-    private var status: (String, Color) {
+    private var status: (word: String, state: AgentState) {
         switch connection.phase {
-        case .connected: ("connected", Color.nw.done)
-        case .connecting: ("connecting…", Color.nw.textSecondary)
-        case .failed(let reason): ("unreachable · \(reason)", Color.nw.failed)
-        case .disconnected: ("disconnected", Color.nw.textSecondary)
+        case .connected: ("connected", .done)
+        case .connecting: ("connecting…", .running)
+        case .failed(let reason): ("unreachable · \(reason)", .failed)
+        case .disconnected: ("disconnected", .idle)
         }
     }
 
     var body: some View {
-        HStack(spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(connection.config.name).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
-                let (word, color) = status
-                let address = Text("\(connection.config.host):\(String(connection.config.port)) · ").foregroundStyle(Color.nw.textSecondary)
-                let count = Text(connection.phase == .connected ? " · \(connection.state.agents.count) agents" : "").foregroundStyle(Color.nw.textSecondary)
-                Text("\(address)\(Text(word).foregroundStyle(color))\(count)")
-                    .font(Font.nw(.micro))
-                    .lineLimit(1)
+        let config = connection.config
+        let (word, state) = status
+        let agents = connection.phase == .connected ? " · \(connection.state.agents.count) agents" : ""
+        SettingsActionRow {
+            VStack(alignment: .leading, spacing: NW.Space.xs) {
+                Text(config.name).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                HStack(spacing: NW.Space.s) {
+                    NWStatusDot(state)
+                    Text("\(Text("\(config.host):\(String(config.port)) · ").foregroundStyle(Color.nw.textSecondary))\(Text(word).foregroundStyle(state.textColor))\(Text(agents).foregroundStyle(Color.nw.textSecondary))")
+                        .font(.nw(.mono))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 6) {
-                Button("Edit", action: edit).buttonStyle(NWButtonStyle(.secondary, size: .s))
-                Button("Reconnect", action: reconnect).buttonStyle(NWButtonStyle(.secondary, size: .s))
-                Button("Remove", action: remove).buttonStyle(NWButtonStyle(.danger, size: .s))
-            }
+            .accessibilityElement(children: .combine)
+        } actions: {
+            Button("Edit", action: edit).buttonStyle(.nw(.secondary, size: .s))
+                .accessibilityLabel("Edit \(config.name)")
+            Button("Reconnect", action: reconnect).buttonStyle(.nw(.secondary, size: .s))
+                .accessibilityLabel("Reconnect \(config.name)")
+            Button("Remove", action: remove).buttonStyle(.nw(.danger, size: .s))
+                .accessibilityLabel("Remove \(config.name)")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .frame(minHeight: AppLayout.settingsRowMinHeight)
     }
 }

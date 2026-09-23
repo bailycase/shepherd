@@ -41,39 +41,44 @@ struct PiSettings: View {
                 SettingsGroup(title: "Native subagent defaults",
                               footnote: "Precedence: explicit call → agent file → these defaults → parent. Child tools run with your account's access.") {
                     SettingsRow(title: "Concurrency", subtitle: "Child process limit per parent, including workflows.") {
-                        NWStepper(value: $settings.childConcurrency, in: 1...16)
+                        NWStepper("Concurrency", value: $settings.childConcurrency, in: 1...16)
                     }
                     SettingsRow(title: "Model", subtitle: "Agent files and explicit calls override this.") {
                         NWPopupMenu(settings.childModel.isEmpty ? "Inherit parent" : settings.childModel,
-                                  mono: !settings.childModel.isEmpty, minWidth: 140) {
+                                    mono: !settings.childModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                             Button("Inherit parent") { settings.childModel = "" }
                             Divider()
-                            ForEach(Array(Set(modelOptions + (settings.childModel.isEmpty ? [] : [settings.childModel]))).sorted(), id: \.self) { id in
+                            ForEach(childModelOptions, id: \.self) { id in
                                 Button(id) { settings.childModel = id }
                             }
                         }
+                        .accessibilityLabel("Subagent model")
                     }
                     SettingsRow(title: "Thinking") {
-                        NWPopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized, minWidth: 140) {
+                        NWPopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized,
+                                    minWidth: AppLayout.settingsPopupWidth) {
                             Button("Inherit parent") { settings.childThinking = "" }
                             Divider()
                             ForEach(["off", "minimal", "low", "medium", "high", "xhigh", "max"], id: \.self) { level in
                                 Button(level.capitalized) { settings.childThinking = level }
                             }
                         }
+                        .accessibilityLabel("Subagent thinking")
                     }
                     SettingsRow(title: "Context", subtitle: "Start each child fresh, or fork the parent's conversation.") {
-                        NWSegmentedPicker(selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
+                        NWSegmentedPicker("Context", selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
                     }
                     SettingsRow(title: "Agent discovery", subtitle: "Project profiles require pi project trust. Files stay the source of truth.") {
-                        NWPopupMenu(Self.scopes.first { $0.0 == settings.childScope }?.1 ?? settings.childScope, minWidth: 140) {
+                        NWPopupMenu(Self.scopes.first { $0.0 == settings.childScope }?.1 ?? settings.childScope,
+                                    minWidth: AppLayout.settingsPopupWidth) {
                             ForEach(Self.scopes, id: \.0) { scope in
                                 Button(scope.1) { settings.childScope = scope.0 }
                             }
                         }
+                        .accessibilityLabel("Agent discovery")
                     }
                 }
-                .task { modelOptions = PiConfig.modelIDs() }
+                .task { modelOptions = await Task.detached(priority: .userInitiated) { Array(Set(PiConfig.modelIDs())).sorted() }.value }
             }
 
             SettingsGroup(title: "Updates", footnote: "Updating never restarts running agents.") {
@@ -83,29 +88,30 @@ struct PiSettings: View {
                 SettingsRow(title: "Update extensions daily", subtitle: "Runs pi update --extensions once a day.") {
                     updateSwitch("Update extensions daily", $settings.autoUpdateExtensions)
                 }
-                HStack(alignment: .center, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("pi \(updates.currentVersion ?? "—")").font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                SettingsActionRow {
+                    VStack(alignment: .leading, spacing: NW.Space.xs) {
+                        Text("pi \(updates.currentVersion ?? "—")").font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
                         status
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 8) {
-                        Button(updates.isChecking ? "Checking…" : "Check now") { updates.checkNow() }
-                            .buttonStyle(NWButtonStyle(.secondary, size: .s))
-                            .disabled(updates.isBusy)
-                        Button(piUpdateTitle) { updates.updatePiNow() }
-                            .buttonStyle(NWButtonStyle(.secondary, size: .s))
-                            .disabled(!updates.canUpdatePi)
-                        Button(extensionsUpdateTitle) { updates.updateExtensionsNow() }
-                            .buttonStyle(NWButtonStyle(.secondary, size: .s))
-                            .disabled(!updates.canUpdateExtensions)
-                    }
+                } actions: {
+                    Button(updates.isChecking ? "Checking…" : "Check now") { updates.checkNow() }
+                        .buttonStyle(.nw(.secondary, size: .s))
+                        .disabled(updates.isBusy)
+                    Button(piUpdateTitle) { updates.updatePiNow() }
+                        .buttonStyle(.nw(.secondary, size: .s))
+                        .disabled(!updates.canUpdatePi)
+                    Button(extensionsUpdateTitle) { updates.updateExtensionsNow() }
+                        .buttonStyle(.nw(.secondary, size: .s))
+                        .disabled(!updates.canUpdateExtensions)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .frame(minHeight: AppLayout.settingsRowMinHeight)
             }
         }
+    }
+
+    /// The configured subagent model always stays listed, even when pi's catalog lacks it.
+    private var childModelOptions: [String] {
+        guard !settings.childModel.isEmpty, !modelOptions.contains(settings.childModel) else { return modelOptions }
+        return (modelOptions + [settings.childModel]).sorted()
     }
 
     private static let scopes: [(String, String)] = [("both", "User + project"), ("user", "User"), ("project", "Project"), ("bundled", "Bundled only")]
@@ -122,25 +128,26 @@ struct PiSettings: View {
 
     /// "● Up to date · extensions updated · uses the pi resolved from your login shell"
     private var status: some View {
-        let (text, color): (String, Color) = {
-            if updates.isChecking { return ("Checking…", Color.nw.textTertiary) }
+        let (text, state): (String, AgentState) = {
+            if updates.isChecking { return ("Checking…", .running) }
             switch updates.activeUpdate {
-            case .pi: return ("Updating pi…", Color.nw.running)
-            case .extensions: return ("Updating extensions…", Color.nw.running)
-            case .both: return ("Updating pi and extensions…", Color.nw.running)
+            case .pi: return ("Updating pi…", .running)
+            case .extensions: return ("Updating extensions…", .running)
+            case .both: return ("Updating pi and extensions…", .running)
             case nil: break
             }
-            if updates.isOutdated { return ("Update available · \(updates.latestVersion ?? "newer version")", Color.nw.lanternText) }
-            if let error = updates.lastError { return (error, Color.nw.failed) }
-            if updates.lastChecked == nil { return ("Not checked yet", Color.nw.textTertiary) }
-            return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), Color.nw.done)
+            if updates.isOutdated { return ("Update available · \(updates.latestVersion ?? "newer version")", .attention) }
+            if let error = updates.lastError { return (error, .failed) }
+            if updates.lastChecked == nil { return ("Not checked yet", .idle) }
+            return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), .done)
         }()
-        return HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(Text(text).foregroundStyle(color))\(Text(" · uses the pi resolved from your login shell").foregroundStyle(Color.nw.textSecondary))")
+        return HStack(spacing: NW.Space.s) {
+            NWStatusDot(state)
+            Text("\(Text(text).foregroundStyle(state.textColor))\(Text(" · uses the pi resolved from your login shell").foregroundStyle(Color.nw.textSecondary))")
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(Font.nw(.caption))
+        .nwText(.caption)
+        .accessibilityElement(children: .combine)
     }
 
     private var piUpdateTitle: String {

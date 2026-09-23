@@ -8,8 +8,8 @@ import ShepherdSessions
 struct AgentSettings: View {
     @ObservedObject private var settings = AppSettings.shared
     @State private var modelOptions: [String] = []
-
-    private var piDefaultModel: String { PiConfig.defaultModel() ?? "pi's own default" }
+    /// pi's own default from its settings.json, read with the catalog (never in `body`).
+    @State private var piDefaultModel = "pi's own default"
 
     var body: some View {
         SettingsPage(title: "Agents",
@@ -18,20 +18,27 @@ struct AgentSettings: View {
                 SettingsRow(title: "Default model",
                             subtitle: "Preselected in the New Agent sheet. “Use pi's default” passes no --model at all.") {
                     NWPopupMenu(settings.defaultModel.isEmpty ? "Use pi's default · \(piDefaultModel)" : settings.defaultModel,
-                              mono: !settings.defaultModel.isEmpty, minWidth: 220) {
+                                mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                         Button("Use pi's default · \(piDefaultModel)") { settings.defaultModel = "" }
                         Divider()
                         ForEach(modelOptions, id: \.self) { id in
                             Button(id) { settings.defaultModel = id }
                         }
                     }
+                    .accessibilityLabel("Default model")
                 }
                 SettingsRow(title: "Default thinking level", subtitle: "Can be changed per agent from the composer.") {
-                    NWSegmentedPicker(selection: $settings.defaultThinking,
-                                     options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
+                    NWSegmentedPicker("Default thinking level", selection: $settings.defaultThinking,
+                                      options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
                 }
             }
         }
-        .task { modelOptions = PiConfig.modelIDs() }
+        .task {
+            let (ids, fallback) = await Task.detached(priority: .userInitiated) {
+                (PiConfig.modelIDs(), PiConfig.defaultModel())
+            }.value
+            modelOptions = ids
+            if let fallback { piDefaultModel = fallback }
+        }
     }
 }
