@@ -193,6 +193,40 @@ struct ControlMotionTests {
         }
     }
 
+    // MARK: Switching agents
+
+    /// The toolbar belongs to whichever agent is selected, so switching hands its controls another
+    /// agent's state. That lands at once (switching is a visibility flip), while the same pane
+    /// toggle still fades when its pane opens (⇧⌘B, the menu, the palette all go through
+    /// `openUserReview`).
+    @Test func anotherAgentsToolbarLandsAtOnceButAToggleFadesWhenItsPaneOpens() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agents = ["one", "two"].enumerated().map { Fixture.agent($1, in: space, order: $0) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        let (one, two) = (agents[0].agent.id, agents[1].agent.id)
+        vm.selectAgent(two)
+        vm.openReview(agentID: two, path: nil)
+        vm.selectAgent(one)
+        let size = CGSize(width: 900, height: 44)
+        let window = OffscreenWindow(size: size, dark: false, WorkspaceHeaderView(vm: vm).frame(width: size.width, height: size.height))
+        defer { window.close() }
+        // Across the title, the status pill and the pane toggles.
+        let strip = CGRect(x: 0, y: size.height / 2, width: size.width, height: 1)
+
+        let toTwo = await MotionProbe.record(window, region: strip, timeout: 1) { vm.selectAgent(two) }
+        #expect(vm.isReviewPaneShowing)
+        #expect(!toTwo.settled.matches(toTwo.before), "agent two's toolbar showed")
+        #expect(toTwo.inBetween.isEmpty, "switching never animates the toolbar")
+        let toOne = await MotionProbe.record(window, region: strip, timeout: 1) { vm.selectAgent(one) }
+        #expect(toOne.inBetween.isEmpty, "nor does switching back")
+
+        let opening = await MotionProbe.record(window, region: strip) { vm.openUserReview() }
+        #expect(vm.isReviewPaneShowing)
+        #expect(!opening.inBetween.isEmpty, "the review toggle lights up as a fade")
+    }
+
     // MARK: Slider
 
     private struct Slider: View {
