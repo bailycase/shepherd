@@ -37,21 +37,23 @@ struct TerminalMotionTests {
         static var paneWidth: CGFloat { 160 }
     }
 
-    /// The grids a surface reports while a pane slides in beside it.
+    /// The grids a surface reports while a pane slides in beside it, besides the full-width grid
+    /// it had before (whose report can trail the mount under load).
     private func gridsWhileAPaneSlidesIn(_ terminal: AppTerminalModel, view: some View, model: Model) async throws -> (grids: [String], animated: Bool) {
         var grids: [String] = []
         terminal.onResize = { grids.append("\($0)x\($1)") }
         let window = OffscreenWindow(size: PaneBesideTerminal<EmptyView>.size, dark: false, view)
         defer { window.close() }
-        try await eventuallyOnMain("the surface to report its first grid") { !grids.isEmpty }
+        try await eventuallyOnMain("the surface to report its first grid", timeout: .seconds(30)) { !grids.isEmpty }
+        let initial = grids[grids.count - 1]
         let strip = CGRect(x: 0, y: PaneBesideTerminal<EmptyView>.size.height / 2, width: PaneBesideTerminal<EmptyView>.size.width, height: 1)
         let recording = await MotionProbe.record(window, region: strip) {
             grids.removeAll()
             model.open = true
         }
         // The last report can trail the picture by a runloop turn.
-        try await eventuallyOnMain("the surface to report its narrower grid") { !grids.isEmpty }
-        return (grids, !recording.inBetween.isEmpty)
+        try await eventuallyOnMain("the surface to report its narrower grid", timeout: .seconds(30)) { grids.contains { $0 != initial } }
+        return (grids.filter { $0 != initial }, !recording.inBetween.isEmpty)
     }
 
     @Test func aTerminalTakesItsFinalGridOnceWhileAPaneSlidesInBesideIt() async throws {
