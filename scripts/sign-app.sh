@@ -7,7 +7,7 @@
 # stamp one set of entitlements on everything.
 #
 # usage: scripts/sign-app.sh <Shepherd.app> <identity> <entitlements.plist>
-#   identity "-" signs ad-hoc, without a secure timestamp (ad-hoc cannot carry one).
+#   identity "-" signs ad-hoc, without the hardened runtime or a secure timestamp.
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
@@ -30,9 +30,13 @@ physical() {
 
 app=$(physical "$app")
 
-sign=(codesign --force --options runtime --sign "$identity")
+# Ad-hoc signatures carry no Team ID, so under the hardened runtime library
+# validation would refuse the app's own ad-hoc frameworks and dyld would abort
+# at launch. Ad-hoc builds therefore skip the runtime, as Xcode's Sign to Run
+# Locally does; the app's entitlements still apply without it.
+sign=(codesign --force --sign "$identity")
 if [[ "$identity" != "-" ]]; then
-  sign+=(--timestamp)
+  sign+=(--options runtime --timestamp)
 fi
 
 # The main executable of a bundle, or nothing when the bundle has no code
