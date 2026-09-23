@@ -427,6 +427,30 @@ struct ThreadComponentMotionTests {
             #expect(tops.contains { $0 < rest - 2 }, "it starts above its place: \(tops), resting at \(rest)")
         }
     }
+
+    /// Thinking's chevron turns to point down as it opens; under Reduce Motion nothing turns,
+    /// and its two positions cross-fade. A fade only ever draws between its two ends: no pixel
+    /// on the way is darker or lighter than both.
+    @Test(arguments: [false, true]) func theChevronTurnsUnlessReduceMotion(reduceMotion: Bool) async throws {
+        let toggle = Toggle()
+        let window = OffscreenWindow(size: CGSize(width: 440, height: 160), dark: false,
+                                     Thinking(toggle: toggle).environment(\._accessibilityReduceMotion, reduceMotion))
+        defer { window.close() }
+        // Around the chevron, above the thinking text.
+        let chevron = CGRect(x: 16, y: 18, width: 18, height: 18)
+
+        let recording = await MotionProbe.record(window, region: chevron) {
+            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { toggle.on = true }
+        }
+
+        #expect(!recording.inBetween.isEmpty, "the chevron changes over frames")
+        let outside = recording.inBetween.map { $0.pixelsOutside(recording.before, recording.settled) }
+        if reduceMotion {
+            #expect(outside.allSatisfy { $0 == 0 }, "it only fades: \(outside) pixels past both ends")
+        } else {
+            #expect(outside.contains { $0 > 0 }, "it turns through positions neither end has")
+        }
+    }
 }
 
 // MARK: Harness
@@ -612,6 +636,19 @@ extension MotionRecording.Frame {
     /// The last row where this frame's lightness is more than `threshold` from `other`'s.
     fileprivate func lastRow(differingFrom other: MotionRecording.Frame, by threshold: Double) -> Int? {
         (0..<bitmap.pixelsHigh).reversed().first { differs(from: other, row: $0, by: threshold) }
+    }
+
+    /// How many pixels are darker or lighter than both `a` and `b` (by more than a rounding
+    /// step): a cross-fade between them never has any.
+    fileprivate func pixelsOutside(_ a: MotionRecording.Frame, _ b: MotionRecording.Frame) -> Int {
+        var count = 0
+        for y in 0..<bitmap.pixelsHigh {
+            for x in 0..<bitmap.pixelsWide {
+                let value = lightness(x: x, y: y), first = a.lightness(x: x, y: y), second = b.lightness(x: x, y: y)
+                if value < min(first, second) - 0.02 || value > max(first, second) + 0.02 { count += 1 }
+            }
+        }
+        return count
     }
 
     /// Whether any pixel of row `y` differs from `other` at all.
