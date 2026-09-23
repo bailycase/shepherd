@@ -3,8 +3,8 @@ import ShepherdCore
 import ShepherdProtocol
 
 /// One row in the command palette: a destination or an action.
-struct PaletteItem: Identifiable {
-    enum Kind {
+struct PaletteItem: Identifiable, Equatable {
+    enum Kind: Equatable {
         case agent(AgentID)
         case space(SpaceID)
         case child(agentID: AgentID, child: ChildRun)

@@ -46,12 +46,11 @@ struct PaletteCard: View {
     @State private var selectedIndex = 0
     @State private var contentRows: [PaletteItem] = []
     @State private var contentSearchTask: Task<Void, Never>?
+    /// Filtered once per query, scope, items or transcript matches; hover and the arrow keys
+    /// only move `selectedIndex`.
+    @State private var results = PaletteResults()
     @FocusState private var fieldFocused: Bool
     @Environment(\.nwPaletteMaxListHeight) private var maxListHeight
-
-    private var results: [PaletteItem] {
-        PaletteSearch.filter(items, query: query, scope: scope) + (scope == .commands ? [] : contentRows)
-    }
 
     var body: some View {
         NWPaletteCard {
@@ -69,14 +68,20 @@ struct PaletteCard: View {
         .onChange(of: query) {
             selectedIndex = 0
             scheduleContentSearch()
+            refreshResults()
         }
-        .onChange(of: scope) { selectedIndex = 0 }
+        .onChange(of: scope) {
+            selectedIndex = 0
+            refreshResults()
+        }
+        .onChange(of: contentRows) { refreshResults() }
+        .onChange(of: items, initial: true) { refreshResults() }
         .onKeyPress(.upArrow) {
             selectedIndex = max(0, selectedIndex - 1)
             return .handled
         }
         .onKeyPress(.downArrow) {
-            selectedIndex = min(max(0, results.count - 1), selectedIndex + 1)
+            selectedIndex = min(max(0, results.rows.count - 1), selectedIndex + 1)
             return .handled
         }
         .onKeyPress(.tab) {
@@ -100,18 +105,16 @@ struct PaletteCard: View {
                 // Eager: the card hugs its results up to the cap, which needs their real height
                 // (a lazy stack reports only what it has realized). The list stays short.
                 VStack(alignment: .leading, spacing: 0) {
-                    let rows = results
-                    ForEach(PaletteEntry.entries(rows)) { entry in
+                    ForEach(results.entries) { entry in
                         switch entry {
                         case .header(let section):
                             NWPaletteSectionHeader(section.title)
-                        case .row(let index, let item):
-                            PaletteRow(item: item, selected: index == selectedIndex,
-                                       highlightTerm: item.contentSnippet != nil ? query : nil) { run(item) }
+                        case .row(let index, let item, let snippet):
+                            PaletteRow(item: item, selected: index == selectedIndex, snippet: snippet) { run(item) }
                                 .onHover { if $0 { selectedIndex = index } }
                         }
                     }
-                    if rows.isEmpty {
+                    if results.rows.isEmpty {
                         Text(query.isEmpty ? "Nothing here yet" : "No matches")
                             .font(Font.nw(.caption))
                             .foregroundStyle(Color.nw.textTertiary)
@@ -123,14 +126,18 @@ struct PaletteCard: View {
             .frame(maxHeight: maxListHeight)
             .fixedSize(horizontal: false, vertical: true)
             .onChange(of: selectedIndex) {
-                if results.indices.contains(selectedIndex) { proxy.scrollTo(results[selectedIndex].id) }
+                if results.rows.indices.contains(selectedIndex) { proxy.scrollTo(results.rows[selectedIndex].id) }
             }
         }
     }
 
+    private func refreshResults() {
+        results = PaletteResults(items: items, query: query, scope: scope, contentRows: contentRows)
+    }
+
     private func runSelected() {
-        guard results.indices.contains(selectedIndex) else { return }
-        run(results[selectedIndex])
+        guard results.rows.indices.contains(selectedIndex) else { return }
+        run(results.rows[selectedIndex])
     }
 
     // MARK: Content search (debounced, off-main)
@@ -151,25 +158,59 @@ struct PaletteCard: View {
     }
 }
 
+/// The results list for one query, scope, item list and set of transcript matches: the rows in
+/// order and the list's entries, snippets already split around their match. Built when one of
+/// those inputs changes, never on hover or selection.
+struct PaletteResults {
+    var rows: [PaletteItem] = []
+    var entries: [PaletteEntry] = []
+
+    init() {}
+
+    init(items: [PaletteItem], query: String, scope: PaletteItem.Scope, contentRows: [PaletteItem]) {
+        rows = PaletteSearch.filter(items, query: query, scope: scope) + (scope == .commands ? [] : contentRows)
+        entries = PaletteEntry.entries(rows, highlighting: query)
+    }
+}
+
+/// A transcript match's `…snippet…`, split around the first occurrence of the query.
+struct PaletteSnippet: Equatable {
+    var before: String
+    var match = ""
+    var after = ""
+
+    init(_ snippet: String, term: String) {
+        let term = term.trimmingCharacters(in: .whitespaces)
+        guard !term.isEmpty, let range = snippet.range(of: term, options: .caseInsensitive) else {
+            before = snippet
+            return
+        }
+        before = String(snippet[..<range.lowerBound])
+        match = String(snippet[range])
+        after = String(snippet[range.upperBound...])
+    }
+}
+
 /// One line of the results list: a section header or a result, each a single lazy-stack view
 /// with a stable id (a result's own id, so `scrollTo` finds it).
 enum PaletteEntry: Identifiable {
     case header(PaletteItem.Section)
-    case row(index: Int, item: PaletteItem)
+    case row(index: Int, item: PaletteItem, snippet: PaletteSnippet?)
 
     var id: String {
         switch self {
         case .header(let section): "section.\(section.rawValue)"
-        case .row(_, let item): item.id
+        case .row(_, let item, _): item.id
         }
     }
 
     /// Headers go before the first row of each section; `index` is the row's place in `rows`.
-    static func entries(_ rows: [PaletteItem]) -> [PaletteEntry] {
+    /// A row with a transcript snippet carries it split around `query`.
+    static func entries(_ rows: [PaletteItem], highlighting query: String = "") -> [PaletteEntry] {
         var entries: [PaletteEntry] = []
         for (index, item) in rows.enumerated() {
             if index == 0 || rows[index - 1].section != item.section { entries.append(.header(item.section)) }
-            entries.append(.row(index: index, item: item))
+            entries.append(.row(index: index, item: item, snippet: item.contentSnippet.map { PaletteSnippet($0, term: query) }))
         }
         return entries
     }
@@ -178,14 +219,14 @@ enum PaletteEntry: Identifiable {
 private struct PaletteRow: View {
     let item: PaletteItem
     let selected: Bool
-    /// Query term to emphasize inside the content snippet.
-    var highlightTerm: String?
+    /// The transcript snippet, with the matched term to emphasize.
+    let snippet: PaletteSnippet?
     let action: () -> Void
 
     var body: some View {
         NWPaletteRow(item.title, systemImage: item.icon, context: item.subtitle, shortcut: item.shortcut,
                      highlighted: selected, iconColor: iconColor, action: action) {
-            if let snippet = item.contentSnippet {
+            if let snippet {
                 snippetText(snippet)
                     .font(Font.nw(.caption))
                     .lineLimit(1)
@@ -206,14 +247,11 @@ private struct PaletteRow: View {
     }
 
     /// Snippet with the matched term emphasized; the rest stays dim.
-    private func snippetText(_ snippet: String) -> Text {
-        guard let term = highlightTerm?.trimmingCharacters(in: .whitespaces), !term.isEmpty,
-              let range = snippet.range(of: term, options: .caseInsensitive) else {
-            return Text(snippet).foregroundStyle(Color.nw.textTertiary)
-        }
-        let before = Text(snippet[snippet.startIndex..<range.lowerBound]).foregroundStyle(Color.nw.textTertiary)
-        let match = Text(snippet[range]).foregroundStyle(Color.nw.textPrimary).bold()
-        let after = Text(snippet[range.upperBound...]).foregroundStyle(Color.nw.textTertiary)
+    private func snippetText(_ snippet: PaletteSnippet) -> Text {
+        let before = Text(snippet.before).foregroundStyle(Color.nw.textTertiary)
+        guard !snippet.match.isEmpty else { return before }
+        let match = Text(snippet.match).foregroundStyle(Color.nw.textPrimary).bold()
+        let after = Text(snippet.after).foregroundStyle(Color.nw.textTertiary)
         return Text("\(before)\(match)\(after)")
     }
 }
