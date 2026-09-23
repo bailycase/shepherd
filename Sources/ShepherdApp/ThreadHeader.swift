@@ -91,7 +91,7 @@ enum ThreadCounters {
     }
 
     @MainActor private static func turns(_ store: NativeThreadStore) -> String {
-        let turns = store.messages.count { $0.role == "user" }
+        let turns = store.turns.count(where: \.isUser)
         return "\(turns) turn\(turns == 1 ? "" : "s")"
     }
 }
