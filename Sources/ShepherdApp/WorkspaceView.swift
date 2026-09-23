@@ -71,7 +71,11 @@ struct EmptyWorkspace: View {
     var body: some View {
         VStack(spacing: 16) {
             if let space = vm.selectedSpace {
-                EmptyState(Text("No agents in \(space.name)"), caption: "Start one to work in \(space.path.abbreviatingWithTilde).", framed: false)
+                let hasAgents = vm.state.agents.contains { $0.spaceID == space.id }
+                EmptyState(Text(hasAgents ? "No agent selected" : "No agents in \(space.name)"),
+                           caption: hasAgents ? "Pick one in the sidebar, or start another in \(space.name)."
+                                              : "Start one to work in \(space.path.abbreviatingWithTilde).",
+                           framed: false)
                 HStack(spacing: 8) {
                     Button("New agent") { vm.quickCreateAgent(in: space.id) }
                         .buttonStyle(ShepherdButtonStyle(.primary))
