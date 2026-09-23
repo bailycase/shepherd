@@ -1,0 +1,342 @@
+import Foundation
+import Testing
+import ShepherdCore
+import ShepherdProtocol
+@testable import ShepherdSessions
+import ShepherdTestSupport
+
+/// `RPCThreadState` fed recorded pi events. The thread needs an `RPCSession` (it bootstraps
+/// state, history, and stats from pi), so the stub answers those requests while the test injects
+/// events directly — the exact projection rules without scripting every scenario into the stub.
+@Suite("Thread projection from pi events")
+struct ThreadEventTests {
+    final class Thread: @unchecked Sendable {
+        let queue = DispatchQueue(label: "test.thread")
+        let session: RPCSession
+        let state: RPCThreadState
+        let dir: URL
+
+        init(bootstrap: Bool = true) throws {
+            dir = try uniqueDirectory("thread")
+            session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command, runtime: .rpc), queue: queue)
+            state = RPCThreadState(session: session, queue: queue)
+            session.onEvent = { [weak state] event in state?.handle(event) }
+            session.start()
+            if bootstrap { queue.async { self.state.bootstrap() } }
+        }
+
+        func stop() {
+            queue.sync { session.shutdown() }
+            try? FileManager.default.removeItem(at: dir)
+        }
+
+        /// Hand recorded pi events to the thread, in order, as the session would.
+        func feed(_ records: String...) async throws {
+            let events = try records.map { try JSONDecoder().decode(RPCEvent.self, from: Data($0.utf8)) }
+            await withCheckedContinuation { continuation in
+                queue.async {
+                    events.forEach(self.state.handle)
+                    continuation.resume()
+                }
+            }
+        }
+
+        func request(_ request: NativeThreadRequest) async -> NativeThreadResult {
+            await withCheckedContinuation { continuation in
+                queue.async { self.state.handle(request) { continuation.resume(returning: $0) } }
+            }
+        }
+
+        func snapshot() async throws -> NativeThreadSnapshot {
+            let result = await request(.snapshot())
+            return try #require(result.snapshotValue, "expected a snapshot, got \(result)")
+        }
+
+        /// Once pi's state, history, stats, and commands have all landed.
+        func ready() async throws -> NativeThreadSnapshot {
+            var latest: NativeThreadSnapshot?
+            try await eventually("the bootstrap to land") {
+                latest = await request(.snapshot()).snapshotValue
+                return latest.map { !$0.piSessionID.isEmpty && $0.messages.count == 2 && $0.stats != nil && $0.commands != nil } ?? false
+            }
+            return try #require(latest)
+        }
+    }
+
+    // MARK: - Bootstrap and revisions
+
+    @Test func theBootstrapProjectsPisStateHistoryStatsAndCommands() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        #expect(s.piSessionID == "stub-session")
+        #expect(UUID(uuidString: s.generation) != nil)
+        #expect(s.model == "anthropic/claude-sonnet-4-20250514")
+        #expect(s.thinking == "medium")
+        #expect(!s.running)
+        #expect(s.runtime == "rpc" && s.dialogsSupported)
+        #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents"])
+        #expect(s.messages.map(\.entryID) == ["m:0", "m:1"])
+        #expect(s.messages.first?.blocks == [NativeThreadBlock(kind: .text, text: "Hello!")])
+        #expect(s.stats == NativeThreadStats(contextTokens: 60000, contextWindow: 200000, contextPercent: 30, totalTokens: 105000, cost: 0.45))
+        #expect(s.commands?.map(\.name) == ["session-name", "fix-tests"])
+        #expect(s.provisional.isEmpty && s.dialogs.isEmpty && s.widgets == [] && !s.clipped && s.olderCursor == nil)
+    }
+
+    @Test func requestsBeforePiReportsItsSessionAreUnavailable() async throws {
+        let t = try Thread(bootstrap: false)
+        defer { t.stop() }
+        #expect(await t.request(.snapshot()) == .failure(code: "native_unavailable", message: "Session is not ready."))
+    }
+
+    @Test func anUnchangedThreadAnswersUnchangedAndAChangeBumpsTheRevision() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        #expect(await t.request(.snapshot(afterRevision: s.revision)) == .unchanged(piSessionID: s.piSessionID, generation: s.generation, revision: s.revision))
+        #expect(await t.request(.snapshot(expectedSessionID: "other")) == .failure(code: "stale_session", message: "Refresh the thread before acting."))
+
+        try await t.feed(#"{"type":"agent_start"}"#)
+        let running = try await t.snapshot()
+        #expect(running.running)
+        #expect(running.revision > s.revision)
+    }
+
+    // MARK: - Streaming
+
+    @Test func deltasBuildOneProvisionalAssistantMessage() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"agent_start"}"#,
+            #"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Hel"}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"lo"}}"#
+        )
+        let streaming = try await t.snapshot()
+        #expect(streaming.provisional.map(\.entryID) == ["provisional:assistant:1"])
+        #expect(streaming.provisional.first?.status == "streaming")
+        #expect(streaming.provisional.first?.blocks.map(\.text) == ["Hello"])
+
+        try await t.feed(#"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Hello there"}],"stopReason":"stop"}}"#)
+        let ended = try await t.snapshot()
+        #expect(ended.provisional.first?.status == "stop")
+        #expect(ended.provisional.first?.blocks.map(\.text) == ["Hello there"])
+    }
+
+    /// Spawned mid-turn: the first event seen is a delta, and it still starts a message.
+    @Test func aDeltaWithoutMessageStartStartsAProvisionalMessage() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"mid-turn"}}"#)
+        #expect(try await t.snapshot().provisional.map { $0.blocks.map(\.text) } == [["mid-turn"]])
+    }
+
+    @Test func userAndToolMessagesDoNotOpenAssistantRows() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"message_start","message":{"role":"user","content":"hi"}}"#,
+            #"{"type":"message_end","message":{"role":"user","content":"hi"}}"#
+        )
+        #expect(try await t.snapshot().provisional.isEmpty)
+    }
+
+    /// "Thought for Ns": measured live, frozen once the answer starts, and carried onto the
+    /// history row with the same pi timestamp after the refresh.
+    @Test func thinkingTimeIsMeasuredLiveAndSurvivesIntoHistory() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"agent_start"}"#,
+            #"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"thinking_start","contentIndex":0}}"#,
+            #"{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"hmm"}}"#
+        )
+        let thinking = try #require(try await t.snapshot().provisional.first?.thinkingSeconds)
+        try await t.feed(#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":"Answer"}}"#)
+        let answered = try #require(try await t.snapshot().provisional.first?.thinkingSeconds)
+        #expect(answered >= thinking)
+        try await t.feed(#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":1,"delta":" more"}}"#)
+        #expect(try await t.snapshot().provisional.first?.thinkingSeconds == answered, "frozen once the answer began")
+
+        // The stub's seeded assistant message carries this timestamp.
+        try await t.feed(
+            #"{"type":"message_end","message":{"role":"assistant","timestamp":1733234567891,"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"Answer more"}],"stopReason":"stop"}}"#,
+            #"{"type":"agent_end","messages":[]}"#
+        )
+        var history: NativeThreadSnapshot?
+        try await eventually("the refresh to replace the provisional row") {
+            history = try await t.snapshot()
+            return history?.provisional.isEmpty == true && history?.running == false
+        }
+        #expect(history?.messages.last?.thinkingSeconds == answered)
+    }
+
+    @Test func toolExecutionsKeepTheirArgumentsAndStartTime() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(#"{"type":"tool_execution_start","toolCallId":"call_1","toolName":"bash","args":{"command":"make"}}"#)
+        let started = try #require(try await t.snapshot().provisional.first)
+        #expect(started.entryID == "provisional:tool:call_1")
+        #expect(started.role == "toolResult" && started.status == "running" && started.toolName == "bash")
+        #expect(started.argumentsText == #"{"command":"make"}"#)
+        let startedAt = try #require(started.startedAt)
+
+        try await t.feed(#"{"type":"tool_execution_update","toolCallId":"call_1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"building…"}]}}"#)
+        let partial = try #require(try await t.snapshot().provisional.first)
+        #expect(partial.blocks.map(\.text) == ["building…"])
+        #expect(partial.argumentsText == #"{"command":"make"}"#, "an update without args keeps the call's arguments")
+        #expect(partial.startedAt == startedAt)
+
+        try await t.feed(#"{"type":"tool_execution_end","toolCallId":"call_1","toolName":"bash","result":{"content":[{"type":"text","text":"failed"}]},"isError":true}"#)
+        let ended = try #require(try await t.snapshot().provisional.first)
+        #expect(ended.status == "complete" && ended.isError == true)
+        #expect(ended.startedAt == startedAt)
+        #expect(ended.timestamp != nil)
+    }
+
+    @Test func atMostAPageOfProvisionalRowsIsKept() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let records = (0..<(RPCThreadState.pageSize + 5)).map {
+            #"{"type":"tool_execution_start","toolCallId":"call_\#($0)","toolName":"bash"}"#
+        }
+        for record in records { try await t.feed(record) }
+        let s = try await t.snapshot()
+        #expect(s.provisional.count == RPCThreadState.pageSize)
+        #expect(s.provisional.first?.toolCallID == "call_5")
+        #expect(s.clipped)
+    }
+
+    /// Active output is bounded before history fills the rest of the snapshot budget.
+    @Test func largeProvisionalOutputIsClippedToTheActiveBudget() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let big = String(repeating: "x", count: 15 * 1024)
+        for i in 0..<12 {
+            try await t.feed(#"{"type":"tool_execution_update","toolCallId":"call_\#(i)","toolName":"bash","partialResult":{"content":[{"type":"text","text":"\#(big)"}]}}"#)
+        }
+        let s = try await t.snapshot()
+        #expect(s.clipped)
+        #expect(s.provisional.count < 12)
+        #expect(s.provisional.last?.toolCallID == "call_11", "the newest output is what stays")
+        #expect(try JSONEncoder().encode(s).count <= RPCThreadState.snapshotLimit)
+    }
+
+    // MARK: - Dialogs
+
+    @Test func aDialogIsShownUntilItsTimeoutExpires() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(#"{"type":"extension_ui_request","id":"d1","method":"input","title":"Name?","placeholder":"name","prefill":"x","timeout":150}"#)
+        #expect(try await t.snapshot().dialogs == [
+            NativeThreadDialog(id: "d1", kind: .input, title: "Name?", placeholder: "name", prefill: "x", timeout: 150),
+        ])
+        try await eventually("the dialog to expire") { try await t.snapshot().dialogs.isEmpty }
+    }
+
+    @Test func aRepeatedDialogIDReplacesTheDialog() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"extension_ui_request","id":"d1","method":"confirm","title":"First?"}"#,
+            #"{"type":"extension_ui_request","id":"d1","method":"confirm","title":"Second?"}"#
+        )
+        #expect(try await t.snapshot().dialogs.map(\.title) == ["Second?"])
+    }
+
+    @Test func anOversizedDialogIsShownUnavailableAndCannotBeAnswered() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        let huge = String(repeating: "m", count: RPCThreadState.dialogBytes)
+        try await t.feed(#"{"type":"extension_ui_request","id":"big","method":"editor","title":"Edit","prefill":"\#(huge)"}"#)
+        let shown = try await t.snapshot()
+        #expect(shown.dialogs == [NativeThreadDialog(id: "big", kind: .editor, title: "Dialog too large for native thread", unavailable: "payload-limit")])
+        #expect(shown.clipped)
+
+        let answer = NativeThreadRequest.answer(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(),
+                                                dialogID: "big", answer: .editor(value: "x"))
+        #expect(await t.request(answer).failureCode == "dialog_unavailable")
+    }
+
+    @Test func atMostEightDialogsAreSent() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        for i in 0..<10 {
+            try await t.feed(#"{"type":"extension_ui_request","id":"d\#(i)","method":"confirm","title":"Q\#(i)"}"#)
+        }
+        #expect(try await t.snapshot().dialogs.map(\.id) == (0..<RPCThreadState.dialogLimit).map { "d\($0)" })
+    }
+
+    // MARK: - Widgets
+
+    @Test func widgetsShowTextWithoutANSIAndClearByKey() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(#"{"type":"extension_ui_request","id":"w","method":"setWidget","widgetKey":"plan","widgetLines":["\u001b[1mStep 1\u001b[22m","Step 2"]}"#)
+        #expect(try await t.snapshot().widgets == [NativeThreadWidget(namespace: "pi", key: "plan", kind: .text, text: "Step 1\nStep 2")])
+
+        try await t.feed(#"{"type":"extension_ui_request","id":"w","method":"setWidget","widgetKey":"plan"}"#)
+        #expect(try await t.snapshot().widgets == [])
+    }
+
+    /// Footer chrome, toasts, titles, and machine payloads meant for an extension's own TUI
+    /// component are not conversation content.
+    @Test func statusToastsTitlesAndMachineWidgetsAreNotShown() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"extension_ui_request","id":"1","method":"setStatus","statusKey":"build","statusText":"ok"}"#,
+            #"{"type":"extension_ui_request","id":"2","method":"notify","message":"loaded","notifyType":"info"}"#,
+            #"{"type":"extension_ui_request","id":"3","method":"setTitle","title":"pi"}"#,
+            #"{"type":"extension_ui_request","id":"4","method":"setWidget","widgetKey":"m","widgetLines":["PI_SUBAGENT_ASYNC_JSON:{\"kind\":\"snapshot\"}"]}"#
+        )
+        #expect(try await t.snapshot().widgets == [])
+    }
+
+    @Test func widgetsOverTheirLimitsAreDropped() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let longKey = String(repeating: "k", count: 129)
+        let longText = String(repeating: "t", count: RPCThreadState.widgetTextBytes + 1)
+        try await t.feed(
+            #"{"type":"extension_ui_request","id":"1","method":"setWidget","widgetKey":"\#(longKey)","widgetLines":["x"]}"#,
+            #"{"type":"extension_ui_request","id":"2","method":"setWidget","widgetKey":"long","widgetLines":["\#(longText)"]}"#
+        )
+        #expect(try await t.snapshot().widgets == [])
+
+        for i in 0..<(RPCThreadState.widgetItems + 1) {
+            try await t.feed(#"{"type":"extension_ui_request","id":"w","method":"setWidget","widgetKey":"w\#(i)","widgetLines":["item"]}"#)
+        }
+        #expect(try await t.snapshot().widgets?.count == RPCThreadState.widgetItems)
+    }
+
+    @Test func widgetsAreBoundedByAnAggregateBudget() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let text = String(repeating: "a", count: 4000)
+        for i in 0..<9 {
+            try await t.feed(#"{"type":"extension_ui_request","id":"w","method":"setWidget","widgetKey":"w\#(i)","widgetLines":["\#(text)"]}"#)
+        }
+        let widgets = try #require(try await t.snapshot().widgets)
+        #expect(widgets.count == 8, "the ninth would exceed \(RPCThreadState.widgetAggregateBytes) bytes")
+        #expect(try JSONEncoder().encode(widgets).count <= RPCThreadState.widgetAggregateBytes)
+    }
+}
