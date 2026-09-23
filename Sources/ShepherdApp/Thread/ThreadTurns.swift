@@ -21,6 +21,7 @@ struct UserTurn: View, Equatable {
                              timestamp: index == messages.count - 1 ? caption : nil,
                              isQueued: message.status == "queued")
                     .opacity(message.status == "pending" ? 0.7 : 1)
+                    .nwAnimation(.hover, value: message.status == "pending")
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
