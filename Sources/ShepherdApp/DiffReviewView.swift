@@ -230,13 +230,17 @@ private struct ReviewBody: View, Equatable {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if session.files.isEmpty {
-                NWEmptyState(Text("No changes"), message: session.isPRMode ? "This branch matches its PR base." : "The working tree matches HEAD.",
-                             showsMark: false)
+                NWEmptyState(Text("No changes"), message: emptyMessage, showsMark: false)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ReviewDiffList(model: model, session: session, commentFocused: commentFocused)
             }
         }
+    }
+
+    private var emptyMessage: String {
+        if session.isPRMode { return "This branch matches its PR base." }
+        return session.reference.map { "\($0) has no changes." } ?? "The working tree matches HEAD."
     }
 }
 
