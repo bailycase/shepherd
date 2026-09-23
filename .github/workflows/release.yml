@@ -147,6 +147,9 @@ jobs:
           xcrun stapler staple "$APP"
 
       - name: Package DMG
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: |
           APP=build/Build/Products/Release/Shepherd.app
           STAGE=$RUNNER_TEMP/dmg
@@ -154,11 +157,19 @@ jobs:
           cp -R "$APP" "$STAGE/"
           ln -s /Applications "$STAGE/Applications"
           hdiutil create -volname Shepherd -srcfolder "$STAGE" -ov -format UDZO Shepherd.dmg
-          # The stapled app is inside; stapling the DMG too lets Gatekeeper
-          # verify offline at mount time. Ad-hoc builds skip it.
+          # The stapled app is inside. The DMG gets its own notarization
+          # ticket so Gatekeeper can verify it offline at mount time; stapler
+          # has nothing to staple until the DMG itself is notarized. Ad-hoc
+          # builds skip all of it.
           if [[ '${{ steps.cert.outputs.identity }}' != '-' ]]; then
-            codesign --force --sign '${{ steps.cert.outputs.identity }}' Shepherd.dmg
-            xcrun stapler staple Shepherd.dmg || true
+            codesign --force --timestamp --sign '${{ steps.cert.outputs.identity }}' Shepherd.dmg
+            # notary.p8 was written by the Notarize step.
+            xcrun notarytool submit Shepherd.dmg \
+              --key "$RUNNER_TEMP/notary.p8" \
+              --key-id "$NOTARY_KEY_ID" \
+              --issuer "$NOTARY_ISSUER_ID" \
+              --wait
+            xcrun stapler staple Shepherd.dmg
           fi
           shasum -a 256 Shepherd.dmg
 
