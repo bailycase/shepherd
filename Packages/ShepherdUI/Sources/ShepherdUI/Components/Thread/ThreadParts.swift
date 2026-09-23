@@ -34,6 +34,8 @@ public enum NWThreadMetrics {
     public static let bubbleMaxWidth: CGFloat = 600
     /// Agent prose measure.
     public static let proseMeasure: CGFloat = 640
+    /// A list item's text starts this far in; its marker sits right-aligned before it.
+    public static let listIndent: CGFloat = 20
     public static let attachmentHeight: CGFloat = 26
     public static let attachmentThumbnail: CGFloat = 20
 }

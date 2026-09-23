@@ -97,7 +97,7 @@ public struct NWProseListItem: Equatable, Sendable {
 }
 
 /// Agent prose: body 13.5/1.6 in `textPrimary` at the 640pt measure, blocks 12pt apart.
-/// Headings at `.headline`, lists with a 20pt marker column (one nested level), quotes on a
+/// Headings at `.headline`, lists indented 20pt (one nested level), quotes on a
 /// 2pt rule, fenced code through `code` (an `NWCodeBlock` unless the app highlights it).
 public struct NWAgentProse<Code: View>: View {
     let blocks: [NWProseBlock]
@@ -156,9 +156,12 @@ private struct NWProseBlocks<Code: View>: View {
                 VStack(alignment: .leading, spacing: NW.Space.xs) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 0) {
+                            // The marker ends 6pt before the item, as a list's outside marker does.
                             Text(ordered ? "\(start + index)." : "•")
                                 .font(.nw(.body)).foregroundStyle(nw.textPrimary).monospacedDigit()
-                                .frame(width: 20, alignment: .leading)
+                                .fixedSize()
+                                .frame(width: NWThreadMetrics.listIndent - NW.Space.s, alignment: .trailing)
+                                .padding(.trailing, NW.Space.s)
                                 .accessibilityHidden(!ordered)
                             VStack(alignment: .leading, spacing: NW.Space.xs) {
                                 Text(item.text).nwText(.body).foregroundStyle(nw.textPrimary).textSelection(.enabled)
