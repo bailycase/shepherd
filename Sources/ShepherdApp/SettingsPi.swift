@@ -4,7 +4,7 @@ import ShepherdSessions
 
 struct PiSettings: View {
     @Bindable private var settings = AppSettings.shared
-    @ObservedObject private var updates = PiUpdateManager.shared
+    private var updates: PiUpdateManager { .shared }
     @State private var modelOptions: [String] = []
 
     var body: some View {

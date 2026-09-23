@@ -11,7 +11,7 @@ import ShepherdProtocol
 struct SettingsView: View {
     var vm: ShepherdViewModel
     private var themes: ThemeManager { .shared }
-    @ObservedObject private var piUpdates = PiUpdateManager.shared
+    private var piUpdates: PiUpdateManager { .shared }
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
 
