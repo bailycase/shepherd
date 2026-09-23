@@ -1,13 +1,15 @@
 import Foundation
 
-/// A short-pathed scratch directory, removed by the caller (`sun_path` caps socket paths at
-/// 104 bytes, so it lives under /tmp when the temporary directory is long).
+/// A new, uniquely named, short-pathed scratch directory, removed by the caller. `mkdtemp`
+/// guarantees no two parallel tests share one (a random name could collide on a socket path);
+/// `sun_path` caps socket paths at 104 bytes, so it lives under /tmp when the temporary
+/// directory is long.
 public func makeScratchDirectory(_ label: String = "shepherd") throws -> URL {
-    var base = FileManager.default.temporaryDirectory
-    if base.path.utf8.count > 70 { base = URL(fileURLWithPath: "/tmp") }
-    let dir = base.appendingPathComponent("\(label)-\(UInt32.random(in: 0..<1_000_000))", isDirectory: true)
-    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-    return dir
+    var base = FileManager.default.temporaryDirectory.path
+    if base.utf8.count > 60 { base = "/tmp" }
+    var template = Array("\(base)/\(label)-XXXXXX".utf8CString)
+    guard mkdtemp(&template) != nil else { throw WaitTimeout(what: "mkdtemp to succeed (errno \(errno))") }
+    return URL(fileURLWithPath: template.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }, isDirectory: true)
 }
 
 /// A git repository in a scratch directory with one commit, for review and worktree tests.
