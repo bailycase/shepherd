@@ -117,5 +117,9 @@ struct AppTerminalView: View {
 
     var body: some View {
         TerminalSurfaceView(model: model.model, isFocused: isFocused, isRendering: isRendering)
+            // SwiftUI resizes a hosted NSView on every frame of an animated layout change, and
+            // each Ghostty resize is a PTY resize: the surface takes its final frame at once
+            // while panes and columns around it move (DESIGN.md › Motion).
+            .nwInstant()
     }
 }
