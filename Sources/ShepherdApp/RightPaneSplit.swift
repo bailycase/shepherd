@@ -27,6 +27,12 @@ final class RightPaneState {
 /// The thread on the left, the right pane (inspector or review) beside it (Navigation board:
 /// 480–50%, 600 default, the drag handle on its left edge). In a column too narrow to keep the
 /// thread at 400pt, the pane overlays the thread instead of squeezing it (`ShellLayout`).
+///
+/// The pane slides in from the trailing edge and back out (`.pane`; a cross-fade under Reduce
+/// Motion) whichever path opens it: ⇧⌘B, ⌘I, the toolbar, a thread link, an agent's
+/// `review_diff`, a finished review. Beside a docked pane the thread takes its new width at
+/// once, as the slide starts: a long thread relaid out on every frame of the slide drops frames.
+/// Resizing (the handle, a window resize, a docked ⇄ overlaid flip) never animates.
 struct RightPaneSplit<Content: View, Pane: View>: View {
     @Bindable var state: RightPaneState
     let showPane: Bool
@@ -39,10 +45,12 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
             let total = geo.size.width
             let layout = ShellLayout.rightPane(containerWidth: total, preferredWidth: liveWidth ?? state.width)
             let docked = layout.mode == .docked
+            let contentWidth = showPane && docked ? layout.contentWidth : total
             // The thread stays the first child in both modes, so opening a pane never remounts it.
             ZStack(alignment: .topLeading) {
                 content()
-                    .frame(width: showPane && docked ? layout.contentWidth : total, height: geo.size.height)
+                    .frame(width: contentWidth, height: geo.size.height)
+                    .animation(nil, value: contentWidth)
                 if showPane {
                     HStack(spacing: 0) {
                         handle(total: total, width: layout.width)
@@ -53,8 +61,10 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                     .background(Color.nw.bgWindow)
                     .nwFloatShadow(!docked)
                     .offset(x: max(0, total - layout.width - AppLayout.dividerWidth))
+                    .nwTransition(.pane, edge: .trailing)
                 }
             }
+            .nwAnimation(.pane, value: showPane)
         }
         .coordinateSpace(.named("right-pane"))
     }
@@ -85,5 +95,26 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                 let step: CGFloat = direction == .increment ? AppLayout.paneAdjustStep : direction == .decrement ? -AppLayout.paneAdjustStep : 0
                 state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: width + step).width
             }
+    }
+}
+
+/// What the right pane shows: a run of the subagent inspector, or one review session.
+enum RightPaneShowing: Hashable {
+    case inspector(runID: String)
+    case review(UUID)
+}
+
+/// The right pane's content. The inspector and the review share the slot: when one replaces the
+/// other, the inspector steps to another run, or a new review replaces one, the content
+/// cross-fades (`.content`) while the pane itself stays put. Give each child
+/// `.nwTransition(.content)` and an identity that follows `showing`.
+struct RightPaneSlot<Content: View>: View {
+    let showing: RightPaneShowing?
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        // A ZStack, so the outgoing and incoming content overlap while they cross-fade.
+        ZStack { content() }
+            .nwAnimation(.content, value: showing)
     }
 }

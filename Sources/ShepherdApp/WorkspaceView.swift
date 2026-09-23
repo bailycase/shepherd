@@ -361,15 +361,20 @@ struct PaneLeafView: View, Equatable {
                         review: { [vm] path in vm.selectAgent(agentID); vm.openReview(agentID: agentID, path: path) }
                     )
                 } pane: {
-                    if let inspecting {
-                        SubagentInspector(store: store, runID: inspecting, active: model.isVisible, close: { [vm] in
-                            vm.subagentInspector.runByAgent.removeValue(forKey: agentID)
-                        }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
-                            do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
-                        }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) })
-                        .id(inspecting)
-                    } else if let review = model.review {
-                        ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
+                    RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? model.review.map { .review($0.id) }) {
+                        if let inspecting {
+                            SubagentInspector(store: store, runID: inspecting, active: model.isVisible, close: { [vm] in
+                                vm.subagentInspector.runByAgent.removeValue(forKey: agentID)
+                            }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
+                                do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
+                            }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) })
+                            .id(inspecting)
+                            .nwTransition(.content)
+                        } else if let review = model.review {
+                            ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
+                                .id(review.id)
+                                .nwTransition(.content)
+                        }
                     }
                 }
             } else {
@@ -607,14 +612,19 @@ private struct RemoteAgentThreadPane: View {
                 }
             )
         } pane: {
-            if let inspecting {
-                SubagentInspector(store: store, runID: inspecting, active: true, close: {
-                    vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
-                }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
-                review: { vm.openRemoteReview(ref, path: $0) })
-                .id(inspecting)
-            } else if let review {
-                ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: true), store: store)
+            RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? review.map { .review($0.id) }) {
+                if let inspecting {
+                    SubagentInspector(store: store, runID: inspecting, active: true, close: {
+                        vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
+                    }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
+                    review: { vm.openRemoteReview(ref, path: $0) })
+                    .id(inspecting)
+                    .nwTransition(.content)
+                } else if let review {
+                    ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: true), store: store)
+                        .id(review.id)
+                        .nwTransition(.content)
+                }
             }
         }
     }
