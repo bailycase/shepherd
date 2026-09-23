@@ -90,7 +90,7 @@ public struct NWRunBrief<Files: View>: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let result {
                 NWBriefLabel(text: "Result", color: resultState.textColor)
-                Text(NWInlineMarkup.attributed(result, codeSize: 11.5))
+                NWInlineText(text: result, codeSize: 11.5).equatable()
                     .font(.nw(.ui, weight: .regular)).lineSpacing(NW.Space.xs)
                     .foregroundStyle(nw.textPrimary)
                     .lineLimit(8)

@@ -22,36 +22,37 @@ public struct NWBranchGlyph: View {
     }
 }
 
-/// Inline code in a subagent's words (a question, a result): backtick spans become mono on
-/// `bgHover`. A plain scan, no Markdown parse; an unpaired backtick stays literal.
+/// A subagent's words (a question, a result) as inline Markdown: emphasis and links as the thread
+/// shows them, code spans mono on `bgHover`, links in `running`. Text that does not parse stays
+/// plain.
 public enum NWInlineMarkup {
-    /// The text split into plain and code spans, in order; empty spans are dropped.
-    public static func spans(_ text: String) -> [(text: String, code: Bool)] {
-        var spans: [(String, Bool)] = []
-        var rest = Substring(text)
-        while let open = rest.firstIndex(of: "`"),
-              let close = rest[rest.index(after: open)...].firstIndex(of: "`") {
-            let before = rest[..<open]
-            let code = rest[rest.index(after: open)..<close]
-            if !before.isEmpty { spans.append((String(before), false)) }
-            if !code.isEmpty { spans.append((String(code), true)) }
-            rest = rest[rest.index(after: close)...]
-        }
-        if !rest.isEmpty { spans.append((String(rest), false)) }
-        return spans
-    }
-
     @MainActor public static func attributed(_ text: String, codeSize: CGFloat = 11.5) -> AttributedString {
-        var result = AttributedString()
-        for span in spans(text) {
-            var part = AttributedString(span.text)
-            if span.code {
-                part.font = .nwMono(codeSize)
-                part.backgroundColor = .nw.bgHover
+        guard var result = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
+            return AttributedString(text)
+        }
+        for run in result.runs {
+            if run.inlinePresentationIntent?.contains(.code) == true {
+                result[run.range].font = .nwMono(codeSize)
+                result[run.range].backgroundColor = .nw.bgHover
             }
-            result += part
+            if run.link != nil { result[run.range].foregroundColor = .nw.running }
         }
         return result
+    }
+}
+
+/// `NWInlineMarkup` text that parses only when its text changes, not on every render of the
+/// view around it (a card's reply keystrokes, an inspector's polls).
+struct NWInlineText: View, Equatable {
+    let text: String
+    let codeSize: CGFloat
+
+    nonisolated static func == (a: NWInlineText, b: NWInlineText) -> Bool {
+        a.text == b.text && a.codeSize == b.codeSize
+    }
+
+    var body: some View {
+        Text(NWInlineMarkup.attributed(text, codeSize: codeSize))
     }
 }
 

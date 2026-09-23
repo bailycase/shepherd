@@ -3,7 +3,7 @@ import SwiftUI
 import Testing
 @testable import ShepherdUI
 
-/// The Agents components' pure parts: duration text, the elapsed schedule's ticks, inline code
+/// The Agents components' pure parts: duration text, the elapsed schedule's ticks, inline Markdown
 /// spans, and the card's spoken summary.
 @Suite("Agents components")
 struct AgentComponentTests {
@@ -41,16 +41,28 @@ struct AgentComponentTests {
         #expect(entries == [now, start.addingTimeInterval(59), start.addingTimeInterval(60), start.addingTimeInterval(120)])
     }
 
-    @Test func inlineCodeSplitsOnPairedBackticks() {
-        let spans = NWInlineMarkup.spans("Collides with `Tokens.textSecondary`. Rename?")
-        #expect(spans.map(\.text) == ["Collides with ", "Tokens.textSecondary", ". Rename?"])
-        #expect(spans.map(\.code) == [false, true, false])
+    /// The runs of `text` as (characters, is code, is strong, is a link).
+    @MainActor private func runs(_ text: String) -> [(String, Bool, Bool, Bool)] {
+        let attributed = NWInlineMarkup.attributed(text)
+        return attributed.runs.map { run in
+            let intent = run.inlinePresentationIntent ?? []
+            return (String(attributed[run.range].characters), intent.contains(.code), intent.contains(.stronglyEmphasized), run.link != nil)
+        }
     }
 
-    @Test(arguments: ["no code at all", "an `unpaired backtick", "``"])
-    func textWithoutACodeSpanStaysPlain(_ text: String) {
-        #expect(NWInlineMarkup.spans(text).allSatisfy { !$0.code })
-        #expect(NWInlineMarkup.spans(text).map(\.text).joined() == (text == "``" ? "" : text))
+    @MainActor @Test func codeSpansAndEmphasisRenderAsTheThreadDoes() {
+        let spans = runs("Collides with `Tokens.textSecondary`. **Rename** or [read](https://example.com)?")
+        #expect(spans.map(\.0) == ["Collides with ", "Tokens.textSecondary", ". ", "Rename", " or ", "read", "?"])
+        #expect(spans.map(\.1) == [false, true, false, false, false, false, false])
+        #expect(spans.map(\.2) == [false, false, false, true, false, false, false])
+        #expect(spans.map(\.3) == [false, false, false, false, false, true, false])
+    }
+
+    @MainActor @Test(arguments: ["no markup at all", "an `unpaired backtick", "two\nlines  kept"])
+    func textWithoutMarkupStaysAsWritten(_ text: String) {
+        let spans = runs(text)
+        #expect(spans.allSatisfy { !$0.1 && !$0.2 && !$0.3 })
+        #expect(spans.map(\.0).joined() == text)
     }
 
     @Test func aCardReadsAsNameRoleStateAndDetail() {
