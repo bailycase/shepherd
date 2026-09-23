@@ -7,7 +7,7 @@ import ShepherdRemote
 
 struct RootView: View {
     @Bindable var vm: ShepherdViewModel
-    @ObservedObject private var themes = ThemeManager.shared
+    private var themes: ThemeManager { .shared }
     @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.openWindow) private var openWindow
     @State private var liveSidebarWidth: Double?

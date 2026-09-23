@@ -60,7 +60,8 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 }
 
 @MainActor
-final class ThemeManager: ObservableObject {
+@Observable
+final class ThemeManager {
     static let shared = ThemeManager()
     static var effectiveSystemColorScheme: ColorScheme {
         UserDefaults.standard.string(forKey: "AppleInterfaceStyle") == "Dark" ? .dark : .light
@@ -70,9 +71,9 @@ final class ThemeManager: ObservableObject {
 
     private let store: UserDefaults
     private let launchOverride: AppearanceMode?
-    private var systemColorScheme: ColorScheme
-    @Published private(set) var mode: AppearanceMode
-    @Published private(set) var current: ShepherdTheme
+    @ObservationIgnored private var systemColorScheme: ColorScheme
+    private(set) var mode: AppearanceMode
+    private(set) var current: ShepherdTheme
 
     init(
         store: UserDefaults = .standard,
