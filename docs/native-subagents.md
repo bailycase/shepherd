@@ -272,56 +272,61 @@ family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-
   provider-request boundary, after the current tools finish. It sends no OS signals and never
   replays the task. Stop can still abort a paused child.
 
-**Cards.**
+**Cards.** [DESIGN.md](../DESIGN.md#subagents) specifies how they look; this is what they do.
 
-- **Placement:** a child's card renders where its `shepherd_child_start` row was. Workflow
-  children (including `/run`) sit at the `shepherd_workflow` row. Children with no tool call
-  (slash commands, pi-subagents rows) trail the last agent turn.
-- **Controls by state:**
-  - Running: Inspect (⌘I), Steer…, Pause or Continue, Stop. A paused card reads "Paused ·
-    elapsed".
-  - Needs you: the child's options as buttons, plus Reply….
-  - Failed: Retry (resume with the original task) and Transcript.
-- **Grouping:** more than three siblings fold into a runs strip. Needs-you cards stay visible.
-- **Ledger:** once every run in a spawn group has finished, the cards become one ledger at the
-  first spawn's position. The header shows the state cells, "all done · wall · tokens" (or
-  "n done · m failed …"), and the combined DiffStat and file count. Below it, one 44pt row per
-  child in spawn order: glyph, role, a one-line summary (or the exit reason), "files · tools ·
-  duration". Diff counts come from `edit` calls; `write` lists the file at +0/−0.
+- **Placement:** a child's card renders where its `shepherd_child_start` row was, and the spawn
+  call leaves the activity lines. Workflow children (including `/run`) sit at the
+  `shepherd_workflow` row. Children with no tool call (slash commands, pi-subagents rows) trail
+  the last agent turn. Once cards stand for a turn's children, its `shepherd_child_wait` and
+  `shepherd_child_result` calls are hidden too.
+- **Controls by state:** clicking a card inspects the run.
+  - Running: the last call and the context window used. Pause or Continue and Stop are in the
+    card's context menu and accessibility actions, and visible in the inspector.
+  - Queued or paused: an outlined "Queued" or "Paused" pill ("paused before its next model
+    request").
+  - Needs you: the question with the child's options as buttons, plus Reply… for free text.
+  - Failed: Open replay (the inspector) and Re-run (resume with the original task).
+- **Grouping:** more than three siblings fold into a runs strip: one step per run, the tally,
+  tokens, and the group's time. Each step opens its run in the inspector (its tooltip names the
+  run), and the rest of the row shows or hides every card. Needs-you cards stay visible.
+- **Ledger:** once every run in a spawn group has finished and none still asks, the cards become
+  one ledger at the first spawn's position. The header shows one step per run, "all done · 45m"
+  (or "2 done · 1 failed · 45m"), and the combined DiffStat. Below it, one row per child in spawn
+  order: state dot, name, a one-line summary (or the exit reason), and "files · duration". Diff
+  counts come from `edit` calls; `write` lists the file at +0/−0.
 - **Turn footer:** reads "time · duration · N tool calls · n subagents". The subagent count
   links to the first child.
 
-**Inspector.** It opens in the right pane beside the thread (`RightPaneSplit`: 600pt default, at
-least 480pt, at most half the window, with the width remembered). It shares that slot with the
-review, and the inspector wins when both are open. Clicking the inspected card or ledger row again
-closes it; sidebar rows always open it.
+**Inspector.** It opens in the right pane beside the thread (`RightPaneSplit`: 600pt by default,
+at least 480pt, at most half the main column, the width remembered; it overlays the thread when
+the column is too narrow). It shares that slot with the review, and the inspector wins when both
+are open. Clicking the inspected card or ledger row again closes it; sidebar rows always open it.
 
-- **Header:** role, "k of n", and a state word, above a line with context, model, thinking (live
-  runs only), turns, tools, and tokens. Live runs have Pause/Continue and Stop.
+- **Header:** the name and "k of n", above a line with the model, the thinking level (live runs
+  only), turns, and tokens (live) or "done 11:02" (finished). Live runs have Pause/Continue and
+  Stop; ‹ › step through siblings.
 - **⋯ menu:** Refresh Transcript (live runs); Copy Transcript and Show Session File in Finder
   (finished runs).
+- **Brief:** the goal (with "step n / m · 62%" while live), and once finished the result and up
+  to five touched files, which open the review pane at the file.
 - **Transcript:** pages the child's session file (its last 8 MiB) 50 entries at a time, using the
-  thread's own projection. "N earlier turns · Show all" loads more. Scrolling up stops following
-  a live run. Switching children invalidates pending pages, and Copy Transcript loads every page
-  first.
+  thread's own projection, one type step smaller. "N earlier turns · Show all" loads more.
+  Scrolling up stops following a live run. Switching children invalidates pending pages, and
+  Copy Transcript loads every page first.
 - **Live runs** end in a Steer composer addressed to the child ("to: worker · not the parent").
   A failed send keeps the draft.
-- **Finished runs** are read-only:
-  - ‹ › step through siblings.
-  - A Result block shows the summary and touched files (the file links reveal the file in
-    Finder).
-  - Messages from the parent appear as bubbles captioned "from parent".
-  - The bottom bar has Re-run, Fork as new agent, Copy transcript, and "kept with the thread".
+- **Finished runs** are read-only: messages from the parent are captioned "from parent", and the
+  bottom bar has Re-run, Fork, and Copy transcript.
 - **Re-run** is `shepherd_child_resume` with the original task.
-- **Fork as new agent** copies the child's session into pi's session directory under a fresh ID
+- **Fork** copies the child's session into pi's session directory under a fresh ID
   (`PiSessionFile.fork`: header rewritten, every entry kept). It starts an RPC agent on it
   (`NewAgentConfig.piSessionID`), provisionally named `<role> (fork)` until the namer retitles
   it. It uses the run's cwd and model, falling back to the parent's. A missing transcript shows
   an error and creates nothing. Remote agents have no Fork.
 
-**Sidebar.** Children nest under their parent with a branch glyph in the state color, and elapsed
-time, "needs you", "failed", or a duration trailing. A group stays expanded while any run is live.
-Once all are finished it gets a disclosure header ("n subagents · done h:mm"). The header is
+**Sidebar.** Children nest under their parent with their state dot, and "ASK", elapsed time, or
+how long they took trailing (in `failed` for a failed run). A group stays expanded while any run
+is live. Once all are finished it gets a disclosure row ("3 subagents · done 9:56"). The group is
 expanded for the selected thread and folded for the others, whose agent row then shows "n sub".
 Selecting a child selects its parent and opens the inspector.
 
