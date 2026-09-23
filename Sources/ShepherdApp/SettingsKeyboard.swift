@@ -101,7 +101,7 @@ private struct ShortcutRecorder: View {
                         .padding(.horizontal, 8)
                         .frame(height: 22)
                         .background(Tokens.accentBg, in: RoundedRectangle(cornerRadius: Radius.xs))
-                        .overlay(RoundedRectangle(cornerRadius: Radius.xs).strokeBorder(Tokens.accent, lineWidth: 1))
+                        .overlay { RoundedRectangle(cornerRadius: Radius.xs).strokeBorder(Tokens.accent, lineWidth: 1) }
                 } else {
                     Keycaps(chord: chordText)
                 }

@@ -137,7 +137,7 @@ struct PiSettings: View {
         }()
         return HStack(spacing: 6) {
             Circle().fill(color).frame(width: 6, height: 6)
-            (Text(text).foregroundStyle(color) + Text(" · uses the pi resolved from your login shell").foregroundStyle(Tokens.textTertiary))
+            Text("\(Text(text).foregroundStyle(color))\(Text(" · uses the pi resolved from your login shell").foregroundStyle(Tokens.textTertiary))")
                 .fixedSize(horizontal: false, vertical: true)
         }
         .font(Fonts.description)

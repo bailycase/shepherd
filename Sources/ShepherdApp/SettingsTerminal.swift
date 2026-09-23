@@ -67,7 +67,7 @@ private struct FontPreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            (Text("~/proj ").foregroundStyle(Tokens.accentText) + Text("❯ git status --short"))
+            Text("\(Text("~/proj ").foregroundStyle(Tokens.accentText))❯ git status --short")
             Text(" M Sources/App.swift").foregroundStyle(Tokens.warningText)
             Text("?? Tests/AppTests.swift").foregroundStyle(Tokens.successText)
             Text("ILil1| O0o {} -> the quick brown fox").foregroundStyle(Tokens.textTertiary)
@@ -78,6 +78,6 @@ private struct FontPreview: View {
         .padding(10)
         .frame(width: 320, alignment: .leading)
         .background(Tokens.bgCanvas, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1) }
     }
 }

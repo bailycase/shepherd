@@ -110,7 +110,7 @@ struct CodeBlockView: View {
             .frame(height: 28)
             .background(Tokens.bgMuted)
             .overlay(alignment: .bottom) { Tokens.borderSubtle.frame(height: 1) }
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 highlighted(code)
                     .font(Fonts.code)
                     .lineSpacing(Fonts.outputLeading)
@@ -120,11 +120,12 @@ struct CodeBlockView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
             }
+            .scrollIndicators(.hidden)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.md))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1) }
     }
 
     private func highlighted(_ code: String) -> Text {

@@ -59,7 +59,7 @@ struct WorkspaceView: View {
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
         // layouts (see TerminalDropOverlay.swift).
-        .background(AppTerminalDropOverlay())
+        .background { AppTerminalDropOverlay() }
     }
 }
 
@@ -230,7 +230,7 @@ struct PaneTreeView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
-        .coordinateSpace(name: containerSpace)
+        .coordinateSpace(.named(containerSpace))
     }
 
     private func separatorColor(for split: PaneNode) -> Color {
@@ -544,7 +544,7 @@ private struct RemotePaneSplitView: View {
                     }
                 }
             }
-            .coordinateSpace(name: containerSpace)
+            .coordinateSpace(.named(containerSpace))
         }
     }
 

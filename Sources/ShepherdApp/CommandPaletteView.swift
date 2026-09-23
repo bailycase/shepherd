@@ -60,7 +60,7 @@ struct PaletteCard: View {
         }
         .frame(width: Metrics.paletteWidth)
         .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.xxl))
-        .overlay(RoundedRectangle(cornerRadius: Radius.xxl).strokeBorder(Tokens.borderStrong, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.xxl).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
         .shadow(color: Tokens.menuShadow, radius: 32, y: 16)
         .onAppear {
             query = initialQuery
@@ -130,7 +130,7 @@ struct PaletteCard: View {
 
     private var resultsList: some View {
         ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     let rows = results
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
@@ -158,6 +158,7 @@ struct PaletteCard: View {
                 }
                 .padding(8)
             }
+            .scrollIndicators(.hidden)
             .frame(maxHeight: Metrics.paletteRowHeight * 14)
             .fixedSize(horizontal: false, vertical: true)
             .onChange(of: selectedIndex) {
@@ -253,8 +254,9 @@ private struct PaletteRow: View {
               let range = snippet.range(of: term, options: .caseInsensitive) else {
             return Text(snippet).foregroundStyle(Tokens.textMuted)
         }
-        return Text(snippet[snippet.startIndex..<range.lowerBound]).foregroundStyle(Tokens.textMuted)
-            + Text(snippet[range]).foregroundStyle(Tokens.text).bold()
-            + Text(snippet[range.upperBound...]).foregroundStyle(Tokens.textMuted)
+        let before = Text(snippet[snippet.startIndex..<range.lowerBound]).foregroundStyle(Tokens.textMuted)
+        let match = Text(snippet[range]).foregroundStyle(Tokens.text).bold()
+        let after = Text(snippet[range.upperBound...]).foregroundStyle(Tokens.textMuted)
+        return Text("\(before)\(match)\(after)")
     }
 }

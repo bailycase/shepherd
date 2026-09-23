@@ -38,7 +38,7 @@ private struct ModelField: View {
             .onChange(of: focused) { showSuggestions = focused && !options.isEmpty }
             .onChange(of: model) { if focused { showSuggestions = !options.isEmpty } }
             .popover(isPresented: $showSuggestions, arrowEdge: .bottom) {
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical) {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(matches, id: \.self) { id in
                             ModelSuggestionRow(id: id) {
@@ -54,6 +54,7 @@ private struct ModelField: View {
                         }
                     }
                 }
+                .scrollIndicators(.hidden)
                 .padding(4)
                 .frame(width: Metrics.modelPickerWidth, height: min(CGFloat(max(matches.count, 1)) * 30 + 8, 260))
                 .background(Tokens.bgRaised)

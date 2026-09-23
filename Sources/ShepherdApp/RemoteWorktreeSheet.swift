@@ -78,7 +78,7 @@ struct RemoteWorktreeSheet: View {
                             VStack(alignment: .leading) {
                                 TextEditor(text: $options.body).frame(height: 70).scrollContentBackground(.hidden).padding(6)
                                     .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.md))
-                                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.borderStrong, lineWidth: 1))
+                                    .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
                                 if generatingDescription { Text("Generating on the host…").font(Fonts.caption).foregroundStyle(Tokens.textMuted) }
                                 else if info.generateDescription == true {
                                     SheetLinkButton(label: descriptionPrepared ? "Regenerate…" : "Generate…") {

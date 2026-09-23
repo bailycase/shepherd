@@ -151,9 +151,9 @@ private struct RemoteHostRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(connection.config.name).font(Fonts.rowTitle).foregroundStyle(Tokens.text)
                 let (word, color) = status
-                (Text("\(connection.config.host):\(String(connection.config.port)) · ").foregroundStyle(Tokens.textTertiary)
-                    + Text(word).foregroundStyle(color)
-                    + Text(connection.phase == .connected ? " · \(connection.state.agents.count) agents" : "").foregroundStyle(Tokens.textTertiary))
+                let address = Text("\(connection.config.host):\(String(connection.config.port)) · ").foregroundStyle(Tokens.textTertiary)
+                let count = Text(connection.phase == .connected ? " · \(connection.state.agents.count) agents" : "").foregroundStyle(Tokens.textTertiary)
+                Text("\(address)\(Text(word).foregroundStyle(color))\(count)")
                     .font(Fonts.micro)
                     .lineLimit(1)
             }

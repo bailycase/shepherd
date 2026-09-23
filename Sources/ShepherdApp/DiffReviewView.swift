@@ -90,7 +90,7 @@ struct ReviewPane: View {
                 Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium)).foregroundStyle(Tokens.text)
                     .frame(width: Metrics.buttonSmall, height: Metrics.buttonSmall)
                     .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.button))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1))
+                    .overlay { RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
             }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             .accessibilityLabel("Review options")
@@ -123,7 +123,7 @@ struct ReviewPane: View {
 
     private var fileStrip: some View {
         ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 HStack(spacing: 4) {
                     ForEach(session.files) { file in
                         chip(file).id(file.id)
@@ -131,6 +131,7 @@ struct ReviewPane: View {
                 }
                 .padding(.horizontal, 10)
             }
+            .scrollIndicators(.hidden)
             .onChange(of: currentFile) { _, id in if let id { withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) } } }
         }
         .frame(height: Metrics.fileStripHeight)
@@ -238,7 +239,7 @@ struct ReviewPane: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(folded ? "Expand \(name)" : "Collapse \(name)")
-            (Text(directory.isEmpty ? "" : directory + "/").foregroundStyle(Tokens.textTertiary) + Text(name).fontWeight(.semibold).foregroundStyle(Tokens.text))
+            Text("\(Text(directory.isEmpty ? "" : directory + "/").foregroundStyle(Tokens.textTertiary))\(Text(name).fontWeight(.semibold).foregroundStyle(Tokens.text))")
                 .font(Fonts.mono(12)).lineLimit(1).truncationMode(.head)
                 .help(file.displayPath)
             Text("\(file.hunks.count) hunk\(file.hunks.count == 1 ? "" : "s")").font(Fonts.micro).foregroundStyle(Tokens.textMuted).fixedSize()
@@ -388,7 +389,7 @@ struct ReviewPane: View {
             .padding(EdgeInsets(top: 4, leading: 14, bottom: 8, trailing: 8))
         }
         .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.xl))
-        .overlay(RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(summaryFocused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(summaryFocused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1) }
         .padding(12)
         .overlay(alignment: .top) { Tokens.border.frame(height: 1) }
     }
@@ -520,7 +521,7 @@ private struct DiffLineRow: View {
         }
         .padding(10)
         .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.accent, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.accent, lineWidth: 1) }
         .padding(EdgeInsets(top: 6, leading: indent, bottom: 8, trailing: 12))
     }
 
@@ -540,7 +541,7 @@ private struct DiffLineRow: View {
         }
         .padding(10)
         .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.borderStrong, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
         .padding(EdgeInsets(top: 6, leading: indent, bottom: 8, trailing: 12))
     }
 

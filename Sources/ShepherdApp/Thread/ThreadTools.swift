@@ -43,7 +43,7 @@ struct ToolGroup: View {
         }
         .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1) }
     }
 }
 
@@ -77,7 +77,7 @@ struct ToolRowView: View {
             Text(row.name).font(Fonts.code).foregroundStyle(Tokens.textTertiary)
                 .frame(width: nameWidth, alignment: .leading).lineLimit(1).truncationMode(.middle)
                 .help(row.name)
-            (Text(row.preview).foregroundStyle(Tokens.text) + Text(row.previewSuffix ?? "").foregroundStyle(Tokens.textMuted))
+            Text("\(Text(row.preview).foregroundStyle(Tokens.text))\(Text(row.previewSuffix ?? "").foregroundStyle(Tokens.textMuted))")
                 .font(Fonts.code).lineLimit(1).truncationMode(.tail)
                 .help(row.preview + (row.previewSuffix ?? ""))
             Spacer(minLength: 8)

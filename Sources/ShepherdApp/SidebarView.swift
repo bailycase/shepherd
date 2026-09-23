@@ -15,7 +15,7 @@ struct SidebarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
+                ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 1) {
                         SidebarSection(
                             title: "This Mac",
@@ -38,6 +38,7 @@ struct SidebarView: View {
                     .padding(.horizontal, Metrics.sidebarPadding)
                     .padding(.bottom, Metrics.sidebarPadding)
                 }
+                .scrollIndicators(.hidden)
                 // Keyboard navigation (⌘1–9, ⌘↑/↓, ⌃⇧digits) can land on a row scrolled out of
                 // view; the same selection may have just opened a disclosure, so scroll on the
                 // next runloop turn once the row exists. The trigger is a counter so re-selecting

@@ -111,7 +111,7 @@ struct SubagentInspector: View {
                 Image(systemName: "ellipsis").font(.system(size: 12, weight: .medium)).foregroundStyle(Tokens.text)
                     .frame(width: Metrics.buttonSmall, height: Metrics.buttonSmall)
                     .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.button))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1))
+                    .overlay { RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
             }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             .accessibilityLabel("Inspector options")
@@ -322,8 +322,8 @@ struct SubagentInspector: View {
             }
         }
         .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.xl))
-        .overlay(RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(composing ? Tokens.accent : Tokens.borderStrong, lineWidth: 1))
-        .background(RoundedRectangle(cornerRadius: Radius.xl + 3).fill(composing ? Tokens.focusRing : .clear).padding(-3))
+        .overlay { RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(composing ? Tokens.accent : Tokens.borderStrong, lineWidth: 1) }
+        .background { RoundedRectangle(cornerRadius: Radius.xl + 3).fill(composing ? Tokens.focusRing : .clear).padding(-3) }
         .padding(12)
     }
 

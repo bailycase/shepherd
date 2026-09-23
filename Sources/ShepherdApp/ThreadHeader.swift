@@ -48,7 +48,7 @@ struct ThreadHeader: View {
                 Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium)).foregroundStyle(Tokens.text)
                     .frame(width: Metrics.buttonMedium, height: Metrics.buttonMedium)
                     .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.button))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1))
+                    .overlay { RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
