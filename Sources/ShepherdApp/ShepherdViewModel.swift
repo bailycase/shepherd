@@ -61,7 +61,8 @@ final class ShepherdViewModel {
             sidebarDefaults.set(collapsedSpaces.map(\.rawValue).sorted(), forKey: "shepherd.collapsedSpaces")
         }
     }
-    /// Live pi-subagents child runs per agent (sidebar subagent rows).
+    /// Child runs per agent, as published: the palette's Subagents section and the needs-you
+    /// mark on an agent's sidebar row.
     /// Ephemeral display state; see `ChildRuns` for the lifecycle rules.
     var childRuns = ChildRuns()
     /// Native diff-review panes keyed by their review leaf. Ephemeral: review
