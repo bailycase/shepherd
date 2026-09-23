@@ -44,7 +44,14 @@ struct TerminalMotionTests {
         terminal.onResize = { grids.append("\($0)x\($1)") }
         let window = OffscreenWindow(size: PaneBesideTerminal<EmptyView>.size, dark: false, view)
         defer { window.close() }
-        try await eventuallyOnMain("the surface to report its first grid", timeout: .seconds(30)) { !grids.isEmpty }
+        // A mounting surface can report a transient grid before its full-width one: wait until
+        // its reports have been quiet for a while.
+        var seen = 0
+        var quietSince = ContinuousClock.now
+        try await eventuallyOnMain("the surface to settle on its first grid", timeout: .seconds(30)) {
+            if grids.count != seen { seen = grids.count; quietSince = .now }
+            return !grids.isEmpty && ContinuousClock.now - quietSince > .milliseconds(500)
+        }
         let initial = grids[grids.count - 1]
         let strip = CGRect(x: 0, y: PaneBesideTerminal<EmptyView>.size.height / 2, width: PaneBesideTerminal<EmptyView>.size.width, height: 1)
         let recording = await MotionProbe.record(window, region: strip) {
