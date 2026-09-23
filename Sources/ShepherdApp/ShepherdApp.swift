@@ -53,7 +53,7 @@ public struct ShepherdMacApp: App {
             SpaceCommands(vm: vm, menu: vm.menuState)
             AgentCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
             MachineCommands(vm: vm, menu: vm.menuState)
-            AppearanceCommands(vm: vm, mode: themes.mode)
+            AppearanceCommands(vm: vm, themes: themes)
         }
     }
 }
