@@ -111,8 +111,11 @@ public struct NWPopupLabel: View {
     }
 }
 
-/// A native slider (lantern) with its value in mono beside it ("105%", "239 pt"). Double-clicking
-/// the value restores `neutral` when one is given. VoiceOver reads the formatted value.
+/// A slider with its value in mono beside it ("105%", "239 pt"), drawn per the Controls board:
+/// a 3pt `lineStrong` track filled with lantern up to a 14pt knob. Double-clicking the value
+/// restores `neutral` when one is given. SwiftUI has no public slider style, so this represents
+/// itself to accessibility as a native `Slider` (adjustable, reading the formatted value) and
+/// takes ← → while focused.
 public struct NWValueSlider: View {
     @Binding var value: Double
     let label: String
@@ -133,23 +136,77 @@ public struct NWValueSlider: View {
 
     public var body: some View {
         HStack(spacing: NW.Space.l) {
-            // Stepped by rounding, not `step:`: AppKit draws a tick per step otherwise.
-            Slider(value: Binding(get: { value }, set: { value = (($0 / step).rounded() * step).clamped(to: range) }), in: range) {
-                Text(label)
-            }
-            .labelsHidden()
-            .tint(.nw.lantern)
-            .frame(width: 180)
-            .accessibilityValue(format(value))
+            NWSliderTrack(value: $value, range: range, step: step)
+                .accessibilityRepresentation {
+                    Slider(value: $value, in: range, step: step) { Text(label) }
+                        .accessibilityValue(format(value))
+                }
             Text(format(value))
                 .font(.nw(.mono))
                 .foregroundStyle(.nw.textSecondary)
-                .frame(minWidth: 44, alignment: .trailing)
+                .frame(minWidth: NWSliderMetrics.valueMinWidth, alignment: .trailing)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { if let neutral { value = neutral } }
                 .help(neutral == nil ? "" : "Double-click to reset")
                 .accessibilityHidden(true)
         }
+    }
+}
+
+enum NWSliderMetrics {
+    static let width: CGFloat = 200
+    static let height: CGFloat = 16
+    static let track: CGFloat = 3
+    static let knob: CGFloat = 14
+    static let valueMinWidth: CGFloat = 44
+}
+
+private struct NWSliderTrack: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        let nw = Color.nw
+        let knob = NWSliderMetrics.knob
+        GeometryReader { geo in
+            let usable = max(1, geo.size.width - knob)
+            let x = CGFloat(fraction) * usable
+            ZStack(alignment: .leading) {
+                Capsule().fill(nw.lineStrong).frame(height: NWSliderMetrics.track)
+                Capsule().fill(nw.lantern).frame(width: x + knob / 2, height: NWSliderMetrics.track)
+                Circle()
+                    .fill(nw.knobOn)
+                    .overlay { Circle().strokeBorder(nw.lineStrong, lineWidth: 1) }
+                    .shadow(color: nw.knobShadow, radius: 1.5, y: 1)
+                    .frame(width: knob, height: knob)
+                    .offset(x: x)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onChanged { drag in
+                let position = Double((drag.location.x - knob / 2) / usable)
+                set(range.lowerBound + position * (range.upperBound - range.lowerBound))
+            })
+        }
+        .frame(width: NWSliderMetrics.width, height: NWSliderMetrics.height)
+        .opacity(enabled ? 1 : 0.4)
+        .nwFocusRing(radius: NWSliderMetrics.height / 2)
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(.leftArrow) { set(value - step); return .handled }
+        .onKeyPress(.rightArrow) { set(value + step); return .handled }
+    }
+
+    private var fraction: Double {
+        let span = range.upperBound - range.lowerBound
+        return span > 0 ? min(1, max(0, (value - range.lowerBound) / span)) : 0
+    }
+
+    private func set(_ proposed: Double) {
+        let stepped = ((proposed / step).rounded() * step).clamped(to: range)
+        if stepped != value { value = stepped }
     }
 }
 
