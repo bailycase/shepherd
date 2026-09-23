@@ -108,7 +108,6 @@ extension View {
 
 private struct NWToastModifier: ViewModifier {
     @Binding var item: NWToast?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content.overlay(alignment: .bottomTrailing) {
@@ -116,14 +115,16 @@ private struct NWToastModifier: ViewModifier {
                 if let toast = item {
                     NWToastView(toast: toast) { item = nil }
                         .padding(NW.Space.xl)
-                        .transition(NW.Motion.sheet.transition(reduceMotion: reduceMotion, edge: .bottom))
+                        // Keyed by id: a toast that replaces another rises in as the old one leaves.
+                        .id(toast.id)
+                        .nwTransition(.sheet, edge: .bottom)
                         .task(id: toast.id) {
                             try? await Task.sleep(for: .seconds(4))
                             if item?.id == toast.id { item = nil }
                         }
                 }
             }
-            .animation(NW.Motion.pane.animation(reduceMotion: reduceMotion), value: item?.id)
+            .nwAnimation(.sheet, value: item?.id)
         }
     }
 }
