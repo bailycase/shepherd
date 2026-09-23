@@ -110,6 +110,20 @@ jobs:
             CURRENT_PROJECT_VERSION='${{ github.run_number }}' \
             build
 
+      - name: Keep dSYMs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dSYMs-${{ steps.meta.outputs.tag }}
+          path: build/Build/Products/Release/*.dSYM
+          if-no-files-found: warn
+
+      # `xcodebuild build` never strips, so the app binary would ship a debug
+      # map of runner object-file paths. -S -x drops debug and local symbols
+      # and keeps global ones, so crash logs stay partly readable; the dSYMs
+      # above predate the strip and share its UUIDs, so they still symbolicate.
+      - name: Strip debug symbols
+        run: xcrun strip -S -x build/Build/Products/Release/Shepherd.app/Contents/MacOS/*
+
       - name: Sign
         run: |
           scripts/sign-app.sh build/Build/Products/Release/Shepherd.app \
