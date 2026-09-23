@@ -19,8 +19,9 @@ import Testing
 ///
 /// Costs a few model turns. With SHEPHERD_PREVIEW_DIR set it also writes
 /// `live-<step>-<light|dark>.png`. Shepherd's support directory is a scratch one; pi's session
-/// files for the scratch checkout are removed afterwards. While SHEPHERD_LIVE_MODEL is set the
-/// fixture previews stay off: they put a stub `pi` on PATH.
+/// files for the scratch checkout are removed afterwards. Run it on its own (`--filter`): the
+/// fixture previews and the app tests put a stub `pi` first on PATH for the rest of the process,
+/// so while SHEPHERD_LIVE_MODEL is set the fixture previews stay off.
 @Suite("Live model use cases", .serialized,
        .enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_LIVE_MODEL"]?.isEmpty == false, "set SHEPHERD_LIVE_MODEL to run"))
 @MainActor
@@ -31,16 +32,15 @@ struct LiveModelUseCaseTests {
         let shots = Preview.directory
         let fm = FileManager.default
         let root = try makeScratchDirectory("live")
-        let support = root.appendingPathComponent("support"), cwd = root.appendingPathComponent("calc")
-        for dir in [support, cwd] { try fm.createDirectory(at: dir, withIntermediateDirectories: true) }
+        let cwd = root.appendingPathComponent("calc")
+        try fm.createDirectory(at: cwd, withIntermediateDirectories: true)
         try "def add(a, b):\n    return a + b\n".write(to: cwd.appendingPathComponent("calc.py"), atomically: true, encoding: .utf8)
         for args in [["init", "-q"], ["config", "user.name", "Shepherd Live"], ["config", "user.email", "live@example.com"],
                      ["add", "."], ["commit", "-qm", "init"]] {
             try git(args, in: cwd)
         }
 
-        let savedSupport = env[ShepherdPaths.supportDirectoryEnvKey]
-        setenv(ShepherdPaths.supportDirectoryEnvKey, support.path, 1)
+        // The support directory is the test process's scratch one (ShepherdTestKit).
         let server = SessionServer(socketPath: ShepherdPaths.socketURL().path, stateURL: ShepherdPaths.stateURL())
         try server.start()
         let sessionsDir = PiSessionFile.projectDirectory(forCwd: cwd.path)
@@ -48,7 +48,6 @@ struct LiveModelUseCaseTests {
         let defaults = try #require(UserDefaults(suiteName: defaultsName))
         defer {
             server.stop()
-            if let savedSupport { setenv(ShepherdPaths.supportDirectoryEnvKey, savedSupport, 1) } else { unsetenv(ShepherdPaths.supportDirectoryEnvKey) }
             try? fm.removeItem(at: sessionsDir)
             try? fm.removeItem(at: root)
             defaults.removePersistentDomain(forName: defaultsName)

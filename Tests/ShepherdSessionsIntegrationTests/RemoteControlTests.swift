@@ -60,7 +60,7 @@ struct RemoteControlTests {
     @Test func addSpaceCreatesTheSpaceWithoutALayout() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
-        let folder = try uniqueDirectory("project")
+        let folder = try makeScratchDirectory("project")
         defer { try? FileManager.default.removeItem(at: folder) }
         let client = try await r.typed()
         defer { client.disconnect() }
@@ -74,7 +74,7 @@ struct RemoteControlTests {
     @Test func addSpaceRejectsDuplicatesAndMissingDirectories() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
-        let folder = try uniqueDirectory("project")
+        let folder = try makeScratchDirectory("project")
         defer { try? FileManager.default.removeItem(at: folder) }
         let client = try await r.raw()
         try client.send(.addSpace(id: 1, path: folder.path))
@@ -90,7 +90,7 @@ struct RemoteControlTests {
     @Test func listDirReturnsSortedSubdirectoriesIncludingHiddenOnes() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
-        let folder = try uniqueDirectory("browse")
+        let folder = try makeScratchDirectory("browse")
         defer { try? FileManager.default.removeItem(at: folder) }
         for name in ["beta", "Alpha", ".pi"] {
             try FileManager.default.createDirectory(at: folder.appendingPathComponent(name), withIntermediateDirectories: true)

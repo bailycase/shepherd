@@ -36,7 +36,6 @@ final class AppHarness {
     var defaults: UserDefaults { scratchDefaults.defaults }
 
     init() throws {
-        IsolatedSupportDirectory.install()
         scratch = try ScratchServer()
         settings = AppSettings(store: scratchDefaults.defaults)
         keybindings = KeybindingsStore(store: scratchDefaults.defaults)
@@ -69,25 +68,6 @@ final class AppHarness {
         vm = nil
         scratch.stop()
         scratchDefaults.remove()
-    }
-}
-
-/// Spawning a shell pane or an agent installs Shepherd's pi extensions and theme into the
-/// support directory. Point it at a per-process scratch directory, once, so no test ever
-/// rewrites the files the user's installed Shepherd loads.
-enum IsolatedSupportDirectory {
-    nonisolated(unsafe) private static var installed = false
-    private static let lock = NSLock()
-
-    static func install() {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !installed else { return }
-        installed = true
-        let dir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("shepherd-app-tests-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        setenv(ShepherdPaths.supportDirectoryEnvKey, dir.path, 1)
     }
 }
 
@@ -183,47 +163,22 @@ extension AppHarness {
     }
 }
 
-/// Puts the stub pi on PATH as `pi`, with a scratch `ZDOTDIR` and support directory, for code
-/// that launches agents exactly as the app does (`zsh -l -c "exec pi --mode rpc …"`, with
-/// extensions installed into the support directory). Process-global: only `.serialized` suites
-/// may use it, and each test must call `restore()`. pi session files seeded for `cwds` are
-/// removed on restore.
+/// Launches agents exactly as the app does (`zsh -l -c "exec pi --mode rpc …"`) with the stub
+/// standing in for `pi` on PATH (`StubPi.installOnPath()`), and removes the pi session files
+/// the app seeds for `cwds` when the test calls `removeSeededSessions()`.
 @MainActor
 final class StubPiOnPath {
-    private static let keys = ["PATH", "ZDOTDIR", ShepherdPaths.supportDirectoryEnvKey]
-    private let saved: [String: String?]
-    private let root: URL
     private var cwds: [String] = []
 
-    init() throws {
-        root = try makeScratchDirectory("pi-path")
-        let bin = root.appendingPathComponent("bin")
-        let zdotdir = root.appendingPathComponent("zdotdir")
-        let support = root.appendingPathComponent("support")
-        for dir in [bin, zdotdir, support] {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        }
-        let shim = bin.appendingPathComponent("pi")
-        try "#!/bin/sh\nexec /usr/bin/env python3 '\(StubPi.path)'\n".write(to: shim, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shim.path)
-        let env = ProcessInfo.processInfo.environment
-        saved = Dictionary(uniqueKeysWithValues: Self.keys.map { ($0, env[$0]) })
-        setenv("PATH", "\(bin.path):\(env["PATH"] ?? "/usr/bin:/bin")", 1)
-        setenv("ZDOTDIR", zdotdir.path, 1)
-        setenv(ShepherdPaths.supportDirectoryEnvKey, support.path, 1)
-    }
+    init() throws { try StubPi.installOnPath() }
 
-    /// Remember a cwd pi sessions get seeded under, so `restore()` removes them.
+    /// Remember a cwd pi sessions get seeded under, so `removeSeededSessions()` removes them.
     func cleansSessions(in cwd: String) { cwds.append(cwd) }
 
-    func restore() {
-        for (key, value) in saved {
-            if let value { setenv(key, value, 1) } else { unsetenv(key) }
-        }
+    func removeSeededSessions() {
         for cwd in cwds {
             try? FileManager.default.removeItem(at: PiSessionFile.projectDirectory(forCwd: cwd))
         }
-        try? FileManager.default.removeItem(at: root)
     }
 }
 
