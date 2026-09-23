@@ -52,6 +52,17 @@ struct PaletteCard: View {
     @FocusState private var fieldFocused: Bool
     @Environment(\.nwPaletteMaxListHeight) private var maxListHeight
 
+    init(items: [PaletteItem], run: @escaping (PaletteItem) -> Void, close: @escaping () -> Void,
+         contentSearch: ((String, Set<String>) async -> [PaletteItem])? = nil, initialQuery: String = "") {
+        self.items = items
+        self.run = run
+        self.close = close
+        self.contentSearch = contentSearch
+        self.initialQuery = initialQuery
+        // The first results are there as the card appears, so opening never animates the list.
+        _results = State(initialValue: PaletteResults(items: items, query: initialQuery, scope: .all, contentRows: []))
+    }
+
     var body: some View {
         NWPaletteCard {
             NWPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $fieldFocused, submit: runSelected) {
@@ -61,6 +72,9 @@ struct PaletteCard: View {
         } results: {
             resultsList
         }
+        // Rows arrive, leave, and reorder as the query or scope changes, and the card follows
+        // their height; moving the highlight (↑↓, hover) changes no row, so it lands at once.
+        .nwAnimation(.list, value: results.entries.map(\.id))
         .onAppear {
             query = initialQuery
             fieldFocused = true
@@ -109,9 +123,11 @@ struct PaletteCard: View {
                         switch entry {
                         case .header(let section):
                             NWPaletteSectionHeader(section.title)
+                                .nwTransition(.list)
                         case .row(let index, let item, let snippet):
                             PaletteRow(item: item, selected: index == selectedIndex, snippet: snippet) { run(item) }
                                 .onHover { if $0 { selectedIndex = index } }
+                                .nwTransition(.list)
                         }
                     }
                     if results.rows.isEmpty {
@@ -119,6 +135,7 @@ struct PaletteCard: View {
                             .font(Font.nw(.caption))
                             .foregroundStyle(Color.nw.textTertiary)
                             .frame(maxWidth: .infinity, minHeight: NWPaletteMetrics.sectionHeight * 2)
+                            .nwTransition(.content)
                     }
                 }
             }

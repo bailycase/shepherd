@@ -44,39 +44,46 @@ extension EnvironmentValues {
 
 extension View {
     /// Presents `content` (the palette card) over a scrim, 18% from the top and capped to the
-    /// window. Clicking the scrim dismisses.
+    /// window. Clicking the scrim dismisses. The card grows from its top edge and the scrim fades
+    /// (`.overlay`; a cross-fade under Reduce Motion) whichever path presents or dismisses it.
     public func nwCommandPalette<Content: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
         overlay {
-            if isPresented.wrappedValue {
-                NWPaletteOverlay(dismiss: { isPresented.wrappedValue = false }, content: content)
-            }
+            NWPaletteOverlay(isPresented: isPresented.wrappedValue, dismiss: { isPresented.wrappedValue = false }, content: content)
         }
     }
 }
 
 private struct NWPaletteOverlay<Content: View>: View {
+    let isPresented: Bool
     let dismiss: () -> Void
     @ViewBuilder let content: () -> Content
     @Environment(\.nwDensity) private var density
 
+    /// Always mounted, so the scrim and the card come and go with their transitions.
     var body: some View {
         GeometryReader { geo in
             let placement = NWPaletteMetrics.placement(in: geo.size, rowHeight: density.rowHeight)
             ZStack(alignment: .top) {
-                Color.nw.scrim
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: dismiss)
-                    .accessibilityHidden(true)
-                content()
-                    .frame(width: placement.width)
-                    .environment(\.nwPaletteMaxListHeight, placement.maxListHeight)
-                    // VoiceOver stays inside the palette while it is up.
-                    .accessibilityAddTraits(.isModal)
-                    .padding(.top, placement.top)
+                if isPresented {
+                    Color.nw.scrim
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: dismiss)
+                        .accessibilityHidden(true)
+                        .nwTransition(.content)
+                    content()
+                        .frame(width: placement.width)
+                        .environment(\.nwPaletteMaxListHeight, placement.maxListHeight)
+                        // VoiceOver stays inside the palette while it is up.
+                        .accessibilityAddTraits(.isModal)
+                        .nwTransition(.overlay, anchor: .top)
+                        .padding(.top, placement.top)
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
         .ignoresSafeArea()
+        .allowsHitTesting(isPresented)
+        .nwAnimation(.overlay, value: isPresented)
     }
 }
 
