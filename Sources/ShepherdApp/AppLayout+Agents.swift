@@ -12,6 +12,8 @@ extension AppLayout {
     /// "72 earlier turns · Show all" · "Following live".
     static let inspectorFooterHeight: CGFloat = 28
     static let steerMaxLines = 6
+    /// The Subagents board's 10pt inset above the Steer card, and above its field.
+    static let steerTopInset: CGFloat = 10
     /// Touched files listed under a finished run's result before "n more".
     static let inspectorMaxFiles = 5
 }

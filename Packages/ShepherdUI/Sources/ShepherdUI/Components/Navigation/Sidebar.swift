@@ -67,6 +67,8 @@ public enum NWSidebarMetrics {
     public static let topBarHeight: CGFloat = 44
     /// Horizontal inset of the tree inside the column.
     public static let treeInset: CGFloat = 6
+    /// The tree's rows sit 1pt apart.
+    public static let rowSpacing: CGFloat = 1
     /// Leading padding of a row's content, and the step each nesting level adds.
     public static let rowPadding: CGFloat = 8
     public static let indentStep: CGFloat = 14

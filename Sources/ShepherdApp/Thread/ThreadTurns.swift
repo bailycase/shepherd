@@ -153,8 +153,8 @@ struct AgentTurn: View, Equatable {
         case .note(_, let text):
             Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
-                .padding(.leading, 10)
-                .overlay(alignment: .leading) { Color.nw.lineStrong.frame(width: 2) }
+                .padding(.leading, AppLayout.noteIndent)
+                .overlay(alignment: .leading) { Color.nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
                 .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
         case .error(_, let text, let count, let final):
             NWTurnError(final ? nativeTurnErrorText(text, toolCalls: presentation.toolCalls) : text,

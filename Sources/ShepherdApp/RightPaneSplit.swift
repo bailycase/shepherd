@@ -51,8 +51,8 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                             .clipped()
                     }
                     .background(Color.nw.bgWindow)
-                    .shadow(color: docked ? .clear : Color.nw.popoverShadow, radius: 16)
-                    .offset(x: max(0, total - layout.width - 1))
+                    .nwFloatShadow(!docked)
+                    .offset(x: max(0, total - layout.width - AppLayout.dividerWidth))
                 }
             }
         }
@@ -62,10 +62,10 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
     /// The pane's leading edge and drag handle (adjustable with VoiceOver).
     private func handle(total: CGFloat, width: CGFloat) -> some View {
         Color.nw.lineSubtle
-            .frame(width: 1)
+            .frame(width: AppLayout.dividerWidth)
             .overlay {
                 Color.clear
-                    .frame(width: 9)
+                    .frame(width: AppLayout.resizeHandleWidth)
                     .contentShape(Rectangle())
                     .pointerStyle(.columnResize)
                     .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .named("right-pane"))
@@ -82,7 +82,7 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
             .accessibilityLabel("Pane width")
             .accessibilityValue("\(Int(width)) points")
             .accessibilityAdjustableAction { direction in
-                let step: CGFloat = direction == .increment ? 40 : direction == .decrement ? -40 : 0
+                let step: CGFloat = direction == .increment ? AppLayout.paneAdjustStep : direction == .decrement ? -AppLayout.paneAdjustStep : 0
                 state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: width + step).width
             }
     }

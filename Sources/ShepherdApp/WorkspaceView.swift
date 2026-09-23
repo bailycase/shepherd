@@ -90,7 +90,7 @@ struct EmptyWorkspace: View {
                 }
             }
         }
-        .frame(maxWidth: 420)
+        .frame(maxWidth: AppLayout.emptyWorkspaceMaxWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
@@ -145,7 +145,7 @@ func paneTreeGeometry(
         case .split(let axis, let ratio, let first, let second):
             let shownRatio = liveRatios[path] ?? ratio
             let span = axis == .vertical ? rect.width : rect.height
-            let separatorSpan = span > 0 ? 1.0 : 0.0
+            let separatorSpan = span > 0 ? AppLayout.dividerWidth : 0
             let firstSpan = max(0, (span - separatorSpan) * shownRatio)
             let secondSpan = max(0, span - separatorSpan - firstSpan)
             let firstRect: CGRect
@@ -277,7 +277,8 @@ struct PaneSeparatorView: View {
             .frame(width: rect.width, height: rect.height)
             .overlay {
                 Color.clear
-                    .frame(width: axis == .vertical ? 9 : nil, height: axis == .horizontal ? 9 : nil)
+                    .frame(width: axis == .vertical ? AppLayout.resizeHandleWidth : nil,
+                           height: axis == .horizontal ? AppLayout.resizeHandleWidth : nil)
                     .contentShape(Rectangle())
                     .pointerStyle(axis == .vertical ? .columnResize : .rowResize)
                     .gesture(dragGesture)
@@ -646,9 +647,9 @@ struct PanePlaceholder: View {
 
     var body: some View {
         Text(text)
-            .font(Font.nwMono(10.5))
+            .font(Font.nw(.micro, weight: .regular))
             .foregroundStyle(Color.nw.textTertiary)
-            .padding(10)
+            .padding(AppLayout.panePlaceholderPadding)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

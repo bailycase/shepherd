@@ -230,7 +230,7 @@ private struct PaletteRow: View {
                 snippetText(snippet)
                     .font(Font.nw(.caption))
                     .lineLimit(1)
-                    .padding(.leading, 24)
+                    .padding(.leading, NWPaletteMetrics.titleInset)
                     .padding(.bottom, NW.Space.xs)
             }
         }

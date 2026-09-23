@@ -131,7 +131,7 @@ struct ToolOutputSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: NW.Space.l) {
                 Text(title).font(Font.nw(.mono, weight: .medium)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
                 Spacer()
                 Button("Copy") {
@@ -141,20 +141,21 @@ struct ToolOutputSheet: View {
                 .buttonStyle(NWButtonStyle(.secondary, size: .s))
                 Button("Done", action: close).buttonStyle(NWButtonStyle(.primary, size: .s)).keyboardShortcut(.defaultAction)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, NW.Space.xl)
             .frame(height: AppLayout.headerHeight)
             .overlay(alignment: .bottom) { NWHairline() }
             ScrollView([.vertical, .horizontal]) {
                 Text(output).font(Font.nw(.code)).lineSpacing(NWTextStyle.code.lineSpacing).foregroundStyle(Color.nw.textSecondary)
-                    .textSelection(.enabled).fixedSize().padding(16)
+                    .textSelection(.enabled).fixedSize().padding(NW.Space.xl)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if truncated {
                 Text("The host clipped this output; the full text is in pi's session file.")
-                    .font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(12)
+                    .font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(NW.Space.l)
             }
         }
-        .frame(minWidth: 720, idealWidth: 860, minHeight: 480, idealHeight: 620)
+        .frame(minWidth: AppLayout.toolOutputMinWidth, idealWidth: AppLayout.toolOutputIdealWidth,
+               minHeight: AppLayout.toolOutputMinHeight, idealHeight: AppLayout.toolOutputIdealHeight)
         .background(Color.nw.bgWindow)
     }
 }

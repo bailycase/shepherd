@@ -6,6 +6,8 @@ import ShepherdUI
 extension AppLayout {
     // Settings
     static let settingsNavWidth: CGFloat = 232
+    /// The nav's rows sit 1pt apart, like the sidebar's.
+    static let settingsNavRowSpacing: CGFloat = NWSidebarMetrics.rowSpacing
     static let settingsContentWidth: CGFloat = 720
     static let settingsTop: CGFloat = 44
     static let settingsBottom: CGFloat = 48
@@ -35,4 +37,11 @@ extension AppLayout {
     static let identityNameFieldMaxWidth: CGFloat = 140
     static let modelSuggestionsMaxHeight: CGFloat = 260
     static let modelSuggestionsVisible = 12
+    /// A spinner beside a sheet's caption ("Generating…").
+    static let sheetSpinner: CGFloat = 11
+    /// The tool-output sheet ("… n more lines", Open Output): its minimum and ideal size.
+    static let toolOutputMinWidth: CGFloat = 720
+    static let toolOutputIdealWidth: CGFloat = 860
+    static let toolOutputMinHeight: CGFloat = 480
+    static let toolOutputIdealHeight: CGFloat = 620
 }

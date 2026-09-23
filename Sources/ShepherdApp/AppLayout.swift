@@ -11,6 +11,18 @@ enum AppLayout {
 
     // Review: diff rows are ShepherdUI NWDiff* metrics.
     static let diffCollapseThreshold = 8
+    /// "Loading the diff…"'s spinner.
+    static let reviewLoadingSpinner: CGFloat = 12
 
     // Settings and sheets: AppLayout+Settings.swift
+
+    // Component Gallery (Debug builds), laid out like the boards: page margins, three 400pt
+    // columns, the gaps between a column's blocks and between items in a row, and bar widths.
+    static let galleryGutter: CGFloat = 48
+    static let galleryTop: CGFloat = 40
+    static let galleryColumnWidth: CGFloat = 400
+    static let galleryColumnGap: CGFloat = 40
+    static let galleryBlockSpacing: CGFloat = 14
+    static let galleryItemSpacing: CGFloat = 10
+    static let galleryBarWidth: CGFloat = 240
 }

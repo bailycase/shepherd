@@ -339,7 +339,7 @@ struct FinalizeWorktreeSheet: View {
                     Spacer(minLength: NW.Space.m)
                     if generatingDescription {
                         HStack(spacing: NW.Space.s) {
-                            ProgressView().progressViewStyle(.nwSpinner(size: 11))
+                            ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.sheetSpinner))
                             Text("Generating…").font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
                         }
                     } else if vm.settings.worktreeGeneratePRDescription {

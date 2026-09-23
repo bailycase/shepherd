@@ -18,6 +18,8 @@ public enum NWComposerMetrics {
     public static let modelSearchHeight: CGFloat = 30
     public static let modelPickerMaxHeight: CGFloat = 360
     public static let thinkingMenuWidth: CGFloat = 220
+    /// The `bgSelected` ring around a focused composer card (the thread's and the Steer card).
+    public static let focusRing: CGFloat = 3
 }
 
 /// The composer card (NWComposer board): `bgRaised`, a 1px strong line, radius 8. While the
@@ -59,7 +61,8 @@ public struct NWComposer<Top: View, Field: View, Controls: View>: View {
         .nwBorder(isFocused ? nw.textTertiary : nw.lineStrong, radius: NW.Radius.m)
         .background {
             if isFocused {
-                RoundedRectangle(cornerRadius: NW.Radius.m + 3).inset(by: -3).fill(nw.bgSelected)
+                RoundedRectangle(cornerRadius: NW.Radius.m + NWComposerMetrics.focusRing)
+                    .inset(by: -NWComposerMetrics.focusRing).fill(nw.bgSelected)
             }
         }
     }

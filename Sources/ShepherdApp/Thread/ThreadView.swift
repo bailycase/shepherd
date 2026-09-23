@@ -295,19 +295,19 @@ struct ThreadView: View {
     /// shows its banner above the composer instead.
     @ViewBuilder private var emptyState: some View {
         if store.snapshot == nil, store.loadError == nil {
-            HStack(spacing: 10) {
-                ProgressView().progressViewStyle(.nwSpinner(size: 14))
+            HStack(spacing: AppLayout.startingSpacing) {
+                ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner))
                 Text("Starting pi…").font(Font.nw(.body)).foregroundStyle(Color.nw.textSecondary)
             }
             .frame(maxWidth: .infinity)
-            .padding(.top, 120)
+            .padding(.top, AppLayout.startingTop)
         } else if store.snapshot != nil {
             NWEmptyState(
-                Text("New agent in \(Text(abbreviatedPath).font(Font.nwMono(15, .medium)))"),
+                Text("New agent in \(Text(abbreviatedPath).font(Font.nwMono(AppLayout.emptyThreadPathSize, .medium)))"),
                 message: "Describe the task. Drop or paste images to attach them, or type / for commands.",
                 showsMark: false, framed: true
             )
-            .padding(.top, 80)
+            .padding(.top, AppLayout.emptyThreadTop)
         }
     }
 

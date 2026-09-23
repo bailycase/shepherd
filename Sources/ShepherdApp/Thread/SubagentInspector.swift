@@ -278,7 +278,7 @@ struct SubagentInspector: View {
                     .lineLimit(1...AppLayout.steerMaxLines).textFieldStyle(.plain).font(.nw(.body)).autocorrectionDisabled()
                     .foregroundStyle(nw.textPrimary).tint(nw.lantern)
                     .focused($composing)
-                    .padding(EdgeInsets(top: 10, leading: NW.Space.l, bottom: NW.Space.xxs, trailing: NW.Space.l))
+                    .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: NW.Space.l, bottom: NW.Space.xxs, trailing: NW.Space.l))
                     .onKeyPress(.return, phases: .down) { press in
                         if press.modifiers.contains(.shift) { draft += "\n"; return .handled }
                         send()
@@ -298,11 +298,14 @@ struct SubagentInspector: View {
             .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
             .nwBorder(composing ? nw.textTertiary : nw.lineStrong, radius: NW.Radius.m)
             .background {
-                if composing { RoundedRectangle(cornerRadius: NW.Radius.m + 3).fill(nw.bgSelected).padding(-3) }
+                if composing {
+                    RoundedRectangle(cornerRadius: NW.Radius.m + NWComposerMetrics.focusRing).fill(nw.bgSelected)
+                        .padding(-NWComposerMetrics.focusRing)
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture { composing = true }
-            .padding(EdgeInsets(top: 10, leading: NW.Space.l, bottom: NW.Space.l, trailing: NW.Space.l))
+            .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: NW.Space.l, bottom: NW.Space.l, trailing: NW.Space.l))
             notice(store.notice)
         }
         .overlay(alignment: .top) { NWHairline() }

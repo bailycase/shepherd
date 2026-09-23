@@ -55,7 +55,7 @@ struct Prose: View, Equatable {
         var attributed = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
         for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            attributed[run.range].font = Font.nwMono(12)
+            attributed[run.range].font = Font.nw(.code)
             attributed[run.range].backgroundColor = Color.nw.lineSubtle
         }
         for run in attributed.runs where run.link != nil {
