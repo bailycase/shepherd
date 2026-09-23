@@ -28,16 +28,17 @@ struct KeyboardSettings: View {
                 SettingsGroup(title: group.title) {
                     ForEach(group.actions, id: \.self) { action in
                         SettingsRow(title: action.sentenceTitle, problem: errorAction == action ? errorText : nil) {
-                            HStack(spacing: 8) {
+                            HStack(spacing: NW.Space.m) {
                                 if !keys.isDefault(action) {
                                     Button("Reset") {
                                         keys.reset(action)
                                         vm.rebuildSurfaces()
                                         clearError()
                                     }
-                                    .buttonStyle(NWLinkButtonStyle(color: Color.nw.running, font: Font.nw(.caption)))
+                                    .buttonStyle(.nwLink)
+                                    .accessibilityLabel("Reset \(action.sentenceTitle)")
                                 }
-                                ShortcutRecorder(action: action, isRecording: recording == action, chordText: keys.display(action)) {
+                                ShortcutRecorder(title: action.sentenceTitle, isRecording: recording == action, chordText: keys.display(action)) {
                                     clearError()
                                     recording = recording == action ? nil : action
                                 } onChord: { chord in
@@ -68,7 +69,7 @@ struct KeyboardSettings: View {
                         vm.rebuildSurfaces()
                         clearError()
                     }
-                    .buttonStyle(NWButtonStyle(.danger, size: .s))
+                    .buttonStyle(.nw(.danger, size: .s))
                     .disabled(keys.overrides.isEmpty)
                 }
             }
@@ -84,7 +85,7 @@ struct KeyboardSettings: View {
 /// The clickable keycap. While recording it swallows key events through a
 /// local monitor: ⎋ cancels, anything else becomes the proposed chord.
 private struct ShortcutRecorder: View {
-    let action: ShortcutAction
+    let title: String
     let isRecording: Bool
     let chordText: String
     let onToggle: () -> Void
@@ -96,10 +97,10 @@ private struct ShortcutRecorder: View {
             Group {
                 if isRecording {
                     Text("Press keys…")
-                        .font(Font.nw(.caption))
+                        .font(.nw(.caption))
                         .foregroundStyle(Color.nw.running)
-                        .padding(.horizontal, 8)
-                        .frame(height: 22)
+                        .padding(.horizontal, NW.Space.m)
+                        .frame(minHeight: NW.Height.controlS - NW.Space.xxs)
                         .background(Color.nw.runningTint, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
                         .overlay { RoundedRectangle(cornerRadius: NW.Radius.xs).strokeBorder(Color.nw.running, lineWidth: 1) }
                 } else {
@@ -107,9 +108,13 @@ private struct ShortcutRecorder: View {
                 }
             }
             .contentShape(Rectangle())
+            .nwFocusRing(radius: NW.Radius.xs)
         }
         .buttonStyle(.plain)
         .help(isRecording ? "Press the new shortcut — ⎋ cancels" : "Click, then press the new shortcut")
+        .accessibilityLabel("\(title) shortcut")
+        .accessibilityValue(isRecording ? "Recording" : chordText)
+        .accessibilityHint(isRecording ? "Press the new shortcut, or Escape to cancel" : "Records a new shortcut")
         .onChange(of: isRecording, initial: true) { _, now in
             now ? startMonitor() : stopMonitor()
         }

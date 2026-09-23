@@ -4,8 +4,8 @@ import AppKit
 import ShepherdCore
 import ShepherdProtocol
 
-/// Settings (spec §12): replaces the window content. A 232pt nav — Back to Shepherd, search
-/// (⌘F), sections with icons, versions pinned at the bottom — beside a 720pt content column.
+/// Settings replaces the window content in place. A 232pt nav on `bgBase` (Back to Shepherd,
+/// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column.
 ///
 /// Everything here is wired: a row exists only if changing it changes the app.
 struct SettingsView: View {
@@ -33,13 +33,14 @@ struct SettingsView: View {
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
         .onChange(of: searchText) {
-            if let first = matchingSections.first, !matchingSections.contains(vm.settingsSection) {
+            let sections = matchingSections
+            if let first = sections.first, !sections.contains(vm.settingsSection) {
                 vm.settingsSection = first
             }
         }
         .background {
             // ⌘F focuses the search field.
-            Button("") { searchFocused = true }
+            Button("Search settings") { searchFocused = true }
                 .keyboardShortcut("f", modifiers: .command)
                 .opacity(0)
                 .accessibilityHidden(true)
@@ -47,7 +48,8 @@ struct SettingsView: View {
     }
 
     private var nav: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let sections = matchingSections
+        return VStack(alignment: .leading, spacing: 0) {
             // Traffic-light strip: draggable, nothing else lives up here.
             Color.clear
                 .frame(height: AppLayout.trafficLightHeight)
@@ -55,23 +57,29 @@ struct SettingsView: View {
                 .gesture(WindowDragGesture())
 
             Button { vm.showSettings = false } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-                    Text("Back to Shepherd").font(Font.nw(.body))
+                HStack(spacing: NW.Space.m) {
+                    Image(systemName: "chevron.left")
+                        .font(.nw(.ui, weight: .semibold))
+                        .imageScale(.small)
+                        .frame(width: NW.Space.xl)
+                        .accessibilityHidden(true)
+                    Text("Back to Shepherd").font(.nw(.ui))
+                    Spacer(minLength: 0)
                 }
                 .foregroundStyle(Color.nw.textSecondary)
+                .padding(.horizontal, NW.Space.m)
+                .frame(minHeight: NW.Height.row)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.nwRow())
             .keyboardShortcut(.escape, modifiers: [])
-            .padding(.horizontal, 14)
-            .padding(.vertical, 6)
+            .padding(.horizontal, NW.Space.s)
 
             NWSearchField("Search settings", text: $searchText, shortcut: "⌘F")
                 .focused($searchFocused)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .padding(.bottom, 12)
+                .padding(.horizontal, NW.Space.m)
+                .padding(.top, NW.Space.m)
+                .padding(.bottom, NW.Space.l)
                 .task {
                     // Typing filters immediately after opening; delayed a beat because focusing
                     // while SwiftUI installs the key-view loop silently loses the request.
@@ -80,44 +88,36 @@ struct SettingsView: View {
                 }
 
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(matchingSections) { section in
-                        SettingsNavRow(section: section, selected: vm.settingsSection == section) {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(sections) { section in
+                        NWSettingsNavRow(section.title, systemImage: section.symbol, selected: vm.settingsSection == section) {
                             vm.settingsSection = section
                         }
                         if !query.isEmpty {
                             ForEach(section.matches(for: query), id: \.self) { item in
-                                Button { vm.settingsSection = section } label: {
-                                    Text(item)
-                                        .font(Font.nw(.caption))
-                                        .foregroundStyle(Color.nw.textSecondary)
-                                        .padding(.leading, 36)
-                                        .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
+                                SettingsSearchHit(title: item, section: section.title) { vm.settingsSection = section }
                             }
                         }
                     }
-                    if matchingSections.isEmpty {
+                    if sections.isEmpty {
                         Text("No matching settings")
-                            .font(Font.nw(.caption))
+                            .font(.nw(.caption))
                             .foregroundStyle(Color.nw.textTertiary)
-                            .padding(.horizontal, 12)
-                            .padding(.top, 4)
+                            .padding(.horizontal, NW.Space.m)
+                            .padding(.top, NW.Space.xs)
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, NW.Space.s)
             }
             .scrollIndicators(.hidden)
 
             Spacer(minLength: 0)
             Text(versions)
-                .font(Font.nw(.micro))
+                .font(.nw(.micro))
                 .foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(1)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 14)
+                .padding(.horizontal, NW.Space.s + NW.Space.m)
+                .padding(.bottom, NW.Space.l)
         }
         .frame(width: AppLayout.settingsNavWidth)
         .background(Color.nw.bgBase.ignoresSafeArea())
@@ -145,8 +145,8 @@ struct SettingsView: View {
             }
             .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
             .padding(.top, AppLayout.settingsTop)
-            .padding(.bottom, 48)
-            .padding(.horizontal, 32)
+            .padding(.bottom, AppLayout.settingsBottom)
+            .padding(.horizontal, AppLayout.settingsGutter)
             .frame(maxWidth: .infinity)
         }
         .scrollContentBackground(.hidden)
@@ -155,6 +155,27 @@ struct SettingsView: View {
             // The window has no title bar; the strip above the content still drags it.
             Color.clear.frame(height: AppLayout.trafficLightHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
         }
+    }
+}
+
+/// A row found by the search, listed under its page: jumps to the page.
+private struct SettingsSearchHit: View {
+    let title: String
+    let section: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.nw(.caption))
+                .foregroundStyle(Color.nw.textSecondary)
+                .lineLimit(1)
+                .padding(.leading, NW.Space.m + NW.Space.xl + NW.Space.m)
+                .frame(maxWidth: .infinity, minHeight: NW.Height.controlS, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.nwRow())
+        .accessibilityLabel("\(title), in \(section)")
     }
 }
 
@@ -220,44 +241,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "circle.lefthalf.filled"
         case .terminal: return "terminal"
         case .agents: return "person.2"
-        case .worktrees: return "arrow.triangle.branch"
-        case .pi: return "arrow.triangle.2.circlepath"
-        case .remote: return "dot.radiowaves.left.and.right"
+        case .worktrees: return "arrow.branch"
+        case .pi: return "pi"
+        case .remote: return "desktopcomputer"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         }
-    }
-}
-
-/// A nav row (32pt, radius 8): 15pt icon and 13pt label; selected is bgSelected.
-private struct SettingsNavRow: View {
-    let section: SettingsSection
-    let selected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Group {
-                    if section == .pi {
-                        Text("π").font(Font.nwSans(15, .medium))
-                    } else {
-                        Image(systemName: section.symbol).font(.system(size: 13, weight: .regular))
-                    }
-                }
-                .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
-                .frame(width: 18)
-                Text(section.title)
-                    .font(selected ? Font.nw(.ui) : Font.nw(.body))
-                    .foregroundStyle(Color.nw.textPrimary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 32)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(NWRowButtonStyle(selected: selected, radius: NW.Radius.m))
-        .accessibilityLabel(section.title)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
     }
 }
