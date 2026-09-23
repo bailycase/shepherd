@@ -221,6 +221,9 @@ struct ThreadMotionTests {
 
         #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the pill came")
         #expect(!recording.inBetween.isEmpty, "it came in over frames")
+        // The pill is at rest before the jump behind it lands: let it land before the window
+        // goes, so no scroll is still animating when the next test starts.
+        try await thread.settle()
     }
 
     // MARK: Composer
