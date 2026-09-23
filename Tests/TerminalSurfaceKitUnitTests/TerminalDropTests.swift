@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Testing
+import ShepherdTestKit
 import UniformTypeIdentifiers
 @testable import TerminalSurfaceKit
 
@@ -38,8 +39,17 @@ struct TerminalFileDropTests {
 
 /// Dropped raster images are clamped where they enter Shepherd: pi writes an attached image
 /// into the session transcript, so an oversized screenshot is re-emitted on every later load.
+/// Each test drops into its own scratch directory, never the `$TMPDIR/shepherd-drops` (and its
+/// pruning) that a running Shepherd uses.
 @Suite("Terminal image drops")
-struct TerminalImageDropTests {
+final class TerminalImageDropTests {
+    private let scratch: URL
+    private var drops: URL { scratch.appendingPathComponent("drops", isDirectory: true) }
+
+    init() throws { scratch = try makeScratchDirectory("drops") }
+
+    deinit { try? FileManager.default.removeItem(at: scratch) }
+
     @Test(arguments: [
         (1920, 1080, nil),
         (2000, 2000, nil),
@@ -115,11 +125,10 @@ struct TerminalImageDropTests {
 
     /// A file drag already has a path; it is used as-is rather than copied.
     @Test func aFileWithinBudgetResolvesToItsOwnPath() async throws {
-        let source = try Images.writeTemporary(try Images.encoded(width: 8, height: 8, as: .png), ext: "png")
-        defer { try? FileManager.default.removeItem(at: source) }
+        let source = try Images.write(try Images.encoded(width: 8, height: 8, as: .png), ext: "png", in: scratch)
 
         let provider = try #require(NSItemProvider(contentsOf: source))
-        let resolved = await TerminalImageDrop.resolve([provider])
+        let resolved = await TerminalImageDrop.resolve([provider], directory: drops)
         #expect(resolved.map(\.path) == [source.path])
     }
 
@@ -127,15 +136,13 @@ struct TerminalImageDropTests {
     /// never rewritten.
     @Test func anOversizedFileIsCopiedDownAndTheOriginalIsUntouched() async throws {
         let original = try Images.encoded(width: 2400, height: 4, as: .tiff)
-        let source = try Images.writeTemporary(original, ext: "tiff")
-        defer { try? FileManager.default.removeItem(at: source) }
+        let source = try Images.write(original, ext: "tiff", in: scratch)
 
         let provider = try #require(NSItemProvider(contentsOf: source))
-        let url = try #require(await TerminalImageDrop.resolve([provider]).first)
-        defer { try? FileManager.default.removeItem(at: url) }
+        let url = try #require(await TerminalImageDrop.resolve([provider], directory: drops).first)
 
         #expect(url != source)
-        #expect(url.deletingLastPathComponent().lastPathComponent == "shepherd-drops")
+        #expect(url.deletingLastPathComponent() == drops)
         #expect(try #require(NSBitmapImageRep(data: try Data(contentsOf: url))).pixelsWide == 2000)
         #expect(try Data(contentsOf: source) == original)
     }
@@ -145,37 +152,33 @@ struct TerminalImageDropTests {
         let data = try Images.encoded(width: 8, height: 8, as: .png)
         func drop() async throws -> URL {
             let provider = NSItemProvider(item: data as NSData, typeIdentifier: UTType.png.identifier)
-            return try #require(await TerminalImageDrop.resolve([provider]).first)
+            return try #require(await TerminalImageDrop.resolve([provider], directory: drops).first)
         }
         let first = try await drop()
         let second = try await drop()
-        defer {
-            try? FileManager.default.removeItem(at: first)
-            try? FileManager.default.removeItem(at: second)
-        }
 
         #expect(first != second)
         #expect(first.pathExtension == "png")
-        #expect(first.deletingLastPathComponent().lastPathComponent == "shepherd-drops")
+        #expect(first.deletingLastPathComponent() == drops)
         #expect(try Data(contentsOf: first) == data)
     }
 
     @Test func providersWithNeitherAFileNorAnImageYieldNothing() async {
         let provider = NSItemProvider(item: "hello" as NSString, typeIdentifier: UTType.plainText.identifier)
-        #expect(await TerminalImageDrop.resolve([provider]).isEmpty)
+        #expect(await TerminalImageDrop.resolve([provider], directory: drops).isEmpty)
     }
 
     /// Remote drops are size-capped before anything is read or copied.
     @Test func theByteLimitRejectsLargerFilesAndAdmitsFilesAtTheLimit() async throws {
         let data = try Images.encoded(width: 8, height: 8, as: .png)
-        let source = try Images.writeTemporary(data, ext: "png")
-        defer { try? FileManager.default.removeItem(at: source) }
+        let source = try Images.write(data, ext: "png", in: scratch)
         let provider = try #require(NSItemProvider(contentsOf: source))
+        let drops = drops
 
         await #expect(throws: CocoaError.self) {
-            _ = try await TerminalImageDrop.resolve([provider], maximumBytes: data.count - 1)
+            _ = try await TerminalImageDrop.resolve([provider], maximumBytes: data.count - 1, directory: drops)
         }
-        #expect(try await TerminalImageDrop.resolve([provider], maximumBytes: data.count) == [source])
+        #expect(try await TerminalImageDrop.resolve([provider], maximumBytes: data.count, directory: drops) == [source])
     }
 }
 
@@ -208,9 +211,8 @@ enum Images {
         return try #require(rep.representation(using: fileType, properties: [:]))
     }
 
-    static func writeTemporary(_ data: Data, ext: String) throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("shepherd-drop-src-\(UUID().uuidString).\(ext)")
+    static func write(_ data: Data, ext: String, in directory: URL) throws -> URL {
+        let url = directory.appendingPathComponent("source-\(UUID().uuidString).\(ext)")
         try data.write(to: url)
         return url
     }
