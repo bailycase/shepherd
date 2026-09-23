@@ -163,25 +163,6 @@ extension AppHarness {
     }
 }
 
-/// Launches agents exactly as the app does (`zsh -l -c "exec pi --mode rpc …"`) with the stub
-/// standing in for `pi` on PATH (`StubPi.installOnPath()`), and removes the pi session files
-/// the app seeds for `cwds` when the test calls `removeSeededSessions()`.
-@MainActor
-final class StubPiOnPath {
-    private var cwds: [String] = []
-
-    init() throws { try StubPi.installOnPath() }
-
-    /// Remember a cwd pi sessions get seeded under, so `removeSeededSessions()` removes them.
-    func cleansSessions(in cwd: String) { cwds.append(cwd) }
-
-    func removeSeededSessions() {
-        for cwd in cwds {
-            try? FileManager.default.removeItem(at: PiSessionFile.projectDirectory(forCwd: cwd))
-        }
-    }
-}
-
 // MARK: Remote
 
 /// A second, in-process Shepherd acting as a remote host: its own server (and optionally its

@@ -179,10 +179,9 @@ struct AgentLifecycleTests {
 @MainActor
 struct AgentLaunchTests {
     @Test func startingAnAgentSpawnsPiOverRPCAndSendsTheOpeningPrompt() async throws {
-        let pi = try StubPiOnPath()
+        try StubPi.installOnPath()
         let app = try AppHarness()
-        defer { app.stop(); pi.removeSeededSessions() }
-        pi.cleansSessions(in: app.dir.path)
+        defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         let other = Fixture.agent("other", in: space)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [other]))
@@ -209,10 +208,9 @@ struct AgentLaunchTests {
     }
 
     @Test func aRestoredAgentWithoutARunningPiRespawnsWhenItsPaneMounts() async throws {
-        let pi = try StubPiOnPath()
+        try StubPi.installOnPath()
         let app = try AppHarness()
-        defer { app.stop(); pi.removeSeededSessions() }
-        pi.cleansSessions(in: app.dir.path)
+        defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         // A layout from a previous run: bound to a session that died with that run.
         let agent = Fixture.agent(in: space, piSession: SessionID())
@@ -227,14 +225,13 @@ struct AgentLaunchTests {
     }
 
     @Test func importingALinkedWorktreeStartsAnAgentCarryingItsIdentity() async throws {
-        let pi = try StubPiOnPath()
+        try StubPi.installOnPath()
         let app = try AppHarness()
-        defer { app.stop(); pi.removeSeededSessions() }
+        defer { app.stop() }
         let repo = try makeScratchRepo()
         let worktree = repo.deletingLastPathComponent().appendingPathComponent("imported-\(UUID().uuidString.prefix(6))")
         defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: worktree) }
         try git(["worktree", "add", "-q", "-b", "worktree/imported", worktree.path], in: repo)
-        pi.cleansSessions(in: worktree.path)
         let vm = try await app.start()
         let spaceID = try #require(await vm.addSpace(at: repo, createInitialAgent: false))
 
