@@ -75,6 +75,9 @@ struct ThreadPreviewTests {
 
     /// Prose, lists, inline code, a link, and a highlighted code block.
     @Test func threadProse() async throws {
+        // Compile the Swift grammar up front so the block's off-main highlighting lands before
+        // the capture.
+        _ = CodeHighlight.highlightLines(["let warm = 1"], path: "warm.swift", style: .theme)
         try await render("thread-prose", ActivityThreads.prose)
     }
 
