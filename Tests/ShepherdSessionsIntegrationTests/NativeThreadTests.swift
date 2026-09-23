@@ -221,7 +221,7 @@ struct NativeThreadTests {
         let pi = try await PiAgent.launch(on: h)
         _ = try await pi.send("ask", from: try await pi.ready())
         let asked = try await pi.snapshot("the question") { !$0.dialogs.isEmpty }
-        #expect(asked.dialogs == [NativeThreadDialog(id: "uuid-2", kind: .confirm, title: "Clear session?", message: "All messages will be lost.", timeout: 5000)])
+        #expect(asked.dialogs == [NativeThreadDialog(id: "uuid-2", kind: .confirm, title: "Clear session?", message: "All messages will be lost.", timeout: 60000)])
         #expect(asked.running)
 
         let op = UUID()

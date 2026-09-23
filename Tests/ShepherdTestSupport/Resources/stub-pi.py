@@ -230,7 +230,7 @@ for raw in sys.stdin.buffer:
             pending_ui = "uuid-2"
             emit({"type": "agent_start"})
             emit({"type": "extension_ui_request", "id": "uuid-2", "method": "confirm",
-                  "title": "Clear session?", "message": "All messages will be lost.", "timeout": 5000})
+                  "title": "Clear session?", "message": "All messages will be lost.", "timeout": 60000})
         elif message == "select":
             pending_ui = "uuid-3"
             emit({"type": "agent_start"})

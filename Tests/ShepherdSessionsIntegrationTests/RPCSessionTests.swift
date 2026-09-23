@@ -136,7 +136,7 @@ struct RPCSessionTests {
         var request: RPCExtensionUIRequest?
         for case .extensionUIRequest(let r) in h.events.current { request = r }
         let ui = try #require(request)
-        #expect(ui.method == "confirm" && ui.id == "uuid-2" && ui.title == "Clear session?" && ui.timeout == 5000)
+        #expect(ui.method == "confirm" && ui.id == "uuid-2" && ui.title == "Clear session?" && ui.timeout == 60000)
 
         h.send(.extensionUIResponse(id: ui.id, confirmed: true))
         try await h.waitFor("agent_settled")
