@@ -18,21 +18,23 @@ public func makeScratchRepo(files: [String: String] = ["README.md": "# scratch\n
     return dir
 }
 
-/// Run git in `dir`, failing on a non-zero exit.
+/// Run git in `dir`; a non-zero exit throws `CommandFailure` carrying git's stderr.
 @discardableResult
 public func git(_ args: [String], in dir: URL) throws -> String {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = args
     process.currentDirectoryURL = dir
-    let out = Pipe()
+    let out = Pipe(), err = Pipe()
     process.standardOutput = out
-    process.standardError = Pipe()
+    process.standardError = err
     try process.run()
     let data = out.fileHandleForReading.readDataToEndOfFile()
+    let errors = err.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
     guard process.terminationStatus == 0 else {
-        throw WaitTimeout(what: "git \(args.joined(separator: " ")) to succeed (exit \(process.terminationStatus))")
+        let stderr = String(decoding: errors, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        throw CommandFailure("git \(args.joined(separator: " "))", "exit \(process.terminationStatus)\(stderr.isEmpty ? "" : ": \(stderr)")")
     }
     return String(decoding: data, as: UTF8.self)
 }

@@ -161,11 +161,12 @@ struct RemoteHostTests {
         try await local.start()
         let connection = try await remote.connect(local.remoteHosts)
 
-        await #expect(throws: (any Error).self) {
+        let error = await #expect(throws: RemoteHostClientError.self) {
             try await local.remoteHosts.createAgent(hostID: connection.id, spaceID: space.id, cwd: second.repo.path, model: nil,
                                                     thinking: nil, initialPrompt: nil, worktreeBranch: "worktree/wrong",
                                                     worktreeBase: "main", worktreeFetchFirst: false)
         }
+        #expect(error?.rejectionCode == "create_failed", "the host refused it, not a dropped connection")
 
         #expect(remote.host.server.state.agents.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: second.path("worktree/wrong")))
@@ -282,9 +283,10 @@ struct RemoteWorktreeTests {
         }
         try "late".write(toFile: s.checkout + "/late.txt", atomically: true, encoding: .utf8)
 
-        await #expect(throws: (any Error).self) {
+        let error = await #expect(throws: RemoteHostClientError.self) {
             _ = try await remotes.agentQuery(s.target, query: .deleteWorktree(operationID: UUID(), confirmedWarning: info.warning, fingerprint: info.fingerprint))
         }
+        #expect(error?.rejectionCode == "query_failed", "the host refused it, not a dropped connection")
 
         #expect(FileManager.default.fileExists(atPath: s.checkout + "/late.txt"))
         #expect(s.remote.host.server.state.agents.count == 1)
