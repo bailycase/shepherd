@@ -29,8 +29,14 @@ struct Composer: View {
     @State private var models: [PiModelCatalog.Entry] = []
     @State private var confirmingStopAll = false
     @State private var picking = false
+    /// Motion starts once the thread has loaded: what arrives with the first snapshot (a widget,
+    /// a waiting question, the model) is simply there when the thread opens.
+    @State private var loaded = false
 
     private enum Menu: Equatable { case models, thinking }
+
+    /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc).
+    private enum OpenMenu: Equatable { case none, slash, models, thinking }
 
     // One effective state, shared with the header pill: a lost connection wins over a cached
     // running snapshot (error maps to Send + an inline error, never Stop).
@@ -58,26 +64,56 @@ struct Composer: View {
     }
     private var menuOpen: Bool { commandQuery != nil || menu != nil }
 
+    private var openMenu: OpenMenu {
+        if commandQuery != nil { return .slash }
+        return switch menu {
+        case .models: .models
+        case .thinking: .thinking
+        case nil: .none
+        }
+    }
+
+    /// What sits above the card: a banner, the notice, extension widgets.
+    private var accessories: [String] {
+        let banner = store.loadError != nil ? "lost" : attachmentError != nil ? "attachment" : store.notice != nil ? "notice" : nil
+        return [banner].compactMap { $0 } + (store.snapshot?.widgets ?? []).filter { $0.kind != .unknown }.map(\.id)
+    }
+
+    /// The question in place of the field, by the identity its panel takes.
+    private var questionKey: String? {
+        guard let dialog = dialogs.first, let snapshot = store.snapshot else { return nil }
+        return snapshot.generation + ":" + snapshot.piSessionID + ":" + dialog.id
+    }
+
+    /// Everything here is anchored to the bottom of the thread: what opens above the card grows
+    /// up from it while the card stays put. Menus grow from their corner over the card; a
+    /// question replaces the field and the card eases to its height; banners, widgets, and
+    /// attachments nudge in. Each is keyed on its own state, so typing and filtering stay
+    /// instant.
     var body: some View {
         let widgets = (store.snapshot?.widgets ?? []).filter { $0.kind != .unknown }
         let query = commandQuery
         VStack(alignment: .leading, spacing: AppLayout.menuGap) {
             if !widgets.isEmpty {
                 VStack(alignment: .leading, spacing: NW.Space.xs) {
-                    ForEach(widgets) { WidgetRow(widget: $0) }
+                    ForEach(widgets) { WidgetRow(widget: $0).nwTransition(.list, edge: .bottom) }
                 }
                 .padding(.horizontal, NW.Space.xs)
+                .nwTransition(.list, edge: .bottom)
             }
             if let error = store.loadError {
                 NWBanner(.failed, title: "Lost connection to the agent process.", message: error) {
                     Button("Reconnect") { Task { await store.refresh(fresh: true) } }
                         .buttonStyle(.nw(.secondary, size: .s))
                 }
+                .nwTransition(.list, edge: .bottom)
             } else if let attachmentError {
                 NWBanner(.failed, title: attachmentError)
+                    .nwTransition(.list, edge: .bottom)
             } else if let notice = store.notice {
                 Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
                     .padding(.horizontal, NW.Space.xs)
+                    .nwTransition(.list, edge: .bottom)
             }
             if let query {
                 let matches = commandMatches
@@ -85,6 +121,7 @@ struct Composer: View {
                             selection: $commandIndex) { command in
                     if let match = matches.first(where: { $0.name == command.name }) { choose(match) }
                 }
+                .nwTransition(.overlay, anchor: .bottomLeading)
             }
             if menu == .models {
                 ModelPicker(current: store.snapshot?.model, models: models) { model in
@@ -93,6 +130,7 @@ struct Composer: View {
                     RecentModels.record(model, thread: agentName)
                     Task { await store.setModel(model) }
                 } close: { menu = nil; composing.wrappedValue = true }
+                .nwTransition(.overlay, anchor: .bottomLeading)
             }
             if menu == .thinking, let thinking = store.snapshot?.thinking {
                 NWThinkingMenu(options: Self.thinkingLevels, current: thinking) { level in
@@ -100,9 +138,15 @@ struct Composer: View {
                     composing.wrappedValue = true
                     Task { await store.setThinking(level.id) }
                 } onClose: { menu = nil; composing.wrappedValue = true }
+                .nwTransition(.overlay, anchor: .bottomLeading)
             }
             card
         }
+        .nwAnimation(.list, value: loaded ? accessories : nil)
+        .nwAnimation(.list, value: attachments.map(\.id))
+        .nwAnimation(.disclosure, value: loaded ? questionKey : nil)
+        .nwAnimation(.overlay, value: loaded ? openMenu : nil)
+        .task(id: store.snapshot != nil) { loaded = store.snapshot != nil }
         .frame(maxWidth: AppLayout.threadMaxWidth)
         .padding(.horizontal, gutter)
         .padding(.bottom, AppLayout.composerBottom)
@@ -155,9 +199,13 @@ struct Composer: View {
                 NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
                     attachments.removeAll { $0.id == attachment.id }
                 }
+                .nwTransition(.list, edge: .leading)
             }
         } field: {
-            if let dialog = dialogs.first, let snapshot = store.snapshot {
+            // The card eases to the new height as a question takes the field's place (or gives
+            // it back); what arrives fades in, and what leaves goes at once rather than
+            // lingering over the controls.
+            if let dialog = dialogs.first, let snapshot = store.snapshot, let questionKey {
                 // The card swaps its field for the question so it can never scroll out of view.
                 QuestionPanel(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
                     Task {
@@ -165,9 +213,10 @@ struct Composer: View {
                                            generation: snapshot.generation, answer: answer)
                     }
                 }
-                .id(snapshot.generation + ":" + snapshot.piSessionID + ":" + dialog.id)
+                .id(questionKey)
+                .nwEntrance(.content)
             } else {
-                field
+                field.nwEntrance(.content)
             }
         } controls: {
             actionRow
@@ -243,7 +292,13 @@ struct Composer: View {
             actionChips(compact: false)
             actionChips(compact: true)
         }
+        // A new model or level cross-fades, and the delivery chip fades in as a draft starts
+        // while the agent runs. Only these: typing and width changes stay instant.
+        .nwAnimation(.content, value: loaded ? [store.snapshot?.model, store.snapshot?.thinking] : nil)
+        .nwAnimation(.list, value: loaded && showsDelivery)
     }
+
+    private var showsDelivery: Bool { running && !store.draft.isEmpty }
 
     private func actionChips(compact: Bool) -> some View {
         HStack(spacing: NW.Space.xxs) {
@@ -272,24 +327,33 @@ struct Composer: View {
             }
             modelChip
             thinkingChip(compact: compact)
-            if running, !store.draft.isEmpty { deliveryChip }
+            if showsDelivery { deliveryChip.nwTransition(.list, edge: .leading) }
             Spacer(minLength: NW.Space.m)
             primary
         }
     }
 
-    @ViewBuilder private var primary: some View {
-        if store.busy {
-            ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
-                .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-                .accessibilityLabel("Waiting for pi")
-        } else if running, dialogs.isEmpty, store.draft.isEmpty {
-            NWComposerActionButton(.stop, enabled: active && store.supports("abort")) { stop() }
-                .help(store.hasLiveSubagents ? "Stop the agent and its subagents" : "Stop the agent's turn")
-        } else {
-            NWComposerActionButton(.send, enabled: canSend && dialogs.isEmpty) { sendDraft() }
-                .help(dialogs.isEmpty ? "Send (⏎)" : "Answer the question first")
+    /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
+    /// accepts a message.
+    private var primary: some View {
+        let stops = running && dialogs.isEmpty && store.draft.isEmpty
+        return ZStack {
+            if store.busy {
+                ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
+                    .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
+                    .accessibilityLabel("Waiting for pi")
+                    .nwTransition(.content)
+            } else {
+                NWComposerActionButton(stops ? .stop : .send,
+                                       enabled: stops ? active && store.supports("abort") : canSend && dialogs.isEmpty) {
+                    if stops { stop() } else { sendDraft() }
+                }
+                .help(stops ? (store.hasLiveSubagents ? "Stop the agent and its subagents" : "Stop the agent's turn")
+                      : dialogs.isEmpty ? "Send (⏎)" : "Answer the question first")
+                .nwTransition(.content)
+            }
         }
+        .nwAnimation(.content, value: store.busy)
     }
 
     private func stop() {
@@ -304,7 +368,7 @@ struct Composer: View {
             let settable = store.snapshot?.supportedActions.contains("setModel") == true
             Button { openModels() } label: {
                 HStack(spacing: NW.Space.s) {
-                    Text(nativeModelShortName(model)).font(Font.nw(.code))
+                    Text(nativeModelShortName(model)).font(Font.nw(.code)).nwContentTransition(.crossFade)
                     if settable { NWChipChevron() }
                 }
             }
@@ -327,6 +391,7 @@ struct Composer: View {
                     Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
                     if !compact { Text("Thinking") }
                     Text(thinking.capitalized).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
+                        .nwContentTransition(.crossFade)
                     NWChipChevron()
                 }
             }
@@ -549,8 +614,14 @@ struct QuestionPanel: View {
                 Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                if count > 1 { Text("1 / \(count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit() }
+                if count > 1 {
+                    Text("1 / \(count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
+                        .nwContentTransition(.numeric())
+                        .nwTransition(.content)
+                }
             }
+            // Another question queuing behind this one counts up.
+            .nwAnimation(.content, value: count)
             if let message = dialog.message {
                 ScrollView {
                     Text(message).font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
@@ -564,6 +635,7 @@ struct QuestionPanel: View {
             if let unavailable = dialog.unavailable {
                 Text(unavailable == "external-editor" ? "An external editor is open · finish it before answering here" : "This question is too large to show here")
                     .font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .nwTransition(.content)
             }
             Group {
                 switch dialog.kind {
@@ -609,6 +681,8 @@ struct QuestionPanel: View {
                 Text("pi may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
         }
+        // An external editor opening or closing dims the answers and says why.
+        .nwAnimation(.content, value: blocked)
         .padding(.top, NW.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
