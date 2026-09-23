@@ -2,9 +2,9 @@ import Foundation
 import ShepherdProtocol
 
 /// Installs the per-session pi extension that mirrors pi-subagents child runs
-/// to the extension socket as setAgentChildren messages, so the sidebar can
-/// show live subagent rows under the agent. Inert for agents without
-/// pi-subagents (no events ever fire).
+/// to the extension socket as setAgentChildren messages, so the agent's thread
+/// can show its subagents. Inert for agents without pi-subagents (no events
+/// ever fire).
 enum SubagentsExtension {
     static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
