@@ -35,13 +35,15 @@ public struct NWMenuHeader: View {
 /// A 28pt menu row: `runningTint` while highlighted. The row is a button; hovering highlights it.
 struct NWMenuRow<Label: View>: View {
     let highlighted: Bool
+    /// 10pt between parts; the slash menu's columns sit 12pt apart.
+    var spacing: CGFloat = 10
     let action: () -> Void
     let onHover: () -> Void
     @ViewBuilder let label: () -> Label
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 10) { label() }
+            HStack(spacing: spacing) { label() }
                 .padding(.horizontal, NW.Space.m)
                 .frame(minHeight: NWComposerMetrics.menuRowHeight)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -113,7 +115,7 @@ public struct NWSlashMenu: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(commands.enumerated()), id: \.element.name) { index, command in
-                            NWMenuRow(highlighted: index == selection, action: { onChoose(command) }, onHover: { selection = index }) {
+                            NWMenuRow(highlighted: index == selection, spacing: NW.Space.l, action: { onChoose(command) }, onHover: { selection = index }) {
                                 name(command)
                                     .frame(width: NWComposerMetrics.slashNameWidth, alignment: .leading)
                                 Text(command.description ?? "").font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
