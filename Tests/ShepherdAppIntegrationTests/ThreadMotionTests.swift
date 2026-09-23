@@ -47,6 +47,40 @@ struct ThreadMotionTests {
         }
     }
 
+    /// A sent message brightens in place once pi has it (70% → 100%), and a queued follow-up
+    /// turns into a sent one in place when its turn ends. The bubble is one view throughout
+    /// (the echo and the saved message have different entries): its fill eases from its first
+    /// look to its last instead of being swapped for a new bubble.
+    @Test(arguments: [false, true]) func aSentMessageSettlesInPlace(queued: Bool) async throws {
+        let text = "Then open the PR against nightly."
+        let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2), running: queued))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.store.draft = text
+        await thread.store.send()
+        try await eventuallyOnMain("the echo") { thread.store.pending.first?.status == (queued ? "queued" : "pending") }
+        try await thread.settle()
+        // Through the bubble's fill, right of its text.
+        let column = CGRect(x: Self.size.width - AppLayout.threadGutter(width: Self.size.width) - 12, y: 0, width: 1, height: 560)
+
+        let recording = await MotionProbe.record(thread.window, region: column) {
+            thread.serve(Fixtures.snapshot(Fixtures.history(2) + [Fixtures.user("u2", text)], revision: 2))
+        }
+
+        // The sent bubble's middle row: its fill, between its top and bottom lines (the rows that
+        // changed and are drawn on).
+        let settled = recording.settled
+        let bubble = (0..<settled.bitmap.pixelsHigh).filter {
+            settled.lightness(x: 0, y: $0) < 0.975 && settled.lightness(x: 0, y: $0) != recording.before.lightness(x: 0, y: $0)
+        }
+        let middle = try #require(bubble.isEmpty ? nil : (bubble.first! + bubble.last!) / 2, "the sent bubble")
+        let first = recording.before.lightness(x: 0, y: middle), last = recording.settled.lightness(x: 0, y: middle)
+        let path = recording.inBetween.map { $0.lightness(x: 0, y: middle) }
+        #expect(abs(first - last) > 0.01, "the bubble's fill changed")
+        #expect(path.contains { abs($0 - first) < abs($0 - last) && abs($0 - first) > 0.001 },
+                "it eases from \(first) to \(last): \(path)")
+    }
+
     /// A lightness difference a reader would see.
     static let visible = 0.03
 

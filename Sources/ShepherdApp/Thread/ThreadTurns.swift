@@ -14,7 +14,10 @@ struct UserTurn: View, Equatable {
 
     var body: some View {
         VStack(alignment: .trailing, spacing: AppLayout.activitySpacing) {
-            ForEach(Array(messages.enumerated()), id: \.element.entryID) { index, message in
+            // By position, not entry: an echo and the message pi saves for it have different
+            // entries, and the bubble must stay one view to settle in place (70% → 100%, queued
+            // → sent).
+            ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
                 let images = message.blocks.count { $0.kind == .unsupportedImage }
                 NWUserBubble(message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"),
                              attachments: Array(repeating: "Image", count: images),
