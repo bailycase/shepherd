@@ -9,7 +9,7 @@ import Testing
 
 /// Agents whose pi (the scripted stub) is already running: talking to them through the
 /// native thread, renaming, deleting, and their process dying on its own.
-@Suite("Agent lifecycle", .runsProcesses)
+@Suite("Agent lifecycle")
 @MainActor
 struct AgentLifecycleTests {
     @Test func aPromptSentFromTheThreadReachesPiAndItsReplyStreamsBack() async throws {
@@ -176,7 +176,7 @@ struct AgentLifecycleTests {
 /// Agents launched the way the app launches them: `zsh -l -c "exec pi --mode rpc …"` with
 /// the stub standing in for `pi` on PATH. Serialized: PATH, ZDOTDIR, and the support
 /// directory are process-global.
-@Suite("Agents launched like the app", .serialized, .runsProcesses)
+@Suite("Agents launched like the app", .serialized)
 @MainActor
 struct AgentLaunchTests {
     @Test func startingAnAgentSpawnsPiOverRPCAndSendsTheOpeningPrompt() async throws {
