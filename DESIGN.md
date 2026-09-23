@@ -889,10 +889,12 @@ or `NSAlert` in the app:
 - Reset settings (`ResetSettingsDialog`)
 - Quitting while agents are working or waiting on you (`QuitDialog`), because quitting stops
   them mid-turn. It lists the busy agents (five named, each with its status dot and "working" or
-  "needs you", the rest counted), with Cancel (⎋) and a destructive Quit, so ⏎ never quits. It
-  opens on the main window as a sheet, even over another sheet, and reopens a closed window
-  first. A second ⌘Q brings it back rather than asking twice, and a log out, restart, or shut
-  down quits without asking.
+  "needs you", the rest counted), with Cancel (⎋) and a destructive Quit, so ⏎ never quits.
+  `QuitConfirmation` puts it on the main window as a critical sheet, so it shows even over
+  another sheet. A closed window is reopened first; if it is not back within a second, the
+  dialog opens in a window of its own. While it asks, AppKit disables Quit, so a second ⌘Q does
+  nothing. A log out, restart, or shut down quits without asking, and one that begins while the
+  dialog is up answers it with Quit.
 
 Git probes and directory listings run off the main thread; the Delete Worktree Agent dialog
 keeps its destructive action disabled until the unreconciled-work check is in.

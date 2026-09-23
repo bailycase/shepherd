@@ -646,8 +646,10 @@ name**. Releasing means tagging `nightly`'s tested tip and pushing the tag.
 - **Transcript search** in the palette reads only the last 512 KB of each agent's pi session.
 - **Launching the binary bare** from a terminal starts a background process; the `AppDelegate`
   promotes it to `.regular` and activates it.
-- **Quitting** while agents are working or blocked asks first, in a `DialogSheet` in the main
-  window (reopened if it was closed), because it stops them mid-turn.
+- **Quitting** while agents are working or blocked asks first, in `QuitDialog` on the main
+  window (reopened if it was closed; its own window if the main one isn't back within a second),
+  because it stops them mid-turn. A log out, restart or shut down never waits on it
+  (`QuitPolicy`; only loginwindow's quit counts as a power-off).
 - **xcodebuild and `Package.resolved`:** a build from a fresh DerivedData resolves packages
   again and rewrites the Xcode project's
   `Shepherd.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` with newer
