@@ -201,6 +201,36 @@ test("merged sidebar projection prioritizes active native and legacy runs before
   }
 });
 
+test("an unchanged native children list is not republished", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-dedupe-"));
+  const saved = { ...process.env }, reports = [], handlers = new Map(), bus = new Map();
+  const server = net.createServer((socket) => socket.on("data", mod.jsonLines((data) => reports.push(data.children), assert.fail)));
+  process.env.SHEPHERD_AGENT_ID = "fixture"; process.env.SHEPHERD_SOCKET = path.join(dir, "s.sock");
+  delete process.env.SHEPHERD_CHILD;
+  await new Promise((r) => server.listen(process.env.SHEPHERD_SOCKET, r));
+  try {
+    const publisher = await jiti.import(path.join(root, "Extensions/shepherd-subagents.ts"));
+    const emit = (name, data) => bus.get(name)?.(data);
+    publisher.default({ on: (name, fn) => handlers.set(name, fn), events: { on: (name, fn) => bus.set(name, fn), emit } });
+    handlers.get("session_start")({}, { hasUI: true, sessionManager: { getSessionId: () => "owner" } });
+    const row = { runID: "native-0", state: "running" };
+    // The children extension re-emits the same list every second; only the first is news.
+    for (let i = 0; i < 3; i++) {
+      emit("shepherd:children:v1", { owner: "owner", children: [row] });
+      await new Promise((r) => setTimeout(r, 600)); // past the 400ms publish debounce
+    }
+    assert.equal(reports.length, 1);
+    emit("shepherd:children:v1", { owner: "owner", children: [{ ...row, state: "complete" }] });
+    await until(() => reports.length >= 2);
+    assert.equal(reports.at(-1)[0].state, "complete");
+  } finally {
+    handlers.get("session_shutdown")?.();
+    await new Promise((r) => server.close(r));
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key]; Object.assign(process.env, saved);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, result, cancellation, continuation, inspector and late callbacks", { timeout: 120000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-native-"));
   const { server, requests } = fixtureServer();

@@ -43,6 +43,8 @@ export default function shepherdSubagents(pi: ExtensionAPI) {
   let sessionGeneration = 0;
   let rpcReady = false;
   let nativeChildren: unknown[] = [];
+  // The children extension re-emits its list every second; only a changed list is republished.
+  let nativeChildrenKey = "[]";
   let parentSessionID = "";
   // Event-sourced facts the snapshot lacks: asyncDir per run, and attention.
   const runs = new Map<string, { asyncDir?: string; agents?: string[]; startedAt: number }>();
@@ -274,7 +276,11 @@ export default function shepherdSubagents(pi: ExtensionAPI) {
   try {
     pi.events.on("shepherd:children:v1", (data: any) => {
       if (!rootSession || data?.owner !== parentSessionID || !Array.isArray(data.children)) return;
-      nativeChildren = data.children.slice(0, MAX_CHILDREN);
+      const next = data.children.slice(0, MAX_CHILDREN);
+      const key = JSON.stringify(next);
+      if (key === nativeChildrenKey) return;
+      nativeChildrenKey = key;
+      nativeChildren = next;
       schedulePublish();
     });
     pi.events.on(RPC_READY_EVENT, () => {
@@ -362,6 +368,7 @@ export default function shepherdSubagents(pi: ExtensionAPI) {
     sessionGeneration += 1;
     rootSession = false;
     nativeChildren = [];
+    nativeChildrenKey = "[]";
     lastPublishHadRows = false;
     runs.clear();
     terminal.clear();
