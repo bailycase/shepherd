@@ -25,6 +25,36 @@ extension MotionRecording.Frame {
         }
     }
 
+    /// Whether this frame draws `rows` exactly as `other` does.
+    func matches(_ other: Self, inRows rows: ClosedRange<Int>) -> Bool {
+        guard let a = bitmap.bitmapData, let b = other.bitmap.bitmapData, bitmap.bytesPerRow == other.bitmap.bytesPerRow,
+              rows.lowerBound >= 0, rows.upperBound < min(bitmap.pixelsHigh, other.bitmap.pixelsHigh) else { return false }
+        let start = rows.lowerBound * bitmap.bytesPerRow
+        return memcmp(a + start, b + start, rows.count * bitmap.bytesPerRow) == 0
+    }
+
+    /// The runs of rows, from the top, that draw at least `drawnThreshold` away from the color at
+    /// `empty` in any column: in a column through stacked cards, their lines and content.
+    func drawnRuns(over empty: (x: Int, y: Int), drawnThreshold: Int = 6) -> [ClosedRange<Int>] {
+        guard let data = bitmap.bitmapData else { return [] }
+        let stride = bitmap.bitsPerPixel / 8
+        let reference = empty.y * bitmap.bytesPerRow + empty.x * stride
+        var runs: [ClosedRange<Int>] = []
+        var start: Int?
+        for y in 0...bitmap.pixelsHigh {
+            let drawn = y < bitmap.pixelsHigh && (0..<bitmap.pixelsWide).contains { x in
+                let offset = y * bitmap.bytesPerRow + x * stride
+                return (0..<3).contains { abs(Int(data[offset + $0]) - Int(data[reference + $0])) >= drawnThreshold }
+            }
+            if drawn, start == nil { start = y }
+            if !drawn, let first = start {
+                runs.append(first...(y - 1))
+                start = nil
+            }
+        }
+        return runs
+    }
+
     /// The first column, from the left, drawing at least `drawnThreshold` away from the color at
     /// `empty`.
     func firstColumn(drawingOver empty: (x: Int, y: Int), drawnThreshold: Int = 48) -> Int? {

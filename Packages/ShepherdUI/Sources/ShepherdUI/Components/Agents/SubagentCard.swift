@@ -82,7 +82,9 @@ public struct NWSubagentCard: View, Equatable {
     private let actionShape: [Bool]
     @State private var replying = false
     @State private var reply = ""
+    @State private var shown = NWShownFlag()
     @FocusState private var replyFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// `isEnabled` gates the answer and re-run actions (inspecting always works). A nil
     /// `answer` hides the question's buttons; a nil `rerun` hides Re-run.
@@ -113,7 +115,7 @@ public struct NWSubagentCard: View, Equatable {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             if run.state == .attention, let question = run.question {
                 questionBox(question)
-                    .nwTransition(.disclosure)
+                    .nwRunArrival(shown.appeared, .disclosure)
             }
             if run.state == .failed {
                 HStack(spacing: NW.Space.s) {
@@ -123,14 +125,17 @@ public struct NWSubagentCard: View, Equatable {
                             .accessibilityLabel("Re-run \(run.name)")
                     }
                 }
-                .nwTransition(.disclosure)
+                .nwRunArrival(shown.appeared, .disclosure)
             }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, NW.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(nw.bgRaised, in: shape)
-        .nwBorder(isSelected ? nw.running : run.state == .attention ? nw.lantern : nw.lineSubtle, radius: NW.Radius.m)
+        // Only the line's color eases: the card's size changes at once (see `nwRunArrival`).
+        .animation(NW.Motion.content.animation(reduceMotion: reduceMotion)) { card in
+            card.nwBorder(isSelected ? nw.running : run.state == .attention ? nw.lantern : nw.lineSubtle, radius: NW.Radius.m)
+        }
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: NW.Radius.m + Self.ring).fill(nw.runningTint).padding(-Self.ring)
@@ -138,18 +143,11 @@ public struct NWSubagentCard: View, Equatable {
         }
         .contentShape(shape)
         .onTapGesture(perform: inspect)
-        // A new state recolors the card and discloses what it brings (a question, the failed
-        // run's actions); the inspected card's ring fades. Live details (the last call, the
-        // context bar) change without the card moving.
-        .nwAnimation(.disclosure, value: Phase(state: run.state, asks: run.question != nil))
+        // A new state takes its place at once and what it brings (a question, the failed run's
+        // actions) fades in; the inspected card's ring fades.
         .nwAnimation(.hover, value: isSelected)
+        .onAppear { shown.appeared = true }
         .accessibilityElement(children: .contain)
-    }
-
-    /// What reshapes the card: its state, and whether it carries a question.
-    private struct Phase: Equatable {
-        let state: AgentState
-        let asks: Bool
     }
 
     /// The selection ring outside the inspected card.
@@ -226,13 +224,12 @@ public struct NWSubagentCard: View, Equatable {
                     VStack(alignment: .leading, spacing: NW.Space.s) { answers(question, answer: answer) }
                 }
                 .nwInstant()
-                if replying { replyField(answer: answer).nwTransition(.disclosure) }
+                if replying { replyField(answer: answer).nwRunArrival(true, .disclosure) }
             }
         }
         .padding(.vertical, NW.Space.m)
         .padding(.horizontal, 10)
         .background(nw.lanternTint, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .nwAnimation(.disclosure, value: replying)
     }
 
     @ViewBuilder private func answers(_ question: NWSubagentQuestion, answer: @escaping (String) -> Void) -> some View {
