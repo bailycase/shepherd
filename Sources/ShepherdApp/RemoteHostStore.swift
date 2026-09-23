@@ -21,7 +21,8 @@ struct RemoteAgentRef: Hashable {
 /// Reconnects with backoff while a host is unreachable — a laptop that slept
 /// picks its hosts back up without any UI action.
 @MainActor
-final class RemoteHostStore: ObservableObject {
+@Observable
+final class RemoteHostStore {
     struct HostConfig: Codable, Hashable, Identifiable {
         var id: UUID = UUID()
         var name: String
@@ -37,24 +38,28 @@ final class RemoteHostStore: ObservableObject {
         case failed(String)
     }
 
+    /// One host's connection. Views observe its config, phase, pushed state and child runs;
+    /// the transport bookkeeping below them is unobserved, and pane views register their
+    /// sessions while rendering, so `panes` must never invalidate a view.
     @MainActor
-    final class Connection: ObservableObject, Identifiable {
+    @Observable
+    final class Connection: Identifiable {
         /// Editable in Settings; the store reconnects after a change.
-        @Published fileprivate(set) var config: HostConfig
-        @Published var phase: Phase = .disconnected { didSet { onProjectionChanged?() } }
-        @Published var state = ShepherdState() { didSet { onProjectionChanged?() } }
-        @Published fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
-        fileprivate var onProjectionChanged: (() -> Void)?
-        fileprivate var childRefreshTask: Task<Void, Never>?
-        fileprivate(set) var endpointID = UUID()
-        fileprivate(set) var transportID = UUID()
-        fileprivate var stateGeneration = 0
-        fileprivate var client: RemoteHostClient?
-        fileprivate var reconnectTask: Task<Void, Never>?
-        fileprivate var reconnectDelay: Duration = .seconds(1)
+        fileprivate(set) var config: HostConfig
+        var phase: Phase = .disconnected { didSet { onProjectionChanged?() } }
+        var state = ShepherdState() { didSet { onProjectionChanged?() } }
+        fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
+        @ObservationIgnored fileprivate var onProjectionChanged: (() -> Void)?
+        @ObservationIgnored fileprivate var childRefreshTask: Task<Void, Never>?
+        @ObservationIgnored fileprivate(set) var endpointID = UUID()
+        @ObservationIgnored fileprivate(set) var transportID = UUID()
+        @ObservationIgnored fileprivate var stateGeneration = 0
+        @ObservationIgnored fileprivate var client: RemoteHostClient?
+        @ObservationIgnored fileprivate var reconnectTask: Task<Void, Never>?
+        @ObservationIgnored fileprivate var reconnectDelay: Duration = .seconds(1)
         /// Panes attached through this connection, keyed by the host-side
         /// session id. Weak-held by the pane views' lifetime: detach removes.
-        fileprivate var panes: [SessionID: RemotePaneSession] = [:]
+        @ObservationIgnored fileprivate var panes: [SessionID: RemotePaneSession] = [:]
 
         let id: UUID
 
@@ -71,7 +76,7 @@ final class RemoteHostStore: ObservableObject {
         func stopChildRefresh() {
             childRefreshTask?.cancel()
             childRefreshTask = nil
-            children = [:]
+            if !children.isEmpty { children = [:] }
         }
 
         func startChildRefresh(client: RemoteHostClient) {
@@ -108,9 +113,9 @@ final class RemoteHostStore: ObservableObject {
 
     static let defaultsKey = "shepherd.remote.hosts"
 
-    var onProjectionChanged: (() -> Void)?
-    var onDropError: ((String) -> Void)?
-    @Published private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
+    @ObservationIgnored var onProjectionChanged: (() -> Void)?
+    @ObservationIgnored var onDropError: ((String) -> Void)?
+    private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
 
     private let defaults: UserDefaults
 
@@ -241,7 +246,8 @@ final class RemoteHostStore: ObservableObject {
                 connection.panes.removeValue(forKey: sessionID)?.detach()
             }
             let agentIDs = Set(state.agents.map(\.id))
-            connection.children = connection.children.filter { agentIDs.contains($0.key) }
+            let children = connection.children.filter { agentIDs.contains($0.key) }
+            if children.count != connection.children.count { connection.children = children }
             connection.stateGeneration &+= 1
             connection.state = state
         }
@@ -465,7 +471,8 @@ final class RemoteHostStore: ObservableObject {
 /// analog of TerminalSessionStore.PaneSession, without the spawn/binding
 /// machinery — the host owns the session lifecycle.
 @MainActor
-final class RemotePaneSession: ObservableObject {
+@Observable
+final class RemotePaneSession {
     enum Phase: Equatable {
         case connecting
         case live
@@ -475,19 +482,19 @@ final class RemotePaneSession: ObservableObject {
 
     let sessionID: SessionID
     let terminal: AppTerminalModel
-    @Published var phase: Phase = .connecting
+    var phase: Phase = .connecting
 
-    var onDropError: ((String) -> Void)?
-    private var uploading = false
-    private weak var client: RemoteHostClient?
-    private var lastCols = 80
-    private var lastRows = 24
-    private var hasReportedGrid = false
-    private var attachStarted = false
+    @ObservationIgnored var onDropError: ((String) -> Void)?
+    @ObservationIgnored private var uploading = false
+    @ObservationIgnored private weak var client: RemoteHostClient?
+    @ObservationIgnored private var lastCols = 80
+    @ObservationIgnored private var lastRows = 24
+    @ObservationIgnored private var hasReportedGrid = false
+    @ObservationIgnored private var attachStarted = false
     /// Debounce the initial attach and later resizes to a settled grid.
     /// Per-frame reports SIGWINCH-spam the child and fill scrollback with
     /// duplicated prompts.
-    private var viewportDebounce: Task<Void, Never>?
+    @ObservationIgnored private var viewportDebounce: Task<Void, Never>?
     private static let resizeSettleMs = 120
 
     init(sessionID: SessionID, client: RemoteHostClient) {

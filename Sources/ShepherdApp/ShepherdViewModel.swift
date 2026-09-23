@@ -98,10 +98,8 @@ final class ShepherdViewModel {
     var hostWorktreeOperationAgents: [UUID: AgentID] = [:]
     var hostBusyWorktrees: Set<String> = []
     var startingCheckoutUsers: [UUID: String] = [:]
-    var remoteProjectionRevision = 0
     var remoteChildren: [RemoteAgentRef: [ChildRun]] {
-        _ = remoteProjectionRevision
-        return Dictionary(uniqueKeysWithValues: remoteHosts.connections.flatMap { connection in
+        Dictionary(uniqueKeysWithValues: remoteHosts.connections.flatMap { connection in
             connection.children.map { (RemoteAgentRef(hostID: connection.id, agentID: $0.key), $0.value) }
         })
     }
@@ -403,7 +401,6 @@ final class ShepherdViewModel {
         self.remoteHosts.onDropError = { [weak self] in self?.remoteActionError = $0 }
         self.remoteHosts.onProjectionChanged = { [weak self] in
             guard let self else { return }
-            self.remoteProjectionRevision &+= 1
             self.remoteThreadStores.prune(live: Set(self.remoteHosts.connections.flatMap { connection in
                 connection.state.agents.map { RemoteAgentRef(hostID: connection.id, agentID: $0.id) }
             }))

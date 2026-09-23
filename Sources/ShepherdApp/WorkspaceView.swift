@@ -461,7 +461,7 @@ struct RemoteAgentPane: View {
 
 private struct RemoteAgentPaneContent: View {
     var vm: ShepherdViewModel
-    @ObservedObject var connection: RemoteHostStore.Connection
+    var connection: RemoteHostStore.Connection
     let agentID: AgentID
 
     var body: some View {
@@ -499,7 +499,7 @@ private struct RemoteAgentPaneContent: View {
 /// ID, so a split moves and resizes panes instead of rebuilding them.
 private struct RemotePaneTreeView: View {
     var vm: ShepherdViewModel
-    @ObservedObject var connection: RemoteHostStore.Connection
+    var connection: RemoteHostStore.Connection
     let ref: RemoteAgentRef
     let tab: Tab
     let node: PaneNode
@@ -539,7 +539,7 @@ private struct RemotePaneTreeView: View {
 
 private struct RemotePaneLeafView: View {
     var vm: ShepherdViewModel
-    @ObservedObject var connection: RemoteHostStore.Connection
+    var connection: RemoteHostStore.Connection
     let ref: RemoteAgentRef
     let tab: Tab
     let leaf: LeafPane
@@ -620,7 +620,7 @@ private struct RemoteAgentThreadPane: View {
 }
 
 private struct RemoteTerminalPane: View {
-    @ObservedObject var pane: RemotePaneSession
+    var pane: RemotePaneSession
     let isFocused: Bool
 
     var body: some View {

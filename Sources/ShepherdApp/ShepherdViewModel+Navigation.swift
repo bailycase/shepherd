@@ -41,7 +41,6 @@ extension ShepherdViewModel {
     }
 
     var blockedCount: Int {
-        _ = remoteProjectionRevision
         // Child runs needing attention count toward the waiting rollup: a
         // stuck subagent is exactly as attention-worthy as a blocked agent.
         return state.agents.count { $0.status == .blocked } + childRuns.attentionCount
@@ -481,7 +480,6 @@ extension ShepherdViewModel {
     }
 
     var activeMachineAgents: [Agent] {
-        _ = remoteProjectionRevision
         guard let remote = selectedRemoteAgent else { return orderedAgents }
         return remoteOrderedAgents(hostID: remote.hostID)
     }

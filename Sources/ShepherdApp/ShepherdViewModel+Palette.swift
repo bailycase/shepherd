@@ -10,7 +10,6 @@ import ShepherdRemote
 @MainActor
 extension ShepherdViewModel {
     var paletteItems: [PaletteItem] {
-        _ = remoteProjectionRevision
         var items: [PaletteItem] = []
         let keys = KeybindingsStore.shared
 
