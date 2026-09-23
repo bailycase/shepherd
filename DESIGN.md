@@ -323,7 +323,9 @@ overshoot as they grow from their anchor) and the confirmation pop (`.bouncy`, 4
 | `shimmer` | 1.4s | ease-in-out, repeating | loading placeholders | — | static |
 
 The glow, the spinner, and the shimmer are clock-driven (`NWPhase`), so Reduce Motion can change
-while they are on screen.
+while they are on screen. A Reduce Motion cross-fade still eases the layout a change moves (the
+rows under an opening disclosure, a column a pane narrows) over its 120ms; only what arrives or
+leaves stops travelling.
 
 **Applying motion.** Never write a duration or a curve in a view: an ad-hoc
 `withAnimation(.easeOut(duration: 0.15))` is a bug, like a hardcoded color.
@@ -340,13 +342,16 @@ while they are on screen.
 - An overlay grows from its anchor: `.nwTransition(.overlay, anchor: .bottomLeading)` for the
   composer's menus, `.top` for the palette.
 
-**What never moves.** Put `.nwInstant()` on a subtree that a change could reach with an animation
-attached.
+**What never moves.** `.nwInstant()` drops the animation a change arrives with (an ancestor's
+`nwAnimation`, a `withNWAnimation`) for its subtree; motion attached inside the subtree still
+runs. Put it on what must not move, as close to it as possible.
 
 - **Switching agents** is a visibility flip, and **keyboard navigation** (⌘1–9, ⌘↑/↓, a palette
   or menu highlight, j/k in the review) lands at once.
-- **Terminal surfaces** never change size frame by frame: every frame of an animated resize is a
-  PTY resize. A split, or a right pane opening beside a terminal, resizes it once.
+- **Terminal surfaces** never change size frame by frame. SwiftUI resizes a hosted NSView on every
+  frame of an animated layout change (about 70 times for one 180ms pane), and for Ghostty each is
+  a PTY resize. With `.nwInstant()` on the terminal view it takes its new size once while
+  everything around it moves; `MotionProbeTests` pins both.
 - **Streaming text** appends without motion; a finished part may fade in once. Clock text
   (elapsed times) ticks without rolling.
 - **Long lists** animate what changed, never the whole list: a thread's `LazyVStack` must not
