@@ -1,12 +1,20 @@
 # Shepherd design
 
 This document is the authority on how Shepherd looks and behaves on macOS. Where anything
-disagrees with it, this document wins. It condenses the design handoff,
-[`docs/design-spec/handoff.md`](docs/design-spec/handoff.md) (boards in
-[`docs/design-spec/boards/`](docs/design-spec/boards/)), and the Night Watch design system that
-supersedes its visual foundations, and records where Shepherd deliberately departs from them. All
-values live in the ShepherdUI package (`Packages/ShepherdUI`), and the code is cited by type name
-so you can check it.
+disagrees with it, this document wins. It describes **Night Watch**, Shepherd's design system,
+as the app implements it: the design boards (Foundations, Controls, Status & feedback,
+Navigation, Thread, Composer & menus, Agents & orchestration, Review, and Swift implementation)
+condensed, plus the places Shepherd deliberately departs from them.
+
+Every value lives in code, and this document names the code so you can check it:
+
+- **Tokens and shared components:** the ShepherdUI package (`Packages/ShepherdUI`, module
+  `ShepherdUI`).
+- **The Mac app's own surface dimensions:** `AppLayout`, split by domain into
+  `Sources/ShepherdApp/AppLayout+<Domain>.swift`.
+
+The older design handoff in [`docs/design-spec/`](docs/design-spec/handoff.md) is superseded by
+this document and kept only as history.
 
 ## Mental model: agents, not chats
 
@@ -15,7 +23,7 @@ Shepherd organizes work around **agents**, not chats: live workers you supervise
 
 - a title it gives itself
 - a workplace (a space's checkout, or a worktree of it)
-- a lifecycle: working, blocked, done, idle
+- a lifecycle: working, blocked on you, done, idle
 
 Every agent renders as a native **thread**: transcript, composer, questions, subagents. The UI's
 job is supervision: *which of my workers needs me right now, and what did it just do?* The
@@ -36,65 +44,70 @@ survive the question "does this help a person supervise ten working agents at on
 
 In priority order:
 
-1. **Readable measure.** The thread column is 760pt, and agent prose is capped at 680pt (about 85
-   characters).
-2. **Shape, not labels.** There are no speaker labels. A user turn is a trailing bubble; agent
-   output is unboxed prose.
-3. **One line per tool call.** Tool activity scans at a glance. Detail is one click away; raw
-   arguments are two.
+1. **Readable measure.** The thread column is at most 760pt, and agent prose is capped at 640pt.
+2. **Shape, not labels.** There are no speaker labels or avatars. A user turn is a trailing
+   bubble; agent output is unboxed prose.
+3. **One quiet line per burst of work.** Consecutive tool calls of one kind merge into one
+   activity line ("Explored 7 files · read 5 · search 2 · 0.9s"). Detail is one click away; raw
+   arguments are behind ⌥-click.
 4. **Nothing in the default view that isn't useful.** No key-hint rows, no status text that
-   repeats the header pill, no working directory under the composer, no footers in menus.
+   repeats the toolbar pill, no working directory under the composer, no footers in menus.
 
 And the rules that follow from them:
 
-- **Flat surfaces separated by borders.** Three background layers (canvas, surface, raised) and
-  three border strengths do the work. The shadows are the composer's, the segmented-control
-  thumb's, and one larger shadow shared by floating menus and the palette. No vibrancy, no
-  translucency, and no gradients except the fade above the composer.
-- **Honest affordances.** Never show a control that does nothing, a shortcut that isn't wired, or
-  sample data in place of real data. Hide unsupported capabilities, or explain them.
+- **Flat surfaces separated by 1px lines.** Surfaces step from `bgBase` (chrome) to `bgWindow`
+  (the thread) to `bgRaised` (cards, the composer, menus), with `bgSunken` for code and headers.
+  Separation is a hairline, never a shadow.
+- **One shadow.** `.nwPopover()` (menus, the palette, popovers) carries the system's only
+  shadow. The sidebar and the right pane borrow it only while they float over the window, and
+  the switch and slider knobs have a small knob shadow. No vibrancy, no translucency, no
+  gradients except the fade above the composer.
+- **Honest affordances.** Never show a control that does nothing, a shortcut that isn't wired,
+  or sample data in place of real data. Hide unsupported capabilities, or explain them.
 - **No permission model.** Shepherd never invents approval UI. When pi or an extension asks a
   question, show it as a question with the answers the asker offered.
-- **Status is a dot (or glyph) plus a word.** Color is never the only signal for an actionable
-  state.
+- **Status is a dot or glyph plus a word.** One enum, `AgentState`, colors every status surface,
+  and color is never the only signal for an actionable state.
+- **Lantern means you.** The brand amber marks the primary action and anything that needs you.
+  Running blue marks work in progress, links, and keyboard focus.
 - **The sidebar tree is the primary navigation.** The command palette is a secondary jump
   surface and never the only way to reach something.
 - **One primary action per surface.** A destructive action is never the ⏎ default.
 
-## Where Shepherd departs from the handoff
+## Where Shepherd departs from the boards
 
-| Handoff | Shepherd | Why |
+| Board | Shepherd | Why |
 | --- | --- | --- |
-| IBM Plex Sans and JetBrains Mono | Geist and Geist Mono, bundled (SIL OFL), on Night Watch's ramp | Night Watch's faces |
-| Mock palette from `tokens.json` | Night Watch's roles and values (light and dark) | Night Watch is the product's palette; the roles are the contract |
-| Sidebar rows 32pt with a 22pt indent, plus a 26pt "compact form" while a right pane is open | Rows **26pt** (density-scaled) with a 16pt indent, always. No compact form | A real fleet lost a third of the tree at 32pt |
-| Sidebar fixed at 256pt, shrinking to 184pt while a right pane is open | Resizable (190–340pt, default 256, persisted), and it **keeps its width** when a right pane opens | Shrinking on every pane toggle made the whole window jump |
-| A SHELLS section, and Shells tabs | Removed. Terminals exist only as panes beside a thread | Global shells and space shell workspaces were removed |
-| ⌘M opens the model picker | **⇧⌘M** | ⌘M is the system Minimize chord |
-| Runtime (Terminal vs Native RPC) as a creation-time choice | Gone: every agent is RPC | Terminal agents were removed |
-| Right-pane width persists per window | It persists app-wide | One main window |
-| Review segmented control "Local \| PR #n" | "Local \| PR", or "PR · <ref>" once the PR base is known | The ref, not a PR number, is what the diff is against |
-| Palette sections: Commands, This thread, Subagents (+ Agents when searching) | Also **Spaces** and **Found in conversations** (transcript search) when searching | Every destination is reachable from the palette |
-| iOS in the same pass | macOS first; iOS adopts the system later ([docs/ios](docs/ios/README.md)) | Scope |
+| Minimum window 1100×700 | **720×600**, with adaptive rules (the sidebar and the right pane overlay below their fit points) | Decided with the resizability review |
+| Sidebar 232pt with 28pt rows, shrinking to a 184pt compact form with 24pt rows while a right pane is open | 232pt by default, resizable (190–340, persisted), and it **keeps its width** when a right pane opens. Rows follow Settings ▸ Appearance ▸ Sidebar rows (22 · 28 · 36) and Density | Shrinking on every pane toggle made the window jump; the row height is configurable by decision |
+| Thread column at most 820pt | **760pt**, with the board's 640pt prose measure | The column kept from the earlier handoff |
+| Colors as asset-catalog colorsets | A runtime theme model: `ThemeDefinition` is data (hex, `Codable`), resolved into `Color.nw` | User themes later; the roles are the contract |
+| Fonts through `ATSApplicationFontsPath` / `UIAppFonts` | Registered from the package bundle at launch (`NWFonts.register()`), no Info.plist entry | ShepherdUI is a package, not an app target |
+| A `ShepherdDesign` package | `Packages/ShepherdUI` | Name |
+| `NavigationSplitView` with `.inspector` for the right pane | Shepherd lays the window out itself (`RootView`, `RightPaneSplit`) | Its own adaptive rules (`ShellLayout`) decide what docks and what overlays |
+| Running sidebar rows draw a sparkline | Running rows show elapsed time; `NWSparkline` exists but nothing uses it | Nothing records an agent's tool calls per minute |
+| A queued follow-up has Edit and Send now | The queued bubble shows no actions | Honest affordances |
+| Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn or asks a question while you aren't watching it (`AgentNotifications`) | Reaches you outside the app |
+| Missions, the mission graph, the attention inbox, evidence review (Lab boards) | Not built | Out of scope for this pass |
+| ⌘M opens the model picker (earlier handoff) | **⇧⌘M** | ⌘M is the system Minimize chord |
 
-Additions the handoff doesn't have:
+Additions the boards don't have:
 
 - The composer's **delivery chip** (Follow-up / Steer), shown while a turn runs with a draft,
   because pi supports both.
-- The header's **subagent rollup** ("n subagents · tokens").
+- The toolbar's **subagent rollup** ("3 subagents · 1.6m tok").
+- **Transcript search** in the palette ("Found in conversations").
 - A **quit confirmation** while agents are working.
 
 ## Theme model
 
-All design values live in the **ShepherdUI** package (`Packages/ShepherdUI`, module `ShepherdUI`),
-which implements **Night Watch**, the design system on the Night Watch boards (Foundations,
-Controls, Status, Swift). It is SwiftUI only and holds no app state. Views read colors from
-`Color.nw`, fonts from `Font.nw(_:)`, and sizes from `NW.Space`, `NW.Radius`, and `NW.Height`
-(plus the app's own surface dimensions in `AppLayout`). **Never hardcode a color, font size, or
-dimension in a view.**
+All design values live in **ShepherdUI**. It is SwiftUI only and holds no app state. Views
+read colors from `Color.nw`, fonts from `Font.nw(_:)`, and sizes from `NW.Space`, `NW.Radius`,
+and `NW.Height`, plus the app's own surface dimensions in `AppLayout`. **Never hardcode a color,
+font size, or dimension in a view.**
 
-A theme is pure data (`ThemeDefinition`: hex strings, `Codable`), so the built-in theme and future
-user themes go through the same model:
+A theme is pure data (`ThemeDefinition`: hex strings, `Codable`), so the built-in theme and
+future user themes go through the same model:
 
 ```text
 ThemeDefinition { id, name, light: ThemeVariant, dark: ThemeVariant }
@@ -104,89 +117,117 @@ ThemeVariant    { colors:   ThemeColors     // the Night Watch roles below (#RRG
                   pi:       PiColors }      // pi's TUI theme schema, for pi run by hand in a terminal pane
 ```
 
-- **`ThemeStore.shared`** holds the selected theme, text scale, and density. It resolves each theme
-  once into an immutable `NWPalette` (every `Color` built when the theme changes) and each text
-  scale into an `NWTypeRamp`, so a token read is a stored-property load.
-- **Colors are dynamic:** every palette color resolves against the appearance of the view drawing
-  it, so light and dark are never stored and never need a re-render.
+- **`ThemeStore.shared`** (`@Observable`) holds the selected theme, the text scale, and the
+  density. It resolves each theme once into an immutable `NWPalette` (every `Color` built when
+  the theme changes) and each text scale into an `NWTypeRamp`, so a token read is a
+  stored-property load.
+- **Colors are dynamic:** every palette color resolves against the appearance of the view
+  drawing it, so light and dark are never stored and never need a re-render.
 - **`ThemeManager`** (app) owns only the appearance mode: System, Light, or Dark, set in
-  Settings ▸ Appearance or the Appearance menu. `SHEPHERD_THEME=night-watch-dark|night-watch-light`
-  forces one at launch.
+  Settings ▸ Appearance or the Appearance menu. `SHEPHERD_THEME=night-watch-dark` or
+  `night-watch-light` forces one at launch (the older `shepherd-dark` still means dark), and
+  Reset returns to it.
 - **What `ThemeManager` pushes:** the resolved variant goes to what cannot follow appearance on
   its own. That is Ghostty surfaces (a live `setTheme`, never a remount or replay) and the pi
   theme file plus the `shepherd-active-theme` variant marker (`night-watch-dark|light`), which pi
-  and editors run in a terminal pane watch.
-- **Fonts:** Geist and Geist Mono (SIL OFL, `Resources/Fonts/OFL.txt`) ship in the package bundle
-  and are registered for the process at launch (`NWFonts.register()`); no Info.plist entry.
-  Terminal panes keep their own font setting.
+  and editors run in a terminal pane watch. The marker's spelling is an external contract.
+- **Fonts:** Geist and Geist Mono (SIL OFL, `Resources/Fonts/OFL.txt`) ship in the package
+  bundle and are registered for the process at launch (`NWFonts.register()`). Terminal panes keep
+  their own font setting.
 
 ### Roles (`ThemeColors`, read as `Color.nw.<role>`)
 
-| Group | Role | Use |
-| --- | --- | --- |
-| Surfaces | `bgBase` | Sidebar, window chrome |
-| | `bgWindow` | Thread, panes, terminal panes |
-| | `bgRaised` | Cards, composer, menus, fields |
-| | `bgSunken` | Code, tool output, headers, segmented track |
-| | `bgBubble` | User messages |
-| | `bgHover` | Row hover (translucent) |
-| | `bgSelected` | Selected row (translucent) |
-| Lines | `lineSubtle` | Dividers, row separators, card borders |
-| | `lineStrong` | Control borders, popovers |
-| Text | `textPrimary` | Body, titles |
-| | `textSecondary` | Labels, previews, descriptions |
-| | `textTertiary` | Meta, timestamps, counts, section labels |
-| | `textOnLantern` | Text on a lantern fill |
-| Brand and state | `lantern` / `lanternText` / `lanternTint` | Brand, the primary action, needs you |
-| | `running` / `runningTint` | Running, links, focus |
-| | `done` / `doneTint` | Success, additions |
-| | `failed` / `failedTint` | Failure, deletions, destructive |
-| Syntax | `synKeyword`, `synType`, `synString`, `synNumber`, `synFunction`, `synComment` (+ `synVariable`, `synOperator`, `synPunctuation`) | Code |
+Values are `NightWatch.swift`'s, dark · light. Translucent roles are `#RRGGBBAA`.
 
-**Derived colors** live on `NWPalette`, not in the theme: `focusRing` (running at 60% dark /
-50% light), `popoverShadow` (the only shadow), `scrim`, `textOnFailed`, and the switch knob colors.
+| Group | Role | Dark | Light | Use |
+| --- | --- | --- | --- | --- |
+| Surfaces | `bgBase` | `#0a0b0c` | `#f2f2f0` | Sidebar, window chrome, Settings nav, the review's file strip |
+| | `bgWindow` | `#0d0e10` | `#fbfbfa` | Thread, toolbar, panes, terminal panes, dialogs |
+| | `bgRaised` | `#15171a` | `#ffffff` | Cards, the composer, menus, fields |
+| | `bgSunken` | `#111316` | `#f5f5f3` | Code, tool output, card headers, the segmented track |
+| | `bgBubble` | `#1a1d21` | `#efefec` | User messages |
+| | `bgHover` | `#ffffff0b` | `#0000000a` | Row hover |
+| | `bgSelected` | `#ffffff14` | `#00000011` | Selected row, the composer's focus ring |
+| Lines | `lineSubtle` | `#1f2226` | `#e7e7e3` | Dividers, row separators, card borders |
+| | `lineStrong` | `#2c3035` | `#d6d6d1` | Control borders, popovers, the composer |
+| Text | `textPrimary` | `#e8e9ec` | `#151618` | Body, titles |
+| | `textSecondary` | `#9aa0a9` | `#5f636b` | Labels, previews, descriptions |
+| | `textTertiary` | `#5f656e` | `#9a9ea5` | Meta, timestamps, counts, section labels |
+| | `textOnLantern` | `#17120a` | `#1a1206` | Text on a lantern fill |
+| Brand and state | `lantern` | `#f2a93b` | `#e39a26` | Brand, the primary action, needs you |
+| | `lanternText` | `#f7c16e` | `#945b00` | Lantern words on a tint ("ASK", "Needs you") |
+| | `lanternTint` | `#f2a93b21` | `#d98a1221` | Needs-you backgrounds |
+| | `running` | `#7aa7ff` | `#2f6fe0` | Running, links, focus |
+| | `runningTint` | `#7aa7ff21` | `#2f6fe01a` | Running pills, menu and palette highlight |
+| | `done` | `#46c37b` | `#1f9d5b` | Success, additions |
+| | `doneTint` | `#46c37b1f` | `#1f9d5b1a` | Done pills, added lines |
+| | `failed` | `#f0625e` | `#d9443f` | Failure, deletions, destructive |
+| | `failedTint` | `#f0625e1f` | `#d9443f17` | Failed pills, removed lines, turn errors |
+| Syntax (`SyntaxColors`) | `synKeyword` | `#d7a6ff` | `#8a3fb5` | Keywords |
+| | `synType` | `#7ee0b5` | `#1a7f55` | Types |
+| | `synString` | `#e8c07a` | `#9a6400` | Strings |
+| | `synNumber` | `#9ec2ff` | `#2f6fe0` | Numbers |
+| | `synFunction` | `#8fc1ff` | `#2a62c9` | Calls |
+| | `synComment` | `#5f656e` | `#9a9ea5` | Comments |
+| | `synVariable`, `synOperator`, `synPunctuation` | `#e8e9ec`, `#9aa0a9`, `#9aa0a9` | `#151618`, `#5f636b`, `#5f636b` | Names and punctuation (the text colors) |
 
-**Status is one enum.** `AgentState` (`running`, `attention`, `done`, `failed`, `stuck`, `queued`,
-`idle`) gives every status surface its color, tint, word, and glyph. The app maps its lifecycles
-onto it (`AgentStateMapping.swift`: agent status, subagent runs, tool calls). Only `attention`
-animates (a 1.6s glow).
+**Derived colors** live on `NWPalette`, not in the theme:
 
-### Night Watch
+- `focusRing`: running at 60% (dark) / 50% (light)
+- `popoverShadow`: `.nwPopover()`'s shadow
+- `scrim`: black at 30% in both appearances, behind the command palette
+- `textOnFailed`: white, for labels on a `failed` fill
+- `knobOn`, `knobOff`, `knobShadow`: the switch and slider knobs
 
-`ThemeDefinition.nightWatch` (`NightWatch.swift`) is the only shipped theme. The UI and syntax
-roles are the Foundations board's values. The terminal and pi palettes are derived from the roles:
-the terminal sits on `bgWindow` with `textPrimary` text and a lantern cursor, and pi uses the same
-brand, state, and syntax colors, with translucent tints flattened onto `bgWindow`.
+**The terminal and pi palettes are derived from the roles.** Terminal panes sit on `bgWindow`
+with `textPrimary` text, a lantern cursor, and a running-blue selection; each variant carries
+its own 16-color ANSI palette (the light one darkened to stay readable). pi uses the same brand,
+state, and syntax colors, with translucent tints flattened onto `bgWindow`, because Ghostty and
+pi want opaque colors.
 
-- **Dark:** near-black (`bgBase #0a0b0c`, `bgWindow #0d0e10`, `bgRaised #15171a`), lantern amber
-  `#f2a93b`, running blue `#7aa7ff`.
-- **Light:** paper white (`bgBase #f2f2f0`, `bgWindow #fbfbfa`, `bgRaised #ffffff`), lantern
-  `#e39a26`, running `#2f6fe0`.
+### One status enum
+
+`AgentState` gives every status surface its color, tint, word, and glyph. The app maps its
+lifecycles onto it in `AgentStateMapping.swift` (agent status, subagent runs, tool calls). Only
+`attention` animates: a 1.6s glow.
+
+| `AgentState` | Word | Color | Pill fill | Glyph (`NWStateGlyph`) | App meaning |
+| --- | --- | --- | --- | --- | --- |
+| `running` | Running | `running` | `runningTint` | spinner | agent working, a live run or call |
+| `attention` | Needs you | `lantern` (words `lanternText`) | `lanternTint` | `exclamationmark.circle` | agent blocked on a question, a run asking |
+| `done` | Done | `done` | `doneTint` | `checkmark` | a finished agent, run, or call |
+| `failed` | Failed | `failed` | `failedTint` | `xmark` | a failed run or call, a lost connection |
+| `stuck` | Stuck | `failed` | `failedTint` | `exclamationmark.triangle` | (unused by the app today) |
+| `queued` | Queued | `textTertiary` (words `textSecondary`) | none, outlined; hollow dot | `circle` | a queued or paused run |
+| `idle` | Idle | `textTertiary` (words `textSecondary`) | none, outlined | `circle.fill` | an idle agent |
 
 ### Contrast rules
 
 `ShepherdUIUnitTests` checks every built-in variant (translucent fills are painted over the
 surface they sit on):
 
-- `textPrimary` and `textSecondary` reach 4.5:1 on `bgBase`, `bgWindow`, and `bgRaised`, and
-  `textPrimary` on `bgSelected`.
-- `lanternText` on `lanternTint`, and `textOnLantern` on `lantern`, reach 4.5:1.
-- State colors reach 3:1 on `bgWindow` as dots and glyphs, and stay distinguishable.
+- `textPrimary`, `textSecondary`, and `textTertiary` reach 4.5:1 on `bgBase`, `bgWindow`, and
+  `bgRaised`, and `textPrimary` on `bgSelected`.
+- `lanternText` on `lanternTint`, each state color on its own tint (over `bgWindow` and over
+  `bgRaised`), and `textOnLantern` on `lantern` reach 4.5:1.
+- `lantern`, `running`, `done`, and `failed` reach 3:1 on `bgWindow` as dots and glyphs, and stay
+  distinguishable from each other.
 - **Documented exceptions** (the board's colors, kept; the test pins their measured ratios):
-  `textTertiary` meta text (dark 3.06–3.35, light 2.40–2.69), the light state pills' words on their
-  own tints (running 3.98, done 3.01, failed 3.71 over the window), the light lantern as a mark
-  (2.27), and white on `failed` (dark 3.18, light 4.33).
-- Every role parses, UI roles alone may be translucent, the ANSI palette has 16 entries, the
-  theme round-trips through JSON, and the terminal background equals `bgWindow`.
+  `textTertiary` meta text (dark 3.06–3.35, light 2.40–2.69), the light state pills' words on
+  their own tints (running 3.98, done 3.01, failed 3.71 over the window), the light lantern as a
+  mark (2.27), and white on `failed` (dark 3.18, light 4.33).
+- Every role parses, only hover, selection, and the state tints may be translucent, surfaces
+  and lines stay distinct, the ANSI palette has 16 entries, the terminal background equals
+  `bgWindow`, and the theme round-trips through JSON.
 
 ### Adding a theme or a role
 
 - **A theme:** write a `ThemeDefinition` that fills every field of `ThemeColors`,
-  `SyntaxColors`, `TerminalColors`, and `PiColors` for both variants (the memberwise initializers
-  make the compiler enforce completeness). Add it to the list the ShepherdUI unit tests iterate and
-  fix values until they pass. Then teach `ThemeManager` and the app's `ShepherdTheme` to resolve it
-  for Ghostty and the pi theme file; today they resolve Night Watch only. The variant marker's
-  `<theme>-dark|light` spelling is an external contract.
+  `SyntaxColors`, `TerminalColors`, and `PiColors` for both variants (the memberwise
+  initializers make the compiler enforce completeness). Add it to the list the ShepherdUI unit
+  tests iterate and fix values until they pass. Then teach `ThemeManager` and the app's
+  `ShepherdTheme` to resolve it for Ghostty and the pi theme file; today they resolve Night Watch
+  only. Keep the variant marker's `<theme>-dark|light` spelling.
 - **A role:** add a field to `ThemeColors`, a value in every theme's light and dark variant, a
   property on `NWPalette`, and a contrast rule if it carries text.
 
@@ -194,313 +235,422 @@ surface they sit on):
 
 Geist for prose and chrome, Geist Mono for anything the agent touched (paths, commands, code,
 output, counts, times). Every size scales with Settings ▸ Appearance ▸ Text size
-(`ThemeStore.textScale`, 0.85–1.3). `.nwText(_:)` applies a style with its line height (extra
+(`ThemeStore.textScale`, 85–130%). `.nwText(_:)` applies a style with its line height (extra
 leading from the face's real metrics); `.font(.nw(_:))` alone suits single lines.
 
-| Style | Spec | Use |
+| Style (`NWTextStyle`) | Spec | Use |
 | --- | --- | --- |
-| `display` | Geist 28/600/1.15 | Empty states, onboarding, settings page titles |
-| `title` | Geist 15/600/1.3 | Thread and pane titles, sheet and dialog titles |
-| `headline` | Geist 13.5/600/1.35 | Card titles, section heads |
-| `body` | Geist 13.5/400/1.6 | Agent prose, bubbles |
+| `display` | Geist 28/600/1.15 | Settings page titles, onboarding |
+| `title` | Geist 15/600/1.3 | Dialog and sheet titles |
+| `headline` | Geist 13.5/600/1.35 | Card titles, Markdown headings |
+| `body` | Geist 13.5/400/1.6 | Agent prose, bubbles, the composer field |
 | `ui` | Geist 12.5/500/1.3 | Rows, buttons, controls |
-| `caption` | Geist 11.5/400/1.35 | Secondary info, descriptions |
-| `code` | Geist Mono 12/400/1.55 | Code blocks, output |
-| `mono` | Geist Mono 11.5/400/1.3 | Paths, commands, tool rows |
-| `micro` | Geist Mono 10.5/500/1.2 | Section labels (`.nwSectionLabel()`: uppercase, tracked, tertiary), counts, times |
+| `caption` | Geist 11.5/400/1.35 | Secondary info, descriptions, footnotes |
+| `code` | Geist Mono 12/400/1.55 | Code blocks, output, the review's file headers |
+| `mono` | Geist Mono 11.5/400/1.3 | Paths, commands, diff lines |
+| `micro` | Geist Mono 10.5/500/1.2 | Section labels (`.nwSectionLabel()`: uppercase, tracked 5%, tertiary), counts, times |
 
-`Font.nw(_:weight:)` takes a weight for the rare emphasis the ramp lacks; `Font.nwSans(_:_:)` and
-`Font.nwMono(_:_:)` exist for the few one-off sizes (the empty-state title, the palette search).
-Prefer a ramp style. The terminal font (family and size) is its own setting in Settings ▸
-Terminal and never follows the chrome's text scale.
+- `Font.nw(_:weight:)` takes a weight for the rare emphasis the ramp lacks. `Font.nwSans(_:_:)`
+  and `Font.nwMono(_:_:)` exist for the one-off sizes the boards specify (the toolbar title at
+  13, row meta at 10–11, the palette field at 15). Prefer a ramp style.
+- **Two prose sizes:** `NWProseSize` (the `nwProseSize` environment value) sets thread prose and
+  bubbles at the ramp (`regular`) or one step smaller (`small`: body at the `ui` size). The
+  subagent inspector's transcript uses `small`.
+- The terminal font (family and size, default SF Mono 12.5) is its own setting in Settings ▸
+  Terminal and never follows the chrome's text scale.
 
-## Metrics, spacing, radii
+## Space, radius, height, elevation, motion
 
 - **Space** (`NW.Space`, 4pt grid): `xxs 2`, `xs 4`, `s 6`, `m 8`, `l 12`, `xl 16`, `xxl 24`,
-  `xxxl 32`.
+  `xxxl 32`. Padding and gaps use only these steps.
 - **Radius** (`NW.Radius`): `xs 4` pills, keycaps, chips · `s 6` buttons, fields, rows · `m 8`
-  cards, the composer, tool groups · `l 12` popovers, the palette, sheets.
-- **Height** (`NW.Height`): rows `rowCompact 22`, `row 28`, `rowComfortable 36` (scaled by
-  Settings ▸ Appearance ▸ Density, 0.8–1.5); controls `controlS 24`, `controlM 28`,
-  `controlL 32`; `touch 44` on iOS.
-- **Hairlines** are 1px, not 1pt: `NWHairline` and `.nwBorder(_:radius:)` use `1 / displayScale`.
-- **Elevation:** `.nwCard()` is flat (raised fill, 1px line); `.nwPopover()` carries the system's
-  only shadow; `.nwFocusRing()` is running blue, 2pt wide, 2pt outside, for keyboard focus only
-  (`.nwFocusRing(_ visible:)` for a field or card whose focus the caller tracks).
-- **Motion** (`NW.Motion`): glow 1.6s, spin 1s, hover 120ms, panes 180ms, sheets 240ms. Under
-  Reduce Motion the glow and spinner are static (they are clock-driven, so toggling Reduce Motion
-  on screen is safe) and panes cross-fade.
-- **Surface dimensions** are the app's (`AppLayout`): window minimum 1040×640 (default 1440×900),
-  main column at least 720, thread column 760, prose 680, user bubble 600, header 52 with 20
-  padding, sidebar 190–340 (default 256) with 26pt rows × density and a 16pt indent, right pane
-  600 (min 480, at most half the window).
-- **Icons:** SF Symbols (medium weight, 13–16pt), monochrome. Never filled glyphs for status,
-  never emoji.
+  cards, the composer, code blocks · `l 12` popovers, the palette.
+- **Height** (`NW.Height`): rows `rowCompact 22` (diff lines), `row 28` (sidebar, menus),
+  `rowComfortable 36` (ledgers), all scaled by Density and rounded to whole points
+  (`NW.Height.scaled(_:)` for other row heights); controls `controlS 24`, `controlM 28`,
+  `controlL 32`, which never scale; `touch 44` on iOS.
+- **Hairlines** are 1px, not 1pt: `NWHairline` and `.nwBorder(_:radius:)` use
+  `NW.hairline(displayScale)`.
+- **Elevation:**
+  - `.nwCard()`: flat, a raised fill and a 1px line (`lineSubtle` unless given).
+  - `.nwPopover()`: a raised fill, a 1px `lineStrong` line, radius 12, and the only shadow.
+  - `.nwFocusRing()`: running blue at `focusRing`, 2pt wide, drawn outside the control, for
+    keyboard focus only (`.nwFocusRing(_ visible:)` for a field or card whose focus the caller
+    tracks; `.nwFocusRingCircle()` for icon buttons).
+- **Motion** (`NW.Motion`): `glow` 1.6s ease-in-out (attention only), `spin` 1s linear (running
+  work), `hover` 120ms, `pane` 180ms, `sheet` 240ms. Apply them with `.nwAnimation(_:value:)`.
+  - The glow and the spinner are clock-driven (`NWPhase`), so toggling Reduce Motion while they
+    are on screen is safe.
+  - Under Reduce Motion both are static, and panes and sheets cross-fade (120ms) instead of
+    moving.
+- **Icons:** SF Symbols, monochrome, medium weight (14pt in icon buttons, smaller inline).
+  Never filled glyphs for status, never emoji. The Foundations board names the symbols to use
+  (`sidebar.left`, `square.and.pencil`, `arrow.up`, `stop.fill`, `paperclip`, `lightbulb`,
+  `arrow.triangle.branch`, `plus.forwardslash.minus`, `ellipsis`, `magnifyingglass`, `bolt`,
+  `desktopcomputer`, …).
 
-## Components
+## Density and row settings
 
-`Packages/ShepherdUI/Sources/ShepherdUI/Components` is the shared library, by domain (Controls,
-Status, Containers, Thread, Composer, Agents), with `#Preview`s of every component in both
-appearances in `Previews/`. Use a component before composing chrome by hand. Debug builds have a
-**Component Gallery** (command palette), which shows the components in their states.
+Settings ▸ Appearance has two independent row controls:
 
-| Component | Use |
-| --- | --- |
-| `.buttonStyle(.nw(_:size:))` (primary, secondary, ghost, danger, dangerFill; s 24, m 28, l 32) | Every text button, on a native `Button`. Primary (lantern) at most once per view; a destructive action is never the ⏎ default. |
-| `.buttonStyle(.nwIcon)` | Icon-only buttons: a 28pt circle (44 on iOS); bordered, or "on" (lantern tint) for a pane toggle while its pane is open. Always with an accessibility label. |
-| `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)` | Inline running-blue actions; hover and selection fills for rows. |
-| `.toggleStyle(.nwSwitch)`, `.toggleStyle(.nwCheckbox)` | Booleans that apply immediately; checks in lists. Native `Toggle`s. |
-| `NWSegmentedPicker`, `NWPopupMenu` | 2–4 exclusive options; longer lists (a native `Menu`). The segmented picker represents itself to accessibility as a native segmented `Picker`. |
-| `.textFieldStyle(.nw)`, `.nwField(focused:error:mono:)`, `NWSearchField` | Text entry (raised, strong line, focus ring, failed line in error). |
-| `NWStepper`, `NWValueSlider` | Integer steppers (accessible as a native `Stepper`); a lantern slider with a mono value (double-click resets). |
-| `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | A real, wired shortcut; counts (neutral, needs you, failed); roles, models, kinds; help with its shortcut. |
-| `NWStatusPill`, `NWStatusDot`, `NWStateGlyph`, `NWBranchGlyph` | State as a pill (headers, cards), a 6pt dot (rows), a 14pt glyph (tool rows, runs), a subagent glyph. |
-| `.progressViewStyle(.nwSpinner)`, `.progressViewStyle(.nwBar)`, `NWStepStrip`, `NWSparkline` | Running work, progress, one segment per step or run, activity. |
-| `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()` | Inline banners (never modal alerts for agent events), transient toasts, empty states, loading placeholders. |
-| `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline` | Section labels, grouped cards with 1px rules, the settings row. |
-| `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWComposerChipStyle`, `NWComposerActionButton`, `NWChipChevron` | Thread and composer parts (their domains' later phases own their final form). |
-| `NWWordmark`, `NWCrook` | The mark. |
+- **Sidebar rows** (`AppSettings.sidebarRowDensity`, an `NWDensity`): Compact 22 · Standard 28 ·
+  Comfortable 36, default Standard. `RootView` sets it on the environment (`.nwDensity(_:)`).
+  The sidebar's rows and the command palette's rows and placement read it, and use it as a
+  minimum height, so larger text still fits. Compact rows set titles at 12pt instead of 12.5.
+- **Density** (`AppSettings.uiDensity`, 80–150%, default 100%): multiplies every row height
+  (`NW.Height.row…`, so the sidebar and palette rows above too), the Settings rows and nav, the
+  ledger rows, and the diff's lines and fold rows. Control heights never scale.
 
-App-level building blocks sit on top of these:
+A sidebar row is therefore its density's base height × Density. `NavigationTokenTests` and
+`TokenTests` (ShepherdUI) pin the heights, and `SidebarRowSettingTests` the setting.
 
-- `SettingsPage`, `SettingsGroup`, `SettingsRow`, `SettingsActionRow`, `SettingsSwitch`,
-  `SettingsTextField`, `PathRow` (`SettingsComponents.swift`), on `NWSettingsNavRow`,
-  `NWGroupCard` and `NWCardRow`
-- `DialogSheet`, `DialogAction`, `DialogBanner`, `RenameDialog` (`DialogSheet.swift`), on
-  `NWDialog`, `NWSheetRow` (`SheetRow`), `NWDialogStatus` and `NWChecklistRow`
-  (`Components/Dialogs`); `AppDialogs` presents them, and `QuitConfirmation` presents
-  `QuitDialog`
-- `CodeBlockView` for fenced code
-
-**Reading the surface sections below.** They predate Night Watch and still name the old roles.
-Read them through the mapping the migration applied: `bgCanvas`→`bgBase`, `bgSurface`→`bgWindow`,
-`bgMuted`/`bgTrack`→`bgSunken`, `bgHoverStrong`→`bgHover`, `borderSubtle`/`border`→`lineSubtle`,
-`borderStrong`→`lineStrong`, `text`→`textPrimary`, `textTertiary`→`textSecondary`,
-`textMuted`/`textDisabled`/`dotIdle`→`textTertiary`, `accent`/`accentText`→`running` (links,
-focus, running) or `lantern` (the primary action), `accentBg`→`runningTint`,
-`success…`→`done`/`doneTint`, `warning…`→`lantern`/`lanternText`/`lanternTint`,
-`danger…`→`failed`/`failedTint`, the old type ramp onto the nearest Night Watch style. The domain
-phases rewrite each surface section as they restyle it.
-
-## Window structure
+## Window and adaptive layout
 
 ```text
-┌────────────────┬───────────────────────────────────────────┬──────────────────────┐
-│ traffic lights │ header 52: space / title · pill · · 18 turns · 46k ctx · ▯ ⋯ │
-│                ├───────────────────────────────────────────┼──────────────────────┤
-│ THIS MAC    19 │        760pt thread column                │ right pane (optional)│
-│ › Space      8 │               ┌───────────────┐           │ review or subagent   │
-│   ● agent      │               │  user bubble  │           │ inspector, 600pt     │
-│   ● agent      │   agent prose (680pt measure) │           │ (min 480, ≤ 50%)     │
-│     ↳ subagent │   ┌ tool group ─────────────┐ │           │                      │
-│ HOST  Unreach. │   └─────────────────────────┘ │           │                      │
-│────────────────│   ┌ composer card ──────────┐ │           │                      │
-│ AUTOMATIONS  1 │   └─────────────────────────┘ │           │                      │
-└────────────────┴───────────────────────────────────────────┴──────────────────────┘
+┌──────────────────┬──────────────────────────────────────────────┬──────────────────────┐
+│ ● ● ●          ✎ │ Title  ● Running · 1m 03s   42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
+│ ⌕ Jump to…   ⌘K  ├──────────────────────────────────────────────┼──────────────────────┤
+│ THIS MAC     19  │         760pt thread column                  │ right pane:          │
+│ ⌄ Shepherd    8  │                       ┌──────────────┐       │ review or subagent   │
+│   ● agent   ASK  │                       │ user bubble  │       │ inspector, 600pt     │
+│   ● agent    4m  │                       └──────────────┘       │ (min 480, ≤ half)    │
+│     ● worker 37m │   agent prose, 640pt measure                 │                      │
+│ HORIZON          │   ✎ Edited 4 files  +149 −63  ›              │                      │
+│   ● Unreachable  │   ┌ composer ──────────────────────────┐     │                      │
+├──────────────────┤   └────────────────────────────────────┘     │                      │
+│ Automations    1 │                                              │                      │
+└──────────────────┴──────────────────────────────────────────────┴──────────────────────┘
 ```
 
-There is one window. The sidebar sits on `bgCanvas`, running behind the traffic lights, and the
-main column sits on `bgSurface`. There is no tab bar and no status line. An agent's layout is its
-thread plus any terminal panes split beside it. Pane dividers are 1pt `border`, tinted accent
-where they border the focused pane.
+- **One window.** `ShepherdMacApp` declares a single `Window` scene ("Shepherd") with a hidden
+  title bar, window tabbing is off, and closing the window leaves the app and every agent
+  running; the Dock icon brings it back. The window controls stay at macOS's default position.
+  The window has no title other than the toolbar's.
+- **Size** (`AppLayout+Navigation.swift`): minimum 720×600, default 1440×900.
+- **Layout:** the sidebar sits on `bgBase` and runs behind the window controls; the main column
+  sits on `bgWindow`. There is no tab bar and no status line. An agent's layout is its thread
+  plus any terminal panes split beside it. Pane dividers are 1pt `lineSubtle`, tinted running
+  where they border the focused pane; dragging one keeps each side at least 160pt, between 15%
+  and 85%.
+- **Switching agents flips visibility; it never remounts.** Every mounted layout stays in the
+  view tree, and hidden ones are `opacity(0)`. This is what makes switching instant.
 
-Switching agents flips visibility; it never remounts. Every mounted layout stays in the view
-tree, and hidden ones are `opacity(0)`. This is what makes switching instant.
+**Adaptive rules** (`ShellLayout`, pure and unit-tested in `ShellLayoutTests`):
 
-**With no agent on screen**, the workspace shows one of three empty states:
-
-- A selected space with no agents: "No agents in <space>", "Start one to work in <path>.", a
-  primary **New agent** button, and its keycaps.
-- No spaces at all: "No spaces yet", "A space is a project folder your agents work in.", and a
-  primary **New space…** button.
-- Otherwise: "No agent selected", "Pick one in the sidebar, or start a new one.", and the New
-  agent keycaps.
+- **Sidebar.** It docks while the main column keeps 720pt beside it, narrowing to fit (to no
+  less than 190pt). In a narrower window, below its fit point (sidebar width + 1 + 720), it hides
+  on its own, and ⇧⌘S or the toolbar's sidebar button shows it as an overlay: at most the window
+  width minus 48pt, over the workspace with the popover shadow. Picking a row or clicking outside
+  closes the overlay. ⇧⌘S in a wide window hides and shows the docked sidebar.
+- **Toolbar inset.** While the sidebar is not docked, the toolbar starts 70pt in to clear the
+  window controls (0 in full screen) and leads with a sidebar button.
+- **Right pane** (review or subagent inspector, `RightPaneSplit`). It docks while the main
+  column is at least 881pt (thread 400 + 1 + pane 480): 600pt by default, at least 480, at most
+  half the column, and the thread always keeps 400. Narrower, the pane overlays the thread from
+  the trailing edge with the popover shadow. Its leading edge is the drag handle (9pt hit area,
+  adjustable with VoiceOver in 40pt steps), and the width persists app-wide
+  (`shepherd.rightPaneWidth`). No width is ever negative.
+- **Palette:** 620pt wide, or the window minus 16pt margins, and never taller than the window
+  leaves room for (`NWPaletteMetrics.placement`).
+- **Composer:** in a narrow thread the chips drop their words ("/" alone, the thinking level
+  alone) instead of truncating mid-word (`ViewThatFits`).
 
 ## Surfaces
 
 ### Sidebar
 
-- **Sections**, 8pt padding:
-  1. **This Mac**, with its agent count and a hover `+` for New Space.
-  2. One section per remote host, with a count, "n need you", "Connecting…", "Unreachable" (in
-     `dangerText`), or "Off".
-  3. Behind a 1pt `border`: **Automations** (hidden while empty).
+`SidebarView` (`SidebarView.swift`, remote sections in `RemoteSidebarSection.swift`) on
+`NWSidebar`.
 
-  Section headers use `.sectionStyle()` with a trailing count, and clicking one toggles the
-  section. With remote hosts configured, hovering a header shows its machine chord (⌃⇧n).
-- **Spaces** are disclosure rows: chevron, name, and agent count, plus a `⎇n` worktree count and
-  a blocked count in `warningText`. Clicking toggles the space; it has no view of its own. A
-  hover `+` starts a new agent in the space. Nested projects indent by path containment, and
-  agents nest beneath their space.
-- **Rows:** 26pt, radius 6, 16pt indent per level. Hover is `bgHoverStrong`; selected is
-  `bgSelected`, with the title in medium weight. A 7pt status dot leads, `⎇` marks a worktree
-  agent, and the title truncates at the tail with the full title in a tooltip.
-- **Trailing slot**, in priority order:
+- **Top bar (44pt):** empty space that drags the window, and the compose button
+  (`square.and.pencil`, "New agent", ⌘N) at the trailing edge. Below it, **Jump to…**
+  (`NWSidebarJumpButton`): a quiet search-shaped button with the palette's keycaps that opens
+  the command palette.
+- **Sections** (`NWSidebarSection`): a micro caps label with a trailing count; clicking it folds
+  the section. With remote hosts configured, hovering a header shows its machine chord (⌃⇧n).
+  1. **This Mac**, with its agent count and a hover `+` for New Space….
+  2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`,
+     and a hover `+` for a new space on the host. Otherwise one status row
+     (`NWSidebarNoticeRow`) stands in for its spaces: "Connecting…", "Unreachable" with Retry, or
+     "Off" with Connect.
+  3. **Automations** as the footer (`NWSidebarFooter`), behind a hairline and hidden while
+     empty: a bolt, "Automations", and a count badge that turns `attention` while an
+     automation's agent needs you. Clicking it discloses the automation rows.
+- **Spaces** (`NWSidebarDisclosureRow`): chevron, name in medium weight, then a `⎇n` worktree
+  count and the blocked count in `lanternText` (else the agent count). Clicking toggles the
+  space; it has no view of its own. A hover `+` starts a new agent in the space. Nested projects
+  indent by path containment, and agents nest beneath their space.
+- **Rows** (`NWSidebarRow`): the density's height, radius 6, 8pt leading padding plus 14pt per
+  nesting level, and a 9pt gap after the dot.
+  - A 6pt dot: `running` blue, `done` green, a hollow `textTertiary` ring while idle, and
+    `lantern` glowing while it needs you.
+  - `⎇` marks a worktree agent. The title truncates at the tail, with the full title (and the
+    worktree branch) in a tooltip.
+  - Hover is `bgHover`; selected is `bgSelected` with the title in semibold.
+- **Trailing slot** of an agent row, in priority order (`SidebarAgentRowModel.accessory`):
   1. the ⌘-digit badge while ⌘ is held
-  2. "needs you" (`warningText`)
+  2. "ASK" in `lanternText` while it needs you
   3. "n sub" for a folded subagent group
-  4. elapsed time while working
-  5. "done"
-- **Status dot:** working is `success` (green, "alive"), blocked is `warning`, and idle or done is
-  `dotIdle`, or `accent` for the open thread.
-- **Subagents** nest under their parent on a 1pt tree line, with a `BranchGlyph` in the state
-  color instead of a dot. The trailing slot shows elapsed time (in `accentText`), "needs you",
-  "failed", or a duration.
+  4. elapsed time while working ("4m", counting live in mono 10)
+- **Subagents** nest under their agent with their run's state dot and name (the role). Trailing:
+  "ASK", elapsed time while running, or how long a finished run took (in `failed` when it
+  failed).
   - While any run is live, the group is expanded.
-  - Once every run has finished, the group gets a disclosure header ("n subagents · done h:mm").
-    It is expanded for the selected thread and folded for the others.
-  - Selecting a subagent row opens it in the inspector.
-- **Width:** resizable by dragging its edge (190–340pt) or in Settings ▸ Appearance. It keeps its
-  width while a right pane is open. ⇧⌘S hides it, and the header then runs under the traffic
-  lights.
+  - Once every run has finished, the group gets a disclosure row ("3 subagents · done 9:56"). It
+    is expanded for the selected thread and folded for the others, whose agent row then shows
+    "n sub".
+  - Selecting a subagent row selects its agent and opens the run in the inspector.
+- **Automation rows:** the automation's name, and its run's state: "running", "ASK", "done", or
+  "stopped" (a hollow dot, not selectable). The context menu has Run Now or Stop, and Delete
+  Automation.
+- **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
+  with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
+  below 720 and keeps its width while a right pane is open.
 - **Interaction:** rows are tap views with button traits and accessibility actions, so they can
-  also be dragged to reorder (with a 2pt accent drop line). Hover `+` glyphs are real labeled
-  buttons. Spaces, agents, hosts, and automations have context menus.
-- **Disconnected hosts:** their rows dim, and connection state lives on the section header,
-  never in a banner.
+  also be dragged to reorder (with a 2pt running drop line, `NWDropIndicator`, at the row's top
+  or bottom edge). Only drags that started in this sidebar qualify. Hover `+` glyphs are real
+  labeled buttons (and always present for VoiceOver). Keyboard selection (⌘1–9, ⌘↑/↓, ⌃⇧digits)
+  scrolls the row into view.
+- **Context menus:**
+  - Spaces: New Agent, Rename…, New Worktree… and Import Existing Worktree… (git repositories
+    only), Remove Space….
+  - Agents: Rename…, Review Changes, then Finalize Worktree… and Delete Worktree Agent… for a
+    worktree agent, or Delete Agent.
+  - Remote agents: Rename…, Finalize Worktree… (worktree agents), Review Uncommitted Changes,
+    Review PR Changes, and Delete Agent or Delete Worktree Agent….
+  - Host headers: New Space…, Reconnect, and Check Worktree Operation… while one is pending.
 
-### Header
+### Toolbar
 
-The header is 52pt on `bgSurface` with a 1pt `border` rule beneath and 20pt padding. From left to
-right:
+`ThreadHeader` (`ThreadHeader.swift`) on `NWThreadToolbar`, placed by `WorkspaceHeaderView`
+(`RootView.swift`).
 
-- the `space / title` breadcrumb, with the space in tertiary and the title in `title`, truncating
-- the `StatusPill`, in priority order: error, needs you, running, idle
-- a spacer
-- counters in `micro`/`textMuted`: "18 turns · 46k ctx", plus a subagent rollup when there are
-  subagents. The turn count appears once the whole history is loaded, and the context tooltip
-  has the details.
-- the right-pane toggle, accent-tinted while open
-- the options menu: Refresh Thread, Load Older Messages (while older history exists), Rename…
+- **44pt** on `bgWindow` with a hairline beneath, 14pt leading and 8pt trailing padding, unified
+  with the title bar (it drags the window).
+- **From left to right:**
+  - the sidebar button (`sidebar.left`) while the sidebar is not docked
+  - the agent's title in Geist 13 semibold, truncating, with "space / title" in its tooltip (a
+    remote agent's space reads "⌁ host")
+  - the status pill (`ThreadStatusPill`), in priority order: Error (a lost connection, drawn as
+    `failed`), Needs you (or "n subagents need you"), Running · elapsed (counting from the prompt
+    that opened the turn), Idle
+  - a spacer
+  - counters in micro tertiary: "18 turns · 46k ctx · 3 subagents · 1.6m tok". The turn count
+    appears once the whole history is loaded, and the tooltip has the context window, session
+    tokens, and cost.
+  - the pane toggles, lantern-tinted while their pane is open: subagents
+    (`arrow.triangle.branch`, ⌘I, only when the thread has subagents) and review
+    (`plus.forwardslash.minus`, ⇧⌘B)
+  - the options menu (`NWOptionsMenu`): Refresh Thread, Load Older Messages (while older history
+    exists), Rename…
+- **With no thread on screen**, the toolbar shows the title only: the selected space's name, or
+  "Shepherd". Over a remote host's utility terminal it reads "<agent> · terminal".
 
-With no thread on screen, the header shows the breadcrumb only ("<space> / No agent selected").
+### Empty workspace
 
-### Thread and turns
+With no agent on screen, `EmptyWorkspace` (`WorkspaceView.swift`) shows an `NWEmptyState` (the
+crook, a title, one sentence, actions):
 
-- **Layout:** a scroll view with the 760pt column centered, 28pt top padding, 28pt between turns,
-  and nothing else between them.
-- **User turn:** a trailing bubble on `bgBubble`, at most 600pt wide, with 12×16 padding and
-  radius 12 (the bottom-trailing corner is 4), in `bodySmall`. Its time sits beneath in
-  `micro`/`textMuted`.
-- **Agent turn:** consecutive assistant messages render as one turn. Prose (`body`, at most
-  680pt) renders Markdown:
-  - headings
-  - lists with one nested level
-  - quotes on a 2pt rule
-  - inline code on `bgHover`
-  - fenced code in a `CodeBlockView`: a 28pt `bgMuted` header with the language and Copy, then
-    syntax-colored code
+- A space with no agents: "No agents in <space>", "Start one to work in <path>.", a primary
+  **New agent** button, and its keycaps.
+- A selected space that has agents, with none on screen: "No agent selected", "Pick one in the
+  sidebar, or start another in <space>.", and the same actions.
+- No spaces at all: "No spaces yet", "A space is a project folder your agents work in.", and a
+  primary **New space…** button.
+- Otherwise: "No agent selected", "Pick one in the sidebar, or start a new one.", and the New
+  agent keycaps.
 
-  Blocks are 10pt apart. Errors and notes render as their own rows on a 2pt rule.
-- **Thinking** comes before the first prose. Collapsed, it reads "Thought for Ns" in italics (or
-  "Thought" when shorter than half a second or unknown). While streaming, it reads "Thinking…"
-  with a spinner. Expanded, it shows tertiary italic prose on a 2pt `border` rule.
-- **Turn footer**, after a finished turn: copy and retry as 28pt ghost icon buttons, then "time ·
-  duration · N tool calls · n subagents". The subagent count links to the run. The footer is
-  hidden while the turn runs.
-- **Working row:** while the agent runs, the thread ends in one row with a spinner and the current
-  activity in tertiary italic: "Running <tool>…", "Thinking…", or "Working…".
-- **Following:** the thread follows the tail only while the reader is within 80pt of the bottom.
-  A live scroll gesture detaches it, and "↓ Jump to latest" returns. Sending re-attaches.
-  Streaming text appends in place and never re-lays out earlier blocks. The composer is the scroll
-  view's bottom inset, so the thread always ends at its last turn.
-- **Empty thread:** "Starting pi…" with a spinner while connecting. Then a framed `EmptyState`,
-  "New agent in <path>" (the path in mono), with "Describe the task. Drop or paste images to
-  attach them, or type / for commands."
-- **Notices** above the thread explain degraded states, for example "Last known thread ·
-  refreshing before enabling actions" or "Some earlier output is clipped".
+### Thread
 
-### Tool rows
+`ThreadView` (`Thread/ThreadView.swift`) lays out the rows `NativeThreadStore` derives once per
+change (`NativeTurnPresentation`, `NativeActivity` in ShepherdRemote); the views only draw them.
+Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
 
-Consecutive tool calls form one `ToolGroup`: border `border`, radius 10, `bgSurface`, with rows
-divided by `borderSubtle`. Prose between calls splits the group. Each call is one 36pt row:
+- **Layout:** a scroll view with the column centered, at most 760pt wide with 32pt gutters (16pt
+  when the thread is too narrow for both). 28pt top margin, 28pt between turns, 14pt between a
+  turn's parts, and 6pt between consecutive activity lines.
+- **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
+  (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
+  growth, the composer resizing, and history swaps never do. "↓ Jump to latest" (a
+  `bgRaised` capsule above the composer) appears while detached if the agent runs or unseen
+  output arrived. Sending re-attaches. The composer floats over the scroll view, which is inset
+  by the composer's measured height, so the thread always ends at its last turn.
+- **Turn jumps:** ⌥⌘↑ and ⌥⌘↓ move between user turns (the target lands at the top); stepping
+  past the last returns to the tail.
+- **History:** "Load older messages" (a small ghost button) heads a thread that has older pages.
+- **Notices** above the thread explain degraded states in caption tertiary: "Last known thread ·
+  refreshing before enabling actions", "This host's pi cannot answer questions here · update
+  Shepherd on the host", "Some earlier output is clipped".
+- **Empty thread:** "Starting pi…" with a spinner while connecting. Then a framed
+  `NWEmptyState` (a dashed `lineStrong` border, no crook): "New agent in `~/path`" (the path in
+  mono), with "Describe the task. Drop or paste images to attach them, or type / for commands."
 
-- **Status glyph** (14pt).
-- **Tool name**, in code face and tertiary, in a 40–76pt column.
-- **Preview**, in code face, tail-truncated:
-  - read/write: the path, plus `:start–end` when a range was given
-  - edit: the path
-  - bash: the first command line
-  - grep: the quoted pattern and its scope
-  - anything else: the first output line, up to 120 characters
-- **Result:**
-  - edit: `DiffStat` and "k blocks"
-  - read: "n lines"
-  - bash: `BUILD SUCCEEDED` or "n passed" in `successText`, or "exit n" in `dangerText`
-  - grep: "n matches"
-- **Duration** in `micro`, live while running ("running" in `accentText` until the first tick).
-- **Chevron**, when the row has output.
+**User turn** (`UserTurn` in `Thread/ThreadTurns.swift`, on `NWUserBubble`):
 
-Expanding a row gives it `bgMuted` (`dangerBg` if the call failed) and shows up to 12 lines of
-output: a running call streams its tail, a finished one shows its head. Then "… n more lines"
-opens the full output in a sheet with Copy. Edit and write rows add a trailing "review ›" link
-into the review pane. Raw arguments stay behind ⌥-click or the context menu → "Show Call" (a
-popover); the menu also has Open Output and Copy Output. Hover is `bgHover`.
+- Right-aligned, at most 600pt, `bgBubble` with a 1px `lineStrong` line, radius 8, 10×14
+  padding, body text. No avatar and no name.
+- The time sits beneath in mono 10.5 tertiary. Sent images show as attachment chips.
+- A sent message shows at once, at 70% opacity until pi saves it. A follow-up sent while a turn
+  runs is **queued**: a dashed outline with no fill, secondary text, and "queued · sends when the
+  turn ends" beneath.
+
+**Agent turn** (`AgentTurn`): consecutive assistant messages render as one turn, in this order:
+thinking, prose, activity lines, subagent cards where their spawn calls were, notes, and errors.
+Once the turn has finished, the changes card and the footer end it.
+
+- **Prose** (`Prose` in `Thread/ThreadMarkdown.swift`, on `NWAgentProse`): body 13.5/1.6 in
+  `textPrimary` at the 640pt measure, blocks 12pt apart. Markdown is parsed once per turn:
+  - headings at `headline`
+  - lists indented 20pt, with one nested level
+  - quotes in italic `textSecondary` on a 2pt `lineStrong` rule
+  - inline code in mono 12 on `lineSubtle` (a text run cannot carry a border), links in
+    `running`
+  - rules as hairlines
+- **Code blocks** (`HighlightedCodeBlock` on `NWCodeBlock`): `bgSunken`, a 1px `lineSubtle`
+  line, radius 8. A 28pt header with the language (or "code") in mono 10.5 tertiary and a copy
+  button that appears on hover or keyboard focus. Code in mono 12, scrolling sideways, never
+  wrapped. Tree-sitter colors it off the main actor in the block's task (Swift, Python, Go, Rust,
+  JavaScript, TypeScript/TSX, C, C++, shell, Ruby, JSON); the first frame is plain, results are
+  cached, and a block that grows while streaming keeps its last colors until the new ones are
+  ready.
+- **Thinking** (`NWThinking`): the thinking in one stretch of work (between prose blocks) folds
+  into one block at the start of that stretch, so per-call reasoning never splits the activity
+  lines. Collapsed: a chevron and "Thought for 4s" in italic 12 `textSecondary` ("Thought" when
+  shorter than half a second or untimed). Expanded: the text in italic 12.5 on a 2pt
+  `lineStrong` rule. Live: a spinner, "Thinking…", and its seconds counting; it collapses when
+  thinking ends.
+- **Notes** ("Image attached", "Output truncated", extension messages) render as caption
+  tertiary text on a 2pt rule (three lines, full text on hover).
+- **Errors** (`NWTurnError`): a failed provider request, on `failedTint` with radius 6: a
+  triangle, the message ("Model overloaded — the turn stopped after 6 tool calls."), "×n" when
+  repeated, and Retry when it ended the turn. Tool failures stay in their activity lines.
+- **Working row** (`NWWorkingRow`): while the agent runs, the thread ends in one row with a
+  spinner and what it is doing in italic 12: "Working…" under a live activity line, "Running
+  <tool>…", or "Thinking…". Live thinking carries its own spinner instead, and a pending
+  question replaces it with the composer's question panel.
+- **Footer** (`NWTurnFooter`), after a finished turn: copy (the turn's prose) and retry (resend
+  the prompt that opened it, only while the agent is idle) as 24pt icon buttons, then "2:44 PM
+  · 3m 12s · 23 tool calls" in mono 10.5 tertiary, and "· 3 subagents" as a link to the first
+  run.
+
+**Activity lines** (`ActivityLineView` in `Thread/ThreadTools.swift`, on `NWActivityLine` and
+`NWActivityCalls`). A turn's tool calls merge into one quiet line per burst of same-kind work
+(`nativeActivityBursts`). A failed call and the running call each stand alone; other tools merge
+only with the same tool.
+
+- **The line:** 26pt, a 13pt glyph, the label in 12.5 `textSecondary`, the meta in mono 11
+  tertiary, and a chevron when it expands. It is a real button with a hover fill.
+
+  | Kind | Glyph | Done | Running |
+  | --- | --- | --- | --- |
+  | Explore (read, grep, find, glob, ls) | `magnifyingglass` | "Explored 7 files" · "read 5 · search 2 · 0.9s" | "Reading", "Searching", "Listing" |
+  | Edit (edit, write) | `pencil` | "Edited 4 files" · "+149 −63" | "Editing", "Writing" |
+  | Run (bash) | `apple.terminal` | "Ran tests and a build" · "17 passed · build ok · 1m 02s"; "Committed and pushed"; "Ran 2 commands" | "Running tests", "Building", "Committing", "Pushing", "Running" |
+  | Subagents (spawns without a card) | `arrow.triangle.branch` | "Started 2 subagents" · "reviewer · tests" | "Starting a subagent" |
+  | Other | `wrench.adjustable` | "Used <tool>" or "Used <tool> n times" | "Running <tool>" |
+
+  Shell commands are classified by what they run (`nativeCommandClasses`: tests, build, commit,
+  push), with setup and pipes (`cd`, `| tail`) ignored and test counts parsed from the output
+  (Swift Testing, XCTest, and "N passed" in general).
+- **Failed:** the line turns `failed` with a triangle and stays visible: "Ran tests" · "swift
+  test · 3 failed", "Edit failed" · the file · the error. A piped test run that exits 0 with
+  failures still fails.
+- **Live:** only the current call is live: a running spinner, the progressive verb in
+  `textPrimary`, the command or path, its elapsed time in running blue, and its last three
+  output lines indented beneath. It then collapses into a finished line.
+- **Calls** (expanded): an indented list on a `lineStrong` hairline rail, 22pt rows in mono 11:
+  the kind ("read", "edit", "bash"), the path (truncated at the head) or command (at the tail),
+  and a stat ("+58 −41", "160 lines", "3 matches", "17 passed", "exit 1").
+  - Clicking an edit or write opens the review pane at its file. Clicking any other call with
+    output expands its first 12 lines on `bgSunken`, then "… n more lines" (or "Output truncated
+    · open" for output the host clipped) opens the whole output in a sheet with Copy.
+  - ⌥-click or the context menu's Show Call opens the raw arguments; the menu also has
+    Review <file>, Open Output, and Copy Output.
+
+**Changes card** (`NWChangesCard`): every finished turn that edited files ends with one.
+
+- A card on `bgWindow`, radius 8, 1px `lineSubtle`. A 32pt `bgSunken` header: pencil, "4 files
+  changed" in `ui` semibold, the diff stat, and a ghost **Review** button that opens the review
+  pane at the first file.
+- One 28pt row per file: the status letter (M `lantern`, A `done` for a file the turn wrote
+  new), the directory in tertiary and the filename in `textPrimary` (mono 12, truncated at the
+  head), and its diff stat. A row opens the review pane at that file.
 
 ### Composer, questions, and menus
 
+`Composer` (`Thread/Composer.swift`) on `NWComposer`, `NWSlashMenu`, `NWModelPicker`, and
+`NWThinkingMenu`. Sizes are `NWComposerMetrics`.
+
 **The card:**
 
-- It is pinned to the bottom of the main column, in the same 760pt column, with a fade from
-  transparent to `bgSurface` above it.
-- It is `bgRaised`, with `borderStrong`, radius 12, and the composer shadow.
-- While focused, while a menu is open, or while a drop hovers, the border turns `accent` with the
-  3pt `focusRing`.
+- It is pinned under the thread in the same column, 16pt above the bottom, with a 48pt fade
+  from transparent to `bgWindow` above it.
+- It is `bgRaised`, with a 1px `lineStrong` line and radius 8. While the field has focus, a menu
+  is open, or a drop hovers, the line turns `textTertiary` inside a 3pt `bgSelected` ring.
+- Attachments sit on top, the field beneath (body text; it grows to 8 lines, then scrolls), and
+  one row of controls under it. Nothing else lives under the field.
 
-**Layout:** the field is on top (`bodySmall`; it grows to 8 rows, then scrolls). One action row
-sits beneath:
+**The control row:**
 
-- attach (only when the agent accepts images)
+- attach (`paperclip`, only when the agent accepts images)
 - "/ commands" (only when pi reports commands)
-- the model chip
-- the thinking chip
-- the delivery chip (Follow-up / Steer, only while a turn runs with a draft)
-- a spacer
-- the single `ComposerActionButton`
+- the model chip (the model in mono 12, with a chevron when it can change)
+- the thinking chip (`lightbulb`, "Thinking", the level; hidden when the model has no reasoning
+  control)
+- the delivery chip (Follow-up · after the turn ends / Steer · after the current tools), only
+  while a turn runs with a draft
+- a spacer, then the single action: a 28pt circle, **Send** (an arrow on `lantern`, at 35% until
+  there is something to send) or **Stop** (a square on `failed`)
+
+Chips are 26pt ghost buttons in 12pt `textSecondary`, filled with `bgHover` on hover or while
+their menu is open.
 
 **States:**
 
 - **Idle:** Send. The placeholder is "Follow up, or / for commands…" ("Follow up…" when pi
   reports no commands), or "Describe the task, or / for commands…" on a fresh agent.
-- **Running:** Stop (`danger`) while the field is empty. The field stays editable with "Queue a
-  follow-up — sent when the turn ends".
+- **Running:** Stop while the field is empty. The field stays editable with "Queue a follow-up —
+  sent when the turn ends".
 - **Accepting:** a spinner ("Waiting for pi") takes the button's place.
-- **Error:** Send, plus an `InlineError` above the card ("Lost connection to the agent process.")
-  with Reconnect.
+- **Error:** Send, plus a `failed` banner above the card, "Lost connection to the agent
+  process.", with the error and Reconnect.
 
-With more than one live subagent, Stop asks once whether to stop everything. There is no status
-text, key hint, or working directory in or under the composer.
+With more than one live subagent, Stop asks first (`StopAllDialog`): Stop only the agent, or
+Stop all. There is no status text, key hint, or working directory in or under the composer.
 
-**Images** attach by drop, paste, or the paperclip. They are resized on the way in (longest edge
-2000px), up to four per message, and shown as `AttachmentChip`s.
+**Images** attach by drop, paste, or the paperclip (a file importer). They are resized on the
+way in (longest edge 2000px), at most four per message and 2 MiB each, and shown as
+`NWAttachmentChip`s (26pt, a 20pt thumbnail, a remove button). Problems show as a `failed`
+banner above the card.
 
 **Questions** from pi or an extension (select, confirm, input, editor) replace the field *inside
-the card*, never in the scrolling thread, so a blocked agent is always answerable. The panel
-shows:
+the card* (`QuestionPanel`), never in the scrolling thread, so a blocked agent is always
+answerable:
 
-- the title, then the message in a `bgMuted` box (at most 140pt tall)
-- the asker's options (the first one primary), Yes/No, or a field with Submit
-- Dismiss
-- "1 / N" when several are queued
+- the attention glyph and the title, "1 / N" when several are queued
+- the message in mono on `bgSunken` (scrolling past 140pt)
+- the asker's options as buttons (the first primary), Yes / No (and y/n while the panel has
+  focus), or a field with Submit; always Dismiss
+- "pi may stop waiting for this answer" when the question has a timeout
 
-**Extension widgets** (an extension's `setWidget` text, with ANSI stripped) appear as small titled
-text rows above the card. Machine payloads, `setStatus`, and `notify` are not shown. Widgets are
-display-only, and the app chooses every font and color.
+**Extension widgets** (an extension's `setWidget` text, ANSI stripped) appear above the card as a
+micro caps title and its text. Machine payloads, `setStatus`, and `notify` are not shown.
+Widgets are display-only, and the app chooses every font and color.
 
-**Menus** open above the card, left-aligned, with an 8pt gap, on `.menuSurface()`. Only one is
-open at a time, and Esc returns focus to the field.
+**Menus** open above the card, left-aligned, 8pt above it, one at a time. They share one anatomy:
+`.nwPopover()` at radius 12 with 6pt padding, 24pt mono caps section headers, and 28pt rows with
+a `runningTint` highlight. ↑↓ move, ⏎ chooses, Esc closes and returns focus to the field.
 
-- **SlashMenu** opens when the draft is "/…" (or from the chip). Its header reads "Commands · n
-  of m". Rows are 36pt: the command in mono (with the typed prefix in bold) in a 150pt column,
-  its description, a source tag for prompt templates, and ⏎ on the highlighted row. The
-  highlight is `accentBg`, and it shows at most 8 rows. ↑↓ select, ⏎ runs, ⇥ completes with a
-  space, and Esc closes. The list is pi's command registry, never hard-coded.
-- **ModelPicker** opens from the model chip or ⇧⌘M. It is 380pt wide with search on top, then
-  Recent (up to 4), then one group per provider. Rows are 32pt, or 40pt with a note ("Current ·
-  this thread", "Used 5m ago in …"), and show a check, the ID in mono, and the context size. It
-  picks the model only.
-- **Thinking chip:** a bulb, "Thinking", and Off / Low / Medium / High. A small menu, independent
-  of the model, hidden when the model has no reasoning control.
+- **Slash menu** (`NWSlashMenu`, 448pt): opens when the draft is "/…" (or from the chip).
+  "Commands · n of m"; rows show the command in mono 12 with the typed prefix in semibold
+  `textPrimary` (a 150pt column), its description, and a tag for prompt templates. At most 8 rows
+  show. ⇥ completes with a space. The list is pi's command registry, never hard-coded.
+- **Model picker** (`ModelPicker` on `NWModelPicker`, 260pt, at most 360pt tall): from the
+  model chip or ⇧⌘M. A search field, then Recent (up to four, from any thread), then one section
+  per provider. Rows show the model in mono 12 and a running check on the current one, or its
+  context size. It picks the model only.
+- **Thinking menu** (`NWThinkingMenu`, 220pt): Off, Low ("quick"), Medium ("default"), High
+  ("slower, deeper"), with a check on the current level.
 
 ### Subagents
 
@@ -508,150 +658,182 @@ A subagent is a turn inside a turn. Its spawn call renders as a card where the c
 wait or status dumps never appear. Behavior is specified in
 [native-subagents.md](docs/native-subagents.md).
 
-The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPresentation` maps a
-`ChildRun` onto their values, and state always comes from `AgentState`.
+The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPresentation`
+(`Thread/SubagentPresentation.swift`) maps a `ChildRun` onto their values, `Thread/Subagents.swift`
+lays them out, and state always comes from `AgentState` (a queued run and a run paused before its
+next model request both draw as `queued`).
 
-- **`NWSubagentCard`:** a `bgRaised` card (padding 10×12, radius 8, 1px `lineSubtle`) that
-  opens the run in the inspector when clicked. Its header is the 13pt branch glyph, the name
-  (12.5/600), a role tag when it differs from the name, a mono model tag, and the state pill.
-  In a narrow thread the tags give way (the model first) before the name truncates. Under it,
-  one mono 11 `textSecondary` line; the rest depends on the state:
-  - **Running:** the line is the last call ("edit ThreadView.swift"), and a 4pt bar with its
-    percent shows the context window used. The card never grows while it runs.
-  - **Paused / Queued:** an outlined pill ("Paused" or "Queued") and why it waits.
-  - **Needs you:** a `lantern` border; "waiting on your answer · 2m" (the wait counts from the
-    child's `shepherd_parent_message` call, or shows no figure); the question (inline Markdown)
-    on `lanternTint` with its answers as buttons (the first primary) and Reply… for free text.
-  - **Done:** "what it did · n tools · duration".
-  - **Failed:** the reason, then Open replay and Re-run.
-
-  Pause/Continue, Stop, and Re-run live in the card's context menu and accessibility actions;
-  the inspector shows them. The inspected card gets a `running` border and a 3pt `runningTint`
-  ring. Only elapsed text re-renders on a clock (`NWElapsedText`, ticking when its text changes,
-  anchored to when it counts from, static once finished).
-- **`NWRunsStrip`:** more than three live sibling runs fold into one 32pt row on `bgSunken`:
-  glyph, "n subagents", one 8pt step per run, "7 done · 3 running · 1 needs you · 1 failed",
-  tokens and the group's elapsed time, and a disclosure for every card. When the row runs out of
-  room the totals give way (tokens first) before the tally truncates. Needs-you runs keep their
-  own card.
-  - Each step is its own button: a click opens that run in the inspector, as its card does. Its
-    target is the step plus half the gap on each side, the row's full height, so steps tile with
-    no dead gap. Its tooltip names the run and state ("worker, running"), and VoiceOver reads
-    "worker, running — open". A hovered step thickens to 5pt; at rest nothing changes.
-  - A click anywhere else on the row expands or collapses the cards.
-- **`NWRunLedger`:** once every run in the group has finished, the cards are replaced in place
-  by a permanent ledger.
-  - A 32pt `bgSunken` header: glyph, "n subagents", one 14pt step per run, "all done · 45m",
-    and the combined DiffStat.
-  - One 36pt row per run in spawn order: state dot, name in a 70pt column, a one-line summary,
-    "files · duration", and a chevron.
-  - Rows open the read-only inspector. The open row is `runningTint` with a 2pt `running` rule
-    on the pane side.
+- **Layout per turn** (`SubagentPresentation.layout`): cards for up to three sibling runs; a runs
+  strip plus the cards that need you for more; a ledger once every run in the group has finished
+  and none still asks. Once cards stand for a turn's children, the parent's
+  `shepherd_child_wait` and `shepherd_child_result` calls no longer show as activity.
+- **`NWSubagentCard`:** `bgRaised`, padding 10×12, radius 8, a 1px `lineSubtle` line (`lantern`
+  while it needs you). Clicking the card opens the run in the inspector; the inspected card
+  wears a `running` line and a 3pt `runningTint` ring.
+  - **Header:** the 13pt branch glyph, the name in `ui` semibold, a role tag when it differs from
+    the name, a mono model tag, and the state pill. In a narrow thread the tags give way (the
+    model first) before the name truncates.
+  - **One mono 11 `textSecondary` line**, then per state:
+    - **Running:** the last call ("edit ThreadView.swift"), and a 4pt bar with its percent for
+      the context window used. The card never grows while it runs.
+    - **Queued / Paused:** an outlined pill ("Queued" or "Paused") and "waiting to start" or
+      "paused before its next model request".
+    - **Needs you:** "waiting on your answer · 2m" (the wait counts from the child's
+      `shepherd_parent_message` call, or shows no figure), then the question as inline Markdown
+      on `lanternTint` with its answers as buttons (the first primary) and Reply… for free text.
+    - **Done:** what it did · "26 tools · 12m".
+    - **Failed:** the reason, then Open replay (the inspector) and Re-run.
+  - Pause/Continue, Stop, and Re-run live in the card's context menu and accessibility actions;
+    the inspector shows them. Only elapsed text re-renders on a clock (`NWElapsedText`, ticking
+    exactly when its text changes, anchored to when it counts from, static once finished).
+- **`NWRunsStrip`:** more than three sibling runs fold into one row in the ledger header's form:
+  a 32pt `bgSunken` row, radius 8, with the glyph (needs you, else running, else queued, else
+  failed, else done), "12 subagents", one 8pt step per run in spawn order, the tally ("7 done ·
+  3 running · 1 queued · 1 needs you", each run counted as its step draws it), tokens and the
+  group's elapsed time, and a chevron.
+  - Each step is a button: its tooltip names the run, and clicking it opens that run in the
+    inspector. The rest of the row shows or hides every card.
+  - When the row runs out of room the totals give way (tokens first) before the tally truncates.
+  - Runs that need you keep their own card under the strip.
+- **`NWRunLedger`:** once every run in the group has finished, the cards are replaced in place by
+  a permanent ledger on `bgWindow`, radius 8.
+  - A 32pt `bgSunken` header: glyph, "3 subagents", one 14pt step per run, "all done · 45m" (or
+    "2 done · 1 failed · 45m"), and the combined diff stat when there is one.
+  - One row per run in spawn order (`rowComfortable`, 36pt × density): state dot, name in a 70pt
+    column, a one-line summary (the exit reason in `failed` for a failed run), "5 files · 41m",
+    and a chevron.
+  - A row opens the run in the inspector (again closes it). The open row is `runningTint` with a
+    2pt `running` rule on the pane side.
 
 ### Right pane: subagent inspector and review
 
-One docked slot to the right of the thread (`RightPaneSplit`) is shared by the subagent inspector
-and the review. When both exist, the inspector wins.
+One slot beside the thread (`RightPaneSplit`) is shared by the subagent inspector and the review;
+when both exist, the inspector wins. Its sizes and adaptive rule are in "Window and adaptive
+layout" above.
 
-- **Size:** default 600pt, minimum 480pt, at most half the window. The left edge is the drag
-  handle, and the width persists.
-- **Toggling:** ⇧⌘B or the header button toggles it, closing whatever is open or otherwise
-  opening the review.
-- **Layout:** the thread keeps running beside it. A pane never replaces the thread and never
-  changes the persisted layout. The sidebar keeps its width.
+- **Toggling:** ⇧⌘B (or the toolbar's review toggle) closes the inspector if it is open,
+  otherwise it opens or closes the review. ⌘I (or the subagents toggle) inspects the thread's
+  first live run (else its last), or closes the inspector.
+- **Layout:** the thread keeps running beside the pane. A pane never replaces the thread and
+  never changes the persisted layout. The sidebar keeps its width.
 
-**Subagent inspector:**
+**Subagent inspector** (`Thread/SubagentInspector.swift`):
 
-- `NWInspectorHeader`, 52pt to line up with the thread's: glyph, "name · k of n", and a mono
-  line ("model · thinking · turns · tokens" live; "model · turns · done 11:02" finished, the
-  accent in the state's color). Live runs get Pause/Continue and Stop; ‹ › step through
-  siblings; then ⋯ and close.
-- `NWRunBrief` on `bgSunken`: GOAL (with "step n / m · 62%" while live) and, once finished,
-  RESULT (inline Markdown) in the state's color with the touched files beneath: up to five
-  `running` links that open the review, then "n more files".
-- The run's own transcript, drawn with the thread's components one step smaller. It follows
-  live, with "n earlier turns · Show all" and "Following live" beneath.
-- A Steer composer (the composer card: radius 8, `lineStrong`) whose placeholder and "to:
-  worker · not the parent" line name the recipient.
-- **A finished run is read-only:** messages from the parent are captioned "from parent", and
-  `NWRunActions` (Re-run · Fork · Copy transcript) replaces the composer.
+- **`NWInspectorHeader`**, 44pt to line up with the toolbar: the branch glyph in the run's state
+  color, "name · k of n", and a mono line: "model · thinking high · 78 turns · 922k tok" while
+  live, "model · 11 turns · done 11:02" once finished, the last part in the state's color.
+  Trailing: Pause/Continue and Stop for a live run, ‹ › to step through siblings, a ⋯ menu
+  (Refresh Transcript while live; Copy Transcript and Show Session File in Finder once
+  finished), and close.
+- **`NWRunBrief`** on `bgSunken`: GOAL, with "step n / m · 62%" while live, and once finished
+  RESULT (inline Markdown) with its label in the state's color. Under it, up to five touched
+  files as `running` links (with their diff stat) that open the review pane at the file, then
+  "n more files".
+- **The run's own transcript**, drawn with the thread's components one step smaller
+  (`nwProseSize` `.small`). It follows live, with "n earlier turns · Show all" and "Following
+  live" (or "Reading earlier output") beneath. Scrolling up stops following.
+- **A Steer composer** while the run is live: the composer card's anatomy, "Steer <name> —
+  delivered before its next turn", "to: <name> · not the parent", and a primary Steer button.
+  A failed send keeps the draft.
+- **A finished run is read-only:** messages from the parent are captioned "10:58 · from parent",
+  and `NWRunActions` (Re-run · Fork · Copy transcript) replaces the composer. Remote agents have
+  no Fork.
 
-**Review** (`ReviewPane`, `DiffReviewView.swift`):
+**Review** (`ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
 
-- **Header (52pt):** "Review" in `title`, with the scope beneath ("working tree vs HEAD" or
-  "branch vs <ref>" · n files · +a −r). It also holds a Local | PR segmented control, an options
-  menu (Expand All Files, Collapse All Files, Copy Review as Text), and close.
-- **File strip (34pt, on `bgCanvas`):** 24pt chips, each with a status letter (M `warningText`,
-  A `successText`, D `dangerText`, R `accentText`), the filename, and a DiffStat. The selected
-  chip is `bgSelected`, and viewed files dim. A pulsing 6pt accent dot shows while the running
-  agent touches the file.
-- **File headers (sticky, 36pt, on `bgMuted`):** chevron, the path with the filename bold, the
-  hunk count and comment count, then Open in Xcode (or the default editor), Revert (`dangerText`,
-  confirmed, local working-tree reviews only), and Viewed.
-- **Diff lines:** 21pt, 12 mono, with old and new number columns, a sign column, and
-  syntax-colored code. Removals are on `dangerBg`, additions on `successBg`, and hunk headers on
-  `bgHover`. Lines are tail-truncated with the full line on hover, never wrapped.
-- **Folding:** a run of more than 8 like lines folds to a 24pt strip ("13 more removed lines ·
-  20–32"). ⌥-click expands the whole file.
-- **Comments:** hovering a line shows an accent `+`, and double-clicking a line also starts a
-  comment card.
-- **Review composer:** at the bottom. Request changes sends the overall and inline comments as the
-  next user turn (queued if the agent is mid-turn). Commit asks the agent to commit. The review
-  closes only once the send succeeds.
-- **Keys:** j/k move between hunks, n/p between files. c comments, v marks viewed, ⌘⏎ sends, and
-  Esc returns to the thread composer.
+- **Header (44pt):** "Review" in Geist 13 semibold, with "4 files · +67 −58" beneath (led by the
+  reference when an agent asked for one, "loading…" while loading). Then a small `Local | PR`
+  segmented control ("PR · <ref>" once the PR base is known), an options menu (Expand All Files,
+  Collapse All Files, Copy Review as Text), and close.
+- **File strip** (`NWFileStrip`, on `bgBase`): 24pt chips that scroll sideways, each with its
+  status letter (M `lantern`, A `done`, D `failed`, R `running`; mono 11 bold), the filename, and
+  for a modified or renamed file its diff stat. The selected chip is `bgSelected`, viewed files
+  dim to 50%, and a running dot marks a file the agent is editing right now.
+- **File headers** (`NWFileHeader`, sticky, at least 32pt on `bgSunken`): a fold chevron, the
+  path in mono with its directory in tertiary and the filename in semibold, "n hunks", "n
+  comments" in `running`, then 24pt icon actions: Open in Xcode (the default editor when Xcode is
+  absent; local reviews only), Revert (confirmed, local working-tree reviews only), and Viewed
+  (`done` once viewed).
+- **Diff lines** (`NWDiffView`, `NWDiffLine`): 22pt (`rowCompact`, × density), two 36pt
+  line-number gutters, a 16pt sign column, and syntax-colored code in mono 11.5. Removals sit on
+  `failedTint`, additions on `doneTint`, and hunk headers are 22pt `bgSunken` rows aligned to the
+  code column. Lines are tail-truncated with the full line on hover, never wrapped. Highlighting
+  runs off the main actor, once per file.
+- **Folding:** a run of more than 8 like lines (`AppLayout.diffCollapseThreshold`) keeps a few
+  lines at each end and folds the middle to a 24pt `bgSunken` strip between hairlines ("+ 13 more
+  removed lines · 20–32"). Clicking shows the lines; ⌥-click shows the whole file.
+- **Comments:** hovering a line shows an 18pt lantern `+`, and double-clicking the line also
+  starts a comment. The editor (`NWCommentEditor`) is a card with a `running` line: ⏎ saves, ⇧⏎
+  adds a line, Esc cancels, and saving an empty comment removes it. A saved comment
+  (`NWInlineComment`) is a raised card with a 16pt lantern avatar, "You", "line 33 · just now",
+  and Edit / Delete on hover.
+- **Review composer** (`NWReviewComposer`, at the foot): "Overall comment", "n inline",
+  **Commit** (asks the agent to commit; not in PR mode) and **Request changes** (primary, ⌘⏎;
+  sends the overall and inline comments as the agent's next turn, queued if it is mid-turn). The
+  review closes only once the send succeeds.
+- **Empty and error states:** "Loading the diff…"; "No changes" with "The working tree matches
+  HEAD." (or "This branch matches its PR base."); a `failed` banner for an error.
+- **Keys:** j/k move between hunks, n/p between files, c comments, v marks viewed, ⌘⏎ sends, and
+  Esc returns to the thread's composer.
 - **Repository changes:** per-file Revert is the only repository mutation outside the worktree
-  flows. Tracked files return to HEAD; new files move to the Trash.
+  flows (`RevertFileDialog`: "Discard changes"). Tracked files return to HEAD; new files move to
+  the Trash.
 
 A review an agent opens (`review_diff`) is the host's view state; remote viewers open their own
 with ⇧⌘B.
 
 ### Terminal panes
 
-Terminal panes render through libghostty on the theme's terminal colors, with a `bgSurface`
-background. An agent's layout may hold terminal panes beside its thread; the thread pane itself
-never has a terminal. A pane whose process died shows a quiet placeholder ("session exited (n)").
+Terminal panes render through libghostty on the theme's terminal colors, on `bgWindow`, with
+10×8pt padding and the Settings ▸ Terminal font. An agent's layout may hold terminal panes beside
+its thread; the thread pane itself never has a terminal. Pane states are quiet placeholders in
+mono 10.5 tertiary ("starting session…", "session exited (n)", "session unavailable · reason").
 The chrome never parses or restyles terminal output.
 
 ### Command palette
 
-⌘K opens a 640pt card, 120pt from the top of the window over the `scrim`: radius 14, `bgRaised`,
-a strong border, and the menu shadow.
+⌘K opens `CommandPaletteView` (`CommandPaletteView.swift`, items in
+`ShepherdViewModel+Palette.swift`) through `.nwCommandPalette(isPresented:)`.
 
-- **Search row (56pt):** 16pt text and a search glyph, with scope pills All · Commands · Agents
-  (⇥ cycles them). The placeholder is "Search commands, agents, subagents…".
-- **Sections:** results are grouped under `sectionSmall` headers: Commands, This thread, and
-  Subagents, and, when searching, Agents, Spaces, and Found in conversations. Conversation search
-  needs at least 3 characters and reads the recent part of each agent's pi session. The Agents
-  scope lists destinations even with no query.
-- **Rows (38pt):** a stroke icon, the label (14pt sans), optional context in `textMuted`, and the
-  real shortcut as `Keycaps`. The highlight is `accentBg` with an accent icon. Subagent rows use
-  the branch glyph in their state color.
+- **Placement:** a 620pt `NWPaletteCard` (`.nwPopover()`, radius 12) 18% down the window, over
+  the 30% `scrim`, and capped to the window (at most 14 rows before the list scrolls). Clicking
+  the scrim or Esc closes it; VoiceOver stays inside it.
+- **Search row (44pt):** a glass, the field in Geist 15 ("Search commands, agents, subagents…"),
+  and the scope control All · Commands · Agents (⇥ cycles it).
+- **Sections** (mono caps headers): Commands, This thread, Subagents, and, once there is a query
+  (or in the Agents scope), Agents, Spaces, and Found in conversations. Conversation search
+  needs at least 3 characters, runs off the main actor after a short pause, and reads the last
+  512 KB of each agent's pi session; its rows show a snippet with the match in bold.
+- **Rows** (`NWPaletteRow`, the sidebar's row height): a stroke icon, the label, dim context, and
+  the real shortcut as keycaps. The highlight is `runningTint` with a running icon. Subagent rows
+  wear their run's state color.
 - **What it never shows:** footer hints, ⌘1–9 numbering, or any status the sidebar doesn't show.
 
 ### Settings
 
-Settings replaces the window content in place. ⌘, toggles it, and "Back to Shepherd" or Esc
-returns.
+Settings replaces the window content in place (`SettingsView.swift`). ⌘, toggles it, and "Back
+to Shepherd" or Esc returns.
 
-- **Navigation:** a 232pt nav on `bgBase` with the sidebar's row anatomy (`NWSettingsNavRow`:
-  28pt rows × density, radius 6, a 13.5pt medium icon, `ui` names, `bgSelected` and semibold when
-  selected). It holds Back to Shepherd, the search field (`NWSearchField`, ⌘F), then
-  Appearance · Terminal · Agents · Worktrees · Pi · Remote · Keyboard · Advanced, with
-  "Shepherd x.y.z · pi x.y.z" pinned at the bottom in `micro`. Searching lists matching rows,
-  as buttons, under their page.
+- **Navigation:** a 232pt nav on `bgBase`: a draggable strip for the window controls, Back to
+  Shepherd, the search field (`NWSearchField`, ⌘F), then Appearance · Terminal · Agents ·
+  Worktrees · Pi · Remote · Keyboard · Advanced (`NWSettingsNavRow`: 28pt × density, a medium
+  icon, the name in `ui`, `bgSelected` and semibold when selected), with "Shepherd x.y.z · pi
+  x.y.z" pinned at the bottom in micro. Searching lists matching rows, as buttons, under their
+  page.
 - **Content:** a 720pt column with 44pt top padding and a 32pt gutter. Each page has a title in
   `display` and a one-line explanation in `body`/`textSecondary`, then groups 28pt apart: a
-  section label (`NWSectionHeader`) over an `NWGroupCard` of `NWCardRow`s. A row is at least 52pt
-  (× density): title in `ui`, description in `caption`/`textSecondary`, the control trailing.
-  Rows without a title (a form's Save, pi's update buttons) are `SettingsActionRow`s.
+  section label (`NWSectionHeader`) over an `NWGroupCard` of `NWCardRow`s. A row is at least
+  52pt (× density): title in `ui`, description in `caption`/`textSecondary`, the control
+  trailing. Rows without a title (a form's Save, pi's update buttons) are `SettingsActionRow`s.
+  The building blocks are in `SettingsComponents.swift`: `SettingsPage`, `SettingsGroup`,
+  `SettingsRow`, `SettingsActionRow`, `SettingsSwitch`, `SettingsTextField`, `PathRow`.
 - **Controls** are the Controls board's, nothing hand-drawn per page:
   - `NWSegmentedPicker` for 2–4 options, `NWPopupMenu` (200pt) for longer lists
   - the lantern switch for booleans (`SettingsSwitch`)
-  - `NWStepper`, and `NWValueSlider`: a 200pt, 3pt `lineStrong` track filled with lantern to a
-    14pt knob, with its value in mono (double-click resets)
-  - `SettingsTextField`: 220pt fields labelled for VoiceOver, the example as the prompt
-  - `NWKeycap`s for shortcuts (click to record, with a "Reset" link when changed)
+  - `NWStepper`, and `NWValueSlider`: 200pt, a 3pt `lineStrong` track filled with lantern to a
+    14pt knob, with its value in mono (double-clicking the value resets it)
+  - `SettingsTextField`: 220pt fields labelled for VoiceOver, with the example as the prompt
+  - `NWKeycap`s for shortcuts (click to record, with a Reset link when changed)
   - small secondary buttons (danger when destructive)
 - **Footnotes and problems:** footnotes are `caption` in `textTertiary`. Inline problems (like
   the listener's bind error) sit in the row in `failed` under the description. A remote host's
@@ -661,71 +843,105 @@ returns.
 
 | Page | Contents |
 | --- | --- |
-| **Appearance** | Theme (Night Watch, the one theme, shown as a name), mode (System/Light/Dark), density, text size, sidebar width |
+| **Appearance** | Theme (Night Watch, shown as a name), Mode (System / Light / Dark), Sidebar rows, Density, Text size, Sidebar width |
 | **Terminal** | Pane font family and size, a live preview, the shell |
 | **Agents** | Default model, default thinking level |
 | **Worktrees** | Base branch (Remote default / Current branch), fetch before creating, and finalize: commit remaining work, generate PR descriptions, delete local branch, merge automatically (+ method) |
-| **Pi** | Bundled extensions (name agents automatically, sync pi theme, panes and agent tools, diff review tool, native subagents, subagent display), native subagent defaults, and pi and extension updates |
-| **Remote** | Hosts (edit, reconnect, remove), add host (name, address, port, token), Serve this Mac (listener, token file) |
-| **Keyboard** | Rebindable shortcuts by group, plus the fixed chords and Reset all |
-| **Advanced** | Files (state, socket), updates and channel, reset |
+| **Pi** | Bundled extensions (name agents automatically, sync pi theme, panes and agent tools, diff review tool, native subagents, subagent display), native subagent defaults, pi and extension updates |
+| **Remote** | Hosts (edit, reconnect, remove), add or edit a host (name, address, port, token), Serve this Mac (listener, token file) |
+| **Keyboard** | Rebindable shortcuts by group, the fixed chords, and Reset all |
+| **Advanced** | Files (workspace state, extension socket), updates and channel, reset settings |
 
 ### Dialogs and sheets
 
 Creation sheets (New Agent, New Worktree, Finalize Worktree, the directory picker, the remote
-worktree sheet) and every confirmation share one anatomy, `NWDialog`, flat on `bgWindow`:
+worktree sheet) and every confirmation share one anatomy, `NWDialog` (460pt by default), flat on
+`bgWindow`:
 
 - a 24pt inset; the title in `title`, an optional explanation in `body`/`textSecondary`
-- labeled rows (`NWSheetRow`): a 96pt `ui`/`textSecondary` label column, the control, a
-  hairline; at least 44pt
-- lists of steps or checks (`NWChecklistRow`): the state glyph (spinner, check, cross, ring), the
-  label in `ui`, a trailing `caption` detail, and a failed check's remedy underneath
-- a footer: an optional status on the leading edge (`NWDialogStatus`, a spinner while working),
-  the actions trailing. Actions never truncate.
+- labeled rows (`NWSheetRow`, aliased `SheetRow`): a 96pt `ui`/`textSecondary` label column,
+  the control, a hairline; at least 44pt
+- lists of steps or checks (`NWChecklistRow`): the state glyph (spinner, check, cross, ring),
+  the label in `ui`, a trailing `caption` detail, and a failed check's remedy underneath
+- a footer: an optional status on the leading edge (`NWDialogStatus`, `failed` for an error),
+  and the actions trailing. Actions never truncate.
 - exactly one primary action as the ⏎ default, ⎋ on Cancel. A destructive action is the
   `dangerFill` button and never the default: destroying things takes a click.
-- anything a destructive action would destroy is called out in an attention `NWBanner`
-  (`DialogBanner`); an error is a failed banner. Never a system alert.
+- anything a destructive action would destroy is called out in an attention banner
+  (`DialogBanner`); an error is a `failed` banner. Never a system alert.
 
-`AppDialogs` presents every sheet of the main window with `sheet(item:)`, so a sheet keeps the
-value it opened with while it animates away. There is no `.alert` or `confirmationDialog` in the
-app: Stop all (`StopAllDialog`), the review's per-file Revert (`RevertFileDialog`), a failed
-agent action (`ActionErrorDialog`) and Reset settings are `DialogSheet`s too. Git probes and
-directory listings run off the main thread; the Delete Worktree Agent dialog keeps its
-destructive action disabled until the unreconciled-work check is in.
+`DialogSheet` and `DialogAction` (`DialogSheet.swift`) build a confirmation from that anatomy,
+and `AppDialogs` (`AppDialogs.swift`) presents every sheet of the main window with
+`sheet(item:)`, so a sheet keeps the value it opened with while it animates away. There is no
+`.alert`, `confirmationDialog`, or `NSAlert` in the app:
 
-Quitting while agents are working or waiting on an answer asks in `QuitDialog`: the busy agents
-(five named, each with a status dot and "working" or "needs you", the rest counted), Cancel (⎋)
-and a destructive Quit. The app delegate answers the quit later, and `QuitConfirmation` puts the
-dialog on the main window as a critical sheet, so it shows even over another sheet. A closed
-window is reopened first; if it is not back within a second, the dialog opens in a window of its
-own. While it asks, AppKit disables Quit, so a second ⌘Q does nothing. A log out, restart or shut
-down quits without asking, and one that begins while the dialog is up answers it with Quit.
+- Rename agent and Rename space (`RenameDialog`)
+- Delete Worktree Agent (`WorktreeDeleteDialog`) and Remove Space (`SpaceDeleteDialog`)
+- Stop all (`StopAllDialog`), the review's Revert (`RevertFileDialog`), and a failed agent action
+  (`ActionErrorDialog`)
+- Reset settings (`ResetSettingsDialog`)
+- Quitting while agents are working or waiting on you: the app asks in a `DialogSheet` in the
+  main window (reopening the window if it was closed), because quitting stops them mid-turn
+
+Git probes and directory listings run off the main thread; the Delete Worktree Agent dialog
+keeps its destructive action disabled until the unreconciled-work check is in.
 
 ## Status language
 
-| State | Sidebar | Header pill | Composer |
-| --- | --- | --- | --- |
-| idle / done | `dotIdle` dot (`accent` for the open thread); "done" trailing | Idle: `successBg`/`successText`, `success` dot | Send |
-| working | `success` dot; elapsed trailing | Running · elapsed: `accentBg`/`accentText`, spinner | Stop; the field queues a follow-up |
-| blocked / subagent needs you | `warning` dot; "needs you" trailing | Needs you ("n subagents need you"): `warningBg`/`warningText` | Question panel in place of the field |
-| error (connection lost) | — | Error: `dangerBg`/`dangerText` | Send + `InlineError` with Reconnect |
-| stopped (component state; the header never shows it) | `dotIdle` | Stopped: `bgBubble`/`textSecondary` | Send |
+| Lifecycle | `AgentState` | Sidebar | Toolbar pill | Composer |
+| --- | --- | --- | --- | --- |
+| Agent working | `running` | blue dot; elapsed trailing | Running · elapsed | Stop; the field queues a follow-up |
+| Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | Needs you | the question panel in place of the field |
+| A subagent needs you | `attention` | the run's row: "ASK" | "n subagents need you" | the card's answers and Reply… |
+| Agent done | `done` | green dot | Idle (outlined) | Send |
+| Agent idle | `idle` | hollow ring | Idle (outlined) | Send |
+| Connection lost | `failed` | — | Error | Send, plus a `failed` banner with Reconnect |
 
-Subagent runs use the same colors on their branch glyph: running `accent`, needs you `warning`,
-done `success`, failed `danger`.
+Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
+done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.
+
+## Components
+
+`Packages/ShepherdUI/Sources/ShepherdUI/Components` is the shared library, by domain, with
+`#Preview`s of every component in both appearances in `Previews/`. Use a component before
+composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
+`ComponentGallery.swift`) that shows the base components in their states.
+
+| Domain | Components | Owned in the app by |
+| --- | --- | --- |
+| Controls | `.buttonStyle(.nw(_:size:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` (a circle, 28pt; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `NWSearchField`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app |
+| Status | `NWStatusPill` (20pt, radius 4), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline`, `.nwToast(item:)`, and `.nwShimmer()` have no app use yet |
+| Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline` | `SettingsComponents.swift`; hairlines everywhere |
+| Navigation | `NWSidebar`, `NWSidebarJumpButton`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift` |
+| Thread | `NWUserBubble`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter`, `NWTurnError`, `NWWorkingRow` | `Thread/ThreadView.swift`, `ThreadTurns.swift`, `ThreadTools.swift`, `ThreadMarkdown.swift` |
+| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton`, `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu` | `Thread/Composer.swift` |
+| Agents | `NWSubagentCard`, `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup` | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift` |
+| Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer` | `DiffReviewView.swift` |
+| Dialogs | `NWDialog`, `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `SettingsView.swift` |
+
+Rules for the controls:
+
+- **Buttons** are styles on a native `Button`. Primary (lantern) appears at most once per view;
+  disabled is 40%. Icon-only buttons always carry an accessibility label.
+- **Toggles, text fields, and pickers** are styles on native controls. `NWSegmentedPicker`,
+  `NWValueSlider`, and `NWStepper` draw their own control and represent themselves to
+  accessibility as a native segmented `Picker`, `Slider`, and `Stepper`.
+- **Keycaps** show only a real, wired shortcut, and only in menus, the palette, Settings, the
+  sidebar's Jump to…, and empty states; never under the composer.
+- **Banners** sit inside the pane they concern. Never a modal alert for an agent event.
 
 ## Keyboard
 
 Keyboard is first-class, and the fast path never requires a dialog. Rebindable chords live in
-`KeybindingsStore` (defaults in `ShortcutAction.defaultChord`, overrides in UserDefaults under
-`shepherd.keybindings`).
+`KeybindingsStore` (`Keybindings.swift`; defaults in `ShortcutAction.defaultChord`, overrides
+in UserDefaults under `shepherd.keybindings`).
 
 - **One source:** menus, palette keycaps, Settings ▸ Keyboard, and the Ghostty unbind list all
   read the store. Hardcoding a chord in a view is a bug, and a hint is never shown for a chord
   that isn't wired.
-- **Rules for a rebound chord:** it must include ⌘, and must not be ⌘1–9, ⌘, or a plain ⌘ system
-  or terminal chord (⌘Q, ⌘H, ⌘M, ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z).
+- **Rules for a rebound chord:** it must include ⌘, must not use a digit (⌘1–9, ⌃⇧1–9), must not
+  be ⌘, or a plain ⌘ system or terminal chord (⌘Q, ⌘H, ⌘M, ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z), and must not be
+  another action's chord.
 
 | Default | Action |
 | --- | --- |
@@ -745,7 +961,8 @@ Fixed chords:
 
 - ⌘1–9 select agents in sidebar order (hold ⌘ to see the badges).
 - ⌃⇧1–9 jump to machines (this Mac is always ⌃⇧1).
-- ⌘, opens Settings.
+- ⌘, opens Settings, and ⌘F searches it.
+- ⏎ confirms and ⎋ cancels in sheets.
 - In the composer, ⏎ sends and ⇧⏎ inserts a newline. `/` at the start opens the command list, and
   Esc closes a menu.
 
@@ -754,49 +971,66 @@ Review-pane and menu keys are listed with their surfaces.
 ## Accessibility and motion
 
 - **Controls:** every control is a real `Button`, `Toggle`, or text field, or carries button
-  traits and actions. Icon-only buttons carry an `accessibilityLabel`.
+  traits and actions (sidebar rows are tap views so they can also be dragged). Icon-only buttons
+  carry an `accessibilityLabel`, and hover-only affordances (the sidebar's `+`, a comment's Edit
+  and Delete, a diff line's `+`) are always reachable as buttons or named actions for VoiceOver.
 - **Rows read as one element:**
-  - agent rows: "title, [worktree,] status word"
-  - subagent rows: "name, subagent, state"
-  - runs strip steps: "name, state — open"
-  - automation rows: "name, automation, state"
-  - tool rows: "read, ThreadView.swift, 160 lines, done", with "Show call" as a named action
-- **Color:** status color is always paired with a word or a glyph shape. Contrast follows the
-  theme rules above, and no text is lighter than `textMuted`.
-- **Reduce Motion:** spinners become a pulsing dot, and expand/collapse and scroll animations are
-  dropped. Otherwise transitions are short (150ms or less) and ease out.
-- **Menu bar:** every pane and agent action exists in the menu bar with its shortcut.
+  - agent rows: "title, [worktree,] running / needs you / idle / done"
+  - subagent rows: "name, subagent, state"; automation rows: "name, automation, state"
+  - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
+    and the hint "Shows the calls"; call rows: "edit, Sources/A.swift, +58 −41"
+  - subagent cards: "name, role, state, detail", with the context bar as the value; ledger rows:
+    "name, state, summary"
+  - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
+    modified, 10 added, 54 removed, viewed"
+- **Resizing:** the sidebar edge and the right pane's handle are adjustable elements that read
+  their width.
+- **Modality:** the palette is modal for VoiceOver while it is up.
+- **Color:** status color is always paired with a word or a glyph shape, and contrast follows the
+  rules above.
+- **Focus:** keyboard focus shows the running focus ring; a click never does.
+- **Reduce Motion:** the glow and spinners are static; panes, sheets, and expanding rows
+  cross-fade briefly (120ms) instead of moving; turn jumps and scroll-to animations are dropped.
+  Otherwise motion uses the `NW.Motion` durations.
+- **Menu bar:** every pane and agent action exists in the menu bar with its shortcut (File,
+  View, Pane, Space, Agent, Machines, Appearance).
 
 ## Known gaps
 
 These places in the code break this document and should be fixed toward it:
 
-- **Hardcoded chords:** two hints hardcode a rebindable chord. The model picker's search row shows
-  "⇧⌘M", and the subagent card shows "Inspect ⌘I".
+- **Literal dimensions in app views:** the tool-output sheet's size and padding
+  (`ToolOutputSheet`), the question panel's 140pt message cap, the empty thread's top offsets,
+  the empty workspace's 420pt measure, and `PanePlaceholder`'s padding should move into
+  `AppLayout+Thread.swift` and `AppLayout+Navigation.swift`.
+- **An ad-hoc alpha:** the pane divider beside the focused pane is `running` at 34% opacity, not
+  a theme role.
+- **Hand-built chrome:** the review header and its ⋯ menu, and the inspector's ⋯ menu, repeat
+  `NWPaneHeader` and `NWOptionsMenu` by hand.
+- **1pt strokes:** several control borders (secondary and danger buttons, pills, banners, the
+  "Jump to latest" capsule) stroke 1pt rather than a 1px hairline.
 
 ## iOS
 
-The iOS client (`App/iOS`, [docs/ios](docs/ios/README.md)) is deferred. It predates this system
-and keeps its own `MobileTokens`. It will adopt ShepherdUI (which already builds for iOS 27) and
-the handoff's §8 rules later:
-navigation instead of the sidebar, 56pt agent rows, collapsed tool groups, the pill composer, and
-touch targets of at least 44pt.
+The iOS client (`App/iOS`, [docs/ios](docs/ios/README.md)) is deferred. It predates Night Watch,
+does not link ShepherdUI, and keeps its own `MobileTokens`. It will adopt ShepherdUI (which
+already builds for iOS 27: fonts follow Dynamic Type through `relativeTo:`, and icon buttons grow
+to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
 
 ## Verifying visuals
 
-Build and run the `Shepherd (Dev)` scheme and compare against the boards in both appearances.
-
 - **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
-  - thread states
-  - review
-  - palette
-  - settings
-  - sheets
-  - sidebar
-  - empty states
+  - thread states (idle, running, thinking, queued, failed, prose, question, empty) and the
+    activity-line states
+  - the composer and its menus
+  - subagent cards, the ledger, and the inspector
+  - the review pane
+  - the palette, the toolbar, the sidebar at each row density, and the window at its minimum
+  - every Settings page, sheet, and dialog
+  - the empty states
 
-  They write `<surface>-<light|dark>.png` into `$SHEPHERD_PREVIEW_DIR` (the tests are skipped when
-  it is unset), so you, or an agent, can look at them:
+  They write `<surface>-<light|dark>.png` into `$SHEPHERD_PREVIEW_DIR` (the suites are skipped
+  when it is unset), so you, or an agent, can look at them:
 
   ```sh
   SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
@@ -804,3 +1038,5 @@ Build and run the `Shepherd (Dev)` scheme and compare against the boards in both
 
 - **Windows:** preview windows sit off-screen and never take focus.
 - **Component Gallery:** in Debug builds, the View menu has a Component Gallery.
+- **The running app:** build and run the `Shepherd (Dev)` scheme and check the change in both
+  appearances.
