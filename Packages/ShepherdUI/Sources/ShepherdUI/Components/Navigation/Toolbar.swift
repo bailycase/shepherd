@@ -87,8 +87,8 @@ public struct NWThreadToolbar<Status: View, Options: View>: View {
                         .help(countersHelp ?? counters)
                         .padding(.trailing, NW.Space.m)
                 }
-                ForEach(toggles.indices, id: \.self) { index in
-                    let item = toggles[index]
+                // Keyed by icon: a toggle that comes and goes never shifts the others' identity.
+                ForEach(toggles, id: \.toggle.systemImage) { item in
                     Button(action: item.action) { Image(systemName: item.toggle.systemImage) }
                         .buttonStyle(.nwIcon(isOn: item.toggle.isOn))
                         .nwHelp(item.toggle.label, shortcut: item.toggle.shortcut)
