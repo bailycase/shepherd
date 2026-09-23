@@ -242,6 +242,11 @@ struct ControlMotionTests {
         #expect(toTwo.inBetween.isEmpty, "switching never animates the toolbar")
         let toOne = await MotionProbe.record(window, region: strip, timeout: 1) { vm.selectAgent(one) }
         #expect(toOne.inBetween.isEmpty, "nor does switching back")
+        let riding = await MotionProbe.record(window, region: strip, timeout: 1) {
+            withNWAnimation(.overlay) { vm.selectAgent(two) }
+        }
+        #expect(riding.inBetween.isEmpty, "nor a switch that rides an animation (the palette closing)")
+        vm.selectAgent(one)
 
         let opening = await MotionProbe.record(window, region: strip) { vm.openUserReview() }
         #expect(vm.isReviewPaneShowing)

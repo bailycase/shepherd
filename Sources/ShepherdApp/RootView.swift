@@ -206,10 +206,16 @@ struct WorkspaceHeaderView: View {
         }
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
-        // Switching agents is a visibility flip: the next agent's toolbar lands at once, and its
-        // controls (a pane toggle, the status pill) don't fade their own state into it.
-        .transaction(value: vm.selectedAgentID) { $0.disablesAnimations = true }
-        .transaction(value: vm.selectedRemoteAgent) { $0.disablesAnimations = true }
+        // Switching agents is a visibility flip: the next agent's toolbar lands at once, even when
+        // the switch rides an animation (the palette closing), and its controls (a pane toggle,
+        // the status pill) don't fade their own state into it.
+        .transaction(value: vm.selectedAgentID, Self.switchAtOnce)
+        .transaction(value: vm.selectedRemoteAgent, Self.switchAtOnce)
+    }
+
+    private static func switchAtOnce(_ transaction: inout Transaction) {
+        transaction.animation = nil
+        transaction.disablesAnimations = true
     }
 
     private func threadHeader(store: NativeThreadStore, project: String, title: String, rename: @escaping () -> Void) -> ThreadHeader {
