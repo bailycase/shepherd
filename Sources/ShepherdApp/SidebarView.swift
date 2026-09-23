@@ -12,12 +12,8 @@ import UniformTypeIdentifiers
 /// values so an unchanged row never re-renders.
 struct SidebarView: View {
     var vm: ShepherdViewModel
-    @ObservedObject private var keys: KeybindingsStore
 
-    init(vm: ShepherdViewModel) {
-        self.vm = vm
-        _keys = ObservedObject(wrappedValue: vm.keybindings)
-    }
+    private var keys: KeybindingsStore { vm.keybindings }
 
     var body: some View {
         NWSidebar(compose: { vm.quickCreateAgent() }, composeLabel: "New agent", composeShortcut: keys.display(.newAgent),

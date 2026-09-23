@@ -19,7 +19,7 @@ public struct ShepherdMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var vm: ShepherdViewModel
     /// Menus rebuild when a shortcut is rebound: the rebindings are passed into each menu.
-    @ObservedObject private var keys = KeybindingsStore.shared
+    private let keys = KeybindingsStore.shared
     @ObservedObject private var themes = ThemeManager.shared
 
     public init() {
