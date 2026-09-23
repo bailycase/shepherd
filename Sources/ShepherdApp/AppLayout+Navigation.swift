@@ -38,9 +38,6 @@ extension AppLayout {
     /// The hover `+` in section and space headers, and its glyph.
     static let sidebarPlusSize: CGFloat = 18
     static let sidebarPlusGlyph: CGFloat = 11
-    /// A finished subagent group's chevron, in a column as wide as the rows' 6pt state dots.
-    static let subagentGroupChevron: CGFloat = 8
-    static let subagentGroupChevronWidth: CGFloat = 6
     /// An overlaid sidebar leaves this much of the window uncovered.
     static let sidebarOverlayMargin: CGFloat = 48
 

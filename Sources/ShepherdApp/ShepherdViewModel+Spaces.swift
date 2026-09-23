@@ -40,7 +40,6 @@ extension ShepherdViewModel {
             cancelReviews(for: agentID)
             childRuns.clear(agent: agentID)
             selectionHistory.removeAll { $0 == agentID }
-            collapsedChildren.remove(agentID)
             subagentInspector.runByAgent.removeValue(forKey: agentID)
         }
         collapsedSpaces.remove(id)

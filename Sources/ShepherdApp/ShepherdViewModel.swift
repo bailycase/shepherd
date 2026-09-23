@@ -244,15 +244,6 @@ final class ShepherdViewModel {
         selectAgent(agentID)
         openTerminalPane(besideAgent: agent, running: "gh auth login")
     }
-    /// Agents whose subagent rows are hidden (clicking the selected agent
-    /// row toggles this); the row shows an `n sub` chip instead. Ephemeral,
-    /// like all child-run display state.
-    var collapsedChildren: Set<AgentID> = []
-    /// Agents whose finished subagent group is unfolded in the sidebar. A completed group
-    /// folds to one "↳ 3 SUBAGENTS" row by default; the choice persists per agent.
-    var unfoldedSubagentGroups: Set<AgentID> = [] {
-        didSet { sidebarDefaults.set(unfoldedSubagentGroups.map(\.rawValue).sorted(), forKey: "shepherd.unfoldedSubagentGroups") }
-    }
     @ObservationIgnored private var childSweepTimer: Timer?
     /// Focus is recorded per layout on every change (clicks, ⌥⌘←/→, splits),
     /// so returning to an agent restores the pane you were last working in.
@@ -360,9 +351,6 @@ final class ShepherdViewModel {
         // Restore persisted sidebar collapse state. Stale IDs are pruned on
         // the first server snapshot (`adopt`).
         let defaults = sidebarDefaults
-        if let raw = defaults.stringArray(forKey: "shepherd.unfoldedSubagentGroups") {
-            unfoldedSubagentGroups = Set(raw.map(AgentID.init(rawValue:)))
-        }
         if let raw = defaults.stringArray(forKey: "shepherd.collapsedSpaces") {
             collapsedSpaces = Set(raw.map(SpaceID.init(rawValue:)))
         }
@@ -714,24 +702,16 @@ final class ShepherdViewModel {
     }
 
     func applyAgentChildren(_ agentID: AgentID, _ children: [ChildRun]) {
-        let wasEmpty = childRuns.children(of: agentID).isEmpty
         var updated = childRuns
         updated.apply(agentID: agentID, children: children)
         // The extension republishes every 45s: an identical publish only refreshes the
         // publisher's timestamp, which no view reads, so it goes to the unobserved storage.
         if updated.rows == childRuns.rows { _childRuns = updated } else { childRuns = updated }
-        let isEmpty = childRuns.children(of: agentID).isEmpty
-        if isEmpty {
-            collapsedChildren.remove(agentID)
-        } else if wasEmpty, selectedAgentID != agentID {
-            // New batches under other agents start folded; the thread on screen shows its
-            // children nested (board: sidebar nesting).
-            collapsedChildren.insert(agentID)
-        }
         syncChildSweepTimer()
     }
 
-    /// Sidebar child rows for one agent.
+    /// One agent's published child runs: its sidebar row asks while one waits on you, and a
+    /// host answers a remote client's children query with them.
     func children(of agentID: AgentID) -> [ChildRun] {
         childRuns.children(of: agentID)
     }

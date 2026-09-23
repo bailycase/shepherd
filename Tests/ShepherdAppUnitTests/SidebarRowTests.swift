@@ -76,34 +76,55 @@ struct SidebarReorderTests {
 @Suite("Sidebar rows")
 struct SidebarRowModelTests {
     private let space = Fixture.space("s")
+    private static let since = Date(timeIntervalSince1970: 10)
 
-    private func model(_ status: AgentStatus, badge: Int? = nil, children: [ChildRun] = [], folded: Bool = false,
-                       since: Date? = Date(timeIntervalSince1970: 10)) -> SidebarAgentRowModel {
+    private func model(_ status: AgentStatus, badge: Int? = nil, children: [ChildRun] = [],
+                       since: Date? = since) -> SidebarAgentRowModel {
         var agent = Fixture.agent("a", in: space).agent
         agent.status = status
         return SidebarAgentRowModel(agent: agent, selected: false, depth: 1, badge: badge, statusSince: since,
-                                    children: children, folded: folded)
+                                    children: children)
     }
 
-    /// ⌘-digit hint, then needs you, then a folded subagent count, then elapsed while working.
+    /// The ⌘-digit hint, then needs you, then elapsed time while working.
     @Test func theTrailingSlotFollowsItsPriority() {
-        let done = [Fixture.child("r1", state: "complete"), Fixture.child("r2", state: "complete")]
         #expect(model(.blocked, badge: 3).accessory == .shortcut("⌘3"))
-        #expect(model(.blocked, children: done, folded: true).accessory == .ask)
-        #expect(model(.working, children: done, folded: true).accessory == .text("2 sub"))
-        #expect(model(.working).accessory == .elapsed(since: Date(timeIntervalSince1970: 10), tone: .running))
+        #expect(model(.blocked).accessory == .ask)
+        #expect(model(.working).accessory == .elapsed(since: Self.since, tone: .running))
         #expect(model(.working, since: nil).accessory == .none)
         #expect(model(.done).accessory == .none)
         #expect(model(.idle).accessory == .none)
     }
 
-    /// A subagent waiting on you makes its agent's row ask, whatever the agent itself is doing.
-    @Test(arguments: [AgentStatus.working, .idle, .done])
-    func aWaitingSubagentMakesItsAgentAsk(status: AgentStatus) {
-        let row = model(status, children: [Fixture.child("r1"), Fixture.child("r2", attention: true)])
-        #expect(row.accessory == .ask)
-        #expect(row.state == .attention)
-        #expect(row.accessibilityLabel == "a, needs you")
+    enum Children: Sendable {
+        case waiting, live, finished
+
+        var runs: [ChildRun] {
+            switch self {
+            case .waiting: [Fixture.child("live"), Fixture.child("asks", attention: true), Fixture.child("done", state: "complete")]
+            case .live: [Fixture.child("live")]
+            case .finished: [Fixture.child("done", state: "complete"), Fixture.child("failed", state: "failed")]
+            }
+        }
+    }
+
+    /// Subagents have no rows, and reach their agent's row only by asking: a waiting one makes
+    /// it ask whatever the agent is doing, and live or finished ones leave it as the agent's own.
+    @Test(arguments: [
+        (AgentStatus.working, Children.waiting, NWSidebarRow.Accessory.ask, AgentState.attention, "needs you"),
+        (.idle, .waiting, .ask, .attention, "needs you"),
+        (.done, .waiting, .ask, .attention, "needs you"),
+        (.working, .live, .elapsed(since: Date(timeIntervalSince1970: 10), tone: .running), .running, "running"),
+        (.idle, .live, .none, .idle, "idle"),
+        (.working, .finished, .elapsed(since: Date(timeIntervalSince1970: 10), tone: .running), .running, "running"),
+        (.done, .finished, .none, .done, "done"),
+    ])
+    func subagentsReachTheirAgentsRowOnlyByAsking(status: AgentStatus, children: Children,
+                                                 accessory: NWSidebarRow.Accessory, state: AgentState, word: String) {
+        let row = model(status, children: children.runs)
+        #expect(row.accessory == accessory)
+        #expect(row.state == state)
+        #expect(row.accessibilityLabel == "a, \(word)")
     }
 
     /// Spaces and hosts count each blocked agent and each asking subagent of the agents given.
@@ -116,18 +137,11 @@ struct SidebarRowModelTests {
         let elsewhere = Fixture.agent("elsewhere", in: space).agent
         let children: [AgentID: [ChildRun]] = [
             working.id: [Fixture.child("q1", attention: true), Fixture.child("q2", attention: true), Fixture.child("live")],
-            idle.id: [Fixture.child("done", state: "complete")],
+            idle.id: Children.finished.runs,
             elsewhere.id: [Fixture.child("q3", attention: true)],
         ]
         #expect(SidebarAttention.count([blocked, working, idle], children: children) == 3)
         #expect(SidebarAttention.count([idle], children: children) == 0)
-    }
-
-    @Test func childRowsShowUnlessTheFinishedGroupIsFolded() {
-        let live = [Fixture.child("r1")]
-        #expect(model(.working, children: live).showsChildRows)
-        #expect(!model(.working, children: live, folded: true).showsChildRows)
-        #expect(!model(.working).showsChildRows)
     }
 
     @Test func theRowReadsAsOneElement() {
@@ -135,18 +149,5 @@ struct SidebarRowModelTests {
         agent.status = .blocked
         let model = SidebarAgentRowModel(agent: agent, selected: false, depth: 1)
         #expect(model.accessibilityLabel == "Fix login, worktree, needs you")
-    }
-
-    /// A run that needs you asks; a live one counts up from its start; a failed one shows its
-    /// duration in the failed color.
-    @Test func subagentRowsTrailWithTheirState() {
-        #expect(SubagentStyle.accessory(Fixture.child("r", attention: true), state: .needsYou) == .ask)
-        var live = Fixture.child("live")
-        live.startedAt = 5_000
-        #expect(SubagentStyle.accessory(live, state: .running) == .elapsed(since: Date(timeIntervalSince1970: 5), tone: .running))
-        var failed = Fixture.child("failed", state: "failed")
-        failed.startedAt = 0
-        failed.endedAt = 14 * 60_000
-        #expect(SubagentStyle.accessory(failed, state: .failed, now: Date(timeIntervalSince1970: 3600)) == .text("14m", tone: .failed))
     }
 }

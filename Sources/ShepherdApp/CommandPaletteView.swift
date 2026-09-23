@@ -240,7 +240,7 @@ private struct PaletteRow: View {
     private var iconColor: Color? {
         switch item.kind {
         case .child(_, let child), .remoteChild(_, _, let child):
-            SubagentStyle.color(nativeSubagentState(child))
+            AgentState(nativeSubagentState(child)).color
         default:
             nil
         }

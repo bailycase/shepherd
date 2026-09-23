@@ -15,8 +15,9 @@ import Testing
 extension PreviewTests {
     // MARK: Sidebar
 
-    /// A space with agents in every status, one with live subagents and one with a finished
-    /// group, a worktree agent, a second space, an automation, and an unreachable second machine.
+    /// A space with agents in every status, a working one whose subagent waits on you (its row
+    /// asks), one with finished subagents (no mark), a worktree agent, a second space, an
+    /// automation, and an unreachable second machine. The palette lists the subagents.
     private func populatedWorkspace() async throws -> (PreviewWorkspace, [Agent]) {
         let workspace = try PreviewWorkspace()
         let space = Space(name: "Shepherd", path: workspace.dir.path)
