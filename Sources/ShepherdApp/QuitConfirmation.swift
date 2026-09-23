@@ -296,6 +296,9 @@ final class QuitConfirmation {
         let panel = QuitPanel(contentViewController: host)
         panel.isReleasedWhenClosed = false
         panel.styleMask = alone ? [.titled, .fullSizeContentView] : [.titled]
+        // Never drawn (a sheet has no title bar, and the window of its own hides it), but
+        // VoiceOver names the window by it.
+        panel.title = prompt.title
         panel.setContentSize(host.view.fittingSize)
         panel.cancel = { [weak self] in self?.finish(quit: false) }
         return panel
