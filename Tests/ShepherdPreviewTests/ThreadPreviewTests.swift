@@ -38,6 +38,35 @@ struct ThreadPreviewTests {
         try await render("thread-activity-thinking", ActivityThreads.running(thinking: true))
     }
 
+    /// A follow-up sent while the push runs: the working row stays with the streaming reply, and
+    /// the queued bubble waits below it.
+    @Test func threadActivityQueued() async throws {
+        let fixture = ThreadFixture(ActivityThreads.running(thinking: false))
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        let request: NativeThreadStore.Request = { [fixture] value in
+            if case .send(_, _, let id, _, _, _) = value { return .accepted(operationID: id) }
+            return try await fixture.request(value)
+        }
+        final class Once { var sent = false }
+        let once = Once()
+        try await Preview.render("thread-activity-queued", size: CGSize(width: 1180, height: 900), ready: {
+            guard store.ready, !store.rows.isEmpty else { return false }
+            if !once.sent {
+                once.sent = true
+                store.draft = "Then open the PR against nightly."
+                Task { await store.send() }
+            }
+            return store.pending.first?.status == "queued"
+        }) {
+            VStack(spacing: 0) {
+                ThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
+                ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview",
+                           agentName: "Investigate", workingDirectory: "~/Developer/Shepherd", review: { _ in })
+            }
+        }
+    }
+
     /// Failed test runs stay red; a turn that failed as a whole ends in NWTurnError with Retry.
     @Test func threadActivityFailed() async throws {
         try await render("thread-activity-failed", ActivityThreads.failed)
