@@ -24,11 +24,12 @@ ShepherdCore
 │   ├── ShepherdRemote
 │   │   └── ShepherdSessions ── SwiftTerm
 │   └── shepherd-cli
-└── ShepherdDesign
 
 TerminalSurfaceKit ── GhosttyTerminal (Vendor/libghostty-spm)
 
-ShepherdApp ── Core, Protocol, Sessions, Design, TerminalSurfaceKit, Sparkle, SwiftTreeSitter
+ShepherdUI (local package, Packages/ShepherdUI) ── nothing
+
+ShepherdApp ── Core, Protocol, Sessions, ShepherdUI, TerminalSurfaceKit, Sparkle, SwiftTreeSitter
 Shepherd iOS (Xcode target) ── Core, Protocol, Remote
 ```
 
@@ -37,7 +38,7 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote
 | `ShepherdCore` | Codable workspace models (`Space`, `Tab`, `Agent`, `Automation`, `ShepherdState`), typed IDs, the `PaneNode` split tree, `AgentStatus` and its transition table, `ThinkingLevel`, and structural validation | nothing |
 | `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), and `ShepherdPaths` | Core |
 | `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the thread client used by local, remote, and iOS views), `NativeThreadPresentation` (pure derivations), and `ShepherdLog` | Core, Protocol |
-| `ShepherdDesign` | The design system: `ThemeDefinition` and Basalt, `ThemeStore`, `Tokens`, `Fonts`, `Metrics`/`Radius`, and the shared SwiftUI components. SwiftUI only; no AppKit views and no app state | Core |
+| `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components. SwiftUI only; no app state | nothing |
 | `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, SwiftTerm |
 | `TerminalSurfaceKit` | The libghostty adapter for terminal panes (see its [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md)). Knows nothing about agents or workspaces | GhosttyTerminal |
 | `ShepherdApp` | Everything on screen: view model, selection, thread views, review, palette, settings, sheets, appearance, keybindings, embedded extensions, the pane-to-session bridge, and the remote host store | all of the above, Sparkle, tree-sitter |
@@ -46,8 +47,8 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote
 Dependencies point inward:
 
 - Core and Protocol import neither Sessions nor App.
-- Sessions imports neither App, Design, nor TerminalSurfaceKit.
-- Design imports neither App nor Sessions.
+- Sessions imports neither App, ShepherdUI, nor TerminalSurfaceKit.
+- ShepherdUI imports no Shepherd module; the app maps its states onto `AgentState`.
 - Only `ShepherdApp/TerminalHost.swift` imports TerminalSurfaceKit.
 - Only TerminalSurfaceKit imports GhosttyTerminal.
 
@@ -89,7 +90,7 @@ layout that has been hidden for 30 s and is outside the four most recently shown
 *cold-parked*: its terminal surfaces are dropped while its processes and host-side screens keep
 running.
 
-**Appearance.** `ThemeStore.shared` (ShepherdDesign) holds the theme, text scale, and density
+**Appearance.** `ThemeStore.shared` (ShepherdUI) holds the theme, text scale, and density
 that views read. `ThemeManager` (app) holds the System/Light/Dark choice. It pushes the resolved
 variant to what cannot follow SwiftUI's appearance by itself: Ghostty surfaces (a live
 `setTheme`) and the pi theme file used by pi run by hand in a terminal pane.
@@ -264,7 +265,8 @@ At startup the server then:
 | A wire message or framing rule | `ShepherdProtocol`, plus every consumer and its round-trip tests |
 | A persisted mutation, process, PTY, RPC projection, socket, or screen behavior | `ShepherdSessions` |
 | Thread-client behavior or a pure presentation rule shared with remote and iOS | `ShepherdRemote` |
-| A color role, type token, size, or reusable control | `ShepherdDesign` (roles in every theme variant, contrast rules where text is involved) |
+| A color role, type token, size, or reusable control | `ShepherdUI` (roles in every theme variant, contrast rules where text is involved) |
+| A surface dimension of a Mac screen | `AppLayout` (ShepherdApp) |
 | Ghostty configuration or surface behavior | `TerminalSurfaceKit`, exposed through `TerminalHost.swift` |
 | Selection, presentation, settings, or interaction | `ShepherdApp`, in the narrowest existing file |
 

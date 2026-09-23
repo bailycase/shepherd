@@ -56,8 +56,8 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Test
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
   extensions, `remote-token`, and subagent artifacts.
-- **`SHEPHERD_THEME=basalt-dark|basalt-light`** forces an appearance at launch, which is handy for
-  screenshots.
+- **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch, which is
+  handy for screenshots.
 - **Set by the app for pi, never read from the user's environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
@@ -72,7 +72,7 @@ Tests come in tiers, and the switch is `--filter` on target names.
 
 | Tier | Targets | What belongs there |
 | --- | --- | --- |
-| Unit | `ShepherdCoreUnitTests`, `ShepherdProtocolUnitTests`, `ShepherdDesignUnitTests`, `ShepherdRemoteUnitTests`, `ShepherdSessionsUnitTests`, `ShepherdAppUnitTests`, `ShepherdCLIUnitTests`, `TerminalSurfaceKitUnitTests` | Pure logic |
+| Unit | `ShepherdCoreUnitTests`, `ShepherdProtocolUnitTests`, `ShepherdUIUnitTests`, `ShepherdRemoteUnitTests`, `ShepherdSessionsUnitTests`, `ShepherdAppUnitTests`, `ShepherdCLIUnitTests`, `TerminalSurfaceKitUnitTests` | Pure logic |
 | Integration | `ShepherdSessionsIntegrationTests`, `ShepherdAppIntegrationTests` | Real processes, sockets, git, windows |
 | Previews | `ShepherdPreviewTests` | Offscreen renders of every surface |
 
@@ -163,9 +163,6 @@ Sources/
                        NativeThread (requests, results, NativeThreadSnapshot), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths.
   ShepherdRemote/      RemoteHostClient, NativeThreadStore, NativeThreadPresentation, ShepherdLog.
-  ShepherdDesign/      ThemeDefinition, Basalt, ThemeStore, Tokens, Typography (Fonts), Metrics
-                       (+ Radius), HexColor, Components/ (Buttons, Controls, Status, Chips,
-                       Containers).
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState, PTYSession, SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
@@ -191,6 +188,13 @@ Sources/
       PiSessionFile, PiUpdateManager, AppUpdater (Sparkle channels)
     Status/Namer/Panes/Review/Theme/Subagents/Children/InspectExtension.swift  embedded extensions
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
+Packages/
+  ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27):
+                       Tokens/ (ThemeDefinition, NightWatch, ThemeStore + NWPalette, Colors
+                       (Color.nw), Typography (Font.nw, bundled Geist), Metrics (NW.Space/Radius/
+                       Height), Motion, Elevation, AgentState, HexColor), Resources/Fonts,
+                       Components/ (Controls, Status, Containers, Thread, Composer, Agents),
+                       Previews/. Its unit tests live in the root (Tests/ShepherdUIUnitTests).
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
   shepherd-status.ts      status + active pi session       shepherd-namer.ts   agent titles
   shepherd-panes.ts       pane_*, agent_list/send/spawn, automation_*, notify
@@ -324,17 +328,19 @@ children-config, children-ui, workflow, and missions, and installs `InspectExten
   Extend both enums, `SessionServer.handleLine`, and the protocol tests together.
 
 **Design tokens only.** Never hardcode a color, font size, or dimension in a view. Everything comes
-from `ShepherdDesign`:
+from ShepherdUI (Night Watch):
 
-- colors from `Tokens` (dynamic, resolved against each view's appearance)
-- fonts from `Fonts` (aware of text scale)
-- sizes from `Metrics` (density-scaled rows) and `Radius`
+- colors from `Color.nw` (dynamic, resolved against each view's appearance)
+- fonts from `Font.nw(_:)` (aware of text scale)
+- sizes from `NW.Space`, `NW.Radius`, and `NW.Height` (density-scaled rows), and the app's surface
+  dimensions from `AppLayout`
 
 Use a shared component before hand-rolling chrome. A new color is a role on `ThemeColors`,
-filled in both variants of every theme (the compiler enforces completeness), with a `Tokens`
-accessor and a contrast rule if it carries text. Borders and hovers are theme roles, never ad-hoc
-alphas. Basalt is the only shipped theme. The pre-redesign token names are gone; never
-reintroduce aliases for them.
+filled in both variants of every theme (the compiler enforces completeness), with an `NWPalette`
+property and a contrast rule if it carries text. Borders and hovers are theme roles, never ad-hoc
+alphas. Status colors come from `AgentState`, never picked per view. Night Watch is the only
+shipped theme. The pre–Night Watch names (`Tokens`, `Fonts`, `Metrics`, `Radius`, Basalt) are gone;
+never reintroduce aliases for them.
 
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a view is a bug.

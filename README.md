@@ -46,7 +46,7 @@ coherent over covering every use case.
   agents over an authenticated TCP listener, off by default, meant for a VPN or trusted network.
 - **Keyboard-first.** A command palette (⌘K) with transcript search across all your agents,
   plus rebindable shortcuts.
-- **Basalt theme.** Light and dark, also applied to terminal panes and to pi run by hand in one.
+- **Night Watch.** Light and dark, also applied to terminal panes and to pi run by hand in one.
 
 Nothing runs in the background without the app. Quit Shepherd and every agent stops. Relaunch it
 and the workspace comes back, with each agent resumed in its pi session.
