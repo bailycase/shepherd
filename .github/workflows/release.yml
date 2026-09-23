@@ -110,12 +110,21 @@ jobs:
             CURRENT_PROJECT_VERSION='${{ github.run_number }}' \
             build
 
+      # Workflow artifacts expire (90 days at most on a public repo), while a
+      # stable release stays on the appcast far longer, so the same dSYMs are
+      # also zipped for the GitHub release. Neither may fail a release.
       - name: Keep dSYMs
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: dSYMs-${{ steps.meta.outputs.tag }}
           path: build/Build/Products/Release/*.dSYM
           if-no-files-found: warn
+
+      - name: Zip dSYMs
+        continue-on-error: true
+        working-directory: build/Build/Products/Release
+        run: zip -qr "$GITHUB_WORKSPACE/Shepherd-dSYMs.zip" *.dSYM
 
       # `xcodebuild build` never strips, so the app binary would ship a debug
       # map of runner object-file paths. -S -x drops debug and local symbols
@@ -197,6 +206,12 @@ jobs:
             git tag "$TAG" && git push origin "$TAG"
           fi
           gh release create "$TAG" Shepherd.dmg "${ARGS[@]}"
+          # Never name this Shepherd.zip: the appcast step falls back to that
+          # asset when a release has no DMG.
+          if [[ -f Shepherd-dSYMs.zip ]]; then
+            gh release upload "$TAG" Shepherd-dSYMs.zip \
+              || echo "::warning::Could not attach dSYMs to $TAG."
+          fi
 
       - name: Update appcast
         env:
