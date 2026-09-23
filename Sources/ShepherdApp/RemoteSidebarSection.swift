@@ -86,7 +86,8 @@ struct RemoteHostBlock: View {
             ? vm.remoteOrderedAgents(hostID: connection.id).firstIndex(where: { $0.id == agent.id }).flatMap { $0 < 9 ? $0 + 1 : nil }
             : nil
         let children = connection.children[agent.id] ?? []
-        let folded = SubagentFolding.folded(children: children, selected: selected, unfolded: false)
+        let folded = SubagentFolding.folded(children: children, selected: selected,
+                                            unfolded: vm.unfoldedSubagentGroups.contains(agent.id))
         let model = SidebarAgentRowModel(agent: agent, selected: selected, depth: 1, badge: badge,
                                          children: children, folded: folded,
                                          inspectedRunID: vm.subagentInspector.remoteRuns[ref])
@@ -115,7 +116,7 @@ struct RemoteHostBlock: View {
             .id(ref)
         if !children.isEmpty {
             SubagentRows(children: children, depth: 2, folded: folded,
-                         inspected: vm.subagentInspector.remoteRuns[ref], toggleFold: {},
+                         inspected: vm.subagentInspector.remoteRuns[ref], toggleFold: { vm.toggleSubagentGroup(agent.id) },
                          open: { vm.openRemoteChild(ref, child: $0) })
         }
     }
