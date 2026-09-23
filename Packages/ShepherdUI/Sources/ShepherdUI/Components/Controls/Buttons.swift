@@ -71,7 +71,7 @@ private struct NWStyledButton: View {
             .background(background(nw), in: shape)
             .nwBorder(kind == .secondary || kind == .danger ? nw.lineStrong : .clear, radius: NW.Radius.s)
             .offset(y: configuration.isPressed ? 0.5 : 0)
-            .opacity(enabled ? 1 : 0.4)
+            .nwEnabledOpacity(enabled)
             .contentShape(shape)
             .onHover { hovering = $0 }
             .nwAnimation(.hover, value: hovering)
@@ -170,7 +170,7 @@ private struct NWIconButton: View {
             .frame(width: side, height: side)
             .background(fill, in: Circle())
             .nwBorder(style.bordered ? nw.lineStrong : .clear, in: Circle())
-            .opacity(enabled ? 1 : 0.4)
+            .nwEnabledOpacity(enabled)
             .contentShape(Circle())
             .onHover { hovering = $0 }
             .nwAnimation(.hover, value: hovering)
@@ -213,7 +213,8 @@ private struct NWLinkButton: View {
         configuration.label
             .font(font ?? .nw(.caption))
             .foregroundStyle(color ?? .nw.running)
-            .opacity(!enabled ? 0.4 : configuration.isPressed ? 0.7 : 1)
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .nwEnabledOpacity(enabled)
             .contentShape(Rectangle())
             .nwFocusRing(radius: NW.Radius.xs)
     }

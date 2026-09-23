@@ -83,7 +83,7 @@ private struct NWFieldChrome: ViewModifier {
             .background(nw.bgRaised, in: shape)
             .nwBorder(error ? nw.failed : nw.lineStrong, radius: NW.Radius.s)
             .nwFocusRing(focused, radius: NW.Radius.s)
-            .opacity(enabled ? 1 : 0.4)
+            .nwEnabledOpacity(enabled)
     }
 }
 

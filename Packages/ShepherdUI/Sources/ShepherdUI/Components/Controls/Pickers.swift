@@ -196,7 +196,7 @@ private struct NWSliderTrack: View {
             })
         }
         .frame(width: NWSliderMetrics.width, height: NWSliderMetrics.height)
-        .opacity(enabled ? 1 : 0.4)
+        .nwEnabledOpacity(enabled)
         .nwFocusRing(radius: NWSliderMetrics.height / 2)
         // Keyboard navigation only, like a native slider: a click must not take focus or ring it.
         .focusable(interactions: .activate)
@@ -258,7 +258,7 @@ public struct NWStepper: View {
         Button(action: action) {
             Image(systemName: symbol).font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.nw.textSecondary)
-                .opacity(enabled ? 1 : 0.4)
+                .nwEnabledOpacity(enabled)
                 .frame(width: NW.Height.controlS, height: 26)
                 .contentShape(Rectangle())
         }
