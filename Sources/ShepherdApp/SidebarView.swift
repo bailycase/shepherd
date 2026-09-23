@@ -9,6 +9,9 @@ import UniformTypeIdentifiers
 /// THIS MAC and each remote host as sections, spaces as disclosure rows with their agents
 /// nested beneath, and Automations as the footer. Subagents have no rows; they live in their
 /// agent's thread. Rows take plain values so an unchanged row never re-renders.
+///
+/// Rows arriving, leaving, reordering, and disclosing animate (`.list`) whatever changed them: a
+/// broadcast, a drop, a click, a reveal. Selecting a row changes no row, so it lands at once.
 struct SidebarView: View {
     var vm: ShepherdViewModel
 
@@ -36,17 +39,35 @@ struct SidebarView: View {
                 .onChange(of: vm.sidebarRevealRequest) {
                     guard let target = vm.sidebarRevealTarget else { return }
                     DispatchQueue.main.async {
-                        withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeOut(duration: NW.Motion.hover.duration)) {
-                            proxy.scrollTo(target)
-                        }
+                        withNWAnimation(.scroll) { proxy.scrollTo(target) }
                     }
                 }
             }
         } footer: {
             if !vm.state.automations.isEmpty {
                 AutomationsFooter(vm: vm)
+                    .nwTransition(.list, edge: .bottom)
             }
         }
+        .nwAnimation(.list, value: rowLayout)
+    }
+
+    /// Everything that adds, removes, reorders, or discloses rows, local and remote, and the
+    /// Automations footer.
+    private var rowLayout: [AnyHashable] {
+        var key: [AnyHashable] = [vm.localMachineCollapsed]
+        for group in vm.spaceTree {
+            key += [group.space.id, vm.collapsedSpaces.contains(group.space.id), group.agents.map(\.id)]
+        }
+        for connection in vm.remoteHosts.connections {
+            key += [connection.id, connection.phase == .connected, vm.collapsedHosts.contains(connection.id)]
+            for space in connection.state.spaces where !space.hidden {
+                key += [space.id, vm.isRemoteSpaceCollapsed(hostID: connection.id, spaceID: space.id),
+                        ShepherdViewModel.sidebarAgents(of: space.id, in: connection.state.agents).map(\.id)]
+            }
+        }
+        key += [vm.state.automations.map(\.id), vm.automationsExpanded]
+        return key
     }
 }
 
@@ -125,9 +146,11 @@ struct SpaceSection: View {
             }
             // The reveal target for a collapsed space; exactly one row carries the id.
             .id(space.id)
+            .nwTransition(.list)
         if !collapsed {
             ForEach(agents) { agent in
                 LocalAgentRow(vm: vm, model: vm.sidebarRowModel(for: agent, depth: depth + 1))
+                    .nwTransition(.disclosure)
             }
         }
     }
@@ -166,17 +189,22 @@ struct SpaceRow: View, Equatable {
         if worktrees > 0 {
             Text("⎇\(worktrees)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
                 .help("\(worktrees) worktree agent\(worktrees == 1 ? "" : "s")")
+                .nwContentTransition(.numeric())
+                .nwAnimation(.content, value: worktrees)
         }
         // The count and the hover `+` share one slot and crossfade, so hovering resizes nothing.
         let showsPlus = hovering && onNewAgent != nil
         ZStack(alignment: .trailing) {
-            Group {
+            ZStack(alignment: .trailing) {
                 if blocked > 0 {
                     Text("\(blocked)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.lanternText)
                 } else if count > 0 {
                     Text("\(count)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
                 }
             }
+            // Counts roll, and waiting ⇄ agents cross-fade, as broadcasts change them.
+            .nwContentTransition(.numeric())
+            .nwAnimation(.content, value: [blocked, count])
             .opacity(showsPlus ? 0 : 1)
             if let onNewAgent {
                 SidebarPlus(help: "New Agent in \(name)", action: onNewAgent)
@@ -366,10 +394,12 @@ private struct AutomationsFooter: View {
                             Divider()
                             Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation.id) }
                         }
+                        .nwTransition(.list)
                     }
                 }
                 .padding(.horizontal, AppLayout.sidebarPadding)
                 .padding(.bottom, NW.Space.m)
+                .nwTransition(.disclosure)
             }
         }
     }
@@ -435,8 +465,9 @@ private struct SidebarDropTarget: ViewModifier {
         content
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             .overlay(alignment: edge == .below ? .bottom : .top) {
-                if edge != nil { NWDropIndicator() }
+                if edge != nil { NWDropIndicator().nwTransition(.hover) }
             }
+            .nwAnimation(.hover, value: edge)
             .onDrop(of: [.shepherdSidebarItem], delegate: SidebarDropDelegate(
                 vm: vm, height: height, allowsBelow: allowsBelow, edge: $edge, perform: perform))
     }

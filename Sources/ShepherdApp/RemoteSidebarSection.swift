@@ -51,14 +51,19 @@ struct RemoteHostBlock: View {
                         onToggle: { vm.toggleRemoteSpaceCollapsed(hostID: connection.id, spaceID: space.id) },
                         onNewAgent: { vm.showNewAgentSheetForRemote(hostID: connection.id, spaceID: space.id) }
                     )
+                    .nwTransition(.list)
                     if !spaceCollapsed {
                         ForEach(agents) { agent in
                             remoteAgentRow(agent)
+                                .nwTransition(.disclosure)
                         }
                     }
                 }
             } else {
-                statusRow
+                // Connecting… ⇄ Unreachable ⇄ Off cross-fade in one slot as the connection retries.
+                ZStack(alignment: .leading) { statusRow }
+                    .nwAnimation(.content, value: connection.phase.kind)
+                    .nwTransition(.list)
             }
         }
     }
@@ -70,10 +75,13 @@ struct RemoteHostBlock: View {
             EmptyView()
         case .connecting:
             NWSidebarNoticeRow(.running, text: "Connecting…")
+                .nwTransition(.content)
         case .failed:
             NWSidebarNoticeRow(.failed, text: "Unreachable", actionTitle: "Retry") { vm.remoteHosts.reconnect(id: connection.id) }
+                .nwTransition(.content)
         case .disconnected:
             NWSidebarNoticeRow(.idle, text: "Off", actionTitle: "Connect") { vm.remoteHosts.reconnect(id: connection.id) }
+                .nwTransition(.content)
         }
     }
 
@@ -105,5 +113,20 @@ struct RemoteHostBlock: View {
             // Scroll target for machine jumps and palette picks; the ref type keeps remote rows
             // distinct from local agent ids.
             .id(ref)
+    }
+}
+
+extension RemoteHostStore.Phase {
+    enum Kind { case disconnected, connecting, connected, failed }
+
+    /// The phase without a failure's reason: what the sidebar's status row and the workspace's
+    /// placeholders cross-fade between (a retry that fails again changes nothing on screen).
+    var kind: Kind {
+        switch self {
+        case .disconnected: .disconnected
+        case .connecting: .connecting
+        case .connected: .connected
+        case .failed: .failed
+        }
     }
 }
