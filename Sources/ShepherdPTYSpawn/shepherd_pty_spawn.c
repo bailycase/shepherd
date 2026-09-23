@@ -22,6 +22,11 @@ pid_t shepherd_forkpty_exec(int *master_fd,
     sigset_t mask;
     sigemptyset(&mask);
     sigprocmask(SIG_SETMASK, &mask, NULL);
+    // Only the pty (0, 1, 2) survives: an inherited pipe would keep another process's reader
+    // waiting for EOF until this shell exits.
+    for (int fd = STDERR_FILENO + 1, max = getdtablesize(); fd < max; fd++) {
+        (void)close(fd);
+    }
     if (cwd != NULL) {
         (void)chdir(cwd);
     }

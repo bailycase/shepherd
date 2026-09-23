@@ -9,7 +9,8 @@
 /// take a runtime lock another thread held at fork time and deadlock or crash the child.
 ///
 /// The child resets every signal disposition to SIG_DFL and clears the signal mask (the app may
-/// ignore or block signals, and those survive exec), changes to `cwd` when given, and execs
+/// ignore or block signals, and those survive exec), closes every descriptor except the pty on
+/// 0–2 (so it holds no other process's pipes open), changes to `cwd` when given, and execs
 /// `path`; on failure it writes `exec_fail_message` (if given) to stderr and exits 127.
 ///
 /// Returns the child's pid in the parent and stores the pty's master side in `master_fd`, or -1
