@@ -150,16 +150,30 @@ public struct NWActivityLine: View {
 }
 
 /// The thread's 10pt disclosure chevron (activity lines, thinking): one `chevron.right` that
-/// turns to point down as it opens, under whatever motion the expansion runs with.
+/// turns to point down as it opens, under whatever motion the expansion runs with. Under Reduce
+/// Motion nothing turns: the two positions cross-fade.
 struct NWThreadChevron: View {
     let isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        Group {
+            if reduceMotion {
+                ZStack {
+                    glyph.opacity(isExpanded ? 0 : 1)
+                    glyph.rotationEffect(.degrees(90)).opacity(isExpanded ? 1 : 0)
+                }
+            } else {
+                glyph.rotationEffect(.degrees(isExpanded ? 90 : 0))
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private var glyph: some View {
         Image(systemName: "chevron.right")
             .font(.system(size: 8, weight: .semibold))
             .frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
-            .rotationEffect(.degrees(isExpanded ? 90 : 0))
-            .accessibilityHidden(true)
     }
 }
 
