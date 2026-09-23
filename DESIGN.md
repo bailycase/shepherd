@@ -699,8 +699,8 @@ Quitting while agents are working or waiting on an answer asks in `QuitDialog`: 
 and a destructive Quit. The app delegate answers the quit later, and `QuitConfirmation` puts the
 dialog on the main window as a critical sheet, so it shows even over another sheet. A closed
 window is reopened first; if it is not back within a second, the dialog opens in a window of its
-own. A second ⌘Q brings the dialog back rather than asking twice, and a log out, restart or shut
-down quits without asking.
+own. While it asks, AppKit disables Quit, so a second ⌘Q does nothing. A log out, restart or shut
+down quits without asking, and one that begins while the dialog is up answers it with Quit.
 
 ## Status language
 
