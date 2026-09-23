@@ -326,9 +326,12 @@ struct NWSidebarDot: View {
 private struct NWSidebarAccessoryView: View {
     let accessory: NWSidebarRow.Accessory
 
-    /// A ZStack, so the old and new accessory cross-fade in one slot.
+    /// A ZStack, so the old and new accessory cross-fade in one slot; nothing at all without
+    /// one, so the row's spacing leaves the title its room.
     var body: some View {
-        ZStack(alignment: .trailing) { content }
+        if accessory != .none {
+            ZStack(alignment: .trailing) { content }
+        }
     }
 
     @ViewBuilder private var content: some View {
