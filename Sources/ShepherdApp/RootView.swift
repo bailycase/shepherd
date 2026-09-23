@@ -159,14 +159,8 @@ struct WorkspaceHeaderView: View {
     var leadingInset: CGFloat = 0
     /// Shown while the sidebar is not docked.
     var showSidebar: (() -> Void)?
-    @ObservedObject private var keys: KeybindingsStore
 
-    init(vm: ShepherdViewModel, leadingInset: CGFloat = 0, showSidebar: (() -> Void)? = nil) {
-        self.vm = vm
-        self.leadingInset = leadingInset
-        self.showSidebar = showSidebar
-        _keys = ObservedObject(wrappedValue: vm.keybindings)
-    }
+    private var keys: KeybindingsStore { vm.keybindings }
 
     var body: some View {
         Group {

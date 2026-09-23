@@ -9,7 +9,7 @@ import AppKit
 /// separately and cannot be recorded over.
 struct KeyboardSettings: View {
     var vm: ShepherdViewModel
-    @ObservedObject private var keys = KeybindingsStore.shared
+    private var keys: KeybindingsStore { .shared }
     /// The action currently recording, if any — one recorder at a time.
     @State private var recording: ShortcutAction?
     @State private var errorText: String?

@@ -66,7 +66,7 @@ struct WorkspaceView: View {
 /// No agent on screen: a space with no agents yet, or no spaces at all.
 struct EmptyWorkspace: View {
     var vm: ShepherdViewModel
-    @ObservedObject private var keys = KeybindingsStore.shared
+    private var keys: KeybindingsStore { .shared }
 
     var body: some View {
         Group {

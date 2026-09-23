@@ -235,16 +235,17 @@ struct KeyChord: Codable, Hashable {
 /// UserDefaults. Menus, hints, and per-surface ghostty unbinds all read from
 /// here, so a custom chord is wired everywhere or nowhere.
 @MainActor
-final class KeybindingsStore: ObservableObject {
+@Observable
+final class KeybindingsStore {
     static let shared = KeybindingsStore()
     static let defaultsKey = "shepherd.keybindings"
 
-    @Published private(set) var overrides: [ShortcutAction: KeyChord]
+    private(set) var overrides: [ShortcutAction: KeyChord]
 
     /// True while the Settings shortcut recorder is capturing. The view
     /// model's navigation keyDown fast path checks this and stands down so
     /// the recorder can capture chords that would otherwise be consumed.
-    var isRecording = false
+    @ObservationIgnored var isRecording = false
 
     private let store: UserDefaults
 
