@@ -225,7 +225,7 @@ Sources/
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
     DiffReview, DiffReviewView (ReviewPane), GitDiff, CodeHighlight (tree-sitter)
     GitWorktree, WorktreeFinalize, NewWorktreeSheet, FinalizeWorktreeSheet, NewAgentSheet,
-      RemoteWorktreeSheet, RemoteDirectoryPicker, DialogSheet
+      RemoteWorktreeSheet, RemoteDirectoryPicker, DialogSheet, QuitConfirmation (QuitDialog)
     CommandPalette, CommandPaletteView, PaletteContentSearch, Keybindings (KeybindingsStore)
     SettingsView, SettingsWindow, SettingsComponents, Settings{Appearance, Terminal, Agents,
       Worktrees, Pi, Remote, Keyboard, Advanced}, AppSettings

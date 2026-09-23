@@ -73,6 +73,7 @@ struct RootView: View {
             CommandPaletteView(vm: vm)
         }
         .background { MenuStateSync(vm: vm) }
+        .background { MainWindowReader() }
         .nwDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)

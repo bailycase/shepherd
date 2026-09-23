@@ -268,7 +268,8 @@ App-level building blocks sit on top of these:
   `NWGroupCard` and `NWCardRow`
 - `DialogSheet`, `DialogAction`, `DialogBanner`, `RenameDialog` (`DialogSheet.swift`), on
   `NWDialog`, `NWSheetRow` (`SheetRow`), `NWDialogStatus` and `NWChecklistRow`
-  (`Components/Dialogs`); `AppDialogs` presents them
+  (`Components/Dialogs`); `AppDialogs` presents them, and `QuitConfirmation` presents
+  `QuitDialog`
 - `CodeBlockView` for fenced code
 
 **Reading the surface sections below.** They predate Night Watch and still name the old roles.
@@ -693,6 +694,13 @@ agent action (`ActionErrorDialog`) and Reset settings are `DialogSheet`s too. Gi
 directory listings run off the main thread; the Delete Worktree Agent dialog keeps its
 destructive action disabled until the unreconciled-work check is in.
 
+Quitting while agents are working or waiting on an answer asks in `QuitDialog`: the busy agents
+(five named, each with a status dot and "working" or "needs you", the rest counted), Cancel (⎋)
+and a destructive Quit. The app delegate answers the quit later, and `QuitConfirmation` puts the
+dialog on the main window as a critical sheet, so it shows even over another sheet. A closed
+window is reopened first. A second ⌘Q brings the dialog back rather than asking twice, and a log
+out, restart or shut down quits without asking.
+
 ## Status language
 
 | State | Sidebar | Header pill | Composer |
@@ -762,8 +770,6 @@ Review-pane and menu keys are listed with their surfaces.
 
 These places in the code break this document and should be fixed toward it:
 
-- **System dialogs:** quitting with working agents still shows an `NSAlert`: the quit reply comes
-  from the app delegate, which may have no window to present a sheet in.
 - **Hardcoded chords:** two hints hardcode a rebindable chord. The model picker's search row shows
   "⇧⌘M", and the subagent card shows "Inspect ⌘I".
 
