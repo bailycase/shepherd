@@ -1019,8 +1019,12 @@ These places in the code break this document and should be fixed toward it:
   a theme role.
 - **Hand-built chrome:** the review header and its ⋯ menu, and the inspector's ⋯ menu, repeat
   `NWPaneHeader` and `NWOptionsMenu` by hand.
-- **1pt strokes:** several control borders (secondary and danger buttons, pills, banners, the
-  "Jump to latest" capsule) stroke 1pt rather than a 1px hairline.
+- **1pt strokes:** several control borders (secondary and danger buttons, fields, pickers and
+  popups, keycaps, pills, banners, the sheets' text editors, the "Jump to latest" capsule) stroke
+  1pt rather than a 1px hairline.
+- **Chords in copy:** Settings ▸ Agents' explanation names ⌘N and Settings ▸ Terminal's shell
+  row names ⌘D in plain text, so a rebound chord leaves them wrong. They should read from
+  `KeybindingsStore` or not name the chord.
 
 ## iOS
 
