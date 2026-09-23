@@ -137,22 +137,40 @@ public struct NWComposerActionButton: View {
     public var body: some View {
         let nw = Color.nw
         Button(action: action) {
-            Group {
-                switch mode {
-                case .send:
-                    Image(systemName: "arrow.up").font(.system(size: 13, weight: .semibold)).foregroundStyle(nw.textOnLantern)
-                case .stop:
-                    Image(systemName: "stop.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.textOnFailed)
-                }
+            switch mode {
+            case .send:
+                Image(systemName: "arrow.up").font(.system(size: 13, weight: .semibold)).foregroundStyle(nw.textOnLantern)
+            case .stop:
+                Image(systemName: "stop.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.textOnFailed)
             }
+        }
+        .buttonStyle(NWComposerActionStyle(fill: mode == .send ? nw.lantern : nw.failed))
+        .disabled(!enabled)
+        .accessibilityLabel(mode == .send ? "Send" : "Stop")
+    }
+}
+
+/// The action's circle. Its own style, because the plain style dims a disabled label again on
+/// top of the board's 35%.
+private struct NWComposerActionStyle: ButtonStyle {
+    let fill: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        NWComposerActionCircle(configuration: configuration, fill: fill)
+    }
+}
+
+private struct NWComposerActionCircle: View {
+    let configuration: ButtonStyleConfiguration
+    let fill: Color
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        configuration.label
             .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-            .background(mode == .send ? nw.lantern : nw.failed, in: Circle())
+            .background(fill.mix(with: .black, by: enabled && configuration.isPressed ? 0.1 : 0), in: Circle())
             .opacity(enabled ? 1 : 0.35)
             .contentShape(Circle())
             .nwFocusRingCircle()
-        }
-        .buttonStyle(.plain)
-        .disabled(!enabled)
-        .accessibilityLabel(mode == .send ? "Send" : "Stop")
     }
 }
