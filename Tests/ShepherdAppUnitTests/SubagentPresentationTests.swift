@@ -113,6 +113,15 @@ struct SubagentPresentationTests {
         #expect(SubagentPresentation.card(run).detail == "finished")
     }
 
+    @Test func summaryLinesDropInlineMarkdown() {
+        var run = Self.run(state: "complete", endedAt: Self.t0 + 60_000)
+        run.summary = "Added 6 tests to `NativePresentationTests`; all pass on **macOS**. Then iOS."
+        #expect(SubagentPresentation.card(run).detail == "Added 6 tests to NativePresentationTests; all pass on macOS")
+        #expect(SubagentPresentation.ledger([run]).entries.first?.summary == "Added 6 tests to NativePresentationTests; all pass on macOS.")
+        run.summary = "Kept an unpaired ` and 2 * 3."
+        #expect(SubagentPresentation.summaryLine(run) == "Kept an unpaired ` and 2 * 3.")
+    }
+
     @Test func aFailedCardSaysWhy() {
         var run = Self.run(state: "failed", endedAt: Self.t0 + 1_000)
         run.exitReason = "exit 1 · context limit reached after 41 turns"
