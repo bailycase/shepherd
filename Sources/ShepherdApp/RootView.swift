@@ -191,11 +191,15 @@ struct WorkspaceHeaderView: View {
                 } else {
                     threadHeader(store: vm.remoteThreadStores.store(for: remote), project: "⌁ \(connection.config.name)",
                                  title: agent.name, rename: { vm.remoteRenameTarget = remote })
+                        .id(remote)
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
                       let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
                 threadHeader(store: vm.threadStores.store(for: agent.id), project: space.name, title: agent.name,
                              rename: { vm.agentRenameTarget = agent.id })
+                    // One toolbar per agent: switching replaces it at once instead of animating
+                    // one agent's status and counters into another's.
+                    .id(agent.id)
             } else {
                 PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar)
             }

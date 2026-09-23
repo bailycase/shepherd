@@ -74,6 +74,9 @@ public struct NWThreadToolbar<Status: View, Options: View>: View {
                 .truncationMode(.tail)
                 .help(titleHelp ?? title)
                 .accessibilityAddTraits(.isHeader)
+                // A rename or a settled name cross-fades.
+                .nwContentTransition(.crossFade)
+                .nwAnimation(.content, value: title)
             status()
                 .layoutPriority(1)
             Spacer(minLength: NW.Space.l)
@@ -86,17 +89,24 @@ public struct NWThreadToolbar<Status: View, Options: View>: View {
                         .fixedSize()
                         .help(countersHelp ?? counters)
                         .padding(.trailing, NW.Space.m)
+                        // Turns, context, and subagents roll as the thread reports them.
+                        .nwContentTransition(.numeric())
+                        .nwTransition(.content)
                 }
                 // Keyed by icon: a toggle that comes and goes never shifts the others' identity.
                 ForEach(toggles, id: \.toggle.systemImage) { item in
                     Button(action: item.action) { Image(systemName: item.toggle.systemImage) }
                         .buttonStyle(.nwIcon(isOn: item.toggle.isOn))
+                        .nwAnimation(.hover, value: item.toggle.isOn)
                         .nwHelp(item.toggle.label, shortcut: item.toggle.shortcut)
                         .accessibilityLabel(item.toggle.label)
                         .accessibilityAddTraits(item.toggle.isOn ? .isSelected : [])
+                        .nwTransition(.list, edge: .trailing)
                 }
                 options()
             }
+            .nwAnimation(.content, value: counters)
+            .nwAnimation(.list, value: toggles.map(\.toggle.systemImage))
             .layoutPriority(1)
         }
         .padding(.leading, NWToolbarMetrics.leadingPadding + leadingInset)

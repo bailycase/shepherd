@@ -54,26 +54,41 @@ struct ThreadHeader: View {
 }
 
 /// Idle / Running · elapsed / Needs you / Error (a lost connection, drawn as `failed`), from the
-/// thread snapshot. A subagent waiting on the user outranks the parent's own state.
+/// thread snapshot. A subagent waiting on the user outranks the parent's own state. A state
+/// change cross-fades the word and eases the tint (`.content`); the running clock ticks without
+/// motion.
 struct ThreadStatusPill: View {
     var store: NativeThreadStore
 
     var body: some View {
         let state = threadPillState(store)
-        if state == .running {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                NWStatusPill(.running, label: "Running · \(threadRunElapsed(store, now: context.date))")
-            }
-        } else {
-            NWStatusPill(state, label: label(state))
+        // One pill in every state, so a change animates in place instead of swapping views.
+        TimelineView(ThreadPillSchedule(ticking: state == .running)) { context in
+            NWStatusPill(state, label: label(state, now: context.date))
         }
+        .nwContentTransition(.crossFade)
+        .nwAnimation(.content, value: state)
     }
 
-    private func label(_ state: AgentState) -> String? {
+    private func label(_ state: AgentState, now: Date) -> String? {
         switch state {
+        case .running: "Running · \(threadRunElapsed(store, now: now))"
         case .attention: nativeSubagentNeedsYouLabel(store.subagents) ?? AgentState.attention.label
         case .failed: "Error"
         default: nil
+        }
+    }
+}
+
+/// Once a second while the thread runs (for its elapsed time), otherwise a single entry.
+struct ThreadPillSchedule: TimelineSchedule {
+    let ticking: Bool
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
+        var next: Date? = startDate
+        return AnyIterator {
+            defer { next = ticking ? next?.addingTimeInterval(1) : nil }
+            return next
         }
     }
 }
