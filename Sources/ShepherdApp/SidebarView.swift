@@ -328,8 +328,9 @@ struct SubagentRows: View, Equatable {
 
     var body: some View {
         if children.allSatisfy(\.isTerminal) {
-            SubagentGroupRow(label: SubagentRows.groupLabel(children), count: children.count, folded: folded, depth: depth)
+            SubagentGroupRow(label: SubagentRows.groupLabel(children), folded: folded, depth: depth)
                 .sidebarTapRow(action: toggleFold)
+                .accessibilityLabel("\(children.count) subagents, \(folded ? "collapsed" : "expanded")")
         }
         if !folded {
             ForEach(children, id: \.id) { run in
@@ -348,7 +349,6 @@ struct SubagentRows: View, Equatable {
 /// "3 subagents · done 14:02" with a chevron: folds a finished group.
 private struct SubagentGroupRow: View {
     let label: String
-    let count: Int
     let folded: Bool
     let depth: Int
     @Environment(\.nwDensity) private var density
@@ -364,7 +364,6 @@ private struct SubagentGroupRow: View {
         }
         .padding(.leading, NWSidebarMetrics.rowPadding + CGFloat(depth) * NWSidebarMetrics.indentStep)
         .frame(maxWidth: .infinity, minHeight: density.rowHeight, alignment: .leading)
-        .accessibilityLabel("\(count) subagents, \(folded ? "collapsed" : "expanded")")
     }
 }
 
