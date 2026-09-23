@@ -127,8 +127,10 @@ struct SubagentLedgerTests {
         #expect(ledger.files == 6 && ledger.diffText == "6 files", "paths touched by two runs count once")
     }
 
-    @Test func rowsFollowSpawnOrderWithFirstSentenceSummaries() {
-        let rows = nativeSubagentLedger(Board.done.shuffled()).rows
+    /// Every arrival order of the three runs, as indexes into `Board.done`.
+    @Test(arguments: [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]])
+    func rowsFollowSpawnOrderWithFirstSentenceSummaries(arrival: [Int]) {
+        let rows = nativeSubagentLedger(arrival.map { Board.done[$0] }).rows
         #expect(rows.map(\.run.role) == ["worker", "reviewer", "tests"])
         #expect(rows.map(\.state) == [.done, .done, .done])
         #expect(rows[0].summary == "Restyled desktop thread, sidebar, composer and iOS to the spec; system…")
