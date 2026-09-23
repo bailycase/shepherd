@@ -23,7 +23,7 @@ struct RemoteWorktreeSheet: View {
         }
         return try await vm.remoteHosts.agentQuery(target, query: value, endpointID: endpointID, transportID: statusOnly ? nil : transportID)
     }
-    @StateObject private var setup = WorktreeSetupModel(repoPath: "host repository")
+    @State private var setup = WorktreeSetupModel(repoPath: "host repository")
     @State private var showingSetup = false
     @State private var checking = true
     @State private var includedCommits: Int?
