@@ -171,14 +171,7 @@ struct PreviewTests {
         }
     }
 
-    // MARK: Review, palette, gallery
-
-    @Test func reviewPane() async throws {
-        let session = Reviews.session()
-        try await Preview.render("review-pane", size: CGSize(width: 760, height: 900)) {
-            ReviewPane(session: session, actions: Reviews.actions).background(Color.nw.bgWindow)
-        }
-    }
+    // MARK: Palette, gallery (the review pane is in ReviewPreviewTests)
 
     @Test func commandPalette() async throws {
         let (workspace, agents) = try await populatedWorkspace()
