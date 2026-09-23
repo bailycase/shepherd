@@ -12,7 +12,7 @@ import Testing
 /// Pane → session binding in `TerminalSessionStore` against a real server: shells keep
 /// running without a view and replay exactly once when one mounts; RPC agent panes bind
 /// without any surface; exits retire their sessions however they race the binding.
-@Suite("Terminal session store", .integrationTimeLimit)
+@Suite("Terminal session store", .integrationTimeLimit, .mainActorExclusive)
 @MainActor
 struct TerminalSessionStoreTests {
     /// An echo loop that also prints `banner` once at start.
