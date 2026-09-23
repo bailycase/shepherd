@@ -9,12 +9,28 @@ struct RemoteWorktreeSheet: View {
     let finalize: Bool
     @State private var endpointID: UUID?
     @State private var transportID: UUID?
+    /// Set only by previews: the finalize form as a ready host fills it, and no query is sent.
+    private let staged: Staged?
 
-    init(vm: ShepherdViewModel, target: RemoteAgentRef, finalize: Bool) {
-        self.vm = vm; self.target = target; self.finalize = finalize
+    /// The host's worktree and a commit count, so a preview renders the finalize form without a
+    /// host.
+    struct Staged {
+        var info: RemoteWorktreeInfo
+        var includedCommits: Int?
+    }
+
+    init(vm: ShepherdViewModel, target: RemoteAgentRef, finalize: Bool, staged: Staged? = nil) {
+        self.vm = vm; self.target = target; self.finalize = finalize; self.staged = staged
         let connection = vm.remoteHosts.connections.first { $0.id == target.hostID }
         _endpointID = State(initialValue: vm.remoteWorktreeOperationEndpoints[target] ?? connection?.endpointID)
         _transportID = State(initialValue: connection?.transportID)
+        if let staged {
+            _info = State(initialValue: staged.info)
+            _options = State(initialValue: staged.info.defaults)
+            _includedCommits = State(initialValue: staged.includedCommits)
+            _checking = State(initialValue: false)
+            _descriptionPrepared = State(initialValue: true)
+        }
     }
 
     private func query(_ value: RemoteAgentQuery, statusOnly: Bool = false) async throws -> RemoteAgentResult {
@@ -115,6 +131,13 @@ struct RemoteWorktreeSheet: View {
         }
         .task {
             guard vm.remoteWorktreeOperationIDs[target] == nil else { return }
+            if staged != nil {
+                // Every check passing, answered here instead of by a host.
+                let checks = Dictionary(uniqueKeysWithValues: WorktreeSetupCheck.allCases.map { ($0.rawValue, RemoteWorktreeCheckState.pass("ok")) })
+                setup.remoteAction = { _ in RemoteWorktreeSetup(repoPath: "host repository", checks: checks, repoSettings: [:]) }
+                await setup.runAll()
+                return
+            }
             if finalize {
                 setup.remoteAction = { action in
                     guard case .worktreeSetup(let result) = try await query(.worktreeSetup(action: action)) else {
@@ -129,7 +152,7 @@ struct RemoteWorktreeSheet: View {
             } else { await prepareInput() }
         }
         .task(id: options.base) {
-            guard finalize, info != nil else { return }
+            guard finalize, info != nil, staged == nil else { return }
             let base = options.base
             includedCommits = nil
             do {
