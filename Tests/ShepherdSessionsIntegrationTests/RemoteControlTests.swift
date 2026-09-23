@@ -8,7 +8,7 @@ import ShepherdTestSupport
 
 /// Remote requests that change the host or ask the host GUI to act: pane control, spaces,
 /// agent creation and actions, host directories, uploads, and the native thread over TCP.
-@Suite("Remote control")
+@Suite("Remote control", .integrationTimeLimit)
 struct RemoteControlTests {
     // MARK: - Pane control
 

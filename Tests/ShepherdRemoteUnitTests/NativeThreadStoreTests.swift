@@ -54,7 +54,7 @@ func start(_ store: NativeThreadStore, _ host: FakeHost) async -> Task<Void, Nev
     return task!
 }
 
-@Suite("NativeThreadStore")
+@Suite("NativeThreadStore", .timeLimit(.minutes(1)))
 @MainActor
 struct NativeThreadStoreTests {
     typealias F = Fixture

@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 /// `RPCSession`: pi on plain pipes. JSONL framing, request/response correlation, timeouts,
 /// and the lifecycle of the child process. Driven against the scripted stub pi.
-@Suite("RPC session transport")
+@Suite("RPC session transport", .integrationTimeLimit)
 struct RPCSessionTests {
     final class Harness: @unchecked Sendable {
         let queue: DispatchQueue

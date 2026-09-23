@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 /// A terminal pane's shell must not inherit the app's other descriptors: a pipe it held open
 /// kept an unrelated reader (git, a login-shell probe) waiting for EOF until the shell exited.
-@Suite("PTY descriptors")
+@Suite("PTY descriptors", .integrationTimeLimit)
 struct PTYDescriptorTests {
     @Test func aShellDoesNotHoldAnotherProcesssPipeOpen() async throws {
         let h = try ScratchServer.fresh()

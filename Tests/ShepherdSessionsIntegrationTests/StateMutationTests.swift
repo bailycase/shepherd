@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 /// Every named `SessionServer` mutation: a success is validated, written to state.json, and
 /// broadcast exactly once; a rejection changes nothing and broadcasts nothing.
-@Suite("State mutations")
+@Suite("State mutations", .integrationTimeLimit)
 struct StateMutationTests {
     // MARK: - Helpers
 

@@ -6,7 +6,7 @@ import ShepherdTestSupport
 
 /// How PTY bytes reach the pane: merged per session (one main-queue delivery in flight), bounded
 /// by backpressure, exact across attach (snapshot + watermark), and never after detach.
-@Suite("Terminal output delivery")
+@Suite("Terminal output delivery", .integrationTimeLimit)
 struct OutputDeliveryTests {
     /// `awk` numbered lines: one burst, deterministic bytes.
     private static func numberedLines(_ count: Int) -> String {

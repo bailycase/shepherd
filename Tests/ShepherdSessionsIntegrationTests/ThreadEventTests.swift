@@ -8,7 +8,7 @@ import ShepherdTestSupport
 /// `RPCThreadState` fed recorded pi events. The thread needs an `RPCSession` (it bootstraps
 /// state, history, and stats from pi), so the stub answers those requests while the test injects
 /// events directly — the exact projection rules without scripting every scenario into the stub.
-@Suite("Thread projection from pi events")
+@Suite("Thread projection from pi events", .integrationTimeLimit)
 struct ThreadEventTests {
     final class Thread: @unchecked Sendable {
         let queue = DispatchQueue(label: "test.thread")

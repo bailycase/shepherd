@@ -8,7 +8,7 @@ import ShepherdTestSupport
 
 /// A remote Shepherd driving the host's sessions over TCP: attach/replay/stream, input and
 /// paste, exits, and output framing.
-@Suite("Remote sessions")
+@Suite("Remote sessions", .integrationTimeLimit)
 struct RemoteSessionTests {
     @Test func attachReplaysTheScreenThenStreamsLiveOutput() async throws {
         let r = try RemoteHost()

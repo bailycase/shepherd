@@ -9,7 +9,7 @@ import ShepherdTestSupport
 
 /// The optional TCP listener: token handshake, version check, state fetch, pushed state, and
 /// its lifecycle alongside the extension socket.
-@Suite("Remote listener")
+@Suite("Remote listener", .integrationTimeLimit)
 struct RemoteListenerTests {
     @Test func aValidHelloIsAnsweredWithTheProtocolAndCapabilities() async throws {
         let r = try RemoteHost()

@@ -8,7 +8,7 @@ import ShepherdTestSupport
 
 /// Every session died with the previous app run, so `start()` clears what state.json still
 /// claims about them before anything is served — and it owns the socket safely.
-@Suite("Server startup")
+@Suite("Server startup", .integrationTimeLimit)
 struct StartupTests {
     /// Persists `state` through one server, stops it, and starts a fresh server on the same files.
     private func relaunch(with state: ShepherdState) async throws -> ScratchServer {

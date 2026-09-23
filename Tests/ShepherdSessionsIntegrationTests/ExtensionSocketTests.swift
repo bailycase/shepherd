@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 /// The Unix socket the bundled pi extensions talk to: fire-and-forget reports that mutate agent
 /// records, and request/reply traffic routed to GUI handlers by correlation id.
-@Suite("Extension socket")
+@Suite("Extension socket", .integrationTimeLimit)
 struct ExtensionSocketTests {
     private func inode(_ url: URL) throws -> Int? {
         (try FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? NSNumber)?.intValue

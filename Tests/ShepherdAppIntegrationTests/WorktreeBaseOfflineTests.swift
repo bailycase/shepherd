@@ -5,7 +5,7 @@ import ShepherdTestSupport
 
 /// With "fetch before creating" off, resolving a worktree's base must not touch the network,
 /// even when origin/HEAD was never recorded locally.
-@Suite("Worktree base without the network")
+@Suite("Worktree base without the network", .integrationTimeLimit)
 struct WorktreeBaseOfflineTests {
     @Test func missingOriginHeadFallsBackToALocalOriginMain() throws {
         let remote = try makeScratchRepo()
