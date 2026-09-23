@@ -80,8 +80,12 @@ public struct NWRunBrief<Files: View>: View {
             HStack(alignment: .firstTextBaseline) {
                 NWBriefLabel(text: "Goal")
                 Spacer(minLength: NW.Space.m)
-                if let note { Text(note).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).monospacedDigit().lineLimit(1) }
+                if let note {
+                    Text(note).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).monospacedDigit().lineLimit(1)
+                        .nwContentTransition(.numeric())
+                }
             }
+            .nwAnimation(.content, value: note)
             Text(goal)
                 .font(.nw(.ui, weight: .regular)).lineSpacing(NW.Space.xs)
                 .foregroundStyle(nw.textSecondary)
@@ -89,16 +93,20 @@ public struct NWRunBrief<Files: View>: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let result {
-                NWBriefLabel(text: "Result", color: resultState.textColor)
-                NWInlineText(text: result, codeSize: 11.5).equatable()
-                    .font(.nw(.ui, weight: .regular)).lineSpacing(NW.Space.xs)
-                    .foregroundStyle(nw.textPrimary)
-                    .lineLimit(8)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                files()
+                VStack(alignment: .leading, spacing: NW.Space.m) {
+                    NWBriefLabel(text: "Result", color: resultState.textColor)
+                    NWInlineText(text: result, codeSize: 11.5).equatable()
+                        .font(.nw(.ui, weight: .regular)).lineSpacing(NW.Space.xs)
+                        .foregroundStyle(nw.textPrimary)
+                        .lineLimit(8)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    files()
+                }
+                .nwTransition(.disclosure)
             }
         }
+        .nwAnimation(.disclosure, value: result != nil)
         .padding(.vertical, 10)
         .padding(.horizontal, NW.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
