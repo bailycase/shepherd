@@ -7,7 +7,12 @@ import ShepherdUI
 /// behavior in the worktree flows is opt-out here. The remote branch is never Shepherd's to
 /// delete regardless (deleting an open PR's head branch closes the PR).
 struct WorktreeSettings: View {
-    @Bindable private var settings = AppSettings.shared
+    @Bindable var settings: AppSettings
+
+    /// Tests pass their own isolated settings.
+    init(settings: AppSettings? = nil) {
+        self.settings = settings ?? .shared
+    }
 
     var body: some View {
         SettingsPage(title: "Worktrees",
@@ -46,8 +51,10 @@ struct WorktreeSettings: View {
                         NWSegmentedPicker("Merge method", selection: $settings.worktreeMergeMethod,
                                           options: [(WorktreeMergeMethod.squash, "Squash"), (.merge, "Merge"), (.rebase, "Rebase")])
                     }
+                    .nwTransition(.disclosure)
                 }
             }
         }
+        .nwAnimation(.disclosure, value: settings.worktreeAutoMergePR)
     }
 }

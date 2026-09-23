@@ -32,12 +32,10 @@ struct SettingsView: View {
         .background { WindowChrome() }
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
-        .onChange(of: searchText) {
-            let sections = matchingSections
-            if let first = sections.first, !sections.contains(vm.settingsSection) {
-                vm.settingsSection = first
-            }
-        }
+        // Settings replaces the window content: it cross-fades in and out with whatever
+        // animates `showSettings` (⌘,, Back, Esc).
+        .nwTransition(.content)
+        .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
         .background {
             // ⌘F focuses the search field.
             Button("Search settings") { searchFocused = true }
@@ -56,7 +54,7 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
 
-            Button { vm.showSettings = false } label: {
+            Button { withNWAnimation(.sheet) { vm.showSettings = false } } label: {
                 HStack(spacing: NW.Space.m) {
                     Image(systemName: "chevron.left")
                         .font(.nw(.ui, weight: .semibold))
@@ -123,6 +121,15 @@ struct SettingsView: View {
         .background(Color.nw.bgBase.ignoresSafeArea())
     }
 
+    /// Searching shows the first page with a match when the current one has none. It lands at
+    /// once: the page cross-fades when it is picked, never per keystroke.
+    static func showFirstMatch(of sections: [SettingsSection], in vm: ShepherdViewModel) {
+        guard let first = sections.first, !sections.contains(vm.settingsSection) else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { vm.settingsSection = first }
+    }
+
     /// "Shepherd 0.1.0 · pi 0.87.1"
     private var versions: String {
         let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
@@ -143,11 +150,14 @@ struct SettingsView: View {
                 case .advanced: AdvancedSettings(vm: vm)
                 }
             }
+            .nwTransition(.content)
             .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
             .padding(.top, AppLayout.settingsTop)
             .padding(.bottom, AppLayout.settingsBottom)
             .padding(.horizontal, AppLayout.settingsGutter)
             .frame(maxWidth: .infinity)
+            // A page picked in the nav cross-fades in place; search switches pages at once.
+            .nwAnimation(.content, value: vm.settingsSection)
         }
         .scrollContentBackground(.hidden)
         .background(Color.nw.bgWindow)

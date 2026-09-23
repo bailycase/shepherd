@@ -37,6 +37,7 @@ struct KeyboardSettings: View {
                                     }
                                     .buttonStyle(.nwLink)
                                     .accessibilityLabel("Reset \(action.sentenceTitle)")
+                                    .nwTransition(.disclosure)
                                 }
                                 ShortcutRecorder(title: action.sentenceTitle, isRecording: recording == action, chordText: keys.display(action)) {
                                     clearError()
@@ -54,6 +55,10 @@ struct KeyboardSettings: View {
                                     }
                                 }
                             }
+                            // The recorder swaps its keycap for "Press keys…"; a changed chord
+                            // grows its Reset link. The rest of the row moves along.
+                            .nwComponentAnimation(.hover, value: recording == action)
+                            .nwComponentAnimation(.disclosure, value: keys.isDefault(action))
                         }
                     }
                 }
@@ -74,6 +79,8 @@ struct KeyboardSettings: View {
                 }
             }
         }
+        // A rejected chord's reason discloses under its row.
+        .nwAnimation(.disclosure, value: errorText)
     }
 
     private func clearError() {

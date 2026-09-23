@@ -33,6 +33,7 @@ struct AdvancedSettings: View {
                             set: { updater.automaticallyChecks = $0 }
                         ))
                     }
+                    .nwTransition(.disclosure)
                     SettingsRow(title: "Update channel",
                                 subtitle: "Stable: tagged releases. Release Candidate and Beta also get newer stable builds. Nightly: every push, least tested.") {
                         NWPopupMenu(updater.channel.label, minWidth: AppLayout.settingsPopupWidth) {
@@ -42,6 +43,7 @@ struct AdvancedSettings: View {
                         }
                         .accessibilityLabel("Update channel")
                     }
+                    .nwTransition(.disclosure)
                 }
                 SettingsRow(title: "Version \(version)") {
                     if updater.available {
@@ -58,6 +60,8 @@ struct AdvancedSettings: View {
                 }
             }
         }
+        // Sparkle reports whether it can update once it has started.
+        .nwAnimation(.disclosure, value: updater.available)
         .sheet(isPresented: $confirmingReset) {
             ResetSettingsDialog {
                 confirmingReset = false

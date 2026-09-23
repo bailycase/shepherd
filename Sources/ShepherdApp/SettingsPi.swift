@@ -79,6 +79,7 @@ struct PiSettings: View {
                     }
                 }
                 .task { modelOptions = await Task.detached(priority: .userInitiated) { Array(Set(PiConfig.modelIDs())).sorted() }.value }
+                .nwTransition(.disclosure)
             }
 
             SettingsGroup(title: "Updates", footnote: "Updating never restarts running agents.") {
@@ -106,6 +107,11 @@ struct PiSettings: View {
                 }
             }
         }
+        .nwAnimation(.disclosure, value: settings.piNativeSubagents)
+        // Checking → up to date, updating → updated: the words, the dot and the buttons' titles
+        // fade in place.
+        .nwAnimation(.content, value: statusLine.text)
+        .nwAnimation(.content, value: piUpdateTitle + extensionsUpdateTitle)
     }
 
     /// The configured subagent model always stays listed, even when pi's catalog lacks it.
@@ -126,25 +132,29 @@ struct PiSettings: View {
         ))
     }
 
+    /// What the updates row reports, and the dot beside it.
+    private var statusLine: (text: String, state: AgentState) {
+        if updates.isChecking { return ("Checking…", .running) }
+        switch updates.activeUpdate {
+        case .pi: return ("Updating pi…", .running)
+        case .extensions: return ("Updating extensions…", .running)
+        case .both: return ("Updating pi and extensions…", .running)
+        case nil: break
+        }
+        if updates.isOutdated { return ("Update available · \(updates.latestVersion ?? "newer version")", .attention) }
+        if let error = updates.lastError { return (error, .failed) }
+        if updates.lastChecked == nil { return ("Not checked yet", .idle) }
+        return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), .done)
+    }
+
     /// "● Up to date · extensions updated · uses the pi resolved from your login shell"
     private var status: some View {
-        let (text, state): (String, AgentState) = {
-            if updates.isChecking { return ("Checking…", .running) }
-            switch updates.activeUpdate {
-            case .pi: return ("Updating pi…", .running)
-            case .extensions: return ("Updating extensions…", .running)
-            case .both: return ("Updating pi and extensions…", .running)
-            case nil: break
-            }
-            if updates.isOutdated { return ("Update available · \(updates.latestVersion ?? "newer version")", .attention) }
-            if let error = updates.lastError { return (error, .failed) }
-            if updates.lastChecked == nil { return ("Not checked yet", .idle) }
-            return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), .done)
-        }()
+        let (text, state) = statusLine
         return HStack(spacing: NW.Space.s) {
             NWStatusDot(state)
             Text("\(Text(text).foregroundStyle(state.textColor))\(Text(" · uses the pi resolved from your login shell").foregroundStyle(Color.nw.textSecondary))")
                 .fixedSize(horizontal: false, vertical: true)
+                .nwContentTransition(.crossFade)
         }
         .nwText(.caption)
         .accessibilityElement(children: .combine)
