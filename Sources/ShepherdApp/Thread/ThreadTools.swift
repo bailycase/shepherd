@@ -81,7 +81,7 @@ struct ActivityLineView: View, Equatable {
         return NWActivityCallRow(
             id: call.id, label: call.label, detail: call.detail, isPath: call.isPath, stat: call.stat, failed: call.failed,
             output: open ? call.outputHead : [], moreLines: max(0, call.outputLineCount - call.outputHead.count),
-            isExpanded: open,
+            truncated: call.truncated, isExpanded: open,
             accessibilityLabel: [call.label, call.detail, call.stat, call.failed ? "failed" : nil].compactMap { $0 }.joined(separator: ", "))
     }
 
