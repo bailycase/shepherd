@@ -44,13 +44,11 @@ struct LiveModelUseCaseTests {
         let server = SessionServer(socketPath: ShepherdPaths.socketURL().path, stateURL: ShepherdPaths.stateURL())
         try server.start()
         let sessionsDir = PiSessionFile.projectDirectory(forCwd: cwd.path)
-        let defaultsName = "shepherd.live.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: defaultsName))
+        let defaults = ScratchDefaults()
         defer {
             server.stop()
             try? fm.removeItem(at: sessionsDir)
             try? fm.removeItem(at: root)
-            defaults.removePersistentDomain(forName: defaultsName)
         }
 
         let settings = AppSettings(store: defaults)
