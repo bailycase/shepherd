@@ -259,6 +259,17 @@ extension ShepherdViewModel {
             badge: shortcutBadge(for: agent.id), statusSince: statusSince[agent.id], children: children(of: agent.id)
         )
     }
+
+    /// The row values for an agent on a remote host, with the children the host reports.
+    func remoteSidebarRowModel(for agent: Agent, on connection: RemoteHostStore.Connection) -> SidebarAgentRowModel {
+        let badge = showAgentShortcutBadges && selectedRemoteAgent?.hostID == connection.id
+            ? remoteOrderedAgents(hostID: connection.id).firstIndex(where: { $0.id == agent.id }).flatMap { $0 < 9 ? $0 + 1 : nil }
+            : nil
+        return SidebarAgentRowModel(
+            agent: agent, selected: selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: agent.id),
+            depth: 1, badge: badge, children: connection.children[agent.id] ?? []
+        )
+    }
 }
 
 /// A local agent's row, with its drag, drop, and context menu.
