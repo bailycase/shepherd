@@ -9,8 +9,9 @@ import Testing
 @testable import ShepherdApp
 
 /// Subagent surfaces in motion, recorded from off-screen windows (`MotionProbe`): a card's
-/// question and a spawned card ease in (and only fade under Reduce Motion), the inspector steps
-/// to a sibling from the side it sits on, and its transcript grows without leaving the tail.
+/// question and a spawned card nudge in where they land (and only fade under Reduce Motion)
+/// while the card takes its new size at once, the inspector steps to a sibling from the side it
+/// sits on, and its transcript grows without leaving the tail.
 @Suite("Subagent motion", .mainActorExclusive)
 @MainActor
 struct SubagentMotionTests {
@@ -57,7 +58,7 @@ struct SubagentMotionTests {
             model.card.question = NWSubagentQuestion(text: "Rename the new tokens, or replace the old ones?", options: ["Rename"])
         }
 
-        #expect(!recording.inBetween.isEmpty, "the card grows over time")
+        #expect(!recording.inBetween.isEmpty, "the question arrives over time")
         let (rest, above) = try framesAbove(recording)
         if reduceMotion {
             #expect(above == 0, "the question fades in where it rests (\(rest))")
@@ -81,6 +82,62 @@ struct SubagentMotionTests {
             #expect(above == 0, "the card fades in where it rests (\(rest))")
         } else {
             #expect(above > 0, "the card nudges down into place (\(rest))")
+        }
+    }
+
+    /// In a thread each spawn's card is its own stack among its turn's parts, and those parts
+    /// (the next card, "Working…") take their new places at once. So a card reshaping for a
+    /// question takes its new size at once too: easing it would open a gap above the card below
+    /// as it grows, and draw it under that card as it shrinks.
+    @Test(arguments: [true, false])
+    func aCardReshapingForAQuestionNeverMovesAgainstTheCardBelow(opening: Bool) async throws {
+        let asking: ChildRun = {
+            var run = Self.run(0)
+            run.needsAttention = true
+            run.question = ChildQuestion(text: "Rename the new tokens, or replace the old ones everywhere?", options: ["Rename", "Replace"])
+            return run
+        }()
+        let model = Model(runs: [opening ? Self.run(0) : asking, Self.run(1)])
+        let window = OffscreenWindow(size: CGSize(width: Self.width, height: Self.column.height), dark: false, SpawnsHost(model: model))
+        defer { window.close() }
+        _ = await MotionProbe.record(window, region: Self.column, timeout: 0.5) {}
+
+        let recording = await MotionProbe.record(window, region: Self.column) { model.runs[0] = opening ? asking : Self.run(0) }
+
+        // The cards' fill sits close to the window's, so the column finds their 1px lines: the
+        // last two rows drawn are the lower card's, the one before them the first card's foot.
+        let empty = (x: 0, y: Int(Self.column.height) - 1)
+        func foot(_ frame: MotionRecording.Frame) -> (foot: Int, next: Int)? {
+            let lines = frame.drawnRuns(over: empty)
+            guard lines.count >= 3 else { return nil }
+            return (lines[lines.count - 3].upperBound, lines[lines.count - 2].lowerBound)
+        }
+        let settled = try #require(foot(recording.settled), "two cards")
+        #expect(settled.foot != foot(recording.before)?.foot, "the first card changed size")
+        // The first card's foot, the gap, and the top of the card below; only the first card's
+        // line may change there, and only its color.
+        let seam = [(settled.foot - 4)...(settled.foot - 1), (settled.foot + 1)...(settled.next + 2)]
+        let moving = recording.frames.dropFirst().filter { frame in seam.contains { !frame.matches(recording.settled, inRows: $0) } }
+        #expect(moving.isEmpty, "the seam between the cards moves in \(moving.count) frames (rows \(seam))")
+        if opening {
+            #expect(!recording.inBetween.isEmpty, "the question fades in")
+        }
+    }
+
+    private struct SpawnsHost: View {
+        let model: Model
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
+                ForEach(model.runs, id: \.id) { run in
+                    SubagentStack(runs: [run], turnLive: true,
+                                  actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(NW.Space.l)
+            .frame(width: SubagentMotionTests.width, height: SubagentMotionTests.column.height, alignment: .top)
+            .background(Color.nw.bgWindow)
         }
     }
 

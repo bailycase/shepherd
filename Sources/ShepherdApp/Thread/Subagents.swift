@@ -42,6 +42,7 @@ private struct SubagentGroup: View, Equatable {
     let inspect: (ChildRun) -> Void
     let command: (ChildRun, NativeSubagentAction, String?, NativeThreadDelivery?) -> Void
     @State private var stripExpanded = false
+    @State private var shown = NWShownFlag()
 
     nonisolated static func == (a: SubagentGroup, b: SubagentGroup) -> Bool {
         a.runs == b.runs && a.turnLive == b.turnLive && a.enabled == b.enabled && a.inspectedRunID == b.inspectedRunID
@@ -56,12 +57,14 @@ private struct SubagentGroup: View, Equatable {
         case .cards: ordered
         }
         // One list of cards in every layout, so a card keeps its identity when the group folds
-        // into the strip: the cards that fold away leave, the strip arrives, and the ledger
-        // replaces them all in place once the group finishes.
+        // into the strip. The group reshapes at once, since the rest of its turn (the next
+        // card, "Working…") moves at once too: the cards that fold away leave, and what arrives
+        // while the group is on screen (a strip, a ledger in place of the cards, a card that
+        // needs you, the cards the strip shows) fades in where it lands.
         VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
             if layout == .ledger {
                 NWRunLedger(SubagentPresentation.ledger(ordered), selection: selection(ordered)).equatable()
-                    .nwTransition(.content)
+                    .nwRunArrival(shown.appeared)
             }
             if layout == .strip {
                 NWRunsStrip(SubagentPresentation.strip(ordered), isExpanded: $stripExpanded) { id in
@@ -69,34 +72,17 @@ private struct SubagentGroup: View, Equatable {
                     if let run = ordered.first(where: { $0.id == id }) { inspect(run) }
                 }
                 .equatable()
-                .nwTransition(.content)
+                .nwRunArrival(shown.appeared)
             }
             ForEach(cards, id: \.id, content: card)
         }
-        .nwAnimation(.list, value: Arrangement(layout: layout, cards: cards.map { CardPhase($0) }))
-    }
-
-    /// What moves the group's rows: its layout, which cards show, and each card's state (a card
-    /// that grows a question pushes the cards under it down with it).
-    private struct Arrangement: Equatable {
-        let layout: SubagentPresentation.Layout
-        let cards: [CardPhase]
-    }
-
-    private struct CardPhase: Equatable {
-        let id: String
-        let state: AgentState
-
-        init(_ run: ChildRun) {
-            id = run.id
-            state = SubagentPresentation.state(run)
-        }
+        .onAppear { shown.appeared = true }
     }
 
     private func card(_ run: ChildRun) -> some View {
         SubagentCard(run: run, selected: run.runID == inspectedRunID, enabled: enabled, inspect: inspect, command: command)
             .equatable()
-            .nwTransition(.list)
+            .nwRunArrival(shown.appeared, .list)
     }
 
     /// The ledger row of the inspected run; choosing a row inspects it (again closes it).

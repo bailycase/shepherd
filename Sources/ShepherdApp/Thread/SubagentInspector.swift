@@ -270,7 +270,9 @@ private struct SubagentRunInspector: View {
                                 AgentTurn(messages: turn.messages, live: !terminal && run != nil && index == turns.count - 1)
                             }
                         }
-                        .modifier(ArrivalFade(fresh: transcript.arrived.contains(turn.id)))
+                        // A turn that arrived while the transcript follows fades in where it
+                        // lands: the transcript's layout, and so following the tail, changes at once.
+                        .nwRunArrival(transcript.arrived.contains(turn.id))
                     }
                     if let run, !run.isTerminal {
                         let working = run.paused == true ? "Pause requested" : run.currentTool.map { "Running \($0)…" } ?? "Thinking…"
@@ -441,24 +443,6 @@ private struct SubagentRunInspector: View {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
         }
-    }
-}
-
-/// A turn that arrived while the transcript follows fades in where it lands. Only its opacity
-/// moves: the transcript's layout, and so following the tail, changes at once. The fade starts
-/// after the turn is placed, outside the change that placed it.
-private struct ArrivalFade: ViewModifier {
-    @State private var shown: Bool
-
-    init(fresh: Bool) {
-        _shown = State(initialValue: !fresh)
-    }
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(shown ? 1 : 0)
-            .nwAnimation(.content, value: shown)
-            .task { if !shown { shown = true } }
     }
 }
 
