@@ -35,11 +35,11 @@ struct AgentsPreviewTests {
         return runs + [paused, queued]
     }
 
-    /// Twelve parallel runs: seven done, three running, one asking, one failed.
+    /// Twelve parallel runs: seven done, two running, one queued, one asking, one failed.
     private static var manyRuns: [ChildRun] {
         let live = cardRuns
         return (0..<12).map { index -> ChildRun in
-            var run = live[index < 7 ? 2 : index < 10 ? 0 : index == 10 ? 1 : 3]
+            var run = live[index < 7 ? 2 : index < 9 ? 0 : index == 9 ? 5 : index == 10 ? 1 : 3]
             run.runID = "strip-\(index)"
             run.startedAt = (run.startedAt ?? nowMs) + Double(index)
             return run

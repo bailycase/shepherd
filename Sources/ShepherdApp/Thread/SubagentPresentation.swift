@@ -116,21 +116,33 @@ enum SubagentPresentation {
                                   removed: ordered.compactMap { $0.result?.removed }.reduce(0, +), entries: entries)
     }
 
+    /// The strip counts each run as its cell and pill draw it: queued and paused runs wait
+    /// (hollow cells), so neither is tallied as running.
     static func strip(_ runs: [ChildRun]) -> NWRunsStripSummary {
         let ordered = ordered(runs)
-        let states = ordered.map(nativeSubagentState)
-        let buckets: [(String, NativeSubagentState)] = [("done", .done), ("running", .running), ("needs you", .needsYou), ("failed", .failed)]
-        let tally = buckets.compactMap { label, state -> String? in
-            let n = states.count { $0 == state }
-            return n > 0 ? "\(n) \(label)" : nil
+        let cells = ordered.map(state)
+        let words = ordered.map(tallyWord)
+        let tally = ["done", "running", "queued", "paused", "needs you", "failed"].compactMap { word -> String? in
+            let n = words.count { $0 == word }
+            return n > 0 ? "\(n) \(word)" : nil
         }
         let tokens = ordered.compactMap(\.tokens).reduce(0, +)
-        let glyph: AgentState = states.contains(.needsYou) ? .attention : states.contains(.running) ? .running
-            : states.contains(.failed) ? .failed : .done
+        let glyph = [AgentState.attention, .running, .queued, .failed].first(where: cells.contains) ?? .done
         let span = span(ordered)
-        return NWRunsStripSummary(title: plural(ordered.count, "subagent"), state: glyph, cells: ordered.map(state),
+        return NWRunsStripSummary(title: plural(ordered.count, "subagent"), state: glyph, cells: cells,
                                   states: tally.joined(separator: " · "), tokens: tokens > 0 ? "\(nativeCompactTokens(tokens)) tok" : nil,
                                   since: span?.since, until: span?.until)
+    }
+
+    /// A run's word in the strip's tally: its pill's word, lowercased.
+    private static func tallyWord(_ run: ChildRun) -> String {
+        switch state(run) {
+        case .attention: "needs you"
+        case .done: "done"
+        case .failed: "failed"
+        case .queued: stateLabel(run) == nil ? "queued" : "paused"
+        default: "running"
+        }
     }
 
     /// The group's time: from its first start, until its last end once every run finished.

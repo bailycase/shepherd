@@ -4,11 +4,12 @@ import SwiftUI
 public struct NWRunsStripSummary: Equatable, Sendable {
     /// "12 subagents".
     public var title: String
-    /// The glyph's state: needs you, else running, else failed, else done.
+    /// The glyph's state: needs you, else running, else queued, else failed, else done.
     public var state: AgentState
     /// One step per run, in spawn order.
     public var cells: [AgentState]
-    /// "7 done · 3 running · 1 needs you · 1 failed".
+    /// "7 done · 3 running · 1 queued · 1 needs you · 1 failed": runs counted as their cells
+    /// draw them.
     public var states: String
     /// "3.6m tok"; nil when no run reported tokens.
     public var tokens: String?
