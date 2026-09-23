@@ -164,7 +164,8 @@ public struct NWDiffLine: View {
     }
 }
 
-/// A right-aligned line number in its 36pt gutter: micro size, regular weight, tertiary.
+/// A right-aligned line number in its 36pt gutter: micro size, regular weight, tertiary. Five
+/// digits, or four at a large text size, shrink to fit rather than truncate.
 private struct NWDiffNumber: View {
     let value: Int?
 
@@ -174,6 +175,7 @@ private struct NWDiffNumber: View {
             .monospacedDigit()
             .foregroundStyle(.nw.textTertiary)
             .lineLimit(1)
+            .minimumScaleFactor(0.6)
             .padding(.trailing, NW.Space.s)
             .frame(width: NWDiffMetrics.numberWidth, alignment: .trailing)
     }

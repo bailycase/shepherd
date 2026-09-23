@@ -68,6 +68,29 @@ struct ReviewPreviewTests {
             ReviewBoard()
         }
     }
+
+    /// A long file (a lockfile): five- and six-digit line numbers fit their 36pt gutters.
+    @Test func reviewDiffLargeLineNumbers() async throws {
+        let code: [(NWDiffLineKind, Int?, Int?, String)] = [
+            (.context, 9_998, 9_998, #"    "node_modules/zod": {"#),
+            (.removed, 9_999, nil, #"      "version": "3.23.8","#),
+            (.added, nil, 9_999, #"      "version": "3.24.1","#),
+            (.context, 10_000, 10_000, #"      "license": "MIT""#),
+            (.context, 123_456, 123_456, "    }"),
+        ]
+        let rows: [NWDiffRow] = [.hunk(id: "h", header: "@@ -9998,5 +9998,5 @@")] + code.enumerated().map { index, line in
+            .line(NWDiffLineContent(id: "l\(index)", key: index, kind: line.0, oldNumber: line.1, newNumber: line.2,
+                                    text: AttributedString(line.3), source: line.3))
+        }
+        try await Preview.render("review-diff-large-line-numbers", size: CGSize(width: 480, height: 150)) {
+            VStack(spacing: 0) {
+                NWFileHeader(path: "package-lock.json", hunkCount: 1, isExpanded: true, isViewed: false, toggle: {}, toggleViewed: {})
+                NWDiffView(rows, onExpand: { _ in })
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(Color.nw.bgWindow)
+        }
+    }
 }
 
 /// The Review board's FleetView change as a real diff.
