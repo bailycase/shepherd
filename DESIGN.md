@@ -44,7 +44,7 @@ survive the question "does this help a person supervise ten working agents at on
 
 In priority order:
 
-1. **Readable measure.** The thread column is at most 760pt, and agent prose is capped at 640pt.
+1. **Readable measure.** The thread column is at most 820pt, and agent prose is capped at 640pt.
 2. **Shape, not labels.** There are no speaker labels or avatars. A user turn is a trailing
    bubble; agent output is unboxed prose.
 3. **One quiet line per burst of work.** Consecutive tool calls of one kind merge into one
@@ -80,7 +80,6 @@ And the rules that follow from them:
 | --- | --- | --- |
 | Minimum window 1100×700 | **720×600**, with adaptive rules (the sidebar and the right pane overlay below their fit points) | Decided with the resizability review |
 | Sidebar 232pt with 28pt rows, shrinking to a 184pt compact form with 24pt rows while a right pane is open | 232pt by default, resizable (190–340, persisted), and it **keeps its width** when a right pane opens. Rows follow Settings ▸ Appearance ▸ Sidebar rows (22 · 28 · 36) and Density | Shrinking on every pane toggle made the window jump; the row height is configurable by decision |
-| Thread column at most 820pt | **760pt**, with the board's 640pt prose measure | The column kept from the earlier handoff |
 | Colors as asset-catalog colorsets | A runtime theme model: `ThemeDefinition` is data (hex, `Codable`), resolved into `Color.nw` | User themes later; the roles are the contract |
 | Fonts through `ATSApplicationFontsPath` / `UIAppFonts` | Registered from the package bundle at launch (`NWFonts.register()`), no Info.plist entry | ShepherdUI is a package, not an app target |
 | A `ShepherdDesign` package | `Packages/ShepherdUI` | Name |
@@ -315,7 +314,7 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 ┌──────────────────┬──────────────────────────────────────────────┬──────────────────────┐
 │ ● ● ●          ✎ │ Title  ● Running · 1m 03s   42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
 │ ⌕ Jump to…   ⌘K  ├──────────────────────────────────────────────┼──────────────────────┤
-│ THIS MAC     19  │         760pt thread column                  │ right pane:          │
+│ THIS MAC     19  │         820pt thread column                  │ right pane:          │
 │ ⌄ Shepherd    8  │                       ┌──────────────┐       │ review or subagent   │
 │   ● agent   ASK  │                       │ user bubble  │       │ inspector, 600pt     │
 │   ● agent    4m  │                       └──────────────┘       │ (min 480, ≤ half)    │
@@ -471,8 +470,8 @@ crook, a title, one sentence, actions):
 change (`NativeTurnPresentation`, `NativeActivity` in ShepherdRemote); the views only draw them.
 Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
 
-- **Layout:** a scroll view with the column centered, at most 760pt wide with 32pt gutters (16pt
-  when the thread is too narrow for both). 28pt top margin, 28pt between turns, 14pt between a
+- **Layout:** a scroll view with the column centered, at most 820pt wide with 32pt gutters (16pt
+  in a thread narrower than the column and both gutters, 884pt; `AppLayout.threadGutter`). 28pt top margin, 28pt between turns, 14pt between a
   turn's parts, and 6pt between consecutive activity lines.
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content

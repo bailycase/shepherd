@@ -10,7 +10,7 @@ extension EnvironmentValues {
     @Entry var threadCommands: ThreadCommandCenter? = nil
 }
 
-/// An agent's thread (NWThread board): a 760pt column of turns in a scroll view that follows
+/// An agent's thread (NWThread board): an 820pt column of turns in a scroll view that follows
 /// the tail, with the composer floating over its bottom edge. The store derives every row once
 /// per change; this view only lays them out.
 struct ThreadView: View {
@@ -34,7 +34,7 @@ struct ThreadView: View {
     @FocusState private var composing: Bool
     @State private var follower = NativeScrollFollower()
     /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
-    @State private var wide = true
+    @State private var gutter = AppLayout.gutter
     @State private var hovering = false
     /// Set on send: once the echoed turn is in the tree, scroll to the tail even if the reader
     /// had scrolled up.
@@ -48,7 +48,6 @@ struct ThreadView: View {
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
 
-    private var gutter: CGFloat { wide ? AppLayout.gutter : AppLayout.gutterCompact }
     private var running: Bool { store.loadError == nil && store.settledRunning }
 
     var body: some View {
@@ -157,7 +156,7 @@ struct ThreadView: View {
         .tint(Color.nw.running)
         .background(Color.nw.bgWindow)
         .animation(.easeInOut(duration: NW.Motion.hover.duration), value: follower.showsJump(running: running))
-        .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.threadMaxWidth + 2 * AppLayout.gutter } action: { wide = $0 }
+        .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { gutter = $0 }
         .onHover { hovering = $0 }
         .onAppear { installWheelMonitor() }
         .onDisappear {

@@ -4,7 +4,8 @@ import SwiftUI
 /// sizes are `NWThreadMetrics` and `NWComposerMetrics` in ShepherdUI.
 extension AppLayout {
     // Thread
-    static let threadMaxWidth: CGFloat = 760
+    /// The column's widest (Navigation board: "thread column · max 820 · prose 640").
+    static let threadMaxWidth: CGFloat = 820
     /// Agent prose keeps the board's 640pt measure even though the column is wider.
     static let proseMaxWidth: CGFloat = 640
     static let userMaxWidth: CGFloat = 600
@@ -33,4 +34,11 @@ extension AppLayout {
     static let menuRowHeight: CGFloat = 36
     /// The New Agent sheet's model list.
     static let modelPickerWidth: CGFloat = 380
+
+    /// The thread's side gutters in a thread `width` wide: the full gutter while the widest
+    /// column fits between two of them, else the compact one, so a narrow thread keeps its
+    /// column rather than its margins.
+    static func threadGutter(width: CGFloat) -> CGFloat {
+        width >= threadMaxWidth + 2 * gutter ? gutter : gutterCompact
+    }
 }
