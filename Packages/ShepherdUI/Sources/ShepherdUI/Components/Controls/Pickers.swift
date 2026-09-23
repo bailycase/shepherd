@@ -58,6 +58,9 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
         .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
         .nwBorder(nw.lineSubtle, radius: NW.Radius.s)
         .fixedSize()
+        // Disabled while what it switches loads (the review's Local | PR): the segments and the
+        // pill dim and come back as a fade, like every other control.
+        .nwComponentAnimation(.hover, value: enabled)
         // A click, ⇥ in the palette, or the value changing elsewhere: the pill moves however the
         // value did, and what the value drives outside the picker is left alone.
         .nwComponentAnimation(.content, value: selection)

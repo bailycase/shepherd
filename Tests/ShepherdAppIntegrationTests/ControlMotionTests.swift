@@ -60,6 +60,27 @@ struct ControlMotionTests {
         #expect(passesBravo != reduceMotion, "the pill crosses Bravo only when it slides")
     }
 
+    private struct LoadingPicker: View {
+        let model: Model
+
+        var body: some View {
+            Picker(model: model).disabled(model.disabled)
+        }
+    }
+
+    /// Disabled while what it switches loads (the review's Local | PR), the picker dims as a
+    /// fade, pill and labels together, however `disabled` changed.
+    @Test func aDisabledSegmentedPickerFadesItsSegmentsAndPill() async {
+        let model = Model()
+        let window = OffscreenWindow(size: CGSize(width: 300, height: 48), dark: false, LoadingPicker(model: model))
+        defer { window.close() }
+        let strip = CGRect(x: 0, y: Picker.inset + NW.Space.xxs + 12, width: 300, height: 1)
+        let recording = await MotionProbe.record(window, region: strip) { model.disabled = true }
+
+        #expect(!recording.settled.matches(recording.before), "the picker dimmed")
+        #expect(!recording.inBetween.isEmpty, "it fades in \(recording.frames.count) frames")
+    }
+
     // MARK: Switch
 
     private struct Switch: View {
