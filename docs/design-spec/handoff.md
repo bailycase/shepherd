@@ -4,9 +4,10 @@
 > delivered and lightly formatted as Markdown, kept as history. Shepherd now implements Night
 > Watch, the design system `DESIGN.md` describes (`Packages/ShepherdUI`), and most of what
 > follows is gone from the code: the `Tokens`/`Fonts`/`Metrics` names, the mock palette, the
-> type ramp, one-line tool rows and tool groups, the 52pt header, and many dimensions. Don't
-> implement from this file; where it disagrees with `DESIGN.md`, `DESIGN.md` wins. The per-board
-> renders live in [`boards/`](boards/) (iOS boards under [`boards/ios/`](boards/ios/)).
+> type ramp, one-line tool rows and tool groups, the 52pt header, subagent rows in the sidebar,
+> and many dimensions. Don't implement from this file; where it disagrees with `DESIGN.md`,
+> `DESIGN.md` wins. The per-board renders live in [`boards/`](boards/) (iOS boards under
+> [`boards/ios/`](boards/ios/)).
 
 For the implementing agent. Source of truth for values: tokens.json (light + dark). Visual
 reference: the Option A, Running, Tool row states, Foundations and Components artboards on
