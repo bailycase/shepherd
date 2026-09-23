@@ -95,7 +95,6 @@ Additions the boards don't have:
 
 - The composer's **delivery chip** (Follow-up / Steer), shown while a turn runs with a draft,
   because pi supports both.
-- The toolbar's **subagent rollup** ("3 subagents · 1.6m tok").
 - **Transcript search** in the palette ("Found in conversations").
 - A **quit confirmation** while agents are working.
 
