@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import AppKit
 import ShepherdCore
 import ShepherdSessions
@@ -29,12 +29,12 @@ private struct ModelField: View {
     }
 
     var body: some View {
-        TextField("", text: $model, prompt: Text("pi's default").foregroundStyle(Tokens.textMuted))
+        TextField("", text: $model, prompt: Text("pi's default").foregroundStyle(Color.nw.textTertiary))
             .textFieldStyle(.plain)
-            .font(Fonts.code)
-            .foregroundStyle(Tokens.text)
+            .font(Font.nw(.mono))
+            .foregroundStyle(Color.nw.textPrimary)
             .focused($focused)
-            .shepherdField(focused: focused, mono: true)
+            .nwField(focused: focused, mono: true)
             .onChange(of: focused) { showSuggestions = focused && !options.isEmpty }
             .onChange(of: model) { if focused { showSuggestions = !options.isEmpty } }
             .popover(isPresented: $showSuggestions, arrowEdge: .bottom) {
@@ -48,16 +48,16 @@ private struct ModelField: View {
                         }
                         if matches.isEmpty {
                             Text("No matching models")
-                                .font(Fonts.caption)
-                                .foregroundStyle(Tokens.textMuted)
+                                .font(Font.nw(.caption))
+                                .foregroundStyle(Color.nw.textTertiary)
                                 .padding(8)
                         }
                     }
                 }
                 .scrollIndicators(.hidden)
                 .padding(4)
-                .frame(width: Metrics.modelPickerWidth, height: min(CGFloat(max(matches.count, 1)) * 30 + 8, 260))
-                .background(Tokens.bgRaised)
+                .frame(width: AppLayout.modelPickerWidth, height: min(CGFloat(max(matches.count, 1)) * 30 + 8, 260))
+                .background(Color.nw.bgRaised)
             }
     }
 }
@@ -69,13 +69,13 @@ private struct ModelSuggestionRow: View {
 
     var body: some View {
         Text(id)
-            .font(Fonts.code)
-            .foregroundStyle(Tokens.text)
+            .font(Font.nw(.mono))
+            .foregroundStyle(Color.nw.textPrimary)
             .lineLimit(1)
             .padding(.horizontal, 10)
             .frame(height: 30)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(hovering ? Tokens.bgHover : Color.clear, in: RoundedRectangle(cornerRadius: Radius.sm))
+            .background(hovering ? Color.nw.bgHover : Color.clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .onTapGesture(perform: action)
@@ -88,7 +88,7 @@ struct SheetLinkButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(label, action: action).buttonStyle(ShepherdButtonStyle(.ghost, size: .small))
+        Button(label, action: action).buttonStyle(NWButtonStyle(.ghost, size: .s))
     }
 }
 
@@ -201,11 +201,11 @@ struct NewAgentSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("New agent")
-                    .font(Fonts.title)
-                    .foregroundStyle(Tokens.text)
+                    .font(Font.nw(.title))
+                    .foregroundStyle(Color.nw.textPrimary)
                 Text("Starts pi as a native thread that runs until Shepherd quits. Pi names the agent from your first prompt.")
-                    .font(Fonts.labelRegular)
-                    .foregroundStyle(Tokens.textTertiary)
+                    .font(Font.nw(.body))
+                    .foregroundStyle(Color.nw.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(EdgeInsets(top: 20, leading: 20, bottom: 8, trailing: 20))
@@ -213,7 +213,7 @@ struct NewAgentSheet: View {
             VStack(spacing: 0) {
                 if !connectedHosts.isEmpty {
                     SheetRow("Machine") {
-                        PopupMenu(remoteConnection?.config.name ?? "This Mac", minWidth: 180) {
+                        NWPopupMenu(remoteConnection?.config.name ?? "This Mac", minWidth: 180) {
                             Button("This Mac") { targetHostID = nil }
                             ForEach(connectedHosts) { connection in
                                 Button(connection.config.name) { targetHostID = connection.id }
@@ -226,10 +226,10 @@ struct NewAgentSheet: View {
                     HStack(spacing: 8) {
                         if targetSpaces.isEmpty {
                             Text("No spaces yet")
-                                .font(Fonts.labelRegular)
-                                .foregroundStyle(Tokens.textTertiary)
+                                .font(Font.nw(.body))
+                                .foregroundStyle(Color.nw.textSecondary)
                         } else {
-                            PopupMenu(selectedSpace?.name ?? "Choose a space", minWidth: 180) {
+                            NWPopupMenu(selectedSpace?.name ?? "Choose a space", minWidth: 180) {
                                 ForEach(targetSpaces) { space in
                                     Button(space.name) { spaceID = space.id }
                                 }
@@ -244,9 +244,9 @@ struct NewAgentSheet: View {
                     HStack(spacing: 8) {
                         TextField("", text: $workingDirectory)
                             .textFieldStyle(.plain)
-                            .font(Fonts.code)
-                            .foregroundStyle(Tokens.text)
-                            .shepherdField(mono: true)
+                            .font(Font.nw(.mono))
+                            .foregroundStyle(Color.nw.textPrimary)
+                            .nwField(mono: true)
                         SheetLinkButton(label: "Choose…") { remotePicking = .cwd }
                     }
                 }
@@ -256,20 +256,20 @@ struct NewAgentSheet: View {
                     SheetRow("Worktree") {
                         HStack(spacing: 10) {
                             Toggle("Worktree", isOn: $worktree)
-                                .toggleStyle(.shepherdSwitch)
+                                .toggleStyle(.nwSwitch)
                                 .labelsHidden()
                                 .disabled(targetHostID != nil && remoteConnection?.supportsWorktreeCreation != true)
                             if worktree {
                                 TextField("", text: $worktreeBranch,
-                                          prompt: Text("branch name").foregroundStyle(Tokens.textMuted))
+                                          prompt: Text("branch name").foregroundStyle(Color.nw.textTertiary))
                                     .textFieldStyle(.plain)
-                                    .font(Fonts.code)
-                                    .foregroundStyle(Tokens.text)
-                                    .shepherdField(mono: true)
+                                    .font(Font.nw(.mono))
+                                    .foregroundStyle(Color.nw.textPrimary)
+                                    .nwField(mono: true)
                             } else {
                                 Text("Isolate the agent on its own branch")
-                                    .font(Fonts.caption)
-                                    .foregroundStyle(Tokens.textTertiary)
+                                    .font(Font.nw(.caption))
+                                    .foregroundStyle(Color.nw.textSecondary)
                             }
                         }
                     }
@@ -278,20 +278,20 @@ struct NewAgentSheet: View {
                 if worktree {
                     SheetRow("Base") {
                         VStack(alignment: .leading, spacing: 4) {
-                            TextField("", text: $worktreeBase, prompt: Text("base branch").foregroundStyle(Tokens.textMuted))
+                            TextField("", text: $worktreeBase, prompt: Text("base branch").foregroundStyle(Color.nw.textTertiary))
                                 .textFieldStyle(.plain)
-                                .font(Fonts.code)
-                                .foregroundStyle(Tokens.text)
-                                .shepherdField(mono: true)
+                                .font(Font.nw(.mono))
+                                .foregroundStyle(Color.nw.textPrimary)
+                                .nwField(mono: true)
                             Text(resolvingBase ? "Resolving on the target…" : baseNote)
-                                .font(Fonts.caption).foregroundStyle(Tokens.textMuted)
+                                .font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                         }
                         .padding(.vertical, 6)
                     }
                     SheetRow("Fetch") {
                         HStack(spacing: 10) {
-                            Toggle("Fetch origin before creating", isOn: $fetchFirst).toggleStyle(.shepherdSwitch).labelsHidden()
-                            Text("Fetch origin before creating").font(Fonts.caption).foregroundStyle(Tokens.textTertiary)
+                            Toggle("Fetch origin before creating", isOn: $fetchFirst).toggleStyle(.nwSwitch).labelsHidden()
+                            Text("Fetch origin before creating").font(Font.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
                             Spacer(minLength: 0)
                             SheetLinkButton(label: "Resolve base…") { Task { await resolveBase(fetch: fetchFirst) } }
                         }
@@ -303,7 +303,7 @@ struct NewAgentSheet: View {
                 }
 
                 SheetRow("Thinking") {
-                    SegmentedControl(selection: Binding(get: { defaults.thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
+                    NWSegmentedPicker(selection: Binding(get: { defaults.thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
                                      options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
                 }
 
@@ -312,20 +312,18 @@ struct NewAgentSheet: View {
                 // this is the field you actually type into.
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Prompt")
-                        .font(Fonts.label)
-                        .foregroundStyle(Tokens.textSecondary)
+                        .font(Font.nw(.ui))
+                        .foregroundStyle(Color.nw.textSecondary)
                     TextEditor(text: $initialPrompt)
                         .focused($promptFocused)
-                        .font(Fonts.bodySmall)
-                        .foregroundStyle(Tokens.text)
+                        .font(Font.nw(.body))
+                        .foregroundStyle(Color.nw.textPrimary)
                         .frame(height: 96)
                         .scrollContentBackground(.hidden)
                         .padding(8)
-                        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.lg))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.lg)
-                                .strokeBorder(promptFocused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1)
-                        )
+                        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+                        .nwFocusRing(promptFocused, radius: NW.Radius.m)
                 }
                 .padding(EdgeInsets(top: 12, leading: 20, bottom: 4, trailing: 20))
             }
@@ -333,25 +331,25 @@ struct NewAgentSheet: View {
 
             HStack(spacing: 10) {
                 if !defaults.ready && !defaults.loading {
-                    Button("Retry defaults") { loadModels() }.buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    Button("Retry defaults") { loadModels() }.buttonStyle(NWButtonStyle(.secondary, size: .s))
                 }
                 Text(errorText ?? (defaults.loading ? "Loading host defaults…" : sessionCaption))
-                    .font(Fonts.caption)
-                    .foregroundStyle(errorText == nil ? Tokens.textTertiary : Tokens.dangerText)
+                    .font(Font.nw(.caption))
+                    .foregroundStyle(errorText == nil ? Color.nw.textSecondary : Color.nw.failed)
                     .lineLimit(2)
                 Spacer(minLength: 12)
                 Button("Cancel") { vm.showNewAgentSheet = false }
-                    .buttonStyle(ShepherdButtonStyle(.secondary))
+                    .buttonStyle(NWButtonStyle(.secondary))
                     .keyboardShortcut(.cancelAction)
                 Button(starting ? "Starting…" : "Start agent") { start() }
-                    .buttonStyle(ShepherdButtonStyle(.primary))
+                    .buttonStyle(NWButtonStyle(.primary))
                     .keyboardShortcut(.defaultAction)
                     .disabled(!canStart)
             }
             .padding(EdgeInsets(top: 8, leading: 20, bottom: 20, trailing: 20))
         }
         .frame(width: 560)
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
         .onAppear {
             if let preselect = vm.newAgentPreselect {
                 // Opened from a remote space header's `+`.

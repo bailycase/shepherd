@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import AppKit
 import ShepherdSessions
 
@@ -16,6 +16,8 @@ public struct ShepherdMacApp: App {
     @ObservedObject private var themes = ThemeManager.shared
 
     public init() {
+        // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
+        NWFonts.register()
         _vm = State(initialValue: ShepherdViewModel(server: .shared))
     }
 
@@ -32,7 +34,7 @@ public struct ShepherdMacApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: Metrics.windowDefaultWidth, height: Metrics.windowDefaultHeight)
+        .defaultSize(width: AppLayout.windowDefaultWidth, height: AppLayout.windowDefaultHeight)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .appSettings) {

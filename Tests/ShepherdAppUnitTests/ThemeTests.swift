@@ -29,7 +29,7 @@ struct PiThemeFileTests {
         let data = try ShepherdPiTheme.encodedData(for: theme)
         let document = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
-        #expect(document["name"] as? String == "basalt")
+        #expect(document["name"] as? String == "night-watch")
         #expect((document["$schema"] as? String)?.hasSuffix("theme-schema.json") == true)
         let colors = try #require(document["colors"] as? [String: String])
         #expect(Set(colors.keys) == Self.requiredColorKeys)
@@ -41,8 +41,8 @@ struct PiThemeFileTests {
     }
 
     @Test func variantIDsAreTheSpellingNeovimWatches() {
-        #expect(ShepherdTheme.all.map(\.id) == ["basalt-dark", "basalt-light"])
-        #expect(ShepherdTheme.basaltDark.isDark && !ShepherdTheme.basaltLight.isDark)
+        #expect(ShepherdTheme.all.map(\.id) == ["night-watch-dark", "night-watch-light"])
+        #expect(ShepherdTheme.nightWatchDark.isDark && !ShepherdTheme.nightWatchLight.isDark)
     }
 
     @Test func installingWritesTheThemeAndTheActiveVariantMarker() throws {
@@ -50,24 +50,24 @@ struct PiThemeFileTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         let marker = directory.appendingPathComponent(ShepherdPiTheme.variantFilename)
 
-        let path = try ShepherdPiTheme.installedPath(for: .basaltDark, directory: directory)
-        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == ShepherdPiTheme.encodedData(for: .basaltDark))
-        #expect(try String(contentsOf: marker, encoding: .utf8) == "basalt-dark\n")
+        let path = try ShepherdPiTheme.installedPath(for: .nightWatchDark, directory: directory)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == ShepherdPiTheme.encodedData(for: .nightWatchDark))
+        #expect(try String(contentsOf: marker, encoding: .utf8) == "night-watch-dark\n")
 
-        #expect(try ShepherdPiTheme.installedPath(for: .basaltLight, directory: directory) == path)
-        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == ShepherdPiTheme.encodedData(for: .basaltLight))
-        #expect(try String(contentsOf: marker, encoding: .utf8) == "basalt-light\n")
+        #expect(try ShepherdPiTheme.installedPath(for: .nightWatchLight, directory: directory) == path)
+        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == ShepherdPiTheme.encodedData(for: .nightWatchLight))
+        #expect(try String(contentsOf: marker, encoding: .utf8) == "night-watch-light\n")
     }
 
     /// pi watches the file; rewriting identical bytes would trigger a pointless reload.
     @Test func reinstallingTheSameThemeLeavesTheFileAlone() throws {
         let directory = try Fixture.scratchDirectory("pi-theme")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let path = try ShepherdPiTheme.installedPath(for: .basaltDark, directory: directory)
+        let path = try ShepherdPiTheme.installedPath(for: .nightWatchDark, directory: directory)
         let past = Date(timeIntervalSince1970: 1_000_000)
         try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: path)
 
-        _ = try ShepherdPiTheme.installedPath(for: .basaltDark, directory: directory)
+        _ = try ShepherdPiTheme.installedPath(for: .nightWatchDark, directory: directory)
 
         let modified = try FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date
         #expect(modified == past)
@@ -81,7 +81,7 @@ struct AppearanceModeTests {
         ThemeManager(store: defaults, environmentTheme: env, systemColorScheme: system)
     }
 
-    @Test(arguments: [(ColorScheme.dark, "basalt-dark"), (.light, "basalt-light")])
+    @Test(arguments: [(ColorScheme.dark, "night-watch-dark"), (.light, "night-watch-light")])
     func systemModeFollowsTheSystemAppearance(system: ColorScheme, theme: String) {
         let themes = manager(Fixture.defaults(), system: system)
         #expect(themes.mode == .system)
@@ -94,19 +94,19 @@ struct AppearanceModeTests {
 
         let reloaded = manager(defaults, system: .dark)
         #expect(reloaded.mode == .light)
-        #expect(reloaded.current.id == "basalt-light")
+        #expect(reloaded.current.id == "night-watch-light")
         #expect(defaults.string(forKey: "shepherd.appearance") == "light")
     }
 
     @Test func systemAppearanceChangesOnlyMatterInSystemMode() {
         let system = manager(Fixture.defaults(), system: .dark)
-        #expect(system.updateSystemColorScheme(.light)?.id == "basalt-light")
+        #expect(system.updateSystemColorScheme(.light)?.id == "night-watch-light")
         #expect(system.updateSystemColorScheme(.light) == nil, "no change, no reconfiguration")
 
         let pinned = manager(Fixture.defaults(), system: .dark)
         pinned.select(.dark)
         #expect(pinned.updateSystemColorScheme(.light) == nil)
-        #expect(pinned.current.id == "basalt-dark")
+        #expect(pinned.current.id == "night-watch-dark")
     }
 
     @Test func resetReturnsToSystemAndClearsTheStoredChoice() {
@@ -114,19 +114,19 @@ struct AppearanceModeTests {
         let themes = manager(defaults, system: .dark)
         themes.select(.light)
 
-        #expect(themes.resetToDefault().id == "basalt-dark")
+        #expect(themes.resetToDefault().id == "night-watch-dark")
         #expect(themes.mode == .system)
         #expect(defaults.object(forKey: "shepherd.appearance") == nil)
     }
 
     /// `SHEPHERD_THEME` forces a variant at launch (screenshots) and is what reset returns to.
-    @Test(arguments: [("basalt-dark", AppearanceMode.dark), ("shepherd-dark", .dark), ("basalt-light", .light)])
+    @Test(arguments: [("night-watch-dark", AppearanceMode.dark), ("shepherd-dark", .dark), ("night-watch-light", .light)])
     func theLaunchOverrideWinsOverStoredAndSystemChoices(env: String, mode: AppearanceMode) {
         let defaults = Fixture.defaults()
         defaults.set("system", forKey: "shepherd.appearance")
         let themes = manager(defaults, env: env, system: mode == .dark ? .light : .dark)
         #expect(themes.mode == mode)
-        #expect(themes.resetToDefault().id == (mode == .dark ? "basalt-dark" : "basalt-light"))
+        #expect(themes.resetToDefault().id == (mode == .dark ? "night-watch-dark" : "night-watch-light"))
     }
 
     @Test func anUnknownLaunchOverrideIsIgnored() {

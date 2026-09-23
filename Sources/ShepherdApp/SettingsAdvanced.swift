@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import AppKit
 import ShepherdProtocol
 
@@ -35,7 +35,7 @@ struct AdvancedSettings: View {
                     }
                     SettingsRow(title: "Update channel",
                                 subtitle: "Stable: tagged releases. Release Candidate and Beta also get newer stable builds. Nightly: every push, least tested.") {
-                        PopupMenu(updater.channel.label, minWidth: 120) {
+                        NWPopupMenu(updater.channel.label, minWidth: 120) {
                             ForEach(UpdateChannel.allCases) { channel in
                                 Button(channel.label) { updater.channel = channel }
                             }
@@ -45,7 +45,7 @@ struct AdvancedSettings: View {
                 SettingsRow(title: "Version \(version)") {
                     if updater.available {
                         Button("Check for updates") { updater.checkForUpdates() }
-                            .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                            .buttonStyle(NWButtonStyle(.secondary, size: .s))
                     }
                 }
             }
@@ -53,7 +53,7 @@ struct AdvancedSettings: View {
                 SettingsRow(title: "Reset settings",
                             subtitle: "Restores appearance, font, agent, shell and keyboard preferences. Spaces, agents and layouts are untouched.") {
                     Button("Reset…") { confirmingReset = true }
-                        .buttonStyle(ShepherdButtonStyle(.destructive, size: .small))
+                        .buttonStyle(NWButtonStyle(.danger, size: .s))
                 }
             }
         }

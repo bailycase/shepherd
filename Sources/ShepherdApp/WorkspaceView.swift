@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import AppKit
 import ShepherdCore
 import ShepherdProtocol
@@ -51,11 +51,11 @@ struct WorkspaceView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Tokens.bgSurface)
+            .background(Color.nw.bgWindow)
         }
         // Every path that changes the active tab lands here: keep parking bookkeeping current.
         .onChange(of: vm.activeTabID, initial: true) { vm.noteActiveTabVisited() }
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
         // layouts (see TerminalDropOverlay.swift).
@@ -69,25 +69,25 @@ struct EmptyWorkspace: View {
     @ObservedObject private var keys = KeybindingsStore.shared
 
     var body: some View {
-        VStack(spacing: 16) {
+        Group {
             if let space = vm.selectedSpace {
                 let hasAgents = vm.state.agents.contains { $0.spaceID == space.id }
-                EmptyState(Text(hasAgents ? "No agent selected" : "No agents in \(space.name)"),
-                           caption: hasAgents ? "Pick one in the sidebar, or start another in \(space.name)."
-                                              : "Start one to work in \(space.path.abbreviatingWithTilde).",
-                           framed: false)
-                HStack(spacing: 8) {
+                NWEmptyState(Text(hasAgents ? "No agent selected" : "No agents in \(space.name)"),
+                             message: hasAgents ? "Pick one in the sidebar, or start another in \(space.name)."
+                                                : "Start one to work in \(space.path.abbreviatingWithTilde).") {
                     Button("New agent") { vm.quickCreateAgent(in: space.id) }
-                        .buttonStyle(ShepherdButtonStyle(.primary))
-                    Keycaps(chord: keys.display(.newAgent))
+                        .buttonStyle(.nw(.primary))
+                    NWKeycap(keys.display(.newAgent))
                 }
             } else if vm.state.spaces.isEmpty {
-                EmptyState(Text("No spaces yet"), caption: "A space is a project folder your agents work in.", framed: false)
-                Button("New space…") { vm.addSpaceFromPanel() }
-                    .buttonStyle(ShepherdButtonStyle(.primary))
+                NWEmptyState(Text("No spaces yet"), message: "A space is a project folder your agents work in.") {
+                    Button("New space…") { vm.addSpaceFromPanel() }
+                        .buttonStyle(.nw(.primary))
+                }
             } else {
-                EmptyState(Text("No agent selected"), caption: "Pick one in the sidebar, or start a new one.", framed: false)
-                Keycaps(chord: keys.display(.newAgent))
+                NWEmptyState(Text("No agent selected"), message: "Pick one in the sidebar, or start a new one.") {
+                    NWKeycap(keys.display(.newAgent))
+                }
             }
         }
         .frame(maxWidth: 420)
@@ -236,10 +236,10 @@ struct PaneTreeView: View {
     private func separatorColor(for split: PaneNode) -> Color {
         guard let focused = vm.focusedPaneID,
               case .split(_, _, let first, let second) = split else {
-            return Tokens.border
+            return Color.nw.lineSubtle
         }
         let bordersFocused = first.contains(focused) || second.contains(focused)
-        return bordersFocused ? Tokens.accent.opacity(0.34) : Tokens.border
+        return bordersFocused ? Color.nw.running.opacity(0.34) : Color.nw.lineSubtle
     }
 }
 
@@ -352,7 +352,7 @@ struct PaneLeafView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.focusedPaneID = pane.id })
     }
@@ -553,7 +553,7 @@ private struct RemotePaneSplitView: View {
     }
 
     private func separator(axis: SplitAxis, size: CGSize) -> some View {
-        Tokens.border
+        Color.nw.lineSubtle
             .frame(width: axis == .vertical ? 1 : nil, height: axis == .horizontal ? 1 : nil)
             .overlay {
                 Color.clear
@@ -638,7 +638,7 @@ private struct RemoteTerminalPane: View {
                     PanePlaceholder(text: "attaching…").allowsHitTesting(false)
                 }
             }
-            .background(Tokens.bgSurface)
+            .background(Color.nw.bgWindow)
         case .failed(let reason):
             PanePlaceholder(text: "remote session unavailable · \(reason)")
         case .exited(let code):
@@ -652,8 +652,8 @@ struct PanePlaceholder: View {
 
     var body: some View {
         Text(text)
-            .font(Fonts.mono(10.5))
-            .foregroundStyle(Tokens.textMuted)
+            .font(Font.nwMono(10.5))
+            .foregroundStyle(Color.nw.textTertiary)
             .padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

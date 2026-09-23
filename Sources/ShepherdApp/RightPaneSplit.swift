@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import ShepherdCore
-import ShepherdDesign
+import ShepherdUI
 
 /// Which subagent each agent's right pane is inspecting, and the pane's width. Device-local
 /// view state: the width persists, the selection does not.
@@ -17,7 +17,7 @@ final class RightPaneState {
 
     init() {
         let saved = UserDefaults.standard.double(forKey: Self.widthKey)
-        width = saved >= Metrics.paneMinWidth ? CGFloat(saved) : 0
+        width = saved >= AppLayout.paneMinWidth ? CGFloat(saved) : 0
     }
 
     func toggle(agentID: AgentID, runID: String) {
@@ -26,8 +26,8 @@ final class RightPaneState {
 
     /// The pane width for a window of `total`: 600 by default, at least 480, at most half.
     func resolvedWidth(total: CGFloat, live: CGFloat? = nil) -> CGFloat {
-        let preferred = live ?? (width > 0 ? width : Metrics.paneDefaultWidth)
-        return min(max(preferred, Metrics.paneMinWidth), max(Metrics.paneMinWidth, total * Metrics.paneMaxFraction))
+        let preferred = live ?? (width > 0 ? width : AppLayout.paneDefaultWidth)
+        return min(max(preferred, AppLayout.paneMinWidth), max(AppLayout.paneMinWidth, total * AppLayout.paneMaxFraction))
     }
 }
 
@@ -47,7 +47,7 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
             HStack(spacing: 0) {
                 content().frame(width: showPane ? total - width - 1 : total)
                 if showPane {
-                    Tokens.border.frame(width: 1)
+                    Color.nw.lineSubtle.frame(width: 1)
                         .overlay {
                             Color.clear.frame(width: 9).contentShape(Rectangle())
                                 .onHover { inside in if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() } }

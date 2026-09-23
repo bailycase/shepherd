@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
@@ -55,13 +55,11 @@ struct PaletteCard: View {
     var body: some View {
         VStack(spacing: 0) {
             searchRow
-            Tokens.border.frame(height: 1)
+            NWHairline()
             resultsList
         }
-        .frame(width: Metrics.paletteWidth)
-        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.xxl))
-        .overlay { RoundedRectangle(cornerRadius: Radius.xxl).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
-        .shadow(color: Tokens.menuShadow, radius: 32, y: 16)
+        .frame(width: AppLayout.paletteWidth)
+        .nwPopover()
         .onAppear {
             query = initialQuery
             fieldFocused = true
@@ -98,22 +96,22 @@ struct PaletteCard: View {
         HStack(spacing: 12) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(Tokens.textTertiary)
+                .foregroundStyle(Color.nw.textSecondary)
             TextField("Search commands, agents, subagents…", text: $query)
                 .textFieldStyle(.plain)
-                .font(Fonts.sans(16))
-                .foregroundStyle(Tokens.text)
+                .font(Font.nwSans(16))
+                .foregroundStyle(Color.nw.textPrimary)
                 .focused($fieldFocused)
                 .onSubmit(runSelected)
             HStack(spacing: 2) {
                 ForEach(PaletteItem.Scope.allCases, id: \.self) { option in
                     Button { scope = option } label: {
                         Text(option.title)
-                            .font(Fonts.sans(12.5, option == scope ? .semibold : .regular))
-                            .foregroundStyle(option == scope ? Tokens.primaryLabel : Tokens.textSecondary)
+                            .font(Font.nwSans(12.5, option == scope ? .semibold : .regular))
+                            .foregroundStyle(option == scope ? Color.nw.textOnLantern : Color.nw.textSecondary)
                             .padding(.horizontal, 8)
                             .frame(height: 24)
-                            .background(option == scope ? Tokens.primaryFill : .clear, in: RoundedRectangle(cornerRadius: Radius.sm))
+                            .background(option == scope ? Color.nw.lantern : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -123,7 +121,7 @@ struct PaletteCard: View {
             .help("⇥ switches scope")
         }
         .padding(.horizontal, 18)
-        .frame(height: Metrics.paletteSearchHeight)
+        .frame(height: AppLayout.paletteSearchHeight)
     }
 
     // MARK: Results
@@ -136,9 +134,9 @@ struct PaletteCard: View {
                     ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
                         if index == 0 || rows[index - 1].section != item.section {
                             Text(item.section.title.uppercased())
-                                .font(Fonts.sectionSmall)
+                                .font(Font.nw(.micro))
                                 .tracking(0.6)
-                                .foregroundStyle(Tokens.textMuted)
+                                .foregroundStyle(Color.nw.textTertiary)
                                 .padding(.horizontal, 12)
                                 .padding(.top, index == 0 ? 8 : 12)
                                 .padding(.bottom, 4)
@@ -150,16 +148,16 @@ struct PaletteCard: View {
                     }
                     if rows.isEmpty {
                         Text(query.isEmpty ? "Nothing here yet" : "No matches")
-                            .font(Fonts.caption)
-                            .foregroundStyle(Tokens.textMuted)
+                            .font(Font.nw(.caption))
+                            .foregroundStyle(Color.nw.textTertiary)
                             .frame(maxWidth: .infinity)
-                            .frame(height: Metrics.paletteRowHeight)
+                            .frame(height: AppLayout.paletteRowHeight)
                     }
                 }
                 .padding(8)
             }
             .scrollIndicators(.hidden)
-            .frame(maxHeight: Metrics.paletteRowHeight * 14)
+            .frame(maxHeight: AppLayout.paletteRowHeight * 14)
             .fixedSize(horizontal: false, vertical: true)
             .onChange(of: selectedIndex) {
                 if results.indices.contains(selectedIndex) { proxy.scrollTo(results[selectedIndex].id) }
@@ -206,31 +204,31 @@ private struct PaletteRow: View {
                         .foregroundStyle(iconColor)
                         .frame(width: 18)
                     Text(item.title)
-                        .font(Fonts.bodySmall)
-                        .foregroundStyle(Tokens.text)
+                        .font(Font.nw(.body))
+                        .foregroundStyle(Color.nw.textPrimary)
                         .lineLimit(1)
                         .layoutPriority(1)
                     if let subtitle = item.subtitle {
                         Text(subtitle)
-                            .font(Fonts.description)
-                            .foregroundStyle(Tokens.textMuted)
+                            .font(Font.nw(.caption))
+                            .foregroundStyle(Color.nw.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
                     Spacer(minLength: 12)
-                    if let shortcut = item.shortcut { Keycaps(chord: shortcut) }
+                    if let shortcut = item.shortcut { NWKeycap(shortcut) }
                 }
                 if let snippet = item.contentSnippet {
                     snippetText(snippet)
-                        .font(Fonts.caption)
+                        .font(Font.nw(.caption))
                         .lineLimit(1)
                         .padding(.leading, 28)
                 }
             }
             .padding(.horizontal, 12)
-            .frame(minHeight: Metrics.paletteRowHeight)
+            .frame(minHeight: AppLayout.paletteRowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(selected ? Tokens.accentBg : .clear, in: RoundedRectangle(cornerRadius: Radius.md))
+            .background(selected ? Color.nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -244,7 +242,7 @@ private struct PaletteRow: View {
         case .child(_, let child), .remoteChild(_, _, let child):
             SubagentStyle.color(nativeSubagentState(child))
         default:
-            selected ? Tokens.accent : Tokens.textTertiary
+            selected ? Color.nw.running : Color.nw.textSecondary
         }
     }
 
@@ -252,11 +250,11 @@ private struct PaletteRow: View {
     private func snippetText(_ snippet: String) -> Text {
         guard let term = highlightTerm?.trimmingCharacters(in: .whitespaces), !term.isEmpty,
               let range = snippet.range(of: term, options: .caseInsensitive) else {
-            return Text(snippet).foregroundStyle(Tokens.textMuted)
+            return Text(snippet).foregroundStyle(Color.nw.textTertiary)
         }
-        let before = Text(snippet[snippet.startIndex..<range.lowerBound]).foregroundStyle(Tokens.textMuted)
-        let match = Text(snippet[range]).foregroundStyle(Tokens.text).bold()
-        let after = Text(snippet[range.upperBound...]).foregroundStyle(Tokens.textMuted)
+        let before = Text(snippet[snippet.startIndex..<range.lowerBound]).foregroundStyle(Color.nw.textTertiary)
+        let match = Text(snippet[range]).foregroundStyle(Color.nw.textPrimary).bold()
+        let after = Text(snippet[range.upperBound...]).foregroundStyle(Color.nw.textTertiary)
         return Text("\(before)\(match)\(after)")
     }
 }

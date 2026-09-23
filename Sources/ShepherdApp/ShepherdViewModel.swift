@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import AppKit
 import ShepherdCore
 import ShepherdProtocol

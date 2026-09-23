@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
@@ -67,13 +67,14 @@ struct Composer: View {
                 .padding(.horizontal, 4)
             }
             if let error = store.loadError {
-                InlineError("Lost connection to the agent process. \(error)", actionTitle: "Reconnect") {
-                    Task { await store.refresh(fresh: true) }
+                NWBanner(.failed, title: "Lost connection to the agent process.", message: error) {
+                    Button("Reconnect") { Task { await store.refresh(fresh: true) } }
+                        .buttonStyle(.nw(.secondary, size: .s))
                 }
             } else if let attachmentError {
-                InlineError(attachmentError)
+                NWBanner(.failed, title: attachmentError)
             } else if let notice = store.notice {
-                Text(notice).font(Fonts.caption).foregroundStyle(Tokens.textMuted).textSelection(.enabled).padding(.horizontal, 4)
+                Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled).padding(.horizontal, 4)
             }
             if commandQuery != nil {
                 SlashMenu(matches: commandMatches, total: commands.count, query: commandQuery ?? "", selected: $commandIndex) { choose($0) }
@@ -88,16 +89,16 @@ struct Composer: View {
             }
             card
         }
-        .frame(maxWidth: Metrics.threadMaxWidth)
+        .frame(maxWidth: AppLayout.threadMaxWidth)
         .padding(.horizontal, gutter)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
             // The thread fades under the composer.
-            LinearGradient(colors: [Tokens.bgSurface.opacity(0), Tokens.bgSurface], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [Color.nw.bgWindow.opacity(0), Color.nw.bgWindow], startPoint: .top, endPoint: .bottom)
                 .frame(height: 48).offset(y: -48).allowsHitTesting(false)
         }
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
         .onChange(of: commandQuery) { _, _ in commandIndex = 0 }
         // The catalog decides whether the thinking chip applies; it is cached per process.
         .task { if models.isEmpty { await loadModels() } }
@@ -118,7 +119,7 @@ struct Composer: View {
             if !attachments.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(attachments) { attachment in
-                        AttachmentChip(attachment.name) { attachments.removeAll { $0.id == attachment.id } }
+                        NWAttachmentChip(attachment.name) { attachments.removeAll { $0.id == attachment.id } }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -141,10 +142,8 @@ struct Composer: View {
             }
             actionRow
         }
-        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.xl))
-        .overlay { RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(focused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1) }
-        .background { RoundedRectangle(cornerRadius: Radius.xl + 3).fill(focused ? Tokens.focusRing : .clear).padding(-3) }
-        .shadow(color: Tokens.composerShadow, radius: 3, y: 1)
+        .nwCard(line: .nw.lineStrong)
+        .nwFocusRing(focused, radius: NW.Radius.m)
         .onDrop(of: [.image, .fileURL], isTargeted: canAttach ? $dropTargeted : nil) { providers in
             guard canAttach else { return false }
             attach(providers)
@@ -160,11 +159,11 @@ struct Composer: View {
 
     private var field: some View {
         TextField(placeholder, text: $store.draft, axis: .vertical)
-            .lineLimit(1...Metrics.composerMaxRows)
+            .lineLimit(1...AppLayout.composerMaxRows)
             .textFieldStyle(.plain)
-            .font(Fonts.bodySmall)
-            .lineSpacing(Fonts.bodySmallLeading)
-            .foregroundStyle(Tokens.text)
+            .font(Font.nw(.body))
+            .lineSpacing(NWTextStyle.body.lineSpacing)
+            .foregroundStyle(Color.nw.textPrimary)
             .autocorrectionDisabled()
             .focused(composing)
             .padding(EdgeInsets(top: 14, leading: 16, bottom: 6, trailing: 16))
@@ -209,8 +208,8 @@ struct Composer: View {
         HStack(spacing: 4) {
             if canAttach {
                 Button { pickImages() } label: {
-                    Image(systemName: "paperclip").font(.system(size: 14, weight: .regular)).foregroundStyle(Tokens.textSecondary)
-                        .frame(width: Metrics.buttonLarge, height: Metrics.buttonLarge).contentShape(Rectangle())
+                    Image(systemName: "paperclip").font(.system(size: 14, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
+                        .frame(width: NW.Height.controlL, height: NW.Height.controlL).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(attachments.count >= NativeImage.maxPerSend)
@@ -223,9 +222,9 @@ struct Composer: View {
                     dismissedQuery = nil
                     composing.wrappedValue = true
                 } label: {
-                    HStack(spacing: 6) { Text("/").foregroundStyle(Tokens.textMuted); Text("commands") }.font(Fonts.mono(12))
+                    HStack(spacing: 6) { Text("/").foregroundStyle(Color.nw.textTertiary); Text("commands") }.font(Font.nwMono(12))
                 }
-                .buttonStyle(ComposerChipStyle(active: commandQuery != nil))
+                .buttonStyle(NWComposerChipStyle(active: commandQuery != nil))
                 .accessibilityLabel("Commands")
             }
             modelChip
@@ -239,14 +238,14 @@ struct Composer: View {
 
     @ViewBuilder private var primary: some View {
         if store.busy {
-            Spinner(size: 13, color: Tokens.textMuted)
-                .frame(width: Metrics.buttonLarge, height: Metrics.buttonLarge)
+            ProgressView().progressViewStyle(.nwSpinner(size: 13, color: Color.nw.textTertiary))
+                .frame(width: NW.Height.controlL, height: NW.Height.controlL)
                 .accessibilityLabel("Waiting for pi")
         } else if running, dialogs.isEmpty, store.draft.isEmpty {
-            ComposerActionButton(.stop, enabled: active && store.supports("abort")) { stop() }
+            NWComposerActionButton(.stop, enabled: active && store.supports("abort")) { stop() }
                 .help(store.hasLiveSubagents ? "Stop the agent and its subagents" : "Stop the agent's turn")
         } else {
-            ComposerActionButton(.send, enabled: canSend && dialogs.isEmpty) { sendDraft() }
+            NWComposerActionButton(.send, enabled: canSend && dialogs.isEmpty) { sendDraft() }
                 .help(dialogs.isEmpty ? "Send (⏎)" : "Answer the question first")
         }
     }
@@ -263,11 +262,11 @@ struct Composer: View {
             let settable = store.snapshot?.supportedActions.contains("setModel") == true
             Button { openModels() } label: {
                 HStack(spacing: 6) {
-                    Text(nativeModelShortName(model)).font(Fonts.mono(12))
-                    if settable { ChipChevron() }
+                    Text(nativeModelShortName(model)).font(Font.nwMono(12))
+                    if settable { NWChipChevron() }
                 }
             }
-            .buttonStyle(ComposerChipStyle(active: menu == .models))
+            .buttonStyle(NWComposerChipStyle(active: menu == .models))
             .disabled(!settable || !store.supports("setModel"))
             .help("Model: \(model)")
             .accessibilityLabel("Model \(model)")
@@ -289,15 +288,15 @@ struct Composer: View {
                 }
             } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "lightbulb").font(.system(size: 11)).foregroundStyle(Tokens.textTertiary)
+                    Image(systemName: "lightbulb").font(.system(size: 11)).foregroundStyle(Color.nw.textSecondary)
                     Text("Thinking")
-                    Text(thinking.capitalized).foregroundStyle(Tokens.text).fontWeight(.medium)
-                    ChipChevron()
+                    Text(thinking.capitalized).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
+                    NWChipChevron()
                 }
-                .font(Fonts.caption)
-                .foregroundStyle(Tokens.textSecondary)
+                .font(Font.nw(.caption))
+                .foregroundStyle(Color.nw.textSecondary)
                 .padding(.horizontal, 10)
-                .frame(height: Metrics.chipHeight)
+                .frame(height: NW.Height.controlL)
                 .contentShape(Rectangle())
             }
             .menuStyle(.button)
@@ -326,10 +325,10 @@ struct Composer: View {
         } label: {
             HStack(spacing: 6) {
                 Text(store.delivery == .steer ? "Steer" : "Follow-up")
-                ChipChevron()
+                NWChipChevron()
             }
-            .font(Fonts.caption).foregroundStyle(Tokens.textSecondary)
-            .padding(.horizontal, 10).frame(height: Metrics.chipHeight).contentShape(Rectangle())
+            .font(Font.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+            .padding(.horizontal, 10).frame(height: NW.Height.controlL).contentShape(Rectangle())
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
         .accessibilityLabel("Delivery")
@@ -428,8 +427,8 @@ struct SlashMenu: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Commands").sectionStyle(Fonts.sectionSmall)
-                Text("· \(matches.count) of \(total)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("Commands").nwSectionLabel()
+                Text("· \(matches.count) of \(total)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
                 Spacer()
             }
             .padding(.horizontal, 14)
@@ -444,18 +443,18 @@ struct SlashMenu: View {
                                 .id(index)
                         }
                         if matches.isEmpty {
-                            Text("No command matches “/\(query)”").font(Fonts.caption).foregroundStyle(Tokens.textMuted)
-                                .padding(.horizontal, 14).frame(height: Metrics.menuRowHeight)
+                            Text("No command matches “/\(query)”").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                                .padding(.horizontal, 14).frame(height: AppLayout.menuRowHeight)
                         }
                     }
                     .padding(.horizontal, 6)
                     .padding(.bottom, 6)
                 }
-                .frame(height: min(CGFloat(max(matches.count, 1)), CGFloat(Metrics.menuMaxRows)) * Metrics.menuRowHeight + 6)
+                .frame(height: min(CGFloat(max(matches.count, 1)), CGFloat(AppLayout.menuMaxRows)) * AppLayout.menuRowHeight + 6)
                 .onChange(of: selected) { _, index in proxy.scrollTo(index) }
             }
         }
-        .menuSurface()
+        .nwPopover()
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Commands")
     }
@@ -464,16 +463,16 @@ struct SlashMenu: View {
         HStack(spacing: 12) {
             commandText(command.name)
                 .frame(width: 150, alignment: .leading)
-            Text(command.description ?? "").font(Fonts.caption).foregroundStyle(Tokens.textTertiary).lineLimit(1)
+            Text(command.description ?? "").font(Font.nw(.caption)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
             Spacer(minLength: 8)
-            if let source = command.source, source != "extension" { Tag(source) }
+            if let source = command.source, source != "extension" { NWTag(source) }
             if highlighted {
-                Image(systemName: "return").font(.system(size: 10, weight: .semibold)).foregroundStyle(Tokens.textMuted)
+                Image(systemName: "return").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         .padding(.horizontal, 10)
-        .frame(height: Metrics.menuRowHeight)
-        .rowBackground(selected: highlighted, hovering: false, selectedFill: Tokens.accentBg)
+        .frame(height: AppLayout.menuRowHeight)
+        .nwRowBackground(selected: highlighted, hovering: false, selectedFill: Color.nw.runningTint)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("/\(command.name), \(command.description ?? "")")
@@ -483,10 +482,10 @@ struct SlashMenu: View {
     private func commandText(_ name: String) -> Text {
         let typed = name.lowercased().hasPrefix(query) ? query.count : 0
         let head = String(name.prefix(typed)), tail = String(name.dropFirst(typed))
-        let slash = Text("/").foregroundStyle(Tokens.textMuted)
-        let typedPart = Text(head).fontWeight(.bold).foregroundStyle(Tokens.text)
-        return Text("\(slash)\(typedPart)\(Text(tail).foregroundStyle(Tokens.text))")
-            .font(Fonts.code)
+        let slash = Text("/").foregroundStyle(Color.nw.textTertiary)
+        let typedPart = Text(head).fontWeight(.bold).foregroundStyle(Color.nw.textPrimary)
+        return Text("\(slash)\(typedPart)\(Text(tail).foregroundStyle(Color.nw.textPrimary))")
+            .font(Font.nw(.mono))
     }
 }
 
@@ -538,25 +537,25 @@ struct ModelPicker: View {
         let flat = groups.flatMap(\.rows)
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Tokens.textMuted)
-                TextField("Search models", text: $query).textFieldStyle(.plain).font(Fonts.labelRegular).focused($searching)
+                Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Color.nw.textTertiary)
+                TextField("Search models", text: $query).textFieldStyle(.plain).font(Font.nw(.body)).focused($searching)
                     .onKeyPress(.downArrow) { selected = min(flat.count - 1, selected + 1); return .handled }
                     .onKeyPress(.upArrow) { selected = max(0, selected - 1); return .handled }
                     .onKeyPress(.return) { if flat.indices.contains(selected) { choose(flat[selected].entry.id) }; return .handled }
                     .onKeyPress(.escape) { close(); return .handled }
-                Text(KeybindingsStore.shared.display(.modelPicker)).font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text(KeybindingsStore.shared.display(.modelPicker)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
             .padding(.horizontal, 12)
             .frame(height: 38)
-            .overlay(alignment: .bottom) { Tokens.border.frame(height: 1) }
+            .overlay(alignment: .bottom) { NWHairline() }
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if models.isEmpty {
-                        HStack(spacing: 8) { Spinner(size: 12); Text("Loading models…").font(Fonts.caption).foregroundStyle(Tokens.textMuted) }
+                        HStack(spacing: 8) { ProgressView().progressViewStyle(.nwSpinner(size: 12)); Text("Loading models…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
                             .padding(14)
                     }
                     ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                        Text(group.title).sectionStyle(Fonts.sectionSmall).padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
+                        Text(group.title).nwSectionLabel().padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
                         ForEach(Array(group.rows.enumerated()), id: \.offset) { index, row in
                             let position = flatIndex(group: group.title, index: index, in: groups)
                             modelRow(row.entry, note: row.note, highlighted: position == selected)
@@ -570,9 +569,9 @@ struct ModelPicker: View {
             }
             .frame(maxHeight: 360)
         }
-        .frame(width: Metrics.modelPickerWidth)
+        .frame(width: AppLayout.modelPickerWidth)
         .fixedSize(horizontal: false, vertical: true)
-        .menuSurface()
+        .nwPopover()
         .onAppear { searching = true }
         .onChange(of: query) { _, _ in selected = 0 }
         .accessibilityElement(children: .contain)
@@ -591,17 +590,17 @@ struct ModelPicker: View {
     private func modelRow(_ entry: PiModelCatalog.Entry, note: String?, highlighted: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Tokens.accent).opacity(entry.id == current ? 1 : 0).frame(width: 12)
+                .foregroundStyle(Color.nw.running).opacity(entry.id == current ? 1 : 0).frame(width: 12)
             VStack(alignment: .leading, spacing: 1) {
-                Text(nativeModelShortName(entry.id)).font(Fonts.code).foregroundStyle(Tokens.text).lineLimit(1)
-                if let note { Text(note).font(Fonts.sans(11)).foregroundStyle(Tokens.textTertiary).lineLimit(1) }
+                Text(nativeModelShortName(entry.id)).font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+                if let note { Text(note).font(Font.nwSans(11)).foregroundStyle(Color.nw.textSecondary).lineLimit(1) }
             }
             Spacer(minLength: 8)
-            if let context = entry.context { Text(context).font(Fonts.micro).foregroundStyle(Tokens.textMuted) }
+            if let context = entry.context { Text(context).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary) }
         }
         .padding(.horizontal, 8)
-        .frame(height: note == nil ? 32 : Metrics.modelRowHeight)
-        .rowBackground(selected: highlighted, hovering: false, selectedFill: Tokens.accentBg)
+        .frame(height: note == nil ? 32 : AppLayout.modelRowHeight)
+        .nwRowBackground(selected: highlighted, hovering: false, selectedFill: Color.nw.runningTint)
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(entry.id + (entry.id == current ? ", current" : ""))
@@ -690,34 +689,34 @@ struct QuestionPanel: View {
         let blocked = !enabled || dialog.unavailable != nil
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                RunStateGlyph(.needsYou, size: 13)
-                Text(dialog.title).font(Fonts.label).foregroundStyle(Tokens.text).textSelection(.enabled)
+                NWStateGlyph(.attention, size: 13)
+                Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                if count > 1 { Text("1 / \(count)").font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit() }
+                if count > 1 { Text("1 / \(count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit() }
             }
             if let message = dialog.message {
                 ScrollView {
-                    Text(message).font(Fonts.code).foregroundStyle(Tokens.text).textSelection(.enabled)
+                    Text(message).font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 140)
                 .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(Tokens.bgMuted, in: RoundedRectangle(cornerRadius: Radius.md))
-                .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1) }
+                .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle, lineWidth: 1) }
             }
             if let unavailable = dialog.unavailable {
                 Text(unavailable == "external-editor" ? "An external editor is open · finish it before answering here" : "This question is too large to show here")
-                    .font(Fonts.caption).foregroundStyle(Tokens.textMuted)
+                    .font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
             }
             Group {
                 switch dialog.kind {
                 case .confirm:
                     HStack(spacing: 8) {
-                        Button("Yes") { answer(.confirm(value: true)) }.buttonStyle(ShepherdButtonStyle(.primary, size: .medium))
-                        Button("No") { answer(.confirm(value: false)) }.buttonStyle(ShepherdButtonStyle(.secondary))
+                        Button("Yes") { answer(.confirm(value: true)) }.buttonStyle(NWButtonStyle(.primary, size: .m))
+                        Button("No") { answer(.confirm(value: false)) }.buttonStyle(NWButtonStyle(.secondary))
                         Spacer(minLength: 0)
-                        Button("Dismiss") { answer(.cancel) }.buttonStyle(ShepherdButtonStyle(.ghost, size: .small))
+                        Button("Dismiss") { answer(.cancel) }.buttonStyle(NWButtonStyle(.ghost, size: .s))
                     }
                     // Y/N answer only while the panel itself has focus, so typing in the composer
                     // can never answer by accident.
@@ -731,27 +730,27 @@ struct QuestionPanel: View {
                     FlowLayout(spacing: 6) {
                         ForEach(Array((dialog.options ?? []).enumerated()), id: \.offset) { index, option in
                             Button(option) { answer(.select(value: option)) }
-                                .buttonStyle(ShepherdButtonStyle(index == 0 ? .primary : .secondary))
+                                .buttonStyle(NWButtonStyle(index == 0 ? .primary : .secondary))
                                 .accessibilityLabel("Choose \(option)")
                         }
-                        Button("Dismiss") { answer(.cancel) }.buttonStyle(ShepherdButtonStyle(.ghost))
+                        Button("Dismiss") { answer(.cancel) }.buttonStyle(NWButtonStyle(.ghost))
                     }
                 case .input, .editor:
                     TextField(dialog.placeholder ?? "Answer", text: $text, axis: .vertical)
                         .lineLimit(dialog.kind == .editor ? 5...12 : 1...5)
-                        .shepherdField(mono: dialog.kind == .editor)
+                        .nwField(mono: dialog.kind == .editor)
                         .autocorrectionDisabled()
                         .accessibilityLabel(dialog.kind == .editor ? "Editor answer" : "Answer")
                     HStack(spacing: 8) {
                         Button("Submit") { answer(dialog.kind == .editor ? .editor(value: text) : .input(value: text)) }
-                            .buttonStyle(ShepherdButtonStyle(.primary))
-                        Button("Dismiss") { answer(.cancel) }.buttonStyle(ShepherdButtonStyle(.ghost))
+                            .buttonStyle(NWButtonStyle(.primary))
+                        Button("Dismiss") { answer(.cancel) }.buttonStyle(NWButtonStyle(.ghost))
                     }
                 }
             }
             .disabled(blocked)
             if dialog.timeout != nil {
-                Text("pi may stop waiting for this answer").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("pi may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -768,8 +767,8 @@ struct WidgetRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(widget.title ?? "\(widget.namespace) · \(widget.key)").sectionStyle(Fonts.sectionSmall)
-            Text(widget.text).font(Fonts.micro).foregroundStyle(Tokens.textSecondary)
+            Text(widget.title ?? "\(widget.namespace) · \(widget.key)").nwSectionLabel()
+            Text(widget.text).font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary)
                 .lineLimit(widget.kind == .status ? 1 : 4)
         }
         .textSelection(.enabled)

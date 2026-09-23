@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdCore
 
 struct RootView: View {
@@ -20,13 +20,13 @@ struct RootView: View {
             if !vm.sidebarHidden {
                 VStack(spacing: 0) {
                     Color.clear
-                        .frame(height: Metrics.trafficLightHeight)
+                        .frame(height: AppLayout.trafficLightHeight)
                         .contentShape(Rectangle())
                         .gesture(WindowDragGesture())
                     SidebarView(vm: vm)
                 }
                 .frame(width: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
-                .background(Tokens.bgCanvas.ignoresSafeArea())
+                .background(Color.nw.bgBase.ignoresSafeArea())
 
                 sidebarResizeHandle
             }
@@ -35,8 +35,8 @@ struct RootView: View {
                 WorkspaceHeaderView(vm: vm)
                 WorkspaceView(vm: vm)
             }
-            .frame(minWidth: Metrics.mainColumnMinWidth)
-            .background(Tokens.bgSurface)
+            .frame(minWidth: AppLayout.mainColumnMinWidth)
+            .background(Color.nw.bgWindow)
         }
         .coordinateSpace(.named("root-layout"))
         .overlay {
@@ -44,7 +44,7 @@ struct RootView: View {
                 ComponentGallery()
                     .overlay(alignment: .topTrailing) {
                         Button("Close") { vm.showComponentGallery = false }
-                            .buttonStyle(ShepherdButtonStyle(.secondary)).padding(20)
+                            .buttonStyle(NWButtonStyle(.secondary)).padding(20)
                     }
                     .zIndex(11)
             } else if vm.showSettings {
@@ -54,17 +54,17 @@ struct RootView: View {
             // ⌘K palette floats over everything; the scrim click-dismisses.
             } else if vm.showCommandPalette {
                 ZStack(alignment: .top) {
-                    Tokens.scrim
+                    Color.nw.scrim
                         .ignoresSafeArea()
                         .onTapGesture { vm.showCommandPalette = false }
                     CommandPaletteView(vm: vm)
-                        .padding(.top, Metrics.paletteTop)
+                        .padding(.top, AppLayout.paletteTop)
                 }
                 .zIndex(12)
             }
         }
         .environment(\.threadCommands, vm.threadCommands)
-        .frame(minWidth: Metrics.windowMinWidth, minHeight: Metrics.windowMinHeight)
+        .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
         .onAppear { vm.systemAppearanceChanged(systemColorScheme) }
@@ -250,16 +250,16 @@ struct RootView: View {
             ) {
                 SheetRow("Worktree") {
                     Text(path)
-                        .font(Fonts.mono(11))
-                        .foregroundStyle(Tokens.textSecondary)
+                        .font(Font.nwMono(11))
+                        .foregroundStyle(Color.nw.textSecondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(path)
                 }
                 SheetRow("Branch") {
                     Text(branch)
-                        .font(Fonts.mono(11))
-                        .foregroundStyle(Tokens.textSecondary)
+                        .font(Font.nwMono(11))
+                        .foregroundStyle(Color.nw.textSecondary)
                 }
                 if let warning = worktreeDeleteWarning {
                     DialogWarning(text: "\(warning) will be lost with the worktree.")
@@ -313,7 +313,7 @@ struct RootView: View {
     }
 
     private var sidebarResizeHandle: some View {
-        Tokens.border
+        Color.nw.lineSubtle
             .frame(width: 1)
             .overlay {
                 Color.clear

@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdCore
 import ShepherdSessions
 

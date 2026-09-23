@@ -49,7 +49,7 @@ The in-memory session still keeps the new surface, because its detach checks ide
   keybind unbinds (below).
 - **The theme** (`TerminalAppearance`): background, foreground, cursor, selection, and the
   16-color ANSI palette. `TerminalHost.swift` fills it from the resolved theme variant's
-  `TerminalColors` (ShepherdDesign). The background equals the theme's `bgSurface`, so panes sit on
+  `TerminalColors` (ShepherdUI). The background equals the theme's `bgWindow`, so panes sit on
   the thread surface. Shepherd has already resolved light or dark, so both of Ghostty's nested
   schemes get the same values.
 

@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -53,10 +53,10 @@ struct SubagentCard: View {
             .accessibilityLabel(nativeSubagentAccessibilityLabel(run, now: context.date))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(state == .failed ? Tokens.dangerBg : Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
-        .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(borderColor, lineWidth: 1) }
-        .background { RoundedRectangle(cornerRadius: Radius.lg + 3).fill(selected ? Tokens.focusRing : .clear).padding(-3) }
+        .background(state == .failed ? Color.nw.failedTint : Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(borderColor, lineWidth: 1) }
+        .nwFocusRing(selected, radius: NW.Radius.m)
         .contentShape(Rectangle())
         // Anywhere that is not a button opens the inspector.
         .onTapGesture { actions.inspect(run) }
@@ -65,12 +65,12 @@ struct SubagentCard: View {
     }
 
     private var borderColor: Color {
-        if selected { return Tokens.accent }
+        if selected { return Color.nw.running }
         return switch state {
-        case .running: Tokens.border
-        case .needsYou: Tokens.warning.opacity(0.45)
-        case .done: Tokens.border
-        case .failed: Tokens.danger.opacity(0.4)
+        case .running: Color.nw.lineSubtle
+        case .needsYou: Color.nw.lantern.opacity(0.45)
+        case .done: Color.nw.lineSubtle
+        case .failed: Color.nw.failed.opacity(0.4)
         }
     }
 
@@ -79,21 +79,21 @@ struct SubagentCard: View {
     /// 40pt: branch glyph · name · "mode · model · thinking" · trailing state.
     private func header(now: Date) -> some View {
         HStack(spacing: 8) {
-            BranchGlyph(SubagentStyle.color(state))
-            Text(role).font(Fonts.labelStrong).foregroundStyle(state == .failed ? Tokens.dangerText : Tokens.text).lineLimit(1)
+            NWBranchGlyph(AgentState(state))
+            Text(role).font(Font.nw(.headline)).foregroundStyle(state == .failed ? Color.nw.failed : Color.nw.textPrimary).lineLimit(1)
             if state == .failed {
-                Text(run.exitReason ?? run.state).font(Fonts.micro).foregroundStyle(Tokens.dangerText).lineLimit(1).truncationMode(.tail)
+                Text(run.exitReason ?? run.state).font(Font.nw(.micro)).foregroundStyle(Color.nw.failed).lineLimit(1).truncationMode(.tail)
             } else if isCollapsed, state == .done, let summary = run.summary ?? doneLines.first {
-                Text(summary).font(Fonts.bodySmall).foregroundStyle(Tokens.textSecondary).lineLimit(1).truncationMode(.tail)
+                Text(summary).font(Font.nw(.body)).foregroundStyle(Color.nw.textSecondary).lineLimit(1).truncationMode(.tail)
             } else {
-                Text(meta).font(Fonts.micro).foregroundStyle(Tokens.textTertiary).lineLimit(1).truncationMode(.middle)
+                Text(meta).font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary).lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 8)
             trailing(now: now)
         }
         .padding(.horizontal, 12)
-        .frame(height: Metrics.subagentHeaderHeight)
-        .background(state == .needsYou ? Tokens.warningBg : .clear)
+        .frame(height: AppLayout.subagentHeaderHeight)
+        .background(state == .needsYou ? Color.nw.lanternTint : .clear)
     }
 
     /// "background · claude-fable-5-1 · thinking high"
@@ -111,30 +111,30 @@ struct SubagentCard: View {
         case .running:
             HStack(spacing: 6) {
                 if run.paused == true {
-                    Image(systemName: "pause.fill").font(.system(size: 9)).foregroundStyle(Tokens.textMuted)
+                    Image(systemName: "pause.fill").font(.system(size: 9)).foregroundStyle(Color.nw.textTertiary)
                 } else {
-                    Spinner(size: 11)
+                    ProgressView().progressViewStyle(.nwSpinner(size: 11))
                 }
                 Text((run.paused == true ? "Paused" : "Running") + (elapsed.map { " · \($0)" } ?? ""))
-                    .font(Fonts.captionMedium).foregroundStyle(Tokens.accentText).monospacedDigit()
+                    .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.running).monospacedDigit()
             }
             .fixedSize()
         case .needsYou:
             HStack(spacing: 6) {
-                RunStateGlyph(.needsYou, size: 12)
-                Text("Needs you" + (elapsed.map { " · \($0)" } ?? "")).font(Fonts.captionMedium).foregroundStyle(Tokens.warningText).monospacedDigit()
+                NWStateGlyph(.attention, size: 12)
+                Text("Needs you" + (elapsed.map { " · \($0)" } ?? "")).font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.lanternText).monospacedDigit()
             }
             .fixedSize()
         case .done:
             HStack(spacing: 8) {
-                if isCollapsed, let result = run.result { DiffStat(added: result.added, removed: result.removed) }
+                if isCollapsed, let result = run.result { NWDiffStat(added: result.added, removed: result.removed) }
                 HStack(spacing: 5) {
-                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Tokens.success)
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.nw.done)
                     Text(isCollapsed ? (elapsed ?? "Done") : "Done" + (elapsed.map { " · \($0)" } ?? ""))
-                        .font(Fonts.captionMedium).foregroundStyle(Tokens.successText).monospacedDigit()
+                        .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.done).monospacedDigit()
                 }
                 Button { collapsed = !isCollapsed } label: {
-                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Tokens.textMuted)
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.nw.textTertiary)
                         .rotationEffect(.degrees(isCollapsed ? -90 : 0)).frame(width: 16, height: 16).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -144,11 +144,11 @@ struct SubagentCard: View {
         case .failed:
             HStack(spacing: 6) {
                 Button("Retry") { actions.command(run, .resume, nil, nil) }
-                    .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
                     .disabled(!actions.enabled)
                     .accessibilityLabel("Retry \(role)")
                 Button("Transcript") { actions.inspect(run) }
-                    .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
                     .accessibilityLabel("Open \(role) transcript")
             }
             .fixedSize()
@@ -163,42 +163,42 @@ struct SubagentCard: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 if let step = run.step {
-                    Text("step \(step.index) / \(step.total)").font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit().fixedSize()
+                    Text("step \(step.index) / \(step.total)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit().fixedSize()
                 }
-                ProgressBar((run.contextPercent ?? 0) / 100)
-                Text(nativeSubagentCounters(run)).font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit().lineLimit(1).fixedSize()
+                ProgressView(value: (run.contextPercent ?? 0) / 100).progressViewStyle(.nwBar)
+                Text(nativeSubagentCounters(run)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit().lineLimit(1).fixedSize()
             }
             if let activity = run.lastActivity {
                 HStack(spacing: 10) {
-                    Text(activity.tool).font(Fonts.code).foregroundStyle(Tokens.textTertiary)
-                        .frame(width: Metrics.toolNameWidth, alignment: .leading).lineLimit(1)
-                    Text(activity.preview ?? "").font(Fonts.code).foregroundStyle(Tokens.text).lineLimit(1).truncationMode(.middle)
+                    Text(activity.tool).font(Font.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                        .frame(width: AppLayout.toolNameWidth, alignment: .leading).lineLimit(1)
+                    Text(activity.preview ?? "").font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 8)
-                    if let diff = activity.diff { DiffStat(added: diff.added, removed: diff.removed) }
-                    Text(nativeAgeText(activity.at, now: now)).font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit().fixedSize()
+                    if let diff = activity.diff { NWDiffStat(added: diff.added, removed: diff.removed) }
+                    Text(nativeAgeText(activity.at, now: now)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit().fixedSize()
                 }
             }
             if replying { replyField(placeholder: "Steer \(role) — delivered before its next turn") }
             HStack(spacing: 6) {
                 Button { actions.inspect(run) } label: {
-                    HStack(spacing: 6) { Text("Inspect"); Text(KeybindingsStore.shared.display(.inspectSubagent)).font(Fonts.micro).foregroundStyle(Tokens.textMuted) }
+                    HStack(spacing: 6) { Text("Inspect"); Text(KeybindingsStore.shared.display(.inspectSubagent)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary) }
                 }
-                .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                .buttonStyle(NWButtonStyle(.secondary, size: .s))
                 .accessibilityLabel("Inspect \(role)")
                 Button("Steer…") { replying.toggle(); replyFocused = replying }
-                    .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
                     .disabled(!actions.enabled)
                     .accessibilityLabel("Steer \(role)")
                 Button(run.paused == true ? "Continue" : "Pause") {
                     actions.command(run, run.paused == true ? .continue : .pause, nil, nil)
                 }
-                .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                .buttonStyle(NWButtonStyle(.secondary, size: .s))
                 .disabled(!actions.enabled)
                 .help("Pause before the next model request; current tools finish normally")
                 Spacer(minLength: 0)
                 Button("Stop") { actions.command(run, .cancel, nil, nil) }
-                    .buttonStyle(ShepherdButtonStyle(.ghost, size: .small))
-                    .foregroundStyle(Tokens.dangerText)
+                    .buttonStyle(NWButtonStyle(.ghost, size: .s))
+                    .foregroundStyle(Color.nw.failed)
                     .disabled(!actions.enabled)
                     .accessibilityLabel("Stop \(role)")
             }
@@ -212,7 +212,7 @@ struct SubagentCard: View {
         let question = run.question
         return VStack(alignment: .leading, spacing: 10) {
             Text(Prose.inline(question?.text ?? run.attentionText ?? ""))
-                .font(Fonts.bodySmall).lineSpacing(Fonts.bodySmallLeading).foregroundStyle(Tokens.text)
+                .font(Font.nw(.body)).lineSpacing(NWTextStyle.body.lineSpacing).foregroundStyle(Color.nw.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             if replying { replyField(placeholder: "Reply to \(role)…") }
@@ -220,12 +220,12 @@ struct SubagentCard: View {
                 FlowLayout(spacing: 6) {
                     ForEach(Array((question?.options ?? []).enumerated()), id: \.offset) { index, option in
                         Button(option) { actions.command(run, .message, option, .steer) }
-                            .buttonStyle(ShepherdButtonStyle(index == 0 ? .primary : .secondary, size: .small))
+                            .buttonStyle(NWButtonStyle(index == 0 ? .primary : .secondary, size: .s))
                             .disabled(!actions.enabled)
                             .accessibilityLabel("Answer \(option)")
                     }
                     Button("Reply…") { replying.toggle(); replyFocused = replying }
-                        .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                        .buttonStyle(NWButtonStyle(.secondary, size: .s))
                         .disabled(!actions.enabled)
                 }
                 Spacer(minLength: 0)
@@ -237,17 +237,17 @@ struct SubagentCard: View {
     private func replyField(placeholder: String) -> some View {
         HStack(spacing: 8) {
             TextField(placeholder, text: $reply)
-                .textFieldStyle(.plain).font(Fonts.bodySmall).autocorrectionDisabled()
+                .textFieldStyle(.plain).font(Font.nw(.body)).autocorrectionDisabled()
                 .focused($replyFocused)
                 .onSubmit { send() }
                 .accessibilityLabel(placeholder)
             Button("Send") { send() }
-                .buttonStyle(ShepherdButtonStyle(.primary, size: .small))
+                .buttonStyle(NWButtonStyle(.primary, size: .s))
                 .disabled(!actions.enabled || reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(.leading, 10).padding(.trailing, 4).padding(.vertical, 4)
-        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(replyFocused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1) }
+        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }.nwFocusRing(replyFocused, radius: NW.Radius.m)
     }
 
     private func send() {
@@ -271,23 +271,23 @@ struct SubagentCard: View {
             let summary = run.summary ?? doneLines.joined(separator: " ")
             if !summary.isEmpty {
                 Text(Prose.inline(summary))
-                    .font(Fonts.bodySmall).lineSpacing(Fonts.bodySmallLeading).foregroundStyle(Tokens.text)
+                    .font(Font.nw(.body)).lineSpacing(NWTextStyle.body.lineSpacing).foregroundStyle(Color.nw.textPrimary)
                     .lineLimit(3).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack(spacing: 12) {
                 if let result = run.result {
                     let parts = nativeSubagentResultLine(result)
-                    Text(parts[0]).foregroundStyle(Tokens.textMuted)
-                    DiffStat(added: result.added, removed: result.removed)
-                    Text(parts[2]).foregroundStyle(Tokens.textMuted)
-                    Text(parts[3]).foregroundStyle(Tokens.textMuted)
+                    Text(parts[0]).foregroundStyle(Color.nw.textTertiary)
+                    NWDiffStat(added: result.added, removed: result.removed)
+                    Text(parts[2]).foregroundStyle(Color.nw.textTertiary)
+                    Text(parts[3]).foregroundStyle(Color.nw.textTertiary)
                 }
                 Spacer(minLength: 0)
                 Button("Open transcript") { actions.inspect(run) }
-                    .buttonStyle(LinkButtonStyle(font: Fonts.micro))
+                    .buttonStyle(NWLinkButtonStyle(font: Font.nw(.micro)))
                     .accessibilityLabel("Open \(role) transcript")
             }
-            .font(Fonts.micro)
+            .font(Font.nw(.micro))
         }
     }
 }
@@ -306,34 +306,34 @@ struct RunsStrip: View {
             let summary = nativeRunsStripSummary(runs, now: context.date)
             let ordered = runs.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
             HStack(spacing: 10) {
-                BranchGlyph(Tokens.accent)
-                Text("\(summary.count) subagents").font(Fonts.labelStrong).foregroundStyle(Tokens.text).fixedSize()
+                NWBranchGlyph(.running)
+                Text("\(summary.count) subagents").font(Font.nw(.headline)).foregroundStyle(Color.nw.textPrimary).fixedSize()
                 HStack(spacing: 3) {
                     ForEach(ordered, id: \.id) { run in
                         Button { actions.inspect(run) } label: {
                             RoundedRectangle(cornerRadius: 2).fill(SubagentStyle.color(nativeSubagentState(run)))
-                                .frame(width: Metrics.runCell, height: Metrics.runCell)
+                                .frame(width: AppLayout.runCell, height: AppLayout.runCell)
                         }
                         .buttonStyle(.plain)
                         .help(run.role ?? run.label)
                         .accessibilityLabel(nativeSubagentAccessibilityLabel(run, now: context.date))
                     }
                 }
-                Text(summary.states).font(Fonts.micro).foregroundStyle(Tokens.textMuted).lineLimit(1)
+                Text(summary.states).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
                 Spacer(minLength: 8)
-                Text(summary.totals).font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit().lineLimit(1).layoutPriority(-1)
+                Text(summary.totals).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit().lineLimit(1).layoutPriority(-1)
                 Button { expanded.toggle() } label: {
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Tokens.textMuted)
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.nw.textTertiary)
                         .rotationEffect(.degrees(expanded ? 90 : 0)).frame(width: 16, height: 16).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(expanded ? "Collapse subagents" : "Expand subagents")
             }
             .padding(.horizontal, 12)
-            .frame(height: Metrics.subagentHeaderHeight)
+            .frame(height: AppLayout.subagentHeaderHeight)
             .frame(maxWidth: .infinity)
-            .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
-            .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1) }
+            .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+            .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle, lineWidth: 1) }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(summary.count) subagents, \(summary.states)")
         }
@@ -353,33 +353,33 @@ struct RunLedger: View {
         let ledger = nativeSubagentLedger(runs)
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                BranchGlyph(Tokens.accent)
-                Text(ledger.title).font(Fonts.labelStrong).foregroundStyle(Tokens.text).fixedSize()
-                RunCells(ledger.rows.map { SubagentStyle.color($0.state) }).accessibilityHidden(true)
-                Text(ledger.status).font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit().lineLimit(1)
+                NWBranchGlyph(.running)
+                Text(ledger.title).font(Font.nw(.headline)).foregroundStyle(Color.nw.textPrimary).fixedSize()
+                NWStepStrip(ledger.rows.map { AgentState($0.state) }, segmentWidth: AppLayout.runCell).accessibilityHidden(true)
+                Text(ledger.status).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit().lineLimit(1)
                 Spacer(minLength: 8)
                 if let files = ledger.diffText {
                     HStack(spacing: 6) {
-                        DiffStat(added: ledger.added, removed: ledger.removed)
-                        Text("· \(files)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                        NWDiffStat(added: ledger.added, removed: ledger.removed)
+                        Text("· \(files)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
                     }
                     .fixedSize()
                 }
             }
             .padding(.horizontal, 12)
-            .frame(height: Metrics.ledgerHeaderHeight)
-            .background(Tokens.bgMuted)
+            .frame(height: AppLayout.ledgerHeaderHeight)
+            .background(Color.nw.bgSunken)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(ledger.title), \(ledger.status)")
             ForEach(ledger.rows, id: \.run.id) { row in
-                Tokens.borderSubtle.frame(height: 1)
+                NWHairline()
                 LedgerRow(row: row, selected: row.run.runID == actions.inspectedRunID) { actions.inspect(row.run) }
             }
         }
         .frame(maxWidth: .infinity)
-        .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
-        .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1) }
+        .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle, lineWidth: 1) }
         .accessibilityElement(children: .contain)
     }
 }
@@ -393,21 +393,21 @@ private struct LedgerRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                RunStateGlyph(row.state == .failed ? .failed : row.state == .needsYou ? .needsYou : .done)
-                Text(row.run.role ?? row.run.label).font(Fonts.labelStrong).foregroundStyle(Tokens.text).lineLimit(1)
-                    .frame(width: Metrics.ledgerNameWidth, alignment: .leading)
-                Text(row.summary).font(Fonts.bodySmall).foregroundStyle(row.state == .failed ? Tokens.dangerText : Tokens.textSecondary)
+                NWStateGlyph(row.state == .failed ? .failed : row.state == .needsYou ? .attention : .done)
+                Text(row.run.role ?? row.run.label).font(Font.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+                    .frame(width: AppLayout.ledgerNameWidth, alignment: .leading)
+                Text(row.summary).font(Font.nw(.body)).foregroundStyle(row.state == .failed ? Color.nw.failed : Color.nw.textSecondary)
                     .lineLimit(1).truncationMode(.tail)
                 Spacer(minLength: 8)
-                Text(row.meta).font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit().lineLimit(1).fixedSize()
+                Text(row.meta).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit().lineLimit(1).fixedSize()
                 Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(selected ? Tokens.accent : Tokens.textMuted)
+                    .foregroundStyle(selected ? Color.nw.running : Color.nw.textTertiary)
             }
             .padding(.horizontal, 12)
-            .frame(height: Metrics.ledgerRowHeight)
+            .frame(height: AppLayout.ledgerRowHeight)
             .frame(maxWidth: .infinity)
-            .background(selected ? Tokens.accentBg : hovering ? Tokens.bgHover : .clear)
-            .overlay(alignment: .trailing) { if selected { Tokens.accent.frame(width: 3) } }
+            .background(selected ? Color.nw.runningTint : hovering ? Color.nw.bgHover : .clear)
+            .overlay(alignment: .trailing) { if selected { Color.nw.running.frame(width: 3) } }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -430,7 +430,7 @@ struct SubagentStack: View {
     var body: some View {
         let ordered = runs.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
         let live = turnLive || ordered.contains { !$0.isTerminal }
-        VStack(alignment: .leading, spacing: Metrics.blockSpacing) {
+        VStack(alignment: .leading, spacing: AppLayout.blockSpacing) {
             if !live, nativeSubagentGroupIsTerminal(ordered) {
                 RunLedger(runs: ordered, actions: actions)
             } else if ordered.count > NativeRunsStripSummary.collapseThreshold {

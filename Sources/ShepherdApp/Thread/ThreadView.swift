@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
@@ -40,7 +40,7 @@ struct ThreadView: View {
     @Environment(\.threadCommands) private var commands
     @FocusState private var composing: Bool
     @State private var follower = NativeScrollFollower()
-    @State private var width: CGFloat = Metrics.threadMaxWidth + 2 * Metrics.gutter
+    @State private var width: CGFloat = AppLayout.threadMaxWidth + 2 * AppLayout.gutter
     @State private var hovering = false
     /// Set on send: once the echoed turn is in the tree, scroll to the tail even if the reader
     /// had scrolled up.
@@ -56,7 +56,7 @@ struct ThreadView: View {
 
     /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
     private var gutter: CGFloat {
-        width >= Metrics.threadMaxWidth + 2 * Metrics.gutter ? Metrics.gutter : Metrics.gutterCompact
+        width >= AppLayout.threadMaxWidth + 2 * AppLayout.gutter ? AppLayout.gutter : AppLayout.gutterCompact
     }
 
     private var running: Bool { store.loadError == nil && store.settledRunning }
@@ -68,13 +68,13 @@ struct ThreadView: View {
         ZStack(alignment: .bottom) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Metrics.turnSpacing) {
+                    LazyVStack(alignment: .leading, spacing: AppLayout.turnSpacing) {
                         notices
                         if store.olderCursor != nil {
                             Button(store.loadingOlder ? "Loading history…" : "Load older messages") {
                                 Task { await store.loadOlder() }
                             }
-                            .buttonStyle(ShepherdButtonStyle(.ghost, size: .small))
+                            .buttonStyle(NWButtonStyle(.ghost, size: .s))
                             .disabled(!active || !store.ready || store.loadingOlder)
                             .frame(maxWidth: .infinity)
                         }
@@ -104,7 +104,7 @@ struct ThreadView: View {
                         }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
-                    .frame(maxWidth: Metrics.threadMaxWidth)
+                    .frame(maxWidth: AppLayout.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
                 }
@@ -112,7 +112,7 @@ struct ThreadView: View {
                 // bottom" is the last turn, not the space under the card.
                 .safeAreaPadding(.bottom, composerHeight)
                 // A margin rather than padding so scrollTo(.top) keeps the 28pt above a turn.
-                .contentMargins(.top, Metrics.threadTop, for: .scrollContent)
+                .contentMargins(.top, AppLayout.threadTop, for: .scrollContent)
                 .defaultScrollAnchor(.bottom, for: .initialOffset)
                 // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
                 // ever happens on user scroll intent.
@@ -163,11 +163,10 @@ struct ThreadView: View {
                             proxy.scrollTo(Self.bottomID, anchor: .bottom)
                         } label: {
                             Label("Jump to latest", systemImage: "arrow.down")
-                                .font(Fonts.captionMedium).foregroundStyle(Tokens.textSecondary)
+                                .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
                                 .padding(.horizontal, 12).frame(height: 28)
-                                .background(Tokens.bgRaised, in: Capsule())
-                                .overlay { Capsule().strokeBorder(Tokens.borderStrong, lineWidth: 1) }
-                                .shadow(color: Tokens.composerShadow, radius: 3, y: 1)
+                                .background(Color.nw.bgRaised, in: Capsule())
+                                .overlay { Capsule().strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
                         }
                         .buttonStyle(.plain)
                         .padding(.bottom, composerHeight + 8)
@@ -180,9 +179,9 @@ struct ThreadView: View {
                      composing: $composing, listModels: listModels, modelPickerRequest: modelPickerRequest)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         }
-        .foregroundStyle(Tokens.text)
-        .tint(Tokens.accent)
-        .background(Tokens.bgSurface)
+        .foregroundStyle(Color.nw.textPrimary)
+        .tint(Color.nw.running)
+        .background(Color.nw.bgWindow)
         .animation(.easeInOut(duration: 0.12), value: follower.showsJump(running: running))
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .onHover { hovering = $0 }
@@ -303,15 +302,16 @@ struct ThreadView: View {
     @ViewBuilder private var emptyState: some View {
         if store.snapshot == nil, store.loadError == nil {
             HStack(spacing: 10) {
-                Spinner(size: 14)
-                Text("Starting pi…").font(Fonts.labelRegular).foregroundStyle(Tokens.textTertiary)
+                ProgressView().progressViewStyle(.nwSpinner(size: 14))
+                Text("Starting pi…").font(Font.nw(.body)).foregroundStyle(Color.nw.textSecondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 120)
         } else if store.snapshot != nil {
-            EmptyState(
-                Text("New agent in \(Text(abbreviatedPath).font(Fonts.mono(15, .medium)))"),
-                caption: "Describe the task. Drop or paste images to attach them, or type / for commands."
+            NWEmptyState(
+                Text("New agent in \(Text(abbreviatedPath).font(Font.nwMono(15, .medium)))"),
+                message: "Describe the task. Drop or paste images to attach them, or type / for commands.",
+                showsMark: false, framed: true
             )
             .padding(.top, 80)
         }
@@ -323,6 +323,6 @@ struct ThreadView: View {
     }
 
     private func quiet(_ text: String) -> some View {
-        Text(text).font(Fonts.caption).foregroundStyle(Tokens.textMuted).textSelection(.enabled)
+        Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
     }
 }

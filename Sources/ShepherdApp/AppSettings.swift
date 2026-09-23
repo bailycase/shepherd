@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdCore
 
 /// What a new worktree branches from (Settings ▸ Worktrees).

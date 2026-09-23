@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdCore
 
 /// The space context menu's "New Worktree…": create a git worktree beside
@@ -35,11 +35,11 @@ struct NewWorktreeSheet: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("New worktree")
-                    .font(Fonts.title)
-                    .foregroundStyle(Tokens.text)
+                    .font(Font.nw(.title))
+                    .foregroundStyle(Color.nw.textPrimary)
                 Text("Creates a git worktree beside \(space.name) on a new branch and starts an agent in it.")
-                    .font(Fonts.labelRegular)
-                    .foregroundStyle(Tokens.textTertiary)
+                    .font(Font.nw(.body))
+                    .foregroundStyle(Color.nw.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(EdgeInsets(top: 20, leading: 20, bottom: 8, trailing: 20))
@@ -47,33 +47,33 @@ struct NewWorktreeSheet: View {
             VStack(spacing: 0) {
                 SheetRow("Branch") {
                     TextField("", text: $branch,
-                              prompt: Text("branch name").foregroundStyle(Tokens.textMuted))
+                              prompt: Text("branch name").foregroundStyle(Color.nw.textTertiary))
                         .textFieldStyle(.plain)
-                        .font(Fonts.code)
-                        .foregroundStyle(Tokens.text)
-                        .shepherdField(focused: branchFocused, mono: true)
+                        .font(Font.nw(.mono))
+                        .foregroundStyle(Color.nw.textPrimary)
+                        .nwField(focused: branchFocused, mono: true)
                         .focused($branchFocused)
                         .onSubmit(create)
                 }
                 SheetRow("Base") {
                     HStack(spacing: 8) {
                         TextField("", text: $base,
-                                  prompt: Text("resolving…").foregroundStyle(Tokens.textMuted))
+                                  prompt: Text("resolving…").foregroundStyle(Color.nw.textTertiary))
                             .textFieldStyle(.plain)
-                            .font(Fonts.code)
-                            .foregroundStyle(Tokens.text)
-                            .shepherdField(mono: true)
+                            .font(Font.nw(.mono))
+                            .foregroundStyle(Color.nw.textPrimary)
+                            .nwField(mono: true)
                             .frame(maxWidth: 200)
                         Text(baseNote)
-                            .font(Fonts.caption)
-                            .foregroundStyle(Tokens.textMuted)
+                            .font(Font.nw(.caption))
+                            .foregroundStyle(Color.nw.textTertiary)
                             .lineLimit(1)
                     }
                 }
                 SheetRow("Checkout") {
                     Text(destination)
-                        .font(Fonts.code)
-                        .foregroundStyle(Tokens.textMuted)
+                        .font(Font.nw(.mono))
+                        .foregroundStyle(Color.nw.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -82,22 +82,22 @@ struct NewWorktreeSheet: View {
 
             HStack(spacing: 10) {
                 Text(errorText ?? "")
-                    .font(Fonts.caption)
-                    .foregroundStyle(Tokens.dangerText)
+                    .font(Font.nw(.caption))
+                    .foregroundStyle(Color.nw.failed)
                     .lineLimit(2)
                 Spacer(minLength: 12)
                 Button("Cancel") { vm.worktreeSheetTarget = nil }
                     .keyboardShortcut(.cancelAction)
                 Button(creating ? "Creating…" : "Create and open") { create() }
                     .keyboardShortcut(.defaultAction)
-                    .buttonStyle(ShepherdButtonStyle(.primary))
+                    .buttonStyle(NWButtonStyle(.primary))
                     .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
             }
             .padding(EdgeInsets(top: 16, leading: 20, bottom: 20, trailing: 20))
         }
         .frame(width: 520)
-        .background(Tokens.bgSurface)
-        .buttonStyle(ShepherdButtonStyle(.secondary))
+        .background(Color.nw.bgWindow)
+        .buttonStyle(NWButtonStyle(.secondary))
         .onAppear { branchFocused = true }
         .task { await resolveBase() }
     }

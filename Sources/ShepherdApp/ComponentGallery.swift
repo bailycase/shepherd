@@ -1,32 +1,34 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 
-/// Every shared component in every state, laid out like the design's Components board, for
-/// checking the library against the spec in both appearances. Debug builds open it from the
-/// command palette ("Component Gallery"); `ComponentGalleryTests` renders it to PNG.
+/// Every shared Night Watch component in its states, laid out like the Controls and Status
+/// boards, for checking the library against the spec in both appearances. Debug builds open it
+/// from the command palette ("Component Gallery").
 struct ComponentGallery: View {
     @State private var segment = "pr"
     @State private var toggle = true
     @State private var toggleOff = false
+    @State private var check = true
     @State private var slider = 0.6
+    @State private var stepper = 4
     @State private var field = ""
     @State private var search = ""
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 32) {
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Text("Components").font(Fonts.display).foregroundStyle(Tokens.text)
-                    Text("Every block is one SwiftUI view in ShepherdDesign.").font(Fonts.labelRegular).foregroundStyle(Tokens.textTertiary)
+            VStack(alignment: .leading, spacing: NW.Space.xxxl) {
+                HStack(alignment: .firstTextBaseline, spacing: NW.Space.xl) {
+                    NWWordmark(size: .large)
+                    Text("Every block is one SwiftUI view in ShepherdUI.").font(.nw(.body)).foregroundStyle(.nw.textSecondary)
                 }
-                Grid(horizontalSpacing: 40, verticalSpacing: 32) {
+                Grid(horizontalSpacing: 40, verticalSpacing: NW.Space.xxxl) {
                     GridRow(alignment: .top) {
-                        column("Buttons — ShepherdButton") { buttons }
-                        column("Segmented control") { segmented }
-                        column("Composer chips") { chips }
+                        column("Buttons") { buttons }
+                        column("Selection") { selection }
+                        column("Inputs") { inputs }
                     }
                     GridRow(alignment: .top) {
-                        column("Sidebar rows") { sidebar }
+                        column("Agent state") { states }
                         column("Settings card") { settingsCard }
                         column("Feedback") { feedback }
                     }
@@ -36,12 +38,12 @@ struct ComponentGallery: View {
             .padding(.horizontal, 48)
             .padding(.vertical, 40)
         }
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
     }
 
     private func column<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader(title)
+            NWSectionHeader(title)
             content()
         }
         .frame(width: 400, alignment: .topLeading)
@@ -50,191 +52,143 @@ struct ComponentGallery: View {
     private var buttons: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Button("Primary") {}.buttonStyle(ShepherdButtonStyle(.primary, size: .large))
-                Button("Secondary") {}.buttonStyle(ShepherdButtonStyle(.secondary))
-                Button("Ghost") {}.buttonStyle(ShepherdButtonStyle(.ghost))
+                Button("Launch") {}.buttonStyle(.nw(.primary))
+                Button("Review") {}.buttonStyle(.nw(.secondary))
+                Button("Cancel") {}.buttonStyle(.nw(.ghost))
+                Button("Stop") {}.buttonStyle(.nw(.danger))
+                Button("Delete") {}.buttonStyle(.nw(.dangerFill))
             }
             HStack(spacing: 10) {
-                Button("Destructive") {}.buttonStyle(ShepherdButtonStyle(.destructive))
-                Button("Disabled") {}.buttonStyle(ShepherdButtonStyle(.secondary)).disabled(true)
-                Button("Small") {}.buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                Button("Small") {}.buttonStyle(.nw(.secondary, size: .s))
+                Button("Large") {}.buttonStyle(.nw(.primary, size: .l))
+                Button("Disabled") {}.buttonStyle(.nw(.secondary)).disabled(true)
+                Button("Show all") {}.buttonStyle(.nwLink)
             }
             HStack(spacing: 10) {
-                Button {} label: { Image(systemName: "plus") }.buttonStyle(IconButtonStyle()).accessibilityLabel("New agent")
-                Button {} label: { Image(systemName: "ellipsis") }.buttonStyle(IconButtonStyle(size: Metrics.buttonMedium)).accessibilityLabel("Options")
-                Button {} label: { Image(systemName: "doc.on.doc") }.buttonStyle(IconButtonStyle(bordered: false)).accessibilityLabel("Copy")
+                Button {} label: { Image(systemName: "sidebar.left") }.buttonStyle(.nwIcon).accessibilityLabel("Sidebar")
+                Button {} label: { Image(systemName: "plus.forwardslash.minus") }.buttonStyle(.nwIcon(isOn: true)).accessibilityLabel("Review")
+                Button {} label: { Image(systemName: "ellipsis") }.buttonStyle(.nwIcon(bordered: true)).accessibilityLabel("Options")
                 Spacer()
-                ComposerActionButton(.send) {}
-                ComposerActionButton(.send, enabled: false) {}
-                ComposerActionButton(.stop) {}
+                NWComposerActionButton(.send) {}
+                NWComposerActionButton(.send, enabled: false) {}
+                NWComposerActionButton(.stop) {}
             }
-            Button("Show all") {}.buttonStyle(LinkButtonStyle())
+            HStack(spacing: NW.Space.s) {
+                Button {} label: { HStack(spacing: 6) { Text("/").foregroundStyle(.nw.textTertiary); Text("commands") }.font(.nw(.mono)) }
+                    .buttonStyle(.nwComposerChip())
+                Button {} label: { HStack(spacing: 6) { Text("claude-opus").font(.nw(.mono)); NWChipChevron() } }
+                    .buttonStyle(.nwComposerChip(active: true))
+                NWAttachmentChip("screenshot.png") {}
+            }
         }
     }
 
-    private var segmented: some View {
+    private var selection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SegmentedControl(selection: $segment, options: [("local", "Local"), ("pr", "PR #24")])
-            SegmentedControl(selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")], size: .small)
-            SectionHeader("Status pill")
-            HStack(spacing: 8) {
-                StatusPill(.idle)
-                StatusPill(.running, label: "Running · 1m 04s")
-                StatusPill(.needsYou, label: "1 subagent needs you")
-            }
-            HStack(spacing: 8) {
-                StatusPill(.error)
-                StatusPill(.stopped)
-            }
-            SectionHeader("Status dot · run glyphs")
-            HStack(spacing: 18) {
-                label(StatusDot(Tokens.success), "running")
-                label(StatusDot(Tokens.accent), "current")
-                label(StatusDot(Tokens.danger), "failed")
-                label(StatusDot(Tokens.dotIdle), "idle")
-            }
+            NWSegmentedPicker("Source", selection: $segment, options: [("local", "Local"), ("pr", "PR #24")])
+            NWSegmentedPicker("Mode", selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")], size: .s)
             HStack(spacing: 14) {
-                RunStateGlyph(.running); RunStateGlyph(.done); RunStateGlyph(.failed); RunStateGlyph(.needsYou); RunStateGlyph(.queued)
-                BranchGlyph(Tokens.accent); BranchGlyph(Tokens.warning); BranchGlyph(Tokens.success)
-                RunCells([Tokens.success, Tokens.success, Tokens.accent, Tokens.warning, Tokens.danger])
+                Toggle("On", isOn: $toggle).toggleStyle(.nwSwitch).labelsHidden()
+                Toggle("Off", isOn: $toggleOff).toggleStyle(.nwSwitch).labelsHidden()
+                Toggle("Done when", isOn: $check).toggleStyle(.nwCheckbox)
             }
-            ProgressBar(0.62).frame(width: 240)
+            HStack(spacing: NW.Space.l) {
+                NWKeycap("⇧⌘N")
+                NWCountBadge(19)
+                NWCountBadge(3, tone: .attention)
+                NWCountBadge(1, tone: .failed)
+                NWTag("prompt")
+                NWTag("claude-sonnet", mono: true)
+            }
+            HStack(spacing: NW.Space.l) {
+                NWDiffStat(added: 58, removed: 41)
+                NWInlineCode("Color.nw.lantern")
+            }
         }
     }
 
-    private var chips: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 6) {
-                Button {} label: { HStack(spacing: 6) { Text("/").foregroundStyle(Tokens.textMuted); Text("commands") }.font(Fonts.mono(12)) }
-                    .buttonStyle(ComposerChipStyle())
-                Button {} label: { HStack(spacing: 6) { Text("claude-opus").font(Fonts.mono(12)); ChipChevron() } }
-                    .buttonStyle(ComposerChipStyle(active: true))
-                Button {} label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lightbulb").font(.system(size: 11)).foregroundStyle(Tokens.textTertiary)
-                        Text("Thinking")
-                        Text("Medium").foregroundStyle(Tokens.text).fontWeight(.medium)
-                        ChipChevron()
-                    }
+    private var inputs: some View {
+        VStack(alignment: .leading, spacing: NW.Space.l) {
+            TextField("Name this agent", text: $field).textFieldStyle(.nw)
+            TextField("Focused field", text: $field).nwField(focused: true)
+            NWSearchField("Search settings", text: $search, shortcut: "⌘F")
+            NWPopupMenu("claude-sonnet", mono: true) { Button("claude-opus") {}; Button("claude-sonnet") {} }
+            NWStepper("Concurrency", value: $stepper, in: 1...16)
+            NWValueSlider("Density", value: $slider, in: 0...1, step: 0.05, neutral: 0.5) { "\(Int($0 * 100))%" }
+        }
+    }
+
+    private var states: some View {
+        VStack(alignment: .leading, spacing: NW.Space.m) {
+            ForEach(AgentState.allCases, id: \.self) { state in
+                HStack(spacing: 14) {
+                    NWStatusPill(state)
+                    NWStatusDot(state)
+                    NWStateGlyph(state)
+                    NWBranchGlyph(state)
                 }
-                .buttonStyle(ComposerChipStyle())
             }
-            SectionHeader("Attachment chip")
-            HStack(spacing: 6) {
-                AttachmentChip("screenshot.png") {}
-                AttachmentChip("ThreadView.swift", prefix: "@") {}
-            }
-            SectionHeader("Diff stat · tags · keycaps")
-            HStack(spacing: 16) {
-                DiffStat(added: 58, removed: 41)
-                Text("6 blocks").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
-                Tag("prompt")
-                Keycaps(chord: "⇧⌘N")
-            }
-            HStack(spacing: 4) {
-                Text("Inline code like").font(Fonts.body).foregroundStyle(Tokens.text)
-                InlineCode("Tokens.textMuted")
+            ProgressView(value: 0.62).progressViewStyle(.nwBar).frame(width: 240)
+            NWStepStrip([.done, .done, .running, .attention, .failed, nil]).frame(width: 240)
+            HStack(spacing: NW.Space.l) {
+                ProgressView().progressViewStyle(.nwSpinner)
+                NWSparkline([2, 4, 3, 7, 5, 9, 4, 6, 5, 8])
             }
         }
-    }
-
-    private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            SectionHeader("This Mac", count: 19).padding(.horizontal, 8).padding(.top, 8).padding(.bottom, 4)
-            sidebarRow("Default", dot: Tokens.dotIdle, selected: false)
-            sidebarRow("Selected (current)", dot: Tokens.accent, selected: true)
-            sidebarRow("Running elsewhere", dot: Tokens.success, selected: false, trailing: "2m")
-            sidebarRow("Needs you", dot: Tokens.warning, selected: false, trailing: "needs you")
-            sidebarRow("Unreachable host", dot: Tokens.dotIdle, selected: false).opacity(0.55)
-            SectionHeader("Horizon") { Text("Unreachable").font(Fonts.sans(11, .medium)).foregroundStyle(Tokens.dangerText) }
-                .padding(.horizontal, 8).padding(.top, 12).padding(.bottom, 4)
-        }
-        .padding(8)
-        .frame(width: 256)
-        .background(Tokens.bgCanvas, in: RoundedRectangle(cornerRadius: Radius.lg))
-        .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1) }
-    }
-
-    private func sidebarRow(_ title: String, dot: Color, selected: Bool, trailing: String? = nil) -> some View {
-        Button {} label: {
-            HStack(spacing: 8) {
-                StatusDot(dot)
-                Text(title).font(selected ? Fonts.label : Fonts.labelRegular).foregroundStyle(Tokens.text).lineLimit(1)
-                Spacer(minLength: 4)
-                if let trailing { Text(trailing).font(Fonts.micro).foregroundStyle(Tokens.textMuted) }
-            }
-            .padding(.leading, 22)
-            .padding(.trailing, 8)
-            .frame(height: Metrics.sidebarRowHeight)
-        }
-        .buttonStyle(RowButtonStyle(selected: selected))
     }
 
     private var settingsCard: some View {
-        GroupCard {
-            CardRow("Mode", description: "System follows your Mac and switches with it.") {
-                SegmentedControl(selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")])
+        NWGroupCard {
+            NWCardRow("Mode", description: "System follows your Mac and switches with it.") {
+                NWSegmentedPicker(selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")])
             }
-            CardRow("Auto-name agents", description: "Title each agent from its opening prompt.") {
-                Toggle("", isOn: $toggle).toggleStyle(.shepherdSwitch).labelsHidden()
+            NWCardRow("Auto-name agents", description: "Title each agent from its opening prompt.") {
+                Toggle("Auto-name agents", isOn: $toggle).toggleStyle(.nwSwitch).labelsHidden()
             }
-            CardRow("Listener", description: "Serve this Mac to other Shepherds.", problem: "bind failed: Address already in use") {
-                Toggle("", isOn: $toggleOff).toggleStyle(.shepherdSwitch).labelsHidden()
-            }
-            CardRow("Default model") {
-                PopupMenu("claude-sonnet", mono: true) { Button("claude-opus") {}; Button("claude-sonnet") {} }
-            }
-            CardRow("Density") {
-                HStack(spacing: 10) {
-                    Slider(value: $slider).tint(Tokens.accent).frame(width: 160)
-                    Text("105%").font(Fonts.micro).foregroundStyle(Tokens.textSecondary).frame(width: 40, alignment: .trailing)
-                }
+            NWCardRow("Listener", description: "Serve this Mac to other Shepherds.", problem: "bind failed: Address already in use") {
+                Toggle("Listener", isOn: $toggleOff).toggleStyle(.nwSwitch).labelsHidden()
             }
         }
     }
 
     private var feedback: some View {
         VStack(alignment: .leading, spacing: 14) {
-            InlineError("Lost connection to the agent process.", actionTitle: "Reconnect") {}
-            EmptyState(Text("New agent in \(Text("~/dev/shepherd").font(Fonts.mono(15, .medium)))"),
-                       caption: "Describe the task. Attach files with ⌘⇧A, or type / for commands.")
-            TextField("Field", text: $field).shepherdField()
-            TextField("Focused field", text: $field).shepherdField(focused: true)
-            SearchField("Search settings", text: $search, shortcut: "⌘F")
+            NWBanner(.failed, title: "Lost connection to the agent process.") {
+                Button("Reconnect") {}.buttonStyle(.nw(.secondary, size: .s))
+            }
+            NWBanner(.attention, title: "ios asks: keep MobileTokens as an alias?", message: "Migrating touches 31 call sites.")
+            NWEmptyState(Text("New agent in \(Text("~/dev/shepherd").font(.nwMono(15, .medium)))"),
+                         message: "Describe the task. Attach files with ⌘⇧A, or type / for commands.", showsMark: false, framed: true)
         }
     }
 
     private var palette: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SectionHeader("Menu surface")
+            NWSectionHeader("Popover")
             VStack(alignment: .leading, spacing: 0) {
-                SearchField("Search commands, agents, subagents…", text: $search, large: true)
-                Tokens.border.frame(height: 1)
+                NWSearchField("Search commands, agents, subagents…", text: $search, large: true)
+                NWHairline()
                 VStack(alignment: .leading, spacing: 2) {
-                    SectionHeader("Commands", small: true).padding(.horizontal, 12).padding(.vertical, 6)
+                    NWSectionHeader("Commands").padding(.horizontal, 12).padding(.vertical, 6)
                     menuRow("New agent", icon: "plus", chord: "⌘N", selected: true)
-                    menuRow("New shell", icon: "terminal", chord: "⌘T", selected: false)
+                    menuRow("Settings", icon: "gearshape", chord: "⌘,", selected: false)
                 }
-                .padding(8)
+                .padding(NW.Space.m)
             }
-            .frame(width: Metrics.paletteWidth)
-            .menuSurface(radius: Radius.xxl)
+            .frame(width: AppLayout.paletteWidth)
+            .nwPopover()
         }
     }
 
     private func menuRow(_ title: String, icon: String, chord: String, selected: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(selected ? Tokens.accent : Tokens.textTertiary).frame(width: 18)
-            Text(title).font(Fonts.sans(14)).foregroundStyle(Tokens.text)
+            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(selected ? Color.nw.running : .nw.textSecondary).frame(width: 18)
+            Text(title).font(.nwSans(14)).foregroundStyle(.nw.textPrimary)
             Spacer()
-            Keycaps(chord: chord)
+            NWKeycap(chord)
         }
         .padding(.horizontal, 12)
-        .frame(height: Metrics.paletteRowHeight)
-        .rowBackground(selected: selected, hovering: false, selectedFill: Tokens.accentBg)
-    }
-
-    private func label(_ dot: StatusDot, _ text: String) -> some View {
-        HStack(spacing: 6) { dot; Text(text).font(Fonts.caption).foregroundStyle(Tokens.textSecondary) }
+        .frame(height: AppLayout.paletteRowHeight)
+        .nwRowBackground(selected: selected, hovering: false, selectedFill: .nw.runningTint)
     }
 }

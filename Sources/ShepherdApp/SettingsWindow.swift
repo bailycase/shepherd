@@ -1,6 +1,6 @@
 import AppKit
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 
 /// Opening and styling the Settings window.
 ///
@@ -75,7 +75,7 @@ struct WindowChrome: NSViewRepresentable {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isMovableByWindowBackground = false
-        window.backgroundColor = NSColor(Tokens.bgCanvas)
+        window.backgroundColor = NSColor(Color.nw.bgBase)
         window.toolbar = nil
     }
 }

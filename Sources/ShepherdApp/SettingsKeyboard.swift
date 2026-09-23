@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import AppKit
 
 // MARK: Keyboard
@@ -35,7 +35,7 @@ struct KeyboardSettings: View {
                                         vm.rebuildSurfaces()
                                         clearError()
                                     }
-                                    .buttonStyle(LinkButtonStyle(color: Tokens.accentText, font: Fonts.caption))
+                                    .buttonStyle(NWLinkButtonStyle(color: Color.nw.running, font: Font.nw(.caption)))
                                 }
                                 ShortcutRecorder(action: action, isRecording: recording == action, chordText: keys.display(action)) {
                                     clearError()
@@ -59,16 +59,16 @@ struct KeyboardSettings: View {
             }
 
             SettingsGroup(title: "Fixed", footnote: "Changes apply immediately, everywhere a shortcut is shown.") {
-                SettingsRow(title: "Select agent 1–9", subtitle: "Sidebar order; hold ⌘ to see the numbers.") { Keycaps(["⌘", "1–9"]) }
-                SettingsRow(title: "Settings") { Keycaps(chord: "⌘,") }
-                SettingsRow(title: "Confirm or cancel in sheets") { Keycaps(["⏎", "⎋"]) }
+                SettingsRow(title: "Select agent 1–9", subtitle: "Sidebar order; hold ⌘ to see the numbers.") { NWKeycap(keys: ["⌘", "1–9"]) }
+                SettingsRow(title: "Settings") { NWKeycap("⌘,") }
+                SettingsRow(title: "Confirm or cancel in sheets") { NWKeycap(keys: ["⏎", "⎋"]) }
                 SettingsRow(title: "Reset all shortcuts") {
                     Button("Reset all") {
                         keys.resetAll()
                         vm.rebuildSurfaces()
                         clearError()
                     }
-                    .buttonStyle(ShepherdButtonStyle(.destructive, size: .small))
+                    .buttonStyle(NWButtonStyle(.danger, size: .s))
                     .disabled(keys.overrides.isEmpty)
                 }
             }
@@ -96,14 +96,14 @@ private struct ShortcutRecorder: View {
             Group {
                 if isRecording {
                     Text("Press keys…")
-                        .font(Fonts.caption)
-                        .foregroundStyle(Tokens.accentText)
+                        .font(Font.nw(.caption))
+                        .foregroundStyle(Color.nw.running)
                         .padding(.horizontal, 8)
                         .frame(height: 22)
-                        .background(Tokens.accentBg, in: RoundedRectangle(cornerRadius: Radius.xs))
-                        .overlay { RoundedRectangle(cornerRadius: Radius.xs).strokeBorder(Tokens.accent, lineWidth: 1) }
+                        .background(Color.nw.runningTint, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+                        .overlay { RoundedRectangle(cornerRadius: NW.Radius.xs).strokeBorder(Color.nw.running, lineWidth: 1) }
                 } else {
-                    Keycaps(chord: chordText)
+                    NWKeycap(chordText)
                 }
             }
             .contentShape(Rectangle())

@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import ShepherdDesign
+import ShepherdUI
 
 // MARK: Page chrome (spec §12)
 
@@ -13,8 +13,8 @@ struct SettingsPage<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(Fonts.display).foregroundStyle(Tokens.text)
-                Text(explanation).font(Fonts.labelRegular).foregroundStyle(Tokens.textTertiary)
+                Text(title).font(Font.nw(.display)).foregroundStyle(Color.nw.textPrimary)
+                Text(explanation).font(Font.nw(.body)).foregroundStyle(Color.nw.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             content
@@ -31,8 +31,8 @@ struct SettingsGroup<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title, small: true).padding(.horizontal, 4)
-            GroupCard { content }
+            NWSectionHeader(title).padding(.horizontal, 4)
+            NWGroupCard { content }
             if let footnote { SettingsNote(text: footnote).padding(.horizontal, 4).padding(.top, 2) }
         }
     }
@@ -46,7 +46,7 @@ struct SettingsRow<Control: View>: View {
     @ViewBuilder var control: Control
 
     var body: some View {
-        CardRow(title, description: subtitle, problem: problem) { control }
+        NWCardRow(title, description: subtitle, problem: problem) { control }
     }
 }
 
@@ -56,8 +56,8 @@ struct SettingsNote: View {
 
     var body: some View {
         Text(text)
-            .font(Fonts.caption)
-            .foregroundStyle(Tokens.textMuted)
+            .font(Font.nw(.caption))
+            .foregroundStyle(Color.nw.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -68,7 +68,7 @@ struct SettingsSwitch: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        Toggle(label, isOn: $isOn).labelsHidden().toggleStyle(.shepherdSwitch)
+        Toggle(label, isOn: $isOn).labelsHidden().toggleStyle(.nwSwitch)
     }
 }
 
@@ -81,9 +81,9 @@ struct PathRow: View {
     var body: some View {
         SettingsRow(title: title, subtitle: subtitle) {
             HStack(spacing: 8) {
-                Text(url.lastPathComponent).font(Fonts.micro).foregroundStyle(Tokens.textSecondary).help(url.path)
+                Text(url.lastPathComponent).font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary).help(url.path)
                 Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                    .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
             }
         }
     }
