@@ -29,8 +29,9 @@ struct Composer: View {
     @State private var models: [PiModelCatalog.Entry] = []
     @State private var confirmingStopAll = false
     @State private var picking = false
-    /// Motion starts once the thread has loaded: what arrives with the first snapshot (a widget,
-    /// a waiting question, the model) is simply there when the thread opens.
+    /// Motion starts once the thread has loaded since it came on screen: what arrives with that
+    /// pull (a widget, a waiting question, the model) is simply there, whether the thread just
+    /// opened or an agent switched back to is catching up.
     @State private var loaded = false
 
     private enum Menu: Equatable { case models, thinking }
@@ -146,7 +147,9 @@ struct Composer: View {
         .nwAnimation(.list, value: attachments.map(\.id))
         .nwAnimation(.disclosure, value: loaded ? questionKey : nil)
         .nwAnimation(.overlay, value: loaded ? openMenu : nil)
-        .task(id: store.snapshot != nil) { loaded = store.snapshot != nil }
+        .task(id: [active, store.ready]) {
+            if !active { loaded = false } else if store.ready { loaded = true }
+        }
         .frame(maxWidth: AppLayout.threadMaxWidth)
         .padding(.horizontal, gutter)
         .padding(.bottom, AppLayout.composerBottom)
