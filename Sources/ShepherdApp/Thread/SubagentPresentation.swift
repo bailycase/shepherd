@@ -13,7 +13,7 @@ enum SubagentPresentation {
     static func layout(_ runs: [ChildRun], turnLive: Bool) -> Layout {
         let live = turnLive || runs.contains { !$0.isTerminal }
         if !live, nativeSubagentGroupIsTerminal(runs) { return .ledger }
-        return runs.count > NativeRunsStripSummary.collapseThreshold ? .strip : .cards
+        return runs.count > NativeRunsStrip.collapseThreshold ? .strip : .cards
     }
 
     /// Spawn order.
