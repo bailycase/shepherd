@@ -319,7 +319,9 @@ extension NWDiffView where Annotation == EmptyView {
     }
 }
 
-/// One row, always a single view (a lazy stack's fast path).
+/// One row, always a single view (a lazy stack's fast path). Opaque on the pane's background, so
+/// the rows sliding into place as a fold or a comment opens or closes cover what is fading
+/// under them instead of showing through it.
 private struct NWDiffRowView<Annotation: View>: View {
     let row: NWDiffRow
     let onComment: ((NWDiffLineContent) -> Void)?
@@ -339,5 +341,6 @@ private struct NWDiffRowView<Annotation: View>: View {
                 NWFoldRow(count: count, kind: kind, range: range, action: { onExpand(id) }, expandFile: onExpandFile)
             }
         }
+        .background(Color.nw.bgWindow)
     }
 }

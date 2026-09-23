@@ -10,9 +10,10 @@ import Testing
 @testable import ShepherdApp
 
 /// The review pane in motion, recorded from off-screen windows (`MotionProbe`): folds and
-/// comments ease open and shut (a big file folds at once), one side's diff cross-fades into the
-/// other's, marking a file viewed pops its check, and keyboard navigation lands at once where a
-/// click scrolls.
+/// comments ease open and shut (a big file, or one read under its pinned header, folds at once),
+/// one side's diff cross-fades into the other's, a reload of the same side lands at once,
+/// marking a file viewed pops its check, and keyboard navigation lands at once where a click
+/// scrolls.
 @Suite("Review motion", .mainActorExclusive)
 @MainActor
 struct ReviewMotionTests {
@@ -85,6 +86,30 @@ struct ReviewMotionTests {
         }
     }
 
+    /// Folding the file being read, under its pinned header, moves the diff under the reader
+    /// (the next files take the folded rows' place): easing that only shows blank gaps and
+    /// fading rows, so it lands at once, and only the chevron may turn.
+    @Test func foldingAFileReadUnderItsPinnedHeaderLandsAtOnce() async throws {
+        let (model, window) = Self.pane((0..<5).map { Self.file("f\($0).txt", lines: 16) })
+        defer { window.close() }
+        let scroll = try #require(Self.diffScroll(window))
+        // Into the middle of the third file, its header pinned over its rows.
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: (scroll.documentView?.frame.height ?? 0) * 0.45))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        _ = await MotionProbe.record(window, region: Self.diff, timeout: 0.5) {}
+
+        let recording = await MotionProbe.record(window, region: Self.diff) { model.toggleFolded("f2.txt") }
+
+        #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the file folds")
+        let moving = recording.inBetween.compactMap { $0.lastColumn(differingFrom: recording.settled) }
+        #expect(moving.allSatisfy { $0 < Int(NWDiffMetrics.numberWidth) }, "only the chevron moves: columns up to \(moving.max() ?? -1)")
+    }
+
+    private static func diffScroll(_ window: OffscreenWindow) -> NSScrollView? {
+        func all(_ view: NSView) -> [NSScrollView] { (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(all) }
+        return all(window.host).max { ($0.documentView?.frame.height ?? 0) < ($1.documentView?.frame.height ?? 0) }
+    }
+
     // MARK: Local | PR
 
     @Test func switchingToThePRDiffCrossFadesTheWholeDiffInPlace() async throws {
@@ -108,20 +133,21 @@ struct ReviewMotionTests {
         #expect(away.isEmpty, "nothing slides: \(Set(away).sorted().prefix(8))")
     }
 
-    /// A reverted file's section eases out of the diff on the reload, and its chip leaves the
-    /// strip, while the rest of the same side's diff stays put.
-    @Test func aRevertedFileEasesOutOfTheDiff() async {
+    /// A reload of the same side (here after a Revert) lands at once in the diff: easing its
+    /// sections under a pinned header mid-scroll opens blank gaps. The strip closes up over the
+    /// chip that left.
+    @Test func aRevertedFileLeavesTheDiffAtOnceWhileTheStripClosesUp() async {
         let files = [Self.file("a.txt", lines: 4), Self.file("b.txt", lines: 4), Self.file("c.txt", lines: 4)]
         let (model, window) = Self.pane(files)
         defer { window.close() }
         let strip = CGRect(x: 0, y: 44, width: Self.size.width, height: 36)
 
-        let diff = await MotionProbe.record(window, region: Self.diff) { model.session.files = files.filter { $0.id != "a.txt" } }
+        let diff = await MotionProbe.record(window, region: Self.diff, timeout: 1) { model.session.files = files.filter { $0.id != "a.txt" } }
         #expect(diff.settled.firstRow(differingFrom: diff.before) != nil, "the file leaves")
-        #expect(!diff.inBetween.isEmpty, "its section eases out")
+        #expect(diff.inBetween.isEmpty, "the diff lands at once")
 
         let chips = await MotionProbe.record(window, region: strip) { model.session.files = files.filter { $0.id == "c.txt" } }
-        #expect(!chips.inBetween.isEmpty, "its chip eases out of the strip")
+        #expect(!chips.inBetween.isEmpty, "the chips close up")
     }
 
     // MARK: Beside the thread

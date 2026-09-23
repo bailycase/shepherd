@@ -62,7 +62,10 @@ public struct NWFileStrip: View {
                         NWFileChip(item: item, selected: item.id == selection, selectionSpace: reduceMotion ? nil : selectionSpace) {
                             onSelect(item.id)
                         }
-                        .nwTransition(.list, edge: .leading)
+                        // A chip that leaves goes at once and the chips after it close up: fading
+                        // where it was, it would show through the chips sliding over it.
+                        .transition(.asymmetric(insertion: NW.Motion.list.transition(reduceMotion: reduceMotion, edge: .leading),
+                                                removal: .identity))
                     }
                 }
                 .padding(NW.Space.s)

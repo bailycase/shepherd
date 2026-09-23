@@ -363,14 +363,20 @@ final class ReviewPaneModel {
     var currentHunk: String?
     private(set) var highlights: [String: ReviewHighlight] = [:]
     /// Counts the changes the diff eases open or shut in place: a file folding, a fold of hidden
-    /// lines opening, a comment or its editor coming or going. A big file, a whole file opened
-    /// at once, and Expand or Collapse All land at once.
+    /// lines opening, a comment or its editor coming or going. A big file, a file scrolled up
+    /// under its pinned header, a whole file opened at once, and Expand or Collapse All land at
+    /// once.
     private(set) var disclosures = 0
     /// Whether the current file last moved by j/k/n/p: keyboard navigation lands at once, where
     /// a click or a "review ›" link scrolls there.
     @ObservationIgnored private(set) var movedByKey = false
     @ObservationIgnored private var keyFocusRequest: UUID?
     @ObservationIgnored private var rowCache: [String: CachedRows] = [:]
+    /// Where each file's rows start in the diff's visible area, while its section is loaded, and
+    /// the height of a file header: a file sits in its place when its rows start below its
+    /// header, and has scrolled up under its pinned header when they start above.
+    @ObservationIgnored private var rowsTops: [String: CGFloat] = [:]
+    @ObservationIgnored private var headerHeight: CGFloat?
 
     /// The most rows a fold eases open or shut; past it the diff changes at once.
     static let easedRowLimit = 60
@@ -465,10 +471,27 @@ final class ReviewPaneModel {
         expandedRuns[fileID, default: []].insert(key)
     }
 
-    /// Eases a file's fold when its rows are few enough.
+    /// Eases a file's fold when its rows are few enough and the file sits in its place. Folding a
+    /// file read under its pinned header moves the diff under the reader (the rows below take
+    /// the folded rows' place), which only reads as a jump, so it lands at once.
     private func easeFold(of fileID: String) {
-        guard let file = session.files.first(where: { $0.id == fileID }), rows(for: file).count <= Self.easedRowLimit else { return }
+        guard sitsInPlace(fileID), let file = session.files.first(where: { $0.id == fileID }),
+              rows(for: file).count <= Self.easedRowLimit else { return }
         disclosures += 1
+    }
+
+    private func sitsInPlace(_ fileID: String) -> Bool {
+        guard let top = rowsTops[fileID], let headerHeight else { return false }
+        return top >= headerHeight - 0.5
+    }
+
+    /// Where a file's rows start in the diff's visible area (its section reports it while loaded).
+    func noteRowsTop(_ top: CGFloat, of fileID: String) {
+        rowsTops[fileID] = top
+    }
+
+    func noteHeaderHeight(_ height: CGFloat) {
+        headerHeight = height
     }
 
     /// Opens every fold in a file (⌥-click on a fold).
