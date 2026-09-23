@@ -8,7 +8,7 @@ import Testing
 
 /// The diff review against real scratch repositories: an agent asking for review over the
 /// extension socket, the diff git produces, sending the review to pi, and reverting files.
-@Suite("Diff review")
+@Suite("Diff review", .integrationTimeLimit)
 @MainActor
 struct ReviewFlowTests {
     /// A repo with `file.txt` modified and `new.txt` untracked.

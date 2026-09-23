@@ -7,7 +7,7 @@ import Testing
 /// Shell panes wrap `pi` so a pi run by hand picks up Shepherd's theme. These start real
 /// zsh/bash/fish processes with scratch HOME/ZDOTDIR (never the user's dotfiles) and a fake
 /// `pi` that records how it was called.
-@Suite("Shell pi integration")
+@Suite("Shell pi integration", .integrationTimeLimit)
 struct ShellIntegrationTests {
     /// A scratch home with a fake `pi` on PATH that records its argv and environment into
     /// `$CAPTURE` and exits `status`.

@@ -6,7 +6,7 @@ import ShepherdTestSupport
 
 /// Automation runs are ephemeral. A restart used to clear each automation's link to its run
 /// agent but keep the agent, which relaunched its pi every start and piled up one per launch.
-@Suite("Automation runs across a restart")
+@Suite("Automation runs across a restart", .integrationTimeLimit)
 struct AutomationRestartTests {
     @Test func restartDropsRunAgentsIncludingOnesAlreadyOrphaned() async throws {
         let first = try ScratchServer()

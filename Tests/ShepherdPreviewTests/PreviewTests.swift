@@ -17,7 +17,7 @@ import Testing
 ///
 /// Fixtures and a scripted stub pi only: no real model, no user files. Serialized so each
 /// render has the main thread to itself.
-@Suite("Previews", .serialized, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
+@Suite("Previews", .serialized, .integrationTimeLimit, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct PreviewTests {
     // MARK: Threads

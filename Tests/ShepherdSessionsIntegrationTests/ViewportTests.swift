@@ -9,7 +9,7 @@ import ShepherdTestSupport
 /// PTY sizing with several viewers (tmux semantics): attached remote viewers share the smallest
 /// grid among them; with none attached, the host's own surface rules. Reports that would not
 /// change the grid never reach the child — every SIGWINCH is a full TUI repaint.
-@Suite("Viewport sizing")
+@Suite("Viewport sizing", .integrationTimeLimit)
 struct ViewportTests {
     private func size(_ r: RemoteHost, _ id: SessionID) async -> [Int]? {
         await r.server.sessionInfo(sessionID: id).map { [$0.cols, $0.rows] }

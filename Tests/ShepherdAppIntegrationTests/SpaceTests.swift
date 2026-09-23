@@ -6,7 +6,7 @@ import Testing
 @testable import ShepherdApp
 
 /// Adding, renaming, and deleting spaces through the view model.
-@Suite("Spaces")
+@Suite("Spaces", .integrationTimeLimit)
 @MainActor
 struct SpaceTests {
     @Test func addingASpaceWithoutAnAgentCreatesOnlyTheSpaceAndSelectsIt() async throws {

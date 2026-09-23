@@ -8,7 +8,7 @@ import ShepherdTestSupport
 
 /// `SessionServer.nativeThread` for an RPC agent: the thread the app renders and the actions it
 /// sends, served from the agent's own pi process (the stub).
-@Suite("Native thread over RPC")
+@Suite("Native thread over RPC", .integrationTimeLimit)
 struct NativeThreadTests {
     private let stale = NativeThreadResult.failure(code: "stale_session", message: "Refresh the thread before acting.")
 

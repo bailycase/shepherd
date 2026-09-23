@@ -7,7 +7,7 @@ import Testing
 
 /// The view model over a real server: restoring a persisted workspace, moving between
 /// agents and spaces, pane focus, cold parking, and sidebar drag-reordering.
-@Suite("Workspace navigation")
+@Suite("Workspace navigation", .integrationTimeLimit)
 @MainActor
 struct WorkspaceNavigationTests {
     @Test func restoringAPersistedWorkspaceSelectsItsSpaceWithNoLayoutOnScreen() async throws {

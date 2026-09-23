@@ -22,7 +22,7 @@ import Testing
 /// files for the scratch checkout are removed afterwards. Run it on its own (`--filter`): the
 /// fixture previews and the app tests put a stub `pi` first on PATH for the rest of the process,
 /// so while SHEPHERD_LIVE_MODEL is set the fixture previews stay off.
-@Suite("Live model use cases", .serialized,
+@Suite("Live model use cases", .serialized, .timeLimit(.minutes(10)),
        .enabled(if: ProcessInfo.processInfo.environment["SHEPHERD_LIVE_MODEL"]?.isEmpty == false, "set SHEPHERD_LIVE_MODEL to run"))
 @MainActor
 struct LiveModelUseCaseTests {

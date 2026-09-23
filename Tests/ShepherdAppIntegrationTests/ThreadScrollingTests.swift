@@ -175,7 +175,7 @@ private final class ThreadHarness {
 
 /// Serialized: each test owns a window and reads it back, and the main thread's layout
 /// passes are the thing under test.
-@Suite("Thread scroll following", .serialized)
+@Suite("Thread scroll following", .serialized, .integrationTimeLimit)
 @MainActor
 struct ThreadScrollingTests {
     @Test func aThreadOpensAtItsTailWithNoBlankSpaceBelowTheLastTurn() async throws {

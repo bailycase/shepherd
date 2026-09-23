@@ -7,7 +7,7 @@ import ShepherdTestSupport
 
 /// A long pi session answers `get_messages` with one multi-megabyte record. The reader once
 /// dropped anything over the 1 MiB network frame cap, and the thread showed no history at all.
-@Suite("Large session history")
+@Suite("Large session history", .integrationTimeLimit)
 struct LargeHistoryTests {
     @Test func aMultiMegabyteHistoryReplyStillLoadsTheThread() async throws {
         let scratch = try ScratchServer()

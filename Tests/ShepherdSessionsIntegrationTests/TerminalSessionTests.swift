@@ -8,7 +8,7 @@ import ShepherdTestSupport
 
 /// Terminal panes: real PTY children owned by the server — spawn, I/O, resize, exit, and the
 /// process-group kill rules that keep nothing alive after its pane or the app is gone.
-@Suite("Terminal sessions")
+@Suite("Terminal sessions", .integrationTimeLimit)
 struct TerminalSessionTests {
     private func pid(in file: URL) throws -> pid_t {
         pid_t(try String(contentsOf: file, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines))!
