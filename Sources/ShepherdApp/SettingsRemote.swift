@@ -36,6 +36,7 @@ struct RemoteSettings: View {
                 if store.connections.isEmpty {
                     SettingsRow(title: "No remote hosts",
                                 subtitle: "Add a Mac running Shepherd below. Its agents appear in the sidebar under its name.") { EmptyView() }
+                        .nwTransition(.list)
                 }
                 ForEach(store.connections, id: \.id) { connection in
                     RemoteHostRow(connection: connection) {
@@ -51,6 +52,7 @@ struct RemoteSettings: View {
                         draftPort = String(config.port)
                         draftToken = config.token
                     }
+                    .nwTransition(.list)
                 }
             }
 
@@ -76,6 +78,7 @@ struct RemoteSettings: View {
                 SettingsActionRow {
                     if editingID != nil {
                         Button("Cancel") { cancelEdit() }.buttonStyle(.nw(.ghost, size: .s))
+                            .nwTransition(.content)
                     }
                     Button(editingID == nil ? "Add host" : "Save") { save() }
                         .buttonStyle(.nw(.secondary, size: .s))
@@ -96,6 +99,12 @@ struct RemoteSettings: View {
                         url: ShepherdPaths.remoteTokenURL())
             }
         }
+        // Hosts arrive and leave as rows; the form swaps between adding and editing in place;
+        // a bind failure discloses under the listener, and its status fades to the new port.
+        .nwAnimation(.list, value: store.connections.map(\.id))
+        .nwAnimation(.content, value: editingID)
+        .nwAnimation(.disclosure, value: vm.remoteListenerProblem)
+        .nwAnimation(.content, value: vm.remoteListenerStatus)
     }
 
     private func save() {
@@ -145,7 +154,10 @@ private struct RemoteHostRow: View {
                         .font(.nw(.mono))
                         .lineLimit(1)
                         .truncationMode(.middle)
+                        .nwContentTransition(.crossFade)
                 }
+                // Connecting… → connected · 5 agents, or unreachable: the word and dot fade.
+                .nwComponentAnimation(.content, value: state)
             }
             .accessibilityElement(children: .combine)
         } actions: {

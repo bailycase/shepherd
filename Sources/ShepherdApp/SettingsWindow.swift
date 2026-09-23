@@ -34,7 +34,7 @@ struct SettingsCommandButton: View {
             } else {
                 NSLog("Shepherd: settings toggled with no current event")
             }
-            vm.showSettings.toggle()
+            withNWAnimation(.sheet) { vm.showSettings.toggle() }
         }
         .keyboardShortcut(",", modifiers: .command)
     }
