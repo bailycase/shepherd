@@ -499,6 +499,20 @@ name**. Releasing means tagging `nightly`'s tested tip and pushing the tag.
 - **Signing:** with the Developer ID, notarization, and Sparkle secrets configured, builds are
   signed and notarized. Without them the workflow falls back to ad-hoc signing and skips the
   appcast.
+  - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
+    the app with `App/Shepherd.entitlements`. Only nested apps and XPC services keep their own
+    entitlements.
+  - Developer ID items get the hardened runtime and a secure timestamp, and both the app and the
+    DMG are notarized and stapled. Ad-hoc builds skip the runtime, because library validation
+    rejects ad-hoc frameworks, which have no Team ID.
+  - Shipped binaries are stripped (`strip -S -x`). Their dSYMs go on each release as
+    `Shepherd-dSYMs.zip`.
+- **Enhanced Security** is set on the Mac target only, because at project level it would push
+  arm64e onto the iOS target. Pointer authentication stays off, since libghostty and Sparkle
+  ship no arm64e slice. The real protection is the hardened-process entitlements. The
+  compile-time half of `ENABLE_ENHANCED_SECURITY` (stack zero-init, typed allocators, libc++
+  hardening) reaches only `App/ShepherdLauncher.swift`: SwiftPM package targets do not inherit
+  target settings. So ShepherdPTYSpawn's C and the tree-sitter parsers build without it.
 
 ## Gotchas
 
