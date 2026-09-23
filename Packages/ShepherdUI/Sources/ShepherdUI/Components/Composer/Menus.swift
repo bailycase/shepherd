@@ -239,6 +239,7 @@ public struct NWModelPicker: View {
                                 Text("Loading models…").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
                             }
                             .padding(NW.Space.m)
+                            .nwTransition(.content)
                         }
                         ForEach(sections) { section in
                             NWMenuHeader(section.title)
@@ -258,6 +259,8 @@ public struct NWModelPicker: View {
                             }
                         }
                     }
+                    // The catalog arriving replaces "Loading models…"; filtering stays instant.
+                    .nwAnimation(.content, value: loading)
                 }
                 .frame(maxHeight: NWComposerMetrics.modelPickerMaxHeight)
                 .onChange(of: selection) { _, index in

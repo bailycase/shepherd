@@ -58,12 +58,22 @@ public struct NWComposer<Top: View, Field: View, Controls: View>: View {
                 .padding(EdgeInsets(top: NW.Space.xs, leading: NW.Space.s, bottom: NW.Space.s, trailing: NW.Space.s))
         }
         .background(nw.bgRaised, in: shape)
-        .nwBorder(isFocused ? nw.textTertiary : nw.lineStrong, radius: NW.Radius.m)
+        // As the card eases to a new height (a question taking the field's place, attachments
+        // arriving), what it holds is revealed by its edge rather than drawn outside it.
+        .clipShape(shape)
+        // The line and the ring fade with focus; keyed on focus alone, so they never lag the
+        // card as it grows.
+        .overlay {
+            Color.clear
+                .nwBorder(isFocused ? nw.textTertiary : nw.lineStrong, radius: NW.Radius.m)
+                .nwAnimation(.hover, value: isFocused)
+                .allowsHitTesting(false)
+        }
         .background {
-            if isFocused {
-                RoundedRectangle(cornerRadius: NW.Radius.m + NWComposerMetrics.focusRing)
-                    .inset(by: -NWComposerMetrics.focusRing).fill(nw.bgSelected)
-            }
+            RoundedRectangle(cornerRadius: NW.Radius.m + NWComposerMetrics.focusRing)
+                .inset(by: -NWComposerMetrics.focusRing).fill(nw.bgSelected)
+                .opacity(isFocused ? 1 : 0)
+                .nwAnimation(.hover, value: isFocused)
         }
     }
 }
@@ -97,14 +107,17 @@ private struct NWComposerChip: View {
     @State private var hovering = false
 
     var body: some View {
+        let filled = enabled && (active || hovering || configuration.isPressed)
         configuration.label
             .font(.nwSans(12))
             .foregroundStyle(.nw.textSecondary)
             .lineLimit(1)
             .padding(.horizontal, NW.Space.m)
             .frame(height: NWComposerMetrics.chipHeight)
-            .background(enabled && (active || hovering || configuration.isPressed) ? Color.nw.bgHover : .clear,
-                        in: RoundedRectangle(cornerRadius: NW.Radius.s))
+            .background {
+                RoundedRectangle(cornerRadius: NW.Radius.s).fill(filled ? Color.nw.bgHover : .clear)
+                    .nwAnimation(.hover, value: filled)
+            }
             .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
             .onHover { hovering = $0 }
             .nwFocusRing(radius: NW.Radius.s)
@@ -137,19 +150,22 @@ public struct NWComposerActionButton: View {
         self.action = action
     }
 
+    /// Send and Stop are one glyph, so a turn starting or ending blends the fill and the glyph
+    /// in place, together. (A symbol replace runs on SF Symbols' own, slower clock: it left an
+    /// arrow on the red Stop fill for a moment.)
     public var body: some View {
         let nw = Color.nw
+        let send = mode == .send
         Button(action: action) {
-            switch mode {
-            case .send:
-                Image(systemName: "arrow.up").font(.system(size: 13, weight: .semibold)).foregroundStyle(nw.textOnLantern)
-            case .stop:
-                Image(systemName: "stop.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.textOnFailed)
-            }
+            Image(systemName: send ? "arrow.up" : "stop.fill")
+                .font(.system(size: send ? 13 : 10, weight: .semibold))
+                .foregroundStyle(send ? nw.textOnLantern : nw.textOnFailed)
+                .nwContentTransition(.crossFade)
         }
-        .buttonStyle(NWComposerActionStyle(fill: mode == .send ? nw.lantern : nw.failed))
+        .buttonStyle(NWComposerActionStyle(fill: send ? nw.lantern : nw.failed))
         .disabled(!enabled)
-        .accessibilityLabel(mode == .send ? "Send" : "Stop")
+        .nwAnimation(.content, value: send)
+        .accessibilityLabel(send ? "Send" : "Stop")
     }
 }
 
@@ -172,7 +188,9 @@ private struct NWComposerActionCircle: View {
         configuration.label
             .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
             .background(fill.mix(with: .black, by: enabled && configuration.isPressed ? 0.1 : 0), in: Circle())
+            // Send brightens as soon as there is something to send.
             .opacity(enabled ? 1 : 0.35)
+            .nwAnimation(.hover, value: enabled)
             .contentShape(Circle())
             .nwFocusRingCircle()
     }
