@@ -9,18 +9,10 @@ import ShepherdTestSupport
 /// another thread holds a runtime lock at the moment of the fork.
 @Suite("PTY fork safety")
 struct ForkSafetyTests {
-    @Test(.disabled("""
-        bug: PTYSession.init resets signal dispositions in the forked child with `for sig in 1..<NSIG`; \
-        unoptimized builds (swift test, the Dev scheme) run that loop through IndexingIterator and \
-        swift_getTupleTypeMetadata2, which takes the runtime's metadata-cache os_unfair_lock. If any \
-        other thread held it at fork time the child aborts pre-exec ("crashed on child side of fork \
-        pre-exec", EXC_BREAKPOINT → SIGKILL) and the new pane dies at once with an empty screen. \
-        Reproduces in ~half of 150 forks when run alone; a C-style loop or a C helper would keep \
-        the child in async-signal-safe code.
-        """))
-    func freshSessionsSurviveForkingWhileOtherThreadsUseTheSwiftRuntime() async throws {
-        // Not `ScratchServer.fresh()`: that warms the child's metadata in this process, which masks
-        // the bug. Run this test alone; any earlier warm-up in the same process hides it too.
+    /// The child once reset signals with a Swift `for` loop, which in unoptimised builds took the
+    /// runtime's metadata lock: about half of 150 forks died pre-exec. The child side is now C
+    /// (ShepherdPTYSpawn).
+    @Test func freshSessionsSurviveForkingWhileOtherThreadsUseTheSwiftRuntime() async throws {
         let h = try ScratchServer(dir: uniqueDirectory("fork"))
         defer { h.stop() }
         let exits = Locked<[SessionID: Int32?]>([:])
