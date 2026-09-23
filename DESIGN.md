@@ -313,7 +313,7 @@ overshoot as they grow from their anchor) and the confirmation pop (`.bouncy`, 4
 | `content` | 120ms | `.smooth` | a value or label changing in place: counts, status words, an icon | cross-fading (`nwContentTransition`) | unchanged; rolling digits and symbol swaps cross-fade |
 | `disclosure` | 180ms | `.smooth` | expanding and collapsing in place, the chevron turning | a 6pt nudge from the top, fading | a 120ms cross-fade |
 | `list` | 180ms | `.smooth` | rows arriving, leaving, reordering | a 6pt nudge, fading | a 120ms cross-fade |
-| `pane` | 180ms | `.smooth` | the right pane, the overlaid sidebar | sliding from its edge, opaque | a 120ms cross-fade in place |
+| `pane` | 180ms | `.smooth` | the right pane, the sidebar (docked or overlaid) | sliding from its edge, opaque | a 120ms cross-fade in place |
 | `overlay` | 180ms | `.snappy` | the palette, composer menus, popovers | growing from 96% at its anchor, fading | a 120ms cross-fade |
 | `sheet` | 240ms | `.smooth` | in-window sheets, a whole-window swap (Settings), toasts | rising from its edge, fading | a 120ms cross-fade |
 | `emphasis` | 240ms | `.bouncy` | a small confirmation pop (viewed, copied, sent) | popping from 85% | nothing |
