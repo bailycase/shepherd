@@ -4,6 +4,7 @@ import SwiftUI
 /// palette, and settings only; never under the composer, never for an unwired chord.
 public struct NWKeycap: View {
     let keys: [String]
+    @Environment(\.displayScale) private var displayScale
 
     /// Splits a display chord ("⇧⌘N") into caps: each modifier, then the key.
     public init(_ chord: String) {
@@ -32,9 +33,11 @@ public struct NWKeycap: View {
                     .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
                     .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
                     // The board's heavier bottom edge (1.5px against 1px): a cap, not a box. A
-                    // second hairline, since a device pixel does not split.
+                    // second hairline just above the border's, since a device pixel does not split.
                     .overlay(alignment: .bottom) {
-                        NWHairline(color: nw.lineStrong).padding(.horizontal, NW.Radius.xs)
+                        NWHairline(color: nw.lineStrong)
+                            .padding(.horizontal, NW.Radius.xs)
+                            .padding(.bottom, NW.hairline(displayScale))
                     }
             }
         }
