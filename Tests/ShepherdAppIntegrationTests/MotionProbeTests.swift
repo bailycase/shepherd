@@ -139,6 +139,44 @@ struct MotionProbeTests {
         }
     }
 
+    /// The confirmation pop swells past its size and settles exactly back (a view left at a
+    /// scale a hair off 1 draws its edges soft for good); under Reduce Motion it never moves.
+    @Test(arguments: [false, true]) func aPopSwellsAndSettlesBackUnlessReduceMotion(reduceMotion: Bool) async {
+        let model = PaneModel()
+        let window = OffscreenWindow(size: CGSize(width: SamplePane.width, height: SamplePane.height), dark: false,
+                                     PoppingBar(model: model).environment(\._accessibilityReduceMotion, reduceMotion))
+        defer { window.close() }
+        // Nothing changes under Reduce Motion, so the recording runs to its timeout: keep it
+        // past the pop's length and no longer.
+        let recording = await MotionProbe.record(window, region: strip, timeout: reduceMotion ? 1 : 5) { model.open.toggle() }
+
+        let swollen = recording.frames.compactMap { $0.firstColumn(differingFrom: recording.before) }
+            .filter { $0 < PoppingBar.restingEdge }
+        if reduceMotion {
+            #expect(recording.frames.allSatisfy { $0.matches(recording.before) })
+        } else {
+            #expect(!swollen.isEmpty, "caught swelling in \(recording.frames.count) frames")
+            #expect(recording.settled.matches(recording.before), "settled back to its size")
+        }
+    }
+
+    /// A 100pt black bar in the middle of the strip that pops when `model.open` flips.
+    private struct PoppingBar: View {
+        let model: PaneModel
+
+        var body: some View {
+            ZStack {
+                Color.white
+                Color.black.frame(width: Self.barWidth, height: SamplePane.height / 2).nwPop(trigger: model.open)
+            }
+            .frame(width: SamplePane.width, height: SamplePane.height)
+        }
+
+        static let barWidth: CGFloat = 100
+        /// Where the bar's leading edge rests.
+        static let restingEdge = Int((SamplePane.width - barWidth) / 2)
+    }
+
     /// A pane sliding in from the leading edge beside a hosted view, which the pane narrows.
     private struct PaneBesideHostedView: View {
         let model: PaneModel
