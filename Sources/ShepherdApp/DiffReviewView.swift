@@ -56,7 +56,7 @@ struct ReviewPaneHost: View {
 }
 
 /// The pane for one session; its state lives in `ReviewPaneModel`.
-private struct ReviewPaneContent: View {
+struct ReviewPaneContent: View {
     let session: ReviewSession
     let touchedPaths: Set<String>
     @State private var model: ReviewPaneModel
@@ -64,9 +64,14 @@ private struct ReviewPaneContent: View {
     @FocusState private var commentFocused: Bool
 
     init(session: ReviewSession, actions: ReviewActions, touchedPaths: Set<String>) {
-        self.session = session
+        self.init(model: ReviewPaneModel(session: session, actions: actions), touchedPaths: touchedPaths)
+    }
+
+    /// A pane over a model the caller holds (tests drive it as the pane's own controls do).
+    init(model: ReviewPaneModel, touchedPaths: Set<String> = []) {
+        session = model.session
         self.touchedPaths = touchedPaths
-        _model = State(initialValue: ReviewPaneModel(session: session, actions: actions))
+        _model = State(initialValue: model)
     }
 
     var body: some View {
@@ -74,10 +79,14 @@ private struct ReviewPaneContent: View {
             ReviewHeader(model: model, session: session)
             if !session.files.isEmpty {
                 ReviewFileStrip(model: model, session: session, touchedPaths: touchedPaths)
+                    .nwTransition(.content)
             }
             ReviewBody(model: model, session: session, commentFocused: $commentFocused)
             ReviewComposerBar(model: model, session: session, focused: $summaryFocused)
         }
+        // Loading, the diff, "No changes", and an error cross-fade, as does one side's diff for
+        // the other (Local | PR); a reload of the same side changes in place.
+        .nwAnimation(.content, value: ReviewBody.Content(session))
         // Controls read focus from their nearest focusable ancestor: without this boundary the
         // focused pane would draw every button's focus ring.
         .focusable(false)
@@ -120,7 +129,11 @@ private struct ReviewHeader: View, Equatable {
 
     var body: some View {
         NWPaneHeader("Review", closeLabel: "Close review", close: model.actions.close) {
+            // Cross-faded, not rolled: rolling digits through its colored runs leaves the old
+            // count's ghost for most of a second.
             subtitle.truncationMode(.middle)
+                .nwContentTransition(.crossFade)
+                .nwAnimation(.content, value: [session.isLoading ? -1 : session.files.count, session.addedCount, session.removedCount])
         } controls: {
             NWSegmentedPicker("Diff", selection: $model.pullRequestMode, options: [(false, "Local"), (true, prLabel)], size: .s)
                 .disabled(session.isLoading)
@@ -163,7 +176,7 @@ private struct ReviewFileStrip: View {
     let touchedPaths: Set<String>
 
     var body: some View {
-        NWFileStrip(items, selection: model.currentFile) { model.select($0) }
+        NWFileStrip(items, selection: model.currentFile, animatesSelection: !model.movedByKey) { model.select($0) }
             .overlay(alignment: .bottom) { NWHairline() }
     }
 
@@ -186,23 +199,44 @@ private struct ReviewBody: View, Equatable {
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
+    /// What the body shows.
+    enum Content: Equatable {
+        case error, loading, empty
+        /// The diff of one side (`pr`: the PR's), so switching sides swaps the whole list.
+        case diff(pr: Bool)
+
+        @MainActor init(_ session: ReviewSession) {
+            if session.loadError != nil { self = .error }
+            else if session.isLoading && session.files.isEmpty { self = .loading }
+            else if session.files.isEmpty { self = .empty }
+            else { self = .diff(pr: session.filesArePR) }
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            if let error = session.loadError {
-                NWBanner(.failed, title: error)
+        // Overlaid, so the state leaving and the one arriving cross-fade in the same place.
+        ZStack {
+            switch Content(session) {
+            case .error:
+                NWBanner(.failed, title: session.loadError ?? "")
                     .padding(NW.Space.l)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            } else if session.isLoading && session.files.isEmpty {
+                    .nwTransition(.content)
+            case .loading:
                 HStack(spacing: NW.Space.m) {
                     ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.reviewLoadingSpinner))
                     Text("Loading the diff…").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if session.files.isEmpty {
+                .nwTransition(.content)
+            case .empty:
                 NWEmptyState(Text("No changes"), message: emptyMessage, showsMark: false)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+                    .nwTransition(.content)
+            case .diff(let pr):
                 ReviewDiffList(model: model, session: session, commentFocused: commentFocused)
+                    .id(pr)
+                    .nwTransition(.content)
             }
         }
     }
@@ -237,6 +271,9 @@ private struct ReviewDiffList: View, Equatable {
                         )
                     }
                 }
+                .nwAnimation(.disclosure, value: model.disclosures)
+                // A file leaving (reverted) or arriving on a reload of the same side.
+                .nwAnimation(.list, value: session.files.map(\.id))
             }
             .modifier(ReviewScrollFollower(model: model, session: session, proxy: proxy))
         }
@@ -246,26 +283,29 @@ private struct ReviewDiffList: View, Equatable {
 }
 
 /// Scrolls the diff to a requested file (the strip, n/p, a "review ›" link) or hunk (j/k). Its
-/// own view, so the requests it watches never re-render the list.
+/// own view, so the requests it watches never re-render the list. A click or a link scrolls
+/// there; keyboard navigation lands at once.
 private struct ReviewScrollFollower: ViewModifier {
     let model: ReviewPaneModel
     let session: ReviewSession
     let proxy: ScrollViewProxy
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: session.focusRequest) { _, _ in scrollToFocus() }
-            .onChange(of: session.files) { _, _ in scrollToFocus() }
+            .onChange(of: session.focusRequest) { _, _ in scrollToFocus(animated: true) }
+            // A file asked for before the diff loaded: the diff opens there.
+            .onChange(of: session.files) { _, _ in scrollToFocus(animated: false) }
             .onChange(of: model.currentHunk) { _, hunk in
                 if let hunk { proxy.scrollTo(hunk, anchor: .top) }
             }
-            .onAppear { DispatchQueue.main.async { scrollToFocus() } }
+            .onAppear { DispatchQueue.main.async { scrollToFocus(animated: false) } }
     }
 
-    private func scrollToFocus() {
+    private func scrollToFocus(animated: Bool) {
         guard let id = model.takeFocusRequest() else { return }
-        withAnimation(reduceMotion ? nil : .easeOut(duration: NW.Motion.pane.duration)) {
+        if animated, !model.movedByKey {
+            withNWAnimation(.scroll) { proxy.scrollTo(id, anchor: .top) }
+        } else {
             proxy.scrollTo(id, anchor: .top)
         }
     }
@@ -314,7 +354,7 @@ private struct DiffFileSection: View, Equatable {
                          revert: canRevert ? { model.reverting = file } : nil,
                          open: canOpen ? { model.actions.open?(file) } : nil)
                 .contentShape(Rectangle())
-                .onTapGesture { model.currentFile = file.id }
+                .onTapGesture { model.point(at: file.id) }
         }
     }
 
@@ -323,11 +363,13 @@ private struct DiffFileSection: View, Equatable {
             ReviewCommentEditor(initialText: comments[line.key]?.text ?? "", focused: commentFocused,
                                 save: { model.saveComment($0, fileID: file.id, lineID: line.key) },
                                 cancel: { model.cancelComment() })
+                .nwTransition(.disclosure)
         } else if let comment = comments[line.key] {
             NWInlineComment(initial: ReviewAuthor.initial, author: "You",
                             meta: "line \(comment.lineNumber) · \(reviewCommentAge(comment.createdAt))", text: comment.text,
                             onEdit: { model.startComment(fileID: file.id, lineID: line.key) },
                             onDelete: { model.deleteComment(fileID: file.id, lineID: line.key) })
+                .nwTransition(.disclosure)
         }
     }
 }

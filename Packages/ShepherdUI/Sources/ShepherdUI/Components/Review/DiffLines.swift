@@ -148,6 +148,7 @@ public struct NWDiffLine: View {
         .background(background(nw))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
         .onTapGesture(count: 2) { onComment?() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(line.accessibilityText)
