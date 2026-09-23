@@ -20,7 +20,7 @@ public struct NativeCardLayout: Equatable, Hashable, Sendable {
         guard let placement, !placement.byToolCall.isEmpty else { self.init(); return }
         let all = placement.all
         self.init(callIDs: Set(placement.byToolCall.keys),
-                  folds: all.count > NativeRunsStripSummary.collapseThreshold || nativeSubagentGroupIsTerminal(all))
+                  folds: all.count > NativeRunsStrip.collapseThreshold || nativeSubagentGroupIsTerminal(all))
     }
 }
 

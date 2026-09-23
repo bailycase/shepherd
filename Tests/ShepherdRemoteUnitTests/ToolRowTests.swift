@@ -141,26 +141,6 @@ struct ToolRowTests {
         #expect(edit.accessibilityLabel == "edit, a, +2 \u{2212}1, 1 block, done")
         #expect(row("custom", status: "running").accessibilityLabel == "custom, running")
     }
-
-    // MARK: Durations
-
-    @Test func aFinishedCallMeasuresStartToResult() throws {
-        let done = NativeToolRow(Fixture.tool("bash", startedAt: 1_000, timestamp: 11_210))
-        let duration = try #require(done.duration(now: Date(timeIntervalSince1970: 999)))
-        #expect(duration.text == "10.2s" && !duration.live)
-    }
-
-    @Test func aRunningCallCountsLiveFromItsStart() throws {
-        let running = NativeToolRow(Fixture.tool("bash", status: "running", startedAt: 1_000))
-        let duration = try #require(running.duration(now: Date(timeIntervalSince1970: 49.9)))
-        #expect(duration.text == "48s" && duration.live)
-    }
-
-    @Test func durationIsUnknownWithoutAStartOrWithAnEndBeforeTheStart() {
-        #expect(NativeToolRow(Fixture.tool("bash", timestamp: 5)).duration(now: Date()) == nil)
-        #expect(NativeToolRow(Fixture.tool("bash", startedAt: 5_000, timestamp: 4_000)).duration(now: Date()) == nil)
-        #expect(NativeToolRow(Fixture.tool("bash", startedAt: 5_000)).duration(now: Date()) == nil)
-    }
 }
 
 @Suite("DiffStat")

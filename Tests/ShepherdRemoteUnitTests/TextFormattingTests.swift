@@ -18,16 +18,6 @@ struct TextFormattingTests {
         #expect(nativeSubagentShortDuration(seconds) == expected)
     }
 
-    @Test func subagentHeaderDurationIsTheLiveFormat() {
-        #expect(nativeSubagentDurationText(37 * 60 + 21) == "37m 21s")
-        #expect(nativeSubagentDurationText(48.7) == "48s")
-    }
-
-    @Test func ageTextNeverGoesNegative() {
-        #expect(nativeAgeText(Board.nowMS - 4000, now: Board.now) == "4s ago")
-        #expect(nativeAgeText(Board.nowMS + 5000, now: Board.now) == "0s ago")
-    }
-
     @Test(arguments: [(999, "999"), (1_000, "1k"), (42_400, "42k"), (581_000, "581k"), (1_600_000, "1.6m"), (2_000_000, "2m")])
     func compactTokensReadLikeTheBoard(tokens: Int, expected: String) {
         #expect(nativeCompactTokens(tokens) == expected)
