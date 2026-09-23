@@ -288,7 +288,8 @@ family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-
   - Failed: Open replay (the inspector) and Re-run (resume with the original task).
 - **Grouping:** more than three siblings fold into a runs strip: one step per run, the tally,
   tokens, and the group's time. Each step opens its run in the inspector (its tooltip names the
-  run), and the rest of the row shows or hides every card. Needs-you cards stay visible.
+  run and its state), and the rest of the row shows or hides every card. Needs-you cards stay
+  visible.
 - **Ledger:** once every run in a spawn group has finished and none still asks, the cards become
   one ledger at the first spawn's position. The header shows one step per run, "all done · 45m"
   (or "2 done · 1 failed · 45m"), and the combined DiffStat. Below it, one row per child in spawn
