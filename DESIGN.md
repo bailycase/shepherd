@@ -321,7 +321,7 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 │ ⌄ Shepherd    8  │                       ┌──────────────┐       │ review or subagent   │
 │   ● agent   ASK  │                       │ user bubble  │       │ inspector, 600pt     │
 │   ● agent    4m  │                       └──────────────┘       │ (min 480, ≤ half)    │
-│     ● worker 37m │   agent prose, 640pt measure                 │                      │
+│   ○ agent        │   agent prose, 640pt measure                 │                      │
 │ HORIZON          │   ✎ Edited 4 files  +149 −63  ›              │                      │
 │   ● Unreachable  │   ┌ composer ──────────────────────────┐     │                      │
 ├──────────────────┤   └────────────────────────────────────┘     │                      │
@@ -376,37 +376,34 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Sections** (`NWSidebarSection`): a micro caps label with a trailing count; clicking it folds
   the section. With remote hosts configured, hovering a header shows its machine chord (⌃⇧n).
   1. **This Mac**, with its agent count and a hover `+` for New Space….
-  2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`,
-     and a hover `+` for a new space on the host. Otherwise one status row
-     (`NWSidebarNoticeRow`) stands in for its spaces: "Connecting…", "Unreachable" with Retry, or
-     "Off" with Connect.
+  2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`
+     (blocked agents plus subagents asking), and a hover `+` for a new space on the host.
+     Otherwise one status row (`NWSidebarNoticeRow`) stands in for its spaces: "Connecting…",
+     "Unreachable" with Retry, or "Off" with Connect.
   3. **Automations** as the footer (`NWSidebarFooter`), behind a hairline and hidden while
      empty: a bolt, "Automations", and a count badge that turns `attention` while an
      automation's agent needs you. Clicking it discloses the automation rows.
 - **Spaces** (`NWSidebarDisclosureRow`): chevron, name in medium weight, then a `⎇n` worktree
-  count and the blocked count in `lanternText` (else the agent count). Clicking toggles the
-  space; it has no view of its own. A hover `+` starts a new agent in the space. Nested projects
-  indent by path containment, and agents nest beneath their space.
+  count and, in `lanternText`, how many questions wait on you (blocked agents plus subagents
+  asking; `SidebarAttention`), else the agent count. Clicking toggles the space; it has no view
+  of its own. A hover `+` starts a new agent in the space. Nested projects indent by path
+  containment, and agents nest beneath their space.
 - **Rows** (`NWSidebarRow`): the density's height, radius 6, 8pt leading padding plus 14pt per
   nesting level, and a 9pt gap after the dot.
   - A 6pt dot: `running` blue, `done` green, a hollow `textTertiary` ring while idle, and
-    `lantern` glowing while it needs you.
+    `lantern` glowing while it, or one of its subagents, needs you.
   - `⎇` marks a worktree agent. The title truncates at the tail, with the full title (and the
     worktree branch) in a tooltip.
   - Hover is `bgHover`; selected is `bgSelected` with the title in semibold.
 - **Trailing slot** of an agent row, in priority order (`SidebarAgentRowModel.accessory`):
   1. the ⌘-digit badge while ⌘ is held
-  2. "ASK" in `lanternText` while it needs you
-  3. "n sub" for a folded subagent group
-  4. elapsed time while working ("4m", counting live in mono 10)
-- **Subagents** nest under their agent with their run's state dot and name (the role). Trailing:
-  "ASK", elapsed time while running, or how long a finished run took (in `failed` when it
-  failed).
-  - While any run is live, the group is expanded.
-  - Once every run has finished, the group gets a disclosure row ("3 subagents · done 9:56"). It
-    is expanded for the selected thread and folded for the others, whose agent row then shows
-    "n sub".
-  - Selecting a subagent row selects its agent and opens the run in the inspector.
+  2. "ASK" in `lanternText` while it, or one of its subagents, needs you
+  3. elapsed time while working ("4m", counting live in mono 10)
+- **Subagents have no rows.** They live in their agent's thread (cards, the runs strip, the
+  ledger, and the inspector; see Subagents below) and in the palette. A subagent waiting on you
+  surfaces through its agent's row, which takes the needs-you dot and "ASK", and counts toward
+  its space's and host's needs-you counts, so the row to click is always marked. Live and
+  finished subagents leave the agent's row as it is.
 - **Automation rows:** the automation's name, and its run's state: "running", "ASK", "done", or
   "stopped" (a hollow dot, not selectable). The context menu has Run Now or Stop, and Delete
   Automation.
@@ -668,8 +665,9 @@ a `runningTint` highlight. ↑↓ move, ⏎ chooses, Esc closes and returns focu
 ### Subagents
 
 A subagent is a turn inside a turn. Its spawn call renders as a card where the call was, and raw
-wait or status dumps never appear. Behavior is specified in
-[native-subagents.md](docs/native-subagents.md).
+wait or status dumps never appear. Subagents live in their agent's thread and the palette; they
+have no sidebar rows, and one waiting on you marks its agent's row instead (see Sidebar).
+Behavior is specified in [native-subagents.md](docs/native-subagents.md).
 
 The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPresentation`
 (`Thread/SubagentPresentation.swift`) maps a `ChildRun` onto their values, `Thread/Subagents.swift`
@@ -824,7 +822,8 @@ The chrome never parses or restyles terminal output.
 - **Rows** (`NWPaletteRow`, the sidebar's row height): a stroke icon, the label, dim context, and
   the real shortcut as keycaps. The highlight is `runningTint` with a running icon. Subagent rows
   wear their run's state color.
-- **What it never shows:** footer hints, ⌘1–9 numbering, or any status the sidebar doesn't show.
+- **What it never shows:** footer hints, ⌘1–9 numbering, or any status the sidebar or the thread
+  doesn't show.
 
 ### Settings
 
@@ -917,7 +916,7 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 | --- | --- | --- | --- | --- |
 | Agent working | `running` | blue dot; elapsed trailing | Running · elapsed | Stop; the field queues a follow-up |
 | Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | Needs you | the question panel in place of the field |
-| A subagent needs you | `attention` | the run's row: "ASK" | "n subagents need you" | the card's answers and Reply… |
+| A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | "n subagents need you" | the card's answers and Reply… |
 | Agent done | `done` | green dot | Idle (outlined) | Send |
 | Agent idle | `idle` | hollow ring | Idle (outlined) | Send |
 | Connection lost | `failed` | — | Error | Send, plus a `failed` banner with Reconnect |
@@ -1000,8 +999,8 @@ Review-pane and menu keys are listed with their surfaces.
   carry an `accessibilityLabel`, and hover-only affordances (the sidebar's `+`, a comment's Edit
   and Delete, a diff line's `+`) are always reachable as buttons or named actions for VoiceOver.
 - **Rows read as one element:**
-  - agent rows: "title, [worktree,] running / needs you / idle / done"
-  - subagent rows: "name, subagent, state"; automation rows: "name, automation, state"
+  - agent rows: "title, [worktree,] running / needs you / idle / done" (needs you also while one
+    of its subagents asks); automation rows: "name, automation, state"
   - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
     and the hint "Shows the calls"; call rows: "edit, Sources/A.swift, +58 −41"
   - subagent cards: "name, role, state, detail", with the context bar as the value; ledger rows:

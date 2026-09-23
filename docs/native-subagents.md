@@ -21,8 +21,9 @@ both apply when an agent next launches.
   Shepherd loading the runtime; it does not install anything else. If you have installed the
   pi-subagents package yourself, it keeps working as before.
 - **Subagent display** loads `shepherd-subagents.ts`, the only publisher of `setAgentChildren`.
-  It merges native children with pi-subagents reports into the rows behind the sidebar, the
-  thread's cards, the ledger, and the inspector. With display off, children still run but none
+  It merges native children with pi-subagents reports into the runs behind the thread's cards,
+  runs strip, and ledger, the inspector, the palette's Subagents section, and the needs-you mark
+  a waiting child puts on its agent's sidebar row. With display off, children still run but none
   of that UI appears, and card commands fail because the server only accepts runs that were
   published.
 
@@ -301,7 +302,8 @@ family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-
 **Inspector.** It opens in the right pane beside the thread (`RightPaneSplit`: 600pt by default,
 at least 480pt, at most half the main column, the width remembered; it overlays the thread when
 the column is too narrow). It shares that slot with the review, and the inspector wins when both
-are open. Clicking the inspected card or ledger row again closes it; sidebar rows always open it.
+are open. Clicking the inspected card or ledger row again closes it; a palette pick always opens
+it.
 
 - **Header:** the name and "k of n", above a line with the model, the thinking level (live runs
   only), turns, and tokens (live) or "done 11:02" (finished). Live runs have Pause/Continue and
@@ -325,11 +327,10 @@ are open. Clicking the inspected card or ledger row again closes it; sidebar row
   it. It uses the run's cwd and model, falling back to the parent's. A missing transcript shows
   an error and creates nothing. Remote agents have no Fork.
 
-**Sidebar.** Children nest under their parent with their state dot, and "ASK", elapsed time, or
-how long they took trailing (in `failed` for a failed run). A group stays expanded while any run
-is live. Once all are finished it gets a disclosure row ("3 subagents · done 9:56"). The group is
-expanded for the selected thread and folded for the others, whose agent row then shows "n sub".
-Selecting a child selects its parent and opens the inspector.
+**Sidebar.** Children have no sidebar rows; everything about a run lives in the parent's thread
+(and the palette). A child waiting on your answer makes its parent's row need you (the lantern
+dot and "ASK") and counts toward its space's and host's needs-you counts, so the sidebar still
+says which thread to open. Live and finished children leave the parent's row as it is.
 
 Child runs are display state reported by the extension. Shepherd never persists them.
 

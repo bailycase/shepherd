@@ -272,7 +272,7 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-status.ts      status + active pi session       shepherd-namer.ts   agent titles
   shepherd-panes.ts       pane_*, agent_list/send/spawn, automation_*, notify
   shepherd-review.ts      review_diff (opens the review pane)
-  shepherd-subagents.ts   setAgentChildren (native + pi-subagents rows)
+  shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
   shepherd-theme.ts       theme sync for pi run by hand in a terminal pane
@@ -515,8 +515,9 @@ are load-bearing:
 - The last pane in a layout cannot be closed.
 
 Shepherd does not nest agents. pi extensions own subagent execution (the bundled native runtime
-is on by default), and the app only *projects* the results: sidebar rows, cards, and the
-inspector. Child runs are display state and never persisted.
+is on by default), and the app only *projects* the results in the parent's thread (cards, the
+runs strip, the ledger, and the inspector) and the palette. Subagents have no sidebar rows; one
+waiting on you marks its parent's row. Child runs are display state and never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps every
 mounted agent layout in the view tree, and selection only changes which one is visible (opacity,
