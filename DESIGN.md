@@ -258,7 +258,7 @@ leading from the face's real metrics); `.font(.nw(_:))` alone suits single lines
 - The terminal font (family and size, default SF Mono 12.5) is its own setting in Settings ▸
   Terminal and never follows the chrome's text scale.
 
-## Space, radius, height, elevation, motion
+## Space, radius, height, elevation
 
 - **Space** (`NW.Space`, 4pt grid): `xxs 2`, `xs 4`, `s 6`, `m 8`, `l 12`, `xl 16`, `xxl 24`,
   `xxxl 32`. Padding and gaps use only these steps.
@@ -283,18 +283,74 @@ leading from the face's real metrics); `.font(.nw(_:))` alone suits single lines
   - `.nwFocusRing()`: running blue at `focusRing`, 2pt wide, drawn outside the control, for
     keyboard focus only (`.nwFocusRing(_ visible:)` for a field or card whose focus the caller
     tracks; `.nwFocusRingCircle()` for icon buttons).
-- **Motion** (`NW.Motion`): `glow` 1.6s ease-in-out (attention only), `spin` 1s linear (running
-  work), `hover` 120ms, `pane` 180ms, `sheet` 240ms. Apply them with `.nwAnimation(_:value:)`.
-  - The glow and the spinner are clock-driven (`NWPhase`), so toggling Reduce Motion while they
-    are on screen is safe.
-  - Under Reduce Motion both are static, and panes and sheets cross-fade (120ms) instead of
-    moving.
 - **Icons:** SF Symbols, monochrome, medium weight: 14pt in icon buttons, smaller inline. Status
   glyphs come from `AgentState` (`NWStateGlyph`); never emoji. The Foundations board names the
   symbols to use
   (`sidebar.left`, `square.and.pencil`, `arrow.up`, `stop.fill`, `paperclip`, `lightbulb`,
   `arrow.triangle.branch`, `plus.forwardslash.minus`, `ellipsis`, `magnifyingglass`, `bolt`,
   `desktopcomputer`, …).
+
+## Motion
+
+Shepherd moves the way a native Mac app does: things come from somewhere, go somewhere, and
+never jump, and nothing moves for decoration. `NW.Motion` (`Tokens/Motion.swift`) holds every
+motion. The Foundations board's durations are the anchors (hover 120ms, panes 180ms, sheets
+240ms, the glow 1.6s, the spinner 1s, the skeleton 1.4s), and every one-shot motion runs on a
+SwiftUI spring at its anchor.
+
+**Why springs.** A spring keeps its velocity when a change is interrupted, so a hover flicked in
+and out, or a pane toggled twice, retargets from where it is instead of restarting. A spring's
+duration is perceptual: at its anchor a change reads as done (98.6% of the way for `.smooth`), and
+the last fraction of a point settles by about 1.7× the anchor. Anything that moves layout or
+slides from an edge is critically damped (`.smooth`, no overshoot), so a pane never pulls away
+from the window's edge and a row never overshoots its slot. Only overlays (`.snappy`, 0.6%
+overshoot as they grow from their anchor) and the confirmation pop (`.bouncy`, 4.6%) bounce.
+`MotionTests` (ShepherdUI) pins all of this.
+
+| Motion | Anchor | Curve | For | Comes and goes by | Under Reduce Motion |
+| --- | --- | --- | --- | --- | --- |
+| `hover` | 120ms | `.smooth` | hover and press fills, focus rings, a control's color | fading | unchanged |
+| `content` | 120ms | `.smooth` | a value or label changing in place: counts, status words, an icon | cross-fading (`nwContentTransition`) | unchanged; rolling digits and symbol swaps cross-fade |
+| `disclosure` | 180ms | `.smooth` | expanding and collapsing in place, the chevron turning | a 6pt nudge from the top, fading | a 120ms cross-fade |
+| `list` | 180ms | `.smooth` | rows arriving, leaving, reordering | a 6pt nudge, fading | a 120ms cross-fade |
+| `pane` | 180ms | `.smooth` | the right pane, the overlaid sidebar | sliding from its edge, opaque | a 120ms cross-fade in place |
+| `overlay` | 180ms | `.snappy` | the palette, composer menus, popovers | growing from 96% at its anchor, fading | a 120ms cross-fade |
+| `sheet` | 240ms | `.smooth` | in-window sheets, a whole-window swap (Settings), toasts | rising from its edge, fading | a 120ms cross-fade |
+| `emphasis` | 240ms | `.bouncy` | a small confirmation pop (viewed, copied, sent) | popping from 85% | nothing |
+| `scroll` | 240ms | `.smooth` | turn jumps, revealing a row | — | instant |
+| `glow` | 1.6s | ease-in-out, repeating | attention only | — | static |
+| `spin` | 1s | linear, repeating | running work | — | static |
+| `shimmer` | 1.4s | ease-in-out, repeating | loading placeholders | — | static |
+
+The glow, the spinner, and the shimmer are clock-driven (`NWPhase`), so Reduce Motion can change
+while they are on screen.
+
+**Applying motion.** Never write a duration or a curve in a view: an ad-hoc
+`withAnimation(.easeOut(duration: 0.15))` is a bug, like a hardcoded color.
+
+- **State a view model or store changes** (a pane opened from a menu, the palette from ⌘K, a row
+  a server broadcast adds): the view attaches the motion, `.nwAnimation(_:value:)` on the
+  container and `.nwTransition(_:edge:)` on what comes and goes, so every path that changes the
+  value animates the same way.
+- **State an action changes** (a click, a key): `withNWAnimation(_:_:)`, which reads Reduce Motion
+  from the system; its `completion:` form fires once the motion has finished.
+- **Content changing in place:** `.nwContentTransition(_:)` (`.numeric`, `.interpolate`,
+  `.symbol`, `.crossFade`) with `.nwAnimation(.content, value:)`.
+- **A confirmation:** `.nwPop(trigger:)`, or `.symbolEffect(.bounce, value:)` on an SF Symbol.
+- An overlay grows from its anchor: `.nwTransition(.overlay, anchor: .bottomLeading)` for the
+  composer's menus, `.top` for the palette.
+
+**What never moves.** Put `.nwInstant()` on a subtree that a change could reach with an animation
+attached.
+
+- **Switching agents** is a visibility flip, and **keyboard navigation** (⌘1–9, ⌘↑/↓, a palette
+  or menu highlight, j/k in the review) lands at once.
+- **Terminal surfaces** never change size frame by frame: every frame of an animated resize is a
+  PTY resize. A split, or a right pane opening beside a terminal, resizes it once.
+- **Streaming text** appends without motion; a finished part may fade in once. Clock text
+  (elapsed times) ticks without rolling.
+- **Long lists** animate what changed, never the whole list: a thread's `LazyVStack` must not
+  animate every row when one turn arrives.
 
 ## Density and row settings
 
@@ -1013,16 +1069,22 @@ Review-pane and menu keys are listed with their surfaces.
 - **Color:** status color is always paired with a word or a glyph shape, and contrast follows the
   rules above.
 - **Focus:** keyboard focus shows the running focus ring; a click never does.
-- **Reduce Motion:** the glow and spinners are static; panes, sheets, and expanding rows
-  cross-fade briefly (120ms) instead of moving; turn jumps and scroll-to animations are dropped.
-  Otherwise motion uses the `NW.Motion` durations.
+- **Reduce Motion:** nothing moves (see Motion). The glow, spinners, and shimmer are static;
+  panes, sheets, overlays, and expanding or arriving rows cross-fade in place (120ms); rolling
+  digits and symbol swaps cross-fade; pops, turn jumps, and scroll-to animations are dropped.
+  Hover and content fades are unchanged.
 - **Menu bar:** every pane and agent action exists in the menu bar with its shortcut (File,
   View, Pane, Space, Agent, Machines, Appearance).
 
 ## Known gaps
 
-None open. When a change leaves code breaking this document, list the place here until it is
-fixed toward it.
+When a change leaves code breaking this document, list the place here until it is fixed toward
+it.
+
+- **Motion:** most surfaces do not apply the Motion table yet (the right pane, the overlaid
+  sidebar, the palette, menus, disclosures, and row changes appear and vanish at once), and a
+  few views still write their own curves: `ThreadView` (turn jumps, the jump-to-latest button),
+  `SidebarView` (revealing a row), `NWFileStrip` (scrolling to a file), and `DiffReviewView`.
 
 Deliberate exceptions stay with their rules rather than here: the layout's 1pt dividers, the
 checkbox's 1.5pt border, and the strokes of status glyphs (see Hairlines), and one-off type
@@ -1056,6 +1118,12 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
   ```
 
 - **Windows:** preview windows sit off-screen and never take focus.
+- **Motion:** SwiftUI keeps animating in an off-screen window, so `MotionProbe`
+  (`Tests/ShepherdAppIntegrationTests/Support`) records a thin strip of one every few milliseconds
+  while a change settles. Compare the frames with the start and end states (`inBetween`,
+  `firstColumn(differingFrom:)`, `lastRow(differingFrom:)`) to show that a surface slides, that it
+  only fades under Reduce Motion (`.environment(\._accessibilityReduceMotion, true)`), or that it
+  stays instant. `MotionProbeTests` is the example.
 - **Component Gallery:** in Debug builds, the View menu has a Component Gallery.
 - **The running app:** build and run the `Shepherd (Dev)` scheme and check the change in both
   appearances.
