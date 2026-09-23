@@ -46,11 +46,15 @@ struct AgentTurn: View, Equatable {
     var review: ((String) -> Void)? = nil
     /// The streaming turn's tail row ("Working…"): the last of its parts.
     var working: String? = nil
+    /// The turn just arrived in a thread on screen: its first parts make their entrance too.
+    /// Read only when the turn is created; not part of equality.
+    var arriving = false
     @State private var openThinking: Set<String> = []
+    @State private var shown = TurnShown()
 
     init(presentation: NativeTurnPresentation, live: Bool, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
-         working: String? = nil) {
+         working: String? = nil, arriving: Bool = false) {
         self.presentation = presentation
         self.live = live
         self.subagents = subagents
@@ -59,6 +63,7 @@ struct AgentTurn: View, Equatable {
         self.retry = retry
         self.review = review
         self.working = working
+        self.arriving = arriving
     }
 
     /// A transcript with no store behind it (the subagent inspector): the presentation is
@@ -102,18 +107,22 @@ struct AgentTurn: View, Equatable {
         return parts
     }
 
+    /// Parts that stream in once the turn is on screen (activity lines, prose, cards, notes,
+    /// errors) fade in, and the changes card and footer that end it rise into place. Text inside
+    /// a part, and the parts a turn opens or scrolls back in with, appear at once.
     var body: some View {
+        let entering = shown.appeared || arriving
         VStack(alignment: .leading, spacing: AppLayout.turnItemSpacing) {
             ForEach(parts) { part in
                 switch part {
                 case .activity(let bursts):
                     VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
                         ForEach(bursts) { burst in
-                            ActivityLineView(burst: burst, review: review).equatable()
+                            ActivityLineView(burst: burst, review: review).equatable().nwArrival(entering)
                         }
                     }
                 case .item(let item):
-                    itemView(item)
+                    itemView(item).nwArrival(entering, Self.entrance(item), edge: .bottom)
                 }
             }
             // Runs with no spawn row in this turn render after it; a folded group already
@@ -121,15 +130,27 @@ struct AgentTurn: View, Equatable {
             if let subagentActions, !subagents.trailing.isEmpty,
                subagents.byToolCall.isEmpty || !NativeCardLayout(subagents).folds {
                 SubagentStack(runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing, actions: subagentActions)
+                    .nwArrival(entering)
             }
-            if let working { WorkingRow(label: working) }
+            // The tail row passes from the thread into its reply unchanged: it never re-enters.
+            if let working { WorkingRow(label: working).nwArrival(shown.appeared) }
             if !live, !presentation.items.isEmpty {
-                if let changes = presentation.changes { changesCard(changes) }
-                footer
+                Group {
+                    if let changes = presentation.changes { changesCard(changes) }
+                    footer
+                }
+                .nwArrival(entering, .list, edge: .bottom)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
+        .onAppear { shown.appeared = true }
+    }
+
+    /// A failed request rises in like a row; everything else streaming in just fades.
+    private static func entrance(_ item: NativeTurnPresentation.Item) -> NW.Motion {
+        if case .error = item { return .list }
+        return .content
     }
 
     @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
@@ -209,6 +230,13 @@ enum TurnPresentationMemo {
         entries[key] = (messages, live, value)
         return value
     }
+}
+
+/// Whether a turn has been on screen, read by its parts as they are created. A reference, so
+/// noting the first appearance never re-renders the turn.
+@MainActor
+final class TurnShown {
+    var appeared = false
 }
 
 /// The tail row while the agent runs.

@@ -47,6 +47,7 @@ struct ThreadView: View {
     @State private var modelPickerRequest = 0
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
+    @State private var arrivals = ThreadArrivals()
 
     private var running: Bool { store.loadError == nil && store.settledRunning }
 
@@ -58,9 +59,14 @@ struct ThreadView: View {
         // its own before the reply starts). A question replaces it with the composer's question
         // panel, and live thinking carries its own spinner.
         let working = running && store.snapshot?.dialogs.isEmpty != false ? workingLabel(liveRow) : nil
+        // Loaded before this change: the tail row appearing with the first load just shows.
+        let settled = arrivals.armed
+        let arrived = arrivals.update(rows.map(\.id), loaded: store.snapshot != nil)
         ZStack(alignment: .bottom) {
             ScrollViewReader { proxy in
                 ScrollView {
+                    // Never animated as a whole (rows, their text, and the tail anchor change on
+                    // every streamed chunk): turns that arrive make their own entrance.
                     LazyVStack(alignment: .leading, spacing: AppLayout.turnSpacing) {
                         notices
                         if store.olderCursor != nil {
@@ -73,9 +79,10 @@ struct ThreadView: View {
                         }
                         if rows.isEmpty { emptyState }
                         ForEach(rows) { row in
-                            turn(row, running: running, working: row.live ? working : nil).id(row.id)
+                            turn(row, running: running, working: row.live ? working : nil, arriving: arrived.contains(row.id))
+                                .id(row.id)
                         }
-                        if let working, liveRow == nil { WorkingRow(label: working) }
+                        if let working, liveRow == nil { WorkingRow(label: working).nwArrival(settled) }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
                     .frame(maxWidth: AppLayout.threadMaxWidth)
@@ -178,14 +185,16 @@ struct ThreadView: View {
         }
     }
 
-    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?) -> some View {
+    /// A sent message rises into the thread; a reply's parts make their own entrances.
+    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?, arriving: Bool) -> some View {
         if row.isUser {
             UserTurn(messages: row.turn.messages, caption: row.turn.messages.first?.timestamp.map { nativeClockText($0) })
                 .equatable()
+                .nwArrival(arriving, .list, edge: .bottom)
         } else if let presentation = row.presentation {
             AgentTurn(presentation: presentation, live: row.live, subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
                       subagentActions: subagentActions, startedAt: row.startedAt,
-                      retry: retryAction(row, running: running), review: review, working: working)
+                      retry: retryAction(row, running: running), review: review, working: working, arriving: arriving)
                 .equatable()
         }
     }
@@ -308,6 +317,8 @@ struct ThreadView: View {
                 showsMark: false, framed: true
             )
             .padding(.top, AppLayout.emptyThreadTop)
+            // Fades in over "Starting pi…"; a thread that opens already started just shows it.
+            .nwArrival(arrivals.startedLoading)
         }
     }
 
@@ -318,6 +329,52 @@ struct ThreadView: View {
 
     private func quiet(_ text: String) -> some View {
         Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
+    }
+}
+
+/// Which turns arrived at a thread's tail with its latest change, so they (and only they) make
+/// an entrance. The first load, a page of older history, and a window or session swapped out
+/// from under the view arrive at once. Read in `body`, and a reference, so keeping it current
+/// never re-renders the thread; the same rows always answer the same set.
+@MainActor
+final class ThreadArrivals {
+    /// The thread has loaded once: from now on, turns appended at its tail arrive.
+    private(set) var armed = false
+    /// The first rows this saw were still loading ("Starting pi…").
+    private(set) var startedLoading = false
+    private var seen = false
+    private var signature: Signature?
+    private var arrived: Set<String> = []
+
+    private struct Signature: Equatable {
+        var count: Int
+        var first: String?
+        var last: String?
+    }
+
+    /// The rows in `ids` that arrived with this change. `loaded` is whether the thread has a
+    /// snapshot yet.
+    func update(_ ids: [String], loaded: Bool) -> Set<String> {
+        if !seen {
+            seen = true
+            startedLoading = !loaded
+        }
+        let next = Signature(count: ids.count, first: ids.first, last: ids.last)
+        guard next != signature || (loaded && !armed) else { return arrived }
+        let last = signature?.last
+        signature = next
+        guard armed else {
+            armed = loaded
+            arrived = []
+            return arrived
+        }
+        if let last, let index = ids.lastIndex(of: last) {
+            arrived = Set(ids[(index + 1)...])
+        } else {
+            // An empty thread's first turns arrive; a different window does not.
+            arrived = last == nil ? Set(ids) : []
+        }
+        return arrived
     }
 }
 
