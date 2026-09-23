@@ -235,6 +235,10 @@ final class QuitConfirmation {
         guard let prompt = pending, panel == nil else { return }
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
+        // A quit from the Dock or the app switcher arrives with another app in front, and macOS
+        // may decline `activate()`; the question still shows above it, as the alert it
+        // replaces did.
+        window.orderFrontRegardless()
         let panel = makePanel(prompt)
         panel.appearance = window.effectiveAppearance
         self.panel = panel
