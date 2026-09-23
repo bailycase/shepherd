@@ -112,4 +112,65 @@ struct MotionProbeTests {
         let edges = recording.inBetween.compactMap { $0.firstColumn(differingFrom: recording.before) }
         #expect(edges.contains { $0 > SamplePane.restingEdge + 4 }, "caught mid-slide: \(edges)")
     }
+
+    /// SwiftUI resizes a hosted NSView on every frame of an animated layout change; for a
+    /// Ghostty surface each is a PTY resize. Under `nwInstant()` the view takes its final size
+    /// once while the pane beside it still slides.
+    @Test func anInstantHostedViewResizesOnceWhileItsNeighborSlides() async {
+        for instant in [false, true] {
+            let model = PaneModel()
+            let surface = SizeLoggingView()
+            let window = OffscreenWindow(size: CGSize(width: SamplePane.width, height: SamplePane.height), dark: false,
+                                         PaneBesideHostedView(model: model, surface: surface, instant: instant))
+            defer { window.close() }
+            let recording = await MotionProbe.record(window, region: strip) {
+                surface.widths.removeAll()
+                model.open = true
+            }
+
+            #expect(!recording.inBetween.isEmpty, "the pane slides (instant: \(instant))")
+            let resting = SamplePane.width - SamplePane.paneWidth
+            if instant {
+                #expect(!surface.widths.isEmpty && surface.widths.allSatisfy { $0 == resting }, "\(surface.widths)")
+            } else {
+                // Without it, the same view is resized frame by frame: the check above is not vacuous.
+                #expect(Set(surface.widths).count > 3, "\(surface.widths)")
+            }
+        }
+    }
+
+    /// A pane sliding in from the leading edge beside a hosted view, which the pane narrows.
+    private struct PaneBesideHostedView: View {
+        let model: PaneModel
+        let surface: SizeLoggingView
+        let instant: Bool
+
+        var body: some View {
+            HStack(spacing: 0) {
+                if model.open {
+                    Color.black.frame(width: SamplePane.paneWidth).nwTransition(.pane, edge: .leading)
+                }
+                HostedView(view: surface).modifier(Instant(on: instant))
+            }
+            .frame(width: SamplePane.width, height: SamplePane.height)
+            .nwAnimation(.pane, value: model.open)
+        }
+    }
+
+    private struct HostedView: NSViewRepresentable {
+        let view: SizeLoggingView
+
+        func makeNSView(context: Context) -> SizeLoggingView { view }
+        func updateNSView(_ nsView: SizeLoggingView, context: Context) {}
+    }
+}
+
+/// A hosted view that records every width it is given, standing in for a terminal surface.
+private final class SizeLoggingView: NSView {
+    var widths: [CGFloat] = []
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        widths.append(newSize.width)
+    }
 }
