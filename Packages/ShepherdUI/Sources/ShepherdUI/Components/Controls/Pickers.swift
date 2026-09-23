@@ -169,6 +169,7 @@ private struct NWSliderTrack: View {
     let range: ClosedRange<Double>
     let step: Double
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.displayScale) private var displayScale
 
     var body: some View {
         let nw = Color.nw
@@ -179,10 +180,10 @@ private struct NWSliderTrack: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(nw.lineStrong).frame(height: NWSliderMetrics.track)
                 Capsule().fill(nw.lantern).frame(width: x + knob / 2, height: NWSliderMetrics.track)
-                // The 1pt ring sits outside the 14pt knob, as the board's spread shadow does.
+                // A hairline ring outside the 14pt knob, as the board's 1px spread shadow draws.
                 Circle()
                     .fill(nw.knobOn)
-                    .background { Circle().fill(nw.lineStrong).padding(-1) }
+                    .background { Circle().fill(nw.lineStrong).padding(-NW.hairline(displayScale)) }
                     .shadow(color: nw.knobShadow, radius: 1.5, y: 1)
                     .frame(width: knob, height: knob)
                     .offset(x: x)
