@@ -5,7 +5,7 @@ import Testing
 @testable import ShepherdApp
 
 /// Settings ▸ Advanced ▸ Reset through the view model, on isolated preference stores.
-@Suite("Settings reset", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Settings reset", .mainActorExclusive)
 @MainActor
 struct SettingsResetTests {
     private func customize(_ app: AppHarness) {
