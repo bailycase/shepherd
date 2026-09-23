@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 
@@ -72,21 +72,21 @@ struct RemoteSettings: View {
                 SettingsRow(title: "Token", subtitle: "Contents of the host's remote-token file.") {
                     SecureField("paste token", text: $draftToken)
                         .textFieldStyle(.plain)
-                        .font(Fonts.code)
-                        .shepherdField(mono: true)
+                        .font(Font.nw(.mono))
+                        .nwField(mono: true)
                         .frame(width: 240)
                 }
                 HStack(spacing: 8) {
                     Spacer()
                     if editingID != nil {
-                        Button("Cancel") { cancelEdit() }.buttonStyle(ShepherdButtonStyle(.ghost, size: .small))
+                        Button("Cancel") { cancelEdit() }.buttonStyle(NWButtonStyle(.ghost, size: .s))
                     }
                     Button(editingID == nil ? "Add host" : "Save") { save() }
-                        .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                        .buttonStyle(NWButtonStyle(.secondary, size: .s))
                         .disabled(!draftValid)
                 }
                 .padding(.horizontal, 16)
-                .frame(minHeight: Metrics.settingsRowMinHeight)
+                .frame(minHeight: AppLayout.settingsRowMinHeight)
             }
 
             SettingsGroup(title: "Serve this Mac",
@@ -107,8 +107,8 @@ struct RemoteSettings: View {
     private func field(_ placeholder: String, text: Binding<String>, mono: Bool = false, width: CGFloat = 240) -> some View {
         TextField(placeholder, text: text)
             .textFieldStyle(.plain)
-            .font(mono ? Fonts.code : Fonts.labelRegular)
-            .shepherdField(mono: mono)
+            .font(mono ? Font.nw(.mono) : Font.nw(.body))
+            .nwField(mono: mono)
             .frame(width: width)
     }
 
@@ -139,33 +139,33 @@ private struct RemoteHostRow: View {
 
     private var status: (String, Color) {
         switch connection.phase {
-        case .connected: ("connected", Tokens.successText)
-        case .connecting: ("connecting…", Tokens.textTertiary)
-        case .failed(let reason): ("unreachable · \(reason)", Tokens.dangerText)
-        case .disconnected: ("disconnected", Tokens.textTertiary)
+        case .connected: ("connected", Color.nw.done)
+        case .connecting: ("connecting…", Color.nw.textSecondary)
+        case .failed(let reason): ("unreachable · \(reason)", Color.nw.failed)
+        case .disconnected: ("disconnected", Color.nw.textSecondary)
         }
     }
 
     var body: some View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(connection.config.name).font(Fonts.rowTitle).foregroundStyle(Tokens.text)
+                Text(connection.config.name).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
                 let (word, color) = status
-                let address = Text("\(connection.config.host):\(String(connection.config.port)) · ").foregroundStyle(Tokens.textTertiary)
-                let count = Text(connection.phase == .connected ? " · \(connection.state.agents.count) agents" : "").foregroundStyle(Tokens.textTertiary)
+                let address = Text("\(connection.config.host):\(String(connection.config.port)) · ").foregroundStyle(Color.nw.textSecondary)
+                let count = Text(connection.phase == .connected ? " · \(connection.state.agents.count) agents" : "").foregroundStyle(Color.nw.textSecondary)
                 Text("\(address)\(Text(word).foregroundStyle(color))\(count)")
-                    .font(Fonts.micro)
+                    .font(Font.nw(.micro))
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 6) {
-                Button("Edit", action: edit).buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
-                Button("Reconnect", action: reconnect).buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
-                Button("Remove", action: remove).buttonStyle(ShepherdButtonStyle(.destructive, size: .small))
+                Button("Edit", action: edit).buttonStyle(NWButtonStyle(.secondary, size: .s))
+                Button("Reconnect", action: reconnect).buttonStyle(NWButtonStyle(.secondary, size: .s))
+                Button("Remove", action: remove).buttonStyle(NWButtonStyle(.danger, size: .s))
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .frame(minHeight: Metrics.settingsRowMinHeight)
+        .frame(minHeight: AppLayout.settingsRowMinHeight)
     }
 }

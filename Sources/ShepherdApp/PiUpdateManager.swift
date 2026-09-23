@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 
 /// Checks the installed pi version and optionally updates pi plus its user
 /// extensions. Checks are intentionally independent of the auto-update toggle

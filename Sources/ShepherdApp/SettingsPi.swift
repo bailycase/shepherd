@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdSessions
 
 struct PiSettings: View {
@@ -41,10 +41,10 @@ struct PiSettings: View {
                 SettingsGroup(title: "Native subagent defaults",
                               footnote: "Precedence: explicit call → agent file → these defaults → parent. Child tools run with your account's access.") {
                     SettingsRow(title: "Concurrency", subtitle: "Child process limit per parent, including workflows.") {
-                        ShepherdStepper(value: $settings.childConcurrency, in: 1...16)
+                        NWStepper(value: $settings.childConcurrency, in: 1...16)
                     }
                     SettingsRow(title: "Model", subtitle: "Agent files and explicit calls override this.") {
-                        PopupMenu(settings.childModel.isEmpty ? "Inherit parent" : settings.childModel,
+                        NWPopupMenu(settings.childModel.isEmpty ? "Inherit parent" : settings.childModel,
                                   mono: !settings.childModel.isEmpty, minWidth: 140) {
                             Button("Inherit parent") { settings.childModel = "" }
                             Divider()
@@ -54,7 +54,7 @@ struct PiSettings: View {
                         }
                     }
                     SettingsRow(title: "Thinking") {
-                        PopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized, minWidth: 140) {
+                        NWPopupMenu(settings.childThinking.isEmpty ? "Inherit parent" : settings.childThinking.capitalized, minWidth: 140) {
                             Button("Inherit parent") { settings.childThinking = "" }
                             Divider()
                             ForEach(["off", "minimal", "low", "medium", "high", "xhigh", "max"], id: \.self) { level in
@@ -63,10 +63,10 @@ struct PiSettings: View {
                         }
                     }
                     SettingsRow(title: "Context", subtitle: "Start each child fresh, or fork the parent's conversation.") {
-                        SegmentedControl(selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
+                        NWSegmentedPicker(selection: $settings.childContext, options: [("fresh", "Fresh"), ("fork", "Fork")])
                     }
                     SettingsRow(title: "Agent discovery", subtitle: "Project profiles require pi project trust. Files stay the source of truth.") {
-                        PopupMenu(Self.scopes.first { $0.0 == settings.childScope }?.1 ?? settings.childScope, minWidth: 140) {
+                        NWPopupMenu(Self.scopes.first { $0.0 == settings.childScope }?.1 ?? settings.childScope, minWidth: 140) {
                             ForEach(Self.scopes, id: \.0) { scope in
                                 Button(scope.1) { settings.childScope = scope.0 }
                             }
@@ -85,25 +85,25 @@ struct PiSettings: View {
                 }
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("pi \(updates.currentVersion ?? "—")").font(Fonts.rowTitle).foregroundStyle(Tokens.text)
+                        Text("pi \(updates.currentVersion ?? "—")").font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
                         status
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     HStack(spacing: 8) {
                         Button(updates.isChecking ? "Checking…" : "Check now") { updates.checkNow() }
-                            .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                            .buttonStyle(NWButtonStyle(.secondary, size: .s))
                             .disabled(updates.isBusy)
                         Button(piUpdateTitle) { updates.updatePiNow() }
-                            .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                            .buttonStyle(NWButtonStyle(.secondary, size: .s))
                             .disabled(!updates.canUpdatePi)
                         Button(extensionsUpdateTitle) { updates.updateExtensionsNow() }
-                            .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                            .buttonStyle(NWButtonStyle(.secondary, size: .s))
                             .disabled(!updates.canUpdateExtensions)
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .frame(minHeight: Metrics.settingsRowMinHeight)
+                .frame(minHeight: AppLayout.settingsRowMinHeight)
             }
         }
     }
@@ -123,24 +123,24 @@ struct PiSettings: View {
     /// "● Up to date · extensions updated · uses the pi resolved from your login shell"
     private var status: some View {
         let (text, color): (String, Color) = {
-            if updates.isChecking { return ("Checking…", Tokens.textMuted) }
+            if updates.isChecking { return ("Checking…", Color.nw.textTertiary) }
             switch updates.activeUpdate {
-            case .pi: return ("Updating pi…", Tokens.accentText)
-            case .extensions: return ("Updating extensions…", Tokens.accentText)
-            case .both: return ("Updating pi and extensions…", Tokens.accentText)
+            case .pi: return ("Updating pi…", Color.nw.running)
+            case .extensions: return ("Updating extensions…", Color.nw.running)
+            case .both: return ("Updating pi and extensions…", Color.nw.running)
             case nil: break
             }
-            if updates.isOutdated { return ("Update available · \(updates.latestVersion ?? "newer version")", Tokens.warningText) }
-            if let error = updates.lastError { return (error, Tokens.dangerText) }
-            if updates.lastChecked == nil { return ("Not checked yet", Tokens.textMuted) }
-            return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), Tokens.successText)
+            if updates.isOutdated { return ("Update available · \(updates.latestVersion ?? "newer version")", Color.nw.lanternText) }
+            if let error = updates.lastError { return (error, Color.nw.failed) }
+            if updates.lastChecked == nil { return ("Not checked yet", Color.nw.textTertiary) }
+            return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), Color.nw.done)
         }()
         return HStack(spacing: 6) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text("\(Text(text).foregroundStyle(color))\(Text(" · uses the pi resolved from your login shell").foregroundStyle(Tokens.textTertiary))")
+            Text("\(Text(text).foregroundStyle(color))\(Text(" · uses the pi resolved from your login shell").foregroundStyle(Color.nw.textSecondary))")
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(Fonts.description)
+        .font(Font.nw(.caption))
     }
 
     private var piUpdateTitle: String {

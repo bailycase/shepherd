@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import ShepherdDesign
+import ShepherdUI
 
 // MARK: Terminal
 
@@ -19,7 +19,7 @@ struct TerminalSettings: View {
             SettingsGroup(title: "Font", footnote: "Font changes apply to open terminals in place; running processes are untouched.") {
                 SettingsRow(title: "Font family",
                             subtitle: "Fixed-pitch families installed on this Mac. Ghostty falls back if a family can't be loaded.") {
-                    PopupMenu(settings.terminalFontFamily == AppSettings.systemFontFamily ? "System font" : settings.terminalFontFamily,
+                    NWPopupMenu(settings.terminalFontFamily == AppSettings.systemFontFamily ? "System font" : settings.terminalFontFamily,
                               minWidth: 200) {
                         Button("System font") { settings.terminalFontFamily = AppSettings.systemFontFamily }
                         Divider()
@@ -30,7 +30,7 @@ struct TerminalSettings: View {
                     .onChange(of: settings.terminalFontFamily) { vm.rebuildSurfaces() }
                 }
                 SettingsRow(title: "Font size") {
-                    ValueSlider(value: $settings.terminalFontSize, in: AppSettings.fontSizeRange, step: 0.5) {
+                    NWValueSlider(value: $settings.terminalFontSize, in: AppSettings.fontSizeRange, step: 0.5) {
                         String(format: "%.1f pt", $0)
                     }
                     .onChange(of: settings.terminalFontSize) { vm.rebuildSurfaces() }
@@ -42,7 +42,7 @@ struct TerminalSettings: View {
             SettingsGroup(title: "Shell", footnote: "A new shell applies to panes opened afterwards.") {
                 SettingsRow(title: "Shell",
                             subtitle: "Used by ⌘D splits and the panes an agent opens.") {
-                    PopupMenu(settings.shellPath, mono: true, minWidth: 180) {
+                    NWPopupMenu(settings.shellPath, mono: true, minWidth: 180) {
                         ForEach(AppSettings.knownShells(including: settings.shellPath), id: \.self) { shell in
                             Button(shell) { settings.shellPath = shell }
                         }
@@ -67,17 +67,17 @@ private struct FontPreview: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(Text("~/proj ").foregroundStyle(Tokens.accentText))❯ git status --short")
-            Text(" M Sources/App.swift").foregroundStyle(Tokens.warningText)
-            Text("?? Tests/AppTests.swift").foregroundStyle(Tokens.successText)
-            Text("ILil1| O0o {} -> the quick brown fox").foregroundStyle(Tokens.textTertiary)
+            Text("\(Text("~/proj ").foregroundStyle(Color.nw.running))❯ git status --short")
+            Text(" M Sources/App.swift").foregroundStyle(Color.nw.lanternText)
+            Text("?? Tests/AppTests.swift").foregroundStyle(Color.nw.done)
+            Text("ILil1| O0o {} -> the quick brown fox").foregroundStyle(Color.nw.textSecondary)
         }
         .font(font)
-        .foregroundStyle(Tokens.text)
+        .foregroundStyle(Color.nw.textPrimary)
         .lineLimit(1)
         .padding(10)
         .frame(width: 320, alignment: .leading)
-        .background(Tokens.bgCanvas, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1) }
+        .background(Color.nw.bgBase, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle, lineWidth: 1) }
     }
 }

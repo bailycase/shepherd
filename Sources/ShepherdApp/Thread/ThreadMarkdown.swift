@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import ShepherdDesign
+import ShepherdUI
 import ShepherdRemote
 
 /// Agent prose: block Markdown on the spec's ramp, capped at the 680pt measure.
@@ -9,10 +9,10 @@ struct Prose: View {
     var small = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Metrics.blockSpacing) {
+        VStack(alignment: .leading, spacing: AppLayout.blockSpacing) {
             MarkdownBlocksView(blocks: nativeMarkdownBlocks(text), small: small)
         }
-        .frame(maxWidth: Metrics.proseMaxWidth, alignment: .leading)
+        .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
     }
 
     /// Inline Markdown: code runs take the code face on `bgHover`. A per-run border cannot be
@@ -23,11 +23,11 @@ struct Prose: View {
             return AttributedString(text)
         }
         for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            attributed[run.range].font = Fonts.mono(13)
-            attributed[run.range].backgroundColor = Tokens.bgHover
+            attributed[run.range].font = Font.nwMono(13)
+            attributed[run.range].backgroundColor = Color.nw.bgHover
         }
         for run in attributed.runs where run.link != nil {
-            attributed[run.range].foregroundColor = Tokens.accentText
+            attributed[run.range].foregroundColor = Color.nw.running
         }
         return attributed
     }
@@ -40,38 +40,38 @@ struct MarkdownBlocksView: View {
     var small = false
     var nested = false
 
-    private var textFont: Font { small || nested ? Fonts.bodySmall : Fonts.body }
-    private var leading: CGFloat { small || nested ? Fonts.bodySmallLeading : Fonts.bodyLeading }
+    private var textFont: Font { small || nested ? Font.nw(.body) : Font.nw(.body) }
+    private var leading: CGFloat { small || nested ? NWTextStyle.body.lineSpacing : NWTextStyle.body.lineSpacing }
 
     var body: some View {
         ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
             switch block {
             case .heading(let level, let text):
-                Text(Prose.inline(text)).font(level <= 2 ? Fonts.sans(small ? 15 : 17, .semibold) : Fonts.title)
-                    .foregroundStyle(Tokens.text).lineSpacing(3).textSelection(.enabled)
+                Text(Prose.inline(text)).font(level <= 2 ? Font.nwSans(small ? 15 : 17, .semibold) : Font.nw(.title))
+                    .foregroundStyle(Color.nw.textPrimary).lineSpacing(3).textSelection(.enabled)
                     .padding(.top, nested ? 0 : 6)
             case .paragraph(let text):
-                Text(Prose.inline(text)).font(textFont).foregroundStyle(Tokens.text)
+                Text(Prose.inline(text)).font(textFont).foregroundStyle(Color.nw.textPrimary)
                     .lineSpacing(leading).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             case .quote(let text):
                 Text(Prose.inline(text)).font(textFont).lineSpacing(leading).italic()
-                    .foregroundStyle(Tokens.textSecondary).textSelection(.enabled)
+                    .foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
                     .padding(.leading, 12)
-                    .overlay(alignment: .leading) { Tokens.border.frame(width: 2) }
+                    .overlay(alignment: .leading) { Color.nw.lineSubtle.frame(width: 2) }
             case .code(let text, let language):
                 CodeBlockView(text: text, language: language)
             case .rule:
-                Tokens.border.frame(height: 1).padding(.vertical, 4)
+                NWHairline().padding(.vertical, 4)
             case .list(let ordered, let start, let items):
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         HStack(alignment: .firstTextBaseline, spacing: 0) {
                             Text(ordered ? "\(start + index)." : "•")
-                                .font(textFont).foregroundStyle(Tokens.textTertiary).monospacedDigit()
+                                .font(textFont).foregroundStyle(Color.nw.textSecondary).monospacedDigit()
                                 .frame(width: 18, alignment: .leading)
                             VStack(alignment: .leading, spacing: 4) {
-                                Text(Prose.inline(item.text)).font(textFont).foregroundStyle(Tokens.text)
+                                Text(Prose.inline(item.text)).font(textFont).foregroundStyle(Color.nw.textPrimary)
                                     .lineSpacing(leading).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)
                                 MarkdownBlocksView(blocks: item.children, small: small, nested: true)
@@ -95,7 +95,7 @@ struct CodeBlockView: View {
         let code = text.trimmingCharacters(in: .newlines)
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(language ?? "code").font(Fonts.micro).foregroundStyle(Tokens.textTertiary)
+                Text(language ?? "code").font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary)
                 Spacer()
                 Button(copied ? "Copied" : "Copy") {
                     NSPasteboard.general.clearContents()
@@ -103,18 +103,18 @@ struct CodeBlockView: View {
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 }
-                .buttonStyle(LinkButtonStyle(color: Tokens.textTertiary, font: Fonts.micro))
+                .buttonStyle(NWLinkButtonStyle(color: Color.nw.textSecondary, font: Font.nw(.micro)))
                 .accessibilityLabel("Copy code")
             }
             .padding(.horizontal, 12)
             .frame(height: 28)
-            .background(Tokens.bgMuted)
-            .overlay(alignment: .bottom) { Tokens.borderSubtle.frame(height: 1) }
+            .background(Color.nw.bgSunken)
+            .overlay(alignment: .bottom) { NWHairline() }
             ScrollView(.horizontal) {
                 highlighted(code)
-                    .font(Fonts.code)
-                    .lineSpacing(Fonts.outputLeading)
-                    .foregroundStyle(Tokens.text)
+                    .font(Font.nw(.mono))
+                    .lineSpacing(NWTextStyle.code.lineSpacing)
+                    .foregroundStyle(Color.nw.textPrimary)
                     .textSelection(.enabled)
                     .fixedSize()
                     .padding(.horizontal, 12)
@@ -123,9 +123,9 @@ struct CodeBlockView: View {
             .scrollIndicators(.hidden)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.md))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1) }
+        .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle, lineWidth: 1) }
     }
 
     private func highlighted(_ code: String) -> Text {

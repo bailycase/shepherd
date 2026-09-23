@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -39,8 +39,8 @@ struct RemoteWorktreeSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(finalize ? "Finalize worktree" : "Delete worktree agent")
-                .font(Fonts.title)
-                .foregroundStyle(Tokens.text)
+                .font(Font.nw(.title))
+                .foregroundStyle(Color.nw.textPrimary)
                 .padding(20)
             SheetRow("Host") { Text(vm.remoteHosts.connections.first { $0.id == target.hostID }?.config.name ?? "removed") }
             if finalize && vm.remoteWorktreeOperationIDs[target] == nil {
@@ -54,32 +54,32 @@ struct RemoteWorktreeSheet: View {
                         Button("Continue") {
                             Task { await prepareInput() }
                         }
-                        .buttonStyle(ShepherdButtonStyle(.primary))
+                        .buttonStyle(NWButtonStyle(.primary))
                         .disabled(setup.running || !setup.allPassed)
                     }.padding(20)
                 }
             }
             if let info {
-                SheetRow("Worktree") { Text(info.path).font(Fonts.code).lineLimit(1).truncationMode(.middle).help(info.path) }
-                SheetRow("Branch") { Text(info.branch).font(Fonts.code) }
+                SheetRow("Worktree") { Text(info.path).font(Font.nw(.mono)).lineLimit(1).truncationMode(.middle).help(info.path) }
+                SheetRow("Branch") { Text(info.branch).font(Font.nw(.mono)) }
                 if operation == nil && vm.remoteWorktreeOperationIDs[target] == nil {
                     if finalize && !checking && !showingSetup {
                         SheetRow("Base") {
                                     HStack {
-                                TextField("base branch", text: $options.base).font(Fonts.code).shepherdField(mono: true)
+                                TextField("base branch", text: $options.base).font(Font.nw(.mono)).nwField(mono: true)
                                 if let count = includedCommits {
                                     Text("Will include \(count) commit\(count == 1 ? "" : "s")")
-                                        .foregroundStyle(count > 20 ? Tokens.warningText : Tokens.textMuted)
+                                        .foregroundStyle(count > 20 ? Color.nw.lanternText : Color.nw.textTertiary)
                                 }
                             }
                         }
-                        SheetRow("Title") { TextField("PR title", text: $options.title).shepherdField() }
+                        SheetRow("Title") { TextField("PR title", text: $options.title).nwField() }
                         SheetRow("Description") {
                             VStack(alignment: .leading) {
                                 TextEditor(text: $options.body).frame(height: 70).scrollContentBackground(.hidden).padding(6)
-                                    .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.md))
-                                    .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
-                                if generatingDescription { Text("Generating on the host…").font(Fonts.caption).foregroundStyle(Tokens.textMuted) }
+                                    .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+                                if generatingDescription { Text("Generating on the host…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
                                 else if info.generateDescription == true {
                                     SheetLinkButton(label: descriptionPrepared ? "Regenerate…" : "Generate…") {
                                         Task { await generateDescription(force: true) }
@@ -88,22 +88,22 @@ struct RemoteWorktreeSheet: View {
                             }
                         }
                         SheetRow("Setup") { SheetLinkButton(label: "Repo setup…") { showingSetup = true } }
-                        SheetRow("Commit") { Toggle("Commit remaining work", isOn: $options.autoCommit).toggleStyle(.shepherdSwitch) }
-                        SheetRow("Cleanup") { Toggle("Delete local branch", isOn: $options.deleteLocalBranch).toggleStyle(.shepherdSwitch) }
-                        SheetRow("Merge") { Toggle("Merge PR automatically", isOn: $options.autoMergePR).toggleStyle(.shepherdSwitch) }
+                        SheetRow("Commit") { Toggle("Commit remaining work", isOn: $options.autoCommit).toggleStyle(.nwSwitch) }
+                        SheetRow("Cleanup") { Toggle("Delete local branch", isOn: $options.deleteLocalBranch).toggleStyle(.nwSwitch) }
+                        SheetRow("Merge") { Toggle("Merge PR automatically", isOn: $options.autoMergePR).toggleStyle(.nwSwitch) }
                         if options.autoMergePR {
                             SheetRow("Method") {
-                                SegmentedControl(selection: $options.mergeMethod,
+                                NWSegmentedPicker(selection: $options.mergeMethod,
                                                  options: [("squash", "Squash"), ("merge", "Merge"), ("rebase", "Rebase")])
                             }
                         }
                         Text("Runs on the host: commit, push, PR, optional merge, clean check, stop agent, remove checkout. The remote branch is never deleted. Failures stop cleanup.")
-                            .font(Fonts.caption)
-                            .foregroundStyle(Tokens.textMuted)
+                            .font(Font.nw(.caption))
+                            .foregroundStyle(Color.nw.textTertiary)
                             .padding(20)
                     } else if !finalize, let warning = info.warning {
                         DialogWarning(text: "\(warning) will be lost with the worktree.")
-                        Toggle("I understand this work will be lost", isOn: $acknowledgedLoss).toggleStyle(.shepherdSwitch).padding(20)
+                        Toggle("I understand this work will be lost", isOn: $acknowledgedLoss).toggleStyle(.nwSwitch).padding(20)
                     }
                 }
             }
@@ -124,7 +124,7 @@ struct RemoteWorktreeSheet: View {
                         vm.remoteWorktreeOperationEndpoints.removeValue(forKey: target)
                         vm.remoteWorktreeSheet = nil
                     }
-                    .buttonStyle(ShepherdButtonStyle(.primary))
+                    .buttonStyle(NWButtonStyle(.primary))
                     .keyboardShortcut(.defaultAction)
                 } else if vm.remoteWorktreeOperationIDs[target] != nil {
                     Text("Operation continues on host. Reconnecting only checks status.")
@@ -141,19 +141,19 @@ struct RemoteWorktreeSheet: View {
                     }
                     if let info {
                         Button(finalize ? "Finalize" : "Delete agent and worktree", role: finalize ? nil : .destructive) { start(info) }
-                        .buttonStyle(ShepherdButtonStyle(finalize ? .primary : .destructive))
+                        .buttonStyle(NWButtonStyle(finalize ? .primary : .danger))
                         .disabled(submitting || (finalize && (checking || showingSetup || generatingDescription || !setup.allPassed)) || (!finalize && info.warning != nil && !acknowledgedLoss)
                                   || (finalize && (options.base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || options.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
                     }
                 }
             }.padding(20)
         }
-        .font(Fonts.labelRegular)
-        .foregroundStyle(Tokens.textSecondary)
+        .font(Font.nw(.body))
+        .foregroundStyle(Color.nw.textSecondary)
         .textFieldStyle(.plain)
         .frame(width: 620)
-        .background(Tokens.bgSurface)
-        .buttonStyle(ShepherdButtonStyle(.secondary))
+        .background(Color.nw.bgWindow)
+        .buttonStyle(NWButtonStyle(.secondary))
         .task {
             guard vm.remoteWorktreeOperationIDs[target] == nil else { return }
             if finalize {

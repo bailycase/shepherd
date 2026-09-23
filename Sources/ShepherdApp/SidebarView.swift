@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import AppKit
 import ShepherdCore
 import ShepherdProtocol
@@ -35,8 +35,8 @@ struct SidebarView: View {
                             RemoteHostBlock(vm: vm, connection: connection)
                         }
                     }
-                    .padding(.horizontal, Metrics.sidebarPadding)
-                    .padding(.bottom, Metrics.sidebarPadding)
+                    .padding(.horizontal, AppLayout.sidebarPadding)
+                    .padding(.bottom, AppLayout.sidebarPadding)
                 }
                 .scrollIndicators(.hidden)
                 // Keyboard navigation (⌘1–9, ⌘↑/↓, ⌃⇧digits) can land on a row scrolled out of
@@ -54,11 +54,11 @@ struct SidebarView: View {
             }
 
             if !vm.state.automations.isEmpty {
-                Tokens.border.frame(height: 1)
+                NWHairline()
                 VStack(alignment: .leading, spacing: 1) {
                     AutomationsSection(vm: vm)
                 }
-                .padding(Metrics.sidebarPadding)
+                .padding(AppLayout.sidebarPadding)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -80,9 +80,9 @@ private struct SidebarRowChrome: ViewModifier {
         content
             .padding(.leading, leading)
             .padding(.trailing, 6)
-            .frame(height: Metrics.sidebarRowHeight)
+            .frame(height: AppLayout.sidebarRowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .rowBackground(selected: selected, hovering: hovering && interactive, radius: Radius.sm)
+            .nwRowBackground(selected: selected, hovering: hovering && interactive, radius: NW.Radius.s)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .onTapGesture(perform: action)
@@ -105,7 +105,7 @@ struct SidebarPlus: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus").font(.system(size: 11, weight: .medium)).foregroundStyle(Tokens.textTertiary)
+            Image(systemName: "plus").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
                 .frame(width: 18, height: 18).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -133,18 +133,18 @@ struct SidebarSection: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(title).sectionStyle(Fonts.section)
+            Text(title).nwSectionLabel()
                 .opacity(collapsed ? 0.7 : 1)
                 .lineLimit(1)
             Spacer(minLength: 4)
             if hovering, let keycap {
-                Text(keycap).font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text(keycap).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
             switch detail {
             case .count(let count) where count > 0:
-                Text("\(count)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("\(count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             case .state(let text, let danger):
-                Text(text).font(Fonts.sans(11, .medium)).foregroundStyle(danger ? Tokens.dangerText : Tokens.textMuted)
+                Text(text).font(Font.nwSans(11, .medium)).foregroundStyle(danger ? Color.nw.failed : Color.nw.textTertiary)
             default:
                 EmptyView()
             }
@@ -172,7 +172,7 @@ struct SpaceSection: View {
     var depth: Int = 0
 
     private var collapsed: Bool { vm.collapsedSpaces.contains(space.id) }
-    private var indent: CGFloat { Metrics.sidebarIndent }
+    private var indent: CGFloat { AppLayout.sidebarIndent }
 
     var body: some View {
         SpaceRow(name: space.name, collapsed: collapsed, count: agents.count,
@@ -216,20 +216,20 @@ struct SpaceRow: View {
             Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .semibold))
                 .rotationEffect(.degrees(collapsed ? 0 : 90))
-                .foregroundStyle(Tokens.textTertiary)
+                .foregroundStyle(Color.nw.textSecondary)
                 .frame(width: 10)
-            Text(name).font(Fonts.label).foregroundStyle(Tokens.text).lineLimit(1)
+            Text(name).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
             Spacer(minLength: 4)
             if worktrees > 0 {
-                Text("⎇\(worktrees)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("⎇\(worktrees)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
                     .help("\(worktrees) worktree agent\(worktrees == 1 ? "" : "s")")
             }
             if hovering, let onNewAgent {
                 SidebarPlus(help: "New Agent in \(name)", action: onNewAgent)
             } else if blocked > 0 {
-                Text("\(blocked)").font(Fonts.micro).foregroundStyle(Tokens.warningText)
+                Text("\(blocked)").font(Font.nw(.micro)).foregroundStyle(Color.nw.lanternText)
             } else if count > 0 {
-                Text("\(count)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("\(count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         .onHover { hovering = $0 }
@@ -301,15 +301,15 @@ struct AgentRow: View {
     let action: () -> Void
 
     var body: some View {
-        let indent = Metrics.sidebarIndent
+        let indent = AppLayout.sidebarIndent
         HStack(spacing: 8) {
-            StatusDot(Tokens.statusDot(agent.status, isCurrent: selected), size: Metrics.statusDot)
+            NWStatusDot(AgentState(agent.status))
             if agent.worktreeBranch != nil {
-                Text("⎇").font(Fonts.micro).foregroundStyle(Tokens.textTertiary)
+                Text("⎇").font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary)
             }
             Text(agent.name)
-                .font(selected ? Fonts.label : Fonts.labelRegular)
-                .foregroundStyle(Tokens.text)
+                .font(selected ? Font.nw(.ui) : Font.nw(.body))
+                .foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .help(agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name)
@@ -324,17 +324,17 @@ struct AgentRow: View {
 
     @ViewBuilder private var trailing: some View {
         if let badge {
-            Text("⌘\(badge)").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+            Text("⌘\(badge)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
         } else if agent.status == .blocked {
-            Text("needs you").font(Fonts.micro).foregroundStyle(Tokens.warningText).fixedSize()
+            Text("needs you").font(Font.nw(.micro)).foregroundStyle(Color.nw.lanternText).fixedSize()
         } else if let subagentCount {
-            Text("\(subagentCount) sub").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+            Text("\(subagentCount) sub").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
         } else if agent.status == .working, let statusSince {
             TimelineView(.periodic(from: .now, by: 30)) { context in
-                Text(SidebarTime.elapsed(since: statusSince, now: context.date)).font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text(SidebarTime.elapsed(since: statusSince, now: context.date)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
         } else if agent.status == .done {
-            Text("done").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+            Text("done").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
         }
     }
 
@@ -370,15 +370,15 @@ struct SubagentRows: View {
     let open: (ChildRun) -> Void
 
     var body: some View {
-        let indent = Metrics.sidebarIndent
+        let indent = AppLayout.sidebarIndent
         let leading = 8 + indent * CGFloat(depth + 1) + 10
         let finished = children.allSatisfy(\.isTerminal)
         if finished {
             HStack(spacing: 6) {
                 Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
                     .rotationEffect(.degrees(folded ? 0 : 90))
-                    .foregroundStyle(Tokens.textMuted)
-                Text(SubagentRows.groupLabel(children)).font(Fonts.micro).foregroundStyle(Tokens.textMuted).lineLimit(1)
+                    .foregroundStyle(Color.nw.textTertiary)
+                Text(SubagentRows.groupLabel(children)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
             }
             .sidebarRow(leading: leading, action: toggleFold)
             .accessibilityLabel("\(children.count) subagents, \(folded ? "collapsed" : "expanded")")
@@ -407,13 +407,13 @@ struct SubagentRow: View {
         let state = nativeSubagentState(run)
         HStack(spacing: 6) {
             // Tree line: the rows hang off their agent.
-            Tokens.border.frame(width: 1).frame(maxHeight: .infinity).padding(.trailing, 2)
-            BranchGlyph(SubagentStyle.color(state), size: 13)
-            Text(run.role ?? run.label).font(Fonts.labelRegular).foregroundStyle(Tokens.text).lineLimit(1)
+            NWHairline(.vertical).frame(maxHeight: .infinity).padding(.trailing, 2)
+            NWBranchGlyph(AgentState(state), size: 13)
+            Text(run.role ?? run.label).font(Font.nw(.body)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
             Spacer(minLength: 4)
             TimelineView(.periodic(from: .now, by: 5)) { context in
                 let (text, color) = SubagentStyle.trailing(run, state: state, now: context.date)
-                Text(text).font(Fonts.micro).foregroundStyle(color).fixedSize()
+                Text(text).font(Font.nw(.micro)).foregroundStyle(color).fixedSize()
             }
         }
         .sidebarRow(selected: selected, leading: leading, action: action)
@@ -424,14 +424,7 @@ struct SubagentRow: View {
 
 /// Color and words for a subagent's state, shared by sidebar rows, cards, and the palette.
 enum SubagentStyle {
-    @MainActor static func color(_ state: NativeSubagentState) -> Color {
-        switch state {
-        case .running: Tokens.accent
-        case .needsYou: Tokens.warning
-        case .done: Tokens.success
-        case .failed: Tokens.danger
-        }
-    }
+    @MainActor static func color(_ state: NativeSubagentState) -> Color { AgentState(state).color }
 
     static func word(_ state: NativeSubagentState) -> String {
         switch state {
@@ -444,13 +437,13 @@ enum SubagentStyle {
 
     @MainActor static func trailing(_ run: ChildRun, state: NativeSubagentState, now: Date) -> (String, Color) {
         switch state {
-        case .needsYou: return ("needs you", Tokens.warningText)
-        case .failed: return ("failed", Tokens.dangerText)
+        case .needsYou: return ("needs you", Color.nw.lanternText)
+        case .failed: return ("failed", Color.nw.failed)
         case .running:
             let elapsed = nativeSubagentElapsed(run, now: now).map(nativeSubagentShortDuration) ?? ""
-            return (elapsed, Tokens.accentText)
+            return (elapsed, Color.nw.running)
         case .done:
-            return (nativeSubagentElapsed(run, now: now).map(nativeSubagentShortDuration) ?? "done", Tokens.textMuted)
+            return (nativeSubagentElapsed(run, now: now).map(nativeSubagentShortDuration) ?? "done", Color.nw.textTertiary)
         }
     }
 }
@@ -505,18 +498,18 @@ struct AutomationRow: View {
         HStack(spacing: 8) {
             Group {
                 if let agent, agent.status == .working || agent.status == .blocked {
-                    StatusDot(Tokens.statusDot(agent.status, isCurrent: selected))
+                    NWStatusDot(AgentState(agent.status))
                 } else if agent != nil {
-                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(Tokens.success)
+                    Image(systemName: "checkmark").font(.system(size: 9, weight: .semibold)).foregroundStyle(Color.nw.done)
                 } else {
-                    Circle().strokeBorder(Tokens.textDisabled, lineWidth: 1).frame(width: 7, height: 7)
+                    Circle().strokeBorder(Color.nw.textTertiary, lineWidth: 1).frame(width: 7, height: 7)
                 }
             }
             .frame(width: 10)
-            Text(automation.name).font(Fonts.labelRegular).foregroundStyle(Tokens.text).lineLimit(1).truncationMode(.middle)
+            Text(automation.name).font(Font.nw(.body)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 4)
-            Text(stateWord).font(Fonts.micro)
-                .foregroundStyle(agent?.status == .blocked ? Tokens.warningText : Tokens.textMuted)
+            Text(stateWord).font(Font.nw(.micro))
+                .foregroundStyle(agent?.status == .blocked ? Color.nw.lanternText : Color.nw.textTertiary)
         }
         .sidebarRow(selected: selected, interactive: agent != nil, action: action)
         .accessibilityElement(children: .ignore)
@@ -535,7 +528,7 @@ private struct SidebarDropTarget: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay(alignment: .top) {
-                if hovering { Rectangle().fill(Tokens.accent).frame(height: 2) }
+                if hovering { Rectangle().fill(Color.nw.running).frame(height: 2) }
             }
             .onDrop(of: [.plainText], isTargeted: $hovering) { providers in
                 guard let provider = providers.first else { return false }

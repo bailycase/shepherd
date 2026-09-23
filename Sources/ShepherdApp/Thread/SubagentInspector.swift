@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import ShepherdCore
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -37,12 +37,12 @@ struct SubagentInspector: View {
             header
             goal
             if terminal, let run { result(run) }
-            Tokens.border.frame(height: 1)
+            NWHairline()
             transcriptView
             footerLine
             if terminal { terminalBar } else { composer }
         }
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
         .task(id: "\(runID):\(active):\(run?.startedAt ?? 0)") {
             guard active else { return }
             await transcript.follow(store: store, runID: runID) { run?.isTerminal != true }
@@ -62,28 +62,28 @@ struct SubagentInspector: View {
         let siblings = siblings
         let position = siblings.firstIndex { $0.runID == runID }
         return HStack(spacing: 10) {
-            BranchGlyph(SubagentStyle.color(state))
+            NWBranchGlyph(AgentState(state))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(role).font(Fonts.labelStrong).foregroundStyle(Tokens.text).lineLimit(1)
+                    Text(role).font(Font.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
                     if let position, siblings.count > 1 {
-                        Text("\(position + 1) of \(siblings.count)").font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit()
+                        Text("\(position + 1) of \(siblings.count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
                     }
                     if let run, run.isTerminal {
-                        Text(run.state == "complete" ? "done" : run.state).font(Fonts.micro)
-                            .foregroundStyle(state == .done ? Tokens.successText : Tokens.dangerText)
+                        Text(run.state == "complete" ? "done" : run.state).font(Font.nw(.micro))
+                            .foregroundStyle(state == .done ? Color.nw.done : Color.nw.failed)
                     }
                 }
-                Text(meta).font(Fonts.micro).foregroundStyle(Tokens.textMuted).lineLimit(1).truncationMode(.tail).help(meta)
+                Text(meta).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.tail).help(meta)
             }
             Spacer(minLength: 8)
             if let select, let position, siblings.count > 1 {
                 HStack(spacing: 2) {
                     Button { select(siblings[position - 1]) } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(IconButtonStyle(bordered: false)).disabled(position == 0)
+                        .buttonStyle(NWIconButtonStyle(bordered: false)).disabled(position == 0)
                         .accessibilityLabel("Previous subagent")
                     Button { select(siblings[position + 1]) } label: { Image(systemName: "chevron.right") }
-                        .buttonStyle(IconButtonStyle(bordered: false)).disabled(position == siblings.count - 1)
+                        .buttonStyle(NWIconButtonStyle(bordered: false)).disabled(position == siblings.count - 1)
                         .accessibilityLabel("Next subagent")
                 }
             }
@@ -91,10 +91,10 @@ struct SubagentInspector: View {
                 Button(run.paused == true ? "Continue" : "Pause") {
                     Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
                 }
-                .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                .buttonStyle(NWButtonStyle(.secondary, size: .s))
                 .disabled(!canAct)
                 Button("Stop") { Task { await store.subagentCommand(runID: runID, action: .cancel) } }
-                    .buttonStyle(ShepherdButtonStyle(.destructive, size: .small))
+                    .buttonStyle(NWButtonStyle(.danger, size: .s))
                     .disabled(!canAct)
                     .accessibilityLabel("Stop \(role)")
             }
@@ -108,21 +108,21 @@ struct SubagentInspector: View {
                     Button("Refresh Transcript") { Task { await transcript.reload(store: store, runID: runID) } }
                 }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 12, weight: .medium)).foregroundStyle(Tokens.text)
-                    .frame(width: Metrics.buttonSmall, height: Metrics.buttonSmall)
-                    .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.button))
-                    .overlay { RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
+                Image(systemName: "ellipsis").font(.system(size: 12, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
+                    .frame(width: NW.Height.controlM, height: NW.Height.controlM)
+                    .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
             }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             .accessibilityLabel("Inspector options")
             Button(action: close) { Image(systemName: "xmark") }
-                .buttonStyle(IconButtonStyle(bordered: false))
+                .buttonStyle(NWIconButtonStyle(bordered: false))
                 .help("Close the inspector")
                 .accessibilityLabel("Close inspector")
         }
         .padding(.horizontal, 14)
-        .frame(height: Metrics.headerHeight)
-        .overlay(alignment: .bottom) { Tokens.border.frame(height: 1) }
+        .frame(height: AppLayout.headerHeight)
+        .overlay(alignment: .bottom) { NWHairline() }
     }
 
     /// "background · claude-fable-5-1 · thinking high · 78 turns · 82 tools · 922k tok"
@@ -142,19 +142,19 @@ struct SubagentInspector: View {
     private var goal: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Goal").sectionStyle()
+                Text("Goal").nwSectionLabel()
                 Spacer()
                 if let run {
-                    Text(stepText(run)).font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit()
+                    Text(stepText(run)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
                 }
             }
-            Text(run?.task ?? run?.label ?? "").font(Fonts.bodySmall).lineSpacing(Fonts.bodySmallLeading)
-                .foregroundStyle(Tokens.text).textSelection(.enabled)
+            Text(run?.task ?? run?.label ?? "").font(Font.nw(.body)).lineSpacing(NWTextStyle.body.lineSpacing)
+                .foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
                 .lineLimit(6).frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
         .frame(maxWidth: .infinity)
-        .background(Tokens.bgMuted)
+        .background(Color.nw.bgSunken)
         .accessibilityElement(children: .combine)
     }
 
@@ -167,13 +167,13 @@ struct SubagentInspector: View {
 
     private func result(_ run: ChildRun) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Result").sectionStyle().foregroundStyle(run.state == "complete" ? Tokens.successText : Tokens.dangerText)
+            Text("Result").nwSectionLabel().foregroundStyle(run.state == "complete" ? Color.nw.done : Color.nw.failed)
             if let summary = run.summary ?? run.output, !summary.isEmpty {
-                Text(Prose.inline(summary)).font(Fonts.bodySmall).lineSpacing(Fonts.bodySmallLeading)
-                    .foregroundStyle(Tokens.text).textSelection(.enabled).lineLimit(8)
+                Text(Prose.inline(summary)).font(Font.nw(.body)).lineSpacing(NWTextStyle.body.lineSpacing)
+                    .foregroundStyle(Color.nw.textPrimary).textSelection(.enabled).lineLimit(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else if let reason = run.exitReason {
-                Text(reason).font(Fonts.bodySmall).foregroundStyle(Tokens.dangerText).frame(maxWidth: .infinity, alignment: .leading)
+                Text(reason).font(Font.nw(.body)).foregroundStyle(Color.nw.failed).frame(maxWidth: .infinity, alignment: .leading)
             }
             if let files = run.files, !files.isEmpty {
                 FlowLayout(spacing: 12) {
@@ -185,8 +185,8 @@ struct SubagentInspector: View {
                             }
                         } label: {
                             HStack(spacing: 6) {
-                                Text(file.path).font(Fonts.micro).foregroundStyle(Tokens.accentText).lineLimit(1)
-                                DiffStat(added: file.added, removed: file.removed)
+                                Text(file.path).font(Font.nw(.micro)).foregroundStyle(Color.nw.running).lineLimit(1)
+                                NWDiffStat(added: file.added, removed: file.removed)
                             }
                         }
                         .buttonStyle(.plain)
@@ -197,8 +197,8 @@ struct SubagentInspector: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Tokens.bgMuted)
-        .overlay(alignment: .top) { Tokens.borderSubtle.frame(height: 1) }
+        .background(Color.nw.bgSunken)
+        .overlay(alignment: .top) { NWHairline() }
     }
 
     // MARK: Transcript
@@ -208,7 +208,7 @@ struct SubagentInspector: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 22) {
                     if transcript.messages.isEmpty, transcript.loaded {
-                        Text(run == nil ? "This run is no longer listed." : "No transcript yet.").font(Fonts.caption).foregroundStyle(Tokens.textMuted)
+                        Text(run == nil ? "This run is no longer listed." : "No transcript yet.").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                     }
                     let turns = nativeTurns(transcript.messages)
                     ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
@@ -249,13 +249,13 @@ struct SubagentInspector: View {
             if transcript.earlierCount > 0 {
                 Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")")
                 Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store, runID: runID) } }
-                    .buttonStyle(LinkButtonStyle(font: Fonts.micro))
+                    .buttonStyle(NWLinkButtonStyle(font: Font.nw(.micro)))
                     .disabled(transcript.loadingOlder)
             }
             Spacer()
             if !terminal { Text(transcript.following ? "Following live" : "Reading earlier output") }
         }
-        .font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+        .font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
         .padding(.horizontal, 14)
         .frame(height: 28)
     }
@@ -272,7 +272,7 @@ struct SubagentInspector: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Button("Re-run") { Task { await store.subagentCommand(runID: runID, action: .resume) } }
-                    .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
                     .disabled(!canAct)
                     .accessibilityLabel("Re-run \(role)")
                 if let fork, let run {
@@ -280,27 +280,27 @@ struct SubagentInspector: View {
                         forking = true
                         Task { forkError = await fork(run); forking = false }
                     }
-                    .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
                     .disabled(!active || forking || run.sessionFile == nil)
                 }
                 Button("Copy transcript") { copyTranscript() }
-                    .buttonStyle(ShepherdButtonStyle(.secondary, size: .small))
+                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
                     .disabled(transcript.messages.isEmpty || copying)
                 Spacer(minLength: 8)
-                Text("kept with the thread").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("kept with the thread").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
             if let notice = forkError ?? store.notice {
-                Text(notice).font(Fonts.caption).foregroundStyle(Tokens.textMuted)
+                Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         .padding(14)
-        .overlay(alignment: .top) { Tokens.border.frame(height: 1) }
+        .overlay(alignment: .top) { NWHairline() }
     }
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 0) {
             TextField("Steer \(role) — delivered before its next turn", text: $draft, axis: .vertical)
-                .lineLimit(1...6).textFieldStyle(.plain).font(Fonts.bodySmall).autocorrectionDisabled()
+                .lineLimit(1...6).textFieldStyle(.plain).font(Font.nw(.body)).autocorrectionDisabled()
                 .focused($composing)
                 .padding(EdgeInsets(top: 12, leading: 14, bottom: 6, trailing: 14))
                 .onKeyPress(.return, phases: .down) { press in
@@ -310,20 +310,20 @@ struct SubagentInspector: View {
                 }
                 .accessibilityLabel("Message to \(role)")
             HStack {
-                Text("to: \(role) · not the parent").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("to: \(role) · not the parent").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
                 Spacer()
                 Button("Steer") { send() }
-                    .buttonStyle(ShepherdButtonStyle(.primary, size: .small))
+                    .buttonStyle(NWButtonStyle(.primary, size: .s))
                     .disabled(!canAct || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding(EdgeInsets(top: 4, leading: 14, bottom: 8, trailing: 8))
             if let notice = store.notice {
-                Text(notice).font(Fonts.caption).foregroundStyle(Tokens.textMuted).padding(.horizontal, 14).padding(.bottom, 8)
+                Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(.horizontal, 14).padding(.bottom, 8)
             }
         }
-        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.xl))
-        .overlay { RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(composing ? Tokens.accent : Tokens.borderStrong, lineWidth: 1) }
-        .background { RoundedRectangle(cornerRadius: Radius.xl + 3).fill(composing ? Tokens.focusRing : .clear).padding(-3) }
+        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.l))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.l).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+        .nwFocusRing(composing, radius: NW.Radius.l)
         .padding(12)
     }
 

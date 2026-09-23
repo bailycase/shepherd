@@ -25,6 +25,18 @@ extension View {
         modifier(NWFocusRingModifier(shape: Circle()))
     }
 
+    /// The same ring, shown while `visible`: for a field or card whose focus the caller tracks
+    /// (a focused text field, the composer while typing, the inspected card).
+    public func nwFocusRing(_ visible: Bool, radius: CGFloat = NW.Radius.s) -> some View {
+        overlay {
+            if visible {
+                RoundedRectangle(cornerRadius: radius).inset(by: -4)
+                    .strokeBorder(Color.nw.focusRing, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
     /// A 1px (hairline) border inside the view's bounds.
     public func nwBorder(_ color: Color, radius: CGFloat = 0) -> some View {
         modifier(NWBorderModifier(color: color, radius: radius))

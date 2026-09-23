@@ -1,4 +1,4 @@
-import ShepherdDesign
+import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
@@ -8,9 +8,11 @@ import Testing
 @Suite("Code highlighting")
 @MainActor
 struct CodeHighlightTests {
+    private static func solid(_ hex: String) -> Color { Color(light: hex, dark: hex) }
+
     private let style = CodeHighlight.Style(
-        comment: Color(hex: "#565758"), string: Color(hex: "#A1C592"), number: Color(hex: "#CEB370"),
-        keyword: Color(hex: "#8892B5"), type: Color(hex: "#A38FB5"), function: Color(hex: "#8FB3AD")
+        comment: Self.solid("#565758"), string: Self.solid("#A1C592"), number: Self.solid("#CEB370"),
+        keyword: Self.solid("#8892B5"), type: Self.solid("#A38FB5"), function: Self.solid("#8FB3AD")
     )
 
     private func color(of fragment: String, in line: AttributedString) -> Color? {

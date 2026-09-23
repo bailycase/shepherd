@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import TerminalSurfaceKit
 
 /// Thin forwarders around the frozen TerminalSurfaceKit API. The only file in

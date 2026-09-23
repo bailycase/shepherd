@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import ShepherdDesign
+import ShepherdUI
 import ShepherdCore
 import ShepherdRemote
 
@@ -47,7 +47,7 @@ struct ReviewPane: View {
             content
             composer
         }
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
         .focusable()
         .focused($paneFocused)
         .focusEffectDisabled()
@@ -71,12 +71,12 @@ struct ReviewPane: View {
     private var header: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Review").font(Fonts.title).foregroundStyle(Tokens.text)
-                Text(scopeLine).font(Fonts.micro).foregroundStyle(Tokens.textMuted).lineLimit(1).truncationMode(.middle)
+                Text("Review").font(Font.nw(.title)).foregroundStyle(Color.nw.textPrimary)
+                Text(scopeLine).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
             }
             Spacer(minLength: 8)
-            SegmentedControl(selection: Binding(get: { session.isPRMode }, set: { actions.setPullRequest($0) }),
-                             options: [(false, "Local"), (true, prLabel)], size: .small)
+            NWSegmentedPicker(selection: Binding(get: { session.isPRMode }, set: { actions.setPullRequest($0) }),
+                             options: [(false, "Local"), (true, prLabel)], size: .s)
                 .disabled(session.isLoading)
             Menu {
                 Button("Expand All Files") { collapsed = []; session.viewed = [] }
@@ -87,21 +87,21 @@ struct ReviewPane: View {
                     NSPasteboard.general.setString(formatReview(files: session.files, comments: session.comments, summary: session.summary, reference: session.reference), forType: .string)
                 }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium)).foregroundStyle(Tokens.text)
-                    .frame(width: Metrics.buttonSmall, height: Metrics.buttonSmall)
-                    .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.button))
-                    .overlay { RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
+                Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
+                    .frame(width: NW.Height.controlM, height: NW.Height.controlM)
+                    .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
             }
             .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             .accessibilityLabel("Review options")
             Button(action: actions.close) { Image(systemName: "xmark") }
-                .buttonStyle(IconButtonStyle(bordered: false))
+                .buttonStyle(NWIconButtonStyle(bordered: false))
                 .help("Close the review")
                 .accessibilityLabel("Close review")
         }
         .padding(.horizontal, 14)
-        .frame(height: Metrics.headerHeight)
-        .overlay(alignment: .bottom) { Tokens.border.frame(height: 1) }
+        .frame(height: AppLayout.headerHeight)
+        .overlay(alignment: .bottom) { NWHairline() }
     }
 
     private var prLabel: String {
@@ -134,9 +134,9 @@ struct ReviewPane: View {
             .scrollIndicators(.hidden)
             .onChange(of: currentFile) { _, id in if let id { withAnimation(.easeOut(duration: 0.12)) { proxy.scrollTo(id) } } }
         }
-        .frame(height: Metrics.fileStripHeight)
-        .background(Tokens.bgCanvas)
-        .overlay(alignment: .bottom) { Tokens.border.frame(height: 1) }
+        .frame(height: AppLayout.fileStripHeight)
+        .background(Color.nw.bgBase)
+        .overlay(alignment: .bottom) { NWHairline() }
     }
 
     private func chip(_ file: DiffFile) -> some View {
@@ -147,14 +147,14 @@ struct ReviewPane: View {
             session.focusRequest = UUID()
         } label: {
             HStack(spacing: 6) {
-                Text(letter).font(Fonts.mono(11, .semibold)).foregroundStyle(color)
-                Text((file.displayPath as NSString).lastPathComponent).font(Fonts.mono(11.5)).foregroundStyle(Tokens.text).lineLimit(1)
-                DiffStat(added: file.addedCount, removed: file.removedCount)
+                Text(letter).font(Font.nwMono(11, .semibold)).foregroundStyle(color)
+                Text((file.displayPath as NSString).lastPathComponent).font(Font.nwMono(11.5)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+                NWDiffStat(added: file.addedCount, removed: file.removedCount)
                 if touchedPaths.contains(where: { reviewFile(matching: $0, in: [file]) != nil }) { PulsingDot() }
             }
             .padding(.horizontal, 8)
             .frame(height: 24)
-            .background(selected ? Tokens.bgSelected : .clear, in: RoundedRectangle(cornerRadius: Radius.sm))
+            .background(selected ? Color.nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
             .opacity(session.viewed.contains(file.id) ? 0.5 : 1)
             .contentShape(Rectangle())
         }
@@ -165,22 +165,23 @@ struct ReviewPane: View {
 
     /// M warning / A success / D danger / R accent.
     @MainActor static func status(_ file: DiffFile) -> (String, Color) {
-        if file.isNew { return ("A", Tokens.successText) }
-        if file.isDeleted { return ("D", Tokens.dangerText) }
-        if file.isRenamed { return ("R", Tokens.accentText) }
-        return ("M", Tokens.warningText)
+        if file.isNew { return ("A", Color.nw.done) }
+        if file.isDeleted { return ("D", Color.nw.failed) }
+        if file.isRenamed { return ("R", Color.nw.running) }
+        return ("M", Color.nw.lanternText)
     }
 
     // MARK: Diff
 
     @ViewBuilder private var content: some View {
         if let error = session.loadError {
-            VStack { InlineError(error) }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            VStack { NWBanner(.failed, title: error) }.padding(14).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else if session.isLoading && session.files.isEmpty {
-            HStack(spacing: 8) { Spinner(size: 12); Text("Loading the diff…").font(Fonts.caption).foregroundStyle(Tokens.textMuted) }
+            HStack(spacing: 8) { ProgressView().progressViewStyle(.nwSpinner(size: 12)); Text("Loading the diff…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if session.files.isEmpty {
-            EmptyState(Text("No changes"), caption: session.isPRMode ? "This branch matches its PR base." : "The working tree matches HEAD.", framed: false)
+            NWEmptyState(Text("No changes"), message: session.isPRMode ? "This branch matches its PR base." : "The working tree matches HEAD.",
+                         showsMark: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollViewReader { proxy in
@@ -234,54 +235,54 @@ struct ReviewPane: View {
             Button {
                 if folded { collapsed.remove(file.id); session.viewed.remove(file.id) } else { collapsed.insert(file.id) }
             } label: {
-                Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Tokens.textMuted)
+                Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.nw.textTertiary)
                     .rotationEffect(.degrees(folded ? -90 : 0)).frame(width: 14, height: 14).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(folded ? "Expand \(name)" : "Collapse \(name)")
-            Text("\(Text(directory.isEmpty ? "" : directory + "/").foregroundStyle(Tokens.textTertiary))\(Text(name).fontWeight(.semibold).foregroundStyle(Tokens.text))")
-                .font(Fonts.mono(12)).lineLimit(1).truncationMode(.head)
+            Text("\(Text(directory.isEmpty ? "" : directory + "/").foregroundStyle(Color.nw.textSecondary))\(Text(name).fontWeight(.semibold).foregroundStyle(Color.nw.textPrimary))")
+                .font(Font.nwMono(12)).lineLimit(1).truncationMode(.head)
                 .help(file.displayPath)
-            Text("\(file.hunks.count) hunk\(file.hunks.count == 1 ? "" : "s")").font(Fonts.micro).foregroundStyle(Tokens.textMuted).fixedSize()
+            Text("\(file.hunks.count) hunk\(file.hunks.count == 1 ? "" : "s")").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).fixedSize()
             if let count = session.commentCountByFile[file.id], count > 0 {
-                Text("\(count) comment\(count == 1 ? "" : "s")").font(Fonts.micro).foregroundStyle(Tokens.accentText).fixedSize()
+                Text("\(count) comment\(count == 1 ? "" : "s")").font(Font.nw(.micro)).foregroundStyle(Color.nw.running).fixedSize()
             }
             Spacer(minLength: 6)
             if let open = actions.open {
                 Button { open(file) } label: { Image(systemName: "arrow.up.forward.square") }
-                    .buttonStyle(IconButtonStyle(size: 26)).help("Open in Xcode").accessibilityLabel("Open \(name)")
+                    .buttonStyle(NWIconButtonStyle(bordered: true, size: 26)).help("Open in Xcode").accessibilityLabel("Open \(name)")
             }
             if actions.revert != nil, !session.isPRMode {
                 Button { reverting = file } label: { Image(systemName: "arrow.uturn.backward") }
-                    .buttonStyle(IconButtonStyle(size: 26, tint: Tokens.dangerText)).help("Revert this file").accessibilityLabel("Revert \(name)")
+                    .buttonStyle(NWIconButtonStyle(bordered: true, size: 26, tint: Color.nw.failed)).help("Revert this file").accessibilityLabel("Revert \(name)")
             }
             Button {
                 if session.viewed.contains(file.id) { session.viewed.remove(file.id) } else { session.viewed.insert(file.id) }
             } label: { Image(systemName: "checkmark") }
-                .buttonStyle(IconButtonStyle(size: 26, tint: session.viewed.contains(file.id) ? Tokens.success : nil))
+                .buttonStyle(NWIconButtonStyle(bordered: true, size: 26, tint: session.viewed.contains(file.id) ? Color.nw.done : nil))
                 .help(session.viewed.contains(file.id) ? "Mark unviewed" : "Mark viewed")
                 .accessibilityLabel(session.viewed.contains(file.id) ? "Mark \(name) unviewed" : "Mark \(name) viewed")
         }
         .padding(.horizontal, 12)
-        .frame(height: Metrics.fileHeaderHeight)
-        .background(Tokens.bgMuted)
-        .overlay(alignment: .bottom) { Tokens.borderSubtle.frame(height: 1) }
+        .frame(height: AppLayout.fileHeaderHeight)
+        .background(Color.nw.bgSunken)
+        .overlay(alignment: .bottom) { NWHairline() }
         .contentShape(Rectangle())
         .onTapGesture { currentFile = file.id }
     }
 
     @ViewBuilder private func fileBody(_ file: DiffFile) -> some View {
         if file.isBinary {
-            Text("Binary file").font(Fonts.caption).foregroundStyle(Tokens.textMuted).padding(12)
+            Text("Binary file").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(12)
         } else {
             let rows = reviewRows(file, expandedRuns: expandedFiles.contains(file.id) ? nil : expandedRuns)
             ForEach(rows) { row in
                 switch row.kind {
                 case .hunk(let header):
-                    Text(header).font(Fonts.mono(10.5)).foregroundStyle(Tokens.textTertiary).lineLimit(1)
-                        .padding(.leading, Metrics.diffNumberWidth * 2 + Metrics.diffSignWidth + 8)
-                        .frame(height: Metrics.diffCollapsedRunHeight).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Tokens.bgHover)
+                    Text(header).font(Font.nwMono(10.5)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
+                        .padding(.leading, AppLayout.diffNumberWidth * 2 + AppLayout.diffSignWidth + 8)
+                        .frame(height: AppLayout.diffCollapsedRunHeight).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.nw.bgHover)
                         .id(row.id)
                 case .line(let hunkID, let index, let line):
                     DiffLineRow(line: line, text: highlightedText(file: file, hunkID: hunkID, index: index, line: line),
@@ -300,10 +301,10 @@ struct ReviewPane: View {
                             Image(systemName: "plus").font(.system(size: 9, weight: .semibold))
                             Text("\(count) more \(Self.word(kind)) line\(count == 1 ? "" : "s") · \(range)")
                         }
-                        .font(Fonts.micro).foregroundStyle(Tokens.textTertiary)
-                        .padding(.leading, Metrics.diffNumberWidth * 2 + 8)
-                        .frame(height: Metrics.diffCollapsedRunHeight).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Tokens.bgMuted)
+                        .font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary)
+                        .padding(.leading, AppLayout.diffNumberWidth * 2 + 8)
+                        .frame(height: AppLayout.diffCollapsedRunHeight).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.nw.bgSunken)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -366,7 +367,7 @@ struct ReviewPane: View {
         let hasReview = inline > 0 || !session.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return VStack(alignment: .leading, spacing: 0) {
             TextField("Overall comment — inline comments are attached automatically", text: $session.summary, axis: .vertical)
-                .lineLimit(1...5).textFieldStyle(.plain).font(Fonts.bodySmall).focused($summaryFocused)
+                .lineLimit(1...5).textFieldStyle(.plain).font(Font.nw(.body)).focused($summaryFocused)
                 .padding(EdgeInsets(top: 12, leading: 14, bottom: 6, trailing: 14))
                 .onKeyPress(.return, phases: .down) { press in
                     guard press.modifiers.contains(.command) else { return .ignored }
@@ -374,24 +375,25 @@ struct ReviewPane: View {
                     return .handled
                 }
             HStack(spacing: 8) {
-                Text("\(inline) inline · ⌘⏎").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("\(inline) inline · ⌘⏎").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
                 Spacer()
                 Button("Commit", action: actions.commit)
-                    .buttonStyle(ShepherdButtonStyle(.secondary, size: .small, tint: Tokens.successText))
+                    .buttonStyle(NWButtonStyle(.secondary, size: .s, tint: Color.nw.done))
                     .disabled(session.isSubmitting || session.files.isEmpty || session.isPRMode)
                     .help("Ask the agent to commit these changes")
                 Button("Request changes", action: actions.requestChanges)
-                    .buttonStyle(ShepherdButtonStyle(.primary, size: .small))
+                    .buttonStyle(NWButtonStyle(.primary, size: .s))
                     .disabled(session.isSubmitting || !hasReview)
                     .keyboardShortcut(.return, modifiers: .command)
                     .help("Send the comments as the agent's next message")
             }
             .padding(EdgeInsets(top: 4, leading: 14, bottom: 8, trailing: 8))
         }
-        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.xl))
-        .overlay { RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(summaryFocused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1) }
+        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.l))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.l).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+        .nwFocusRing(summaryFocused, radius: NW.Radius.l)
         .padding(12)
-        .overlay(alignment: .top) { Tokens.border.frame(height: 1) }
+        .overlay(alignment: .top) { NWHairline() }
     }
 
     // MARK: Keyboard
@@ -450,19 +452,19 @@ private struct DiffLineRow: View {
             HStack(spacing: 0) {
                 number(line.oldLine)
                 number(line.newLine)
-                Text(sign).font(Fonts.output).foregroundStyle(signColor).frame(width: Metrics.diffSignWidth)
-                Text(text).font(Fonts.output).lineLimit(1).truncationMode(.tail).help(line.text)
+                Text(sign).font(Font.nw(.code)).foregroundStyle(signColor).frame(width: AppLayout.diffSignWidth)
+                Text(text).font(Font.nw(.code)).lineLimit(1).truncationMode(.tail).help(line.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button(action: startComment) {
-                    Image(systemName: "plus").font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
-                        .frame(width: 20, height: 20).background(Tokens.accent, in: RoundedRectangle(cornerRadius: Radius.xs))
+                    Image(systemName: "plus").font(.system(size: 10, weight: .bold)).foregroundStyle(Color.nw.textOnLantern)
+                        .frame(width: 20, height: 20).background(Color.nw.lantern, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
                 }
                 .buttonStyle(.plain)
                 .opacity(hovering && comment == nil && !editing ? 1 : 0)
                 .padding(.trailing, 6)
                 .accessibilityLabel("Comment on line \(line.newLine ?? line.oldLine ?? 0)")
             }
-            .frame(height: Metrics.diffLineHeight)
+            .frame(height: AppLayout.diffLineHeight)
             .background(background)
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -472,8 +474,8 @@ private struct DiffLineRow: View {
     }
 
     private func number(_ value: Int?) -> some View {
-        Text(value.map(String.init) ?? "").font(Fonts.mono(11)).foregroundStyle(Tokens.textMuted)
-            .frame(width: Metrics.diffNumberWidth, alignment: .trailing).padding(.trailing, 4)
+        Text(value.map(String.init) ?? "").font(Font.nwMono(11)).foregroundStyle(Color.nw.textTertiary)
+            .frame(width: AppLayout.diffNumberWidth, alignment: .trailing).padding(.trailing, 4)
     }
 
     private var sign: String {
@@ -486,26 +488,26 @@ private struct DiffLineRow: View {
 
     private var signColor: Color {
         switch line.kind {
-        case .added: Tokens.success
-        case .removed: Tokens.danger
-        case .context: Tokens.textMuted
+        case .added: Color.nw.done
+        case .removed: Color.nw.failed
+        case .context: Color.nw.textTertiary
         }
     }
 
     private var background: Color {
         switch line.kind {
-        case .added: Tokens.successBg
-        case .removed: Tokens.dangerBg
-        case .context: hovering ? Tokens.bgHover : .clear
+        case .added: Color.nw.doneTint
+        case .removed: Color.nw.failedTint
+        case .context: hovering ? Color.nw.bgHover : .clear
         }
     }
 
-    private var indent: CGFloat { Metrics.diffNumberWidth * 2 + 8 + Metrics.diffSignWidth }
+    private var indent: CGFloat { AppLayout.diffNumberWidth * 2 + 8 + AppLayout.diffSignWidth }
 
     private var editor: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("Comment for the agent on this line", text: $draft, axis: .vertical)
-                .lineLimit(1...8).textFieldStyle(.plain).font(Fonts.bodySmall)
+                .lineLimit(1...8).textFieldStyle(.plain).font(Font.nw(.body))
                 .focused(commentFocused)
                 .onKeyPress(.return, phases: .down) { press in
                     if press.modifiers.contains(.shift) { draft += "\n"; return .handled }
@@ -515,33 +517,33 @@ private struct DiffLineRow: View {
                 .onKeyPress(.escape) { cancelComment(); return .handled }
             HStack(spacing: 6) {
                 Spacer()
-                Button("Cancel", action: cancelComment).buttonStyle(ShepherdButtonStyle(.ghost, size: .small))
-                Button("Comment", action: saveComment).buttonStyle(ShepherdButtonStyle(.primary, size: .small))
+                Button("Cancel", action: cancelComment).buttonStyle(NWButtonStyle(.ghost, size: .s))
+                Button("Comment", action: saveComment).buttonStyle(NWButtonStyle(.primary, size: .s))
             }
         }
         .padding(10)
-        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.accent, lineWidth: 1) }
+        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.running, lineWidth: 1) }
         .padding(EdgeInsets(top: 6, leading: indent, bottom: 8, trailing: 12))
     }
 
     private func card(_ comment: ReviewComment) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Text("Y").font(Fonts.sans(10, .bold)).foregroundStyle(.white)
-                    .frame(width: 16, height: 16).background(Tokens.accent, in: Circle())
-                Text("You").font(Fonts.sans(12, .semibold)).foregroundStyle(Tokens.text)
-                Text("line \(comment.lineNumber) · \(Self.age(comment.createdAt))").font(Fonts.micro).foregroundStyle(Tokens.textMuted)
+                Text("Y").font(Font.nwSans(10, .bold)).foregroundStyle(Color.nw.textOnLantern)
+                    .frame(width: 16, height: 16).background(Color.nw.lantern, in: Circle())
+                Text("You").font(Font.nwSans(12, .semibold)).foregroundStyle(Color.nw.textPrimary)
+                Text("line \(comment.lineNumber) · \(Self.age(comment.createdAt))").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
                 Spacer()
-                Button("Edit", action: startComment).buttonStyle(LinkButtonStyle(color: Tokens.textTertiary, font: Fonts.caption))
-                Button("Delete", action: deleteComment).buttonStyle(LinkButtonStyle(color: Tokens.textTertiary, font: Fonts.caption))
+                Button("Edit", action: startComment).buttonStyle(NWLinkButtonStyle(color: Color.nw.textSecondary, font: Font.nw(.caption)))
+                Button("Delete", action: deleteComment).buttonStyle(NWLinkButtonStyle(color: Color.nw.textSecondary, font: Font.nw(.caption)))
             }
-            Text(comment.text).font(Fonts.bodySmall).foregroundStyle(Tokens.text).textSelection(.enabled)
+            Text(comment.text).font(Font.nw(.body)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
-        .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
+        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
         .padding(EdgeInsets(top: 6, leading: indent, bottom: 8, trailing: 12))
     }
 
@@ -572,7 +574,7 @@ private struct PulsingDot: View {
     @State private var dim = false
 
     var body: some View {
-        Circle().fill(Tokens.accent).frame(width: 6, height: 6)
+        Circle().fill(Color.nw.running).frame(width: 6, height: 6)
             .opacity(dim ? 0.3 : 1)
             .onAppear {
                 guard !reduceMotion else { return }
@@ -607,7 +609,7 @@ struct ReviewRow: Identifiable, Equatable {
 
 /// A file's rows with long runs folded (spec §9): more than eight same-kind lines in a row keep
 /// a few at each end and fold the middle into one strip. `expandedRuns` nil expands everything.
-func reviewRows(_ file: DiffFile, expandedRuns: Set<String>?, threshold: Int = Metrics.diffCollapseThreshold) -> [ReviewRow] {
+func reviewRows(_ file: DiffFile, expandedRuns: Set<String>?, threshold: Int = AppLayout.diffCollapseThreshold) -> [ReviewRow] {
     var rows: [ReviewRow] = []
     for hunk in file.hunks {
         let hunkKey = "\(file.id)\u{0}\(hunk.id)"

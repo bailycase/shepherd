@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 
 // MARK: Worktrees
 
@@ -15,7 +15,7 @@ struct WorktreeSettings: View {
             SettingsGroup(title: "New worktrees") {
                 SettingsRow(title: "Base branch",
                             subtitle: "Remote default starts clean from origin's default branch. Current branch stacks on your checkout's in-progress work. The New Worktree sheet lets you override it.") {
-                    SegmentedControl(selection: $settings.worktreeBaseMode,
+                    NWSegmentedPicker(selection: $settings.worktreeBaseMode,
                                      options: [(WorktreeBaseMode.fresh, "Remote default"), (.head, "Current branch")])
                 }
                 SettingsRow(title: "Fetch before creating",
@@ -43,7 +43,7 @@ struct WorktreeSettings: View {
                 }
                 if settings.worktreeAutoMergePR {
                     SettingsRow(title: "Merge method", subtitle: "Must be allowed by the repository's settings.") {
-                        SegmentedControl(selection: $settings.worktreeMergeMethod,
+                        NWSegmentedPicker(selection: $settings.worktreeMergeMethod,
                                          options: [(WorktreeMergeMethod.squash, "Squash"), (.merge, "Merge"), (.rebase, "Rebase")])
                     }
                 }

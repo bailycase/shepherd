@@ -1,5 +1,5 @@
 import Testing
-@testable import ShepherdDesign
+@testable import ShepherdUI
 
 @Suite("HexColor")
 struct HexColorTests {
@@ -12,17 +12,38 @@ struct HexColorTests {
     func parsesSixDigitHexWithOrWithoutHash(_ string: String, red: Double, green: Double, blue: Double) throws {
         let color = try #require(HexColor(string))
         #expect(color.red == red && color.green == green && color.blue == blue)
+        #expect(color.alpha == 1 && color.isOpaque)
     }
 
-    @Test(arguments: ["", "#", "#FFF", "#12345", "#1234567", "#GGGGGG", "blue", "##123456", "#12 456"])
-    func rejectsAnythingButSixHexDigits(_ string: String) {
+    @Test func eightDigitsCarryAlphaInTheLastByte() throws {
+        let color = try #require(HexColor("#FFFFFF14"))
+        #expect(color.red == 1 && color.green == 1 && color.blue == 1)
+        #expect(color.alpha == Double(0x14) / 255)
+        #expect(!color.isOpaque)
+    }
+
+    @Test(arguments: ["", "#", "#FFF", "#12345", "#1234567", "#123456789", "#GGGGGG", "blue", "##123456", "#12 456"])
+    func rejectsAnythingButSixOrEightHexDigits(_ string: String) {
         #expect(HexColor(string) == nil)
     }
 
-    /// `UInt32(_:radix:)` accepts a leading sign; a six-character "+FFFFF" must not parse.
+    /// `UInt64(_:radix:)` accepts a leading sign; a six-character "+FFFFF" must not parse.
     @Test func rejectsASignPrefix() {
         #expect(HexColor("#+FFFFF") == nil)
         #expect(HexColor("-00000") == nil)
+    }
+
+    @Test(arguments: ["#0a0b0c", "#ffffff0b", "#f2a93b21"])
+    func hexStringRoundTrips(_ string: String) {
+        #expect(HexColor(string)?.hexString == string)
+    }
+
+    @Test func compositingPaintsTheColorOverTheBackground() {
+        let white = HexColor("#FFFFFF")!, black = HexColor("#000000")!
+        let half = HexColor(red: 1, green: 1, blue: 1, alpha: 0.5)
+        let painted = half.composited(over: black)
+        #expect(painted.isOpaque && abs(painted.red - 0.5) < 1e-12)
+        #expect(white.composited(over: black) == white)
     }
 
     @Test func luminanceSpansZeroToOne() {

@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -18,23 +18,23 @@ struct UserTurn: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
                         if block.kind == .unsupportedImage {
-                            Label("Image", systemImage: "photo").font(Fonts.caption).foregroundStyle(Tokens.textTertiary)
+                            Label("Image", systemImage: "photo").font(Font.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
                         } else {
-                            Text(block.text).font(small ? Fonts.sans(13.5) : Fonts.bodySmall).foregroundStyle(Tokens.text)
-                                .lineSpacing(Fonts.bodySmallLeading).textSelection(.enabled)
+                            Text(block.text).font(small ? Font.nwSans(13.5) : Font.nw(.body)).foregroundStyle(Color.nw.textPrimary)
+                                .lineSpacing(NWTextStyle.body.lineSpacing).textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
-                .background(Tokens.bgBubble, in: UnevenRoundedRectangle(topLeadingRadius: Radius.xl, bottomLeadingRadius: Radius.xl,
-                                                                         bottomTrailingRadius: Radius.bubbleTail, topTrailingRadius: Radius.xl))
+                .background(Color.nw.bgBubble, in: UnevenRoundedRectangle(topLeadingRadius: NW.Radius.l, bottomLeadingRadius: NW.Radius.l,
+                                                                         bottomTrailingRadius: NW.Radius.xs, topTrailingRadius: NW.Radius.l))
                 .opacity(message.status == "pending" ? 0.7 : 1)
-                .frame(maxWidth: Metrics.userMaxWidth, alignment: .trailing)
+                .frame(maxWidth: AppLayout.userMaxWidth, alignment: .trailing)
             }
             if let caption {
-                Text(caption).font(Fonts.micro).foregroundStyle(Tokens.textMuted).monospacedDigit()
+                Text(caption).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -59,7 +59,7 @@ struct AgentTurn: View {
 
     var body: some View {
         let items = nativeTurnItems(messages)
-        VStack(alignment: .leading, spacing: Metrics.blockSpacing) {
+        VStack(alignment: .leading, spacing: AppLayout.blockSpacing) {
             ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 switch item {
                 case .thinking(let text):
@@ -75,16 +75,16 @@ struct AgentTurn: View {
                     HStack(spacing: 6) {
                         Image(systemName: "exclamationmark.triangle").font(.system(size: 10, weight: .semibold))
                         Text("Request failed · \(text)").lineLimit(1).truncationMode(.tail)
-                        if count > 1 { Text("×\(count)").monospacedDigit().foregroundStyle(Tokens.textMuted) }
+                        if count > 1 { Text("×\(count)").monospacedDigit().foregroundStyle(Color.nw.textTertiary) }
                     }
-                    .font(Fonts.caption).foregroundStyle(Tokens.dangerText)
+                    .font(Font.nw(.caption)).foregroundStyle(Color.nw.failed)
                     .help(text)
                 case .note(let text):
-                    Text(text).font(Fonts.caption).foregroundStyle(Tokens.textMuted)
+                    Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                         .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
                         .padding(.leading, 10)
-                        .overlay(alignment: .leading) { Tokens.border.frame(width: 2) }
-                        .frame(maxWidth: Metrics.proseMaxWidth, alignment: .leading)
+                        .overlay(alignment: .leading) { Color.nw.lineSubtle.frame(width: 2) }
+                        .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
                 }
             }
             // Runs with no spawn row in this turn render after it; a folded group already
@@ -136,12 +136,12 @@ struct ThinkingDisclosure: View {
             } label: {
                 HStack(spacing: 8) {
                     if streaming {
-                        Spinner(size: 12)
+                        ProgressView().progressViewStyle(.nwSpinner(size: 12))
                     } else {
                         Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
-                            .rotationEffect(.degrees(expanded ? 90 : 0)).foregroundStyle(Tokens.textMuted).frame(width: 12)
+                            .rotationEffect(.degrees(expanded ? 90 : 0)).foregroundStyle(Color.nw.textTertiary).frame(width: 12)
                     }
-                    Text(caption).font(Fonts.caption).italic().foregroundStyle(Tokens.textTertiary)
+                    Text(caption).font(Font.nw(.caption)).italic().foregroundStyle(Color.nw.textSecondary)
                 }
                 .padding(.vertical, 4)
                 .padding(.trailing, 8)
@@ -151,12 +151,12 @@ struct ThinkingDisclosure: View {
             .accessibilityLabel(caption)
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             if expanded {
-                Text(text).font(Fonts.sans(13)).italic().lineSpacing(3)
-                    .foregroundStyle(Tokens.textTertiary).textSelection(.enabled)
+                Text(text).font(Font.nwSans(13)).italic().lineSpacing(3)
+                    .foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 20).padding(.vertical, 4)
-                    .overlay(alignment: .leading) { Tokens.border.frame(width: 2).padding(.leading, 5) }
-                    .frame(maxWidth: Metrics.proseMaxWidth, alignment: .leading)
+                    .overlay(alignment: .leading) { Color.nw.lineSubtle.frame(width: 2).padding(.leading, 5) }
+                    .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
             }
         }
     }
@@ -186,13 +186,13 @@ struct TurnFooter: View {
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc") }
-                .buttonStyle(IconButtonStyle(bordered: false))
+                .buttonStyle(NWIconButtonStyle(bordered: false))
                 .help("Copy the reply")
                 .accessibilityLabel("Copy response")
             }
             if let retry {
                 Button(action: retry) { Image(systemName: "arrow.counterclockwise") }
-                    .buttonStyle(IconButtonStyle(bordered: false))
+                    .buttonStyle(NWIconButtonStyle(bordered: false))
                     .help("Send this turn's prompt again")
                     .accessibilityLabel("Retry turn")
             }
@@ -205,11 +205,11 @@ struct TurnFooter: View {
                 if let first = ordered.first, let inspect {
                     if time != nil || tools > 0 { Text(" · ") }
                     Button("\(ordered.count) subagent\(ordered.count == 1 ? "" : "s")") { inspect(first) }
-                        .buttonStyle(LinkButtonStyle(font: Fonts.micro))
+                        .buttonStyle(NWLinkButtonStyle(font: Font.nw(.micro)))
                         .accessibilityLabel("Open \(first.role ?? first.label) in the inspector")
                 }
             }
-            .font(Fonts.micro).foregroundStyle(Tokens.textMuted).padding(.leading, 6)
+            .font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).padding(.leading, 6)
         }
     }
 }
@@ -221,10 +221,10 @@ struct WorkingRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Spinner(size: 12)
-            Text(label).font(Fonts.caption).italic().foregroundStyle(Tokens.textTertiary)
+            ProgressView().progressViewStyle(.nwSpinner(size: 12))
+            Text(label).font(Font.nw(.caption)).italic().foregroundStyle(Color.nw.textSecondary)
         }
-        .frame(height: Metrics.workingRowHeight)
+        .frame(height: AppLayout.workingRowHeight)
         .padding(.leading, 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)

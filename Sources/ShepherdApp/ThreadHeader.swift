@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -17,9 +17,9 @@ struct ThreadHeader: View {
     var body: some View {
         HStack(spacing: 10) {
             HStack(spacing: 8) {
-                Text(project).font(Fonts.label).foregroundStyle(Tokens.textTertiary).lineLimit(1).fixedSize()
-                Text("/").font(Fonts.labelRegular).foregroundStyle(Tokens.textDisabled)
-                Text(title).font(Fonts.title).foregroundStyle(Tokens.text).lineLimit(1).truncationMode(.tail)
+                Text(project).font(Font.nw(.ui)).foregroundStyle(Color.nw.textSecondary).lineLimit(1).fixedSize()
+                Text("/").font(Font.nw(.body)).foregroundStyle(Color.nw.textTertiary)
+                Text(title).font(Font.nw(.title)).foregroundStyle(Color.nw.textPrimary).lineLimit(1).truncationMode(.tail)
                     .layoutPriority(-1)
                     .help(title)
             }
@@ -30,8 +30,7 @@ struct ThreadHeader: View {
                 Button(action: togglePane) {
                     Image(systemName: "sidebar.right")
                 }
-                .buttonStyle(IconButtonStyle(size: Metrics.buttonMedium, tint: paneOpen ? Tokens.accent : nil))
-                .background(paneOpen ? Tokens.accentBg : .clear, in: RoundedRectangle(cornerRadius: Radius.button))
+                .buttonStyle(.nwIcon(bordered: true, isOn: paneOpen))
                 .help(paneOpen ? "Close the pane" : "Review changes")
                 .accessibilityLabel(paneOpen ? "Close the pane" : "Review changes")
             }
@@ -45,10 +44,10 @@ struct ThreadHeader: View {
                     Button("Rename…", action: rename)
                 }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 13, weight: .medium)).foregroundStyle(Tokens.text)
-                    .frame(width: Metrics.buttonMedium, height: Metrics.buttonMedium)
-                    .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.button))
-                    .overlay { RoundedRectangle(cornerRadius: Radius.button).strokeBorder(Tokens.borderStrong, lineWidth: 1) }
+                Image(systemName: "ellipsis").font(.system(size: 14, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
+                    .frame(width: NW.Height.controlM, height: NW.Height.controlM)
+                    .overlay { Circle().strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+                    .contentShape(Circle())
             }
             .menuStyle(.button)
             .buttonStyle(.plain)
@@ -56,17 +55,17 @@ struct ThreadHeader: View {
             .fixedSize()
             .accessibilityLabel("Thread options")
         }
-        .padding(.leading, Metrics.headerPadding + leadingInset)
-        .padding(.trailing, Metrics.headerPadding)
-        .frame(height: Metrics.headerHeight)
+        .padding(.leading, AppLayout.headerPadding + leadingInset)
+        .padding(.trailing, AppLayout.headerPadding)
+        .frame(height: AppLayout.headerHeight)
         .frame(maxWidth: .infinity)
-        .background(Tokens.bgSurface)
-        .overlay(alignment: .bottom) { Tokens.border.frame(height: 1) }
+        .background(Color.nw.bgWindow)
+        .overlay(alignment: .bottom) { NWHairline() }
     }
 }
 
-/// Idle / Running · elapsed / Needs you / Error, from the thread snapshot (spec §6). A subagent
-/// waiting on the user outranks the parent's own state.
+/// Idle / Running · elapsed / Needs you / Error (a lost connection, drawn as `failed`), from the
+/// thread snapshot (spec §6). A subagent waiting on the user outranks the parent's own state.
 struct ThreadStatusPill: View {
     @ObservedObject var store: NativeThreadStore
 
@@ -74,10 +73,18 @@ struct ThreadStatusPill: View {
         let state = threadPillState(store)
         if state == .running {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                StatusPill(.running, label: "Running · \(threadRunElapsed(store, now: context.date))")
+                NWStatusPill(.running, label: "Running · \(threadRunElapsed(store, now: context.date))")
             }
         } else {
-            StatusPill(state, label: state == .needsYou ? nativeSubagentNeedsYouLabel(store.subagents) ?? "Needs you" : nil)
+            NWStatusPill(state, label: label(state))
+        }
+    }
+
+    private func label(_ state: AgentState) -> String? {
+        switch state {
+        case .attention: nativeSubagentNeedsYouLabel(store.subagents) ?? AgentState.attention.label
+        case .failed: "Error"
+        default: nil
         }
     }
 }
@@ -93,7 +100,7 @@ private struct ThreadCounters: View {
             nativeSubagentRollup(store.subagents),
         ].compactMap { $0 }
         if !parts.isEmpty {
-            Text(parts.joined(separator: " · ")).font(Fonts.micro).foregroundStyle(Tokens.textMuted).lineLimit(1).fixedSize()
+            Text(parts.joined(separator: " · ")).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).fixedSize()
                 .help(nativeContextTooltip(store.snapshot?.stats))
         }
     }
@@ -105,9 +112,9 @@ private struct ThreadCounters: View {
 }
 
 @MainActor
-func threadPillState(_ store: NativeThreadStore) -> AgentPillState {
-    if store.loadError != nil { return .error }
-    if store.snapshot?.dialogs.isEmpty == false || nativeSubagentNeedsYouLabel(store.subagents) != nil { return .needsYou }
+func threadPillState(_ store: NativeThreadStore) -> AgentState {
+    if store.loadError != nil { return .failed }
+    if store.snapshot?.dialogs.isEmpty == false || nativeSubagentNeedsYouLabel(store.subagents) != nil { return .attention }
     if store.settledRunning { return .running }
     return .idle
 }
@@ -128,16 +135,16 @@ struct PlainHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(project).font(Fonts.label).foregroundStyle(Tokens.textTertiary).lineLimit(1)
-            Text("/").font(Fonts.labelRegular).foregroundStyle(Tokens.textDisabled)
-            Text(title).font(Fonts.title).foregroundStyle(Tokens.text).lineLimit(1)
+            Text(project).font(Font.nw(.ui)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
+            Text("/").font(Font.nw(.body)).foregroundStyle(Color.nw.textTertiary)
+            Text(title).font(Font.nw(.title)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
             Spacer(minLength: 0)
         }
-        .padding(.leading, Metrics.headerPadding + leadingInset)
-        .padding(.trailing, Metrics.headerPadding)
-        .frame(height: Metrics.headerHeight)
+        .padding(.leading, AppLayout.headerPadding + leadingInset)
+        .padding(.trailing, AppLayout.headerPadding)
+        .frame(height: AppLayout.headerHeight)
         .frame(maxWidth: .infinity)
-        .background(Tokens.bgSurface)
-        .overlay(alignment: .bottom) { Tokens.border.frame(height: 1) }
+        .background(Color.nw.bgWindow)
+        .overlay(alignment: .bottom) { NWHairline() }
     }
 }

@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import AppKit
 import ShepherdCore
 import ShepherdProtocol
@@ -25,10 +25,10 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             nav
-            Tokens.border.frame(width: 1)
+            NWHairline(.vertical)
             detail
         }
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
         .background { WindowChrome() }
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
@@ -50,16 +50,16 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             // Traffic-light strip: draggable, nothing else lives up here.
             Color.clear
-                .frame(height: Metrics.trafficLightHeight)
+                .frame(height: AppLayout.trafficLightHeight)
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
 
             Button { vm.showSettings = false } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.left").font(.system(size: 11, weight: .semibold))
-                    Text("Back to Shepherd").font(Fonts.labelRegular)
+                    Text("Back to Shepherd").font(Font.nw(.body))
                 }
-                .foregroundStyle(Tokens.textSecondary)
+                .foregroundStyle(Color.nw.textSecondary)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -67,7 +67,7 @@ struct SettingsView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
 
-            SearchField("Search settings", text: $searchText, shortcut: "⌘F")
+            NWSearchField("Search settings", text: $searchText, shortcut: "⌘F")
                 .focused($searchFocused)
                 .padding(.horizontal, 10)
                 .padding(.top, 8)
@@ -89,8 +89,8 @@ struct SettingsView: View {
                             ForEach(section.matches(for: query), id: \.self) { item in
                                 Button { vm.settingsSection = section } label: {
                                     Text(item)
-                                        .font(Fonts.caption)
-                                        .foregroundStyle(Tokens.textTertiary)
+                                        .font(Font.nw(.caption))
+                                        .foregroundStyle(Color.nw.textSecondary)
                                         .padding(.leading, 36)
                                         .frame(maxWidth: .infinity, minHeight: 24, alignment: .leading)
                                         .contentShape(Rectangle())
@@ -101,8 +101,8 @@ struct SettingsView: View {
                     }
                     if matchingSections.isEmpty {
                         Text("No matching settings")
-                            .font(Fonts.caption)
-                            .foregroundStyle(Tokens.textMuted)
+                            .font(Font.nw(.caption))
+                            .foregroundStyle(Color.nw.textTertiary)
                             .padding(.horizontal, 12)
                             .padding(.top, 4)
                     }
@@ -113,14 +113,14 @@ struct SettingsView: View {
 
             Spacer(minLength: 0)
             Text(versions)
-                .font(Fonts.micro)
-                .foregroundStyle(Tokens.textMuted)
+                .font(Font.nw(.micro))
+                .foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(1)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 14)
         }
-        .frame(width: Metrics.settingsNavWidth)
-        .background(Tokens.bgCanvas.ignoresSafeArea())
+        .frame(width: AppLayout.settingsNavWidth)
+        .background(Color.nw.bgBase.ignoresSafeArea())
     }
 
     /// "Shepherd 0.1.0 · pi 0.87.1"
@@ -143,17 +143,17 @@ struct SettingsView: View {
                 case .advanced: AdvancedSettings(vm: vm)
                 }
             }
-            .frame(maxWidth: Metrics.settingsContentWidth, alignment: .leading)
-            .padding(.top, Metrics.settingsTop)
+            .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
+            .padding(.top, AppLayout.settingsTop)
             .padding(.bottom, 48)
             .padding(.horizontal, 32)
             .frame(maxWidth: .infinity)
         }
         .scrollContentBackground(.hidden)
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
         .overlay(alignment: .top) {
             // The window has no title bar; the strip above the content still drags it.
-            Color.clear.frame(height: Metrics.trafficLightHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
+            Color.clear.frame(height: AppLayout.trafficLightHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
         }
     }
 }
@@ -193,7 +193,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Words people search for that aren't row titles ("dark" → Appearance).
     private var keywords: [String: [String]] {
         switch self {
-        case .appearance: ["Mode": ["dark", "light", "color", "basalt"], "Text size": ["font", "zoom", "scale"], "Density": ["compact", "spacing"]]
+        case .appearance: ["Mode": ["dark", "light", "color", "night watch", "theme"], "Text size": ["font", "zoom", "scale"], "Density": ["compact", "spacing"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
@@ -240,23 +240,23 @@ private struct SettingsNavRow: View {
             HStack(spacing: 10) {
                 Group {
                     if section == .pi {
-                        Text("π").font(Fonts.sans(15, .medium))
+                        Text("π").font(Font.nwSans(15, .medium))
                     } else {
                         Image(systemName: section.symbol).font(.system(size: 13, weight: .regular))
                     }
                 }
-                .foregroundStyle(selected ? Tokens.text : Tokens.textSecondary)
+                .foregroundStyle(selected ? Color.nw.textPrimary : Color.nw.textSecondary)
                 .frame(width: 18)
                 Text(section.title)
-                    .font(selected ? Fonts.label : Fonts.labelRegular)
-                    .foregroundStyle(Tokens.text)
+                    .font(selected ? Font.nw(.ui) : Font.nw(.body))
+                    .foregroundStyle(Color.nw.textPrimary)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
             .frame(height: 32)
             .contentShape(Rectangle())
         }
-        .buttonStyle(RowButtonStyle(selected: selected, radius: Radius.md))
+        .buttonStyle(NWRowButtonStyle(selected: selected, radius: NW.Radius.m))
         .accessibilityLabel(section.title)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
     }

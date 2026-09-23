@@ -1,6 +1,6 @@
 import Foundation
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 import SwiftTreeSitter
 import TreeSitterSwift
 import TreeSitterPython
@@ -29,8 +29,8 @@ enum CodeHighlight {
         let function: Color
 
         @MainActor static var theme: Style {
-            Style(comment: Tokens.syntax(\.comment), string: Tokens.syntax(\.string), number: Tokens.syntax(\.number),
-                  keyword: Tokens.syntax(\.keyword), type: Tokens.syntax(\.type), function: Tokens.syntax(\.function))
+            Style(comment: Color.nw.synComment, string: Color.nw.synString, number: Color.nw.synNumber,
+                  keyword: Color.nw.synKeyword, type: Color.nw.synType, function: Color.nw.synFunction)
         }
     }
 

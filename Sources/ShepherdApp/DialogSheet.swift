@@ -1,5 +1,5 @@
 import SwiftUI
-import ShepherdDesign
+import ShepherdUI
 
 /// One flat labeled row shared by every sheet and dialog: a label column, the control on the
 /// right, a hairline underneath (DESIGN.md "Dialogs") — no Form chrome, no grouped boxes.
@@ -16,15 +16,15 @@ struct SheetRow<Content: View>: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text(label)
-                    .font(Fonts.label)
-                    .foregroundStyle(Tokens.textSecondary)
+                    .font(Font.nw(.ui))
+                    .foregroundStyle(Color.nw.textSecondary)
                     .frame(width: 96, alignment: .leading)
                 control()
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.horizontal, 20)
             .frame(minHeight: 44)
-            Tokens.borderSubtle.frame(height: 1)
+            NWHairline()
                 .padding(.leading, 20)
         }
     }
@@ -79,12 +79,12 @@ struct DialogSheet<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(Fonts.title)
-                    .foregroundStyle(Tokens.text)
+                    .font(Font.nw(.title))
+                    .foregroundStyle(Color.nw.textPrimary)
                 if let subtitle {
                     Text(subtitle)
-                        .font(Fonts.labelRegular)
-                        .foregroundStyle(Tokens.textTertiary)
+                        .font(Font.nw(.body))
+                        .foregroundStyle(Color.nw.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .lineSpacing(2)
                 }
@@ -102,7 +102,7 @@ struct DialogSheet<Content: View>: View {
             .padding(EdgeInsets(top: 16, leading: 20, bottom: 20, trailing: 20))
         }
         .frame(width: width)
-        .background(Tokens.bgSurface)
+        .background(Color.nw.bgWindow)
     }
 
     @ViewBuilder
@@ -110,18 +110,18 @@ struct DialogSheet<Content: View>: View {
         switch action.kind {
         case .cancel:
             Button(action.label, action: action.action)
-                .buttonStyle(ShepherdButtonStyle(.secondary))
+                .buttonStyle(NWButtonStyle(.secondary))
                 .keyboardShortcut(.cancelAction)
         case .normal:
             Button(action.label, action: action.action)
-                .buttonStyle(ShepherdButtonStyle(.secondary))
+                .buttonStyle(NWButtonStyle(.secondary))
         case .prominent:
             Button(action.label, action: action.action)
-                .buttonStyle(ShepherdButtonStyle(.primary))
+                .buttonStyle(NWButtonStyle(.primary))
                 .keyboardShortcut(.defaultAction)
         case .destructive:
             Button(action.label, action: action.action)
-                .buttonStyle(ShepherdButtonStyle(.destructive))
+                .buttonStyle(NWButtonStyle(.danger))
         }
     }
 }
@@ -141,11 +141,11 @@ struct DialogWarning: View {
     var body: some View {
         HStack(spacing: 10) {
             Rectangle()
-                .fill(Tokens.warning)
+                .fill(Color.nw.lantern)
                 .frame(width: 2)
             Text(text)
-                .font(Fonts.caption)
-                .foregroundStyle(Tokens.warningText)
+                .font(Font.nw(.caption))
+                .foregroundStyle(Color.nw.lanternText)
                 .fixedSize(horizontal: false, vertical: true)
                 .lineSpacing(2)
             Spacer(minLength: 0)
@@ -177,11 +177,11 @@ struct RenameDialog: View {
         ) {
             TextField("", text: $text)
                 .textFieldStyle(.plain)
-                .font(Fonts.labelRegular)
-                .foregroundStyle(Tokens.text)
+                .font(Font.nw(.body))
+                .foregroundStyle(Color.nw.textPrimary)
                 .focused($focused)
                 .onSubmit(onRename)
-                .shepherdField(focused: focused)
+                .nwField(focused: focused)
                 .padding(.horizontal, 20)
         }
         .onAppear { focused = true }
