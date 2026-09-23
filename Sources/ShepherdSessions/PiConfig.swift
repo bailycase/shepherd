@@ -4,9 +4,30 @@ import Foundation
 /// so the host side can answer a remote client's model listing with the same
 /// logic the local New Agent sheet uses.
 public enum PiConfig {
-    private static var agentDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pi/agent")
+    /// pi's own override for its agent directory (config and sessions).
+    public static let agentDirectoryEnvKey = "PI_CODING_AGENT_DIR"
+
+    /// `~/.pi/agent`, or wherever `PI_CODING_AGENT_DIR` moves it, the same way pi resolves it.
+    /// A blank value is ignored and `~` is expanded.
+    public static func agentDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        if let override = environment[agentDirectoryEnvKey],
+           !override.trimmingCharacters(in: .whitespaces).isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
+                .standardizedFileURL
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".pi/agent", isDirectory: true)
     }
+
+    /// Where pi keeps its session files: `<agent directory>/sessions`.
+    public static func sessionsDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        agentDirectory(environment: environment).appendingPathComponent("sessions", isDirectory: true)
+    }
+
+    private static var agentDirectory: URL { agentDirectory() }
 
     /// Model ids from ~/.pi/agent/models.json; empty when unreadable. Accepts
     /// arrays of strings or of objects with an "id"/"name", at the top level
