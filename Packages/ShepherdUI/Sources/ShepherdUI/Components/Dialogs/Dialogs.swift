@@ -143,7 +143,7 @@ public struct NWChecklistRow<Remedy: View>: View {
         self.title = title
         self.state = state
         self.stateLabel = stateLabel ?? state.label
-        self.detail = NWChecklistMetrics.oneLine(detail)
+        self.detail = detail.flatMap { $0.isEmpty ? nil : $0 }
         self.remedy = remedy()
         hasRemedy = Remedy.self != EmptyView.self
     }
@@ -198,17 +198,6 @@ extension NWChecklistRow where Remedy == EmptyView {
 enum NWChecklistMetrics {
     /// `NWStateGlyph`'s default size: the remedy indents past it.
     static let glyph: CGFloat = 14
-
-    /// A detail on one line. Details are often a tool's stderr, and a one-line `Text` of several
-    /// lines shows only a fragment of the last one; nil when there is nothing to show.
-    static func oneLine(_ text: String?) -> String? {
-        guard let text else { return nil }
-        let line = text.split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-        return line.isEmpty ? nil : line
-    }
 }
 
 /// A row of Settings' navigation, the sidebar's anatomy: a 28pt row (density-scaled), an icon,
