@@ -58,6 +58,12 @@ struct RemoteWorktreeSheet: View {
 
     private var operationPending: Bool { vm.remoteWorktreeOperationIDs[target] != nil }
 
+    /// Which part of the sheet shows: the checks, the setup checklist, the form, the running
+    /// operation, the outcome.
+    private var stage: [Bool] {
+        [checking, showingSetup, info != nil, operationPending, operation != nil, operation?.finished == true, options.autoMergePR]
+    }
+
     var body: some View {
         NWDialog(finalize ? "Finalize worktree" : "Delete worktree agent",
                  message: finalize ? "Runs on \(hostName): commit, push, pull request, optional merge, then cleanup." : nil,
@@ -103,6 +109,7 @@ struct RemoteWorktreeSheet: View {
                 VStack(alignment: .leading, spacing: NW.Space.xs) {
                     ForEach(Array(operation.progress.enumerated()), id: \.offset) { _, line in
                         Text(line).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
+                            .nwTransition(.list)
                     }
                 }
                 .padding(.horizontal, NWDialogMetrics.inset)
@@ -115,6 +122,7 @@ struct RemoteWorktreeSheet: View {
                         .textSelection(.enabled)
                         .padding(.horizontal, NWDialogMetrics.inset)
                         .padding(.top, NW.Space.l)
+                        .nwTransition(.disclosure)
                 }
             }
             if let errorText { DialogBanner(state: .failed, title: "Request failed", message: errorText) }
@@ -129,6 +137,13 @@ struct RemoteWorktreeSheet: View {
         } actions: {
             actions
         }
+        // Checking → setup or the form → the host's progress → done: each stage replaces the
+        // last in place as the sheet eases to its height, and progress lines arrive as rows.
+        .nwAnimation(.disclosure, value: stage)
+        .nwAnimation(.list, value: operation?.progress.count)
+        .nwAnimation(.disclosure, value: errorText)
+        .nwAnimation(.content, value: generatingDescription)
+        .nwAnimation(.content, value: includedCommits)
         .task {
             guard vm.remoteWorktreeOperationIDs[target] == nil else { return }
             if staged != nil {
@@ -226,6 +241,7 @@ struct RemoteWorktreeSheet: View {
                     Text("Will include \(count) commit\(count == 1 ? "" : "s")")
                         .font(.nw(.caption))
                         .foregroundStyle(count > 20 ? Color.nw.lanternText : Color.nw.textTertiary)
+                        .nwContentTransition(.numeric())
                 }
             }
         }
@@ -263,6 +279,7 @@ struct RemoteWorktreeSheet: View {
                 NWSegmentedPicker("Merge method", selection: $options.mergeMethod,
                                   options: [("squash", "Squash"), ("merge", "Merge"), ("rebase", "Rebase")])
             }
+            .nwTransition(.disclosure)
         }
         Text("Runs on the host: commit, push, PR, optional merge, clean check, stop agent, remove checkout. The remote branch is never deleted. Failures stop cleanup.")
             .nwText(.caption)

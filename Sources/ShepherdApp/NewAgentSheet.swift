@@ -200,6 +200,18 @@ struct NewAgentSheet: View {
         remotePicking = .space
     }
 
+    /// The rows the sheet shows beyond the fixed ones: the Machine row, the Worktree row, and
+    /// the worktree's Base and Fetch rows.
+    private var disclosureState: [Bool] {
+        [!connectedHosts.isEmpty, targetHostID != nil || isRepo, worktree]
+    }
+
+    /// Captions that settle after the sheet is up. Typing into a field changes none of them.
+    private var captionState: [String?] {
+        [resolvingBase ? nil : baseNote, errorText, defaults.loading ? nil : sessionCaption,
+         defaults.ready ? "ready" : nil, starting ? "starting" : nil]
+    }
+
     var body: some View {
         NWDialog("New agent",
                  message: "Starts pi as a native thread that runs until Shepherd quits. Pi names the agent from your first prompt.",
@@ -214,6 +226,7 @@ struct NewAgentSheet: View {
                     }
                     .accessibilityLabel("Machine")
                 }
+                .nwTransition(.disclosure)
             }
 
             SheetRow("Space") {
@@ -222,6 +235,7 @@ struct NewAgentSheet: View {
                         Text("No spaces yet")
                             .font(.nw(.ui))
                             .foregroundStyle(Color.nw.textSecondary)
+                            .nwTransition(.content)
                     } else {
                         NWPopupMenu(selectedSpace?.name ?? "Choose a space", minWidth: AppLayout.settingsPopupWidth) {
                             ForEach(targetSpaces) { space in
@@ -229,10 +243,12 @@ struct NewAgentSheet: View {
                             }
                         }
                         .accessibilityLabel("Space")
+                        .nwTransition(.content)
                     }
                     Spacer(minLength: 0)
                     SheetLinkButton(label: "Add space…") { addSpaceInline() }
                 }
+                .nwComponentAnimation(.content, value: targetSpaces.isEmpty)
             }
 
             SheetRow("Directory") {
@@ -256,13 +272,16 @@ struct NewAgentSheet: View {
                             TextField("Worktree branch", text: $worktreeBranch,
                                       prompt: Text("branch name").foregroundStyle(Color.nw.textTertiary))
                                 .textFieldStyle(.nw(mono: true))
+                                .nwTransition(.content)
                         } else {
                             Text("Isolate the agent on its own branch")
                                 .font(.nw(.caption))
                                 .foregroundStyle(Color.nw.textSecondary)
+                                .nwTransition(.content)
                         }
                     }
                 }
+                .nwTransition(.disclosure)
             }
 
             if worktree {
@@ -274,8 +293,10 @@ struct NewAgentSheet: View {
                         Text(resolvingBase ? "Resolving on the target…" : baseNote)
                             .font(.nw(.caption))
                             .foregroundStyle(Color.nw.textTertiary)
+                            .nwContentTransition(.crossFade)
                     }
                 }
+                .nwTransition(.disclosure)
                 SheetRow("Fetch") {
                     HStack(spacing: NW.Space.m) {
                         Toggle("Fetch origin before creating", isOn: $fetchFirst).toggleStyle(.nwSwitch).labelsHidden()
@@ -287,6 +308,7 @@ struct NewAgentSheet: View {
                         SheetLinkButton(label: "Resolve base…") { Task { await resolveBase(fetch: fetchFirst) } }
                     }
                 }
+                .nwTransition(.disclosure)
             }
 
             SheetRow("Model") {
@@ -314,7 +336,13 @@ struct NewAgentSheet: View {
                     .padding(NW.Space.m)
                     .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
                     .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
-                    .nwFocusRing(promptFocused, radius: NW.Radius.s)
+                    .overlay {
+                        // The ring fades on its own layer: the editor itself never animates.
+                        Color.clear
+                            .nwFocusRing(promptFocused, radius: NW.Radius.s)
+                            .nwComponentAnimation(.hover, value: promptFocused)
+                            .allowsHitTesting(false)
+                    }
                     .accessibilityLabel("Prompt")
             }
             .padding(EdgeInsets(top: NW.Space.l, leading: NWDialogMetrics.inset, bottom: 0, trailing: NWDialogMetrics.inset))
@@ -323,6 +351,7 @@ struct NewAgentSheet: View {
                 Button("Retry defaults") { loadModels() }.buttonStyle(.nw(.secondary, size: .s))
             }
             NWDialogStatus(errorText ?? (defaults.loading ? "Loading host defaults…" : sessionCaption), isError: errorText != nil)
+                .nwContentTransition(.crossFade)
         } actions: {
             Button("Cancel") { vm.showNewAgentSheet = false }
                 .buttonStyle(.nw(.secondary))
@@ -332,6 +361,11 @@ struct NewAgentSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canStart)
         }
+        // Rows the sheet grows (a host to pick, the worktree option once the directory probes as
+        // a repository, the worktree's base and fetch) disclose, and the sheet follows; captions
+        // that settle later (the resolved base, host defaults, an error) fade in place.
+        .nwAnimation(.disclosure, value: disclosureState)
+        .nwAnimation(.content, value: captionState)
         .onAppear {
             if let preselect = vm.newAgentPreselect {
                 // Opened from a remote space header's `+`.
@@ -422,6 +456,7 @@ struct NewAgentSheet: View {
                 },
                 cancel: { remotePicking = nil }
             )
+            .dialogSheetFrame()
         }
     }
 
