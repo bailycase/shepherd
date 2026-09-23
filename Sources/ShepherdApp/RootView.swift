@@ -63,6 +63,7 @@ struct RootView: View {
                 .zIndex(12)
             }
         }
+        .nwDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
         .preferredColorScheme(themes.mode.colorScheme)

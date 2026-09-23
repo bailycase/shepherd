@@ -25,6 +25,10 @@ struct AppearanceSettings: View {
                 }
             }
             SettingsGroup(title: "Layout") {
+                SettingsRow(title: "Sidebar rows", subtitle: "Compact 22 · Standard 28 · Comfortable 36 pt, for the sidebar and menus.") {
+                    NWSegmentedPicker("Sidebar rows", selection: $settings.sidebarRowDensity,
+                                      options: NWDensity.allCases.map { ($0, $0.title) })
+                }
                 SettingsRow(title: "Density", subtitle: "Row heights across the sidebar and chrome. Lower fits more agents.") {
                     NWValueSlider(value: $settings.uiDensity, in: AppSettings.uiDensityRange, step: 0.05, neutral: 1) {
                         "\(Int(($0 * 100).rounded()))%"
