@@ -20,7 +20,7 @@ public struct ShepherdMacApp: App {
     @State private var vm: ShepherdViewModel
     /// Menus rebuild when a shortcut is rebound: the rebindings are passed into each menu.
     private let keys = KeybindingsStore.shared
-    @ObservedObject private var themes = ThemeManager.shared
+    private let themes = ThemeManager.shared
 
     public init() {
         // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.

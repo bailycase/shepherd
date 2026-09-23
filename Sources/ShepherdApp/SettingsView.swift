@@ -10,7 +10,7 @@ import ShepherdProtocol
 /// Everything here is wired: a row exists only if changing it changes the app.
 struct SettingsView: View {
     var vm: ShepherdViewModel
-    @ObservedObject private var themes = ThemeManager.shared
+    private var themes: ThemeManager { .shared }
     @ObservedObject private var piUpdates = PiUpdateManager.shared
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
