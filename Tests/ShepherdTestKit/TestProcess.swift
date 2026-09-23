@@ -10,10 +10,12 @@ public enum TestProcess {
     /// `SHEPHERD_SUPPORT_DIR`: where the app installs extensions, themes, and shell integration.
     public static var supportDirectory: URL { root.appendingPathComponent("support", isDirectory: true) }
 
-    /// First on `PATH`, empty until a test installs a stand-in there (the stub `pi`).
+    /// First on `PATH`, also in login shells: `gh` and `pi` here refuse to run until a test
+    /// installs the stub `pi` over its stand-in (`StubPi.installOnPath()`).
     public static var binDirectory: URL { root.appendingPathComponent("bin", isDirectory: true) }
 
-    /// `ZDOTDIR`: empty, so login shells never run the user's dotfiles.
+    /// `ZDOTDIR`, so login shells never run the user's dotfiles; its startup files only keep
+    /// `binDirectory` first on PATH.
     public static var zdotdir: URL { root.appendingPathComponent("zdotdir", isDirectory: true) }
 
     /// `PI_CODING_AGENT_DIR`: the pi config the app reads and the session files it seeds (unset

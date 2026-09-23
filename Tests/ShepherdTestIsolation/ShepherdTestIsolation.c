@@ -6,8 +6,13 @@
 //   support/  SHEPHERD_SUPPORT_DIR: extensions, themes, and shell integration install here,
 //             never into the user's ~/Library/Application Support/Shepherd(-dev), even when the
 //             run inherited SHEPHERD_SUPPORT_DIR from a Shepherd agent.
-//   bin/      first on PATH; tests that launch pi the way the app does put the stub there.
-//   zdotdir/  ZDOTDIR, so login shells spawned by tests never run the user's dotfiles.
+//   bin/      first on PATH, holding stand-ins that refuse to run for `gh` and `pi`, so no test
+//             reaches the user's GitHub credentials or pi through a login shell. Tests that launch
+//             pi the way the app does replace the `pi` one with the stub (StubPi.installOnPath).
+//   zdotdir/  ZDOTDIR, so login shells spawned by tests never run the user's dotfiles. Its
+//             .zshenv and .zlogin put bin/ back first: from a minimal environment (Xcode, launchd)
+//             nix-darwin's /etc/zshenv replaces PATH, and macOS's path_helper in /etc/zprofile
+//             moves the system directories ahead of it, either of which would find the real tools.
 //   pi-agent/ PI_CODING_AGENT_DIR, so the session headers the app seeds and the pi config it
 //             reads are scratch, never ~/.pi/agent. Skipped for the opt-in live-model use case
 //             (SHEPHERD_LIVE_MODEL), which runs the user's real pi with their configuration.
@@ -17,6 +22,7 @@
 
 #include "ShepherdTestIsolation.h"
 
+#include <fcntl.h>
 #include <removefile.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +48,25 @@ static void fail(const char *what) {
 static void make(const char *name, char *out, size_t size) {
     if ((size_t)snprintf(out, size, "%s/%s", root, name) >= size) fail("path");
     if (mkdir(out, 0700) != 0) fail("mkdir");
+}
+
+static void write_file(const char *directory, const char *name, const char *contents, mode_t mode) {
+    char path[700];
+    if ((size_t)snprintf(path, sizeof path, "%s/%s", directory, name) >= sizeof path) fail("path");
+    int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, mode);
+    if (fd < 0) fail("open");
+    size_t length = strlen(contents);
+    if (write(fd, contents, length) != (ssize_t)length) fail("write");
+    if (close(fd) != 0) fail("close");
+}
+
+/// A `command` in bin/ that says why it will not run and exits 127, as a missing command would.
+static void refuse(const char *bin, const char *command) {
+    char script[256];
+    if ((size_t)snprintf(script, sizeof script,
+                         "#!/bin/sh\necho \"%s: out of reach of Shepherd's tests (Tests/ShepherdTestIsolation)\" >&2\nexit 127\n",
+                         command) >= sizeof script) fail("path");
+    write_file(bin, command, script, 0755);
 }
 
 /// Agent-only variables (AGENTS.md "Environment variables"), matched by prefix.
@@ -100,10 +125,20 @@ static void shepherd_test_isolation_install(void) {
         || setenv("PATH", newPath, 1) != 0) fail("setenv");
     free(newPath);
 
+    // zsh reads .zshenv for every shell and .zlogin last for a login shell, after the system files.
+    if (strchr(bin, '\'') != NULL) fail("path");
+    char startup[1400];
+    if ((size_t)snprintf(startup, sizeof startup, "path=('%s' ${path:#'%s'})\n", bin, bin) >= sizeof startup) fail("path");
+    write_file(zdotdir, ".zshenv", startup, 0600);
+    write_file(zdotdir, ".zlogin", startup, 0600);
+    refuse(bin, "gh");
+
+    // The opt-in live-model run drives the user's real pi with their configuration.
     const char *liveModel = getenv("SHEPHERD_LIVE_MODEL");
     if (liveModel == NULL || liveModel[0] == '\0') {
         char piAgent[600];
         make("pi-agent", piAgent, sizeof piAgent);
         if (setenv("PI_CODING_AGENT_DIR", piAgent, 1) != 0) fail("setenv");
+        refuse(bin, "pi");
     }
 }
