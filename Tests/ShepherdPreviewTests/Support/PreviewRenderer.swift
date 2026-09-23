@@ -52,7 +52,8 @@ enum Preview {
                     !Self.shows(text, in: host)
                 }
             }
-            // Let appear transitions (≤ 0.2s in DESIGN.md) finish before capturing.
+            // Let appear transitions finish before capturing: DESIGN.md › Motion anchors one-shot
+            // motion at 240ms at most, when its spring reads as done.
             for _ in 0..<4 {
                 try await Task.sleep(for: .milliseconds(60))
                 window.layoutIfNeeded()
