@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Signs a built Shepherd.app inside-out: every nested code item first, deepest
-# path first, then the app itself with the app's entitlements. Nested items keep
-# the entitlements they were built with (Sparkle's Autoupdate carries one; its
-# Downloader.xpc does when Sparkle is built sandboxed) and never receive the
-# app's. That is why this does not sign with `codesign --deep`, which would
-# stamp one set of entitlements on everything.
+# path first, then the app itself with the app's entitlements. Nested items
+# never receive the app's entitlements, which is why this does not sign with
+# `codesign --deep`: that would stamp one set of entitlements on everything.
+#
+# Nested apps and XPC services keep the entitlements they were built with
+# (Sparkle's Downloader.xpc carries some when Sparkle is built sandboxed).
+# Everything else is signed with none, as in Sparkle's own signing
+# instructions. That drops the stray application-identifier that Sparkle's
+# ad-hoc build leaves on Autoupdate: it has no Team ID prefix and no
+# provisioning profile behind it.
 #
 # usage: scripts/sign-app.sh <Shepherd.app> <identity> <entitlements.plist>
 #   identity "-" signs ad-hoc, without the hardened runtime or a secure timestamp.
@@ -80,8 +85,12 @@ items=$(nested_code | awk -F/ '{ print NF "\t" $0 }' | sort -rn -k1,1 | cut -f2-
 
 while IFS= read -r item; do
   [[ -n "$item" ]] || continue
-  echo "sign ${item#"$app"/}"
-  "${sign[@]}" --preserve-metadata=entitlements "$item"
+  case "$item" in
+    *.app|*.xpc|*.appex|*.systemextension) keep=(--preserve-metadata=entitlements) ;;
+    *) keep=() ;;
+  esac
+  echo "sign ${item#"$app"/}${keep:+ (keeping its entitlements)}"
+  "${sign[@]}" ${keep[@]+"${keep[@]}"} "$item"
 done <<<"$items"
 
 echo "sign $(basename "$app") with $entitlements"
