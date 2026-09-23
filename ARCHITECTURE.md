@@ -176,7 +176,7 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   - `automation_*`, through `onAutomationRequest`
   - `notify`
 - **`shepherd-review.ts`:** `review_diff`, which opens the review pane.
-- **`shepherd-subagents.ts`:** publishes subagent rows with `setAgentChildren`.
+- **`shepherd-subagents.ts`:** publishes subagent runs with `setAgentChildren`.
 - **`shepherd-children.ts`:** opens a `helloChildren` control connection for subagent commands.
 - **`shepherd-theme.ts`:** loaded only by pi run by hand in a terminal pane.
 
