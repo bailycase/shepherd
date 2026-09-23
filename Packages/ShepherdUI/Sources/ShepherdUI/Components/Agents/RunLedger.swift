@@ -41,6 +41,12 @@ public struct NWRunLedgerSummary: Equatable, Sendable {
         self.removed = removed
         self.entries = entries
     }
+
+    /// The header as VoiceOver reads it: "3 subagents, all done · 45m, 318 added, 64 removed".
+    public var accessibilityLabel: String {
+        let diff = added + removed > 0 ? "\(added) added, \(removed) removed" : nil
+        return ([title, status, diff] as [String?]).compactMap { $0 }.joined(separator: ", ")
+    }
 }
 
 /// The permanent record of a finished run group (Agents board): a header on `bgSunken` (glyph,
@@ -94,7 +100,7 @@ public struct NWRunLedger: View, Equatable {
         .frame(minHeight: NWRunLayout.headerHeight)
         .background(nw.bgSunken)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(ledger.title), \(ledger.status)")
+        .accessibilityLabel(ledger.accessibilityLabel)
         .accessibilityAddTraits(.isHeader)
     }
 }

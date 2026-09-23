@@ -70,5 +70,25 @@ struct AgentComponentTests {
         #expect(run.accessibilityLabel == "desktop, worker, Running, edit ThreadView.swift")
         let paused = NWSubagentRun(id: "p", name: "docs", state: .queued, stateLabel: "Paused", detail: "")
         #expect(paused.accessibilityLabel == "docs, Paused")
+        let done = NWSubagentRun(id: "r", name: "reviewer", state: .done, detail: "2 spec deviations fixed", detailMeta: "26 tools · 12m")
+        #expect(done.accessibilityLabel == "reviewer, Done, 2 spec deviations fixed, 26 tools · 12m")
+    }
+
+    @Test func aCardSpeaksItsProgressAsAValue() {
+        var run = NWSubagentRun(id: "d", name: "desktop", state: .running, detail: "edit ThreadView.swift")
+        #expect(run.accessibilityValue == "")
+        run.progress = 0.616
+        #expect(run.accessibilityValue == "Progress 62%")
+        run.progressLabel = "Context window used"
+        run.progress = 1.4
+        #expect(run.accessibilityValue == "Context window used 100%")
+    }
+
+    @Test func aLedgerHeaderSpeaksItsDiffOnlyWhenThereIsOne() {
+        var ledger = NWRunLedgerSummary(title: "3 subagents", state: .done, status: "all done · 45m", added: 318, removed: 64, entries: [])
+        #expect(ledger.accessibilityLabel == "3 subagents, all done · 45m, 318 added, 64 removed")
+        ledger.added = 0
+        ledger.removed = 0
+        #expect(ledger.accessibilityLabel == "3 subagents, all done · 45m")
     }
 }
