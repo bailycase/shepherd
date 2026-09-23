@@ -510,7 +510,8 @@ The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPrese
 - **`NWSubagentCard`:** a `bgRaised` card (padding 10×12, radius 8, 1px `lineSubtle`) that
   opens the run in the inspector when clicked. Its header is the 13pt branch glyph, the name
   (12.5/600), a role tag when it differs from the name, a mono model tag, and the state pill.
-  Under it, one mono 11 `textSecondary` line; the rest depends on the state:
+  In a narrow thread the tags give way (the model first) before the name truncates. Under it,
+  one mono 11 `textSecondary` line; the rest depends on the state:
   - **Running:** the line is the last call ("edit ThreadView.swift"), and a 4pt bar with its
     percent shows the context window used. The card never grows while it runs.
   - **Paused / Queued:** an outlined pill ("Paused" or "Queued") and why it waits.
@@ -526,7 +527,8 @@ The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPrese
   anchored to when it counts from, static once finished).
 - **`NWRunsStrip`:** more than three live sibling runs fold into one 32pt row on `bgSunken`:
   glyph, "n subagents", one 8pt step per run, "7 done · 3 running · 1 needs you · 1 failed",
-  tokens and the group's elapsed time, and a disclosure for every card. Needs-you runs keep their
+  tokens and the group's elapsed time, and a disclosure for every card. When the row runs out of
+  room the totals give way (tokens first) before the tally truncates. Needs-you runs keep their
   own card.
 - **`NWRunLedger`:** once every run in the group has finished, the cards are replaced in place
   by a permanent ledger.
