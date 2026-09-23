@@ -47,6 +47,16 @@ struct TokenTests {
         #expect(close(resolved(NWPalette(.nightWatch).scrim, dark: dark), HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)))
     }
 
+    /// A pane divider bordering the focused pane is running at 34%, a derived color rather than
+    /// an alpha picked in the view.
+    @Test(arguments: [false, true])
+    func theFocusedPanesDividerIsRunningAtThirtyFourPercent(dark: Bool) throws {
+        let colors = dark ? ThemeDefinition.nightWatch.dark.colors : ThemeDefinition.nightWatch.light.colors
+        let running = try #require(HexColor(colors.running))
+        #expect(close(resolved(NWPalette(.nightWatch).focusDivider, dark: dark),
+                      HexColor(red: running.red, green: running.green, blue: running.blue, alpha: 0.34)))
+    }
+
     /// The theme is resolved once: reads share one palette until another theme is selected.
     @Test func theStoreResolvesEachThemeOnce() {
         let store = ThemeStore()

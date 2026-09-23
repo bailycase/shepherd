@@ -51,6 +51,8 @@ public final class NWPalette: Sendable {
     // Derived (not theme roles)
     /// The keyboard focus ring: running at 60% (dark) / 50% (light).
     public let focusRing: Color
+    /// A pane divider bordering the focused pane: running at 34% in both appearances.
+    public let focusDivider: Color
     /// `.nwPopover()`'s shadow, the only shadow in the system.
     public let popoverShadow: Color
     /// Behind the command palette: black at 30% in both appearances (Composer board).
@@ -106,6 +108,8 @@ public final class NWPalette: Sendable {
         let runningDark = HexColor(d.running) ?? HexColor(red: 0, green: 0, blue: 1)
         focusRing = Color(light: HexColor(red: runningLight.red, green: runningLight.green, blue: runningLight.blue, alpha: 0.5),
                           dark: HexColor(red: runningDark.red, green: runningDark.green, blue: runningDark.blue, alpha: 0.6))
+        focusDivider = Color(light: HexColor(red: runningLight.red, green: runningLight.green, blue: runningLight.blue, alpha: 0.34),
+                             dark: HexColor(red: runningDark.red, green: runningDark.green, blue: runningDark.blue, alpha: 0.34))
         popoverShadow = Color(light: HexColor(red: 20 / 255, green: 20 / 255, blue: 20 / 255, alpha: 0.12),
                               dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.55))
         let scrimBlack = HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)

@@ -173,6 +173,7 @@ Values are `NightWatch.swift`'s, dark · light. Translucent roles are `#RRGGBBAA
 **Derived colors** live on `NWPalette`, not in the theme:
 
 - `focusRing`: running at 60% (dark) / 50% (light)
+- `focusDivider`: running at 34% in both appearances, for a pane divider beside the focused pane
 - `popoverShadow`: `.nwPopover()`'s shadow
 - `scrim`: black at 30% in both appearances, behind the command palette
 - `textOnFailed`: white, for labels on a `failed` fill
@@ -329,9 +330,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Size** (`AppLayout+Navigation.swift`): minimum 720×600, default 1440×900.
 - **Layout:** the sidebar sits on `bgBase` and runs behind the window controls; the main column
   sits on `bgWindow`. There is no tab bar and no status line. An agent's layout is its thread
-  plus any terminal panes split beside it. Pane dividers are 1pt `lineSubtle`, tinted running
-  where they border the focused pane; dragging one keeps each side at least 160pt, between 15%
-  and 85%.
+  plus any terminal panes split beside it. Pane dividers are 1pt `lineSubtle`, tinted
+  `focusDivider` where they border the focused pane; dragging one keeps each side at least
+  160pt, between 15% and 85%.
 - **Switching agents flips visibility; it never remounts.** Every mounted layout stays in the
   view tree, and hidden ones are `opacity(0)`. This is what makes switching instant.
 
@@ -1016,8 +1017,6 @@ These places in the code break this document and should be fixed toward it:
   (`ToolOutputSheet`), the question panel's 140pt message cap, the empty thread's top offsets,
   the empty workspace's 420pt measure, and `PanePlaceholder`'s padding should move into
   `AppLayout+Thread.swift` and `AppLayout+Navigation.swift`.
-- **An ad-hoc alpha:** the pane divider beside the focused pane is `running` at 34% opacity, not
-  a theme role.
 - **Hand-built chrome:** the review header and its ⋯ menu, and the inspector's ⋯ menu, repeat
   `NWPaneHeader` and `NWOptionsMenu` by hand.
 - **1pt strokes:** several control borders (secondary and danger buttons, fields, pickers and
