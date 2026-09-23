@@ -232,9 +232,9 @@ struct RemoteWorktreeSheet: View {
             }
         }
         SheetRow("Setup") { SheetLinkButton(label: "Repo setup…") { showingSetup = true } }
-        SheetRow("Commit") { SettingsSwitch(label: "Commit remaining work", isOn: $options.autoCommit) }
-        SheetRow("Cleanup") { SettingsSwitch(label: "Delete local branch", isOn: $options.deleteLocalBranch) }
-        SheetRow("Merge") { SettingsSwitch(label: "Merge PR automatically", isOn: $options.autoMergePR) }
+        SheetRow("Commit") { captionedSwitch("Commit remaining work", isOn: $options.autoCommit) }
+        SheetRow("Cleanup") { captionedSwitch("Delete local branch", isOn: $options.deleteLocalBranch) }
+        SheetRow("Merge") { captionedSwitch("Merge PR automatically", isOn: $options.autoMergePR) }
         if options.autoMergePR {
             SheetRow("Method") {
                 NWSegmentedPicker("Merge method", selection: $options.mergeMethod,
@@ -247,6 +247,17 @@ struct RemoteWorktreeSheet: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, NWDialogMetrics.inset)
             .padding(.top, NW.Space.l)
+    }
+
+    /// A switch with what it does beside it: the row label alone ("Cleanup") doesn't say.
+    private func captionedSwitch(_ label: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: NW.Space.m) {
+            SettingsSwitch(label: label, isOn: isOn)
+            Text(label)
+                .font(.nw(.caption))
+                .foregroundStyle(Color.nw.textSecondary)
+                .accessibilityHidden(true)
+        }
     }
 
     private func prepareInput() async {
