@@ -356,6 +356,15 @@ runs. Put it on what must not move, as close to it as possible.
   (elapsed times) ticks without rolling.
 - **Long lists** animate what changed, never the whole list: a thread's `LazyVStack` must not
   animate every row when one turn arrives.
+- **Columns take their new width at once** while a pane or the sidebar slides beside them: the
+  thread beside a docked right pane, the main column beside the docked sidebar, and split
+  panes. A long thread relaid out on every frame of a slide drops frames (measured in a debug
+  build: gaps up to 55ms beside one thread and 171ms with five mounted layouts, against under
+  9ms for plain content), so the column snaps as the motion starts and the pane slides into or
+  out of the room. Window resizes, divider drags, and docked ⇄ overlaid flips never animate.
+- **Selection** changes no row, so it lands at once; only rows arriving, leaving, reordering,
+  or disclosing animate a list. Each agent's toolbar has its own identity, so switching never
+  animates one agent's status or counters into another's.
 
 ## Density and row settings
 
@@ -409,7 +418,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   less than 190pt). In a window narrower than that allows (190 + 1 + 720 = 911pt), it hides on
   its own, and ⇧⌘S or the toolbar's sidebar button shows it as an overlay: its width, at most the
   window width minus 48pt, over the workspace with the popover shadow. Picking a row or clicking
-  outside closes the overlay. ⇧⌘S in a wide window hides and shows the docked sidebar.
+  outside closes the overlay. ⇧⌘S in a wide window hides and shows the docked sidebar. Either
+  way it slides from the leading edge (`.pane`); a window resize that hides or docks it is
+  instant.
 - **Toolbar inset.** While the sidebar is not docked, the toolbar's content moves a further 70pt
   in to clear the window controls (none in full screen) and leads with a sidebar button.
 - **Right pane** (review or subagent inspector, `RightPaneSplit`). It docks while the main
@@ -417,7 +428,8 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   half the column, and the thread always keeps 400. Narrower, the pane overlays the thread from
   the trailing edge with the popover shadow. Its leading edge is the drag handle (9pt hit area,
   adjustable with VoiceOver in 40pt steps), and the width persists app-wide
-  (`shepherd.rightPaneWidth`). No width is ever negative.
+  (`shepherd.rightPaneWidth`). No width is ever negative. It slides in from the trailing edge
+  (`.pane`), and its content cross-fades when the review and the inspector swap.
 - **Palette:** 620pt wide, or the window minus 16pt margins, and never taller than the window
   leaves room for (`NWPaletteMetrics.placement`).
 - **Composer:** in a narrow thread the chips drop their words ("/" alone, the thinking level
@@ -1086,10 +1098,11 @@ Review-pane and menu keys are listed with their surfaces.
 When a change leaves code breaking this document, list the place here until it is fixed toward
 it.
 
-- **Motion:** most surfaces do not apply the Motion table yet (the right pane, the overlaid
-  sidebar, the palette, menus, disclosures, and row changes appear and vanish at once), and a
-  few views still write their own curves: `ThreadView` (turn jumps, the jump-to-latest button),
-  `SidebarView` (revealing a row), `NWFileStrip` (scrolling to a file), and `DiffReviewView`.
+- **Motion:** the shell applies the Motion table (the right pane, the sidebar, the palette, the
+  toolbar, the workspace), but most surfaces inside the thread, the review, and Settings do not
+  yet (menus, disclosures, and row changes there appear and vanish at once), and a few views
+  still write their own curves: `ThreadView` (turn jumps, the jump-to-latest button),
+  `NWFileStrip` (scrolling to a file), and `DiffReviewView`.
 
 Deliberate exceptions stay with their rules rather than here: the layout's 1pt dividers, the
 checkbox's 1.5pt border, and the strokes of status glyphs (see Hairlines), and one-off type
@@ -1128,7 +1141,9 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
   while a change settles. Compare the frames with the start and end states (`inBetween`,
   `firstColumn(differingFrom:)`, `lastRow(differingFrom:)`) to show that a surface slides, that it
   only fades under Reduce Motion (`.environment(\._accessibilityReduceMotion, true)`), or that it
-  stays instant. `MotionProbeTests` is the example.
+  stays instant. `MotionProbeTests` is the example. An off-screen window completes removal
+  transitions at once (even an explicit `withAnimation`'s completion fires within a frame), so
+  record what arrives; what leaves runs the same transition in reverse.
 - **Component Gallery:** in Debug builds, the View menu has a Component Gallery.
 - **The running app:** build and run the `Shepherd (Dev)` scheme and check the change in both
   appearances.
