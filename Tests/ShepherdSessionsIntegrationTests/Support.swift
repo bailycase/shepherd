@@ -291,8 +291,8 @@ struct RemoteHost {
 
     var server: SessionServer { host.server }
 
-    init() throws {
-        host = try ScratchServer.fresh()
+    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
+        host = try ScratchServer(modelCatalog: modelCatalog)
         let tokenURL = host.dir.appendingPathComponent("remote-token")
         port = try host.server.startRemoteListener(port: 0, tokenURL: tokenURL)
         token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)

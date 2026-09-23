@@ -225,6 +225,7 @@ public final class SessionServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "shepherd.sessions")
     private let socketPath: String
     private let store: StateStore
+    private let modelCatalog: ModelCatalog
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
     private var remoteListenFD: Int32 = -1
@@ -303,9 +304,21 @@ public final class SessionServer: @unchecked Sendable {
     /// on the main queue, tracked independently for each session.
     private var outputStates: [SessionID: SessionOutputState] = [:]
 
-    public init(socketPath: String, stateURL: URL) {
+    /// The models a remote client's `listModels` gets, and the default among them. It blocks
+    /// (asking pi shells out), so the server calls it off its queue.
+    public typealias ModelCatalog = @Sendable () -> (models: [String], defaultModel: String?)
+
+    /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default.
+    public static let piModelCatalog: ModelCatalog = {
+        let models = PiModelCatalog.modelIDs()
+        return (models.isEmpty ? PiConfig.modelIDs() : models, PiConfig.defaultModel())
+    }
+
+    /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
+    public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
+        self.modelCatalog = modelCatalog
     }
 
     /// Current persisted state (safe to read from any thread).
@@ -873,13 +886,12 @@ public final class SessionServer: @unchecked Sendable {
         case .listModels(let id):
             // Asking pi shells out (~0.5s cold); never block the server
             // queue. Reply from the queue once the catalog returns.
+            let catalog = modelCatalog
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let models = PiModelCatalog.modelIDs()
-                let fallback = models.isEmpty ? PiConfig.modelIDs() : models
-                let defaultModel = PiConfig.defaultModel()
+                let listing = catalog()
                 self?.queue.async {
                     guard let self, self.clients[client.fd] === client else { return }
-                    self.send(.models(id: id, models: fallback, defaultModel: defaultModel), to: client)
+                    self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel), to: client)
                 }
             }
         case .addSpace(let id, let path):

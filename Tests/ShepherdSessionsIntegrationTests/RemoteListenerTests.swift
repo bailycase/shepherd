@@ -140,15 +140,24 @@ struct RemoteListenerTests {
         guard case .system("bind", _)? = error else { Issue.record("expected a bind failure, got \(String(describing: error))"); return }
     }
 
-    /// Asking pi for its models shells out; it must not hold the server queue meanwhile.
+    /// Asking pi for its models shells out; it must not hold the server queue meanwhile. The
+    /// stand-in catalog cannot return until the state reply has arrived, so a listing that held
+    /// the queue would never let that reply through.
     @Test func aModelListingDoesNotBlockOtherRequests() async throws {
-        let r = try RemoteHost()
+        let stateArrived = DispatchSemaphore(value: 0)
+        let r = try RemoteHost(modelCatalog: {
+            _ = stateArrived.wait(timeout: .now() + 30)
+            return (["stand-in/model"], "stand-in/model")
+        })
         defer { r.stop() }
         let client = try await r.raw()
         try client.send(.listModels(id: 1))
         try client.send(.stateFetch(id: 2))
-        let frames = try await client.frames(until: { if case .models = $0 { true } else { false } }, timeout: .seconds(60))
-        let stateIndex = frames.firstIndex { if case .state(2, _) = $0 { true } else { false } }
-        #expect(stateIndex != nil && stateIndex! < frames.count - 1, "the state reply overtook the model listing")
+
+        let beforeListing = try await client.frames(until: { if case .state(2, _) = $0 { true } else { false } })
+        stateArrived.signal()
+        #expect(!beforeListing.contains { if case .models = $0 { true } else { false } })
+        let listing = try await client.frames(until: { if case .models = $0 { true } else { false } })
+        #expect(listing.last == .models(id: 1, models: ["stand-in/model"], defaultModel: "stand-in/model"))
     }
 }

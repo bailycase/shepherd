@@ -12,11 +12,15 @@ public final class ScratchServer: @unchecked Sendable {
     public var socketPath: String { dir.appendingPathComponent("s.sock").path }
     public var stateURL: URL { dir.appendingPathComponent("state.json") }
 
+    /// What a remote `listModels` answers unless a test passes its own catalog: never pi's.
+    public static let standInModels = (models: ["stub/model-a", "stub/model-b"], defaultModel: Optional("stub/model-a"))
+
     /// Starts on a fresh directory, or on `dir` to restart over an existing state file.
-    public init(dir: URL? = nil) throws {
+    public init(dir: URL? = nil, modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
         self.dir = try dir ?? makeScratchDirectory("srv")
         server = SessionServer(socketPath: self.dir.appendingPathComponent("s.sock").path,
-                               stateURL: self.dir.appendingPathComponent("state.json"))
+                               stateURL: self.dir.appendingPathComponent("state.json"),
+                               modelCatalog: modelCatalog)
         let broadcasts = broadcasts
         server.onStateChanged = { state in broadcasts.withValue { $0.append(state) } }
         try server.start()
