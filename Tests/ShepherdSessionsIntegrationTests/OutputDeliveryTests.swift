@@ -154,51 +154,54 @@ struct OutputDeliveryTests {
     }
 
     /// A stalled renderer must stop the PTY before the child finishes; released, every byte
-    /// still arrives in order.
-    @Test func aStalledRendererBackpressuresTheChildWithoutLosingBytes() async throws {
-        let h = try ScratchServer.fresh()
-        defer { h.stop() }
-        let release = DispatchSemaphore(value: 0)
-        defer { release.signal() }
-        let received = Locked(Data())
-        let stalled = Locked(false)
-        let payloadCount = 6 * 1024 * 1024
-        h.server.onOutput = { _, data in
-            received.withValue { $0.append(data) }
-            if !stalled.current, data.range(of: Data("READY".utf8)) != nil {
-                stalled.withValue { $0 = true }
-                release.wait()
+    /// still arrives in order. The stall blocks the main queue, so it runs in its own process
+    /// where no other test waits on that queue.
+    @Test func aStalledRendererBackpressuresTheChildWithoutLosingBytes() async {
+        await #expect(processExitsWith: .success) {
+            let h = try ScratchServer()
+            defer { h.stop() }
+            let release = DispatchSemaphore(value: 0)
+            defer { release.signal() }
+            let received = Locked(Data())
+            let stalled = Locked(false)
+            let payloadCount = 6 * 1024 * 1024
+            h.server.onOutput = { _, data in
+                received.withValue { $0.append(data) }
+                if !stalled.current, data.range(of: Data("READY".utf8)) != nil {
+                    stalled.withValue { $0 = true }
+                    release.wait()
+                }
             }
-        }
-        let info = try await h.shell(
-            "stty raw -echo -opost; IFS= read -r _; printf READY; awk 'BEGIN{for(i=1;i<=2000000;i++)print i}' | head -c \(payloadCount); printf END; sleep 30")
-        _ = try await h.server.attachSnapshot(sessionID: info.id, replay: false)
-        h.server.write(sessionID: info.id, data: Data("go\n".utf8))
-        try await eventually("the renderer to stall") { stalled.current }
+            let info = try await h.shell(
+                "stty raw -echo -opost; IFS= read -r _; printf READY; awk 'BEGIN{for(i=1;i<=2000000;i++)print i}' | head -c \(payloadCount); printf END; sleep 30")
+            _ = try await h.server.attachSnapshot(sessionID: info.id, replay: false)
+            h.server.write(sessionID: info.id, data: Data("go\n".utf8))
+            try await eventually("the renderer to stall") { stalled.current }
 
-        // Reading stops at the high-water mark: the host screen freezes short of the tail.
-        var previous = ""
-        var unchanged = 0
-        try await eventually("the host screen to stop advancing") {
-            let now = await h.screen(info.id)
-            unchanged = now == previous ? unchanged + 1 : 0
-            previous = now
-            return unchanged >= 5
-        }
-        #expect(!(await h.screen(info.id)).contains("END"), "the child reached its tail while the renderer was stalled")
-        release.signal()
+            // Reading stops at the high-water mark: the host screen freezes short of the tail.
+            var previous = ""
+            var unchanged = 0
+            try await eventually("the host screen to stop advancing") {
+                let now = await h.screen(info.id)
+                unchanged = now == previous ? unchanged + 1 : 0
+                previous = now
+                return unchanged >= 5
+            }
+            #expect(!(await h.screen(info.id)).contains("END"), "the child reached its tail while the renderer was stalled")
+            release.signal()
 
-        var payload = Data(capacity: payloadCount)
-        var n = 1
-        while payload.count < payloadCount { payload.append(contentsOf: "\(n)\n".utf8); n += 1 }
-        let expected = Data("READY".utf8) + payload.prefix(payloadCount) + Data("END".utf8)
-        // Anything before READY is the tty echoing "go" if it beat `stty -echo`.
-        func fromReady() -> Data {
-            let all = received.current
-            return all.range(of: Data("READY".utf8)).map { all[$0.lowerBound...] } ?? Data()
+            var payload = Data(capacity: payloadCount)
+            var n = 1
+            while payload.count < payloadCount { payload.append(contentsOf: "\(n)\n".utf8); n += 1 }
+            let expected = Data("READY".utf8) + payload.prefix(payloadCount) + Data("END".utf8)
+            // Anything before READY is the tty echoing "go" if it beat `stty -echo`.
+            func fromReady() -> Data {
+                let all = received.current
+                return all.range(of: Data("READY".utf8)).map { all[$0.lowerBound...] } ?? Data()
+            }
+            try await eventually("every byte after release", timeout: .seconds(30)) { fromReady().count >= expected.count }
+            let intact = fromReady() == expected
+            #expect(intact, "payload differs: \(fromReady().count) of \(expected.count) bytes")
         }
-        try await eventually("every byte after release", timeout: .seconds(30)) { fromReady().count >= expected.count }
-        let intact = fromReady() == expected
-        #expect(intact, "payload differs: \(fromReady().count) of \(expected.count) bytes")
     }
 }

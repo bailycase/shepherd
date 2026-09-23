@@ -112,20 +112,19 @@ struct TerminalSessionTests {
     }
 
     /// The app ignores some signals; a child must not inherit that, or kills escalate to SIGKILL.
-    @Test func childrenStartWithDefaultSignalDispositions() async throws {
-        let h = try ScratchServer.fresh()
-        defer { h.stop() }
-        let previous = signal(SIGTERM, SIG_IGN)
-        let info: SessionInfo
-        do {
-            defer { signal(SIGTERM, previous) }
-            info = try await h.server.createSession(params: CreateSessionParams(cwd: "/", command: [
+    /// A signal disposition is process-wide, so the test ignores SIGTERM in its own process.
+    @Test func childrenStartWithDefaultSignalDispositions() async {
+        await #expect(processExitsWith: .success) {
+            _ = signal(SIGTERM, SIG_IGN)
+            let h = try ScratchServer()
+            defer { h.stop() }
+            let info = try await h.server.createSession(params: CreateSessionParams(cwd: "/", command: [
                 "python3", "-c", "import signal; print('TERM=' + ('default' if signal.getsignal(signal.SIGTERM) == signal.SIG_DFL else 'inherited'))",
             ]))
+            try await h.waitForScreen(info.id, toContain: "TERM=")
+            let screen = await h.screen(info.id)
+            #expect(screen.contains("TERM=default"), "\(screen)")
         }
-        try await h.waitForScreen(info.id, toContain: "TERM=")
-        let screen = await h.screen(info.id)
-        #expect(screen.contains("TERM=default"), "\(screen)")
     }
 
     @Test func inputIsDeliveredInOrderToALateReader() async throws {
