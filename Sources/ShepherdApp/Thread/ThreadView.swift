@@ -75,6 +75,7 @@ struct ThreadView: View {
                             }
                             .buttonStyle(NWButtonStyle(.ghost, size: .s))
                             .disabled(!active || !store.ready || store.loadingOlder)
+                            .nwAnimation(.content, value: store.loadingOlder)
                             .frame(maxWidth: .infinity)
                         }
                         if rows.isEmpty { emptyState }
@@ -137,22 +138,7 @@ struct ThreadView: View {
                     handle(command, proxy: proxy)
                 })
                 .overlay(alignment: .bottom) {
-                    if follower.showsJump(running: running) {
-                        Button {
-                            follower.jumpToLatest()
-                            proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                        } label: {
-                            Label("Jump to latest", systemImage: "arrow.down")
-                                .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                                .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
-                                .background(Color.nw.bgRaised, in: Capsule())
-                                .nwBorder(Color.nw.lineStrong, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.bottom, composerHeight + NW.Space.m)
-                        .transition(.opacity)
-                        .accessibilityLabel("Jump to latest")
-                    }
+                    jumpToLatest(showing: follower.showsJump(running: running), proxy: proxy)
                 }
             }
             Composer(store: store, active: active, agentName: agentName, hasTurns: !rows.isEmpty, gutter: gutter,
@@ -162,7 +148,6 @@ struct ThreadView: View {
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
         .background(Color.nw.bgWindow)
-        .animation(.easeInOut(duration: NW.Motion.hover.duration), value: follower.showsJump(running: running))
         .onGeometryChange(for: CGFloat.self) { AppLayout.threadGutter(width: $0.size.width) } action: { gutter = $0 }
         .onHover { hovering = $0 }
         .onAppear { installWheelMonitor() }
@@ -197,6 +182,30 @@ struct ThreadView: View {
                       retry: retryAction(row, running: running), review: review, working: working, arriving: arriving)
                 .equatable()
         }
+    }
+
+    /// "↓ Jump to latest" grows in from above the composer while detached. Its motion is its
+    /// own: the rows beside it never animate with it.
+    @ViewBuilder private func jumpToLatest(showing: Bool, proxy: ScrollViewProxy) -> some View {
+        ZStack {
+            if showing {
+                Button {
+                    follower.jumpToLatest()
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                } label: {
+                    Label("Jump to latest", systemImage: "arrow.down")
+                        .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
+                        .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
+                        .background(Color.nw.bgRaised, in: Capsule())
+                        .nwBorder(Color.nw.lineStrong, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .nwTransition(.overlay, anchor: .bottom)
+                .accessibilityLabel("Jump to latest")
+            }
+        }
+        .nwAnimation(.overlay, value: showing)
+        .padding(.bottom, composerHeight + NW.Space.m)
     }
 
     private static let bottomID = "thread-bottom"
@@ -246,9 +255,7 @@ struct ThreadView: View {
             }
             jumpedTurn = userTurns[target]
             follower.beginJump()
-            withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeOut(duration: 0.15)) {
-                proxy.scrollTo(userTurns[target], anchor: .top)
-            }
+            withNWAnimation(.scroll) { proxy.scrollTo(userTurns[target], anchor: .top) }
         }
     }
 
