@@ -30,10 +30,15 @@ struct RootView: View {
             // hides it; a window too narrow to dock it overlays it instead. It keeps its width
             // while a right pane is open.
             if docked {
-                SidebarView(vm: vm)
-                    .frame(width: sidebar.width)
-                    .background(Color.nw.bgBase.ignoresSafeArea())
-                sidebarResizeHandle(width: sidebar.width)
+                HStack(spacing: 0) {
+                    SidebarView(vm: vm)
+                        .frame(width: sidebar.width)
+                        .background(Color.nw.bgBase.ignoresSafeArea())
+                    sidebarResizeHandle(width: sidebar.width)
+                }
+                // Over the main column, which takes its new frame at once as it slides.
+                .zIndex(1)
+                .nwTransition(.pane, edge: .leading)
             }
 
             VStack(spacing: 0) {
@@ -46,12 +51,21 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity)
             .background(Color.nw.bgWindow)
+            // Every mounted layout reflows when the column's width changes; relaid out on each
+            // frame of the slide they drop frames, so the column snaps as the sidebar moves.
+            .animation(nil, value: docked)
         }
+        // What the sliding sidebar uncovers reads as its own base.
+        .background(Color.nw.bgBase.ignoresSafeArea())
+        // ⇧⌘S, the toolbar's button, the palette: the docked sidebar slides from the leading
+        // edge. Keyed on the preference alone: a window resize that docks or undocks it is instant.
+        .nwAnimation(.pane, value: vm.sidebarHidden)
         .coordinateSpace(.named("root-layout"))
         .overlay(alignment: .leading) {
-            if sidebar.mode == .overlay {
-                sidebarOverlay(width: sidebar.width)
-            }
+            sidebarOverlay(width: sidebar.width, shown: sidebar.mode == .overlay)
+                // A resize that crosses the fit point closes the overlay at once.
+                .animation(nil, value: vm.sidebarAutoHidden)
+                .nwAnimation(.pane, value: vm.sidebarOverlayShown)
         }
         .overlay {
             if vm.showComponentGallery {
@@ -97,19 +111,22 @@ struct RootView: View {
         .modifier(AppDialogs(vm: vm))
     }
 
-    /// The sidebar over the workspace in a window too narrow to dock it. Clicking outside
-    /// closes it, as does picking a row.
-    private func sidebarOverlay(width: CGFloat) -> some View {
+    /// The sidebar over the workspace in a window too narrow to dock it; it slides in from the
+    /// leading edge. Clicking outside closes it, as does picking a row.
+    private func sidebarOverlay(width: CGFloat, shown: Bool) -> some View {
         ZStack(alignment: .leading) {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { vm.dismissSidebarOverlay() }
-                .accessibilityHidden(true)
-            SidebarView(vm: vm)
-                .frame(width: width)
-                .background(Color.nw.bgBase.ignoresSafeArea())
-                .overlay(alignment: .trailing) { NWHairline(.vertical) }
-                .nwFloatShadow()
+            if shown {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { vm.dismissSidebarOverlay() }
+                    .accessibilityHidden(true)
+                SidebarView(vm: vm)
+                    .frame(width: width)
+                    .background(Color.nw.bgBase.ignoresSafeArea())
+                    .overlay(alignment: .trailing) { NWHairline(.vertical) }
+                    .nwFloatShadow()
+                    .nwTransition(.pane, edge: .leading)
+            }
         }
     }
 

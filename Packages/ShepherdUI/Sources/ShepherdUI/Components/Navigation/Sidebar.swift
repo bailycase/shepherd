@@ -82,6 +82,7 @@ public struct NWSidebarJumpButton: View {
     let title: String
     let shortcut: String?
     let action: () -> Void
+    @State private var hovering = false
 
     public init(_ title: String = "Jump to…", shortcut: String?, action: @escaping () -> Void) {
         self.title = title
@@ -104,10 +105,13 @@ public struct NWSidebarJumpButton: View {
             }
             .padding(.horizontal, NW.Space.m)
             .frame(minHeight: 26)
+            .nwRowBackground(selected: false, hovering: hovering)
             .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
             .nwBorder(.nw.lineSubtle, radius: NW.Radius.s)
         }
         .buttonStyle(NWPlainPressStyle())
+        .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
         .accessibilityLabel(title)
         .accessibilityHint(shortcut.map { "Opens the command palette, \($0)" } ?? "Opens the command palette")
     }
@@ -169,7 +173,10 @@ public struct NWSidebarSection<Accessory: View>: View {
                         .opacity(hovering ? 1 : 0)
                         .accessibilityHidden(true)
                 }
-                detailView
+                // One slot: a count rolls, and a count ⇄ a word cross-fades, in place.
+                ZStack(alignment: .trailing) { detailView }
+                    .nwContentTransition(.numeric())
+                    .nwAnimation(.content, value: detail)
                     .opacity(showsAccessory ? 0 : 1)
                     .frame(minWidth: accessoryWidth, alignment: .trailing)
             }
@@ -268,8 +275,11 @@ public struct NWSidebarRow: View, Equatable {
     }
 
     public var body: some View {
+        // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
+        // selection is not animated here, so it lands at once.
         HStack(spacing: NWSidebarMetrics.rowGap) {
             NWSidebarDot(state: state)
+                .nwAnimation(.content, value: state)
             if worktree {
                 Text("⎇").font(.nw(.micro)).foregroundStyle(.nw.textSecondary).accessibilityHidden(true)
             }
@@ -278,8 +288,11 @@ public struct NWSidebarRow: View, Equatable {
                 .foregroundStyle(.nw.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.tail)
+                .nwContentTransition(.crossFade)
+                .nwAnimation(.content, value: title)
             Spacer(minLength: NW.Space.xs)
             NWSidebarAccessoryView(accessory: accessory)
+                .nwAnimation(.content, value: accessory)
         }
         .padding(.leading, NWSidebarMetrics.rowPadding + CGFloat(depth) * NWSidebarMetrics.indentStep)
         .padding(.trailing, NWSidebarMetrics.rowPadding)
@@ -296,13 +309,16 @@ public struct NWSidebarRow: View, Equatable {
 struct NWSidebarDot: View {
     let state: AgentState
 
+    /// A ZStack, so a hollow dot and a filled one cross-fade in one place.
     var body: some View {
-        if state == .idle || state == .queued {
-            Circle().strokeBorder(Color.nw.textTertiary, lineWidth: 1)
-                .frame(width: 6, height: 6)
-                .accessibilityHidden(true)
-        } else {
-            NWStatusDot(state)
+        ZStack {
+            if state == .idle || state == .queued {
+                Circle().strokeBorder(Color.nw.textTertiary, lineWidth: 1)
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+            } else {
+                NWStatusDot(state)
+            }
         }
     }
 }
@@ -310,7 +326,12 @@ struct NWSidebarDot: View {
 private struct NWSidebarAccessoryView: View {
     let accessory: NWSidebarRow.Accessory
 
+    /// A ZStack, so the old and new accessory cross-fade in one slot.
     var body: some View {
+        ZStack(alignment: .trailing) { content }
+    }
+
+    @ViewBuilder private var content: some View {
         switch accessory {
         case .none:
             EmptyView()
@@ -444,6 +465,9 @@ public struct NWSidebarFooter: View {
                 Text(title).font(.nw(.ui, weight: .regular)).foregroundStyle(.nw.textSecondary).lineLimit(1)
                 Spacer(minLength: NW.Space.xs)
                 NWCountBadge(count, tone: tone)
+                    .nwContentTransition(.numeric())
+                    .nwAnimation(.content, value: count)
+                    .nwAnimation(.content, value: tone)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, NW.Space.m)
