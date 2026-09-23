@@ -110,7 +110,8 @@ private struct RevertConfirmation: ViewModifier {
 
 // MARK: Header
 
-/// "Review" over "4 files · +67 −58", the Local | PR control, the options menu, and close.
+/// The pane header: "Review" over "4 files · +67 −58", the Local | PR control, the options
+/// menu, and close.
 private struct ReviewHeader: View, Equatable {
     @Bindable var model: ReviewPaneModel
     let session: ReviewSession
@@ -118,20 +119,12 @@ private struct ReviewHeader: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
-        let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Review").font(.nwSans(13, .semibold)).foregroundStyle(nw.textPrimary).accessibilityAddTraits(.isHeader)
-                subtitle
-                    .font(.nw(.micro, weight: .regular))
-                    .foregroundStyle(nw.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer(minLength: NW.Space.m)
+        NWPaneHeader("Review", closeLabel: "Close review", close: model.actions.close) {
+            subtitle.truncationMode(.middle)
+        } controls: {
             NWSegmentedPicker("Diff", selection: $model.pullRequestMode, options: [(false, "Local"), (true, prLabel)], size: .s)
                 .disabled(session.isLoading)
-            Menu {
+            NWOptionsMenu("Review options") {
                 Button("Expand All Files") { model.expandAllFiles() }
                 Button("Collapse All Files") { model.collapseAllFiles() }
                 Divider()
@@ -140,29 +133,9 @@ private struct ReviewHeader: View, Equatable {
                     NSPasteboard.general.setString(formatReview(files: session.files, comments: session.comments, summary: session.summary,
                                                                 reference: session.reference), forType: .string)
                 }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(nw.textSecondary)
-                    .frame(width: NW.Height.controlM, height: NW.Height.controlM)
-                    .contentShape(Circle())
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Review options")
-            .accessibilityLabel("Review options")
-            Button(action: model.actions.close) { Image(systemName: "xmark") }
-                .buttonStyle(.nwIcon)
-                .help("Close the review")
-                .accessibilityLabel("Close review")
+            .nwHelp("Review options")
         }
-        .padding(.leading, NW.Space.l)
-        .padding(.trailing, NW.Space.s)
-        .frame(height: AppLayout.headerHeight)
-        .background(nw.bgWindow)
-        .overlay(alignment: .bottom) { NWHairline() }
     }
 
     private var prLabel: String {
