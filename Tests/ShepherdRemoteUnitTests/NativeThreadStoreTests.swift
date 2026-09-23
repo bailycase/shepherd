@@ -423,6 +423,21 @@ struct NativeThreadStoreTests {
         #expect(store.rows.map(\.live) == [false, false, false, true])
     }
 
+    @Test func aRunningCallsTailFollowsOutputThatKeepsItsLength() async throws {
+        let running = { (output: String) in
+            F.tool("bash", args: #"{"command":"swift build"}"#, output: output, status: "running", id: "provisional:tool:b", callID: "b")
+        }
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [F.user(id: "u")], provisional: [running("step 1")]))
+        defer { task.cancel() }
+        host.snapshot = F.snapshot(revision: 2, running: true, messages: [F.user(id: "u")], provisional: [running("step 2")])
+        await store.refresh()
+        guard case .activity(let burst)? = store.rows.last?.presentation?.items.last else {
+            Issue.record("no live line")
+            return
+        }
+        #expect(burst.state == .running && burst.tail == ["step 2"])
+    }
+
     @Test func aFollowUpSentWhileRunningIsQueuedBelowTheLiveReply() async throws {
         let live = F.assistant("streaming reply", id: "live")
         let (store, host, task) = await started(F.snapshot(running: true, messages: [F.user(id: "u0"), hi], provisional: [live]))
