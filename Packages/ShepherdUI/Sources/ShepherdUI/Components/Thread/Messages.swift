@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The user's turn: right-aligned, at most 600pt, `bgBubble` with a 1px strong line, radius 8.
 /// No avatar and no name; the time sits beneath. A follow-up typed while a turn runs is queued:
-/// dashed and quiet until it sends.
+/// dashed and quiet until it sends. Its text follows `nwProseSize`.
 public struct NWUserBubble: View {
     let text: String
     let attachments: [String]
@@ -13,6 +13,7 @@ public struct NWUserBubble: View {
     let isQueued: Bool
     let onEdit: (() -> Void)?
     let onSendNow: (() -> Void)?
+    @Environment(\.nwProseSize) private var proseSize
 
     /// `attachments` name the images sent with the message. `onEdit` and `onSendNow` add the
     /// queued bubble's buttons; pass them only when the host can do it.
@@ -39,8 +40,8 @@ public struct NWUserBubble: View {
                 }
                 if !text.isEmpty {
                     Text(text)
-                        .font(.nw(.body))
-                        .lineSpacing(max(0, NWTextStyle.body.lineSpacing - 1))
+                        .font(.nw(.body, size: proseSize))
+                        .lineSpacing(max(0, NWTextStyle.body.lineSpacing(proseSize) - 1))
                         .foregroundStyle(isQueued ? nw.textSecondary : nw.textPrimary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
@@ -99,6 +100,7 @@ public struct NWProseListItem: Equatable, Sendable {
 /// Agent prose: body 13.5/1.6 in `textPrimary` at the 640pt measure, blocks 12pt apart.
 /// Headings at `.headline`, lists indented 20pt (one nested level), quotes on a
 /// 2pt rule, fenced code through `code` (an `NWCodeBlock` unless the app highlights it).
+/// Text follows `nwProseSize`.
 public struct NWAgentProse<Code: View>: View {
     let blocks: [NWProseBlock]
     let maxWidth: CGFloat
@@ -129,22 +131,23 @@ private struct NWProseBlocks<Code: View>: View {
     let blocks: [NWProseBlock]
     var nested = false
     let code: (String, String?) -> Code
+    @Environment(\.nwProseSize) private var size
 
     var body: some View {
         let nw = Color.nw
         ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
             switch block {
             case .heading(_, let text):
-                Text(text).font(.nw(.headline)).lineSpacing(NWTextStyle.headline.lineSpacing)
+                Text(text).font(.nw(.headline, size: size)).lineSpacing(NWTextStyle.headline.lineSpacing(size))
                     .foregroundStyle(nw.textPrimary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, nested ? 0 : NW.Space.xs)
                     .accessibilityAddTraits(.isHeader)
             case .paragraph(let text):
-                Text(text).nwText(.body).foregroundStyle(nw.textPrimary).textSelection(.enabled)
+                Text(text).nwText(.body, size: size).foregroundStyle(nw.textPrimary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             case .quote(let text):
-                Text(text).nwText(.body).italic().foregroundStyle(nw.textSecondary).textSelection(.enabled)
+                Text(text).nwText(.body, size: size).italic().foregroundStyle(nw.textSecondary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, NW.Space.l)
                     .overlay(alignment: .leading) { nw.lineStrong.frame(width: 2) }
@@ -158,13 +161,13 @@ private struct NWProseBlocks<Code: View>: View {
                         HStack(alignment: .firstTextBaseline, spacing: 0) {
                             // The marker ends 6pt before the item, as a list's outside marker does.
                             Text(ordered ? "\(start + index)." : "•")
-                                .font(.nw(.body)).foregroundStyle(nw.textPrimary).monospacedDigit()
+                                .font(.nw(.body, size: size)).foregroundStyle(nw.textPrimary).monospacedDigit()
                                 .fixedSize()
                                 .frame(width: NWThreadMetrics.listIndent - NW.Space.s, alignment: .trailing)
                                 .padding(.trailing, NW.Space.s)
                                 .accessibilityHidden(!ordered)
                             VStack(alignment: .leading, spacing: NW.Space.xs) {
-                                Text(item.text).nwText(.body).foregroundStyle(nw.textPrimary).textSelection(.enabled)
+                                Text(item.text).nwText(.body, size: size).foregroundStyle(nw.textPrimary).textSelection(.enabled)
                                     .fixedSize(horizontal: false, vertical: true)
                                 NWProseBlocks(blocks: item.children, nested: true, code: code)
                             }

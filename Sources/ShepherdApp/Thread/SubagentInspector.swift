@@ -192,9 +192,9 @@ struct SubagentInspector: View {
                         if turn.isUser {
                             // In the child's session every user message after the first is the
                             // parent (a steer or a resume); the first is the task itself.
-                            UserTurn(messages: turn.messages, caption: index > 0 ? parentCaption(turn) : nil, small: true)
+                            UserTurn(messages: turn.messages, caption: index > 0 ? parentCaption(turn) : nil)
                         } else {
-                            AgentTurn(messages: turn.messages, live: !terminal && run != nil && index == turns.count - 1, small: true)
+                            AgentTurn(messages: turn.messages, live: !terminal && run != nil && index == turns.count - 1)
                         }
                     }
                     if let run, !run.isTerminal {
@@ -203,6 +203,7 @@ struct SubagentInspector: View {
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
                 .padding(AppLayout.inspectorPadding)
+                .environment(\.nwProseSize, .small)
             }
             .defaultScrollAnchor(terminal ? .top : .bottom, for: .initialOffset)
             .defaultScrollAnchor(transcript.following && !terminal ? .bottom : nil, for: .sizeChanges)
