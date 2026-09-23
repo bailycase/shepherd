@@ -39,11 +39,12 @@ then everything.
 | Unit | `swift test --filter UnitTests` | Pure logic: no processes, sockets, windows, git, or sleeps. Seconds for the whole tier. |
 | Integration | `swift test --filter IntegrationTests` | A real `SessionServer` (`ScratchServer`), the scripted stub pi (`StubPi.command`), git scratch repos, off-screen windows. Waits are named `eventually(...)` polls, never fixed sleeps. |
 | Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter PreviewTests` | Offscreen renders of every surface, in light and dark, written as PNGs. Skipped without the variable. |
-| Everything | `swift test` | All of the above; CI runs this with `--no-parallel`. |
+| Everything | `swift test` | All of the above, in parallel; CI runs the same. |
 | Extensions | `PI_PACKAGE_DIR=<installed pi package> node --test Tests/Extensions/*.test.mjs` | The bundled pi extensions, against a local fake provider. |
 
 An opt-in run against a real model is gated on `SHEPHERD_LIVE_MODEL` (for example
-`cpa/~anthropic/claude-haiku-latest`). Shared helpers live in `Tests/ShepherdTestSupport`.
+`cpa/~anthropic/claude-haiku-latest`). Shared helpers live in `Tests/ShepherdTestKit` (any tier) and
+`Tests/ShepherdTestSupport` (integration and previews).
 [AGENTS.md](AGENTS.md#testing) says which tier a change needs and which coverage must never be
 dropped.
 

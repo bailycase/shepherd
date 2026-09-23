@@ -64,6 +64,9 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Test
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`.
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
+- **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
+  `~/.pi/agent`. Shepherd follows it (`PiConfig.agentDirectory`) when it seeds session headers
+  and reads pi's models and settings.
 
 ## Testing
 
@@ -82,22 +85,55 @@ Tests come in tiers, and the switch is `--filter` on target names.
 - A tiny scratch file is fine when the unit under test *is* a file format (state.json decoding, a
   pi session file).
 - Each test should run well under 50 ms, and a whole target well under a second.
-- Prefer table-driven `@Test(arguments:)`.
+- Prefer table-driven `@Test(arguments:)`, with explicit inputs: never `shuffled()` or random data.
+- Unit targets may use `Tests/ShepherdTestKit`, which depends on no Shepherd module:
+  `ScratchDefaults`, `makeScratchDirectory()`, `Locked`, and `CommandFailure`.
 
-**Integration tests** use the helpers in `Tests/ShepherdTestSupport`:
+**Integration tests** use the helpers in `Tests/ShepherdTestSupport`, which re-exports
+`ShepherdTestKit`:
 
 - `ScratchServer`: a real `SessionServer` on scratch paths that records every broadcast state.
+  A remote `listModels` gets a fixed stand-in catalog, never pi's (`SessionServer(modelCatalog:)`).
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `STUB_PI_LOG` records what it received, and `STUB_PI_HISTORY_BYTES` seeds a long history.
-- `makeScratchRepo()` and `git(_:in:)`: a git repository with one commit.
-- `makeScratchDirectory()`: a short path, because `sun_path` caps socket paths at 104 bytes.
+  `StubPi.installOnPath()` puts it first on `PATH` as `pi` (answering `--list-models`) for code
+  that launches pi the way the app does.
+- `makeScratchRepo()` and `git(_:in:)`: a git repository with one commit. A failing git call
+  throws `CommandFailure` with git's stderr.
+- `makeScratchDirectory()`: a `mkdtemp` directory inside the process's scratch root, short
+  because `sun_path` caps socket paths at 104 bytes.
 - `ExtensionClient`: a raw extension-socket client.
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
   Keep timeouts generous (10–30 s), but make the happy path fast.
-- Mark a suite `.serialized` only when it shares process-global state (environment variables, the
-  support directory).
+- Every integration and preview suite carries `.integrationTimeLimit` (two minutes per test), so
+  a hang fails the test that hung, by name.
+- Every `@MainActor` integration and preview suite carries `.mainActorExclusive`: those tests
+  share the one main thread, so they run one at a time across suites while everything else
+  stays parallel.
+- `.serialized` orders the tests inside its own suite and nothing more. It does not isolate a
+  suite from any other: every suite of a target (with SwiftPM's native build system, of every
+  target) shares one process.
+
+**Process-wide state is set once, never by a test.** Tests never call `setenv`, `unsetenv`,
+`signal`, `chdir`, or `umask`, or change any other global that a concurrent test could observe.
+
+- When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
+  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a
+  scratch root for that process, puts an empty `bin/` first on `PATH`, and clears the agent-only
+  `SHEPHERD_*` variables a run started from a Shepherd agent inherits. The root is removed at
+  exit. A target that touches the filesystem, spawns processes, or reaches `ShepherdPaths`
+  depends on `ShepherdTestKit`.
+- Otherwise pass state in: `ShepherdPaths.supportDirectory(environment:)`,
+  `PiConfig.agentDirectory(environment:)`, `TerminalImageDrop.resolve(_:directory:)`.
+- A test that needs process-wide state anyway (a signal disposition) or blocks the main queue runs
+  as an exit test, in its own process: `await #expect(processExitsWith: .success) { … }`.
+  Expectations inside the body are reported as usual.
+- A store that takes `UserDefaults` gets `ScratchDefaults()`, never `UserDefaults(suiteName:)`
+  with a name. Its suite is a plist in the scratch root; a named suite leaks into
+  `~/Library/Preferences`, because cfprefsd writes a removed domain back after its plist is
+  deleted.
 
 **Previews** render every surface (thread states, review, palette, settings, sheets, sidebar,
 empty states) in light and dark to `$SHEPHERD_PREVIEW_DIR/<surface>-<light|dark>.png`. They are
@@ -117,7 +153,8 @@ pointing at the installed pi package. They isolate `HOME` and use a local fake p
 - Windows sit off-screen (`x: -30_000, y: -30_000`), borderless, and ordered back
   (`orderBack`).
 - Never call `makeKey` or `orderFront`, and never post synthetic mouse or keyboard events.
-- Nothing touches the user's pi configuration, sessions, or a running Shepherd.
+- Nothing touches the user's support directory, preferences, pi configuration or sessions,
+  `$TMPDIR/shepherd-drops`, or a running Shepherd.
 
 **Which tier a change needs:**
 
@@ -128,8 +165,9 @@ pointing at the installed pi package. They isolate `HOME` and use a local fake p
   build.
 
 Name each test as a sentence of the behavior (`deletingASpaceKeepsNestedSpaces`), and test
-contracts rather than copy text. When a test exposes a real bug, keep it with
-`.disabled("bug: …")` and report it.
+contracts rather than copy text. When a test exposes a real bug, keep it running: wrap the
+failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it. Unlike
+`.disabled`, a known issue still runs, so the test says when the bug is fixed.
 
 **Coverage that must not be dropped:**
 
@@ -146,7 +184,7 @@ contracts rather than copy text. When a test exposes a real bug, keep it with
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, review rows and diff parsing, `PiSessionFile` paths, and child runs.
 
-CI (`.github/workflows/ci.yml`) runs `swift build --build-tests` and `swift test --no-parallel` on
+CI (`.github/workflows/ci.yml`) runs `swift build --build-tests` and `swift test` (in parallel) on
 pull requests and pushes to `master`.
 
 ## Source map
