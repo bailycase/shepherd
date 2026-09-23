@@ -729,8 +729,8 @@ layout" above.
   color, "name · k of n", and a mono line: "model · thinking high · 78 turns · 922k tok" while
   live, "model · 11 turns · done 11:02" once finished, the last part in the state's color.
   Trailing: Pause/Continue and Stop for a live run, ‹ › to step through siblings, a ⋯ menu
-  (Refresh Transcript while live; Copy Transcript and Show Session File in Finder once
-  finished), and close.
+  (`NWOptionsMenu`: Refresh Transcript while live; Copy Transcript and Show Session File in
+  Finder once finished), and close.
 - **`NWRunBrief`** on `bgSunken`: GOAL, with "step n / m · 62%" while live, and once finished
   RESULT (inline Markdown) with its label in the state's color. Under it, up to five touched
   files as `running` links (with their diff stat) that open the review pane at the file, then
@@ -747,10 +747,11 @@ layout" above.
 
 **Review** (`ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
 
-- **Header (44pt):** "Review" in Geist 13 semibold, with "4 files · +67 −58" beneath (led by the
-  reference when an agent asked for one, "loading…" while loading). Then a small `Local | PR`
-  segmented control ("PR · <ref>" once the PR base is known), an options menu (Expand All Files,
-  Collapse All Files, Copy Review as Text), and close.
+- **Header** (`NWPaneHeader`, 44pt like the toolbar beside it): "Review" in Geist 13 semibold,
+  with "4 files · +67 −58" beneath (led by the reference when an agent asked for one,
+  "loading…" while loading). Then a small `Local | PR` segmented control ("PR · <ref>" once the
+  PR base is known), an options menu (`NWOptionsMenu`: Expand All Files, Collapse All Files,
+  Copy Review as Text), and close.
 - **File strip** (`NWFileStrip`, on `bgBase`): 24pt chips that scroll sideways, each with its
   status letter (M `lantern`, A `done`, D `failed`, R `running`; mono 11 bold), the filename, and
   for a modified or renamed file its diff stat. The selected chip is `bgSelected`, viewed files
@@ -926,7 +927,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Controls | `.buttonStyle(.nw(_:size:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` (a circle, 28pt; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `NWSearchField`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app |
 | Status | `NWStatusPill` (20pt, radius 4), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline`, `.nwToast(item:)`, and `.nwShimmer()` have no app use yet |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline` | `SettingsComponents.swift`; hairlines everywhere |
-| Navigation | `NWSidebar`, `NWSidebarJumpButton`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift` |
+| Navigation | `NWSidebar`, `NWSidebarJumpButton`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
 | Thread | `NWUserBubble`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter`, `NWTurnError`, `NWWorkingRow` | `Thread/ThreadView.swift`, `ThreadTurns.swift`, `ThreadTools.swift`, `ThreadMarkdown.swift` |
 | Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton`, `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu` | `Thread/Composer.swift` |
 | Agents | `NWSubagentCard`, `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup` | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift` |
@@ -1017,8 +1018,6 @@ These places in the code break this document and should be fixed toward it:
   (`ToolOutputSheet`), the question panel's 140pt message cap, the empty thread's top offsets,
   the empty workspace's 420pt measure, and `PanePlaceholder`'s padding should move into
   `AppLayout+Thread.swift` and `AppLayout+Navigation.swift`.
-- **Hand-built chrome:** the review header and its ⋯ menu, and the inspector's ⋯ menu, repeat
-  `NWPaneHeader` and `NWOptionsMenu` by hand.
 - **1pt strokes:** several control borders (secondary and danger buttons, fields, pickers and
   popups, keycaps, pills, banners, the sheets' text editors, the "Jump to latest" capsule) stroke
   1pt rather than a 1px hairline.

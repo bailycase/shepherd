@@ -111,7 +111,7 @@ struct SubagentInspector: View {
                     .buttonStyle(.nwIcon).disabled(position == siblings.count - 1)
                     .accessibilityLabel("Next subagent")
             }
-            Menu {
+            NWOptionsMenu("Inspector options") {
                 if let run, run.isTerminal {
                     Button("Copy Transcript") { copyTranscript() }
                     if let file = run.sessionFile {
@@ -120,11 +120,7 @@ struct SubagentInspector: View {
                 } else {
                     Button("Refresh Transcript") { Task { await transcript.reload(store: store, runID: runID) } }
                 }
-            } label: {
-                Image(systemName: "ellipsis")
             }
-            .menuStyle(.button).buttonStyle(.nwIcon).menuIndicator(.hidden).fixedSize()
-            .accessibilityLabel("Inspector options")
             Button(action: close) { Image(systemName: "xmark") }
                 .buttonStyle(.nwIcon)
                 .help("Close the inspector")
