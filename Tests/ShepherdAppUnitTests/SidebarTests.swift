@@ -166,18 +166,6 @@ struct SidebarRowTests {
         #expect(SidebarTime.elapsed(since: start, now: start.addingTimeInterval(seconds)) == text)
     }
 
-    /// Live groups are always expanded; a finished group folds for threads that are not
-    /// selected unless the user unfolded it.
-    @Test func finishedSubagentGroupsFoldOutsideTheSelectedThread() {
-        let live = [Fixture.child("a", state: "complete"), Fixture.child("b")]
-        let done = [Fixture.child("a", state: "complete"), Fixture.child("b", state: "failed")]
-        #expect(!SubagentFolding.folded(children: live, selected: false, unfolded: false))
-        #expect(SubagentFolding.folded(children: done, selected: false, unfolded: false))
-        #expect(!SubagentFolding.folded(children: done, selected: true, unfolded: false))
-        #expect(!SubagentFolding.folded(children: done, selected: false, unfolded: true))
-        #expect(!SubagentFolding.folded(children: [], selected: false, unfolded: false))
-    }
-
     @Test(arguments: [
         (AgentStatus.working, "running"), (.blocked, "needs you"), (.idle, "idle"), (.done, "done"),
     ])

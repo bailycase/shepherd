@@ -12,7 +12,7 @@ import ShepherdProtocol
 ///     sends its full projection),
 ///   - terminal legacy rows without pending attention expire after `terminalTTL`,
 ///   - finished native transcripts stay available until the publisher removes them or the
-///     parent exits; the completed-run ledger must remain reachable from the sidebar,
+///     parent exits, so a finished run stays reachable from the palette,
 ///   - an agent whose extension has gone quiet (`staleAfter` without any
 ///     publish) loses all its rows — a killed pi can't strand "running" rows,
 ///   - `clear(agent:)` serves the hard cases (process exit, agent deletion).

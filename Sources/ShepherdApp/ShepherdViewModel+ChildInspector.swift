@@ -3,7 +3,8 @@ import ShepherdCore
 import ShepherdProtocol
 
 /// Subagent inspection happens in the native side panel inside the parent agent's own
-/// workspace: selecting a child row selects the parent and opens that run beside the thread.
+/// workspace: picking a run in the palette selects the parent and opens that run beside the
+/// thread.
 @MainActor
 extension ShepherdViewModel {
     func openChildInspector(agentID: AgentID, child: ChildRun) {

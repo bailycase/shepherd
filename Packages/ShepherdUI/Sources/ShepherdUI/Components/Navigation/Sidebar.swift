@@ -223,7 +223,7 @@ extension NWSidebarSection where Accessory == EmptyView {
     }
 }
 
-/// One agent, subagent, or automation in the tree (Navigation board, `NWSidebarRow`). Its look
+/// One agent or automation in the tree (Navigation board, `NWSidebarRow`). Its look
 /// follows the state: a 6pt dot (hollow while idle, glowing while it needs you), the title
 /// (semibold when selected), and one trailing accessory. Rows nest by `depth`; height is the
 /// environment's `nwDensity`, as a minimum. Interaction is the caller's.
@@ -235,7 +235,7 @@ public struct NWSidebarRow: View, Equatable {
         /// Live elapsed time since a moment ("4m"), in tertiary, or `failed` for a stuck or
         /// failed run.
         case elapsed(since: Date, tone: AgentState)
-        /// A fixed duration or word ("41m", "done", "3 sub").
+        /// A fixed duration or word ("14m", "done", "stopped").
         case text(String, tone: AgentState? = nil)
         /// The ⌘-digit hint while ⌘ is held.
         case shortcut(String)
