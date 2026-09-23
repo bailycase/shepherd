@@ -112,12 +112,8 @@ jobs:
 
       - name: Sign
         run: |
-          APP=build/Build/Products/Release/Shepherd.app
-          IDENTITY='${{ steps.cert.outputs.identity }}'
-          # Sparkle's XPC services and framework must be signed inside-out;
-          # --deep handles the nesting for both ad-hoc and Developer ID.
-          codesign --force --deep --options runtime --sign "$IDENTITY" "$APP"
-          codesign --verify --deep --strict "$APP"
+          scripts/sign-app.sh build/Build/Products/Release/Shepherd.app \
+            '${{ steps.cert.outputs.identity }}' App/Shepherd.entitlements
 
       - name: Notarize
         if: steps.cert.outputs.identity != '-'
