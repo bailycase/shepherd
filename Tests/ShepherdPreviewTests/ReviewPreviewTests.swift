@@ -3,13 +3,14 @@ import Foundation
 import ShepherdCore
 import ShepherdUI
 import SwiftUI
+import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
 /// The docked review pane and its Night Watch parts (Review board), in light and dark:
 ///
 ///     SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter ReviewPreviewTests
-@Suite("Review previews", .serialized, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
+@Suite("Review previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct ReviewPreviewTests {
     init() {

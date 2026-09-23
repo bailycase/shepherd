@@ -4,6 +4,7 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import SwiftUI
+import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
@@ -11,7 +12,7 @@ import Testing
 /// NWComposer boards, in light and dark:
 ///
 ///     SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter ThreadPreviewTests
-@Suite("Thread previews", .serialized, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
+@Suite("Thread previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct ThreadPreviewTests {
     private func render(_ surface: String, _ snapshot: NativeThreadSnapshot, size: CGSize = CGSize(width: 1180, height: 900)) async throws {

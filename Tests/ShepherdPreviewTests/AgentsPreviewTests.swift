@@ -5,13 +5,14 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import SwiftUI
+import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
 /// Subagent surfaces (Agents board) in light and dark: the cards in every state, the runs
 /// strip, the ledger, a live group and a finished one in a thread, and the inspector on a live
 /// and a finished run. See `PreviewTests` for how previews run.
-@Suite("Agents previews", .serialized, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
+@Suite("Agents previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct AgentsPreviewTests {
     private let actions = SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true)

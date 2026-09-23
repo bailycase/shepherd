@@ -8,7 +8,7 @@ import Testing
 @testable import ShepherdApp
 
 /// Settings and every sheet and dialog, in light and dark: see `PreviewTests` for how to run.
-@Suite("Settings and dialog previews", .serialized, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
+@Suite("Settings and dialog previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct SettingsPreviewTests {
     // MARK: Settings
