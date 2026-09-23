@@ -124,9 +124,12 @@ Tests come in tiers, and the switch is `--filter` on target names.
 
 - When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
   `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a
-  scratch root for that process, puts an empty `bin/` first on `PATH`, and clears the agent-only
-  `SHEPHERD_*` variables a run started from a Shepherd agent inherits. The root is removed at
-  exit. A target that touches the filesystem, spawns processes, or reaches `ShepherdPaths`
+  scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
+  from a Shepherd agent inherits. It also puts a `bin/` first on `PATH`, holding stand-ins for
+  `gh` and `pi` that refuse to run, and the scratch `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it
+  first in every zsh a test starts. Without them, a login shell from a minimal environment
+  (Xcode, launchd) reaches the user's own `gh` and `pi`, because the system startup files
+  rebuild PATH. The root is removed at exit. A target that touches the filesystem, spawns processes, or reaches `ShepherdPaths`
   depends on `ShepherdTestKit`.
 - Otherwise pass state in: `ShepherdPaths.supportDirectory(environment:)`,
   `PiConfig.agentDirectory(environment:)`, `TerminalImageDrop.resolve(_:directory:)`.
