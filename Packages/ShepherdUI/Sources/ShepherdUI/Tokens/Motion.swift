@@ -334,7 +334,9 @@ private struct NWPopModifier<T: Equatable>: ViewModifier {
             view.scaleEffect(reduceMotion ? 1 : scale)
         } keyframes: { _ in
             SpringKeyframe(NWPop.peak, duration: NW.Motion.emphasis.duration / 3, spring: .snappy)
-            SpringKeyframe(1.0, duration: NW.Motion.emphasis.duration, spring: NW.Motion.emphasis.spring ?? .bouncy)
+            // No duration: the segment runs until the spring settles. Cut at the anchor it
+            // would leave the view at a scale a hair off 1, with soft edges, until the next pop.
+            SpringKeyframe(1.0, spring: NW.Motion.emphasis.spring ?? .bouncy)
         }
     }
 }
