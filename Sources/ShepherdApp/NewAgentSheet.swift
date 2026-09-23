@@ -381,7 +381,10 @@ struct NewAgentSheet: View {
         }
         .task(id: workingDirectory) {
             let directory = workingDirectory
-            isRepo = await Task.detached(priority: .userInitiated) { GitWorktree.isRepo(directory) }.value
+            let repo = await Task.detached(priority: .userInitiated) { GitWorktree.isRepo(directory) }.value
+            // A probe for a directory typed over since must not land after the newer one.
+            guard !Task.isCancelled else { return }
+            isRepo = repo
         }
         .sheet(item: $remotePicking) { target in
             // One picker for both machines: the listing source is the only
