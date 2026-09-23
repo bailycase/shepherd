@@ -133,6 +133,8 @@ public struct NWSidebarSection<Accessory: View>: View {
     let toggle: (() -> Void)?
     @ViewBuilder let accessory: () -> Accessory
     @State private var hovering = false
+    /// The accessory's width once laid out; zero while it draws nothing (a disconnected host).
+    @State private var accessoryWidth: CGFloat = 0
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     public init(_ title: String, detail: Detail = .none, collapsed: Bool = false, hoverHint: String? = nil,
@@ -145,29 +147,48 @@ public struct NWSidebarSection<Accessory: View>: View {
         self.accessory = accessory
     }
 
+    /// `hovering` starts the header hovered, for previews and tests.
+    init(_ title: String, detail: Detail = .none, collapsed: Bool = false, hoverHint: String? = nil,
+         toggle: (() -> Void)? = nil, hovering: Bool, @ViewBuilder accessory: @escaping () -> Accessory) {
+        self.init(title, detail: detail, collapsed: collapsed, hoverHint: hoverHint, toggle: toggle, accessory: accessory)
+        _hovering = State(initialValue: hovering)
+    }
+
+    /// Hovering never moves or resizes the header: the hint and the accessory are always laid
+    /// out and only fade, and the accessory (taller than the label) floats over the count's slot
+    /// instead of joining the row. Always shown for VoiceOver.
     public var body: some View {
-        HStack(spacing: NW.Space.s) {
-            Button { toggle?() } label: {
-                HStack(spacing: NW.Space.s) {
-                    Text(title).nwSectionLabel().lineLimit(1)
-                        .opacity(collapsed ? 0.7 : 1)
-                    Spacer(minLength: NW.Space.xs)
-                    if hovering, let hoverHint {
-                        Text(hoverHint).font(.nw(.micro, weight: .regular)).foregroundStyle(.nw.textTertiary)
-                    }
-                    detailView
+        let showsAccessory = accessoryWidth > 0 && (hovering || voiceOver)
+        Button { toggle?() } label: {
+            HStack(spacing: NW.Space.s) {
+                Text(title).nwSectionLabel().lineLimit(1)
+                    .opacity(collapsed ? 0.7 : 1)
+                Spacer(minLength: NW.Space.xs)
+                if let hoverHint {
+                    Text(hoverHint).font(.nw(.micro, weight: .regular)).foregroundStyle(.nw.textTertiary)
+                        .opacity(hovering ? 1 : 0)
+                        .accessibilityHidden(true)
                 }
-                .contentShape(Rectangle())
+                detailView
+                    .opacity(showsAccessory ? 0 : 1)
+                    .frame(minWidth: accessoryWidth, alignment: .trailing)
             }
-            .buttonStyle(NWPlainPressStyle())
-            .disabled(toggle == nil)
-            .accessibilityLabel(accessibilityText)
-            .accessibilityAddTraits(.isHeader)
-            // A hover affordance for the pointer; always there for VoiceOver.
-            if hovering || voiceOver { accessory() }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(NWPlainPressStyle())
+        .disabled(toggle == nil)
+        .accessibilityLabel(accessibilityText)
+        .accessibilityAddTraits(.isHeader)
+        .overlay(alignment: .trailing) {
+            accessory()
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { accessoryWidth = $0 }
+                .opacity(showsAccessory ? 1 : 0)
+                .allowsHitTesting(showsAccessory)
+                .accessibilityHidden(!showsAccessory)
         }
         .padding(EdgeInsets(top: NW.Space.l, leading: NW.Space.m, bottom: NW.Space.xs, trailing: NW.Space.m))
         .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
     }
 
     @ViewBuilder private var detailView: some View {
