@@ -389,7 +389,7 @@ struct PaneLeafView: View, Equatable {
 /// An agent's only surface. Observes the pane session for exit/failure so a dead pi shows
 /// the same placeholder a shell pane would.
 struct AgentThreadPane: View {
-    @ObservedObject var session: TerminalSessionStore.PaneSession
+    var session: TerminalSessionStore.PaneSession
     var store: NativeThreadStore
     let active: Bool
     let isFocused: Bool
@@ -416,7 +416,7 @@ struct AgentThreadPane: View {
 }
 
 struct LiveTerminalPane: View {
-    @ObservedObject var session: TerminalSessionStore.PaneSession
+    var session: TerminalSessionStore.PaneSession
     let isFocused: Bool
     /// False for a mounted-but-hidden pane, which keeps its surface but must
     /// stop running a render loop.
