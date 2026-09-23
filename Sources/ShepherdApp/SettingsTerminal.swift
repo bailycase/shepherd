@@ -25,6 +25,7 @@ struct TerminalSettings: View {
                             Button(family) { settings.terminalFontFamily = family }
                         }
                     }
+                    .accessibilityLabel("Font family")
                     .onChange(of: settings.terminalFontFamily) { vm.rebuildSurfaces() }
                 }
                 SettingsRow(title: "Font size") {
@@ -45,6 +46,7 @@ struct TerminalSettings: View {
                             Button(shell) { settings.shellPath = shell }
                         }
                     }
+                    .accessibilityLabel("Shell")
                 }
             }
         }
