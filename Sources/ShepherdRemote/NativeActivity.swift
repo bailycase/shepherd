@@ -230,10 +230,11 @@ private func matches(_ pattern: NSRegularExpression, in text: String) -> [[Strin
     }
 }
 
-/// Summaries live at the end of long outputs; parsing the tail keeps a 10 MB log cheap.
+/// Summaries live at the end of long outputs; parsing the tail keeps a 10 MB log cheap. A cut
+/// inside a multi-byte character (✔, ✘) is repaired rather than falling back to the whole log.
 private func outputTail(_ output: String, limit: Int = 64 * 1024) -> String {
     guard output.utf8.count > limit else { return output }
-    return String(output.utf8.suffix(limit)) ?? output
+    return String(decoding: output.utf8.suffix(limit), as: UTF8.self)
 }
 
 /// Passed and failed test counts from a runner's output (Swift Testing, XCTest, pytest, jest,
