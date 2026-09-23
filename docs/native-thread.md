@@ -10,7 +10,7 @@ pi --mode rpc                                           ShepherdSessions
   → RPCSession            JSONL over stdin/stdout, owned in-process
   → RPCThreadState        pi events → NativeThreadSnapshot; requests → RPC commands
   → SessionServer.nativeThread (local, direct)  |  RemoteRequest.nativeThread (TCP)
-  → NativeThreadStore     poll, page, echo, settle              ShepherdRemote
+  → NativeThreadStore     poll, page, echo, settle; derive rows ShepherdRemote
   → ThreadView · Composer · SubagentInspector                   ShepherdApp/Thread
 ```
 
@@ -164,6 +164,13 @@ The platform-neutral client lives in ShepherdRemote. There is one store per agen
 agent's lifetime: `NativeThreadStores` for local agents, and a separate set for remote agents.
 Drafts, history pages, and scroll state therefore survive switching and cold parking.
 
+The store is `@MainActor @Observable`, and it derives what the thread draws once per change:
+`turns`, `rows` (`NativeThreadRow`: a turn, and for a reply its `NativeTurnPresentation`), each
+reply's subagent `placements`, and `lastPromptAt` (the running pill's start). Views read those
+stored values, so a keystroke in the composer re-renders only the composer. A finished tool
+call is parsed once (`NativeActivityCall`, cached by entry); a running call is re-read as its
+output grows.
+
 - **Polling:** the visible thread's task polls every 500 ms while the agent runs, a question is
   pending, or a subagent is live, and every 2 s otherwise. Each poll passes the last revision;
   older snapshots are ignored. A hidden thread stops polling.
@@ -175,50 +182,63 @@ Drafts, history pages, and scroll state therefore survive switching and cold par
 - **Drafts and gating:** `draft` and `delivery` (follow-up or steer) belong to the store.
   `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
   busy.
-- **Errors:** transport failures surface as `loadError` (the header's Error pill and the
+- **Errors:** transport failures surface as `loadError` (the toolbar's Error pill and the
   composer's Reconnect banner), and action failures as `notice`. Actions are never retried
   automatically; an unknown outcome is reported, not resent. A stale session triggers a fresh
   snapshot.
 
 ## Presentation and views
 
-`NativeThreadPresentation` (ShepherdRemote) holds the pure derivations:
+The pure derivations live in ShepherdRemote:
 
-- turns and turn items, and the Markdown block parser
-- tool-row previews, results, and durations
-- `DiffStat` from edit payloads
-- the status pill state
-- subagent card, strip, and ledger models
-- `NativeScrollFollower`: only a live scroll gesture detaches following; momentum, content
-  replacement, composer resizes, and growth are treated as layout, never as intent
+- **`NativeTurnPresentation`:** a reply's items, built once per turn change, in order:
+  thinking (folded into one block per stretch of work between prose), prose (Markdown parsed
+  once), activity lines, the positions of subagent cards (a spawn call with a card leaves the
+  activity), notes, and errors. It also carries the changes card, the countable tool calls, and
+  the copy text.
+- **`NativeActivity`:** tool calls as activity lines. `NativeActivityCall` reads one call (its
+  kind, label, path or command, stat, output head, and live tail); `nativeActivityBursts` merges
+  consecutive calls of one kind into lines (a failed or running call stands alone);
+  `nativeCommandClasses` classifies shell commands (tests, build, commit, push) and the output
+  parsers count passed and failed tests; `NativeTurnChanges` is the changes card.
+- **`NativeThreadPresentation`:** turns, the Markdown block parser, `DiffStat` from edit
+  payloads, the status pill state, subagent state, placement, and rollups, clock and duration
+  text, and `NativeScrollFollower` (only a live scroll gesture detaches following; momentum,
+  content replacement, composer resizes, and growth are treated as layout, never as intent).
+  The iOS client still draws the older turn items and tool rows from here (`nativeTurnItems`,
+  `NativeToolRow`).
 
-iOS shares these derivations.
+`Sources/ShepherdApp/Thread/` renders them with ShepherdUI's Thread, Composer, and Agents
+components ([DESIGN.md](../DESIGN.md) specifies their look):
 
-`Sources/ShepherdApp/Thread/` renders them:
-
-- **`ThreadView`:** the scroll view, tail following, and turn jumps (⌥⌘↑/↓).
-- **`ThreadTurns`:** the user bubble, agent turn, thinking, turn footer with copy and retry, and
-  the working row.
-- **`ThreadTools`:** tool groups and one-line tool rows.
-- **`ThreadMarkdown`:** prose and syntax-colored code blocks.
+- **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
+  thread.
+- **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
+  footer with copy and retry), and the working row.
+- **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw
+  arguments.
+- **`ThreadMarkdown`:** prose (inline Markdown styled once per text) and code blocks, colored by
+  tree-sitter off the main actor and cached.
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
   - chips: model with its picker on ⇧⌘M, thinking, and delivery (Follow-up / Steer, shown only
     while a turn runs with a draft)
   - the slash menu, fed from pi's command registry
   - the question panel and extension widgets
-- **`Subagents`:** cards, the runs strip, and the ledger.
+- **`Subagents`** and **`SubagentPresentation`:** cards, the runs strip, and the ledger, with
+  child runs mapped onto the components' values.
 - **`SubagentInspector`:** the inspector, hosted with the review in the right pane
   (`RightPaneSplit`).
 
-`ThreadHeader` sits above the thread. A remote agent uses the same views, with requests sent to
-its host.
+`ThreadHeader`, the toolbar, sits above the thread. A remote agent uses the same views, with
+requests sent to its host.
 
 ## Testing
 
 - **Unit (`swift test --filter UnitTests`):** the `RPCThreadState` projection fed recorded pi
   events, `NativeThread` wire round-trips against `Tests/Extensions/native-thread-wire.json`, and
-  the presentation derivations.
+  the presentation derivations (activity lines in `ActivityTests`, the store in
+  `NativeThreadStoreTests`).
 - **Integration (`swift test --filter IntegrationTests`):** a real `SessionServer`
   (`ScratchServer`) driving the scripted stub pi (`StubPi.command`,
   `Tests/ShepherdTestSupport/Resources/stub-pi.py`). The stub's prompt keywords script
