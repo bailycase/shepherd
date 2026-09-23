@@ -15,6 +15,10 @@ import Testing
 @Suite("Thread previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct ThreadPreviewTests {
+    /// Long enough for a one-shot motion a test starts to come fully to rest: a spring reads as
+    /// done at its anchor (240ms at most) and settles by about 1.7× it (DESIGN.md › Motion).
+    static let motionAtRest: TimeInterval = 0.45
+
     private func render(_ surface: String, _ snapshot: NativeThreadSnapshot, size: CGSize = CGSize(width: 1180, height: 900),
                         ready: @escaping @MainActor () -> Bool = { true }) async throws {
         let fixture = ThreadFixture(snapshot)
@@ -50,7 +54,7 @@ struct ThreadPreviewTests {
             if case .send(_, _, let id, _, _, _) = value { return .accepted(operationID: id) }
             return try await fixture.request(value)
         }
-        final class Once { var sent = false }
+        final class Once { var sent = false; var queuedAt: Date? }
         let once = Once()
         try await Preview.render("thread-activity-queued", size: CGSize(width: 1180, height: 900), ready: {
             guard store.ready, !store.rows.isEmpty else { return false }
@@ -59,7 +63,11 @@ struct ThreadPreviewTests {
                 store.draft = "Then open the PR against nightly."
                 Task { await store.send() }
             }
-            return store.pending.first?.status == "queued"
+            guard store.pending.first?.status == "queued" else { return false }
+            // The queued bubble rises into the thread: capture it at rest.
+            let queuedAt = once.queuedAt ?? Date()
+            once.queuedAt = queuedAt
+            return Date().timeIntervalSince(queuedAt) > ThreadPreviewTests.motionAtRest
         }) {
             VStack(spacing: 0) {
                 ThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
