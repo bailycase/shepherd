@@ -38,7 +38,7 @@ struct RootView: View {
             .frame(minWidth: Metrics.mainColumnMinWidth)
             .background(Tokens.bgSurface)
         }
-        .coordinateSpace(name: "root-layout")
+        .coordinateSpace(.named("root-layout"))
         .overlay {
             if vm.showComponentGallery {
                 ComponentGallery()

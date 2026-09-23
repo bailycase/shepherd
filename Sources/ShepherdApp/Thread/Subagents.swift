@@ -55,8 +55,8 @@ struct SubagentCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(state == .failed ? Tokens.dangerBg : Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(borderColor, lineWidth: 1))
-        .background(RoundedRectangle(cornerRadius: Radius.lg + 3).fill(selected ? Tokens.focusRing : .clear).padding(-3))
+        .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(borderColor, lineWidth: 1) }
+        .background { RoundedRectangle(cornerRadius: Radius.lg + 3).fill(selected ? Tokens.focusRing : .clear).padding(-3) }
         .contentShape(Rectangle())
         // Anywhere that is not a button opens the inspector.
         .onTapGesture { actions.inspect(run) }
@@ -247,7 +247,7 @@ struct SubagentCard: View {
         }
         .padding(.leading, 10).padding(.trailing, 4).padding(.vertical, 4)
         .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.md))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(replyFocused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(replyFocused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1) }
     }
 
     private func send() {
@@ -333,7 +333,7 @@ struct RunsStrip: View {
             .frame(height: Metrics.subagentHeaderHeight)
             .frame(maxWidth: .infinity)
             .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1))
+            .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1) }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("\(summary.count) subagents, \(summary.states)")
         }
@@ -379,7 +379,7 @@ struct RunLedger: View {
         .frame(maxWidth: .infinity)
         .background(Tokens.bgSurface, in: RoundedRectangle(cornerRadius: Radius.lg))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1) }
         .accessibilityElement(children: .contain)
     }
 }

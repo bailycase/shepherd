@@ -64,6 +64,6 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                 }
             }
         }
-        .coordinateSpace(name: "right-pane")
+        .coordinateSpace(.named("right-pane"))
     }
 }

@@ -29,7 +29,7 @@ struct SettingsView: View {
             detail
         }
         .background(Tokens.bgSurface)
-        .background(WindowChrome())
+        .background { WindowChrome() }
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
         .onChange(of: searchText) {
@@ -79,7 +79,7 @@ struct SettingsView: View {
                     searchFocused = true
                 }
 
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(matchingSections) { section in
                         SettingsNavRow(section: section, selected: vm.settingsSection == section) {
@@ -109,6 +109,7 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 10)
             }
+            .scrollIndicators(.hidden)
 
             Spacer(minLength: 0)
             Text(versions)

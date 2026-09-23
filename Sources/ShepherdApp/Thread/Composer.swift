@@ -142,8 +142,8 @@ struct Composer: View {
             actionRow
         }
         .background(Tokens.bgRaised, in: RoundedRectangle(cornerRadius: Radius.xl))
-        .overlay(RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(focused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1))
-        .background(RoundedRectangle(cornerRadius: Radius.xl + 3).fill(focused ? Tokens.focusRing : .clear).padding(-3))
+        .overlay { RoundedRectangle(cornerRadius: Radius.xl).strokeBorder(focused ? Tokens.accent : Tokens.borderStrong, lineWidth: 1) }
+        .background { RoundedRectangle(cornerRadius: Radius.xl + 3).fill(focused ? Tokens.focusRing : .clear).padding(-3) }
         .shadow(color: Tokens.composerShadow, radius: 3, y: 1)
         .onDrop(of: [.image, .fileURL], isTargeted: canAttach ? $dropTargeted : nil) { providers in
             guard canAttach else { return false }
@@ -483,9 +483,9 @@ struct SlashMenu: View {
     private func commandText(_ name: String) -> Text {
         let typed = name.lowercased().hasPrefix(query) ? query.count : 0
         let head = String(name.prefix(typed)), tail = String(name.dropFirst(typed))
-        return (Text("/").foregroundStyle(Tokens.textMuted)
-            + Text(head).fontWeight(.bold).foregroundStyle(Tokens.text)
-            + Text(tail).foregroundStyle(Tokens.text))
+        let slash = Text("/").foregroundStyle(Tokens.textMuted)
+        let typedPart = Text(head).fontWeight(.bold).foregroundStyle(Tokens.text)
+        return Text("\(slash)\(typedPart)\(Text(tail).foregroundStyle(Tokens.text))")
             .font(Fonts.code)
     }
 }
@@ -704,7 +704,7 @@ struct QuestionPanel: View {
                 .frame(maxHeight: 140)
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(Tokens.bgMuted, in: RoundedRectangle(cornerRadius: Radius.md))
-                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1))
+                .overlay { RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Tokens.border, lineWidth: 1) }
             }
             if let unavailable = dialog.unavailable {
                 Text(unavailable == "external-editor" ? "An external editor is open · finish it before answering here" : "This question is too large to show here")

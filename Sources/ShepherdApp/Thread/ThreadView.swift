@@ -166,7 +166,7 @@ struct ThreadView: View {
                                 .font(Fonts.captionMedium).foregroundStyle(Tokens.textSecondary)
                                 .padding(.horizontal, 12).frame(height: 28)
                                 .background(Tokens.bgRaised, in: Capsule())
-                                .overlay(Capsule().strokeBorder(Tokens.borderStrong, lineWidth: 1))
+                                .overlay { Capsule().strokeBorder(Tokens.borderStrong, lineWidth: 1) }
                                 .shadow(color: Tokens.composerShadow, radius: 3, y: 1)
                         }
                         .buttonStyle(.plain)
@@ -310,7 +310,7 @@ struct ThreadView: View {
             .padding(.top, 120)
         } else if store.snapshot != nil {
             EmptyState(
-                Text("New agent in ") + Text(abbreviatedPath).font(Fonts.mono(15, .medium)),
+                Text("New agent in \(Text(abbreviatedPath).font(Fonts.mono(15, .medium)))"),
                 caption: "Describe the task. Drop or paste images to attach them, or type / for commands."
             )
             .padding(.top, 80)

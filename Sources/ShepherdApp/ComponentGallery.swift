@@ -152,7 +152,7 @@ struct ComponentGallery: View {
         .padding(8)
         .frame(width: 256)
         .background(Tokens.bgCanvas, in: RoundedRectangle(cornerRadius: Radius.lg))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1))
+        .overlay { RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Tokens.border, lineWidth: 1) }
     }
 
     private func sidebarRow(_ title: String, dot: Color, selected: Bool, trailing: String? = nil) -> some View {
@@ -196,7 +196,7 @@ struct ComponentGallery: View {
     private var feedback: some View {
         VStack(alignment: .leading, spacing: 14) {
             InlineError("Lost connection to the agent process.", actionTitle: "Reconnect") {}
-            EmptyState(Text("New agent in ") + Text("~/dev/shepherd").font(Fonts.mono(15, .medium)),
+            EmptyState(Text("New agent in \(Text("~/dev/shepherd").font(Fonts.mono(15, .medium)))"),
                        caption: "Describe the task. Attach files with ⌘⇧A, or type / for commands.")
             TextField("Field", text: $field).shepherdField()
             TextField("Focused field", text: $field).shepherdField(focused: true)
