@@ -52,12 +52,15 @@ enum QuitPolicy {
         case quit
         case ask(QuitPrompt)
         /// A quit while the dialog already asks: the first quit still waits on its answer.
+        /// AppKit holds a second quit back while one waits (Quit is disabled and a quit event
+        /// goes unanswered), so this guards against that changing.
         case keepAsking
     }
 
-    /// A log out, restart or shut down never waits on the dialog, even one already showing:
-    /// the user already chose to stop everything, and a sheet would hold up the system until
-    /// it gave up on the app. `asking` is whether the dialog is up.
+    /// A log out, restart or shut down never waits on the dialog: the user already chose to
+    /// stop everything, and a sheet would hold up the system until it gave up on the app.
+    /// (With the dialog already up, the power-off notice answers it: `QuitConfirmation`.)
+    /// `asking` is whether the dialog is up.
     static func decide(agents: [Agent], systemPoweringOff: Bool, asking: Bool) -> Decision {
         if systemPoweringOff { return .quit }
         if asking { return .keepAsking }
@@ -142,8 +145,16 @@ final class QuitConfirmation {
     func watchForPowerOff() {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil,
                                                           queue: .main) { _ in
-            MainActor.assumeIsolated { QuitConfirmation.shared.workspacePoweringOff = true }
+            MainActor.assumeIsolated { QuitConfirmation.shared.systemWillPowerOff() }
         }
+    }
+
+    /// A log out, restart or shut down began. A quit already waiting on the dialog is answered
+    /// Quit: AppKit holds loginwindow's own quit back until that answer, so asking on would
+    /// hold up the system.
+    private func systemWillPowerOff() {
+        workspacePoweringOff = true
+        finish(quit: true)
     }
 
     func shouldTerminate(agents: [Agent]) -> NSApplication.TerminateReply {
@@ -247,8 +258,8 @@ final class QuitConfirmation {
         panel.makeKeyAndOrderFront(nil)
     }
 
-    /// A second quit brings the question back to the front, in a window of its own if the main
-    /// window never came back.
+    /// A second quit (should AppKit ever let one through while the first waits) brings the
+    /// question back to the front, in a window of its own if the main window never came back.
     private func reveal() {
         NSApp.activate()
         if let panel {
