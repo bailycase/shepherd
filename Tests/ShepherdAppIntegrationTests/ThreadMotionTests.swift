@@ -380,12 +380,30 @@ struct ThreadComponentMotionTests {
         OffscreenWindow(size: CGSize(width: 300, height: 60), dark: false, view.environment(\._accessibilityReduceMotion, reduceMotion))
     }
 
+    /// Waits until the window draws the same picture for a few polls, so work queued on the main
+    /// thread (an earlier test's windows going away) is done before a recording starts: a stall
+    /// in a motion's first frames would hide where it starts.
+    private func atRest(_ window: OffscreenWindow) async throws {
+        var last = 0, still = 0
+        try await eventuallyOnMain("the window to come to rest", timeout: .seconds(10), poll: .milliseconds(20)) {
+            window.layout()
+            let host = window.host
+            guard let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds), let data = bitmap.bitmapData else { return false }
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let hash = Data(bytes: data, count: bitmap.bytesPerPlane).hashValue
+            still = hash == last ? still + 1 : 0
+            last = hash
+            return still >= 5
+        }
+    }
+
     /// A row that streams in rises from just below its place as it fades in, in a plain
     /// transaction (the store's); under Reduce Motion it only fades.
     @Test(arguments: [false, true]) func anArrivalRisesIntoPlaceUnlessReduceMotion(reduceMotion: Bool) async throws {
         let toggle = Toggle()
         let window = window(Bar(toggle: toggle, motion: Arrival(isNew: true)), reduceMotion: reduceMotion)
         defer { window.close() }
+        try await atRest(window)
 
         let recording = await MotionProbe.record(window, region: column) { toggle.on = true }
 
@@ -402,10 +420,11 @@ struct ThreadComponentMotionTests {
     }
 
     /// A row that loads with the thread, or scrolls back into a lazy stack, is simply there.
-    @Test func aViewThatIsNotNewNeverArrives() async {
+    @Test func aViewThatIsNotNewNeverArrives() async throws {
         let toggle = Toggle()
         let window = window(Bar(toggle: toggle, motion: Arrival(isNew: false)))
         defer { window.close() }
+        try await atRest(window)
 
         let recording = await MotionProbe.record(window, region: column) { toggle.on = true }
 
@@ -414,10 +433,11 @@ struct ThreadComponentMotionTests {
     }
 
     /// The composer's field and a question: what arrives fades in, what leaves goes at once.
-    @Test func anEntranceFadesInAndLeavesAtOnce() async {
+    @Test func anEntranceFadesInAndLeavesAtOnce() async throws {
         let toggle = Toggle()
         let window = window(Bar(toggle: toggle, motion: Entrance(), animated: true))
         defer { window.close() }
+        try await atRest(window)
 
         let arriving = await MotionProbe.record(window, region: column) { toggle.on = true }
         #expect(!arriving.inBetween.isEmpty, "it fades in")
@@ -447,6 +467,7 @@ struct ThreadComponentMotionTests {
         defer { window.close() }
         // Through the text, clear of the chevron and the title.
         let column = CGRect(x: 200, y: 40, width: 1, height: 110)
+        try await atRest(window)
 
         let recording = await MotionProbe.record(window, region: column) {
             withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { toggle.on = true }
@@ -473,6 +494,7 @@ struct ThreadComponentMotionTests {
         defer { window.close() }
         // Around the chevron, above the thinking text.
         let chevron = CGRect(x: 16, y: 18, width: 18, height: 18)
+        try await atRest(window)
 
         let recording = await MotionProbe.record(window, region: chevron) {
             withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { toggle.on = true }
