@@ -152,12 +152,15 @@ public struct NWActivityCallRow: Identifiable, Equatable, Sendable {
     /// The call's first output lines, shown while the row is expanded; `moreLines` counts the rest.
     public var output: [String]
     public var moreLines: Int
+    /// The host clipped the output: the full text only opens in its own sheet.
+    public var truncated: Bool
     public var isExpanded: Bool
     /// "edit, Sources/A.swift, +58 −41"
     public var accessibilityLabel: String
 
     public init(id: String, label: String, detail: String, isPath: Bool = false, stat: String? = nil, failed: Bool = false,
-                output: [String] = [], moreLines: Int = 0, isExpanded: Bool = false, accessibilityLabel: String? = nil) {
+                output: [String] = [], moreLines: Int = 0, truncated: Bool = false, isExpanded: Bool = false,
+                accessibilityLabel: String? = nil) {
         self.id = id
         self.label = label
         self.detail = detail
@@ -166,6 +169,7 @@ public struct NWActivityCallRow: Identifiable, Equatable, Sendable {
         self.failed = failed
         self.output = output
         self.moreLines = moreLines
+        self.truncated = truncated
         self.isExpanded = isExpanded
         self.accessibilityLabel = accessibilityLabel ?? [label, detail, stat].compactMap { $0 }.joined(separator: ", ")
     }
@@ -173,7 +177,8 @@ public struct NWActivityCallRow: Identifiable, Equatable, Sendable {
 
 /// An expanded line's calls (NWThread board): an indented list on a hairline rail, 22pt mono 11
 /// rows of kind · path or command · stat. A row opens its file or its output (`onSelect`);
-/// an expanded row shows its first lines on `bgSunken`, and "… n more lines" asks for the rest.
+/// an expanded row shows its first lines on `bgSunken`, and "… n more lines" (or, for output
+/// the host clipped, "Output truncated · open") asks for the rest.
 public struct NWActivityCalls<Menu: View>: View {
     let rows: [NWActivityCallRow]
     let onSelect: (String) -> Void
@@ -252,6 +257,9 @@ private struct NWActivityCallRowView<Menu: View>: View {
                         .fixedSize(horizontal: false, vertical: true)
                     if row.moreLines > 0 {
                         Button("… \(row.moreLines) more line\(row.moreLines == 1 ? "" : "s")") { onShowAll(row.id) }
+                            .buttonStyle(.nwLink(font: .nwMono(11)))
+                    } else if row.truncated {
+                        Button("Output truncated · open") { onShowAll(row.id) }
                             .buttonStyle(.nwLink(font: .nwMono(11)))
                     }
                 }
