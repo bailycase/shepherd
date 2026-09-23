@@ -26,10 +26,13 @@ enum TerminalSessionStoreError: Error, CustomStringConvertible {
 /// app), so each pane respawns fresh — `pi --mode rpc` for an agent's primary
 /// pane, a login shell for everything else.
 @MainActor
-final class TerminalSessionStore: ObservableObject {
+final class TerminalSessionStore {
 
+    /// One pane's session. Views observe only `phase`; everything else is attach and replay
+    /// bookkeeping, and the terminal model is built lazily while a view renders.
     @MainActor
-    final class PaneSession: ObservableObject {
+    @Observable
+    final class PaneSession {
         enum Phase: Equatable {
             case connecting
             case live
@@ -42,9 +45,9 @@ final class TerminalSessionStore: ObservableObject {
         /// The pane's process is reached only through `SessionServer.nativeThread`.
         let isRPC: Bool
         /// Set once `terminal` has been built; RPC panes must never build one.
-        private(set) var hasTerminalModel = false
+        @ObservationIgnored private(set) var hasTerminalModel = false
         /// Built on first use so an RPC pane never pays for a Ghostty model.
-        lazy var terminal: AppTerminalModel = {
+        @ObservationIgnored lazy var terminal: AppTerminalModel = {
             assert(!isRPC, "RPC pane \(paneID) must not build a terminal model")
             hasTerminalModel = true
             return AppTerminalModel(
@@ -56,8 +59,8 @@ final class TerminalSessionStore: ObservableObject {
                 extraUnbinds: KeybindingsStore.shared.customGhosttyUnbinds
             )
         }()
-        @Published var phase: Phase = .connecting
-        var sessionID: SessionID?
+        var phase: Phase = .connecting
+        @ObservationIgnored var sessionID: SessionID?
         struct BufferedOutput {
             let data: Data
             let sequence: UInt64
@@ -65,21 +68,21 @@ final class TerminalSessionStore: ObservableObject {
 
         /// Output that races the attach replay. Sequence watermarks decide
         /// which chunks the snapshot already contains.
-        fileprivate var buffered: [BufferedOutput] = []
+        @ObservationIgnored fileprivate var buffered: [BufferedOutput] = []
         /// True while subscribed, including the atomic snapshot handoff.
-        fileprivate var attachRequested = false
-        fileprivate var surfaceGeneration: UInt64?
-        private var nextAttachAttempt: UInt64 = 0
-        fileprivate var activeAttachAttempt: UInt64?
+        @ObservationIgnored fileprivate var attachRequested = false
+        @ObservationIgnored fileprivate var surfaceGeneration: UInt64?
+        @ObservationIgnored private var nextAttachAttempt: UInt64 = 0
+        @ObservationIgnored fileprivate var activeAttachAttempt: UInt64?
         /// Last grid the surface reported via onResize; the PTY keeps this
         /// size. Defaults match createSession's fallback 80×24.
-        fileprivate(set) var lastCols = 80
-        fileprivate(set) var lastRows = 24
+        @ObservationIgnored fileprivate(set) var lastCols = 80
+        @ObservationIgnored fileprivate(set) var lastRows = 24
         /// True after Ghostty reports this surface's actual grid at least once.
-        fileprivate var hasReportedGrid = false
+        @ObservationIgnored fileprivate var hasReportedGrid = false
         /// Suspended `awaitGrid` callers, resumed by the first grid report (or
         /// by its timeout).
-        private var gridWaiters: [CheckedContinuation<Void, Never>] = []
+        @ObservationIgnored private var gridWaiters: [CheckedContinuation<Void, Never>] = []
 
         init(paneID: PaneID, isRPC: Bool = false) {
             self.paneID = paneID
