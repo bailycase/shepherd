@@ -1,5 +1,5 @@
 // @ts-nocheck -- loaded by pi/jiti; no separate Node workspace is required.
-// Execution belongs to this extension. shepherd-subagents.ts is the only sidebar publisher.
+// Execution belongs to this extension. shepherd-subagents.ts is the only setAgentChildren publisher.
 import { spawn, execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
