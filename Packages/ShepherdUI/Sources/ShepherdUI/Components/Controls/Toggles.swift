@@ -41,7 +41,7 @@ private struct NWSwitch: View {
             }
             .buttonStyle(.plain)
         }
-        .opacity(enabled ? 1 : 0.4)
+        .nwEnabledOpacity(enabled)
         .accessibilityRepresentation {
             Toggle(isOn: configuration.$isOn) { configuration.label }
         }
@@ -91,7 +91,7 @@ private struct NWCheckbox: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .opacity(enabled ? 1 : 0.4)
+        .nwEnabledOpacity(enabled)
         .accessibilityRepresentation {
             Toggle(isOn: configuration.$isOn) { configuration.label }
         }
