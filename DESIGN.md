@@ -875,18 +875,24 @@ worktree sheet) and every confirmation share one anatomy, `NWDialog` (460pt by d
 - anything a destructive action would destroy is called out in an attention banner
   (`DialogBanner`); an error is a `failed` banner. Never a system alert.
 
-`DialogSheet` and `DialogAction` (`DialogSheet.swift`) build a confirmation from that anatomy,
-and `AppDialogs` (`AppDialogs.swift`) presents every sheet of the main window with
-`sheet(item:)`, so a sheet keeps the value it opened with while it animates away. There is no
-`.alert`, `confirmationDialog`, or `NSAlert` in the app:
+`DialogSheet` and `DialogAction` (`DialogSheet.swift`) build a confirmation from that anatomy.
+`AppDialogs` (`AppDialogs.swift`) presents the view model's sheets (creation, rename, delete,
+Finalize, the directory picker, a failed action), mostly with `sheet(item:)`, so a sheet keeps
+the value it opened with while it animates away. The composer presents Stop all, the review
+pane its Revert, and Settings ▸ Advanced its reset. There is no `.alert`, `confirmationDialog`,
+or `NSAlert` in the app:
 
 - Rename agent and Rename space (`RenameDialog`)
 - Delete Worktree Agent (`WorktreeDeleteDialog`) and Remove Space (`SpaceDeleteDialog`)
 - Stop all (`StopAllDialog`), the review's Revert (`RevertFileDialog`), and a failed agent action
   (`ActionErrorDialog`)
 - Reset settings (`ResetSettingsDialog`)
-- Quitting while agents are working or waiting on you: the app asks in a `DialogSheet` in the
-  main window (reopening the window if it was closed), because quitting stops them mid-turn
+- Quitting while agents are working or waiting on you (`QuitDialog`), because quitting stops
+  them mid-turn. It lists the busy agents (five named, each with its status dot and "working" or
+  "needs you", the rest counted), with Cancel (⎋) and a destructive Quit, so ⏎ never quits. It
+  opens on the main window as a sheet, even over another sheet, and reopens a closed window
+  first. A second ⌘Q brings it back rather than asking twice, and a log out, restart, or shut
+  down quits without asking.
 
 Git probes and directory listings run off the main thread; the Delete Worktree Agent dialog
 keeps its destructive action disabled until the unreconciled-work check is in.
