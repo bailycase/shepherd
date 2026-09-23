@@ -45,10 +45,13 @@ struct AgentTurn: View, Equatable {
     var retry: (() -> Void)? = nil
     /// Opens the review pane at a file.
     var review: ((String) -> Void)? = nil
+    /// The streaming turn's tail row ("Working…"): the last of its parts.
+    var working: String? = nil
     @State private var openThinking: Set<String> = []
 
     init(presentation: NativeTurnPresentation, live: Bool, small: Bool = false, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
-         subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil) {
+         subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
+         working: String? = nil) {
         self.presentation = presentation
         self.live = live
         self.small = small
@@ -57,6 +60,7 @@ struct AgentTurn: View, Equatable {
         self.startedAt = startedAt
         self.retry = retry
         self.review = review
+        self.working = working
     }
 
     /// A transcript with no store behind it (the subagent inspector): the presentation is
@@ -67,7 +71,8 @@ struct AgentTurn: View, Equatable {
 
     static func == (lhs: AgentTurn, rhs: AgentTurn) -> Bool {
         lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.small == rhs.small && lhs.subagents == rhs.subagents
-            && lhs.startedAt == rhs.startedAt && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
+            && lhs.startedAt == rhs.startedAt && lhs.working == rhs.working
+            && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
             && (lhs.subagentActions == nil) == (rhs.subagentActions == nil)
             && lhs.subagentActions?.enabled == rhs.subagentActions?.enabled
             && lhs.subagentActions?.inspectedRunID == rhs.subagentActions?.inspectedRunID
@@ -119,6 +124,7 @@ struct AgentTurn: View, Equatable {
                subagents.byToolCall.isEmpty || !NativeCardLayout(subagents).folds {
                 SubagentStack(runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing, actions: subagentActions)
             }
+            if let working { WorkingRow(label: working) }
             if !live, !presentation.items.isEmpty {
                 if let changes = presentation.changes { changesCard(changes) }
                 footer

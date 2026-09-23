@@ -54,6 +54,11 @@ struct ThreadView: View {
     var body: some View {
         let rows = store.rows
         let running = running
+        let liveRow = rows.last(where: \.live)
+        // One persistent tail row for the whole run, the last part of the streaming reply (or on
+        // its own before the reply starts). A question replaces it with the composer's question
+        // panel, and live thinking carries its own spinner.
+        let working = running && store.snapshot?.dialogs.isEmpty != false ? workingLabel(liveRow) : nil
         ZStack(alignment: .bottom) {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -69,13 +74,9 @@ struct ThreadView: View {
                         }
                         if rows.isEmpty { emptyState }
                         ForEach(rows) { row in
-                            turn(row, running: running).id(row.id)
+                            turn(row, running: running, working: row.live ? working : nil).id(row.id)
                         }
-                        // One persistent tail row for the whole run; a question replaces it with
-                        // the composer's question panel, and live thinking carries its own spinner.
-                        if running, store.snapshot?.dialogs.isEmpty != false, let label = workingLabel(rows.last { !$0.isUser }) {
-                            WorkingRow(label: label)
-                        }
+                        if let working, liveRow == nil { WorkingRow(label: working) }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
                     .frame(maxWidth: AppLayout.threadMaxWidth)
@@ -178,14 +179,14 @@ struct ThreadView: View {
         }
     }
 
-    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool) -> some View {
+    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?) -> some View {
         if row.isUser {
             UserTurn(messages: row.turn.messages, caption: row.turn.messages.first?.timestamp.map { nativeClockText($0) })
                 .equatable()
         } else if let presentation = row.presentation {
             AgentTurn(presentation: presentation, live: row.live, subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
                       subagentActions: subagentActions, startedAt: row.startedAt,
-                      retry: retryAction(row, running: running), review: review)
+                      retry: retryAction(row, running: running), review: review, working: working)
                 .equatable()
         }
     }
@@ -194,8 +195,8 @@ struct ThreadView: View {
 
     /// What the tail row says: nothing under live thinking (it has its own spinner), "Working…"
     /// under a live activity line, else pi's current activity.
-    private func workingLabel(_ last: NativeThreadRow?) -> String? {
-        if let presentation = last?.presentation, last?.live == true {
+    private func workingLabel(_ live: NativeThreadRow?) -> String? {
+        if let presentation = live?.presentation {
             if presentation.endsInLiveThinking { return nil }
             if presentation.endsInLiveActivity { return "Working…" }
         }
