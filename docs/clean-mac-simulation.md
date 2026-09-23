@@ -77,8 +77,9 @@ Add `~/tmp/clean-sim-repo` as a space in the `Shepherd (Dev)` build. Create a wo
 it (New Worktree…; the base falls back to the current branch because there is no origin). Then
 open Finalize Worktree….
 
-- **Without the git shim:** the row shows the last line of `git ls-remote`'s stderr, for
-  example "Please make sure you have the correct access rights and the repository exists."
+- **Without the git shim:** the row shows the last line of `git ls-remote`'s stderr that names
+  the problem (git's closing advice about access rights is skipped), for example "fatal:
+  'origin' does not appear to be a git repository".
 - **With the shim:** stderr is empty, so the row shows "origin remote missing or unreachable".
 
 For the credential-failure variant, where the remote exists but auth doesn't, run:
@@ -101,7 +102,7 @@ Open the worktree agent's context menu and choose **Finalize Worktree…**:
 | --- | --- | --- | --- |
 | Git installed | "git not found on PATH" | "Install command line tools…" | Runs `xcode-select --install`. Apple's installer appears; cancel it if the tools are already installed |
 | Git identity | "git user.name / user.email are not set" | Name and email fields, then Apply | Fill both and apply. The row re-checks and shows `name · email` |
-| Origin reachable | git's last stderr line, or "origin remote missing or unreachable" | Text asking for a pushable `origin` | Run `git remote add origin <real repo>` in the scratch repo, then Re-run checks. The row passes |
+| Origin reachable | git's last stderr line that isn't its closing advice, or "origin remote missing or unreachable" | Text asking for a pushable `origin` | Run `git remote add origin <real repo>` in the scratch repo, then Re-run checks. The row passes |
 | GitHub CLI | "GitHub CLI not installed" (Tier B only) | `brew install gh` with Copy | Copy puts the command on the clipboard |
 | GitHub CLI signed in | "not authenticated — run gh auth login" | "Open a terminal for gh login…" | Closes the sheet and opens a terminal pane beside the agent's thread with `gh auth login` typed in. Finish the login (the real `gh` must resolve), reopen Finalize, then Re-run checks. The row passes |
 
