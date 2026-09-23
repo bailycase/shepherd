@@ -117,6 +117,63 @@ struct ShellMotionTests {
 
     // MARK: Workspace
 
+    /// Switching agents is a visibility flip across the window: the sidebar's selection, the
+    /// toolbar, and a review pane open beside one of them never ease between the two. The
+    /// thread's own body is left out: a thread coming back on screen refreshes, and its "last
+    /// known thread" notice clears a frame later, which is the thread's state, not motion.
+    @Test func switchingAgentsChangesTheSidebarToolbarAndRightPaneAtOnce() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let first = try await app.liveAgent("first agent", in: space, order: 0)
+        let second = try await app.liveAgent("second", in: space, order: 1)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [first, second]))
+        vm.reviewDiffLoader = { _, reference in ([], reference) }
+        let size = CGSize(width: 1280, height: 600)
+        let window = OffscreenWindow(size: size, dark: false, RootView(vm: vm))
+        defer { window.close() }
+        for agent in [second, first] {
+            vm.selectAgent(agent.agent.id)
+            let store = vm.threadStores.store(for: agent.agent.id)
+            try await eventuallyOnMain("\(agent.agent.name)'s thread to load", timeout: .seconds(20)) { store.ready }
+        }
+        vm.toggleReviewPane()
+        #expect(vm.isReviewPaneShowing)
+        _ = await MotionProbe.record(window, timeout: 1) {}
+
+        let column = CGFloat(app.settings.sidebarWidth) + AppLayout.dividerWidth
+        let pane = ShellLayout.rightPane(containerWidth: size.width - column, preferredWidth: nil)
+        for agent in [second, first, second] {
+            let threadEnd = agent.agent.id == first.agent.id ? size.width - pane.width - AppLayout.dividerWidth : size.width
+            let thread = CGRect(x: column, y: NWToolbarMetrics.height, width: threadEnd - column, height: size.height - NWToolbarMetrics.height)
+            let switching = await MotionProbe.record(window) { vm.selectAgent(agent.agent.id) }
+            #expect(!switching.settled.matches(switching.before), "the window changed")
+            let caught = switching.inBetween.filter { frame in
+                differs(frame, from: switching.before, outside: thread) && differs(frame, from: switching.settled, outside: thread)
+            }
+            #expect(caught.isEmpty, "\(agent.agent.name) appears at once, but \(caught.count) frames were caught between")
+        }
+    }
+
+    /// Whether any pixel outside `excluded` (in points, one pixel per point) differs.
+    private func differs(_ frame: MotionRecording.Frame, from other: MotionRecording.Frame, outside excluded: CGRect) -> Bool {
+        let a = frame.bitmap, b = other.bitmap
+        guard a.pixelsWide == b.pixelsWide, a.pixelsHigh == b.pixelsHigh, a.bytesPerRow == b.bytesPerRow,
+              let pa = a.bitmapData, let pb = b.bitmapData else { return true }
+        let size = a.bitsPerPixel / 8
+        for y in 0..<a.pixelsHigh {
+            let row = y * a.bytesPerRow
+            if !(Int(excluded.minY)..<Int(excluded.maxY)).contains(y) {
+                if memcmp(pa + row, pb + row, a.pixelsWide * size) != 0 { return true }
+                continue
+            }
+            let lead = max(0, min(a.pixelsWide, Int(excluded.minX))), trail = max(lead, min(a.pixelsWide, Int(excluded.maxX)))
+            if memcmp(pa + row, pb + row, lead * size) != 0 { return true }
+            if memcmp(pa + row + trail * size, pb + row + trail * size, (a.pixelsWide - trail) * size) != 0 { return true }
+        }
+        return false
+    }
+
     /// Selecting another empty space cross-fades the empty state's words.
     @Test func theEmptyWorkspaceCrossFadesBetweenSpaces() async throws {
         let app = try AppHarness()
