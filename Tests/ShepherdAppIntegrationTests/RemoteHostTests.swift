@@ -4,6 +4,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 import ShepherdTestSupport
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
@@ -123,6 +124,39 @@ struct RemoteHostTests {
         local.remoteHosts.removeHost(id: connection.id)
         #expect(connection.children.isEmpty)
         #expect(vm.blockedCount == 0)
+    }
+
+    /// Subagents have no sidebar rows: one waiting on you makes its agent's row ask and counts
+    /// as needing you, on the host's own sidebar and on a client's, until it is answered.
+    @Test func aWaitingSubagentAsksThroughItsAgentsRowOnTheHostAndItsClients() async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        let space = Fixture.space(path: remote.host.dir.path)
+        let fixture = Fixture.agent("parent", in: space)
+        let hostVM = try await remote.host.start(with: Fixture.state(spaces: [space], agents: [fixture]))
+        let vm = try await local.start()
+        let connection = try await remote.connect(local.remoteHosts)
+        let target = RemoteAgentRef(hostID: connection.id, agentID: fixture.agent.id)
+        let agent = try #require(hostVM.state.agents.first { $0.id == fixture.agent.id })
+        #expect(agent.status == .idle)
+        let asking = ChildRun(runID: "run", label: "reviewer", state: "running", needsAttention: true)
+
+        hostVM.applyAgentChildren(agent.id, [asking])
+        let hostRow = hostVM.sidebarRowModel(for: agent, depth: 1)
+        #expect(hostRow.state == .attention && hostRow.accessory == .ask)
+        #expect(SidebarAttention.count(hostVM.state.agents, children: hostVM.childRuns.rows) == 1)
+        try await eventuallyOnMain("the question to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == true }
+        let clientRow = vm.remoteSidebarRowModel(for: agent, on: connection)
+        #expect(clientRow.state == .attention && clientRow.accessory == .ask)
+        #expect(SidebarAttention.count(connection.state.agents, children: connection.children) == 1)
+
+        var answered = asking
+        answered.needsAttention = false
+        hostVM.applyAgentChildren(agent.id, [answered])
+        #expect(hostVM.sidebarRowModel(for: agent, depth: 1).state == .idle)
+        try await eventuallyOnMain("the answer to reach the client") { vm.remoteChildren[target]?.first?.needsAttention == false }
+        #expect(vm.remoteSidebarRowModel(for: agent, on: connection).accessory == .none)
+        #expect(SidebarAttention.count(connection.state.agents, children: connection.children) == 0)
     }
 
     @Test func quickCreateWhileARemoteAgentIsSelectedCreatesOnTheHostOnly() async throws {
