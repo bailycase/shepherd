@@ -162,7 +162,9 @@ struct StopAllDialog: View {
 
     var body: some View {
         DialogSheet(title: "Stop the agent and every running subagent?",
-                    subtitle: "\(runningSubagents) subagents are still running.",
+                    // The count is live: subagents can finish while the dialog is open.
+                    subtitle: runningSubagents == 1 ? "1 subagent is still running."
+                        : "\(runningSubagents) subagents are still running.",
                     actions: [
                         DialogAction("Cancel", kind: .cancel, action: cancel),
                         DialogAction("Stop only the agent", action: stopAgent),
