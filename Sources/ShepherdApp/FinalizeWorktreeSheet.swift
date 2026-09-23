@@ -94,6 +94,13 @@ struct FinalizeWorktreeSheet: View {
         } actions: {
             actions
         }
+        // Each phase replaces the last in place (title, body, footer) while the sheet eases to
+        // its new height; within a phase, late arrivals (the commit count, a generated
+        // description, a start error, the PR link) settle without a jump.
+        .nwAnimation(.disclosure, value: phase)
+        .nwAnimation(.disclosure, value: startError)
+        .nwAnimation(.content, value: generatingDescription)
+        .nwAnimation(.content, value: includedCommits)
         .task {
             guard staged == nil else { return }
             await initialChecks()
@@ -313,6 +320,7 @@ struct FinalizeWorktreeSheet: View {
                         Text("Will include \(count) commit\(count == 1 ? "" : "s")")
                             .font(.nw(.caption))
                             .foregroundStyle(count > 20 ? Color.nw.lanternText : Color.nw.textTertiary)
+                            .nwContentTransition(.numeric())
                             .help("Commits on \(branch) that are not on the base branch — what the pull request will contain")
                     }
                 }
@@ -357,7 +365,13 @@ struct FinalizeWorktreeSheet: View {
                     .padding(NW.Space.s)
                     .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
                     .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
-                    .nwFocusRing(focusedField == .description, radius: NW.Radius.s)
+                    .overlay {
+                        // The ring fades on its own layer: the editor itself never animates.
+                        Color.clear
+                            .nwFocusRing(focusedField == .description, radius: NW.Radius.s)
+                            .nwComponentAnimation(.hover, value: focusedField == .description)
+                            .allowsHitTesting(false)
+                    }
                     .accessibilityLabel("Pull request description")
             }
             .padding(EdgeInsets(top: NW.Space.l, leading: NWDialogMetrics.inset, bottom: 0, trailing: NWDialogMetrics.inset))
@@ -460,12 +474,11 @@ struct WorktreeSetupChecklist: View {
             ForEach(WorktreeSetupCheck.allCases) { check in
                 let state = model.states[check] ?? .pending
                 let status = state.checklist
-                if case .fail = state {
-                    NWChecklistRow(check.label, state: status.state, stateLabel: status.word, detail: status.detail) {
-                        remedy(for: check)
-                    }
-                } else {
-                    NWChecklistRow(check.label, state: status.state, stateLabel: status.word, detail: status.detail)
+                // One row whatever the state, so a check turning from checking to passed pops
+                // in place and a failed one grows its remedy underneath.
+                NWChecklistRow(check.label, state: status.state, stateLabel: status.word, detail: status.detail,
+                               showsRemedy: status.state == .failed) {
+                    remedy(for: check)
                 }
             }
             repoSettingsSection
@@ -474,6 +487,11 @@ struct WorktreeSetupChecklist: View {
             }
         }
         .disabled(model.running)
+        // Re-running the checks is the visual verification pass: remedies and the failure
+        // banner disclose and withdraw as the answers come in.
+        .nwAnimation(.disclosure, value: model.states)
+        .nwAnimation(.disclosure, value: model.repoSettings)
+        .nwAnimation(.disclosure, value: model.actionError)
     }
 
     /// Recommended GitHub repo settings: status + explanation + one-click

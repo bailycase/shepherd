@@ -76,6 +76,12 @@ struct RemoteDirectoryPicker: View {
     @State private var loadRequest = UUID()
     @FocusState private var pathFocused: Bool
 
+    /// What the listing shows, apart from the typed filter.
+    private struct Listing: Hashable {
+        let path: String
+        let showHidden: Bool
+    }
+
     /// Hidden dirs shown only on request (or when the typed filter asks for
     /// them), narrowed with shell-like fuzzy matching. Prefix matches sort
     /// first, followed by subsequence matches in directory-name order.
@@ -131,7 +137,12 @@ struct RemoteDirectoryPicker: View {
                     }
                 }
                 .padding(NW.Space.s)
+                // A new directory's listing (or the hidden ones) replaces the old as one
+                // cross-fade, never row by row; the filter you type narrows it at once.
+                .id(Listing(path: path, showHidden: showHidden))
+                .nwTransition(.content)
             }
+            .nwAnimation(.content, value: Listing(path: path, showHidden: showHidden))
             .frame(height: AppLayout.directoryListHeight)
             .background(Color.nw.bgSunken)
             NWHairline()

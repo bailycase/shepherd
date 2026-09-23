@@ -97,8 +97,20 @@ extension DialogSheet where Content == EmptyView {
     }
 }
 
+extension View {
+    /// A dialog presented as a `.sheet`. When a row discloses or withdraws, SwiftUI gives the
+    /// sheet window its new height at once while the rows ease to their places; the group keeps
+    /// the dialog pinned to that frame, so its title stays still instead of drifting with the
+    /// window's centering, and the background fills the window from the first frame.
+    func dialogSheetFrame() -> some View {
+        geometryGroup().background(Color.nw.bgWindow)
+    }
+}
+
 /// A banner inside a dialog, at the dialog's margins: what a destructive action would destroy
-/// (`.attention`), or why something failed (`.failed`). Never a system alert triangle.
+/// (`.attention`), or why something failed (`.failed`). Never a system alert triangle. It
+/// discloses when it arrives late (a probe's warning, a failed step): animate the dialog on
+/// what it shows (`nwAnimation(.disclosure, value:)`) so the sheet grows in step.
 struct DialogBanner: View {
     var state: AgentState = .attention
     let title: String
@@ -108,6 +120,7 @@ struct DialogBanner: View {
         NWBanner(state, title: title, message: message)
             .padding(.horizontal, NWDialogMetrics.inset)
             .padding(.top, NW.Space.l)
+            .nwTransition(.disclosure)
     }
 }
 

@@ -50,7 +50,9 @@ struct NewWorktreeSheet: View {
                         .font(.nw(.caption))
                         .foregroundStyle(Color.nw.textTertiary)
                         .lineLimit(1)
+                        .nwContentTransition(.crossFade)
                 }
+                .nwComponentAnimation(.content, value: baseNote)
             }
             SheetRow("Checkout") {
                 Text(destination)
@@ -75,6 +77,9 @@ struct NewWorktreeSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
         }
+        // Creating… shows in the footer and the button; a failure discloses as a banner.
+        .nwAnimation(.content, value: creating)
+        .nwAnimation(.disclosure, value: errorText)
         .onAppear { branchFocused = true }
         .task { await resolveBase() }
     }

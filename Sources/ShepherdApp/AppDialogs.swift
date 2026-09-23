@@ -12,15 +12,19 @@ struct AppDialogs: ViewModifier {
         content
             .sheet(isPresented: $vm.showNewAgentSheet) {
                 NewAgentSheet(vm: vm)
+                    .dialogSheetFrame()
             }
             .sheet(item: $vm.worktreeSheetSpace) { space in
                 NewWorktreeSheet(vm: vm, space: space)
+                    .dialogSheetFrame()
             }
             .sheet(item: $vm.finalizeRequest) { request in
                 FinalizeWorktreeSheet(vm: vm, agent: request.agent, space: request.space)
+                    .dialogSheetFrame()
             }
             .sheet(item: $vm.spacePickerTarget) { target in
                 spacePicker(target)
+                    .dialogSheetFrame()
             }
             .sheet(item: $vm.remoteRenameItem) { item in
                 RenameDialog(title: "Rename agent", name: vm.remoteAgent(item.value)?.name ?? "") { name in
@@ -32,6 +36,7 @@ struct AppDialogs: ViewModifier {
             }
             .sheet(item: $vm.remoteWorktreeItem) { item in
                 RemoteWorktreeSheet(vm: vm, target: item.target, finalize: item.finalize)
+                    .dialogSheetFrame()
             }
             .sheet(item: $vm.spaceRenameSpace) { space in
                 RenameDialog(title: "Rename space", caption: "Sidebar label only — the folder on disk is not renamed.",
@@ -52,6 +57,7 @@ struct AppDialogs: ViewModifier {
             }
             .sheet(item: $vm.worktreeDeleteAgent) { agent in
                 WorktreeDeleteDialog(vm: vm, agent: agent)
+                    .dialogSheetFrame()
             }
             .sheet(item: $vm.spaceDeleteSpace) { space in
                 SpaceDeleteDialog(vm: vm, space: space)
@@ -158,6 +164,9 @@ struct WorktreeDeleteDialog: View {
                 DialogBanner(title: "Unreconciled work", message: "\(warning) will be lost with the worktree.")
             }
         }
+        // The probe's answer arrives after the sheet is up: the warning discloses and the
+        // "Checking…" status fades as the destructive action enables.
+        .nwAnimation(.disclosure, value: checked)
         .task(id: agent.id) {
             let (path, branch) = (path, branch)
             // No checkout to probe (its space is gone): `git -C ""` would probe the app's own
