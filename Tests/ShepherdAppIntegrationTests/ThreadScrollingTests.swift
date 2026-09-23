@@ -324,6 +324,9 @@ struct ThreadScrollingTests {
         try await thread.waitUntilReady()
 
         thread.command(.previousTurn)
+        // The jump's spring starts from rest: its first frames barely move, and a busy main
+        // thread can hold them back longer than `settle` waits for stillness.
+        try await eventuallyOnMain("the jump to leave the tail") { thread.distanceFromBottom > NativeScrollFollower.threshold }
         try await thread.settle()
         let detached = thread.distanceFromBottom
         #expect(detached > NativeScrollFollower.threshold)
