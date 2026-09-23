@@ -52,10 +52,19 @@ public struct NWSubagentRun: Identifiable, Equatable, Sendable {
         self.question = question
     }
 
-    /// "desktop, worker, Running, edit DesktopNativeThreadView.swift".
+    /// "desktop, worker, Running, edit DesktopNativeThreadView.swift"; a finished run adds its
+    /// meta ("reviewer, Done, 2 spec deviations fixed, 26 tools · 12m").
     public var accessibilityLabel: String {
-        ([name, role, stateLabel ?? state.label, detail] as [String?]).compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        ([name, role, stateLabel ?? state.label, detail, detailMeta] as [String?]).compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
     }
+
+    /// The progress as VoiceOver reads it ("Context window used 62%"); empty without progress.
+    public var accessibilityValue: String {
+        percent.map { "\(progressLabel ?? "Progress") \($0)%" } ?? ""
+    }
+
+    /// `progress` as a whole percent.
+    var percent: Int? { progress.map { Int((min(1, max(0, $0)) * 100).rounded()) } }
 }
 
 /// A live subagent inline in its parent's turn (Agents board): branch glyph, name, role and
@@ -99,6 +108,7 @@ public struct NWSubagentCard: View, Equatable {
             Button(action: inspect) { summary }
                 .buttonStyle(.plain)
                 .accessibilityLabel(run.accessibilityLabel)
+                .accessibilityValue(run.accessibilityValue)
                 .accessibilityHint("Opens the run in the inspector")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             if run.state == .attention, let question = run.question {
@@ -159,7 +169,7 @@ public struct NWSubagentCard: View, Equatable {
                 HStack(spacing: NW.Space.m) {
                     ProgressView(value: progress).progressViewStyle(.nwBar)
                         .accessibilityLabel(run.progressLabel ?? "Progress")
-                    Text("\(Int((min(1, max(0, progress)) * 100).rounded()))%")
+                    Text("\(run.percent ?? 0)%")
                         .font(.nwMono(10)).foregroundStyle(nw.textTertiary).monospacedDigit().fixedSize()
                         .accessibilityHidden(true)
                 }
