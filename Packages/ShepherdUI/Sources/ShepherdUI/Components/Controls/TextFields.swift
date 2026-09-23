@@ -81,8 +81,16 @@ private struct NWFieldChrome: ViewModifier {
             .padding(.vertical, NW.Space.xs)
             .frame(minHeight: NW.Height.controlM)
             .background(nw.bgRaised, in: shape)
-            .nwBorder(error ? nw.failed : nw.lineStrong, radius: NW.Radius.s)
-            .nwFocusRing(focused, radius: NW.Radius.s)
+            .overlay {
+                // The line and the ring fade on their own layer, so focusing a field or
+                // flagging it never animates the text inside.
+                Color.clear
+                    .nwBorder(error ? nw.failed : nw.lineStrong, radius: NW.Radius.s)
+                    .nwFocusRing(focused, radius: NW.Radius.s)
+                    .nwComponentAnimation(.hover, value: focused)
+                    .nwComponentAnimation(.hover, value: error)
+                    .allowsHitTesting(false)
+            }
             .nwEnabledOpacity(enabled)
     }
 }
