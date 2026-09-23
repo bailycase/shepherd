@@ -99,4 +99,17 @@ struct MotionProbeTests {
         #expect(recording.settled.firstColumn(differingFrom: recording.before) == SamplePane.restingEdge)
         #expect(recording.inBetween.isEmpty)
     }
+
+    /// `nwInstant()` drops the animation a change arrives with, not motion attached inside it:
+    /// a pane with its own `nwAnimation` still slides under an instant ancestor.
+    @Test func anInstantAncestorKeepsTheMotionAttachedInsideIt() async {
+        let model = PaneModel()
+        let window = OffscreenWindow(size: CGSize(width: SamplePane.width, height: SamplePane.height), dark: false,
+                                     SamplePane(model: model).nwInstant())
+        defer { window.close() }
+        let recording = await MotionProbe.record(window, region: strip) { model.open = true }
+
+        let edges = recording.inBetween.compactMap { $0.firstColumn(differingFrom: recording.before) }
+        #expect(edges.contains { $0 > SamplePane.restingEdge + 4 }, "caught mid-slide: \(edges)")
+    }
 }
