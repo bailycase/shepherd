@@ -15,8 +15,8 @@ struct FinalizeWorktreeSheet: View {
     let agent: Agent
     let space: Space
 
-    @StateObject private var setup: WorktreeSetupModel
-    @StateObject private var finalizer = WorktreeFinalizer()
+    @State private var setup: WorktreeSetupModel
+    @State private var finalizer = WorktreeFinalizer()
     @State private var descriptionGenerator = WorktreePRDescriptionGenerator()
     @State private var phase: Phase = .checking
     @State private var base = ""
@@ -42,7 +42,7 @@ struct FinalizeWorktreeSheet: View {
         self.vm = vm
         self.agent = agent
         self.space = space
-        _setup = StateObject(wrappedValue: WorktreeSetupModel(repoPath: space.path))
+        _setup = State(initialValue: WorktreeSetupModel(repoPath: space.path))
     }
 
     private var branch: String { agent.worktreeBranch ?? "" }
@@ -421,7 +421,7 @@ struct FinalizeWorktreeSheet: View {
 /// The guided prerequisite checklist: one row per check with its state glyph; failing rows
 /// grow their remedy inline. Re-running the checks is the visual verification pass.
 struct WorktreeSetupChecklist: View {
-    @ObservedObject var model: WorktreeSetupModel
+    var model: WorktreeSetupModel
     /// gh login needs a real terminal — Shepherd opens a pane beside the agent's thread.
     let openLoginShell: () -> Void
     @State private var identityName = ""

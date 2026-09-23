@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import ShepherdProtocol
 
 /// Async login-shell runner for worktree setup probes and the finalize
@@ -182,15 +183,16 @@ typealias WorktreeCheckState = RemoteWorktreeCheckState
 /// Probes the finalize prerequisites and applies the fixable remedies.
 /// Repo-scoped: the `remote` check runs against the space's checkout.
 @MainActor
-final class WorktreeSetupModel: ObservableObject {
-    @Published private(set) var states: [WorktreeSetupCheck: WorktreeCheckState]
+@Observable
+final class WorktreeSetupModel {
+    private(set) var states: [WorktreeSetupCheck: WorktreeCheckState]
     /// Recommended GitHub repo settings — informational, never gate `allPassed`.
-    @Published private(set) var repoSettings: [WorktreeRepoSetting: WorktreeRepoSettingState]
-    @Published private(set) var running = false
+    private(set) var repoSettings: [WorktreeRepoSetting: WorktreeRepoSettingState]
+    private(set) var running = false
     private(set) var repoPath: String
-    var remoteAction: ((RemoteWorktreeSetupAction) async throws -> RemoteWorktreeSetup)?
-    @Published private(set) var actionError: String?
-    var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1, timeout: 20) }
+    @ObservationIgnored var remoteAction: ((RemoteWorktreeSetupAction) async throws -> RemoteWorktreeSetup)?
+    private(set) var actionError: String?
+    @ObservationIgnored var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1, timeout: 20) }
 
     var snapshot: RemoteWorktreeSetup {
         .init(repoPath: repoPath,
@@ -473,7 +475,8 @@ struct WorktreePRDescriptionGenerator {
 /// cleanup. The Shepherd agent retires when the user closes the success
 /// dialog, not mid-pipeline.
 @MainActor
-final class WorktreeFinalizer: ObservableObject {
+@Observable
+final class WorktreeFinalizer {
     enum Step: Int, CaseIterable, Identifiable {
         case commit, push, pullRequest, mergePR, verifyClean, removeWorktree, deleteBranch
 
@@ -523,16 +526,16 @@ final class WorktreeFinalizer: ObservableObject {
         var mergeMethod = "squash"
     }
 
-    @Published private(set) var states: [Step: StepState]
-    @Published private(set) var phase: Phase = .idle
-    @Published private(set) var prURL: String?
+    private(set) var states: [Step: StepState]
+    private(set) var phase: Phase = .idle
+    private(set) var prURL: String?
 
     /// Injectable for tests; production uses the login shell.
-    var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1) }
+    @ObservationIgnored var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1) }
     /// Injectable clean gate; production is the same probe the delete dialog uses.
-    var cleanCheck: (String, String) -> String? = GitWorktree.unreconciledWork
+    @ObservationIgnored var cleanCheck: (String, String) -> String? = GitWorktree.unreconciledWork
 
-    var beforeCleanup: (() async throws -> Void)?
+    @ObservationIgnored var beforeCleanup: (() async throws -> Void)?
 
     init() {
         states = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, .pending) })
