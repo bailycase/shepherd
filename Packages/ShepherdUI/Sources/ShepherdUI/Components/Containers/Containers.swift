@@ -51,7 +51,8 @@ public struct NWGroupCard<Content: View>: View {
 }
 
 /// A card row (settings): title, optional description and inline problem (in `failed`), and a
-/// trailing control. At least 52pt, scaled by density.
+/// trailing control. At least 52pt, scaled by density. The problem line discloses; animate the
+/// page around it (`nwAnimation(.disclosure, value: problem)`) so the card grows in step.
 public struct NWCardRow<Control: View>: View {
     let title: String
     let description: String?
@@ -78,6 +79,7 @@ public struct NWCardRow<Control: View>: View {
                     Text(problem).nwText(.caption).foregroundStyle(nw.failed)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
+                        .nwTransition(.disclosure)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
