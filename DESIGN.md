@@ -283,8 +283,9 @@ leading from the face's real metrics); `.font(.nw(_:))` alone suits single lines
     are on screen is safe.
   - Under Reduce Motion both are static, and panes and sheets cross-fade (120ms) instead of
     moving.
-- **Icons:** SF Symbols, monochrome, medium weight (14pt in icon buttons, smaller inline).
-  Never filled glyphs for status, never emoji. The Foundations board names the symbols to use
+- **Icons:** SF Symbols, monochrome, medium weight: 14pt in icon buttons, smaller inline. Status
+  glyphs come from `AgentState` (`NWStateGlyph`); never emoji. The Foundations board names the
+  symbols to use
   (`sidebar.left`, `square.and.pencil`, `arrow.up`, `stop.fill`, `paperclip`, `lightbulb`,
   `arrow.triangle.branch`, `plus.forwardslash.minus`, `ellipsis`, `magnifyingglass`, `bolt`,
   `desktopcomputer`, …).
