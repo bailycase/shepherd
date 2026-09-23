@@ -129,6 +129,10 @@ public struct NWSheetRow<Control: View>: View {
 
 /// A step or check in a sheet's list (a pipeline, a prerequisite checklist): the state glyph,
 /// the label, and a trailing detail. A row can carry its remedy underneath.
+///
+/// The glyph, the label's color and the detail fade as the state moves on, and the glyph pops
+/// once when a step passes. A remedy that comes and goes (`showsRemedy`) discloses; animate the
+/// list around it (`nwAnimation(.disclosure, value:)`) so the rows below make room in step.
 public struct NWChecklistRow<Remedy: View>: View {
     let title: String
     let state: AgentState
@@ -136,16 +140,18 @@ public struct NWChecklistRow<Remedy: View>: View {
     let detail: String?
     let remedy: Remedy
     let hasRemedy: Bool
+    @State private var passes = 0
 
-    /// `stateLabel` replaces the state's word for VoiceOver ("passed", "pending").
+    /// `stateLabel` replaces the state's word for VoiceOver ("passed", "pending"). The remedy
+    /// shows while `showsRemedy` (a failed check's fix); the row stays the same view either way.
     public init(_ title: String, state: AgentState, stateLabel: String? = nil, detail: String? = nil,
-                @ViewBuilder remedy: () -> Remedy) {
+                showsRemedy: Bool = true, @ViewBuilder remedy: () -> Remedy) {
         self.title = title
         self.state = state
         self.stateLabel = stateLabel ?? state.label
         self.detail = detail.flatMap { $0.isEmpty ? nil : $0 }
         self.remedy = remedy()
-        hasRemedy = Remedy.self != EmptyView.self
+        hasRemedy = showsRemedy && Remedy.self != EmptyView.self
     }
 
     public var body: some View {
@@ -160,6 +166,7 @@ public struct NWChecklistRow<Remedy: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NW.Space.m) {
                 NWStateGlyph(state)
+                    .nwPop(trigger: passes)
                 Text(title)
                     .font(.nw(.ui))
                     .foregroundStyle(titleColor)
@@ -172,26 +179,36 @@ public struct NWChecklistRow<Remedy: View>: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .help(detail)
+                        .nwContentTransition(.crossFade)
                 }
             }
             .frame(minHeight: NW.Height.row)
+            .nwComponentAnimation(.content, value: detail)
+            .nwComponentAnimation(.content, value: state)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel([title, stateLabel, detail].compactMap(\.self).joined(separator: ", "))
             if hasRemedy {
                 remedy
                     .padding(.leading, NWChecklistMetrics.glyph + NW.Space.m)
                     .padding(.bottom, NW.Space.m)
+                    .nwTransition(.disclosure)
             }
         }
         .padding(.horizontal, inset)
+        // A disclosing remedy shows as the row makes room for it, never over what follows.
+        .clipped()
         .overlay(alignment: .bottom) { NWHairline().padding(.leading, inset) }
         .accessibilityElement(children: .contain)
+        .onChange(of: state) { old, new in
+            // A step that passes pops once; leaving done (a re-run) doesn't.
+            if new == .done, old != .done { passes += 1 }
+        }
     }
 }
 
 extension NWChecklistRow where Remedy == EmptyView {
     public init(_ title: String, state: AgentState, stateLabel: String? = nil, detail: String? = nil) {
-        self.init(title, state: state, stateLabel: stateLabel, detail: detail) { EmptyView() }
+        self.init(title, state: state, stateLabel: stateLabel, detail: detail, showsRemedy: false) { EmptyView() }
     }
 }
 
