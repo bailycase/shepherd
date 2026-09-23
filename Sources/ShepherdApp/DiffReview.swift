@@ -379,11 +379,6 @@ final class ReviewPaneModel {
         set { actions.setPullRequest(newValue) }
     }
 
-    var isConfirmingRevert: Bool {
-        get { reverting != nil }
-        set { if !newValue { reverting = nil } }
-    }
-
     func isFolded(_ fileID: String) -> Bool {
         collapsed.contains(fileID) || session.viewed.contains(fileID)
     }

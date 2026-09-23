@@ -125,11 +125,11 @@ struct Composer: View {
                 attach(urls: resolved)
             }
         }
-        .confirmationDialog("Stop the agent and every running subagent?", isPresented: $confirmingStopAll) {
-            Button("Stop All", role: .destructive) { Task { await store.abortAll() } }
-            Button("Stop Only the Agent") { Task { await store.abort() } }
-        } message: {
-            Text("\(store.subagents.count { !$0.isTerminal }) subagents are still running.")
+        .sheet(isPresented: $confirmingStopAll) {
+            StopAllDialog(runningSubagents: store.subagents.count { !$0.isTerminal },
+                          stopAgent: { confirmingStopAll = false; Task { await store.abort() } },
+                          stopAll: { confirmingStopAll = false; Task { await store.abortAll() } },
+                          cancel: { confirmingStopAll = false })
         }
     }
 
