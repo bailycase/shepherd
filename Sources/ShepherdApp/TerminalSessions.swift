@@ -584,9 +584,12 @@ final class TerminalSessionStore: ObservableObject {
     /// with the previous app run), so `aliveSessions` is whatever the server
     /// holds right now — normally empty.
     private func bootstrap() async throws {
+        serverState = server.state
+        aliveSessions = Set(await server.listSessions().filter(\.isAlive).map(\.id))
+        // Read again: adopting the snapshot from before the await would roll back anything
+        // committed meanwhile (a space added while the app starts).
         let state = server.state
         serverState = state
-        aliveSessions = Set(await server.listSessions().filter(\.isAlive).map(\.id))
         onStateChanged?(state)
     }
 
