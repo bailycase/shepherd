@@ -87,3 +87,68 @@ struct TerminalMotionTests {
         #expect(Set(grids).count > 3, "\(grids)")
     }
 }
+
+/// The same rule in the real shell: a shell pane split beside an agent's thread, in `RootView`,
+/// while the docked sidebar slides away and back and the right pane slides in beside the
+/// thread.
+@Suite("Terminal motion in the shell", .serialized, .mainActorExclusive)
+@MainActor
+struct ShellTerminalMotionTests {
+    /// Every grid the shell's surface reports.
+    @MainActor
+    final class GridLog {
+        var grids: [String] = []
+    }
+
+    @Test func aShellPaneBesideTheThreadResizesOncePerSidebarSlideAndNeverForTheRightPane() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = try await app.liveAgent("agent", in: space, auxiliary: 1)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        vm.reviewDiffLoader = { _, reference in ([], reference) }
+        vm.selectAgent(agent.agent.id)
+        let shell = vm.sessions.session(for: agent.auxiliary[0], in: agent.tab)
+        let log = GridLog()
+        let forward = shell.terminal.onResize
+        shell.terminal.onResize = { cols, rows in
+            log.grids.append("\(cols)x\(rows)")
+            forward?(cols, rows)
+        }
+        let size = CGSize(width: 1440, height: 600)
+        let window = OffscreenWindow(size: size, dark: false, RootView(vm: vm))
+        defer { window.close() }
+        let store = vm.threadStores.store(for: agent.agent.id)
+        try await eventuallyOnMain("the thread to load", timeout: .seconds(20)) { store.ready }
+        try await eventuallyOnMain("the shell to go live", timeout: .seconds(30)) { shell.phase == .live }
+        try await quiet(log)
+        // Through the sidebar's "Jump to…" and the workspace beside it.
+        let row = CGRect(x: 0, y: 57, width: size.width, height: 1)
+
+        for hidden in [true, false] {
+            let before = log.grids.count
+            let recording = await MotionProbe.record(window, region: row) { vm.toggleSidebar() }
+            try await quiet(log)
+            #expect(vm.sidebarHidden == hidden)
+            #expect(log.grids.count - before == 1, "one PTY resize per slide (hidden: \(hidden)): \(log.grids[before...])")
+            if !hidden { #expect(!recording.inBetween.isEmpty, "the sidebar slides in") }
+        }
+
+        let before = log.grids.count
+        let opening = await MotionProbe.record(window, region: row) { vm.toggleReviewPane() }
+        try await quiet(log)
+        #expect(vm.isReviewPaneShowing)
+        #expect(!opening.inBetween.isEmpty, "the review slides in")
+        #expect(log.grids.count == before, "the shell beside the thread keeps its grid: \(log.grids[before...])")
+    }
+
+    /// Waits until the surface's grid reports have been quiet for a while.
+    private func quiet(_ log: GridLog) async throws {
+        var seen = log.grids.count
+        var since = ContinuousClock.now
+        try await eventuallyOnMain("the shell's grid reports to go quiet", timeout: .seconds(30)) {
+            if log.grids.count != seen { seen = log.grids.count; since = .now }
+            return ContinuousClock.now - since > .milliseconds(600)
+        }
+    }
+}
