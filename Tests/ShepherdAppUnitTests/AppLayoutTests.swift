@@ -16,17 +16,18 @@ struct AppLayoutTests {
         body()
     }
 
-    @Test func designedDensityGivesTheDenseSidebar() {
+    @Test(arguments: [(NWDensity.compact, 22.0), (.standard, 28.0), (.comfortable, 36.0)])
+    func sidebarRowsFollowNightWatchAtTheDesignedDensity(rows: NWDensity, height: Double) {
         withDensity(1) {
-            #expect(AppLayout.sidebarRowHeight == 26)
+            #expect(rows.rowHeight == CGFloat(height))
             #expect(AppLayout.settingsRowMinHeight == 52)
         }
     }
 
-    @Test(arguments: [(0.85, 22.0, 44.0), (1.2, 31.0, 62.0)])
+    @Test(arguments: [(0.85, 24.0, 44.0), (1.2, 34.0, 62.0)])
     func rowHeightsScaleAndRoundToWholePoints(density: Double, row: Double, settings: Double) {
         withDensity(CGFloat(density)) {
-            #expect(AppLayout.sidebarRowHeight == CGFloat(row))
+            #expect(NWDensity.standard.rowHeight == CGFloat(row))
             #expect(AppLayout.settingsRowMinHeight == CGFloat(settings))
         }
     }
@@ -34,7 +35,7 @@ struct AppLayoutTests {
     @Test func densityLeavesFixedSizesAlone() {
         withDensity(1.3) {
             #expect(AppLayout.threadMaxWidth == 760)
-            #expect(AppLayout.headerHeight == 52)
+            #expect(AppLayout.headerHeight == 44)
         }
     }
 
@@ -43,8 +44,10 @@ struct AppLayoutTests {
         #expect(AppLayout.proseMaxWidth < AppLayout.threadMaxWidth)
     }
 
-    @Test func theWindowMinimumFitsTheMainColumnBesideTheFullSidebar() {
-        #expect(AppLayout.mainColumnMinWidth + AppLayout.sidebarDefaultWidth <= AppLayout.windowMinWidth)
+    @Test func theMinimumWindowIsTheMainColumnAloneSoTheSidebarOverlaysThere() {
+        #expect(AppLayout.windowMinWidth == AppLayout.mainColumnMinWidth)
+        #expect(ShellLayout.sidebarFitWidth(AppLayout.sidebarDefaultWidth) > AppLayout.windowMinWidth)
+        #expect(ShellLayout.sidebarFitWidth(AppLayout.sidebarDefaultWidth) <= AppLayout.windowDefaultWidth)
     }
 }
 

@@ -3,6 +3,14 @@ import ShepherdUI
 import AppKit
 import ShepherdSessions
 
+/// The one main window's scene id.
+enum MainWindow {
+    static let id = "main"
+    /// Opens (or fronts) the main window; set once the window has appeared, used to reopen it
+    /// from the Dock after it was closed.
+    @MainActor static var open: (() -> Void)?
+}
+
 /// The Mac app, exposed as a library so an Xcode app target can provide the
 /// entry point. Launch it with `ShepherdMacApp.main()` — SwiftUI must own the
 /// instance for the delegate adaptor and state objects to be managed.
@@ -10,8 +18,7 @@ import ShepherdSessions
 public struct ShepherdMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var vm: ShepherdViewModel
-    /// Menus rebuild when a shortcut is rebound — the App body observes the
-    /// store so every `.keyboardShortcut` below re-resolves.
+    /// Menus rebuild when a shortcut is rebound: the rebindings are passed into each menu.
     @ObservedObject private var keys = KeybindingsStore.shared
     @ObservedObject private var themes = ThemeManager.shared
 
@@ -22,7 +29,9 @@ public struct ShepherdMacApp: App {
     }
 
     public var body: some Scene {
-        WindowGroup {
+        // One window, never tabbed. Sessions belong to the app, not the window: closing it
+        // leaves every agent running, and the Dock or Window menu brings it back.
+        Window("Shepherd", id: MainWindow.id) {
             RootView(vm: vm)
                 // Host role: bind the remote listener if this Mac serves its
                 // sessions (the toggle persists; a host stays a host). The
@@ -37,190 +46,15 @@ public struct ShepherdMacApp: App {
         .defaultSize(width: AppLayout.windowDefaultWidth, height: AppLayout.windowDefaultHeight)
         .windowResizability(.contentMinSize)
         .commands {
-            CommandGroup(replacing: .appSettings) {
-                SettingsCommandButton(vm: vm)
-                if AppUpdater.shared.available {
-                    Button("Check for Updates…") {
-                        AppUpdater.shared.checkForUpdates()
-                    }
-                }
-            }
-            CommandGroup(replacing: .newItem) {
-                Button("New Agent in Current Checkout") {
-                    Task { @MainActor in vm.quickCreateAgent() }
-                }
-                .keyboardShortcut(keys.shortcut(.newAgent))
-                Button("New Agent with Options…") {
-                    Task { @MainActor in vm.showNewAgentSheet = true }
-                }
-                .keyboardShortcut(keys.shortcut(.newAgentOptions))
-                Button("New Space…") {
-                    Task { @MainActor in vm.addSpaceFromPanel() }
-                }
-                .keyboardShortcut(keys.shortcut(.newSpace))
-            }
-            CommandGroup(after: .toolbar) {
-                Button("Command Palette") {
-                    Task { @MainActor in vm.showCommandPalette.toggle() }
-                }
-                .keyboardShortcut(keys.shortcut(.commandPalette))
-                Button(vm.sidebarHidden ? "Show Sidebar" : "Hide Sidebar") {
-                    Task { @MainActor in vm.sidebarHidden.toggle() }
-                }
-                .keyboardShortcut(keys.shortcut(.toggleSidebar))
-                Button(vm.isRightPaneOpen ? "Close Pane" : "Review Changes") {
-                    Task { @MainActor in vm.toggleRightPane() }
-                }
-                .keyboardShortcut(keys.shortcut(.toggleRightPane))
-                .disabled(vm.visibleThread == nil)
-                #if DEBUG
-                Divider()
-                Button("Component Gallery") {
-                    Task { @MainActor in vm.showComponentGallery.toggle() }
-                }
-                #endif
-            }
-            CommandGroup(replacing: .saveItem) {
-                Button("Close Pane") {
-                    Task { @MainActor in vm.closeFocusedPane() }
-                }
-                .keyboardShortcut(keys.shortcut(.closePane))
-            }
-            CommandMenu("Pane") {
-                Button("Split Vertically") {
-                    Task { @MainActor in vm.splitFocusedPane(axis: .vertical) }
-                }
-                .keyboardShortcut(keys.shortcut(.splitVertical))
-                Button("Split Horizontally") {
-                    Task { @MainActor in vm.splitFocusedPane(axis: .horizontal) }
-                }
-                .keyboardShortcut(keys.shortcut(.splitHorizontal))
-                Divider()
-                Button("Focus Next Pane") {
-                    Task { @MainActor in vm.focusAdjacentPane(1) }
-                }
-                .keyboardShortcut(keys.shortcut(.focusNextPane))
-                Button("Focus Previous Pane") {
-                    Task { @MainActor in vm.focusAdjacentPane(-1) }
-                }
-                .keyboardShortcut(keys.shortcut(.focusPreviousPane))
-            }
-            CommandMenu("Space") {
-                if vm.visibleSpaces.isEmpty {
-                    Button("No Spaces") {}.disabled(true)
-                } else {
-                    ForEach(vm.visibleSpaces) { space in
-                        Button(space.name) {
-                            let id = space.id
-                            Task { @MainActor in vm.selectSpace(id) }
-                        }
-                    }
-                }
-            }
-            CommandMenu("Agent") {
-                let selected = vm.selectedRemoteAgent?.agentID ?? vm.selectedAgentID
-                Button("Focus") {
-                    Task { @MainActor in vm.focusSelectedAgent() }
-                }
-                .disabled(selected == nil && vm.selectedRemoteAgent == nil)
-                Button("Rename…") {
-                    Task { @MainActor in vm.renameSelectedAgent() }
-                }
-                .keyboardShortcut(keys.shortcut(.renameAgent))
-                .disabled(selected == nil)
-                Divider()
-                Button("Stop") {
-                    Task { @MainActor in vm.stopVisibleAgent() }
-                }
-                .keyboardShortcut(keys.shortcut(.stopAgent))
-                .disabled(vm.visibleThread == nil)
-                Button("Choose Model…") {
-                    Task { @MainActor in vm.sendThreadCommand(.modelPicker) }
-                }
-                .keyboardShortcut(keys.shortcut(.modelPicker))
-                .disabled(vm.visibleThread == nil)
-                Button("Inspect Subagent") {
-                    Task { @MainActor in vm.sendThreadCommand(.inspectSubagent) }
-                }
-                .keyboardShortcut(keys.shortcut(.inspectSubagent))
-                .disabled(vm.visibleThread == nil)
-                Button("Previous Turn") {
-                    Task { @MainActor in vm.sendThreadCommand(.previousTurn) }
-                }
-                .keyboardShortcut(keys.shortcut(.previousTurn))
-                .disabled(vm.visibleThread == nil)
-                Button("Next Turn") {
-                    Task { @MainActor in vm.sendThreadCommand(.nextTurn) }
-                }
-                .keyboardShortcut(keys.shortcut(.nextTurn))
-                .disabled(vm.visibleThread == nil)
-                Divider()
-                Button("Next Agent") {
-                    Task { @MainActor in vm.selectAdjacentAgent(1) }
-                }
-                .keyboardShortcut(keys.shortcut(.nextAgent))
-                .disabled(vm.activeMachineAgents.isEmpty)
-                Button("Previous Agent") {
-                    Task { @MainActor in vm.selectAdjacentAgent(-1) }
-                }
-                .keyboardShortcut(keys.shortcut(.previousAgent))
-                .disabled(vm.activeMachineAgents.isEmpty)
-                Divider()
-                Button("Delete Agent") {
-                    Task { @MainActor in vm.deleteSelectedAgent() }
-                }
-                .keyboardShortcut(keys.shortcut(.deleteAgent))
-                .disabled(selected == nil)
-                if !vm.activeMachineAgents.isEmpty {
-                    Divider()
-                    ForEach(Array(vm.activeMachineAgents.prefix(9).enumerated()), id: \.element.id) { index, agent in
-                        Button(agent.name) {
-                            let digit = index + 1
-                            Task { @MainActor in
-                                vm.showCommandPalette = false
-                                vm.selectAgentDigit(digit)
-                            }
-                        }
-                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
-                    }
-                }
-            }
-            // ⌃⇧1–9: machine jump (local is always ⌃⇧1, hosts follow in
-            // configured order). Wired permanently like the agent digits.
-            CommandMenu("Machines") {
-                Button("This Mac") {
-                    Task { @MainActor in vm.jumpToMachine(1) }
-                }
-                .keyboardShortcut("1", modifiers: [.control, .shift])
-                ForEach(Array(vm.remoteHosts.connections.prefix(8).enumerated()), id: \.element.id) { index, connection in
-                    Button("⌁ \(connection.config.name)") {
-                        let digit = index + 2
-                        Task { @MainActor in vm.jumpToMachine(digit) }
-                    }
-                    .keyboardShortcut(KeyEquivalent(Character("\(index + 2)")), modifiers: [.control, .shift])
-                    .disabled(connection.phase != .connected)
-                }
-            }
-            CommandMenu("Appearance") {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Button {
-                        Task { @MainActor in
-                            vm.selectAppearance(
-                                mode,
-                                systemColorScheme: ThemeManager.effectiveSystemColorScheme
-                            )
-                        }
-                    } label: {
-                        if themes.mode == mode {
-                            Label(mode.title, systemImage: "checkmark")
-                        } else {
-                            Text(mode.title)
-                        }
-                    }
-                }
-            }
+            AppSettingsCommands(vm: vm)
+            FileCommands(vm: vm, keys: keys, bindings: keys.overrides)
+            ViewCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+            PaneCommands(vm: vm, keys: keys, bindings: keys.overrides)
+            SpaceCommands(vm: vm, menu: vm.menuState)
+            AgentCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+            MachineCommands(vm: vm, menu: vm.menuState)
+            AppearanceCommands(vm: vm, mode: themes.mode)
         }
-
     }
 }
 
@@ -228,6 +62,8 @@ public struct ShepherdMacApp: App {
 /// regular app so the window fronts when run from a terminal.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // One window: no tab bar, and no "Show Tab Bar" menu items.
+        NSWindow.allowsAutomaticWindowTabbing = false
         do {
             _ = try ShepherdPiTheme.installedPath(for: ThemeManager.shared.current)
         } catch {
@@ -280,6 +116,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             NSLog("Shepherd: failed to start session server: \(error)")
         }
+    }
+
+    /// Agents keep running with the window closed; only Quit stops them.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Clicking the Dock icon with the window closed brings it back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { MainActor.assumeIsolated { MainWindow.open?() } }
+        return true
     }
 
     /// Quitting kills every agent process (sessions die with the app), so a

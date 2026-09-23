@@ -75,6 +75,11 @@ final class ShepherdViewModel {
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
     }
+    /// The window is too narrow to dock the sidebar (`ShellLayout.sidebar`), so ⇧⌘S overlays
+    /// it instead. Written by the window as it resizes; ephemeral.
+    var sidebarAutoHidden = false
+    /// The overlaid sidebar is showing (narrow window only). Ephemeral.
+    var sidebarOverlayShown = false
     /// The sidebar row being dragged, for drop validation while the drag hovers; the drag
     /// payload itself never leaves the process.
     @ObservationIgnored var sidebarDragPayload: String?
@@ -283,6 +288,8 @@ final class ShepherdViewModel {
     let remoteThreadStores = NativeThreadStores<RemoteAgentRef>()
     /// Keyboard commands for the thread on screen.
     let threadCommands = ThreadCommandCenter()
+    /// The menu bar's narrow view of this model (`MenuStateSync` keeps it current).
+    let menuState = MenuState()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = RightPaneState()
     /// System notifications when an unwatched agent finishes or blocks.

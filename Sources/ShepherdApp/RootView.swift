@@ -1,44 +1,66 @@
 import SwiftUI
+import Combine
+import AppKit
 import ShepherdUI
 import ShepherdCore
+import ShepherdRemote
 
 struct RootView: View {
     @Bindable var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
-    @ObservedObject private var appearance = AppSettings.shared
+    @ObservedObject private var appearance: AppSettings
     @Environment(\.colorScheme) private var systemColorScheme
+    @Environment(\.openWindow) private var openWindow
     @State private var renameDraft = ""
     @State private var liveSidebarWidth: Double?
     /// Unreconciled-work warning for the Delete Worktree Agent alert,
     /// computed once when the target is set (a couple of quick git probes).
     @State private var worktreeDeleteWarning: String?
+    @State private var windowWidth = AppLayout.windowDefaultWidth
+    /// In full screen the window controls are gone, so nothing needs to clear them.
+    @State private var isFullScreen = false
+
+    init(vm: ShepherdViewModel) {
+        self.vm = vm
+        _appearance = ObservedObject(wrappedValue: vm.settings)
+    }
+
+    private var sidebar: ShellLayout.Sidebar {
+        ShellLayout.sidebar(windowWidth: windowWidth, preferredWidth: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth),
+                            userHidden: vm.sidebarHidden, overlayShown: vm.sidebarOverlayShown)
+    }
 
     var body: some View {
+        let sidebar = sidebar
+        let docked = sidebar.mode == .docked
         HStack(spacing: 0) {
-            // Left column: the flat canvas runs continuously behind the traffic lights and the
-            // tree. ⌘⇧S hides it. It keeps its width while a right pane is open.
-            if !vm.sidebarHidden {
-                VStack(spacing: 0) {
-                    Color.clear
-                        .frame(height: AppLayout.trafficLightHeight)
-                        .contentShape(Rectangle())
-                        .gesture(WindowDragGesture())
-                    SidebarView(vm: vm)
-                }
-                .frame(width: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
-                .background(Color.nw.bgBase.ignoresSafeArea())
-
+            // The flat base runs continuously behind the window controls and the tree. ⇧⌘S
+            // hides it; a window too narrow to dock it overlays it instead. It keeps its width
+            // while a right pane is open.
+            if docked {
+                SidebarView(vm: vm)
+                    .frame(width: sidebar.width)
+                    .background(Color.nw.bgBase.ignoresSafeArea())
                 sidebarResizeHandle
             }
 
             VStack(spacing: 0) {
-                WorkspaceHeaderView(vm: vm)
+                WorkspaceHeaderView(
+                    vm: vm,
+                    leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
+                    showSidebar: docked ? nil : { vm.toggleSidebar() }
+                )
                 WorkspaceView(vm: vm)
             }
-            .frame(minWidth: AppLayout.mainColumnMinWidth)
+            .frame(maxWidth: .infinity)
             .background(Color.nw.bgWindow)
         }
         .coordinateSpace(.named("root-layout"))
+        .overlay(alignment: .leading) {
+            if sidebar.mode == .overlay {
+                sidebarOverlay(width: sidebar.width)
+            }
+        }
         .overlay {
             if vm.showComponentGallery {
                 ComponentGallery()
@@ -46,30 +68,39 @@ struct RootView: View {
                         Button("Close") { vm.showComponentGallery = false }
                             .buttonStyle(NWButtonStyle(.secondary)).padding(20)
                     }
-                    .zIndex(11)
             } else if vm.showSettings {
                 SettingsView(vm: vm)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .zIndex(10)
-            // ⌘K palette floats over everything; the scrim click-dismisses.
-            } else if vm.showCommandPalette {
-                ZStack(alignment: .top) {
-                    Color.nw.scrim
-                        .ignoresSafeArea()
-                        .onTapGesture { vm.showCommandPalette = false }
-                    CommandPaletteView(vm: vm)
-                        .padding(.top, AppLayout.paletteTop)
-                }
-                .zIndex(12)
             }
         }
+        // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
+        .nwCommandPalette(isPresented: Binding(
+            get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },
+            set: { vm.showCommandPalette = $0 }
+        )) {
+            CommandPaletteView(vm: vm)
+        }
+        .background { MenuStateSync(vm: vm) }
         .nwDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            windowWidth = width
+            vm.setSidebarAutoHidden(ShellLayout.sidebar(windowWidth: width, preferredWidth: CGFloat(appearance.sidebarWidth),
+                                                        userHidden: vm.sidebarHidden, overlayShown: false).autoHidden)
+        }
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
-        .onAppear { vm.systemAppearanceChanged(systemColorScheme) }
+        .onAppear {
+            vm.systemAppearanceChanged(systemColorScheme)
+            MainWindow.open = { [openWindow] in openWindow(id: MainWindow.id) }
+        }
         .onChange(of: systemColorScheme) { vm.systemAppearanceChanged(systemColorScheme) }
+        // The overlaid sidebar is for picking: it closes once something is picked.
+        .onChange(of: vm.selectedAgentID) { vm.dismissSidebarOverlay() }
+        .onChange(of: vm.selectedRemoteAgent) { vm.dismissSidebarOverlay() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in isFullScreen = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in isFullScreen = false }
         .sheet(isPresented: $vm.showNewAgentSheet) {
             NewAgentSheet(vm: vm)
         }
@@ -313,6 +344,24 @@ struct RootView: View {
         }
     }
 
+    /// The sidebar over the workspace in a window too narrow to dock it. Clicking outside
+    /// closes it, as does picking a row.
+    private func sidebarOverlay(width: CGFloat) -> some View {
+        ZStack(alignment: .leading) {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { vm.dismissSidebarOverlay() }
+                .accessibilityHidden(true)
+            SidebarView(vm: vm)
+                .frame(width: width)
+                .background(Color.nw.bgBase.ignoresSafeArea())
+                .overlay(alignment: .trailing) { NWHairline(.vertical) }
+                .shadow(color: Color.nw.popoverShadow, radius: 16)
+        }
+    }
+
+    /// The sidebar's trailing edge, and its drag handle. Dragging never narrows the main
+    /// column below its minimum.
     private var sidebarResizeHandle: some View {
         Color.nw.lineSubtle
             .frame(width: 1)
@@ -320,17 +369,12 @@ struct RootView: View {
                 Color.clear
                     .frame(width: 9)
                     .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
+                    .pointerStyle(.columnResize)
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("root-layout"))
                             .onChanged { value in
-                                liveSidebarWidth = AppSettings.clampSidebarWidth(Double(value.location.x))
+                                let room = Double(windowWidth - 1 - AppLayout.mainColumnMinWidth)
+                                liveSidebarWidth = AppSettings.clampSidebarWidth(min(Double(value.location.x), room))
                             }
                             .onEnded { _ in
                                 if let width = liveSidebarWidth {
@@ -341,18 +385,28 @@ struct RootView: View {
                     )
             }
             .zIndex(1)
+            .accessibilityLabel("Resize sidebar")
     }
 }
 
 // MARK: Workspace header
 
-/// The 52pt header over the workspace: the thread header for the agent on screen (local or
-/// remote), else a breadcrumb. The window has no other title.
+/// The 44pt toolbar over the workspace: the thread toolbar for the agent on screen (local or
+/// remote), else the space's name. The window has no other title.
 struct WorkspaceHeaderView: View {
     var vm: ShepherdViewModel
+    /// Clears the window controls while the sidebar is not docked (zero in full screen).
+    var leadingInset: CGFloat = 0
+    /// Shown while the sidebar is not docked.
+    var showSidebar: (() -> Void)?
+    @ObservedObject private var keys: KeybindingsStore
 
-    /// With the sidebar hidden the header runs under the traffic lights.
-    private var inset: CGFloat { vm.sidebarHidden ? 64 : 0 }
+    init(vm: ShepherdViewModel, leadingInset: CGFloat = 0, showSidebar: (() -> Void)? = nil) {
+        self.vm = vm
+        self.leadingInset = leadingInset
+        self.showSidebar = showSidebar
+        _keys = ObservedObject(wrappedValue: vm.keybindings)
+    }
 
     var body: some View {
         Group {
@@ -360,24 +414,27 @@ struct WorkspaceHeaderView: View {
                let connection = vm.remoteHosts.connections.first(where: { $0.id == remote.hostID }),
                let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
                 if vm.remoteInspectingAgent == remote {
-                    PlainHeader(project: "⌁ \(connection.config.name)", title: "\(agent.name) · terminal", leadingInset: inset)
+                    PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
                 } else {
-                    ThreadHeader(store: vm.remoteThreadStores.store(for: remote), project: "⌁ \(connection.config.name)",
-                                 title: agent.name, leadingInset: inset, paneOpen: vm.isRightPaneOpen,
-                                 togglePane: { vm.toggleRightPane() }, rename: { vm.remoteRenameTarget = remote })
+                    threadHeader(store: vm.remoteThreadStores.store(for: remote), project: "⌁ \(connection.config.name)",
+                                 title: agent.name, rename: { vm.remoteRenameTarget = remote })
                 }
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
                       let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
-                ThreadHeader(store: vm.threadStores.store(for: agent.id), project: space.name, title: agent.name,
-                             leadingInset: inset, paneOpen: vm.isRightPaneOpen,
-                             togglePane: { vm.toggleRightPane() }, rename: { vm.agentRenameTarget = agent.id })
-            } else if let space = vm.selectedSpace {
-                PlainHeader(project: space.name, title: "No agent selected", leadingInset: inset)
+                threadHeader(store: vm.threadStores.store(for: agent.id), project: space.name, title: agent.name,
+                             rename: { vm.agentRenameTarget = agent.id })
             } else {
-                PlainHeader(project: "Shepherd", title: "No agent selected", leadingInset: inset)
+                PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar)
             }
         }
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
+    }
+
+    private func threadHeader(store: NativeThreadStore, project: String, title: String, rename: @escaping () -> Void) -> ThreadHeader {
+        ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
+                     reviewOpen: vm.isReviewPaneShowing, inspectorOpen: vm.isInspectorShowing,
+                     reviewShortcut: keys.display(.toggleRightPane), inspectShortcut: keys.display(.inspectSubagent),
+                     toggleReview: { vm.toggleReviewPane() }, toggleSubagents: { vm.toggleSubagentPane() }, rename: rename)
     }
 }

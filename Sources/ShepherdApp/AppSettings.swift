@@ -333,8 +333,8 @@ final class AppSettings: ObservableObject {
 
     static let uiDensityRange: ClosedRange<Double> = 0.8...1.5
     static let uiTextScaleRange: ClosedRange<Double> = 0.85...1.3
-    static let sidebarWidthRange: ClosedRange<Double> = 190...340
-    static let defaultSidebarWidth: Double = 256
+    static let sidebarWidthRange = Double(AppLayout.sidebarMinWidth)...Double(AppLayout.sidebarMaxWidth)
+    static let defaultSidebarWidth = Double(AppLayout.sidebarDefaultWidth)
 
     static func clampSidebarWidth(_ width: Double) -> Double {
         min(max(width, sidebarWidthRange.lowerBound), sidebarWidthRange.upperBound)
