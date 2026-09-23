@@ -92,13 +92,19 @@ extension PreviewTests {
         }
     }
 
-    /// The minimum window with the sidebar called up: it overlays the thread.
+    /// The minimum window with the sidebar called up: it overlays the thread. Captured once its
+    /// slide has settled to the last fraction of a point (about 1.7× the pane's anchor).
     @Test func appWindowMinimumWithSidebarOverlay() async throws {
         let (workspace, store) = try await liveWindow()
         defer { workspace.stop() }
-        try await Preview.render("app-window-minimum-sidebar", size: CGSize(width: 720, height: 600),
-                                 ready: { store.ready && workspace.vm.sidebarAutoHidden },
-                                 afterReady: { if !workspace.vm.sidebarOverlayShown { workspace.vm.toggleSidebar() } }) {
+        var shownAt: ContinuousClock.Instant?
+        try await Preview.render("app-window-minimum-sidebar", size: CGSize(width: 720, height: 600), ready: {
+            guard store.ready, workspace.vm.sidebarAutoHidden else { return false }
+            if !workspace.vm.sidebarOverlayShown { workspace.vm.toggleSidebar() }
+            let shown = shownAt ?? .now
+            shownAt = shown
+            return ContinuousClock.now - shown > .seconds(NW.Motion.pane.duration * 2)
+        }) {
             RootView(vm: workspace.vm)
         }
     }
