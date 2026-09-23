@@ -362,7 +362,7 @@ struct PaneLeafView: View {
 /// the same placeholder a shell pane would.
 struct AgentThreadPane: View {
     @ObservedObject var session: TerminalSessionStore.PaneSession
-    @ObservedObject var store: NativeThreadStore
+    var store: NativeThreadStore
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request

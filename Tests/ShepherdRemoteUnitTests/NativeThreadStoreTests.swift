@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
@@ -404,6 +405,69 @@ struct NativeThreadStoreTests {
         #expect(!store.settledRunning && !store.ready)
     }
 
+    // MARK: Rows
+
+    @Test func eachReplyRowCarriesItsPresentationAndItsPrompt() async throws {
+        let (store, _, task) = await started(F.snapshot(messages: [F.user("go", id: "u"), F.assistant("Reading.", id: "a"), F.tool("read", callID: "r")]))
+        defer { task.cancel() }
+        #expect(store.rows.map(\.id) == ["u", "u/reply"])
+        let reply = try #require(store.rows.last)
+        #expect(reply.promptText == "go" && !reply.live)
+        #expect(reply.presentation?.items.count == 2)
+    }
+
+    @Test func onlyTheLastReplyIsLiveWhileTheAgentRuns() async {
+        let (store, _, task) = await started(F.snapshot(running: true, messages: [F.user(id: "u1"), hi, F.user(id: "u2")],
+                                                        provisional: [F.assistant("streaming", id: "live")]))
+        defer { task.cancel() }
+        #expect(store.rows.map(\.live) == [false, false, false, true])
+    }
+
+    @Test func aFollowUpSentWhileRunningIsQueuedBelowTheLiveReply() async throws {
+        let live = F.assistant("streaming reply", id: "live")
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [F.user(id: "u0"), hi], provisional: [live]))
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = "and then this"
+        await store.send()
+        let echo = try #require(store.pending.first)
+        #expect(echo.status == "queued")
+        #expect(store.displayedMessages.map(\.entryID) == ["u0", "a", "live", echo.entryID])
+        #expect(store.rows.map(\.live) == [false, true, false], "the streaming reply stays live above the queued prompt")
+    }
+
+    @Test func aPersistedPromptKeepsTheTurnIdentityOfItsEcho() async throws {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = "do the thing"
+        await store.send()
+        let echo = try #require(store.pending.first)
+        #expect(store.rows.last?.id == echo.entryID)
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("do the thing", id: "u"), F.assistant("done", id: "r")])
+        await store.refresh()
+        #expect(store.pending.isEmpty)
+        #expect(store.rows.map(\.id) == ["a", echo.entryID, echo.entryID + "/reply"])
+    }
+
+    @Test func typingADraftOrAnUnchangedPollInvalidatesNothingTheThreadDraws() async {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        let invalidated = Flag()
+        withObservationTracking {
+            _ = store.rows
+            _ = store.displayedMessages
+            _ = store.placements
+        } onChange: {
+            invalidated.set()
+        }
+        store.draft = "typing"
+        host.snapshot = F.snapshot(revision: 2, messages: [hi])
+        await store.refresh()
+        #expect(store.snapshot?.revision == 2)
+        #expect(!invalidated.value)
+    }
+
     @Test func stopDetachesTheStoreFromItsHost() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
@@ -411,4 +475,12 @@ struct NativeThreadStoreTests {
         await store.refresh()
         #expect(host.requests.count == 1 && !store.supports("send"))
     }
+}
+
+/// Set once from an observation's change handler.
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var raised = false
+    var value: Bool { lock.withLock { raised } }
+    func set() { lock.withLock { raised = true } }
 }

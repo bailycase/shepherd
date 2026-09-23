@@ -559,7 +559,7 @@ private struct DiffLineRow: View {
 struct ReviewPaneHost: View {
     let session: ReviewSession
     let actions: ReviewActions
-    @ObservedObject var store: NativeThreadStore
+    var store: NativeThreadStore
 
     var body: some View {
         ReviewPane(session: session, actions: actions,

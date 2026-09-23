@@ -9,7 +9,7 @@ import ShepherdRemote
 /// one step smaller than the thread, following live, and a Steer composer. A finished run is
 /// read-only: a Result block, "from parent" captions, and Re-run / Fork / Copy instead.
 struct SubagentInspector: View {
-    @ObservedObject var store: NativeThreadStore
+    var store: NativeThreadStore
     let runID: String
     let active: Bool
     let close: () -> Void
