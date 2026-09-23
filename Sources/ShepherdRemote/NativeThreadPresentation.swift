@@ -649,8 +649,8 @@ public struct NativeScrollFollower: Equatable, Sendable {
     public var userScrolling = false
     /// Content grew while detached; cleared on re-stick.
     public var unseen = false
-    /// A programmatic jump (previous/next turn) is still animating: the positions it passes
-    /// through are not the reader's, so they neither re-stick nor detach.
+    /// A programmatic jump (previous/next turn) has not left the bottom band yet: its first
+    /// frames start at the tail, and those positions are not the reader asking to follow.
     public var jumping = false
 
     public init(sticky: Bool = true, userScrolling: Bool = false, unseen: Bool = false) {
@@ -666,8 +666,13 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// height rising.
     public mutating func observe(distanceFromBottom: Double, userIntent: Bool = false, contentGrew: Bool = false) {
         if jumping {
-            if contentGrew { unseen = true }
-            return
+            // The jump ends once it leaves the band (it landed on an earlier turn) or the reader
+            // scrolls; until then, positions inside the band don't re-stick.
+            guard userIntent || distanceFromBottom > Self.threshold else {
+                if contentGrew { unseen = true }
+                return
+            }
+            jumping = false
         }
         if distanceFromBottom <= Self.threshold {
             sticky = true
@@ -685,19 +690,11 @@ public struct NativeScrollFollower: Equatable, Sendable {
         jumping = false
     }
 
-    /// A jump to an earlier turn starts: detach, and ignore the animation's positions (starting
-    /// at the tail, its first frames sit inside the threshold and used to re-stick).
+    /// A jump to an earlier turn starts: detach, and don't let the scroll's first frames (still
+    /// at the tail) re-stick. No timing is involved: the jump ends when it leaves the band.
     public mutating func beginJump() {
         sticky = false
         jumping = true
-    }
-
-    /// The jump's scroll settled at `distanceFromBottom`: judge that position like any other.
-    /// A jump that landed at the bottom (nothing to move to) follows the tail again.
-    public mutating func endJump(distanceFromBottom: Double) {
-        guard jumping else { return }
-        jumping = false
-        observe(distanceFromBottom: distanceFromBottom)
     }
 
     /// The pill shows while detached and something is happening or already happened below.
