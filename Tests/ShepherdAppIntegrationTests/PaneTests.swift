@@ -9,7 +9,7 @@ import Testing
 /// Pane control requests from an agent's panes extension, over the real extension socket.
 /// An agent may only touch its own layout, never closes or types into its own pi pane, and
 /// a layout always keeps its last pane.
-@Suite("Agent pane control", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Agent pane control", .mainActorExclusive)
 @MainActor
 struct PaneControlTests {
     @Test func anAgentCannotCloseItsOwnPiPane() async throws {
@@ -134,7 +134,7 @@ struct PaneControlTests {
 }
 
 /// Pane focus and layout rules the user drives from the keyboard (⌘D, ⌘W, ⌥⌘←/→).
-@Suite("Pane layout", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Pane layout", .mainActorExclusive)
 @MainActor
 struct PaneLayoutTests {
     @Test func splittingTheFocusedPaneFocusesTheNewPaneAndPersists() async throws {

@@ -107,11 +107,14 @@ Tests come in tiers, and the switch is `--filter` on target names.
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
   Keep timeouts generous (10–30 s), but make the happy path fast.
-- Every integration and preview suite carries `.integrationTimeLimit` (two minutes per test), so
-  a hang fails the test that hung, by name.
-- Every `@MainActor` integration and preview suite carries `.mainActorExclusive`: those tests
-  share the one main thread, so they run one at a time across suites while everything else
-  stays parallel.
+- Every integration and preview suite is time-limited to two minutes per test, so a hang fails
+  the test that hung, by name.
+  - Most suites carry `.integrationTimeLimit`.
+  - `@MainActor` suites carry `.mainActorExclusive` instead. Those tests share the one main
+    thread, so they run one at a time across suites while everything else stays parallel. The
+    trait starts the clock only when a test gets its turn. Never add a `.timeLimit` beside it:
+    that clock also runs while the test waits in the queue, so tests near the back would fail
+    without having hung.
 - `.serialized` orders the tests inside its own suite and nothing more. It does not isolate a
   suite from any other: every suite of a target (with SwiftPM's native build system, of every
   target) shares one process.

@@ -10,7 +10,7 @@ import Testing
 /// A client view model driving a second in-process Shepherd over the authenticated TCP
 /// remote protocol. The host runs its own view model, which answers host-side requests
 /// (reviews, children, worktrees) exactly as a real host does.
-@Suite("Remote hosts", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Remote hosts", .mainActorExclusive)
 @MainActor
 struct RemoteHostTests {
     /// Both machines hold an identical workspace, so every id matches across them: nothing
@@ -200,7 +200,7 @@ struct RemoteHostTests {
 }
 
 /// Worktree queries a remote client sends to the host that owns the checkout.
-@Suite("Remote worktrees", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Remote worktrees", .mainActorExclusive)
 @MainActor
 struct RemoteWorktreeTests {
     @MainActor private struct Setup {
@@ -295,7 +295,7 @@ struct RemoteWorktreeTests {
 
 /// Remote pane streams: attach at the viewer's settled grid, and detaching releases the
 /// viewport without killing the host process.
-@Suite("Remote pane streams", .integrationTimeLimit, .mainActorExclusive)
+@Suite("Remote pane streams", .mainActorExclusive)
 @MainActor
 struct RemotePaneStreamTests {
     @Test func theFirstAttachUsesTheViewersSettledGrid() async throws {
