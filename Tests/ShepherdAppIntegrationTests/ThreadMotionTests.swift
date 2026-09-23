@@ -101,6 +101,37 @@ struct ThreadMotionTests {
         #expect(outputRecording.inBetween.isEmpty, "the output lines go at once")
     }
 
+    /// Switching back to an agent is a visibility flip: what it did while hidden (new turns, a
+    /// question waiting in the composer) is simply there once its thread catches up, while the
+    /// same changes on screen make their entrances.
+    @Test func anAgentSwitchedBackToCatchesUpAtOnce() async throws {
+        let dialog = NativeThreadDialog(id: "d1", kind: .confirm, title: "Deploy to production?", message: "This pushes main to the fleet.")
+        let later = Fixtures.snapshot(Fixtures.history(2) + [Fixtures.user("u2", "While you were away"),
+                                                             Fixtures.assistant("a2", "Done while hidden, with a reply long enough to read.")],
+                                      dialogs: [dialog], revision: 2)
+        let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.visibility.active = false
+        try await eventuallyOnMain("the hidden thread to stop polling") { !thread.store.ready }
+        thread.stage(later)
+
+        // Right of the old turns' footer buttons: Retry comes back as the store gets ready, a
+        // control enabling with its own fade.
+        let content = CGRect(x: 100, y: 0, width: Self.size.width - 100, height: Self.size.height)
+        let recording = await MotionProbe.record(thread.window, region: content) { thread.visibility.active = true }
+
+        #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the thread caught up")
+        #expect(recording.inBetween.isEmpty, "\(recording.inBetween.count) frames between the stale thread and the caught-up one")
+
+        // The control: on screen, the same change animates.
+        let shown = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
+        defer { shown.close() }
+        try await shown.waitUntilReady()
+        let onScreen = await MotionProbe.record(shown.window, region: content) { shown.serve(later) }
+        #expect(!onScreen.inBetween.isEmpty)
+    }
+
     // MARK: Composer
 
     /// ⇧⌘M's picker comes in over frames (growing from the chip's corner, or under Reduce Motion
@@ -330,8 +361,26 @@ struct ThreadComponentMotionTests {
 /// A `ThreadView` in an off-screen window, served snapshots the test sets.
 @MainActor
 private final class MotionThread {
+    /// Whether the thread is on screen: a hidden agent's thread stops polling.
+    @MainActor @Observable final class Visibility {
+        var active = true
+    }
+
+    private struct Hosted: View {
+        let visibility: Visibility
+        let store: NativeThreadStore
+        let request: NativeThreadStore.Request
+        let models: [PiModelCatalog.Entry]
+
+        var body: some View {
+            ThreadView(store: store, active: visibility.active, isFocused: false, request: request, commandKey: "motion",
+                       listModels: { models })
+        }
+    }
+
     let store = NativeThreadStore()
     let commands = ThreadCommandCenter()
+    let visibility = Visibility()
     private var snapshot: NativeThreadSnapshot
     let window: OffscreenWindow
 
@@ -343,9 +392,7 @@ private final class MotionThread {
             if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
             return .snapshot(value: self.snapshot)
         }
-        let models = Fixtures.models
-        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "motion",
-                               listModels: { models })
+        window.show(Hosted(visibility: visibility, store: store, request: request, models: Fixtures.models)
             .environment(\.threadCommands, commands)
             .environment(\._accessibilityReduceMotion, reduceMotion))
     }
@@ -354,6 +401,11 @@ private final class MotionThread {
     func serve(_ next: NativeThreadSnapshot) {
         snapshot = next
         Task { await store.refresh() }
+    }
+
+    /// Serves `next` on the store's next pull, without pulling.
+    func stage(_ next: NativeThreadSnapshot) {
+        snapshot = next
     }
 
     func waitUntilReady() async throws {

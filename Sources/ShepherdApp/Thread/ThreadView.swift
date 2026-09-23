@@ -61,7 +61,8 @@ struct ThreadView: View {
         let working = running && store.snapshot?.dialogs.isEmpty != false ? workingLabel(liveRow) : nil
         // Loaded before this change: the tail row appearing with the first load just shows.
         let settled = arrivals.armed
-        let arrived = arrivals.update(rows.map(\.id), loaded: store.snapshot != nil)
+        let arrived = arrivals.update(rows.map(\.id), session: store.snapshot.map { $0.piSessionID + ":" + $0.generation },
+                                      active: active, ready: store.ready)
         ZStack(alignment: .bottom) {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -340,12 +341,14 @@ struct ThreadView: View {
 }
 
 /// Which turns arrived at a thread's tail with its latest change, so they (and only they) make
-/// an entrance. The first load, a page of older history, and a window or session swapped out
-/// from under the view arrive at once. Read in `body`, and a reference, so keeping it current
-/// never re-renders the thread; the same rows always answer the same set.
+/// an entrance. Loading is instant: opening the thread, the first pull after it comes back on
+/// screen (an agent switched back to catches up at once), a page of older history, and a
+/// window or session swapped out from under the view. Read in `body`, and a reference, so
+/// keeping it current never re-renders the thread; the same rows always answer the same set.
 @MainActor
 final class ThreadArrivals {
-    /// The thread has loaded once: from now on, turns appended at its tail arrive.
+    /// The thread is on screen and has loaded since it came there: from now on, turns appended
+    /// at its tail arrive.
     private(set) var armed = false
     /// The first rows this saw were still loading ("Starting pi…").
     private(set) var startedLoading = false
@@ -354,32 +357,38 @@ final class ThreadArrivals {
     private var arrived: Set<String> = []
 
     private struct Signature: Equatable {
+        var session: String?
         var count: Int
         var first: String?
         var last: String?
     }
 
-    /// The rows in `ids` that arrived with this change. `loaded` is whether the thread has a
-    /// snapshot yet.
-    func update(_ ids: [String], loaded: Bool) -> Set<String> {
+    /// The rows in `ids` that arrived with this change. `session` names the snapshot's pi
+    /// session (nil before the first one), `active` is whether the thread is on screen (a hidden
+    /// thread stops polling), and `ready` whether the store's latest pull has landed.
+    func update(_ ids: [String], session: String?, active: Bool, ready: Bool) -> Set<String> {
         if !seen {
             seen = true
-            startedLoading = !loaded
+            startedLoading = session == nil
         }
-        let next = Signature(count: ids.count, first: ids.first, last: ids.last)
-        guard next != signature || (loaded && !armed) else { return arrived }
-        let last = signature?.last
-        signature = next
+        if !active { armed = false }
+        let next = Signature(session: session, count: ids.count, first: ids.first, last: ids.last)
         guard armed else {
-            armed = loaded
+            signature = next
             arrived = []
+            armed = active && ready && session != nil
             return arrived
         }
-        if let last, let index = ids.lastIndex(of: last) {
+        guard next != signature else { return arrived }
+        let previous = signature
+        signature = next
+        if previous?.session != session {
+            arrived = []
+        } else if let last = previous?.last, let index = ids.lastIndex(of: last) {
             arrived = Set(ids[(index + 1)...])
         } else {
             // An empty thread's first turns arrive; a different window does not.
-            arrived = last == nil ? Set(ids) : []
+            arrived = previous?.last == nil ? Set(ids) : []
         }
         return arrived
     }
