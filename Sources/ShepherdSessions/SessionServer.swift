@@ -1838,8 +1838,8 @@ public final class SessionServer: @unchecked Sendable {
                   agents[from].spaceID == agents[to].spaceID else {
                 throw SessionServerError.conflict("Agents must belong to the same space")
             }
-            guard from != to else { return }
-            try self.mutateState { $0.agents.insert($0.agents.remove(at: from), at: to) }
+            guard from != to, let moved = agents.moving(agentID, before: target) else { return }
+            try self.mutateState { $0.agents = moved }
         }
     }
 
