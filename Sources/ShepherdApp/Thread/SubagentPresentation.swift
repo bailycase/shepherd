@@ -164,6 +164,11 @@ enum SubagentPresentation {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    /// "1 more file" under the touched files the inspector lists, of `count` in all.
+    static func moreFiles(_ count: Int) -> String {
+        plural(count - AppLayout.inspectorMaxFiles, "more file")
+    }
+
     // MARK: Helpers
 
     /// The layout truncates; this only keeps a runaway first sentence short.

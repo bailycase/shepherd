@@ -228,6 +228,11 @@ struct SubagentPresentationTests {
         #expect(SubagentPresentation.goalNote(run) == nil)
     }
 
+    @Test(arguments: [(AppLayout.inspectorMaxFiles + 1, "1 more file"), (AppLayout.inspectorMaxFiles + 3, "3 more files")])
+    func filesPastTheListAreCounted(count: Int, text: String) {
+        #expect(SubagentPresentation.moreFiles(count) == text)
+    }
+
     @Test(arguments: [("anthropic/claude-sonnet", "claude-sonnet"), ("gpt-5", "gpt-5"), ("cpa/~anthropic/claude-haiku", "claude-haiku")])
     func modelTagsDropTheProvider(model: String, tag: String) {
         #expect(SubagentPresentation.modelTag(model) == tag)

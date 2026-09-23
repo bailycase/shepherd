@@ -114,8 +114,17 @@ struct AgentsPreviewTests {
         }
     }
 
+    /// The finished tests run with its touched files and inline code in its result.
+    private static var doneRuns: [ChildRun] {
+        var runs = Threads.doneRuns
+        runs[2].summary = "Added 6 tests to `NativePresentationTests`; all 14 pass on **macOS** and iOS."
+        runs[2].files = [ChildFileChange(path: "Tests/ShepherdRemoteUnitTests/NativePresentationTests.swift", added: 96, removed: 3),
+                         ChildFileChange(path: "Tests/ShepherdRemoteUnitTests/Fixtures.swift", added: 22, removed: 1)]
+        return runs
+    }
+
     @Test func threadSubagentInspectorFinished() async throws {
-        let fixture = ThreadFixture(Threads.subagents(Threads.doneRuns, running: false))
+        let fixture = ThreadFixture(Threads.subagents(Self.doneRuns, running: false))
         fixture.transcripts["native-tests"] = Threads.testsTranscript
         defer { fixture.store.stop() }
         let panes = RightPaneState()
