@@ -129,8 +129,10 @@ Tests come in tiers, and the switch is `--filter` on target names.
   `gh` and `pi` that refuse to run, and the scratch `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it
   first in every zsh a test starts. Without them, a login shell from a minimal environment
   (Xcode, launchd) reaches the user's own `gh` and `pi`, because the system startup files
-  rebuild PATH. The root is removed at exit. A target that touches the filesystem, spawns processes, or reaches `ShepherdPaths`
-  depends on `ShepherdTestKit`.
+  rebuild PATH. The root is removed at exit.
+- A target depends on `ShepherdTestKit` when the code it tests can reach the support directory,
+  pi's directory, `UserDefaults`, the drop directory, or a shell. With the swiftbuild build
+  system each target is its own test bundle, so a target without it gets no isolation.
 - Otherwise pass state in: `ShepherdPaths.supportDirectory(environment:)`,
   `PiConfig.agentDirectory(environment:)`, `TerminalImageDrop.resolve(_:directory:)`.
 - A test that needs process-wide state anyway (a signal disposition) or blocks the main queue runs
