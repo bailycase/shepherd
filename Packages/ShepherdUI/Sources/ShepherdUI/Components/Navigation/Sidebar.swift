@@ -131,6 +131,7 @@ public struct NWSidebarSection<Accessory: View>: View {
     let toggle: (() -> Void)?
     @ViewBuilder let accessory: () -> Accessory
     @State private var hovering = false
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     public init(_ title: String, detail: Detail = .none, collapsed: Bool = false, hoverHint: String? = nil,
                 toggle: (() -> Void)? = nil, @ViewBuilder accessory: @escaping () -> Accessory) {
@@ -160,7 +161,8 @@ public struct NWSidebarSection<Accessory: View>: View {
             .disabled(toggle == nil)
             .accessibilityLabel(accessibilityText)
             .accessibilityAddTraits(.isHeader)
-            if hovering { accessory() }
+            // A hover affordance for the pointer; always there for VoiceOver.
+            if hovering || voiceOver { accessory() }
         }
         .padding(EdgeInsets(top: NW.Space.l, leading: NW.Space.m, bottom: NW.Space.xs, trailing: NW.Space.m))
         .onHover { hovering = $0 }
