@@ -955,9 +955,9 @@ Keyboard is first-class, and the fast path never requires a dialog. Rebindable c
 `KeybindingsStore` (`Keybindings.swift`; defaults in `ShortcutAction.defaultChord`, overrides
 in UserDefaults under `shepherd.keybindings`).
 
-- **One source:** menus, palette keycaps, Settings ▸ Keyboard, and the Ghostty unbind list all
-  read the store. Hardcoding a chord in a view is a bug, and a hint is never shown for a chord
-  that isn't wired.
+- **One source:** menus, palette keycaps, Settings ▸ Keyboard, copy that names a chord
+  (Settings ▸ Agents and Terminal), and the Ghostty unbind list all read the store. Hardcoding a
+  chord in a view is a bug, and a hint is never shown for a chord that isn't wired.
 - **Rules for a rebound chord:** it must include ⌘, must not use a digit (⌘1–9, ⌃⇧1–9), must not
   be ⌘, or a plain ⌘ system or terminal chord (⌘Q, ⌘H, ⌘M, ⌘C, ⌘V, ⌘X, ⌘A, ⌘Z), and must not be
   another action's chord.
@@ -1022,9 +1022,6 @@ These places in the code break this document and should be fixed toward it:
   (`ToolOutputSheet`), the question panel's 140pt message cap, the empty thread's top offsets,
   the empty workspace's 420pt measure, and `PanePlaceholder`'s padding should move into
   `AppLayout+Thread.swift` and `AppLayout+Navigation.swift`.
-- **Chords in copy:** Settings ▸ Agents' explanation names ⌘N and Settings ▸ Terminal's shell
-  row names ⌘D in plain text, so a rebound chord leaves them wrong. They should read from
-  `KeybindingsStore` or not name the chord.
 
 ## iOS
 

@@ -43,6 +43,20 @@ struct KeybindingsTests {
         #expect(ShortcutAction.newAgent.sentenceTitle == "New agent in current checkout")
     }
 
+    /// Settings copy that names a rebindable chord reads it from the store, so a rebind never
+    /// leaves the copy naming the old chord.
+    @Test func settingsCopyNamesChordsAsTheyAreBound() {
+        let keys = KeybindingsStore(store: Fixture.defaults())
+        #expect(AgentSettings.explanation(keys).contains("⌘N"))
+        #expect(TerminalSettings.shellSubtitle(keys).contains("⌘D"))
+
+        #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .newAgent) == nil)
+        #expect(keys.assign(KeyChord(key: "e", command: true, option: true), to: .splitVertical) == nil)
+        let agents = AgentSettings.explanation(keys), shell = TerminalSettings.shellSubtitle(keys)
+        #expect(agents.contains(keys.display(.newAgent)) && !agents.contains("⌘N"))
+        #expect(shell.contains(keys.display(.splitVertical)) && !shell.contains("⌘D"))
+    }
+
     // MARK: Validation
 
     @Test func chordsWithoutCommandAreRejected() {

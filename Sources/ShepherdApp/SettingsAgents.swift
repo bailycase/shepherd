@@ -7,13 +7,13 @@ import ShepherdSessions
 
 struct AgentSettings: View {
     @Bindable private var settings = AppSettings.shared
+    private var keys: KeybindingsStore { .shared }
     @State private var modelOptions: [String] = []
     /// pi's own default from its settings.json, read with the catalog (never in `body`).
     @State private var piDefaultModel = "pi's own default"
 
     var body: some View {
-        SettingsPage(title: "Agents",
-                     explanation: "Defaults for agents you create with ⌘N or the New Agent sheet. Existing agents keep their settings.") {
+        SettingsPage(title: "Agents", explanation: Self.explanation(keys)) {
             SettingsGroup(title: "New agents") {
                 SettingsRow(title: "Default model",
                             subtitle: "Preselected in the New Agent sheet. “Use pi's default” passes no --model at all.") {
@@ -40,5 +40,10 @@ struct AgentSettings: View {
             modelOptions = ids
             if let fallback { piDefaultModel = fallback }
         }
+    }
+
+    /// Names New Agent's chord as it is bound now, so a rebind never leaves the copy wrong.
+    static func explanation(_ keys: KeybindingsStore) -> String {
+        "Defaults for agents you create with \(keys.display(.newAgent)) or the New Agent sheet. Existing agents keep their settings."
     }
 }

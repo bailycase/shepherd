@@ -13,6 +13,7 @@ struct ComponentGallery: View {
     @State private var stepper = 4
     @State private var field = ""
     @State private var search = ""
+    private var keys: KeybindingsStore { .shared }
 
     var body: some View {
         ScrollView {
@@ -93,7 +94,7 @@ struct ComponentGallery: View {
                 Toggle("Done when", isOn: $check).toggleStyle(.nwCheckbox)
             }
             HStack(spacing: NW.Space.l) {
-                NWKeycap("⇧⌘N")
+                NWKeycap(keys.display(.newSpace))
                 NWCountBadge(19)
                 NWCountBadge(3, tone: .attention)
                 NWCountBadge(1, tone: .failed)
@@ -158,7 +159,7 @@ struct ComponentGallery: View {
             }
             NWBanner(.attention, title: "ios asks: keep MobileTokens as an alias?", message: "Migrating touches 31 call sites.")
             NWEmptyState(Text("New agent in \(Text("~/dev/shepherd").font(.nwMono(15, .medium)))"),
-                         message: "Describe the task. Attach files with ⌘⇧A, or type / for commands.", showsMark: false, framed: true)
+                         message: "Describe the task. Drop or paste images to attach them, or type / for commands.", showsMark: false, framed: true)
         }
     }
 
@@ -170,7 +171,7 @@ struct ComponentGallery: View {
                 NWHairline()
                 VStack(alignment: .leading, spacing: 2) {
                     NWSectionHeader("Commands").padding(.horizontal, 12).padding(.vertical, 6)
-                    menuRow("New agent", icon: "plus", chord: "⌘N", selected: true)
+                    menuRow("New agent", icon: "plus", chord: keys.display(.newAgent), selected: true)
                     menuRow("Settings", icon: "gearshape", chord: "⌘,", selected: false)
                 }
                 .padding(NW.Space.m)

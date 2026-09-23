@@ -9,6 +9,7 @@ import ShepherdUI
 struct TerminalSettings: View {
     var vm: ShepherdViewModel
     @Bindable private var settings = AppSettings.shared
+    private var keys: KeybindingsStore { .shared }
     @State private var families: [String] = []
     @State private var shells: [String] = []
 
@@ -39,8 +40,7 @@ struct TerminalSettings: View {
                 }
             }
             SettingsGroup(title: "Shell", footnote: "A new shell applies to panes opened afterwards.") {
-                SettingsRow(title: "Shell",
-                            subtitle: "Used by ⌘D splits and the panes an agent opens.") {
+                SettingsRow(title: "Shell", subtitle: Self.shellSubtitle(keys)) {
                     NWPopupMenu(settings.shellPath, mono: true, minWidth: AppLayout.settingsPopupWidth) {
                         ForEach(shells, id: \.self) { shell in
                             Button(shell) { settings.shellPath = shell }
@@ -52,6 +52,11 @@ struct TerminalSettings: View {
         }
         .task(id: settings.terminalFontFamily) { families = TerminalFontCatalog.families(including: settings.terminalFontFamily) }
         .task(id: settings.shellPath) { shells = AppSettings.knownShells(including: settings.shellPath) }
+    }
+
+    /// Names the split chord as it is bound now, so a rebind never leaves the copy wrong.
+    static func shellSubtitle(_ keys: KeybindingsStore) -> String {
+        "Used by \(keys.display(.splitVertical)) splits and the panes an agent opens."
     }
 }
 
