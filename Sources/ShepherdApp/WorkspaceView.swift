@@ -46,9 +46,16 @@ struct WorkspaceView: View {
                         .id(remote)
                 }
 
-                if visibleTabID == nil, vm.selectedRemoteAgent == nil {
-                    EmptyWorkspace(vm: vm)
+                // The empty state cross-fades on a layer of its own; the layouts under it still
+                // flip at once.
+                let empty = visibleTabID == nil && vm.selectedRemoteAgent == nil
+                ZStack {
+                    if empty {
+                        EmptyWorkspace(vm: vm)
+                            .nwTransition(.content)
+                    }
                 }
+                .nwAnimation(.content, value: empty)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.nw.bgWindow)
@@ -63,13 +70,25 @@ struct WorkspaceView: View {
     }
 }
 
-/// No agent on screen: a space with no agents yet, or no spaces at all.
+/// No agent on screen: a space with no agents yet, or no spaces at all. Its variants cross-fade
+/// into one another.
 struct EmptyWorkspace: View {
     var vm: ShepherdViewModel
     private var keys: KeybindingsStore { .shared }
 
+    private enum Variant: Equatable {
+        case space(SpaceID, hasAgents: Bool)
+        case noSpaces
+        case noSelection
+    }
+
+    private var variant: Variant {
+        if let space = vm.selectedSpace { return .space(space.id, hasAgents: vm.state.agents.contains { $0.spaceID == space.id }) }
+        return vm.state.spaces.isEmpty ? .noSpaces : .noSelection
+    }
+
     var body: some View {
-        Group {
+        ZStack {
             if let space = vm.selectedSpace {
                 let hasAgents = vm.state.agents.contains { $0.spaceID == space.id }
                 NWEmptyState(Text(hasAgents ? "No agent selected" : "No agents in \(space.name)"),
@@ -90,6 +109,8 @@ struct EmptyWorkspace: View {
                 }
             }
         }
+        .nwContentTransition(.crossFade)
+        .nwAnimation(.content, value: variant)
         .frame(maxWidth: AppLayout.emptyWorkspaceMaxWidth)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -284,6 +305,10 @@ struct PaneSeparatorView: View {
                     .gesture(dragGesture)
             }
             .offset(x: rect.minX, y: rect.minY)
+            // Focus moving between panes tints the divider (`.hover`); a split, a close, or a
+            // drag moves it at once, like the panes it divides.
+            .animation(nil, value: rect)
+            .nwAnimation(.hover, value: color)
             .zIndex(1)
     }
 
@@ -408,15 +433,31 @@ struct AgentThreadPane: View {
     var review: ((String) -> Void)? = nil
 
     var body: some View {
-        switch session.phase {
-        case .connecting, .live:
-            ThreadView(store: store, active: active, isFocused: isFocused, request: request, commandKey: commandKey,
-                       agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
-                       inspectedRunID: inspectedRunID, review: review)
-        case .failed(let reason):
-            PanePlaceholder(text: "session unavailable · \(reason)")
-        case .exited(let code):
-            PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
+        // The placeholder cross-fades in when pi dies; connecting → live changes nothing here.
+        ZStack {
+            switch session.phase {
+            case .connecting, .live:
+                ThreadView(store: store, active: active, isFocused: isFocused, request: request, commandKey: commandKey,
+                           agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
+                           inspectedRunID: inspectedRunID, review: review)
+            case .failed(let reason):
+                PanePlaceholder(text: "session unavailable · \(reason)")
+                    .nwTransition(.content)
+            case .exited(let code):
+                PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
+                    .nwTransition(.content)
+            }
+        }
+        .nwAnimation(.content, value: session.phase.isRunning)
+    }
+}
+
+extension TerminalSessionStore.PaneSession.Phase {
+    /// Connecting or live: the session's view is up (a thread, a terminal surface).
+    var isRunning: Bool {
+        switch self {
+        case .connecting, .live: true
+        case .failed, .exited: false
         }
     }
 }
@@ -429,22 +470,31 @@ struct LiveTerminalPane: View {
     var isRendering: Bool = true
 
     var body: some View {
-        switch session.phase {
-        case .connecting, .live:
-            // Keep one Ghostty view mounted across the connecting → live
-            // transition. Replacing it here discards the just-replayed screen.
-            ZStack(alignment: .topLeading) {
-                AppTerminalView(model: session.terminal, isFocused: isFocused, isRendering: isRendering)
-                if case .connecting = session.phase {
-                    PanePlaceholder(text: "starting session…")
-                        .allowsHitTesting(false)
+        // "starting session…" fades off the surface once it is live; a failed or exited
+        // session's placeholder cross-fades with it. The surface itself never moves (it is
+        // `nwInstant`).
+        ZStack {
+            switch session.phase {
+            case .connecting, .live:
+                // Keep one Ghostty view mounted across the connecting → live
+                // transition. Replacing it here discards the just-replayed screen.
+                ZStack(alignment: .topLeading) {
+                    AppTerminalView(model: session.terminal, isFocused: isFocused, isRendering: isRendering)
+                    if case .connecting = session.phase {
+                        PanePlaceholder(text: "starting session…")
+                            .allowsHitTesting(false)
+                            .nwTransition(.content)
+                    }
                 }
+            case .failed(let reason):
+                PanePlaceholder(text: "session unavailable · \(reason)")
+                    .nwTransition(.content)
+            case .exited(let code):
+                PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
+                    .nwTransition(.content)
             }
-        case .failed(let reason):
-            PanePlaceholder(text: "session unavailable · \(reason)")
-        case .exited(let code):
-            PanePlaceholder(text: code.map { "session exited (\($0))" } ?? "session exited")
         }
+        .nwAnimation(.content, value: session.phase)
     }
 }
 
@@ -470,8 +520,10 @@ private struct RemoteAgentPaneContent: View {
     var connection: RemoteHostStore.Connection
     let agentID: AgentID
 
+    /// Connecting, unreachable, and disconnected placeholders cross-fade with the layout as the
+    /// connection changes; switching to the host's inspector tab (`.id(tab.id)`) stays instant.
     var body: some View {
-        Group {
+        ZStack {
             switch connection.phase {
             case .connected:
                 if let agent = connection.state.agents.first(where: { $0.id == agentID }),
@@ -489,15 +541,20 @@ private struct RemoteAgentPaneContent: View {
                     .id(tab.id)
                 } else {
                     PanePlaceholder(text: "agent has no layout on \(connection.config.name)")
+                        .nwTransition(.content)
                 }
             case .connecting:
                 PanePlaceholder(text: "connecting to \(connection.config.name)…")
+                    .nwTransition(.content)
             case .failed(let reason):
                 PanePlaceholder(text: "\(connection.config.name) unreachable · \(reason)")
+                    .nwTransition(.content)
             case .disconnected:
                 PanePlaceholder(text: "\(connection.config.name) disconnected")
+                    .nwTransition(.content)
             }
         }
+        .nwAnimation(.content, value: connection.phase.kind)
     }
 }
 
@@ -550,26 +607,45 @@ private struct RemotePaneLeafView: View {
     let tab: Tab
     let leaf: LeafPane
 
+    /// What the leaf shows, for its cross-fade.
+    private enum Showing: Equatable {
+        case thread, review, loadingReview, terminal(SessionID), starting
+    }
+
+    /// A placeholder fades out as the review or the terminal it stood for arrives; a terminal
+    /// surface itself appears at once and never animates.
     var body: some View {
-        Group {
-            if let agent = primaryAgent(in: tab, pane: leaf, agents: connection.state.agents) {
+        let agent = primaryAgent(in: tab, pane: leaf, agents: connection.state.agents)
+        let reviewTarget = agent == nil && leaf.isReview == true ? vm.selectedRemoteAgent : nil
+        let review = reviewTarget.flatMap { vm.remoteReviews[$0] }.flatMap { $0.paneID == leaf.id ? $0 : nil }
+        let terminal: (id: SessionID, pane: RemotePaneSession)? = agent == nil && reviewTarget == nil
+            ? leaf.sessionID.flatMap { id in vm.remoteHosts.paneSession(connection: connection, sessionID: id).map { (id, $0) } }
+            : nil
+        let showing: Showing = agent != nil ? .thread : reviewTarget != nil ? (review != nil ? .review : .loadingReview)
+            : terminal.map { .terminal($0.id) } ?? .starting
+        ZStack {
+            if let agent {
                 RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name, isFocused: vm.remoteFocusedPaneID == leaf.id)
-            } else if leaf.isReview == true, let target = vm.selectedRemoteAgent {
-                if let review = vm.remoteReviews[target], review.paneID == leaf.id {
+            } else if let target = reviewTarget {
+                if let review {
                     ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true))
+                        .nwTransition(.content)
                 } else {
                     PanePlaceholder(text: "loading host review…")
                         .task { vm.openRemoteHostReview(target, pane: leaf) }
+                        .nwTransition(.content)
                 }
-            } else if let sessionID = leaf.sessionID,
-               let pane = vm.remoteHosts.paneSession(connection: connection, sessionID: sessionID) {
-                RemoteTerminalPane(pane: pane, isFocused: vm.remoteFocusedPaneID == leaf.id)
-                    .id(sessionID)
-                    .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: sessionID) }
+            } else if let terminal {
+                RemoteTerminalPane(pane: terminal.pane, isFocused: vm.remoteFocusedPaneID == leaf.id)
+                    .id(terminal.id)
+                    .onDisappear { vm.remoteHosts.closePane(connection: connection, sessionID: terminal.id) }
+                    .transition(.identity)
             } else {
                 PanePlaceholder(text: "starting remote pane…")
+                    .nwTransition(.content)
             }
         }
+        .nwAnimation(.content, value: showing)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.nw.bgWindow)
         .contentShape(Rectangle())
@@ -635,20 +711,27 @@ private struct RemoteTerminalPane: View {
     let isFocused: Bool
 
     var body: some View {
-        switch pane.phase {
-        case .connecting, .live:
-            ZStack(alignment: .topLeading) {
-                AppTerminalView(model: pane.terminal, isFocused: isFocused, isRendering: true)
-                if case .connecting = pane.phase {
-                    PanePlaceholder(text: "attaching…").allowsHitTesting(false)
+        // As `LiveTerminalPane`: placeholders fade, the surface never moves.
+        ZStack {
+            switch pane.phase {
+            case .connecting, .live:
+                ZStack(alignment: .topLeading) {
+                    AppTerminalView(model: pane.terminal, isFocused: isFocused, isRendering: true)
+                    if case .connecting = pane.phase {
+                        PanePlaceholder(text: "attaching…").allowsHitTesting(false)
+                            .nwTransition(.content)
+                    }
                 }
+                .background(Color.nw.bgWindow)
+            case .failed(let reason):
+                PanePlaceholder(text: "remote session unavailable · \(reason)")
+                    .nwTransition(.content)
+            case .exited(let code):
+                PanePlaceholder(text: code.map { "remote session exited (\($0))" } ?? "remote session exited")
+                    .nwTransition(.content)
             }
-            .background(Color.nw.bgWindow)
-        case .failed(let reason):
-            PanePlaceholder(text: "remote session unavailable · \(reason)")
-        case .exited(let code):
-            PanePlaceholder(text: code.map { "remote session exited (\($0))" } ?? "remote session exited")
         }
+        .nwAnimation(.content, value: pane.phase)
     }
 }
 
