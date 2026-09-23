@@ -8,7 +8,7 @@ import ShepherdProtocol
 /// Settings ▸ Remote: configured remote Shepherd hosts, and this Mac's own listener.
 struct RemoteSettings: View {
     var vm: ShepherdViewModel
-    @ObservedObject var store: RemoteHostStore
+    var store: RemoteHostStore
 
     @State private var draftName = ""
     @State private var draftHost = ""
@@ -118,7 +118,7 @@ enum RemoteSettingsDefaults {
 
 /// "horizon" over "horizon.internal:7433 · connected · 5 agents", with Edit, Reconnect, Remove.
 private struct RemoteHostRow: View {
-    @ObservedObject var connection: RemoteHostStore.Connection
+    var connection: RemoteHostStore.Connection
     let remove: () -> Void
     let reconnect: () -> Void
     let edit: () -> Void

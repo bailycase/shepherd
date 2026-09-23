@@ -9,7 +9,7 @@ import ShepherdProtocol
 /// for them ("Unreachable", Retry).
 struct RemoteHostBlock: View {
     var vm: ShepherdViewModel
-    @ObservedObject var connection: RemoteHostStore.Connection
+    var connection: RemoteHostStore.Connection
 
     private var detail: NWSidebarSectionDetail {
         guard connection.phase == .connected else { return .none }
