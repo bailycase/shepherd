@@ -38,9 +38,10 @@ connecting. [VALIDATION.md](VALIDATION.md) covers the scripted checks.
 - **Target:** the `Shepherd iOS` Xcode target (iOS 27, iPhone and iPad) compiles the nine files
   in `App/iOS`. It links only `ShepherdCore`, `ShepherdProtocol`, and `ShepherdRemote`, not
   ShepherdUI or `ShepherdApp`.
-- **Shared with the Mac:** `RemoteHostClient`, the `NativeThreadStore` thread client, and the
-  `NativeThreadPresentation` derivations (turns, tool rows, pill state) are the same code the
-  Mac uses.
+- **Shared with the Mac:** `RemoteHostClient` and the `NativeThreadStore` thread client are the
+  same code the Mac uses. The phone draws the `NativeThreadPresentation` derivations (turns, tool
+  rows, pill state); the Mac has moved on to activity lines and the changes card
+  (`NativeTurnPresentation`, `NativeActivity`).
 - **Tokens:** it keeps its own `MobileTokens`: colors, the phone type ramp, and status words.
   These are not Night Watch and no longer match the Mac.
 
@@ -91,10 +92,12 @@ connecting. [VALIDATION.md](VALIDATION.md) covers the scripted checks.
   missing.
 - **Multiple hosts:** only one is supported.
 - **Notifications:** none. The app disconnects in the background.
-- **Design system:** ShepherdUI (Night Watch) and the handoff's iOS rules
-  ([handoff §8](../design-spec/handoff.md), boards in `docs/design-spec/boards/ios/`) are not
-  adopted. The boards show attach, timestamps, "Thought for Ns", a context count, and
-  Shells/Settings tabs. The app has none of these.
+- **Design system:** ShepherdUI (Night Watch, [DESIGN.md](../../DESIGN.md)) is not adopted,
+  though the package already builds for iOS 27: its fonts follow Dynamic Type through
+  `relativeTo:`, and icon buttons grow to the 44pt `NW.Height.touch`. The earlier handoff's iOS
+  boards ([handoff §8](../design-spec/handoff.md), `docs/design-spec/boards/ios/`, superseded)
+  show attach, timestamps, "Thought for Ns", a context count, and Shells/Settings tabs. The app
+  has none of these.
 - **Approval wording:** confirm questions are labeled "Allow once / Deny" and blocked agents
   "needs approval". The handoff says there is no approval UI, only questions.
 
