@@ -206,7 +206,7 @@ public struct NWCodeBlock: View {
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12))
+                    Image(systemName: copied ? "checkmark" : "square.on.square").font(.system(size: 12))
                 }
                 .buttonStyle(.nwIcon(size: NWThreadMetrics.codeCopyButton))
                 .focused($copyFocused)
@@ -356,7 +356,7 @@ public struct NWTurnFooter: View {
                     onCopy()
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-                } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 12)) }
+                } label: { Image(systemName: copied ? "checkmark" : "square.on.square").font(.system(size: 12)) }
                 .buttonStyle(.nwIcon(size: NWThreadMetrics.footerButton))
                 .help("Copy the reply")
                 .accessibilityLabel(copied ? "Copied" : "Copy response")

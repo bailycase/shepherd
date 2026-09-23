@@ -330,7 +330,7 @@ public struct NWChangesCard: View {
                 NWDiffStat(added: added, removed: removed, font: .nwMono(11))
                 Spacer(minLength: 0)
                 if let onReview {
-                    Button(action: onReview) { Label("Review", systemImage: "plusminus") }
+                    Button(action: onReview) { Label("Review", systemImage: "plus.forwardslash.minus") }
                         .buttonStyle(.nw(.ghost, size: .s))
                         .accessibilityLabel("Review \(title)")
                 }
