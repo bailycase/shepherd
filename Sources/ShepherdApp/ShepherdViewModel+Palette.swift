@@ -35,7 +35,7 @@ extension ShepherdViewModel {
                                      icon: "dot.radiowaves.left.and.right"))
         }
         items.append(PaletteItem(id: "action.toggleSidebar", kind: .action("toggleSidebar"), section: .commands,
-                                 title: sidebarHidden ? "Show sidebar" : "Hide sidebar",
+                                 title: isSidebarVisible ? "Hide sidebar" : "Show sidebar",
                                  shortcut: keys.display(.toggleSidebar), icon: "sidebar.left"))
         items.append(PaletteItem(id: "action.settings", kind: .action("settings"), section: .commands,
                                  title: "Settings…", shortcut: "⌘,", icon: "gearshape"))
@@ -184,7 +184,7 @@ extension ShepherdViewModel {
             case "newSpace": addSpaceFromPanel()
             case "rename": renameSelectedAgent()
             case "model": sendThreadCommand(.modelPicker)
-            case "toggleSidebar": sidebarHidden.toggle()
+            case "toggleSidebar": toggleSidebar()
             case "settings": showSettings = true
             case "reviewDiff": openUserReview()
             case "reviewPR": openUserPRReview()

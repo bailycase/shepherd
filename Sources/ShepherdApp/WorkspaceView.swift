@@ -204,9 +204,10 @@ struct PaneTreeView: View {
     var body: some View {
         GeometryReader { geo in
             let geometry = paneTreeGeometry(for: node, in: geo.size, liveRatios: liveRatios)
+            let visible = vm.isVisibleTab(tab)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
-                    PaneLeafView(vm: vm, tab: tab, pane: leaf.pane)
+                    PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane, visible: visible))
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                 }
@@ -234,16 +235,35 @@ struct PaneTreeView: View {
     }
 
     private func separatorColor(for split: PaneNode) -> Color {
-        guard let focused = vm.focusedPaneID,
-              case .split(_, _, let first, let second) = split else {
-            return Color.nw.lineSubtle
-        }
-        let bordersFocused = first.contains(focused) || second.contains(focused)
-        return bordersFocused ? Color.nw.running.opacity(0.34) : Color.nw.lineSubtle
+        paneSeparatorColor(split, focused: vm.focusedPaneID)
+    }
+
+    /// Everything a leaf draws, resolved here so the leaf itself reads nothing observable and
+    /// re-renders only when one of these values changes.
+    private func leafModel(_ pane: LeafPane, visible: Bool) -> PaneLeafModel {
+        let agent = primaryAgent(in: tab, pane: pane, agents: vm.state.agents)
+        return PaneLeafModel(
+            pane: pane,
+            isVisible: visible,
+            // Hidden layouts stay mounted, so a pane only holds keyboard focus while its own
+            // layout is the visible one; otherwise a background terminal would swallow typing.
+            isFocused: visible && vm.focusedPaneID == pane.id,
+            agentID: agent?.id,
+            agentName: agent?.name ?? "",
+            inspectingRunID: agent.flatMap { vm.subagentInspector.runByAgent[$0.id] },
+            review: agent.flatMap { agent in vm.reviewSessions.values.first { $0.agentID == agent.id } }
+        )
     }
 }
 
-private struct PaneSeparatorView: View {
+/// Dividers are 1pt `lineSubtle`, tinted running where they border the focused pane.
+@MainActor
+func paneSeparatorColor(_ split: PaneNode, focused: PaneID?) -> Color {
+    guard let focused, case .split(_, _, let first, let second) = split else { return Color.nw.lineSubtle }
+    return first.contains(focused) || second.contains(focused) ? Color.nw.running.opacity(0.34) : Color.nw.lineSubtle
+}
+
+struct PaneSeparatorView: View {
     let axis: SplitAxis
     let rect: CGRect
     let containerRect: CGRect
@@ -259,13 +279,7 @@ private struct PaneSeparatorView: View {
                 Color.clear
                     .frame(width: axis == .vertical ? 9 : nil, height: axis == .horizontal ? 9 : nil)
                     .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside {
-                            (axis == .vertical ? NSCursor.resizeLeftRight : NSCursor.resizeUpDown).push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
+                    .pointerStyle(axis == .vertical ? .columnResize : .rowResize)
                     .gesture(dragGesture)
             }
             .offset(x: rect.minX, y: rect.minY)
@@ -294,67 +308,81 @@ private struct PaneSeparatorView: View {
 
 // MARK: Panes
 
-struct PaneLeafView: View {
+/// What one leaf shows, as plain values (`PaneTreeView.leafModel`).
+struct PaneLeafModel: Equatable {
+    let pane: LeafPane
+    let isVisible: Bool
+    let isFocused: Bool
+    /// The agent whose pi runs in this pane; nil for a terminal pane.
+    let agentID: AgentID?
+    let agentName: String
+    let inspectingRunID: String?
+    let review: ReviewSession?
+
+    static func == (a: PaneLeafModel, b: PaneLeafModel) -> Bool {
+        a.pane == b.pane && a.isVisible == b.isVisible && a.isFocused == b.isFocused && a.agentID == b.agentID
+            && a.agentName == b.agentName && a.inspectingRunID == b.inspectingRunID && a.review === b.review
+    }
+}
+
+struct PaneLeafView: View, Equatable {
     var vm: ShepherdViewModel
     let tab: Tab
-    let pane: LeafPane
+    let model: PaneLeafModel
+
+    static func == (a: PaneLeafView, b: PaneLeafView) -> Bool {
+        a.vm === b.vm && a.tab == b.tab && a.model == b.model
+    }
 
     var body: some View {
-        // Hidden layouts stay mounted, so a pane only holds keyboard focus
-        // while its own layout is the visible one — otherwise a background
-        // agent's terminal would swallow typing.
-        let visible = vm.isVisibleTab(tab)
-        let focused = vm.focusedPaneID == pane.id && visible
-        let agent = primaryAgent(in: tab, pane: pane, agents: vm.state.agents)
-
+        let pane = model.pane
         Group {
             if pane.isReview == true {
                 PanePlaceholder(text: "review unavailable")
-            } else if let agent {
+            } else if let agentID = model.agentID {
                 // The thread is the agent's pane; the session binding still goes through the
                 // store so a pi exit closes the pane. The right pane docks beside it: an
                 // inspected subagent, else the agent's review.
-                let store = vm.threadStores.store(for: agent.id)
-                let inspecting = vm.subagentInspector.runByAgent[agent.id]
-                let review = vm.reviewSessions.values.first { $0.agentID == agent.id }
-                RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
+                let store = vm.threadStores.store(for: agentID)
+                let inspecting = model.inspectingRunID
+                RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || model.review != nil) {
                     AgentThreadPane(
                         session: vm.sessions.session(for: pane, in: tab),
                         store: store,
-                        active: visible,
-                        isFocused: focused && inspecting == nil,
-                        request: { try await vm.server.nativeThread(agentID: agent.id, request: $0) },
-                        commandKey: ThreadCommandCenter.key(local: agent.id),
-                        agentName: agent.name,
+                        active: model.isVisible,
+                        isFocused: model.isFocused && inspecting == nil,
+                        request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
+                        commandKey: ThreadCommandCenter.key(local: agentID),
+                        agentName: model.agentName,
                         workingDirectory: pane.cwd,
-                        inspectSubagent: { vm.toggleSubagentInspector(agentID: agent.id, runID: $0.runID) },
+                        inspectSubagent: { [vm] in vm.toggleSubagentInspector(agentID: agentID, runID: $0.runID) },
                         inspectedRunID: inspecting,
-                        review: { path in vm.selectAgent(agent.id); vm.openReview(agentID: agent.id, path: path) }
+                        review: { [vm] path in vm.selectAgent(agentID); vm.openReview(agentID: agentID, path: path) }
                     )
                 } pane: {
                     if let inspecting {
-                        SubagentInspector(store: store, runID: inspecting, active: visible, close: {
-                            vm.subagentInspector.runByAgent.removeValue(forKey: agent.id)
-                        }, select: { vm.subagentInspector.runByAgent[agent.id] = $0.runID }, fork: { run in
-                            do { try await vm.forkSubagent(agentID: agent.id, run: run); return nil } catch { return String(describing: error) }
-                        }, review: { vm.openReview(agentID: agent.id, path: $0) })
+                        SubagentInspector(store: store, runID: inspecting, active: model.isVisible, close: { [vm] in
+                            vm.subagentInspector.runByAgent.removeValue(forKey: agentID)
+                        }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
+                            do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
+                        }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) })
                         .id(inspecting)
-                    } else if let review {
+                    } else if let review = model.review {
                         ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
                     }
                 }
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),
-                    isFocused: focused,
-                    isRendering: visible
+                    isFocused: model.isFocused,
+                    isRendering: model.isVisible
                 )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.nw.bgWindow)
         .contentShape(Rectangle())
-        .simultaneousGesture(TapGesture().onEnded { vm.focusedPaneID = pane.id })
+        .simultaneousGesture(TapGesture().onEnded { [vm] in vm.focusedPaneID = pane.id })
     }
 }
 
@@ -467,20 +495,45 @@ private struct RemoteAgentPaneContent: View {
     }
 }
 
+/// A remote layout drawn like a local one: every leaf a direct child of one ZStack keyed by pane
+/// ID, so a split moves and resizes panes instead of rebuilding them.
 private struct RemotePaneTreeView: View {
     var vm: ShepherdViewModel
     @ObservedObject var connection: RemoteHostStore.Connection
     let ref: RemoteAgentRef
     let tab: Tab
     let node: PaneNode
+    @State private var liveRatios: [PaneSplitPath: Double] = [:]
+
+    private var containerSpace: String { "remote-split-\(tab.id)" }
 
     var body: some View {
-        switch node {
-        case .leaf(let leaf):
-            RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf)
-        case .split:
-            RemotePaneSplitView(vm: vm, connection: connection, ref: ref, tab: tab, node: node)
+        GeometryReader { geo in
+            let geometry = paneTreeGeometry(for: node, in: geo.size, liveRatios: liveRatios)
+            ZStack(alignment: .topLeading) {
+                ForEach(geometry.leaves, id: \.pane.id) { leaf in
+                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane)
+                        .frame(width: leaf.rect.width, height: leaf.rect.height)
+                        .offset(x: leaf.rect.minX, y: leaf.rect.minY)
+                }
+                ForEach(geometry.separators) { separator in
+                    PaneSeparatorView(
+                        axis: separator.axis,
+                        rect: separator.rect,
+                        containerRect: separator.containerRect,
+                        color: paneSeparatorColor(separator.node, focused: vm.remoteFocusedPaneID),
+                        coordinateSpace: containerSpace,
+                        liveRatio: Binding(
+                            get: { liveRatios[separator.id] },
+                            set: { liveRatios[separator.id] = $0 }
+                        ),
+                        onCommit: { vm.commitRemoteSplitRatio(ref: ref, split: separator.node, ratio: $0) }
+                    )
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
+        .coordinateSpace(.named(containerSpace))
     }
 }
 
@@ -511,69 +564,10 @@ private struct RemotePaneLeafView: View {
                 PanePlaceholder(text: "starting remote pane…")
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.nw.bgWindow)
         .contentShape(Rectangle())
         .simultaneousGesture(TapGesture().onEnded { vm.remoteFocusedPaneID = leaf.id })
-    }
-}
-
-private struct RemotePaneSplitView: View {
-    var vm: ShepherdViewModel
-    @ObservedObject var connection: RemoteHostStore.Connection
-    let ref: RemoteAgentRef
-    let tab: Tab
-    let node: PaneNode
-    @State private var liveRatio: Double?
-
-    private var containerSpace: String { "remote-split-\(tab.id)" }
-
-    var body: some View {
-        if case .split(let axis, let ratio, let first, let second) = node {
-            let shownRatio = liveRatio ?? ratio
-            GeometryReader { geo in
-                if axis == .vertical {
-                    HStack(spacing: 0) {
-                        child(first).frame(width: max(0, (geo.size.width - 1) * shownRatio))
-                        separator(axis: axis, size: geo.size)
-                        child(second).frame(maxWidth: .infinity)
-                    }
-                } else {
-                    VStack(spacing: 0) {
-                        child(first).frame(height: max(0, (geo.size.height - 1) * shownRatio))
-                        separator(axis: axis, size: geo.size)
-                        child(second).frame(maxHeight: .infinity)
-                    }
-                }
-            }
-            .coordinateSpace(.named(containerSpace))
-        }
-    }
-
-    private func child(_ child: PaneNode) -> some View {
-        RemotePaneTreeView(vm: vm, connection: connection, ref: ref, tab: tab, node: child)
-    }
-
-    private func separator(axis: SplitAxis, size: CGSize) -> some View {
-        Color.nw.lineSubtle
-            .frame(width: axis == .vertical ? 1 : nil, height: axis == .horizontal ? 1 : nil)
-            .overlay {
-                Color.clear
-                    .frame(width: axis == .vertical ? 9 : nil, height: axis == .horizontal ? 9 : nil)
-                    .contentShape(Rectangle())
-                    .gesture(
-                        DragGesture(minimumDistance: 1, coordinateSpace: .named(containerSpace))
-                            .onChanged { value in
-                                let span = axis == .vertical ? max(1, size.width) : max(1, size.height)
-                                let position = axis == .vertical ? value.location.x : value.location.y
-                                liveRatio = min(0.85, max(0.15, position / span))
-                            }
-                            .onEnded { _ in
-                                if let ratio = liveRatio {
-                                    vm.commitRemoteSplitRatio(ref: ref, split: node, ratio: ratio)
-                                }
-                                liveRatio = nil
-                            }
-                    )
-            }
     }
 }
 

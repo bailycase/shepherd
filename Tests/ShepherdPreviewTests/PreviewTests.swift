@@ -20,109 +20,6 @@ import Testing
 @Suite("Previews", .serialized, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct PreviewTests {
-    // MARK: Sidebar and chrome
-
-    /// A space with agents in every status, one with subagents, a worktree agent, an
-    /// automation, and an unreachable second machine.
-    private func populatedWorkspace() async throws -> (PreviewWorkspace, [Agent]) {
-        let workspace = try PreviewWorkspace()
-        let space = Space(name: "Shepherd", path: workspace.dir.path)
-        let other = Space(name: "billing-service", path: workspace.dir.appendingPathComponent("billing").path)
-        let rows: [(String, AgentStatus, String?)] = [
-            ("Plan shepherd extensions", .working, nil), ("Dock review pane", .working, "worktree/dock-review"),
-            ("Fix remote subagent deletion", .idle, nil), ("Investigate SwiftUI live preview", .idle, nil),
-            ("Fix remote nightly", .blocked, nil), ("Fix agent deletion workflow", .done, nil),
-        ]
-        var agents: [Agent] = [], tabs: [ShepherdCore.Tab] = []
-        for (index, row) in rows.enumerated() {
-            let (agent, tab) = try await workspace.agent(row.0, in: space, order: index, status: row.1, branch: row.2)
-            agents.append(agent); tabs.append(tab)
-        }
-        let (billing, billingTab) = try await workspace.agent("Migrate invoices to v2", in: other, order: 0, status: .idle)
-        agents.append(billing); tabs.append(billingTab)
-        let automation = Automation(name: "Merge PR #24 after CI", prompt: "watch", cwd: workspace.dir.path, enabled: false)
-        try await workspace.seed(ShepherdState(spaces: [space, other], tabs: tabs, agents: agents, automations: [automation]))
-        let vm = workspace.vm
-        vm.selectedSpaceID = space.id
-        vm.selectedAgentID = agents[3].id
-        vm.applyAgentChildren(agents[3].id, Array(Threads.liveRuns.prefix(3)))
-        vm.applyAgentChildren(agents[5].id, Threads.doneRuns)
-        vm.remoteHosts.addHost(name: "Horizon", host: "127.0.0.1", port: 1, token: "x")
-        return (workspace, agents)
-    }
-
-    @Test func sidebar() async throws {
-        let (workspace, _) = try await populatedWorkspace()
-        defer { workspace.stop() }
-        try await Preview.render("sidebar", size: CGSize(width: 256, height: 720)) {
-            SidebarView(vm: workspace.vm).background(Color.nw.bgBase)
-        }
-    }
-
-    /// The whole window with the sidebar hidden: the header runs under the traffic lights.
-    @Test func sidebarHiddenHeader() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        let space = Space(name: "Shepherd", path: workspace.dir.path)
-        let (agent, tab) = try await workspace.agent("Investigate SwiftUI live preview", in: space, order: 0, live: true)
-        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-        workspace.vm.sidebarHidden = true
-        workspace.vm.selectAgent(agent.id)
-        let store = workspace.vm.threadStores.store(for: agent.id)
-        try await Preview.render("sidebar-hidden-header", size: CGSize(width: 1280, height: 800), ready: { store.ready }) {
-            RootView(vm: workspace.vm)
-        }
-    }
-
-    /// The full window over a live (stub) agent after one turn.
-    @Test func appWindow() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        let space = Space(name: "Shepherd", path: workspace.dir.path)
-        let (agent, tab) = try await workspace.agent("Investigate SwiftUI live preview", in: space, order: 0, status: .done, live: true)
-        let (other, otherTab) = try await workspace.agent("Dock review pane", in: space, order: 1, status: .working, live: true)
-        try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab, otherTab], agents: [agent, other]))
-        let server = workspace.server
-        try await eventuallyAsync("pi to be ready") {
-            guard case .snapshot(let snapshot)? = try? await server.nativeThread(agentID: agent.id, request: .snapshot()) else { return false }
-            return !snapshot.piSessionID.isEmpty
-        }
-        let snapshot = try await server.nativeThread(agentID: agent.id, request: .snapshot())
-        guard case .snapshot(let ready) = snapshot else { return }
-        _ = try await server.nativeThread(agentID: agent.id, request: .send(
-            expectedSessionID: ready.piSessionID, generation: ready.generation, operationID: UUID(),
-            text: "List the files in this checkout.", delivery: .followUp))
-        workspace.vm.selectAgent(agent.id)
-        let store = workspace.vm.threadStores.store(for: agent.id)
-        try await Preview.render("app-window", size: CGSize(width: 1440, height: 900),
-                                 ready: { store.ready && store.messages.contains { $0.toolName == "bash" } }) {
-            RootView(vm: workspace.vm)
-        }
-    }
-
-    // MARK: Empty workspace states
-
-    @Test(arguments: ["no-spaces", "space-without-agents", "no-agent-selected"])
-    func emptyWorkspace(state: String) async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        let space = Space(name: "Shepherd", path: workspace.dir.path)
-        switch state {
-        case "space-without-agents":
-            try await workspace.seed(ShepherdState(spaces: [space]))
-            workspace.vm.selectSpace(space.id)
-        case "no-agent-selected":
-            let (agent, tab) = try await workspace.agent("Background agent", in: space, order: 0, live: true)
-            try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-            workspace.vm.selectedAgentID = nil
-            workspace.vm.selectedSpaceID = nil
-        default: break
-        }
-        try await Preview.render("empty-\(state)", size: CGSize(width: 1280, height: 760)) {
-            RootView(vm: workspace.vm)
-        }
-    }
-
     // MARK: Threads
 
     private func renderThread(_ surface: String, _ fixture: ThreadFixture, size: CGSize = CGSize(width: 1180, height: 1000),
@@ -171,20 +68,7 @@ struct PreviewTests {
         }
     }
 
-    // MARK: Palette, gallery (the review pane is in ReviewPreviewTests)
-
-    @Test func commandPalette() async throws {
-        let (workspace, agents) = try await populatedWorkspace()
-        defer { workspace.stop() }
-        workspace.vm.selectAgent(agents[3].id)
-        try await Preview.render("command-palette", size: CGSize(width: 1000, height: 720)) {
-            ZStack(alignment: .top) {
-                Color.nw.bgWindow
-                Color.nw.scrim
-                CommandPaletteView(vm: workspace.vm).padding(.top, AppLayout.paletteTop)
-            }
-        }
-    }
+    // MARK: Gallery (the palette is in NavigationPreviewTests, the review pane in ReviewPreviewTests)
 
     @Test func componentGallery() async throws {
         try await Preview.render("components", size: CGSize(width: 1440, height: 1320)) {
