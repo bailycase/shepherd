@@ -236,34 +236,46 @@ struct Composer: View {
             .accessibilityLabel("Message the agent")
     }
 
-    @ViewBuilder private var actionRow: some View {
-        if canAttach {
-            Button { picking = true } label: { Image(systemName: "paperclip") }
-                .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
-                .disabled(attachments.count >= NativeImage.maxPerSend)
-                .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
-                .accessibilityLabel("Attach file")
+    /// Full chip labels when they fit; in a narrow thread (a docked right pane) the chips drop
+    /// their words ("/", the thinking level alone) instead of truncating mid-word.
+    private var actionRow: some View {
+        ViewThatFits(in: .horizontal) {
+            actionChips(compact: false)
+            actionChips(compact: true)
         }
-        if !commands.isEmpty {
-            Button {
-                store.draft = "/"
-                dismissedQuery = nil
-                menu = nil
-                composing.wrappedValue = true
-            } label: {
-                HStack(spacing: NW.Space.s) {
-                    Text("/").font(Font.nwMono(12))
-                    Text("commands")
-                }
+    }
+
+    private func actionChips(compact: Bool) -> some View {
+        HStack(spacing: NW.Space.xxs) {
+            if canAttach {
+                Button { picking = true } label: { Image(systemName: "paperclip") }
+                    .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+                    .disabled(attachments.count >= NativeImage.maxPerSend)
+                    .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
+                    .accessibilityLabel("Attach file")
             }
-            .buttonStyle(.nwComposerChip(active: commandQuery != nil))
-            .accessibilityLabel("Commands")
+            if !commands.isEmpty {
+                Button {
+                    store.draft = "/"
+                    dismissedQuery = nil
+                    menu = nil
+                    composing.wrappedValue = true
+                } label: {
+                    HStack(spacing: NW.Space.s) {
+                        Text("/").font(Font.nwMono(12))
+                        if !compact { Text("commands") }
+                    }
+                }
+                .buttonStyle(.nwComposerChip(active: commandQuery != nil))
+                .help("Commands")
+                .accessibilityLabel("Commands")
+            }
+            modelChip
+            thinkingChip(compact: compact)
+            if running, !store.draft.isEmpty { deliveryChip }
+            Spacer(minLength: NW.Space.m)
+            primary
         }
-        modelChip
-        thinkingChip
-        if running, !store.draft.isEmpty { deliveryChip }
-        Spacer(minLength: NW.Space.m)
-        primary
     }
 
     @ViewBuilder private var primary: some View {
@@ -305,7 +317,7 @@ struct Composer: View {
 
     /// Off / Low / Medium / High, independent of the model; hidden when the model takes no
     /// thinking level.
-    @ViewBuilder private var thinkingChip: some View {
+    @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
         if let thinking = store.snapshot?.thinking, store.snapshot?.supportedActions.contains("setThinking") == true,
            reasoningAvailable {
             Button {
@@ -313,7 +325,7 @@ struct Composer: View {
             } label: {
                 HStack(spacing: NW.Space.s) {
                     Image(systemName: "lightbulb").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                    Text("Thinking")
+                    if !compact { Text("Thinking") }
                     Text(thinking.capitalized).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
                     NWChipChevron()
                 }
