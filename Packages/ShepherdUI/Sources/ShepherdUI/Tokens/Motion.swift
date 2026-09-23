@@ -328,16 +328,13 @@ private struct NWPopModifier<T: Equatable>: ViewModifier {
     let trigger: T
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// One structure either way, so toggling Reduce Motion never remounts the popped view.
     func body(content: Content) -> some View {
-        if reduceMotion {
-            content
-        } else {
-            content.keyframeAnimator(initialValue: 1.0, trigger: trigger) { view, scale in
-                view.scaleEffect(scale)
-            } keyframes: { _ in
-                SpringKeyframe(NWPop.peak, duration: NW.Motion.emphasis.duration / 3, spring: .snappy)
-                SpringKeyframe(1.0, duration: NW.Motion.emphasis.duration, spring: NW.Motion.emphasis.spring ?? .bouncy)
-            }
+        content.keyframeAnimator(initialValue: 1.0, trigger: trigger) { view, scale in
+            view.scaleEffect(reduceMotion ? 1 : scale)
+        } keyframes: { _ in
+            SpringKeyframe(NWPop.peak, duration: NW.Motion.emphasis.duration / 3, spring: .snappy)
+            SpringKeyframe(1.0, duration: NW.Motion.emphasis.duration, spring: NW.Motion.emphasis.spring ?? .bouncy)
         }
     }
 }
