@@ -136,7 +136,8 @@ struct SettingsPreviewTests {
         let staged: FinalizeWorktreeSheet.Staged = switch state {
         case "input": .init(phase: .input, title: agent.name, body: Self.prBody, includedCommits: 3)
         case "done": .init(phase: .done, steps: done, prURL: "https://github.com/ada/shepherd/pull/128")
-        default: .init(phase: .failed, steps: [.commit: .done("committed"), .push: .failed(rejected)])
+        default: .init(phase: .failed, steps: [.commit: .done("committed"),
+                                               .push: .failed(WorktreeFinalizer.failureDetail(.init(status: 1, stdout: "", stderr: rejected)))])
         }
         try await Preview.render("sheet-finalize-\(state)", size: CGSize(width: AppLayout.finalizeSheetWidth, height: 560)) {
             FinalizeWorktreeSheet(vm: workspace.vm, agent: agent, space: space, staged: staged)

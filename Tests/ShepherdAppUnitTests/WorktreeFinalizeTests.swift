@@ -251,6 +251,35 @@ struct WorktreeFinalizePipelineTests {
         #expect(finalizer.states[.push] == .failed(detail))
     }
 
+    /// Real git and gh failures: the first line, which is all the sheet shows before its
+    /// tooltip, names the problem instead of git's `To <remote>` header.
+    @Test(arguments: [
+        ("""
+        To github.com:ada/shepherd.git
+         ! [rejected]        feat/x -> feat/x (non-fast-forward)
+        error: failed to push some refs to 'github.com:ada/shepherd.git'
+        hint: Updates were rejected because the tip of your current branch is behind
+        """, "! [rejected] feat/x -> feat/x (non-fast-forward)"),
+        ("""
+        To github.com:ada/shepherd.git
+         ! [remote rejected] feat/x -> feat/x (protected branch hook declined)
+        error: failed to push some refs to 'github.com:ada/shepherd.git'
+        """, "! [remote rejected] feat/x -> feat/x (protected branch hook declined)"),
+        ("""
+        ERROR: Permission to ada/shepherd.git denied to someone.
+        fatal: Could not read from remote repository.
+        """, "ERROR: Permission to ada/shepherd.git denied to someone."),
+        ("pull request create failed: GraphQL: No commits between main and feat/x (createPullRequest)",
+         "pull request create failed: GraphQL: No commits between main and feat/x (createPullRequest)"),
+    ])
+    func aFailureLeadsWithTheLineThatNamesTheProblem(stderr: String, first: String) {
+        let detail = WorktreeFinalizer.failureDetail(.init(status: 1, stdout: "", stderr: stderr))
+        #expect(detail.split(separator: "\n").first.map(String.init) == first)
+        let words = { (text: Substring) in text.split(whereSeparator: \.isWhitespace).joined(separator: " ") }
+        #expect(Set(detail.split(separator: "\n").map(words)) == Set(stderr.split(separator: "\n").map(words)),
+                "the tooltip keeps every line")
+    }
+
     @Test func aFinishedPipelineDoesNotRunAgain() async {
         let shell = shell()
         let finalizer = await run(context(), shell: shell)
