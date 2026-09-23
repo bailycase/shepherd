@@ -125,7 +125,7 @@ private struct ReviewHeader: View, Equatable {
         let nw = Color.nw
         HStack(spacing: NW.Space.m) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("Review").font(.nwSans(13, .semibold)).foregroundStyle(nw.textPrimary)
+                Text("Review").font(.nwSans(13, .semibold)).foregroundStyle(nw.textPrimary).accessibilityAddTraits(.isHeader)
                 subtitle
                     .font(.nw(.micro, weight: .regular))
                     .foregroundStyle(nw.textTertiary)
