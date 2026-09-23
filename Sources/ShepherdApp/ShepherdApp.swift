@@ -9,6 +9,29 @@ enum MainWindow {
     /// Opens (or fronts) the main window; set once the window has appeared, used to reopen it
     /// from the Dock after it was closed.
     @MainActor static var open: (() -> Void)?
+    /// The window itself while it is up, for what AppKit presents on it (the quit
+    /// confirmation). `MainWindowReader` reports it.
+    @MainActor static weak var window: NSWindow? {
+        didSet {
+            if let window, window !== oldValue { QuitConfirmation.shared.mainWindowAppeared(window) }
+        }
+    }
+}
+
+/// Reports the window hosting it as `MainWindow.window`.
+struct MainWindowReader: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ReaderView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class ReaderView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { MainWindow.window = window }
+        }
+
+        /// Behind the whole root view: never the target of a click.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
 }
 
 /// The Mac app, exposed as a library so an Xcode app target can provide the
@@ -108,6 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
+        QuitConfirmation.shared.watchForPowerOff()
+
         // Sessions live and die with the app: start the in-process session
         // server (extension socket) and shut it down on quit so every agent
         // stops when Shepherd stops, like any terminal app.
@@ -127,26 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    /// Quitting kills every agent process (sessions die with the app), so a
-    /// quit while agents are mid-turn asks first. Idle/done agents quit
-    /// silently — their transcripts are on disk and respawn on relaunch.
+    /// Quitting kills every agent process (sessions die with the app), so a quit while agents
+    /// are mid-turn asks first, in a dialog on the main window (`QuitConfirmation`).
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let busy = SessionServer.shared.state.agents.filter {
-            $0.status == .working || $0.status == .blocked
-        }
-        guard !busy.isEmpty else { return .terminateNow }
-
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = busy.count == 1
-            ? "1 agent is still working"
-            : "\(busy.count) agents are still working"
-        let names = busy.prefix(5).map(\.name).joined(separator: "\n")
-        let more = busy.count > 5 ? "\n…" : ""
-        alert.informativeText = "Quitting stops their processes mid-turn. Conversations stay on disk and reopen on next launch.\n\n\(names)\(more)"
-        alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        QuitConfirmation.shared.shouldTerminate(agents: SessionServer.shared.state.agents)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

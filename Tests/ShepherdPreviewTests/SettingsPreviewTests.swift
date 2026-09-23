@@ -234,6 +234,24 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Quit while agents work: five named (one waiting on an answer), the rest counted.
+    @Test func quitDialog() async throws {
+        let space = Space(name: "shepherd", path: "/tmp/shepherd")
+        let names = ["Fix the login redirect", "Night Watch tokens", "Review the sidebar", "Flaky integration tests",
+                     "Release notes", "Remote listener", "Docs pass"]
+        let agents = names.enumerated().map { index, name in
+            Agent(name: name, spaceID: space.id, tabID: TabID(), status: index == 1 ? .blocked : .working)
+        }
+        let prompt = try #require(QuitPrompt(agents: agents))
+        try await Preview.render("sheet-quit", size: CGSize(width: NWDialogMetrics.width, height: 330)) {
+            QuitDialog(prompt: prompt, quit: {}, cancel: {})
+        }
+        let one = try #require(QuitPrompt(agents: [agents[0]]))
+        try await Preview.render("sheet-quit-one", size: CGSize(width: NWDialogMetrics.width, height: 200)) {
+            QuitDialog(prompt: one, quit: {}, cancel: {})
+        }
+    }
+
     @Test func revertFileDialog() async throws {
         try await Preview.render("sheet-revert-file", size: CGSize(width: NWDialogMetrics.width, height: 200)) {
             RevertFileDialog(path: "Sources/ShepherdApp/SidebarView.swift", isNew: false, revert: {}, cancel: {})
