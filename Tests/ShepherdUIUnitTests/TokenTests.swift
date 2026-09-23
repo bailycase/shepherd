@@ -41,6 +41,12 @@ struct TokenTests {
         #expect(close(resolved(palette.synString, dark: false), HexColor(ThemeDefinition.nightWatch.light.syntax.string)!))
     }
 
+    /// The Composer board puts the command palette "over a 30% scrim".
+    @Test(arguments: [false, true])
+    func theScrimIsBlackAtThirtyPercent(dark: Bool) {
+        #expect(close(resolved(NWPalette(.nightWatch).scrim, dark: dark), HexColor(red: 0, green: 0, blue: 0, alpha: 0.3)))
+    }
+
     /// The theme is resolved once: reads share one palette until another theme is selected.
     @Test func theStoreResolvesEachThemeOnce() {
         let store = ThemeStore()
