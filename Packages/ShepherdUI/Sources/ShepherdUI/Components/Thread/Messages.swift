@@ -62,6 +62,8 @@ public struct NWUserBubble: View {
                 Text(timestamp).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).monospacedDigit()
             }
         }
+        // A queued follow-up turns into a sent message in place when the turn ends.
+        .nwAnimation(.content, value: isQueued)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .combine)
     }
@@ -183,6 +185,8 @@ public struct NWCodeBlock: View {
     let highlighted: AttributedString?
     @State private var hovering = false
     @State private var copied = false
+    /// Copies so far: each one pops the check.
+    @State private var copies = 0
     @FocusState private var copyFocused: Bool
 
     public init(_ code: String, language: String?, highlighted: AttributedString? = nil) {
@@ -200,13 +204,15 @@ public struct NWCodeBlock: View {
                 Button {
                     NWPasteboard.copy(code)
                     copied = true
+                    copies += 1
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: {
-                    Image(systemName: copied ? "checkmark" : "square.on.square").font(.system(size: 12))
+                    NWCopyGlyph(copied: copied, copies: copies)
                 }
                 .buttonStyle(.nwIcon(size: NWThreadMetrics.codeCopyButton))
                 .focused($copyFocused)
                 .opacity(hovering || copyFocused || copied ? 1 : 0)
+                .nwAnimation(.hover, value: hovering || copyFocused || copied)
                 .accessibilityLabel(copied ? "Copied" : "Copy code")
             }
             .padding(.leading, NW.Space.l)
@@ -234,6 +240,21 @@ public struct NWCodeBlock: View {
         .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(language.map { "\($0) code" } ?? "Code")
+    }
+}
+
+/// A copy button's glyph (code blocks, the turn footer): two squares that turn into a check
+/// for a moment after each copy, replacing the symbol and popping.
+struct NWCopyGlyph: View {
+    let copied: Bool
+    /// Copies so far: each one pops.
+    let copies: Int
+
+    var body: some View {
+        Image(systemName: copied ? "checkmark" : "square.on.square").font(.system(size: 12))
+            .nwContentTransition(.symbol)
+            .nwAnimation(.content, value: copied)
+            .nwPop(trigger: copies)
     }
 }
 
@@ -347,6 +368,7 @@ public struct NWTurnFooter: View {
     let onCopy: (() -> Void)?
     let onRetry: (() -> Void)?
     @State private var copied = false
+    @State private var copies = 0
 
     public init(meta: String, link: String? = nil, onLink: (() -> Void)? = nil,
                 onCopy: (() -> Void)? = nil, onRetry: (() -> Void)? = nil) {
@@ -363,8 +385,9 @@ public struct NWTurnFooter: View {
                 Button {
                     onCopy()
                     copied = true
+                    copies += 1
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-                } label: { Image(systemName: copied ? "checkmark" : "square.on.square").font(.system(size: 12)) }
+                } label: { NWCopyGlyph(copied: copied, copies: copies) }
                 .buttonStyle(.nwIcon(size: NWThreadMetrics.footerButton))
                 .help("Copy the reply")
                 .accessibilityLabel(copied ? "Copied" : "Copy response")
@@ -374,6 +397,7 @@ public struct NWTurnFooter: View {
                     .buttonStyle(.nwIcon(size: NWThreadMetrics.footerButton))
                     .help("Send this turn's prompt again")
                     .accessibilityLabel("Retry turn")
+                    .nwTransition(.content)
             }
             HStack(spacing: 0) {
                 Text(meta).monospacedDigit()
@@ -386,6 +410,8 @@ public struct NWTurnFooter: View {
             .foregroundStyle(Color.nw.textTertiary)
             .padding(.leading, NW.Space.xs)
         }
+        // Retry appears once the agent is idle again.
+        .nwAnimation(.content, value: onRetry != nil)
     }
 }
 
@@ -415,12 +441,18 @@ public struct NWTurnError: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             if count > 1 {
                 Text("×\(count)").font(.nwMono(11)).foregroundStyle(nw.textTertiary).monospacedDigit()
+                    .nwContentTransition(.numeric())
+                    .nwTransition(.content)
             }
             if let retry {
                 Button(action: retry) { Label("Retry", systemImage: "arrow.clockwise") }
                     .buttonStyle(.nw(.secondary, size: .s))
+                    .nwTransition(.content)
             }
         }
+        // A repeat counts up; Retry appears when the error ends the turn.
+        .nwAnimation(.content, value: count)
+        .nwAnimation(.content, value: retry != nil)
         .padding(.vertical, NW.Space.m)
         .padding(.horizontal, 10)
         .background(nw.failedTint, in: RoundedRectangle(cornerRadius: NW.Radius.s))
@@ -437,7 +469,10 @@ public struct NWWorkingRow: View {
     public var body: some View {
         HStack(spacing: NW.Space.m) {
             ProgressView().progressViewStyle(.nwSpinner(size: 12))
+            // "Working…" ⇄ "Running <tool>…" ⇄ "Thinking…" cross-fade.
             Text(label).font(.nwSans(12)).italic().foregroundStyle(Color.nw.textSecondary)
+                .nwContentTransition(.crossFade)
+                .nwAnimation(.content, value: label)
         }
         .padding(.leading, NW.Space.xs)
         .frame(minHeight: NWThreadMetrics.activityHeight)
