@@ -18,7 +18,14 @@ struct SettingsPreviewTests {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
         workspace.vm.settingsSection = section
-        try await Preview.render("settings-\(section.rawValue)", size: CGSize(width: 1280, height: 900)) {
+        // Tall enough for the whole page.
+        let height: CGFloat = switch section {
+        case .pi: 1480
+        case .keyboard: 1380
+        case .remote, .worktrees: 1000
+        default: 900
+        }
+        try await Preview.render("settings-\(section.rawValue)", size: CGSize(width: 1280, height: height)) {
             SettingsView(vm: workspace.vm)
         }
     }
