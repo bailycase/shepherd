@@ -16,6 +16,7 @@ import SwiftUI
 /// ```
 @MainActor
 struct MotionRecording {
+    /// Coordinates are points of the recorded region (one pixel per point), from its top-left.
     struct Frame {
         /// Seconds since the change.
         let time: TimeInterval
@@ -114,8 +115,13 @@ enum MotionProbe {
         return MotionRecording(frames: frames)
     }
 
+    /// One pixel per point whatever the screen: `bitmapImageRepForCachingDisplay` follows the
+    /// window's backing scale, which would double every column on a Retina Mac.
     private static func capture(_ view: NSView, _ rect: CGRect, at time: TimeInterval) -> MotionRecording.Frame {
-        let bitmap = view.bitmapImageRepForCachingDisplay(in: rect)!
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(rect.width.rounded(.up)),
+                                      pixelsHigh: Int(rect.height.rounded(.up)), bitsPerSample: 8, samplesPerPixel: 4,
+                                      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        bitmap.size = rect.size
         view.cacheDisplay(in: rect, to: bitmap)
         return MotionRecording.Frame(time: time, bitmap: bitmap)
     }
