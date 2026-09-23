@@ -64,6 +64,7 @@ final class AppSettings: ObservableObject {
         static let uiDensity = "shepherd.ui.density"
         static let uiTextScale = "shepherd.ui.textScale"
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
+        static let sidebarRowDensity = "shepherd.sidebarRowDensity"
         static let remoteListenerEnabled = "shepherd.remote.listener"
         static let remoteListenerPort = "shepherd.remote.listenerPort"
         static let autoUpdatePi = "shepherd.pi.autoUpdate"
@@ -81,7 +82,7 @@ final class AppSettings: ObservableObject {
             defaultThinking, autoNameAgents, shellPath,
             piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             childConcurrency, childModel, childThinking, childContext, childScope,
-            uiDensity, uiTextScale, sidebarWidth,
+            uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             remoteListenerEnabled, remoteListenerPort,
             autoUpdatePi, autoUpdateExtensions,
             worktreeBaseMode, worktreeFetchBeforeCreate,
@@ -214,6 +215,12 @@ final class AppSettings: ObservableObject {
         didSet { store.set(sidebarWidth, forKey: Key.sidebarWidth) }
     }
 
+    /// Sidebar and menu row height (Compact 22 · Standard 28 · Comfortable 36), before the
+    /// density scale.
+    @Published var sidebarRowDensity: NWDensity {
+        didSet { store.set(sidebarRowDensity.rawValue, forKey: Key.sidebarRowDensity) }
+    }
+
     /// Serve this Mac's sessions to remote Shepherd clients (the mini role).
     /// Applied at launch and on toggle; persists so a host stays a host
     /// across reboots.
@@ -309,6 +316,7 @@ final class AppSettings: ObservableObject {
         uiTextScale = min(max(textScale == 0 ? 1 : textScale, Self.uiTextScaleRange.lowerBound), Self.uiTextScaleRange.upperBound)
         let width = store.double(forKey: Key.sidebarWidth)
         sidebarWidth = Self.clampSidebarWidth(width == 0 ? Self.defaultSidebarWidth : width)
+        sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(NWDensity.init(rawValue:)) ?? .standard
         remoteListenerEnabled = store.bool(forKey: Key.remoteListenerEnabled)
         let port = store.integer(forKey: Key.remoteListenerPort)
         remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(RemoteSettingsDefaults.port)
@@ -368,6 +376,7 @@ final class AppSettings: ObservableObject {
         uiDensity = 1
         uiTextScale = 1
         sidebarWidth = Self.defaultSidebarWidth
+        sidebarRowDensity = .standard
         piThemeExtension = true
         piPanesExtension = true
         piReviewExtension = true

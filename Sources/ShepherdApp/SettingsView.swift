@@ -179,7 +179,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Row titles on the page, as the search lists them under the section.
     var items: [String] {
         switch self {
-        case .appearance: ["Theme", "Mode", "Density", "Text size", "Sidebar width"]
+        case .appearance: ["Theme", "Mode", "Sidebar rows", "Density", "Text size", "Sidebar width"]
         case .terminal: ["Font family", "Font size", "Shell"]
         case .agents: ["Default model", "Default thinking level"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
@@ -193,7 +193,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     /// Words people search for that aren't row titles ("dark" → Appearance).
     private var keywords: [String: [String]] {
         switch self {
-        case .appearance: ["Mode": ["dark", "light", "color", "night watch", "theme"], "Text size": ["font", "zoom", "scale"], "Density": ["compact", "spacing"]]
+        case .appearance: ["Mode": ["dark", "light", "color", "night watch", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"]]
         case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
         case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
