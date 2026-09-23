@@ -151,24 +151,38 @@ struct SpaceRow: View, Equatable {
     }
 
     var body: some View {
-        NWSidebarDisclosureRow(name, expanded: !collapsed, depth: depth) { hovering in
-            if worktrees > 0 {
-                Text("⎇\(worktrees)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
-                    .help("\(worktrees) worktree agent\(worktrees == 1 ? "" : "s")")
-            }
-            if hovering, let onNewAgent {
-                SidebarPlus(help: "New Agent in \(name)", action: onNewAgent)
-            } else if blocked > 0 {
-                Text("\(blocked)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.lanternText)
-            } else if count > 0 {
-                Text("\(count)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
-            }
-        }
+        NWSidebarDisclosureRow(name, expanded: !collapsed, depth: depth) { hovering in trailing(hovering: hovering) }
         .opacity(dimmed ? 0.55 : 1)
         .sidebarTapRow(action: onToggle)
         .accessibilityLabel(Self.accessibilityText(name: name, count: count, blocked: blocked, collapsed: collapsed))
         .accessibilityActions {
             if let onNewAgent { Button("New Agent in \(name)", action: onNewAgent) }
+        }
+    }
+
+    /// Worktree count, then one slot the agent count (or waiting count) and the hover `+` share.
+    @ViewBuilder func trailing(hovering: Bool) -> some View {
+        if worktrees > 0 {
+            Text("⎇\(worktrees)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+                .help("\(worktrees) worktree agent\(worktrees == 1 ? "" : "s")")
+        }
+        // The count and the hover `+` share one slot and crossfade, so hovering resizes nothing.
+        let showsPlus = hovering && onNewAgent != nil
+        ZStack(alignment: .trailing) {
+            Group {
+                if blocked > 0 {
+                    Text("\(blocked)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.lanternText)
+                } else if count > 0 {
+                    Text("\(count)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+                }
+            }
+            .opacity(showsPlus ? 0 : 1)
+            if let onNewAgent {
+                SidebarPlus(help: "New Agent in \(name)", action: onNewAgent)
+                    .opacity(showsPlus ? 1 : 0)
+                    .allowsHitTesting(showsPlus)
+                    .accessibilityHidden(true)
+            }
         }
     }
 

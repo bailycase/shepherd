@@ -416,8 +416,10 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Interaction:** rows are tap views with button traits and accessibility actions, so they can
   also be dragged to reorder (with a 2pt running drop line, `NWDropIndicator`, at the row's top
   or bottom edge). Only drags that started in this sidebar qualify. Hover `+` glyphs are real
-  labeled buttons (and always present for VoiceOver). Keyboard selection (⌘1–9, ⌘↑/↓, ⌃⇧digits)
-  scrolls the row into view.
+  labeled buttons (and always present for VoiceOver). Hovering never moves or resizes anything:
+  the machine chord and the `+` are always laid out and only fade in, and the `+` takes the
+  count's slot (a header's floats over it, since it is taller than the label). Keyboard
+  selection (⌘1–9, ⌘↑/↓, ⌃⇧digits) scrolls the row into view.
 - **Context menus:**
   - Spaces: New Agent, Rename…, New Worktree… and Import Existing Worktree… (git repositories
     only), Remove Space….
