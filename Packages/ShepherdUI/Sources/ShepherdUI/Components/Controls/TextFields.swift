@@ -81,7 +81,7 @@ private struct NWFieldChrome: ViewModifier {
             .padding(.vertical, NW.Space.xs)
             .frame(minHeight: NW.Height.controlM)
             .background(nw.bgRaised, in: shape)
-            .overlay { shape.strokeBorder(error ? nw.failed : nw.lineStrong, lineWidth: 1) }
+            .nwBorder(error ? nw.failed : nw.lineStrong, radius: NW.Radius.s)
             .nwFocusRing(focused, radius: NW.Radius.s)
             .opacity(enabled ? 1 : 0.4)
     }

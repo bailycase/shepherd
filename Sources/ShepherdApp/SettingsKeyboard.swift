@@ -102,7 +102,7 @@ private struct ShortcutRecorder: View {
                         .padding(.horizontal, NW.Space.m)
                         .frame(minHeight: NW.Height.controlS - NW.Space.xxs)
                         .background(Color.nw.runningTint, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                        .overlay { RoundedRectangle(cornerRadius: NW.Radius.xs).strokeBorder(Color.nw.running, lineWidth: 1) }
+                        .nwBorder(Color.nw.running, radius: NW.Radius.xs)
                 } else {
                     NWKeycap(chordText)
                 }

@@ -34,7 +34,7 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
                         .background {
                             if selected {
                                 RoundedRectangle(cornerRadius: NW.Radius.xs).fill(nw.bgSelected)
-                                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.xs).strokeBorder(nw.lineStrong, lineWidth: 1) }
+                                    .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
                             }
                         }
                         .contentShape(Rectangle())
@@ -45,7 +45,7 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
         }
         .padding(NW.Space.xxs)
         .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(nw.lineSubtle, lineWidth: 1) }
+        .nwBorder(nw.lineSubtle, radius: NW.Radius.s)
         .fixedSize()
         .accessibilityRepresentation {
             Picker(label, selection: $selection) {
@@ -106,7 +106,7 @@ public struct NWPopupLabel: View {
         .padding(.trailing, NW.Space.m)
         .frame(height: NW.Height.controlM)
         .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(nw.lineStrong, lineWidth: 1) }
+        .nwBorder(nw.lineStrong, radius: NW.Radius.s)
         .contentShape(Rectangle())
     }
 }
@@ -245,7 +245,7 @@ public struct NWStepper: View {
             button("plus", label: "More", enabled: value < range.upperBound) { value += 1 }
         }
         .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(nw.lineStrong, lineWidth: 1) }
+        .nwBorder(nw.lineStrong, radius: NW.Radius.s)
         .fixedSize()
         .accessibilityRepresentation {
             Stepper(label, value: $value, in: range)

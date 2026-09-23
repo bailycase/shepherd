@@ -50,14 +50,7 @@ public struct NWUserBubble: View {
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
             .background(isQueued ? Color.clear : nw.bgBubble, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .overlay {
-                if isQueued {
-                    RoundedRectangle(cornerRadius: NW.Radius.m)
-                        .strokeBorder(nw.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                } else {
-                    Color.clear.nwBorder(nw.lineStrong, radius: NW.Radius.m)
-                }
-            }
+            .nwBorder(nw.lineStrong, in: RoundedRectangle(cornerRadius: NW.Radius.m), dash: isQueued ? [3, 3] : [])
             .frame(maxWidth: NWThreadMetrics.bubbleMaxWidth, alignment: .trailing)
             if isQueued {
                 HStack(spacing: NW.Space.m) {

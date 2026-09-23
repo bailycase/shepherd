@@ -30,10 +30,11 @@ public struct NWKeycap: View {
                     .padding(.horizontal, NW.Space.xs)
                     .frame(minWidth: 18, minHeight: 18)
                     .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.xs).strokeBorder(nw.lineStrong, lineWidth: 1) }
-                    // The board's 1.5px bottom edge: a cap, not a box.
+                    .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
+                    // The board's heavier bottom edge (1.5px against 1px): a cap, not a box. A
+                    // second hairline, since a device pixel does not split.
                     .overlay(alignment: .bottom) {
-                        Rectangle().fill(nw.lineStrong).frame(height: 0.5).padding(.horizontal, NW.Radius.xs)
+                        NWHairline(color: nw.lineStrong).padding(.horizontal, NW.Radius.xs)
                     }
             }
         }

@@ -47,7 +47,7 @@ public struct NWBanner<Actions: View>: View {
         .padding(.vertical, NW.Space.l)
         .padding(.horizontal, 14)
         .background(state.tint ?? nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(nw.lineSubtle, lineWidth: 1) }
+        .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
         .accessibilityElement(children: .combine)
     }
 
@@ -202,12 +202,7 @@ public struct NWEmptyState<Actions: View>: View {
         .padding(.vertical, 28)
         .padding(.horizontal, NW.Space.xl)
         .frame(maxWidth: .infinity)
-        .overlay {
-            if framed {
-                RoundedRectangle(cornerRadius: NW.Radius.m)
-                    .strokeBorder(nw.lineStrong, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            }
-        }
+        .nwBorder(framed ? nw.lineStrong : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m), dash: [4, 3])
     }
 }
 

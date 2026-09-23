@@ -69,11 +69,7 @@ private struct NWStyledButton: View {
             .padding(.horizontal, padding)
             .frame(minHeight: height)
             .background(background(nw), in: shape)
-            .overlay {
-                if kind == .secondary || kind == .danger {
-                    shape.strokeBorder(nw.lineStrong, lineWidth: 1)
-                }
-            }
+            .nwBorder(kind == .secondary || kind == .danger ? nw.lineStrong : .clear, radius: NW.Radius.s)
             .offset(y: configuration.isPressed ? 0.5 : 0)
             .opacity(enabled ? 1 : 0.4)
             .contentShape(shape)
@@ -173,9 +169,7 @@ private struct NWIconButton: View {
             .foregroundStyle(foreground)
             .frame(width: side, height: side)
             .background(fill, in: Circle())
-            .overlay {
-                if style.bordered { Circle().strokeBorder(nw.lineStrong, lineWidth: 1) }
-            }
+            .nwBorder(style.bordered ? nw.lineStrong : .clear, in: Circle())
             .opacity(enabled ? 1 : 0.4)
             .contentShape(Circle())
             .onHover { hovering = $0 }
