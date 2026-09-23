@@ -15,10 +15,11 @@ import Testing
 @Suite("Thread previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct ThreadPreviewTests {
-    private func render(_ surface: String, _ snapshot: NativeThreadSnapshot, size: CGSize = CGSize(width: 1180, height: 900)) async throws {
+    private func render(_ surface: String, _ snapshot: NativeThreadSnapshot, size: CGSize = CGSize(width: 1180, height: 900),
+                        ready: @escaping @MainActor () -> Bool = { true }) async throws {
         let fixture = ThreadFixture(snapshot)
         defer { fixture.store.stop() }
-        try await Preview.render(surface, size: size, ready: { fixture.store.ready && !fixture.store.rows.isEmpty }) {
+        try await Preview.render(surface, size: size, ready: { fixture.store.ready && !fixture.store.rows.isEmpty && ready() }) {
             fixture.thread()
         }
     }
@@ -75,10 +76,16 @@ struct ThreadPreviewTests {
 
     /// Prose, lists, inline code, a link, and a highlighted code block.
     @Test func threadProse() async throws {
-        // Compile the Swift grammar up front so the block's off-main highlighting lands before
-        // the capture.
-        _ = CodeHighlight.highlightLines(["let warm = 1"], path: "warm.swift", style: .theme)
-        try await render("thread-prose", ActivityThreads.prose)
+        // Code blocks color themselves off the main actor: capture once every fence's colors
+        // are in.
+        let snapshot = ActivityThreads.prose
+        let fences = snapshot.messages.flatMap(\.blocks).filter { $0.kind == .text }.flatMap { nativeMarkdownBlocks($0.text) }
+            .compactMap { block -> CodeHighlightCache.Key? in
+                guard case .code(let code, let language) = block else { return nil }
+                return CodeHighlightCache.Key(fence: code, language: language)
+            }
+        #expect(!fences.isEmpty)
+        try await render("thread-prose", snapshot, ready: { fences.allSatisfy { CodeHighlightCache.cached($0) != nil } })
     }
 
     /// The "Activity line states" board: done, expanded into calls, failed with its output
