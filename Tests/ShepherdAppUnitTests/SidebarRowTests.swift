@@ -97,6 +97,32 @@ struct SidebarRowModelTests {
         #expect(model(.idle).accessory == .none)
     }
 
+    /// A subagent waiting on you makes its agent's row ask, whatever the agent itself is doing.
+    @Test(arguments: [AgentStatus.working, .idle, .done])
+    func aWaitingSubagentMakesItsAgentAsk(status: AgentStatus) {
+        let row = model(status, children: [Fixture.child("r1"), Fixture.child("r2", attention: true)])
+        #expect(row.accessory == .ask)
+        #expect(row.state == .attention)
+        #expect(row.accessibilityLabel == "a, needs you")
+    }
+
+    /// Spaces and hosts count each blocked agent and each asking subagent of the agents given.
+    @Test func needsYouCountsBlockedAgentsAndAskingSubagents() {
+        var blocked = Fixture.agent("blocked", in: space).agent
+        blocked.status = .blocked
+        var working = Fixture.agent("working", in: space).agent
+        working.status = .working
+        let idle = Fixture.agent("idle", in: space).agent
+        let elsewhere = Fixture.agent("elsewhere", in: space).agent
+        let children: [AgentID: [ChildRun]] = [
+            working.id: [Fixture.child("q1", attention: true), Fixture.child("q2", attention: true), Fixture.child("live")],
+            idle.id: [Fixture.child("done", state: "complete")],
+            elsewhere.id: [Fixture.child("q3", attention: true)],
+        ]
+        #expect(SidebarAttention.count([blocked, working, idle], children: children) == 3)
+        #expect(SidebarAttention.count([idle], children: children) == 0)
+    }
+
     @Test func childRowsShowUnlessTheFinishedGroupIsFolded() {
         let live = [Fixture.child("r1")]
         #expect(model(.working, children: live).showsChildRows)

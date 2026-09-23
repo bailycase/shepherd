@@ -13,8 +13,7 @@ struct RemoteHostBlock: View {
 
     private var detail: NWSidebarSectionDetail {
         guard connection.phase == .connected else { return .none }
-        let blocked = connection.state.agents.count { $0.status == .blocked }
-            + connection.children.values.reduce(0) { $0 + $1.count(where: \.needsAttention) }
+        let blocked = SidebarAttention.count(connection.state.agents, children: connection.children)
         return blocked > 0 ? .text("\(blocked) need you", tone: .attention) : .count(connection.state.agents.count)
     }
 
@@ -48,7 +47,7 @@ struct RemoteHostBlock: View {
                         name: space.name,
                         collapsed: spaceCollapsed,
                         count: agents.count,
-                        blocked: agents.count { $0.status == .blocked },
+                        blocked: SidebarAttention.count(agents, children: connection.children),
                         onToggle: { vm.toggleRemoteSpaceCollapsed(hostID: connection.id, spaceID: space.id) },
                         onNewAgent: { vm.showNewAgentSheetForRemote(hostID: connection.id, spaceID: space.id) }
                     )

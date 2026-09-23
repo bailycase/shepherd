@@ -105,7 +105,8 @@ struct SpaceSection: View {
     var body: some View {
         let collapsed = vm.collapsedSpaces.contains(space.id)
         SpaceRow(name: space.name, collapsed: collapsed, count: agents.count,
-                 blocked: agents.count { $0.status == .blocked }, worktrees: agents.count { $0.worktreeBranch != nil },
+                 blocked: SidebarAttention.count(agents, children: vm.childRuns.rows),
+                 worktrees: agents.count { $0.worktreeBranch != nil },
                  depth: depth,
                  onToggle: { vm.toggleSpaceCollapsed(space.id) },
                  onNewAgent: { vm.quickCreateAgent(in: space.id) })
@@ -137,6 +138,7 @@ struct SpaceRow: View, Equatable {
     let name: String
     let collapsed: Bool
     let count: Int
+    /// Questions waiting on you (`SidebarAttention`), shown in place of the agent count.
     var blocked = 0
     var worktrees = 0
     var depth = 0
@@ -208,11 +210,17 @@ struct SidebarAgentRowModel: Equatable {
     var inspectedRunID: String?
     var dimmed = false
 
+    /// A question waits on the user: the agent's own, or one of its subagents'.
+    var needsYou: Bool { agent.status == .blocked || children.contains(where: \.needsAttention) }
+
+    /// The dot: needs you wins over the agent's own status.
+    var state: AgentState { needsYou ? .attention : AgentState(agent.status) }
+
     /// The agent row's trailing slot, in priority order: the ⌘-digit hint while ⌘ is held,
     /// needs you, a folded subagent count, then elapsed time while working.
     var accessory: NWSidebarRow.Accessory {
         if let badge { return .shortcut("⌘\(badge)") }
-        if agent.status == .blocked { return .ask }
+        if needsYou { return .ask }
         if folded, !children.isEmpty { return .text("\(children.count) sub") }
         if agent.status == .working, let statusSince { return .elapsed(since: statusSince, tone: .running) }
         return .none
@@ -223,7 +231,17 @@ struct SidebarAgentRowModel: Equatable {
 
     /// "Fix the login, worktree, running".
     var accessibilityLabel: String {
-        "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(AgentRow.statusWord(agent.status))"
+        "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(needsYou ? "needs you" : AgentRow.statusWord(agent.status))"
+    }
+}
+
+/// What the sidebar counts as needing you: each blocked agent, plus each subagent asking a
+/// question, so a space or host with a waiting subagent reads as waiting.
+enum SidebarAttention {
+    static func count(_ agents: [Agent], children: [AgentID: [ChildRun]]) -> Int {
+        agents.reduce(0) { total, agent in
+            total + (agent.status == .blocked ? 1 : 0) + (children[agent.id] ?? []).count(where: \.needsAttention)
+        }
     }
 }
 
@@ -299,7 +317,7 @@ struct AgentRow: View {
     let action: () -> Void
 
     var body: some View {
-        NWSidebarRow(model.agent.name, state: AgentState(model.agent.status), selected: model.selected,
+        NWSidebarRow(model.agent.name, state: model.state, selected: model.selected,
                      depth: model.depth, worktree: model.agent.worktreeBranch != nil, dimmed: model.dimmed,
                      accessory: model.accessory)
             .help(model.agent.worktreeBranch.map { "\(model.agent.name) · worktree \($0)" } ?? model.agent.name)
