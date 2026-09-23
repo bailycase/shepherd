@@ -58,7 +58,8 @@ enum UpdateChannel: String, CaseIterable, Identifiable {
 /// Info.plist (SUFeedURL / SUPublicEDKey), so bare SwiftPM library builds
 /// carry no update machinery — only the bundled app updates itself.
 @MainActor
-final class AppUpdater: ObservableObject {
+@Observable
+final class AppUpdater {
     static let shared = AppUpdater()
 
     /// UserDefaults key for the selected channel (an UpdateChannel rawValue).
@@ -73,7 +74,7 @@ final class AppUpdater: ObservableObject {
     /// instead of a crash.
     let available: Bool
 
-    @Published var channel: UpdateChannel {
+    var channel: UpdateChannel {
         didSet { UserDefaults.standard.set(channel.rawValue, forKey: Self.channelKey) }
     }
 
@@ -111,11 +112,16 @@ final class AppUpdater: ObservableObject {
         controller.checkForUpdates(nil)
     }
 
+    /// Stored by Sparkle, so its reads and writes are reported to observers by hand.
     var automaticallyChecks: Bool {
-        get { controller.updater.automaticallyChecksForUpdates }
+        get {
+            access(keyPath: \.automaticallyChecks)
+            return controller.updater.automaticallyChecksForUpdates
+        }
         set {
-            objectWillChange.send()
-            controller.updater.automaticallyChecksForUpdates = newValue
+            withMutation(keyPath: \.automaticallyChecks) {
+                controller.updater.automaticallyChecksForUpdates = newValue
+            }
         }
     }
 }

@@ -7,7 +7,7 @@ import ShepherdProtocol
 
 struct AdvancedSettings: View {
     var vm: ShepherdViewModel
-    @ObservedObject private var updater = AppUpdater.shared
+    private var updater: AppUpdater { .shared }
     @State private var confirmingReset = false
 
     private var version: String {
