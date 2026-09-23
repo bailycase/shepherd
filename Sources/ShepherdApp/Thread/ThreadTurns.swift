@@ -134,13 +134,13 @@ struct AgentTurn: View, Equatable {
     @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
         switch item {
         case .thinking(let id, let text, let seconds, let live, let since):
-            if live {
-                NWThinking(liveSince: since.map { Date(timeIntervalSince1970: $0 / 1000) }, seconds: seconds)
-            } else {
-                NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
+            // One view for live and finished thinking, so "Thinking…" settles into "Thought
+            // for Ns" in place.
+            live
+                ? NWThinking(liveSince: since.map { Date(timeIntervalSince1970: $0 / 1000) }, seconds: seconds)
+                : NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
                     get: { openThinking.contains(id) },
                     set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }))
-            }
         case .prose(_, _, let blocks):
             Prose(blocks: blocks).equatable()
         case .activity(let burst):

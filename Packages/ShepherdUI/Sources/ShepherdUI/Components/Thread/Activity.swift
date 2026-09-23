@@ -39,13 +39,23 @@ public struct NWActivityLine: View {
         self.action = action
     }
 
+    /// When the call ends, the live line cross-fades into its finished line in place and its
+    /// output lines go at once: they update per output chunk, and a thread following its tail
+    /// must not watch them shrink.
     public var body: some View {
-        switch status {
-        case .live(let since, let tail):
-            live(since: since, tail: tail)
-        case .done, .failed:
-            finished
+        let live: (since: Date?, tail: [String])? = if case .live(let since, let tail) = status { (since, tail) } else { nil }
+        VStack(alignment: .leading, spacing: NW.Space.xs) {
+            ZStack(alignment: .leading) {
+                if let live {
+                    liveHeader(since: live.since).nwTransition(.content)
+                } else {
+                    finished.nwTransition(.content)
+                }
+            }
+            .nwAnimation(.content, value: live == nil)
+            if let tail = live?.tail, !tail.isEmpty { liveTail(tail) }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var symbol: String {
@@ -76,6 +86,7 @@ public struct NWActivityLine: View {
                     .lineLimit(1)
                     .fixedSize()
                     .layoutPriority(1)
+                    .nwContentTransition(.numeric())
                 if !meta.isEmpty {
                     Text(meta)
                         .font(.nwMono(11))
@@ -83,14 +94,14 @@ public struct NWActivityLine: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .monospacedDigit()
+                        .nwContentTransition(.numeric())
                 }
                 if action != nil {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(nw.textTertiary)
-                        .frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
+                    NWThreadChevron(isExpanded: isExpanded).foregroundStyle(nw.textTertiary)
                 }
             }
+            // A finished call joining the line counts up ("Explored 6 files").
+            .nwAnimation(.content, value: [label, meta])
             .padding(.leading, NW.Space.xs)
             .padding(.trailing, NW.Space.m)
             .frame(minHeight: NWThreadMetrics.activityHeight)
@@ -104,38 +115,51 @@ public struct NWActivityLine: View {
         .accessibilityHint(action == nil ? "" : "Shows the calls")
     }
 
-    private func live(since: Date?, tail: [String]) -> some View {
+    private func liveHeader(since: Date?) -> some View {
         let nw = Color.nw
-        return VStack(alignment: .leading, spacing: NW.Space.xs) {
-            HStack(spacing: NW.Space.m) {
-                ProgressView().progressViewStyle(.nwSpinner(size: NWThreadMetrics.activityIcon))
-                Text(label).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary).lineLimit(1).fixedSize()
-                    .layoutPriority(1)
-                if !meta.isEmpty {
-                    Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
-                }
-                if let since {
-                    NWElapsedText(since: since, style: .long).font(.nwMono(11)).foregroundStyle(nw.running).fixedSize()
-                }
+        return HStack(spacing: NW.Space.m) {
+            ProgressView().progressViewStyle(.nwSpinner(size: NWThreadMetrics.activityIcon))
+            Text(label).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary).lineLimit(1).fixedSize()
+                .layoutPriority(1)
+            if !meta.isEmpty {
+                Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
             }
-            .frame(minHeight: NWThreadMetrics.activityHeight)
-            if !tail.isEmpty {
-                VStack(alignment: .leading, spacing: NWThreadMetrics.tailLineSpacing) {
-                    ForEach(Array(tail.enumerated()), id: \.offset) { index, line in
-                        Text(line)
-                            .font(.nwMono(11))
-                            .foregroundStyle(index == tail.count - 1 ? nw.textSecondary : nw.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                }
-                .padding(.leading, NWThreadMetrics.liveTailIndent)
-                .accessibilityHidden(true)
+            if let since {
+                NWElapsedText(since: since, style: .long).font(.nwMono(11)).foregroundStyle(nw.running).fixedSize()
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: NWThreadMetrics.activityHeight)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
+    }
+
+    private func liveTail(_ tail: [String]) -> some View {
+        let nw = Color.nw
+        return VStack(alignment: .leading, spacing: NWThreadMetrics.tailLineSpacing) {
+            ForEach(Array(tail.enumerated()), id: \.offset) { index, line in
+                Text(line)
+                    .font(.nwMono(11))
+                    .foregroundStyle(index == tail.count - 1 ? nw.textSecondary : nw.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .padding(.leading, NWThreadMetrics.liveTailIndent)
+        .accessibilityHidden(true)
+    }
+}
+
+/// The thread's 10pt disclosure chevron (activity lines, thinking): one `chevron.right` that
+/// turns to point down as it opens, under whatever motion the expansion runs with.
+struct NWThreadChevron: View {
+    let isExpanded: Bool
+
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 8, weight: .semibold))
+            .frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
+            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+            .accessibilityHidden(true)
     }
 }
 
@@ -269,6 +293,7 @@ private struct NWActivityCallRowView<Menu: View>: View {
                 .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
                 .padding(.leading, labelWidth + 10)
                 .padding(.bottom, NW.Space.xs)
+                .nwTransition(.disclosure)
             }
         }
     }
