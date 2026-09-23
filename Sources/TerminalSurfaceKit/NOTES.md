@@ -65,8 +65,9 @@ A focused Ghostty surface consumes any key equivalent that matches one of its bi
 `appOwnedChords` lists every chord the app chrome uses, and each is written as `keybind = <chord>=unbind`:
 
 - new agent, options, and new space
-- close pane and delete agent
+- close pane, delete agent, and rename
 - splits and pane focus
+- ⇧⌘[ and ⇧⌘], which the app does not bind but Ghostty would swallow as no-op tab switches
 - agent navigation and turn jumps
 - sidebar, right pane, model picker, stop, and inspect
 - ⌘1–9 and ⌃⇧1–9, in both logical and physical spellings
