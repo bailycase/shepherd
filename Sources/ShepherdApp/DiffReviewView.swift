@@ -271,9 +271,9 @@ private struct ReviewDiffList: View, Equatable {
                         )
                     }
                 }
+                // A reload of the same side (after a Revert, a refresh) lands at once: easing the
+                // sections' offsets under pinned headers mid-scroll opens and closes blank gaps.
                 .nwAnimation(.disclosure, value: model.disclosures)
-                // A file leaving (reverted) or arriving on a reload of the same side.
-                .nwAnimation(.list, value: session.files.map(\.id))
             }
             .modifier(ReviewScrollFollower(model: model, session: session, proxy: proxy))
         }
@@ -333,6 +333,9 @@ private struct DiffFileSection: View, Equatable {
 
     var body: some View {
         Section {
+            // Where the file's rows start: a fold eases only while the file sits in its place.
+            Color.clear.frame(height: 0)
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { model.noteRowsTop($0, of: file.id) }
             if !isFolded {
                 if file.isBinary {
                     Text("Binary file")
@@ -355,6 +358,7 @@ private struct DiffFileSection: View, Equatable {
                          open: canOpen ? { model.actions.open?(file) } : nil)
                 .contentShape(Rectangle())
                 .onTapGesture { model.point(at: file.id) }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.noteHeaderHeight($0) }
         }
     }
 
