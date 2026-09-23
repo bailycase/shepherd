@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import ShepherdCore
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
@@ -55,7 +55,7 @@ struct PreviewTests {
         let (workspace, _) = try await populatedWorkspace()
         defer { workspace.stop() }
         try await Preview.render("sidebar", size: CGSize(width: 256, height: 720)) {
-            SidebarView(vm: workspace.vm).background(Tokens.bgCanvas)
+            SidebarView(vm: workspace.vm).background(Color.nw.bgBase)
         }
     }
 
@@ -185,13 +185,13 @@ struct PreviewTests {
         try await Preview.render("subagent-cards", size: CGSize(width: 760, height: 1040)) {
             VStack(alignment: .leading, spacing: 22) {
                 ForEach(Threads.liveRuns, id: \.id) { SubagentCard(run: $0, actions: actions) }
-                Text("MANY PARALLEL RUNS").font(Fonts.section).foregroundStyle(Tokens.textMuted)
+                Text("MANY PARALLEL RUNS").nwSectionLabel()
                 RunsStrip(runs: many, actions: actions, expanded: .constant(false))
                 Spacer(minLength: 0)
             }
             .padding(32)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Tokens.bgSurface)
+            .background(Color.nw.bgWindow)
         }
     }
 
@@ -222,7 +222,7 @@ struct PreviewTests {
     @Test func reviewPane() async throws {
         let session = Reviews.session()
         try await Preview.render("review-pane", size: CGSize(width: 760, height: 900)) {
-            ReviewPane(session: session, actions: Reviews.actions).background(Tokens.bgSurface)
+            ReviewPane(session: session, actions: Reviews.actions).background(Color.nw.bgWindow)
         }
     }
 
@@ -232,9 +232,9 @@ struct PreviewTests {
         workspace.vm.selectAgent(agents[3].id)
         try await Preview.render("command-palette", size: CGSize(width: 1000, height: 720)) {
             ZStack(alignment: .top) {
-                Tokens.bgSurface
-                Tokens.scrim
-                CommandPaletteView(vm: workspace.vm).padding(.top, Metrics.paletteTop)
+                Color.nw.bgWindow
+                Color.nw.scrim
+                CommandPaletteView(vm: workspace.vm).padding(.top, AppLayout.paletteTop)
             }
         }
     }
@@ -310,7 +310,7 @@ struct PreviewTests {
                         actions: [DialogAction("Cancel", kind: .cancel) {}, DialogAction("Delete Agent and Worktree", kind: .destructive) {}]) {
                 DialogWarning(text: "3 uncommitted changes and 2 commits only on worktree/fix-login will be lost.")
                 SheetRow("Worktree") {
-                    Text("~/Developer/Shepherd-worktree-fix-login").font(Fonts.code).foregroundStyle(Tokens.textSecondary).lineLimit(1)
+                    Text("~/Developer/Shepherd-worktree-fix-login").font(Font.nw(.mono)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
                 }
             }
         }

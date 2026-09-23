@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import ShepherdDesign
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdTestSupport
@@ -184,7 +184,7 @@ struct ThreadScrollingTests {
 
         try await thread.waitUntilReady()
 
-        #expect(thread.trailingSpace <= Metrics.turnSpacing * 2 + 13, "blank space after the last turn: \(thread.trailingSpace)")
+        #expect(thread.trailingSpace <= AppLayout.turnSpacing * 2 + 13, "blank space after the last turn: \(thread.trailingSpace)")
         thread.scrollToEnd()
         #expect(thread.distanceFromBottom >= -1 && thread.distanceFromBottom < 2, "scrolled past the end: \(thread.distanceFromBottom)")
     }
@@ -364,6 +364,6 @@ struct ThreadScrollingTests {
 
         #expect(thread.store.displayedMessages.last?.entryID.hasPrefix("pending:") == true)
         try await eventuallyOnMain("sending to bring the view back to the tail") { thread.distanceFromBottom < 2 }
-        #expect(thread.trailingSpace <= Metrics.turnSpacing * 2 + 13)
+        #expect(thread.trailingSpace <= AppLayout.turnSpacing * 2 + 13)
     }
 }
