@@ -65,6 +65,8 @@ private struct NWPaletteOverlay<Content: View>: View {
                 content()
                     .frame(width: placement.width)
                     .environment(\.nwPaletteMaxListHeight, placement.maxListHeight)
+                    // VoiceOver stays inside the palette while it is up.
+                    .accessibilityAddTraits(.isModal)
                     .padding(.top, placement.top)
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
