@@ -8,6 +8,9 @@
 //             run inherited SHEPHERD_SUPPORT_DIR from a Shepherd agent.
 //   bin/      first on PATH; tests that launch pi the way the app does put the stub there.
 //   zdotdir/  ZDOTDIR, so login shells spawned by tests never run the user's dotfiles.
+//   pi-agent/ PI_CODING_AGENT_DIR, so the session headers the app seeds and the pi config it
+//             reads are scratch, never ~/.pi/agent. Skipped for the opt-in live-model use case
+//             (SHEPHERD_LIVE_MODEL), which runs the user's real pi with their configuration.
 // The root is removed when the process exits. Variables a Shepherd sets for its agents (a run
 // started by an agent inherits them) are cleared, so nothing can reach the running Shepherd's
 // socket through the environment.
@@ -96,4 +99,11 @@ static void shepherd_test_isolation_install(void) {
     if (setenv("SHEPHERD_SUPPORT_DIR", support, 1) != 0 || setenv("ZDOTDIR", zdotdir, 1) != 0
         || setenv("PATH", newPath, 1) != 0) fail("setenv");
     free(newPath);
+
+    const char *liveModel = getenv("SHEPHERD_LIVE_MODEL");
+    if (liveModel == NULL || liveModel[0] == '\0') {
+        char piAgent[600];
+        make("pi-agent", piAgent, sizeof piAgent);
+        if (setenv("PI_CODING_AGENT_DIR", piAgent, 1) != 0) fail("setenv");
+    }
 }
