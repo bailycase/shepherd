@@ -11,7 +11,6 @@ struct UserTurn: View, Equatable {
     let messages: [NativeThreadMessage]
     /// "2:41 PM"; "10:58 · from parent" in a child's transcript.
     var caption: String?
-    var small = false
 
     var body: some View {
         VStack(alignment: .trailing, spacing: AppLayout.activitySpacing) {
@@ -36,7 +35,6 @@ struct AgentTurn: View, Equatable {
     let presentation: NativeTurnPresentation
     /// True while this turn is the one streaming.
     let live: Bool
-    var small = false
     var subagents = NativeSubagentPlacement()
     var subagentActions: SubagentActions? = nil
     /// Timestamp (ms) of the user message that opened this turn: the footer's time and duration.
@@ -49,12 +47,11 @@ struct AgentTurn: View, Equatable {
     var working: String? = nil
     @State private var openThinking: Set<String> = []
 
-    init(presentation: NativeTurnPresentation, live: Bool, small: Bool = false, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
+    init(presentation: NativeTurnPresentation, live: Bool, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
          working: String? = nil) {
         self.presentation = presentation
         self.live = live
-        self.small = small
         self.subagents = subagents
         self.subagentActions = subagentActions
         self.startedAt = startedAt
@@ -65,12 +62,12 @@ struct AgentTurn: View, Equatable {
 
     /// A transcript with no store behind it (the subagent inspector): the presentation is
     /// memoised per turn.
-    init(messages: [NativeThreadMessage], live: Bool, small: Bool = false) {
-        self.init(presentation: TurnPresentationMemo.presentation(messages, live: live), live: live, small: small)
+    init(messages: [NativeThreadMessage], live: Bool) {
+        self.init(presentation: TurnPresentationMemo.presentation(messages, live: live), live: live)
     }
 
     static func == (lhs: AgentTurn, rhs: AgentTurn) -> Bool {
-        lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.small == rhs.small && lhs.subagents == rhs.subagents
+        lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.subagents == rhs.subagents
             && lhs.startedAt == rhs.startedAt && lhs.working == rhs.working
             && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
             && (lhs.subagentActions == nil) == (rhs.subagentActions == nil)

@@ -84,6 +84,17 @@ struct TokenTests {
         }
     }
 
+    /// A side transcript (the subagent inspector) sets prose one step under the thread: `.body`
+    /// at the `.ui` size, still at the body's line height.
+    @Test func smallProseIsOneStepUnderTheThread() {
+        let ramp = NWTypeRamp(scale: 1)
+        #expect(NWProseSize.regular.step == 0 && NWProseSize.small.step == NWTextStyle.body.size - NWTextStyle.ui.size)
+        #expect(ramp.font(.body) == Font.custom("Geist-Regular", size: 13.5, relativeTo: .body))
+        #expect(ramp.font(.body, size: .small) == Font.custom("Geist-Regular", size: 12.5, relativeTo: .body))
+        #expect(ramp.font(.headline, size: .small) == Font.custom("Geist-SemiBold", size: 12.5, relativeTo: .headline))
+        #expect(ramp.lineSpacing(.body, size: .small) > 0 && ramp.lineSpacing(.body, size: .small) <= ramp.lineSpacing(.body))
+    }
+
     @Test(arguments: [1.0, 1.25])
     func leadingScalesWithTextSize(scale: Double) {
         let saved = ThemeStore.shared.textScale
