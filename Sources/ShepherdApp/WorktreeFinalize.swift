@@ -342,8 +342,7 @@ final class WorktreeSetupModel {
                 repoPath
             )
             if r.status == 0 { return .pass("origin reachable with your credentials") }
-            let detail = r.stderr.split(separator: "\n").last.map(String.init)
-            return .fail(detail ?? "origin remote missing or unreachable")
+            return .fail(Self.remoteFailureDetail(r.stderr) ?? "origin remote missing or unreachable")
         case .gh:
             let r = await runner("command -v gh >/dev/null 2>&1 && gh --version | head -1", nil)
             if r.status == 0 {
@@ -363,6 +362,20 @@ final class WorktreeSetupModel {
             return .fail("not authenticated — run gh auth login")
         }
     }
+
+    /// Why `git ls-remote` failed: its last line that is not git's closing boilerplate, which
+    /// follows every SSH failure and says nothing about this one. nil when nothing else is left.
+    static func remoteFailureDetail(_ stderr: String) -> String? {
+        stderr.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty && !gitRemoteBoilerplate.contains($0) }
+    }
+
+    private static let gitRemoteBoilerplate: Set<String> = [
+        "fatal: Could not read from remote repository.",
+        "Please make sure you have the correct access rights",
+        "and the repository exists.",
+    ]
 }
 
 enum WorktreeCommitCount {

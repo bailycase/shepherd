@@ -315,6 +315,40 @@ struct WorktreeSetupTests {
         #expect(!model.allPassed)
     }
 
+    /// git's closing lines after an SSH failure, the same whatever went wrong.
+    private nonisolated static let sshBoilerplate = """
+        fatal: Could not read from remote repository.
+
+        Please make sure you have the correct access rights
+        and the repository exists.
+
+        """
+
+    /// Real `git ls-remote` stderr: the check shows the line that names the problem, not git's
+    /// boilerplate.
+    @Test(arguments: [
+        ("ssh: Could not resolve hostname github.invalid: nodename nor servname provided, or not known\n" + sshBoilerplate,
+         "ssh: Could not resolve hostname github.invalid: nodename nor servname provided, or not known"),
+        ("git@github.com: Permission denied (publickey).\n" + sshBoilerplate, "git@github.com: Permission denied (publickey)."),
+        ("ERROR: Repository not found.\n" + sshBoilerplate, "ERROR: Repository not found."),
+        ("fatal: 'origin' does not appear to be a git repository\n" + sshBoilerplate, "fatal: 'origin' does not appear to be a git repository"),
+        ("fatal: unable to access 'https://github.invalid/o/r.git/': Could not resolve host: github.invalid\n",
+         "fatal: unable to access 'https://github.invalid/o/r.git/': Could not resolve host: github.invalid"),
+        ("remote: Invalid username or token. Password authentication is not supported for Git operations.\n"
+            + "fatal: Authentication failed for 'https://github.com/o/r.git/'\n",
+         "fatal: Authentication failed for 'https://github.com/o/r.git/'"),
+        ("remote: Repository not found.\nfatal: repository 'https://github.com/o/missing.git/' not found\n",
+         "fatal: repository 'https://github.com/o/missing.git/' not found"),
+        (sshBoilerplate, "origin remote missing or unreachable"),
+        ("", "origin remote missing or unreachable"),
+    ])
+    func anUnreachableOriginSaysWhyWithoutGitsBoilerplate(stderr: String, detail: String) async {
+        let shell = ScriptedShell { $0.hasPrefix("git ls-remote") ? .fail(128, stderr) : .ok }
+        let model = model(shell)
+        await model.runAll()
+        #expect(model.states[.remote] == .fail(detail))
+    }
+
     @Test func applyingAnIdentityQuotesItAndReprobes() async {
         let identitySet = LockedFlag()
         let shell = ScriptedShell { script in
