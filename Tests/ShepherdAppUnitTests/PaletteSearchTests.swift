@@ -93,3 +93,27 @@ struct PaletteSearchTests {
         #expect(PaletteSearch.filter(items, query: "ar").map(\.section) == [.commands, .thisThread, .agents])
     }
 }
+
+/// The results list is one flat run of single views: a header before each section's first
+/// row, and every row keeping its place in the results (keyboard selection is by index).
+@Suite("Palette entries")
+struct PaletteEntryTests {
+    private func item(_ id: String, _ section: PaletteItem.Section) -> PaletteItem {
+        PaletteItem(id: id, kind: .action(id), section: section, title: id)
+    }
+
+    @Test func eachSectionGetsOneHeaderBeforeItsFirstRow() {
+        let entries = PaletteEntry.entries([item("a", .commands), item("b", .commands), item("c", .agents)])
+        #expect(entries.map(\.id) == ["section.\(PaletteItem.Section.commands.rawValue)", "a", "b",
+                                      "section.\(PaletteItem.Section.agents.rawValue)", "c"])
+    }
+
+    @Test func rowsKeepTheirIndexInTheResults() {
+        let entries = PaletteEntry.entries([item("a", .commands), item("b", .agents)])
+        let indices = entries.compactMap { entry -> Int? in
+            if case .row(let index, _) = entry { return index }
+            return nil
+        }
+        #expect(indices == [0, 1])
+    }
+}
