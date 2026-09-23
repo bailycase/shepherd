@@ -47,12 +47,15 @@ jobs:
             mkdir -p "$d/PackageFrameworks"
             [ -d "$d/Sparkle.framework" ] && ln -sf "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework" || true
           done
-          # --no-parallel: OutputCoalescingTests deliberately blocks the
-          # main queue (backpressure test); concurrent suites on a slow
-          # shared runner deadlock behind it. Serial is still fast.
-          # Watchdog: the suite finishes in seconds; if it stalls for 5
-          # minutes, dump thread stacks of the hung test host, then fail.
-          swift test --no-parallel &
+          # Parallel: the tests that block the main queue or change
+          # process-wide state run as exit tests in their own process, and
+          # the app's main-actor suites take turns (.mainActorExclusive).
+          # Every integration suite has a per-test time limit, so a hang
+          # that honors cancellation fails by name. The watchdog is for one
+          # that does not (a blocked thread): the run takes about a minute,
+          # so if it is still going after 5, dump thread stacks of the hung
+          # test host, then fail.
+          swift test &
           TEST_PID=$!
           (
             sleep 300
