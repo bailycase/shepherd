@@ -693,8 +693,11 @@ next model request both draw as `queued`).
   failed, else done), "12 subagents", one 8pt step per run in spawn order, the tally ("7 done ·
   3 running · 1 queued · 1 needs you", each run counted as its step draws it), tokens and the
   group's elapsed time, and a chevron.
-  - Each step is a button: its tooltip names the run, and clicking it opens that run in the
-    inspector. The rest of the row shows or hides every card.
+  - Each step is its own button: clicking it opens that run in the inspector, as its card does.
+    Its target is the step plus half the gap on each side, the row's full height, so steps tile
+    with no dead gap. Its tooltip names the run and its state ("worker, running"), and a hovered
+    step thickens; at rest the strip is unchanged. A click anywhere else on the row shows or
+    hides every card.
   - When the row runs out of room the totals give way (tokens first) before the tally truncates.
   - Runs that need you keep their own card under the strip.
 - **`NWRunLedger`:** once every run in the group has finished, the cards are replaced in place by
@@ -982,7 +985,7 @@ Review-pane and menu keys are listed with their surfaces.
   - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
     and the hint "Shows the calls"; call rows: "edit, Sources/A.swift, +58 −41"
   - subagent cards: "name, role, state, detail", with the context bar as the value; ledger rows:
-    "name, state, summary"
+    "name, state, summary"; runs strip steps: "name, state — open"
   - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
     modified, 10 added, 54 removed, viewed"
 - **Resizing:** the sidebar edge and the right pane's handle are adjustable elements that read
