@@ -73,8 +73,19 @@ struct CodeHighlightTests {
         #expect(CodeHighlight.supports(path: path) == supported)
     }
 
-    /// The review highlights off the main thread while the thread's code blocks highlight on it:
-    /// concurrent calls share compiled grammars and must agree.
+    /// A thread's fenced block renders off the main actor as one colored string, line breaks
+    /// kept; a language without a grammar stays plain.
+    @Test func aFencedBlockRendersOffTheMainActor() async throws {
+        let style = style
+        let key = CodeHighlightCache.Key(code: "var value = 1\n// done", language: "go")
+        let block = try #require(await Task.detached { CodeHighlightCache.render(key, style: style) }.value)
+        #expect(String(block.characters) == key.code)
+        #expect(color(of: "// done", in: block) == style.comment)
+        #expect(CodeHighlightCache.render(CodeHighlightCache.Key(code: "+++", language: "brainfuck"), style: style) == nil)
+    }
+
+    /// The review and the thread's code blocks both highlight off the main thread: concurrent
+    /// calls share compiled grammars and must agree.
     @Test func concurrentCallsGiveTheSameColors() async {
         let source = [#"var value = "hello" // done"#, "func f() int { return 42 }"]
         let style = style

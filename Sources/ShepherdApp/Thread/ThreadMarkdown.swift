@@ -67,8 +67,9 @@ struct Prose: View, Equatable {
     }
 }
 
-/// A fenced block, plain on its first frame and syntax colored once tree-sitter has run in the
-/// block's task. Results are cached, so a block that scrolls back in is colored at once.
+/// A fenced block, plain on its first frame and syntax colored once tree-sitter has run off the
+/// main actor in the block's task. Results are cached, so a block that scrolls back in is
+/// colored at once.
 struct HighlightedCodeBlock: View {
     let code: String
     let language: String?
@@ -80,40 +81,45 @@ struct HighlightedCodeBlock: View {
     var body: some View {
         NWCodeBlock(trimmed, language: language, highlighted: highlighted ?? CodeHighlightCache.cached(key))
             .task(id: key) {
-                guard CodeHighlightCache.cached(key) == nil else { return }
-                // Let the plain block land first; highlighting a long block is not free.
-                await Task.yield()
-                guard !Task.isCancelled else { return }
-                highlighted = CodeHighlightCache.highlight(key)
+                let key = key
+                guard CodeHighlightCache.cached(key) == nil, CodeHighlight.path(forFenceLanguage: key.language) != nil else { return }
+                let style = CodeHighlight.Style.theme
+                let value = await Task.detached(priority: .userInitiated) { CodeHighlightCache.render(key, style: style) }.value
+                guard !Task.isCancelled, let value else { return }
+                CodeHighlightCache.store(value, for: key)
+                highlighted = value
             }
     }
 }
 
-@MainActor
+/// Colored fenced blocks by code and language: rendered anywhere, cached on the main actor.
 enum CodeHighlightCache {
-    struct Key: Hashable {
+    struct Key: Hashable, Sendable {
         var code: String
         var language: String?
     }
 
-    private static var values: [Key: AttributedString] = [:]
+    @MainActor private static var values: [Key: AttributedString] = [:]
 
-    static func cached(_ key: Key) -> AttributedString? { values[key] }
+    @MainActor static func cached(_ key: Key) -> AttributedString? { values[key] }
 
-    /// nil when the language has no grammar (the block stays plain).
-    static func highlight(_ key: Key) -> AttributedString? {
-        if let value = values[key] { return value }
+    @MainActor static func store(_ value: AttributedString, for key: Key) {
+        if values.count > 256 { values.removeAll(keepingCapacity: true) }
+        values[key] = value
+    }
+
+    /// The block's colors, nil when the language has no grammar (the block stays plain).
+    /// Parses with tree-sitter, so callers run it off the main actor.
+    static func render(_ key: Key, style: CodeHighlight.Style) -> AttributedString? {
         guard let path = CodeHighlight.path(forFenceLanguage: key.language) else { return nil }
         let lines = key.code.components(separatedBy: "\n")
-        let colored = CodeHighlight.highlightLines(lines, path: path, style: .theme)
+        let colored = CodeHighlight.highlightLines(lines, path: path, style: style)
         guard colored.count == lines.count else { return nil }
         var joined = AttributedString()
         for (index, line) in colored.enumerated() {
             if index > 0 { joined += AttributedString("\n") }
             joined += line
         }
-        if values.count > 256 { values.removeAll(keepingCapacity: true) }
-        values[key] = joined
         return joined
     }
 }

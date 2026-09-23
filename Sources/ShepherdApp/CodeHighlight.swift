@@ -18,8 +18,8 @@ import TreeSitterJSON
 
 private final class CodeHighlightBundleToken: NSObject {}
 
-/// Tree-sitter syntax colors. Not main-actor bound: the review highlights its diff off the main
-/// thread. Compiled grammars are shared (a `Query` is thread-safe); each call parses with its own
+/// Tree-sitter syntax colors. Not main-actor bound: the review's diff and the thread's code
+/// blocks highlight off the main thread. Compiled grammars are shared (a `Query` is thread-safe); each call parses with its own
 /// `Parser`.
 enum CodeHighlight {
     /// Highlight colors, from the theme's syntax roles (dynamic: they follow light/dark).
