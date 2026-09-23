@@ -83,7 +83,10 @@ let package = Package(
         .executableTarget(
             name: "shepherd-cli",
             dependencies: ["ShepherdCore", "ShepherdProtocol"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // Embedded at Contents/MacOS; Xcode links ShepherdCore/ShepherdProtocol as frameworks
+            // in Contents/Frameworks, which only this rpath reaches in a release build.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
         // Tests come in two tiers (see AGENTS.md "Testing"):
         //   *UnitTests — pure logic: no processes, sockets, windows, or sleeps. `swift test --filter UnitTests`.
