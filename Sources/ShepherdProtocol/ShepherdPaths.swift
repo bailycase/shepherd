@@ -18,8 +18,11 @@ public enum ShepherdPaths {
     /// A relative path or `~` is resolved; an empty value is ignored.
     public static let supportDirectoryEnvKey = "SHEPHERD_SUPPORT_DIR"
 
-    public static func supportDirectory() -> URL {
-        if let override = ProcessInfo.processInfo.environment[supportDirectoryEnvKey],
+    /// `environment` is the process environment unless a caller (a test) passes its own.
+    public static func supportDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        if let override = environment[supportDirectoryEnvKey],
            !override.trimmingCharacters(in: .whitespaces).isEmpty {
             return URL(fileURLWithPath: (override as NSString).expandingTildeInPath, isDirectory: true)
                 .standardizedFileURL
@@ -29,18 +32,24 @@ public enum ShepherdPaths {
             .appendingPathComponent("Shepherd", isDirectory: true)
     }
 
-    public static func socketURL() -> URL {
-        supportDirectory().appendingPathComponent("shepherd.sock")
+    public static func socketURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment).appendingPathComponent("shepherd.sock")
     }
 
-    public static func stateURL() -> URL {
-        supportDirectory().appendingPathComponent("state.json")
+    public static func stateURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment).appendingPathComponent("state.json")
     }
 
     /// Shared secret for remote Shepherd clients (the TCP listener). Created
     /// on first use with 0600 permissions; deleting it revokes every client.
-    public static func remoteTokenURL() -> URL {
-        supportDirectory().appendingPathComponent("remote-token")
+    public static func remoteTokenURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment).appendingPathComponent("remote-token")
     }
 }
 
