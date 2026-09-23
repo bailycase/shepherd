@@ -149,7 +149,7 @@ struct GitWorktreeTests {
 
 /// Worktree agents through the view model: the import picker, deleting an agent together
 /// with its checkout, and refusing work that would lose data.
-@Suite("Worktree agents", .integrationTimeLimit)
+@Suite("Worktree agents", .integrationTimeLimit, .mainActorExclusive)
 @MainActor
 struct WorktreeAgentTests {
     private func worktreeAgent(in sandbox: WorktreeSandbox, branch: String) throws -> AgentFixture {
@@ -255,7 +255,7 @@ struct WorktreeAgentTests {
 /// Finalize Worktree's local steps on real repositories. `gh` is the only thing stubbed: a
 /// local bare repository is the origin, so commit, push, the clean gate, worktree removal,
 /// and branch deletion all run for real.
-@Suite("Finalize worktree", .integrationTimeLimit)
+@Suite("Finalize worktree", .integrationTimeLimit, .mainActorExclusive)
 @MainActor
 struct FinalizeWorktreeTests {
     private func finalizer(prURL: String = "https://github.com/o/r/pull/7", fakePush: Bool = false) -> WorktreeFinalizer {

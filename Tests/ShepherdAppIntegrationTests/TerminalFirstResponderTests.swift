@@ -8,7 +8,7 @@ import Testing
 /// AppKit's first responder (SwiftUI focus cannot reach permanently mounted panes), so these
 /// check the window's first responder directly. The window is never key: making a view first
 /// responder in it never takes the user's focus.
-@Suite("Terminal first responder", .serialized, .integrationTimeLimit)
+@Suite("Terminal first responder", .serialized, .integrationTimeLimit, .mainActorExclusive)
 @MainActor
 struct TerminalFirstResponderTests {
     @MainActor private struct Panes {
