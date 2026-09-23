@@ -43,7 +43,8 @@ schemes:
 client ([docs/ios](docs/ios/README.md)).
 
 ```bash
-xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' build
+xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
+  -onlyUsePackageVersionsFromResolvedFile build
 swift build                                  # every package target
 swift test --filter UnitTests                # fast tier: seconds
 swift test --filter IntegrationTests         # real server, stub pi, git, off-screen windows
@@ -56,14 +57,17 @@ PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Test
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
   extensions, `remote-token`, and subagent artifacts.
-- **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch, which is
-  handy for screenshots.
+- **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
+  older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
+  returns to it.
 - **Set by the app for pi, never read from the user's environment:**
   - Always: `SHEPHERD_AGENT_ID`, `SHEPHERD_SOCKET`, `SHEPHERD_EXT_STATUS`.
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`.
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
+- **`SHEPHERD_PREVIEW_DIR`** and **`SHEPHERD_LIVE_MODEL`** switch on the preview renders and the
+  live-model run (see Testing).
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
   `~/.pi/agent`. Shepherd follows it (`PiConfig.agentDirectory`) when it seeds session headers
   and reads pi's models and settings.
@@ -87,7 +91,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
 - Each test should run well under 50 ms, and a whole target well under a second.
 - Prefer table-driven `@Test(arguments:)`, with explicit inputs: never `shuffled()` or random data.
 - Unit targets may use `Tests/ShepherdTestKit`, which depends on no Shepherd module:
-  `ScratchDefaults`, `makeScratchDirectory()`, `Locked`, and `CommandFailure`.
+  `ScratchDefaults`, `makeScratchDirectory()`, `Locked`, `CommandFailure`, and `TestProcess` (the
+  process's scratch paths).
 
 **Integration tests** use the helpers in `Tests/ShepherdTestSupport`, which re-exports
 `ShepherdTestKit`:
@@ -148,6 +153,13 @@ empty states) in light and dark to `$SHEPHERD_PREVIEW_DIR/<surface>-<light|dark>
 skipped when the variable is unset. Look at them after a UI change; they exist so an agent can
 see its work.
 
+- Each domain has its own suite in `Tests/ShepherdPreviewTests` (`ThreadPreviewTests`,
+  `NavigationPreviewTests`, `AgentsPreviewTests`, `ReviewPreviewTests`, `SettingsPreviewTests`),
+  and `PreviewTests` holds the rest. Add a new surface's render to its domain's suite.
+- `--filter ThreadPreviewTests` (or any one suite) renders just that domain.
+- ShepherdUI's components also have `#Preview`s (`Packages/ShepherdUI/Sources/ShepherdUI/Previews/`)
+  for Xcode's canvas; the Debug build's Component Gallery shows the base components live.
+
 **Live model:** the opt-in use-case run against a real model is gated on `SHEPHERD_LIVE_MODEL`
 (e.g. `cpa/~anthropic/claude-haiku-latest`). It never runs by default.
 
@@ -199,48 +211,63 @@ pull requests and pushes to `master`.
 
 ```text
 App/
-  ShepherdLauncher.swift   Mac @main shim.        iOS/  the deferred iOS client (own target)
+  ShepherdLauncher.swift   Mac @main shim.   Shepherd.entitlements   iOS/  the deferred iOS client
 Sources/
   ShepherdCore/        Models (Space, Tab, Agent, Automation, ShepherdState), typed IDs, PaneNode
                        (binary split tree; LeafPane carries sessionID/cwd/agentID), AgentStatus +
-                       canTransition, ThinkingLevel, SessionRuntime, StateValidation. No deps.
+                       canTransition, ThinkingLevel, SessionRuntime, StateValidation, Reorder.
+                       No deps.
   ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …), RemoteMessage
                        (RemoteRequest/RemoteReply, RemoteProtocol version + capabilities),
                        NativeThread (requests, results, NativeThreadSnapshot), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths.
-  ShepherdRemote/      RemoteHostClient, NativeThreadStore, NativeThreadPresentation, ShepherdLog.
+  ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
+                       NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
+                       the changes card), ShepherdLog. Shared with the iOS client.
+  ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState, PTYSession, SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiModelCatalog, PiConfig.
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   ShepherdApp/         The Mac app:
-    ShepherdApp.swift, RootView, SidebarView, ThreadHeader, WorkspaceView, WorkspaceSelection
-    ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette,
-      +RightPane, +Review, +ChildInspector, +Automations, +RemoteActions, +RemoteInspection,
-      +RemoteWorktrees)
-    Thread/            ThreadView, Composer, ThreadTurns, ThreadTools, ThreadMarkdown, Subagents,
-                       SubagentInspector (+ RightPaneSplit)
+    ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
+      SidebarView, RemoteSidebarSection, ThreadHeader, WorkspaceView, WorkspaceSelection,
+      RightPaneSplit, AppCommands (menus, MenuState), AppDialogs (every sheet)
+    AppLayout (+Navigation, +Thread, +Agents, +Settings; ShellLayout's adaptive rules live in
+      +Navigation), AgentStateMapping (app lifecycles → AgentState)
+    ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
+      +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
+      +RemoteInspection, +RemoteWorktrees)
+    Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
+                       Composer, Subagents, SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
-    DiffReview, DiffReviewView (ReviewPane), GitDiff, CodeHighlight (tree-sitter)
-    GitWorktree, WorktreeFinalize, NewWorktreeSheet, FinalizeWorktreeSheet, NewAgentSheet,
-      RemoteWorktreeSheet, RemoteDirectoryPicker, DialogSheet, QuitConfirmation (QuitDialog)
+    DiffReview (ReviewSession), DiffReviewView (ReviewPane), GitDiff, CodeHighlight (tree-sitter)
+    GitWorktree, WorktreeFinalize, ChecklistStatus, NewWorktreeSheet, FinalizeWorktreeSheet,
+      NewAgentSheet, RemoteWorktreeSheet, RemoteDirectoryPicker, DialogSheet,
+      QuitConfirmation (QuitDialog)
     CommandPalette, CommandPaletteView, PaletteContentSearch, Keybindings (KeybindingsStore)
     SettingsView, SettingsWindow, SettingsComponents, Settings{Appearance, Terminal, Agents,
       Worktrees, Pi, Remote, Keyboard, Advanced}, AppSettings
     Themes (ThemeManager, ShepherdTheme), ShepherdPiTheme, ShellIntegration, ComponentGallery
-    RemoteHostStore, RemoteSidebarSection, AgentPeers, AgentNotifications, ChildRuns,
-      PiSessionFile, PiUpdateManager, AppUpdater (Sparkle channels)
+    RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
+      AppUpdater (Sparkle channels)
     Status/Namer/Panes/Review/Theme/Subagents/Children/InspectExtension.swift  embedded extensions
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
-  ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27):
-                       Tokens/ (ThemeDefinition, NightWatch, ThemeStore + NWPalette, Colors
-                       (Color.nw), Typography (Font.nw, bundled Geist), Metrics (NW.Space/Radius/
-                       Height), Motion, Elevation, AgentState, HexColor), Resources/Fonts,
-                       Components/ (Controls, Status, Containers, Thread, Composer, Agents),
-                       Previews/. Its unit tests live in the root (Tests/ShepherdUIUnitTests).
+  ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27;
+                       SwiftUI only, imports no Shepherd module):
+                       Tokens/       ThemeDefinition, NightWatch, ThemeStore, Colors (NWPalette,
+                                     Color.nw), Typography (NWTextStyle, Font.nw, NWFonts,
+                                     NWProseSize), Metrics (NW.Space/Radius/Height), Motion,
+                                     Elevation (.nwCard/.nwPopover/.nwFocusRing, NWHairline),
+                                     AgentState, HexColor
+                       Resources/Fonts  Geist and Geist Mono (SIL OFL)
+                       Components/   Controls, Status, Containers, Navigation, Thread, Composer,
+                                     Agents, Review, Dialogs
+                       Previews/     a #Preview per component, light and dark
+                       Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
   shepherd-status.ts      status + active pi session       shepherd-namer.ts   agent titles
   shepherd-panes.ts       pane_*, agent_list/send/spawn, automation_*, notify
@@ -249,7 +276,16 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
   shepherd-theme.ts       theme sync for pi run by hand in a terminal pane
-Tests/                 Test tiers above; LegacyTests/ holds the pre-rewrite suites (not built).
+Tests/
+  <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
+  ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
+  ShepherdTestKit/        ScratchDefaults, makeScratchDirectory, Locked, CommandFailure, TestProcess
+  ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
+                          eventually, the time-limit traits
+  Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
+  ShepherdIOSChecks/      the iOS client's scripts
+scripts/               sign-app.sh (release signing), sync-embedded-extension.py
+Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```
 
 ## Data flow
@@ -374,19 +410,48 @@ children-config, children-ui, workflow, and missions, and installs `InspectExten
   Extend both enums, `SessionServer.handleLine`, and the protocol tests together.
 
 **Design tokens only.** Never hardcode a color, font size, or dimension in a view. Everything comes
-from ShepherdUI (Night Watch):
+from ShepherdUI (Night Watch) or `AppLayout`:
 
 - colors from `Color.nw` (dynamic, resolved against each view's appearance)
-- fonts from `Font.nw(_:)` (aware of text scale)
-- sizes from `NW.Space`, `NW.Radius`, and `NW.Height` (density-scaled rows), and the app's surface
-  dimensions from `AppLayout`
+- fonts from `Font.nw(_:)` or `.nwText(_:)` (aware of text scale); `Font.nwSans`/`nwMono` only for
+  a size the boards give outside the ramp
+- spacing, radii, and heights from `NW.Space`, `NW.Radius`, and `NW.Height` (rows scale with
+  Density; controls don't)
+- a Mac screen's own dimensions from `AppLayout`, in the file for its domain:
+  `AppLayout+Navigation.swift` (window, sidebar, toolbar, right pane, palette),
+  `AppLayout+Thread.swift` (thread, composer), `AppLayout+Agents.swift` (subagent stack,
+  inspector), `AppLayout+Settings.swift` (Settings, sheet sizes), and `AppLayout.swift` for
+  anything else. A component's own measures stay with it in ShepherdUI (`NWThreadMetrics`,
+  `NWComposerMetrics`, `NWSidebarMetrics`, `NWToolbarMetrics`, `NWPaletteMetrics`,
+  `NWDiffMetrics`, `NWDialogMetrics`).
 
-Use a shared component before hand-rolling chrome. A new color is a role on `ThemeColors`,
-filled in both variants of every theme (the compiler enforces completeness), with an `NWPalette`
-property and a contrast rule if it carries text. Borders and hovers are theme roles, never ad-hoc
-alphas. Status colors come from `AgentState`, never picked per view. Night Watch is the only
-shipped theme. The pre–Night Watch names (`Tokens`, `Fonts`, `Metrics`, `Radius`, Basalt) are gone;
-never reintroduce aliases for them.
+Use a shared component before hand-rolling chrome. A reusable part goes in the package, under
+`Components/<Domain>/` with a `#Preview` in both appearances; composition that knows about agents
+or the server stays in the app. ShepherdUI imports no Shepherd module: pass it values, and map
+app lifecycles onto `AgentState` in `AgentStateMapping.swift`.
+
+A new color is a role on `ThemeColors`, filled in both variants of every theme (the compiler
+enforces completeness), with an `NWPalette` property and a contrast rule if it carries text.
+Borders and hovers are theme roles, never ad-hoc alphas. Status colors come from `AgentState`,
+never picked per view. Night Watch is the only shipped theme. The pre–Night Watch names
+(`ShepherdDesign`, `Tokens`, `Fonts`, `Metrics`, `Radius`, Basalt) are gone; never reintroduce
+aliases for them.
+
+**State is Observation.** The view model, `NativeThreadStore`, `AppSettings`,
+`KeybindingsStore`, `ThemeManager`, `ThemeStore`, `RemoteHostStore` and its connections,
+`PiUpdateManager`, `AppUpdater`, the worktree models, terminal pane sessions, and `MenuState`
+are `@MainActor @Observable` classes, owned with `@State` and bound with `@Bindable`.
+
+- Don't add `ObservableObject`, `@Published`, `@StateObject`, or `@ObservedObject` to the Mac app.
+  TerminalSurfaceKit's `TerminalSurfaceModel` stays one because GhosttyTerminal's view state is
+  one, and the deferred iOS client still uses them.
+- Observe only what views draw: bookkeeping is `@ObservationIgnored`, and a property is written
+  only when its value changes, so a poll or a status report never re-renders a view it didn't
+  change.
+- Views take plain `Equatable` values (sidebar rows, pane leaves, thread rows) and do no parsing,
+  filtering, or highlighting in `body`; stores derive rows once per change. Menus read narrow
+  cached values from `MenuState`.
+- `PreferenceObservationTests` checks that a changed preference reaches the views that read it.
 
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a view is a bug.
@@ -581,4 +646,10 @@ name**. Releasing means tagging `nightly`'s tested tip and pushing the tag.
 - **Transcript search** in the palette reads only the last 512 KB of each agent's pi session.
 - **Launching the binary bare** from a terminal starts a background process; the `AppDelegate`
   promotes it to `.regular` and activates it.
-- **Quitting** while agents are working asks first, because it stops them mid-turn.
+- **Quitting** while agents are working or blocked asks first, in a `DialogSheet` in the main
+  window (reopened if it was closed), because it stops them mid-turn.
+- **xcodebuild and `Package.resolved`:** a build from a fresh DerivedData resolves packages
+  again and rewrites the Xcode project's
+  `Shepherd.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` with newer
+  versions (Sparkle and SwiftTerm, for example). Pass `-onlyUsePackageVersionsFromResolvedFile`,
+  and never commit a bumped `Package.resolved` by accident.
