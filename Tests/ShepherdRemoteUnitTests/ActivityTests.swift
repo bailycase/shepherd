@@ -75,6 +75,13 @@ struct ActivityTests {
         #expect(counts.passed == passed && counts.failed == failed)
     }
 
+    @Test func aLongLogIsSummarisedFromItsTailEvenWhenTheCutSplitsACharacter() {
+        let lines = String(repeating: "✔ Test passed\n", count: 6_000)
+        #expect(lines.utf8.count > 64 * 1024)
+        let counts = nativeTestCounts("x" + lines + "✔ Test run with 6000 tests in 9 suites passed after 3.1 seconds.")
+        #expect(counts.passed == 6_000 && counts.failed == nil)
+    }
+
     // MARK: Calls
 
     @Test func aCallIsIdentifiedByItsCallIDSoTheLiveAndSavedCopiesMatch() {
