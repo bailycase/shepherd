@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdSessions
 
 /// Pi's on-disk session files, from Shepherd's side.
 ///
@@ -19,12 +20,9 @@ enum PiSessionFile {
     /// never a broken session.
     private static let version = 3
 
-    /// Pi's default `~/.pi/agent/sessions` root. Tests pass a scratch root
-    /// instead so they never write into the user's home directory.
-    static var defaultSessionsRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".pi/agent/sessions", isDirectory: true)
-    }
+    /// Pi's sessions root: `~/.pi/agent/sessions`, or under `PI_CODING_AGENT_DIR`
+    /// when that moves pi's agent directory.
+    static var defaultSessionsRoot: URL { PiConfig.sessionsDirectory() }
 
     /// The path as pi sees it: `realpath(3)`, like Node's `fs.realpathSync`. Foundation's
     /// `resolvingSymlinksInPath` is not a substitute: it maps /private/tmp back to /tmp.
