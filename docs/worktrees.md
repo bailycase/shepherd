@@ -42,8 +42,9 @@ to Settings ▸ Worktrees ▸ Base branch:
 
 - **Remote default** (`fresh`, the default):
   1. Find the default branch with `git symbolic-ref --short refs/remotes/origin/HEAD`.
-  2. If that fails, run `git remote set-head origin --auto` and try again. This step needs the
-     network even when fetching is off.
+  2. If that fails and fetching is on, run `git remote set-head origin --auto` and try again.
+     With fetching off (or if that still fails), use a local `origin/main` or `origin/master`.
+     Fetching off never touches the network.
   3. With **Fetch before creating** on (the default), run `git fetch --quiet origin <default>`.
      The note reads "fetched just now". If the fetch fails, the cached `origin/<default>` is used
      and the note reads "cached — fetch failed". A failed fetch does not stop creation.
@@ -53,8 +54,9 @@ to Settings ▸ Worktrees ▸ Base branch:
 - **Current branch** (`head`): the base is the checkout's current branch, for deliberately
   stacking on in-progress work.
 
-The fetch has no time limit. A hung network holds the sheet on "resolving" until git gives up.
-`GIT_TERMINAL_PROMPT=0` stops git from waiting on a credential prompt.
+The network commands (`fetch`, `set-head`) stop after 20 seconds (`GitWorktree.networkTimeout`),
+and a timed-out fetch falls back to the cached ref like any failed fetch. `GIT_TERMINAL_PROMPT=0`
+stops git from waiting on a credential prompt.
 
 ### The create command
 
@@ -175,5 +177,6 @@ The host path differs from the local one in a few ways:
 Worktree behavior is covered by integration tests against `makeScratchRepo()` repositories
 (`Tests/ShepherdTestSupport`). They cover branching from an explicit base with `--no-track`, base
 resolution in both modes, finalize ordering and gating, and the remote setup actions. The
-fetch-failure fallback and the `set-head --auto` path are worth covering. For the manual
+offline default-branch fallback is covered (`WorktreeBaseOfflineTests`); the fetch-failure
+fallback is worth covering too. For the manual
 setup-wizard pass, see [clean-mac-simulation.md](clean-mac-simulation.md).
