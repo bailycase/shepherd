@@ -68,8 +68,15 @@ enum QuitPolicy {
     /// restarts or shuts down.
     static let powerOffReasons: Set<OSType> = [OSType(kAELogOut), OSType(kAEReallyLogOut), OSType(kAERestart), OSType(kAEShutDown)]
 
-    static func isPowerOff(quitReason: OSType?) -> Bool {
-        quitReason.map(powerOffReasons.contains) ?? false
+    static let loginWindow = "com.apple.loginwindow"
+
+    /// A quit event is a log out, restart or shut down when its reason says so, or when
+    /// NSWorkspace announced one and loginwindow sent the event. The announcement alone is not
+    /// enough: it stays set after another app cancels the log out, and a later quit from the
+    /// Dock or the app switcher must still ask.
+    static func isPowerOff(quitReason: OSType?, senderBundleID: String?, workspacePoweringOff: Bool) -> Bool {
+        if let quitReason, powerOffReasons.contains(quitReason) { return true }
+        return workspacePoweringOff && senderBundleID == loginWindow
     }
 }
 
@@ -152,7 +159,7 @@ final class QuitConfirmation {
     }
 
     /// Only the quit loginwindow sends counts: a log out that another app cancelled must not
-    /// let a later ⌘Q through unasked.
+    /// let a later quit through unasked, from ⌘Q or from another app's quit event.
     private var systemPoweringOff: Bool {
         guard let event = NSAppleEventManager.shared().currentAppleEvent,
               event.eventClass == AEEventClass(kCoreEventClass), event.eventID == AEEventID(kAEQuitApplication) else {
@@ -160,7 +167,10 @@ final class QuitConfirmation {
         }
         let keyword = AEKeyword(kAEQuitReason)
         let reason = event.attributeDescriptor(forKeyword: keyword) ?? event.paramDescriptor(forKeyword: keyword)
-        return workspacePoweringOff || QuitPolicy.isPowerOff(quitReason: reason?.typeCodeValue)
+        let sender = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))
+            .flatMap { NSRunningApplication(processIdentifier: $0.int32Value)?.bundleIdentifier }
+        return QuitPolicy.isPowerOff(quitReason: reason?.typeCodeValue, senderBundleID: sender,
+                                     workspacePoweringOff: workspacePoweringOff)
     }
 
     /// The main window (re)appeared: a quit waiting for it asks there, once the window has

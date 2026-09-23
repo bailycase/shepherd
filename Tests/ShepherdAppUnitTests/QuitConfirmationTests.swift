@@ -47,7 +47,19 @@ struct QuitConfirmationTests {
         (OSType(kAEQuitAll), false), (nil as OSType?, false),
     ])
     func loginwindowsQuitReasonsMeanPowerOff(reason: OSType?, poweringOff: Bool) {
-        #expect(QuitPolicy.isPowerOff(quitReason: reason) == poweringOff)
+        #expect(QuitPolicy.isPowerOff(quitReason: reason, senderBundleID: nil, workspacePoweringOff: false) == poweringOff)
+    }
+
+    /// NSWorkspace's power-off notice stays set after another app cancels the log out, so it
+    /// counts only for a quit event loginwindow sent: a later quit from the Dock still asks.
+    @Test(arguments: [
+        ("com.apple.loginwindow" as String?, true, true),
+        ("com.apple.dock", true, false),
+        (nil as String?, true, false),
+        ("com.apple.loginwindow", false, false),
+    ])
+    func thePowerOffNoticeCountsOnlyForLoginwindowsQuit(sender: String?, announced: Bool, poweringOff: Bool) {
+        #expect(QuitPolicy.isPowerOff(quitReason: nil, senderBundleID: sender, workspacePoweringOff: announced) == poweringOff)
     }
 
     @Test func oneWorkingAgentIsNamedInTheSingular() throws {
