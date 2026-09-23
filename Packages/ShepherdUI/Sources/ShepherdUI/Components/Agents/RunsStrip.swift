@@ -89,12 +89,15 @@ public struct NWRunsStrip: View, Equatable {
             HStack(spacing: 10) {
                 NWBranchGlyph(summary.state, size: 13)
                 Text(summary.title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1).fixedSize()
+                    .nwContentTransition(.numeric())
                 NWStepStrip(summary.cells.map(\.state), segmentWidth: NWRunLayout.stripCellWidth).fixedSize()
                     .anchorPreference(key: NWRunsStripSegmentsKey.self, value: .bounds) { $0 }
                 Text(summary.states).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+                    .nwContentTransition(.numeric())
                     .layoutPriority(2)
                 Spacer(minLength: NW.Space.m)
                 // The tally ("1 needs you") outranks the totals: tokens go first, then the time.
+                // Which of them fits follows the width at once.
                 ViewThatFits(in: .horizontal) {
                     totals(tokens: summary.tokens)
                     totals(tokens: nil)
@@ -102,10 +105,14 @@ public struct NWRunsStrip: View, Equatable {
                 }
                 .font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
                 .layoutPriority(1)
+                .nwInstant()
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(nw.textTertiary)
                     .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                    .nwAnimation(.disclosure, value: isExpanded)
             }
+            // Runs changing state recolor their steps and roll the tally.
+            .nwAnimation(.content, value: summary.cells.map(\.state))
             .padding(.horizontal, NW.Space.l)
             .frame(maxWidth: .infinity, minHeight: NWRunLayout.headerHeight)
             .background(nw.bgSunken)
