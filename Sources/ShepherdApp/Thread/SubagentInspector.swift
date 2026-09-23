@@ -8,6 +8,10 @@ import ShepherdRemote
 /// The inspector for one subagent run (Agents board): header, the run's brief, its own
 /// transcript one step smaller than the thread, following live, and a Steer composer. A
 /// finished run is read-only: its result, "from parent" captions, and Re-run · Fork · Copy.
+///
+/// Inspecting another run swaps the run in place, whichever path chose it (‹ ›, a card, a
+/// strip step, the palette): a sibling nudges in from the side it sits on in spawn order, any
+/// other run cross-fades.
 struct SubagentInspector: View {
     var store: NativeThreadStore
     let runID: String
@@ -19,13 +23,70 @@ struct SubagentInspector: View {
     var fork: ((ChildRun) async -> String?)? = nil
     /// Opens a touched file in the review pane.
     var review: ((String) -> Void)? = nil
+    @State private var shown = ShownRun()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The run on screen before `runID` changed; not observed, so remembering it never renders.
+    private final class ShownRun {
+        var runID: String?
+    }
+
+    var body: some View {
+        let arrival = arrival
+        let edge = arrival?.edge
+        ZStack {
+            SubagentRunInspector(store: store, runID: runID, siblings: arrival?.siblings ?? [], active: active, close: close,
+                                 select: select, fork: fork, review: review)
+                .id(runID)
+                .transition(.asymmetric(insertion: (edge.map { NW.Motion.list.transition(reduceMotion: reduceMotion, edge: $0) }) ?? .opacity,
+                                        removal: .opacity))
+        }
+        .nwAnimation(edge == nil ? .content : .list, value: runID)
+        .onChange(of: runID, initial: true) { _, id in shown.runID = id }
+    }
+
+    /// Read only as a run comes on screen, so the store's polls never re-render this view: its
+    /// siblings (it opens with its "2 of 3" and ‹ › in place), and the side it arrives from,
+    /// trailing for a later sibling of the run it replaces, leading for an earlier one, nil for
+    /// any other run.
+    private var arrival: (siblings: [ChildRun], edge: Edge?)? {
+        guard shown.runID != runID else { return nil }
+        let siblings = nativeSubagentSiblings(of: runID, in: store.subagents, turns: nativeTurns(store.displayedMessages))
+        guard let previous = shown.runID, let from = siblings.firstIndex(where: { $0.runID == previous }),
+              let to = siblings.firstIndex(where: { $0.runID == runID }) else { return (siblings, nil) }
+        return (siblings, to > from ? .trailing : .leading)
+    }
+}
+
+/// One run's inspector; `SubagentInspector` keys it by run, so each run starts fresh (its
+/// transcript, draft, and scroll position).
+private struct SubagentRunInspector: View {
+    var store: NativeThreadStore
+    let runID: String
+    let active: Bool
+    let close: () -> Void
+    var select: ((ChildRun) -> Void)?
+    var fork: ((ChildRun) async -> String?)?
+    var review: ((String) -> Void)?
     @State private var transcript = SubagentTranscriptModel()
-    @State private var siblings: [ChildRun] = []
+    @State private var siblings: [ChildRun]
     @State private var draft = ""
     @State private var forkError: String?
     @State private var forking = false
     @State private var copying = false
     @FocusState private var composing: Bool
+
+    init(store: NativeThreadStore, runID: String, siblings: [ChildRun], active: Bool, close: @escaping () -> Void,
+         select: ((ChildRun) -> Void)?, fork: ((ChildRun) async -> String?)?, review: ((String) -> Void)?) {
+        self.store = store
+        self.runID = runID
+        self.active = active
+        self.close = close
+        self.select = select
+        self.fork = fork
+        self.review = review
+        _siblings = State(initialValue: siblings)
+    }
 
     private var run: ChildRun? { store.subagents.first { $0.runID == runID } }
     private var canAct: Bool { active && store.supports("subagents") }
@@ -37,23 +98,37 @@ struct SubagentInspector: View {
             brief(run)
             transcriptView(run)
             footerLine(run)
-            if let run, run.isTerminal { finishedBar(run) } else { composer(run) }
+            if let run, run.isTerminal { finishedBar(run).nwTransition(.content) } else { composer(run).nwTransition(.content) }
         }
         .background(Color.nw.bgWindow)
+        // The run's own milestones (paused, needing you, finishing with its result and actions)
+        // and a notice under the footer reshape the column; the transcript's growth does not.
+        .nwAnimation(.disclosure, value: Phase(run: run, notice: forkError ?? store.notice))
         .task(id: FollowKey(runID: runID, active: active, startedAt: run?.startedAt)) {
             guard active else { return }
             let store = store, runID = runID
             await transcript.follow(store: store, runID: runID) { store.subagents.first { $0.runID == runID }?.isTerminal != true }
         }
-        .onChange(of: SiblingKey(store: store), initial: true) {
+        .onChange(of: SiblingKey(store: store)) {
             siblings = nativeSubagentSiblings(of: runID, in: store.subagents, turns: nativeTurns(store.displayedMessages))
-        }
-        .onChange(of: runID) { _, _ in
-            draft = ""
-            forkError = nil
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Inspector for \(Self.role(run))")
+    }
+
+    /// What reshapes the inspector's column.
+    private struct Phase: Equatable {
+        var state: AgentState?
+        var paused: Bool
+        var finished: Bool
+        var notice: String?
+
+        init(run: ChildRun?, notice: String?) {
+            state = run.map(SubagentPresentation.state)
+            paused = run?.paused == true
+            finished = run?.isTerminal == true
+            self.notice = notice
+        }
     }
 
     private static func role(_ run: ChildRun?) -> String {
@@ -126,6 +201,7 @@ struct SubagentInspector: View {
                 .help("Close the inspector")
                 .accessibilityLabel("Close inspector")
         }
+        .nwAnimation(.content, value: siblings.map(\.runID))
     }
 
     // MARK: Brief
@@ -185,16 +261,21 @@ struct SubagentInspector: View {
                     }
                     let turns = transcript.turns
                     ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
-                        if turn.isUser {
-                            // In the child's session every user message after the first is the
-                            // parent (a steer or a resume); the first is the task itself.
-                            UserTurn(messages: turn.messages, caption: index > 0 ? parentCaption(turn) : nil)
-                        } else {
-                            AgentTurn(messages: turn.messages, live: !terminal && run != nil && index == turns.count - 1)
+                        Group {
+                            if turn.isUser {
+                                // In the child's session every user message after the first is the
+                                // parent (a steer or a resume); the first is the task itself.
+                                UserTurn(messages: turn.messages, caption: index > 0 ? parentCaption(turn) : nil)
+                            } else {
+                                AgentTurn(messages: turn.messages, live: !terminal && run != nil && index == turns.count - 1)
+                            }
                         }
+                        .modifier(ArrivalFade(fresh: transcript.arrived.contains(turn.id)))
                     }
                     if let run, !run.isTerminal {
-                        WorkingRow(label: run.paused == true ? "Pause requested" : run.currentTool.map { "Running \($0)…" } ?? "Thinking…")
+                        let working = run.paused == true ? "Pause requested" : run.currentTool.map { "Running \($0)…" } ?? "Thinking…"
+                        WorkingRow(label: working)
+                            .nwAnimation(.content, value: working)
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
@@ -222,6 +303,7 @@ struct SubagentInspector: View {
         HStack(spacing: NW.Space.s) {
             if transcript.earlierCount > 0 {
                 Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.nwMono(11))
+                    .nwContentTransition(.numeric())
                 Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store, runID: runID) } }
                     .buttonStyle(.nwLink(font: .nwSans(11)))
                     .disabled(transcript.loadingOlder)
@@ -232,6 +314,14 @@ struct SubagentInspector: View {
         .font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary)
         .padding(.horizontal, AppLayout.inspectorPadding)
         .frame(minHeight: AppLayout.inspectorFooterHeight)
+        .nwAnimation(.content, value: FooterState(earlier: transcript.earlierCount, loading: transcript.loadingOlder,
+                                                  following: transcript.following))
+    }
+
+    private struct FooterState: Equatable {
+        var earlier: Int
+        var loading: Bool
+        var following: Bool
     }
 
     /// "10:58 · from parent"; the time is omitted when pi gave none.
@@ -257,6 +347,7 @@ struct SubagentInspector: View {
                         Label(forking ? "Forking…" : "Fork", systemImage: "arrow.branch")
                     }
                     .buttonStyle(.nw(.secondary, size: .s))
+                    .nwAnimation(.content, value: forking)
                     .disabled(!active || forking || run.sessionFile == nil)
                     .help("Fork as a new agent with this run's transcript")
                     .accessibilityLabel("Fork \(Self.role(run)) as a new agent")
@@ -303,6 +394,7 @@ struct SubagentInspector: View {
                         .padding(-NWComposerMetrics.focusRing)
                 }
             }
+            .nwAnimation(.hover, value: composing)
             .contentShape(Rectangle())
             .onTapGesture { composing = true }
             .padding(EdgeInsets(top: AppLayout.steerTopInset, leading: NW.Space.l, bottom: NW.Space.l, trailing: NW.Space.l))
@@ -315,6 +407,7 @@ struct SubagentInspector: View {
         if let text {
             Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .padding(.horizontal, NW.Space.l).padding(.bottom, NW.Space.m)
+                .nwTransition(.disclosure)
         }
     }
 
@@ -351,6 +444,24 @@ struct SubagentInspector: View {
     }
 }
 
+/// A turn that arrived while the transcript follows fades in where it lands. Only its opacity
+/// moves: the transcript's layout, and so following the tail, changes at once. The fade starts
+/// after the turn is placed, outside the change that placed it.
+private struct ArrivalFade: ViewModifier {
+    @State private var shown: Bool
+
+    init(fresh: Bool) {
+        _shown = State(initialValue: !fresh)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .nwAnimation(.content, value: shown)
+            .task { if !shown { shown = true } }
+    }
+}
+
 /// Pages of one child's transcript. Reloads on the store's cadence while the run lives; a
 /// reload keeps everything already paged in (older pages are fetched only on "Show all").
 /// Turns are grouped once per change, and views watch `tail`, not the whole array.
@@ -370,6 +481,8 @@ final class SubagentTranscriptModel {
     private(set) var loadingOlder = false
     /// Set while the newest page is at the tail; "Show all" keeps the reader's place instead.
     private(set) var following = true
+    /// The turns the latest reload brought after the first page: they fade in where they land.
+    private(set) var arrived: Set<String> = []
     @ObservationIgnored private var olderCursor: String?
     @ObservationIgnored private var runID: String?
     @ObservationIgnored private var generation = UUID()
@@ -405,7 +518,7 @@ final class SubagentTranscriptModel {
         }
         guard !Task.isCancelled, generation == epoch, reloadTicket == ticket, self.runID == runID else { return }
         let spliced = Self.splice(messages, newest: page)
-        setMessages(spliced.messages)
+        setMessages(spliced.messages, marksArrivals: loaded)
         if spliced.replaced {
             olderCursor = page.olderCursor
             setEarlierCount(page.earlierCount)
@@ -441,12 +554,21 @@ final class SubagentTranscriptModel {
         }
     }
 
-    private func setMessages(_ value: [NativeThreadMessage]) {
+    private func setMessages(_ value: [NativeThreadMessage], marksArrivals: Bool = false) {
         guard value != messages else { return }
+        let before = Set(turns.map(\.id))
         messages = value
         turns = nativeTurns(value)
         let next = Tail(count: value.count, lastEntryID: value.last?.entryID)
         if next != tail { tail = next }
+        // A live reload marks the turns it adds (and keeps the last marks when it adds none);
+        // a reset or older pages clear them.
+        if marksArrivals {
+            let added = Set(turns.map(\.id)).subtracting(before)
+            if !added.isEmpty, added != arrived { arrived = added }
+        } else if !arrived.isEmpty {
+            arrived = []
+        }
     }
 
     private func setEarlierCount(_ value: Int) {
