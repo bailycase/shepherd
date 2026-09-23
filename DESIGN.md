@@ -269,8 +269,12 @@ leading from the face's real metrics); `.font(.nw(_:))` alone suits single lines
   `rowComfortable 36` (ledgers), all scaled by Density and rounded to whole points
   (`NW.Height.scaled(_:)` for other row heights); controls `controlS 24`, `controlM 28`,
   `controlL 32`, which never scale; `touch 44` on iOS.
-- **Hairlines** are 1px, not 1pt: `NWHairline` and `.nwBorder(_:radius:)` use
-  `NW.hairline(displayScale)`.
+- **Hairlines** are 1px, not 1pt: `NWHairline`, `.nwBorder(_:radius:)`, and
+  `.nwBorder(_:in:dash:)` (any shape, optionally dashed) use `NW.hairline(displayScale)`. Every
+  border of a control, field, pill, keycap, banner, card, or bubble draws through them. Two
+  kinds of line stay in points: the layout's dividers (pane splits and the edges of the docked
+  sidebar and right pane, 1pt, because the window's arithmetic counts them) and the strokes of
+  status dots and glyphs.
 - **Elevation:**
   - `.nwCard()`: flat, a raised fill and a 1px line (`lineSubtle` unless given).
   - `.nwPopover()`: a raised fill, a 1px `lineStrong` line, radius 12, and the only shadow.
@@ -1018,9 +1022,6 @@ These places in the code break this document and should be fixed toward it:
   (`ToolOutputSheet`), the question panel's 140pt message cap, the empty thread's top offsets,
   the empty workspace's 420pt measure, and `PanePlaceholder`'s padding should move into
   `AppLayout+Thread.swift` and `AppLayout+Navigation.swift`.
-- **1pt strokes:** several control borders (secondary and danger buttons, fields, pickers and
-  popups, keycaps, pills, banners, the sheets' text editors, the "Jump to latest" capsule) stroke
-  1pt rather than a 1px hairline.
 - **Chords in copy:** Settings ▸ Agents' explanation names ⌘N and Settings ▸ Terminal's shell
   row names ⌘D in plain text, so a rebound chord leaves them wrong. They should read from
   `KeybindingsStore` or not name the chord.

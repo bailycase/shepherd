@@ -140,7 +140,7 @@ struct ThreadView: View {
                                 .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
                                 .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
                                 .background(Color.nw.bgRaised, in: Capsule())
-                                .overlay { Capsule().strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+                                .nwBorder(Color.nw.lineStrong, in: Capsule())
                         }
                         .buttonStyle(.plain)
                         .padding(.bottom, composerHeight + NW.Space.m)

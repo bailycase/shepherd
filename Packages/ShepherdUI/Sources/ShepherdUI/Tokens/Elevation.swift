@@ -37,9 +37,16 @@ extension View {
         }
     }
 
-    /// A 1px (hairline) border inside the view's bounds.
+    /// A 1px (hairline) border inside the view's bounds. Every control, card, and pane border
+    /// draws through this or `nwBorder(_:in:dash:)`, never a 1pt stroke.
     public func nwBorder(_ color: Color, radius: CGFloat = 0) -> some View {
-        modifier(NWBorderModifier(color: color, radius: radius))
+        nwBorder(color, in: RoundedRectangle(cornerRadius: radius))
+    }
+
+    /// A 1px (hairline) border along `shape` (a capsule, a circle) inside the view's bounds;
+    /// `dash` draws it dashed (a queued bubble, a framed empty state).
+    public func nwBorder<S: InsettableShape>(_ color: Color, in shape: S, dash: [CGFloat] = []) -> some View {
+        modifier(NWBorderModifier(color: color, shape: shape, dash: dash))
     }
 }
 
@@ -64,14 +71,15 @@ public struct NWHairline: View {
     }
 }
 
-private struct NWBorderModifier: ViewModifier {
+private struct NWBorderModifier<S: InsettableShape>: ViewModifier {
     let color: Color
-    let radius: CGFloat
+    let shape: S
+    let dash: [CGFloat]
     @Environment(\.displayScale) private var displayScale
 
     func body(content: Content) -> some View {
         content.overlay {
-            RoundedRectangle(cornerRadius: radius).strokeBorder(color, lineWidth: NW.hairline(displayScale))
+            shape.strokeBorder(color, style: StrokeStyle(lineWidth: NW.hairline(displayScale), dash: dash))
         }
     }
 }

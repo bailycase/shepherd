@@ -313,7 +313,7 @@ struct NewAgentSheet: View {
                     .frame(height: AppLayout.promptEditorHeight)
                     .padding(NW.Space.m)
                     .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+                    .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
                     .nwFocusRing(promptFocused, radius: NW.Radius.s)
                     .accessibilityLabel("Prompt")
             }

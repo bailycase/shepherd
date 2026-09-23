@@ -356,7 +356,7 @@ struct FinalizeWorktreeSheet: View {
                     .frame(height: AppLayout.descriptionEditorHeight)
                     .padding(NW.Space.s)
                     .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+                    .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
                     .nwFocusRing(focusedField == .description, radius: NW.Radius.s)
                     .accessibilityLabel("Pull request description")
             }

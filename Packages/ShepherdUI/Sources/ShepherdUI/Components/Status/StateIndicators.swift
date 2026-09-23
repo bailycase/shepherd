@@ -25,11 +25,7 @@ public struct NWStatusPill: View {
         .padding(.trailing, 7)
         .frame(height: 20)
         .background(state.tint ?? .clear, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-        .overlay {
-            if state.tint == nil {
-                RoundedRectangle(cornerRadius: NW.Radius.xs).strokeBorder(Color.nw.lineStrong, lineWidth: 1)
-            }
-        }
+        .nwBorder(state.tint == nil ? Color.nw.lineStrong : .clear, radius: NW.Radius.xs)
         .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
