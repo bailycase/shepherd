@@ -100,14 +100,10 @@ private struct RevertConfirmation: ViewModifier {
     @Bindable var model: ReviewPaneModel
 
     func body(content: Content) -> some View {
-        content.confirmationDialog("Discard the changes to \(model.reverting?.displayPath ?? "this file")?",
-                                   isPresented: $model.isConfirmingRevert, presenting: model.reverting) { file in
-            Button("Discard Changes", role: .destructive) {
-                model.actions.revert?(file)
-                model.reverting = nil
-            }
-        } message: { file in
-            Text(file.isNew ? "The new file moves to the Trash." : "The file returns to its last committed version. This cannot be undone from Shepherd.")
+        content.sheet(item: $model.reverting) { file in
+            RevertFileDialog(path: file.displayPath, isNew: file.isNew,
+                             revert: { model.actions.revert?(file); model.reverting = nil },
+                             cancel: { model.reverting = nil })
         }
     }
 }
