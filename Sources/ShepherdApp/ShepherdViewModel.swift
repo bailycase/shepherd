@@ -365,7 +365,8 @@ final class ShepherdViewModel {
             self?.adopt(serverState)
         }
         sessions.onTabLayoutChanged = { [weak self] tabID, layout in
-            guard let self, let index = self.state.tabs.firstIndex(where: { $0.id == tabID }) else { return }
+            guard let self, let index = self.state.tabs.firstIndex(where: { $0.id == tabID }),
+                  self.state.tabs[index].layout != layout else { return }
             self.state.tabs[index].layout = layout
         }
         sessions.onAgentStatus = { [weak self] agentID, status in
@@ -669,7 +670,8 @@ final class ShepherdViewModel {
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus) {
         if let index = state.agents.firstIndex(where: { $0.id == id }) {
             let old = state.agents[index].status
-            state.agents[index].status = status
+            // A repeated report must not invalidate every view that reads the workspace.
+            if old != status { state.agents[index].status = status }
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
             // Visible means the workspace is actually showing this agent's
             // layout — not a remote agent.
@@ -690,9 +692,10 @@ final class ShepherdViewModel {
         childSweepTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                // Copy-out so an idle sweep doesn't publish a no-op change.
+                // Copy-out so an idle sweep doesn't publish a no-op change; its bookkeeping
+                // still lands (unobserved) so a stale publisher is not re-swept forever.
                 var swept = self.childRuns
-                if swept.sweep() { self.childRuns = swept }
+                if swept.sweep() { self.childRuns = swept } else { self._childRuns = swept }
                 self.syncChildSweepTimer()
             }
         }
@@ -700,7 +703,11 @@ final class ShepherdViewModel {
 
     func applyAgentChildren(_ agentID: AgentID, _ children: [ChildRun]) {
         let wasEmpty = childRuns.children(of: agentID).isEmpty
-        childRuns.apply(agentID: agentID, children: children)
+        var updated = childRuns
+        updated.apply(agentID: agentID, children: children)
+        // The extension republishes every 45s: an identical publish only refreshes the
+        // publisher's timestamp, which no view reads, so it goes to the unobserved storage.
+        if updated.rows == childRuns.rows { _childRuns = updated } else { childRuns = updated }
         let isEmpty = childRuns.children(of: agentID).isEmpty
         if isEmpty {
             collapsedChildren.remove(agentID)

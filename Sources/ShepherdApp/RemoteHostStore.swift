@@ -86,12 +86,14 @@ final class RemoteHostStore: ObservableObject {
                         do {
                             if case .children(let rows) = try await client.agentQuery(agentID: agent.id, query: .children),
                                !Task.isCancelled, self?.client === client,
-                               self?.state.agents.contains(where: { $0.id == agent.id }) == true {
+                               self?.state.agents.contains(where: { $0.id == agent.id }) == true,
+                               // The poll repeats every 3s; an unchanged answer must not republish.
+                               self?.children[agent.id] != rows {
                                 self?.children[agent.id] = rows
                             }
                         } catch {
                             guard !Task.isCancelled, self?.client === client else { return }
-                            self?.children.removeValue(forKey: agent.id)
+                            if self?.children[agent.id] != nil { self?.children.removeValue(forKey: agent.id) }
                         }
                     }
                     try? await Task.sleep(for: .seconds(3))
