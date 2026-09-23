@@ -3,6 +3,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdPTYSpawn
 
 /// A live PTY-backed process. All mutable state is confined to `queue`; that
 /// queue targets the in-process server's serial queue, so the server may read
@@ -176,8 +177,8 @@ final class PTYSession: @unchecked Sendable {
             throw SpawnError(message: "executable not found: \(argv[0])")
         }
 
-        // Everything the child touches is C-allocated before fork: no Swift
-        // runtime or malloc calls are safe between fork and exec.
+        // Everything the child touches is C-allocated before fork, and the child side runs in C:
+        // no Swift, runtime, or malloc calls are safe between fork and exec.
         let execPathC = strdup(execPath)
         let cwdC = strdup(params.cwd)
         let execFailMsgC = strdup("shepherd: exec failed\r\n")
@@ -195,26 +196,14 @@ final class PTYSession: @unchecked Sendable {
 
         var ws = winsize(ws_row: UInt16(rows), ws_col: UInt16(cols), ws_xpixel: 0, ws_ypixel: 0)
         var master: Int32 = -1
-        let pid = forkpty(&master, nil, nil, &ws)
+        // The child side (signal reset, chdir, exec) is C: see shepherd_pty_spawn.h.
+        let pid = argvC.withUnsafeMutableBufferPointer { argvBuf in
+            envC.withUnsafeMutableBufferPointer { envBuf in
+                shepherd_forkpty_exec(&master, &ws, execPathC, argvBuf.baseAddress, envBuf.baseAddress, cwdC, execFailMsgC)
+            }
+        }
         if pid < 0 {
             throw SpawnError(message: "forkpty failed: errno \(errno)")
-        }
-        if pid == 0 {
-            // The app may ignore SIGTERM/SIGINT (dispatch signal sources) and
-            // SIG_IGN dispositions plus blocked masks survive exec; restore
-            // defaults so children are killable. Async-signal-safe calls only.
-            for sig in 1..<NSIG { signal(sig, SIG_DFL) }
-            var sigmask = sigset_t()
-            sigemptyset(&sigmask)
-            sigprocmask(SIG_SETMASK, &sigmask, nil)
-            if let cwdC { _ = chdir(cwdC) }
-            argvC.withUnsafeMutableBufferPointer { argvBuf in
-                envC.withUnsafeMutableBufferPointer { envBuf in
-                    _ = execve(execPathC, argvBuf.baseAddress, envBuf.baseAddress)
-                }
-            }
-            if let execFailMsgC { _ = write(2, execFailMsgC, strlen(execFailMsgC)) }
-            _exit(127)
         }
 
         self.childPID = pid

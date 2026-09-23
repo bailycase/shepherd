@@ -51,17 +51,8 @@ func uniqueDirectory(_ label: String = "shp") throws -> URL {
 extension ScratchServer {
     /// A server on a directory no other test can be using.
     static func fresh() throws -> ScratchServer {
-        _ = warmForkPath
-        return try ScratchServer(dir: uniqueDirectory("srv"))
+        try ScratchServer(dir: uniqueDirectory("srv"))
     }
-
-    /// Works around the bug `ForkSafetyTests` documents: PTYSession's pre-exec child iterates a
-    /// Range, which in unoptimised builds instantiates tuple metadata under a runtime lock another
-    /// thread may hold at fork time. Running the same loop here first caches that metadata, so the
-    /// child only reads it. Without this, parallel tests lose freshly spawned panes at random.
-    private static let warmForkPath: Void = {
-        for sig in 1..<NSIG { _ = sig }
-    }()
 
     /// Replace the state and wait for its broadcast, then forget every broadcast so a test
     /// observes only what it causes.

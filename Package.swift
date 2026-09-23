@@ -47,10 +47,12 @@ let package = Package(
             dependencies: ["ShepherdCore"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The pty child side (fork → exec) in C: nothing in Swift may run between fork and exec.
+        .target(name: "ShepherdPTYSpawn"),
         .target(
             name: "ShepherdSessions",
             dependencies: [
-                "ShepherdCore", "ShepherdProtocol", "ShepherdRemote",
+                "ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdPTYSpawn",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
