@@ -46,7 +46,7 @@ struct ActivityLineView: View, Equatable {
                     if let call = burst.calls.first(where: { $0.id == row.id }) { menu(call) }
                 }
                 .padding(.vertical, NW.Space.xxs)
-                .transition(.opacity)
+                .nwTransition(.disclosure)
             }
         }
         .sheet(item: $sheet) { sheet in
@@ -72,8 +72,10 @@ struct ActivityLineView: View, Equatable {
         }
     }
 
+    /// A click on this line: the whole thread eases around the calls as they open, so the
+    /// change animates as one transaction rather than from a container.
     private func toggle() {
-        withAnimation(NW.Motion.pane.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
+        withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
     }
 
     private func row(_ call: NativeActivityCall) -> NWActivityCallRow {
@@ -94,7 +96,7 @@ struct ActivityLineView: View, Equatable {
         if call.kind == .edit, let path = call.path, let review {
             review(path)
         } else if call.expandable {
-            withAnimation(NW.Motion.pane.animation(reduceMotion: reduceMotion)) {
+            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) {
                 if expandedCalls.remove(id) == nil { expandedCalls.insert(id) }
             }
         }

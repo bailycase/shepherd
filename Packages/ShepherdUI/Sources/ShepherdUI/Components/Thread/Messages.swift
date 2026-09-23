@@ -273,54 +273,66 @@ public struct NWThinking: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// When thinking ends, "Thinking… 4s" cross-fades into "Thought for 4s" in place, as long
+    /// as the caller keeps one `NWThinking` for both (the same view identity).
     public var body: some View {
         let nw = Color.nw
-        if live {
-            HStack(spacing: NW.Space.m) {
-                ProgressView().progressViewStyle(.nwSpinner(size: 12, color: nw.textSecondary))
-                Text(title).font(.nwSans(12)).italic().foregroundStyle(nw.textSecondary)
-                if let since {
-                    NWElapsedText(since: since, style: .long).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
-                } else if let seconds {
-                    Text(NWDuration.text(seconds, .long)).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
-                }
+        VStack(alignment: .leading, spacing: NW.Space.m) {
+            ZStack(alignment: .leading) {
+                if live { liveHeader.nwTransition(.content) } else { toggle.nwTransition(.content) }
             }
-            .frame(minHeight: NWThreadMetrics.activityHeight)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Thinking")
-        } else {
-            VStack(alignment: .leading, spacing: NW.Space.m) {
-                Button {
-                    withAnimation(NW.Motion.pane.animation(reduceMotion: reduceMotion)) { isExpanded.toggle() }
-                } label: {
-                    HStack(spacing: NW.Space.s) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.system(size: 8, weight: .semibold))
-                            .frame(width: NWThreadMetrics.chevron, height: NWThreadMetrics.chevron)
-                        Text(title).font(.nwSans(12)).italic()
-                    }
+            .nwAnimation(.content, value: live)
+            if isExpanded, !live {
+                Text(text)
+                    .font(.nwSans(12.5)).italic()
+                    .lineSpacing(NWTextStyle.caption.lineSpacing + 2)
                     .foregroundStyle(nw.textSecondary)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .nwFocusRing(radius: NW.Radius.xs)
-                .accessibilityLabel(title)
-                .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
-                .accessibilityHint("Shows the model's thinking")
-                if isExpanded {
-                    Text(text)
-                        .font(.nwSans(12.5)).italic()
-                        .lineSpacing(NWTextStyle.caption.lineSpacing + 2)
-                        .foregroundStyle(nw.textSecondary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, NW.Space.xxs)
-                        .padding(.leading, NW.Space.l)
-                        .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
-                        .frame(maxWidth: NWThreadMetrics.proseMeasure, alignment: .leading)
-                }
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, NW.Space.xxs)
+                    .padding(.leading, NW.Space.l)
+                    .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
+                    .frame(maxWidth: NWThreadMetrics.proseMeasure, alignment: .leading)
+                    .nwTransition(.disclosure)
             }
         }
+    }
+
+    private var liveHeader: some View {
+        let nw = Color.nw
+        return HStack(spacing: NW.Space.m) {
+            ProgressView().progressViewStyle(.nwSpinner(size: 12, color: nw.textSecondary))
+            Text(title).font(.nwSans(12)).italic().foregroundStyle(nw.textSecondary)
+            if let since {
+                NWElapsedText(since: since, style: .long).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
+            } else if let seconds {
+                Text(NWDuration.text(seconds, .long)).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
+            }
+        }
+        .frame(minHeight: NWThreadMetrics.activityHeight)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Thinking")
+    }
+
+    private var toggle: some View {
+        Button {
+            withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { isExpanded.toggle() }
+        } label: {
+            HStack(spacing: NW.Space.s) {
+                NWThreadChevron(isExpanded: isExpanded)
+                // Thinking that merges into this stretch counts its seconds up.
+                Text(title).font(.nwSans(12)).italic()
+                    .nwContentTransition(.numeric())
+                    .nwAnimation(.content, value: title)
+            }
+            .foregroundStyle(Color.nw.textSecondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .nwFocusRing(radius: NW.Radius.xs)
+        .accessibilityLabel(title)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+        .accessibilityHint("Shows the model's thinking")
     }
 }
 
