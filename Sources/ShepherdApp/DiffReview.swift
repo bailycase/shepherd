@@ -402,9 +402,14 @@ final class ReviewPaneModel {
         if session.viewed.contains(fileID) { session.viewed.remove(fileID) } else { session.viewed.insert(fileID) }
     }
 
-    /// Opens one fold, or with `wholeFile` every fold in the file.
-    func expandFold(_ key: String, in fileID: String, wholeFile: Bool) {
-        if wholeFile { expandedFiles.insert(fileID) } else { expandedRuns[fileID, default: []].insert(key) }
+    /// Opens one fold.
+    func expandFold(_ key: String, in fileID: String) {
+        expandedRuns[fileID, default: []].insert(key)
+    }
+
+    /// Opens every fold in a file (⌥-click on a fold).
+    func expandFile(_ fileID: String) {
+        expandedFiles.insert(fileID)
     }
 
     func expandAllFiles() {
