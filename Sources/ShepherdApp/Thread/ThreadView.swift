@@ -5,22 +5,16 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// Keyboard commands for the thread on screen, when the app provides them.
-private struct ThreadCommandsKey: EnvironmentKey {
-    static let defaultValue: ThreadCommandCenter? = nil
-}
-
 extension EnvironmentValues {
-    var threadCommands: ThreadCommandCenter? {
-        get { self[ThreadCommandsKey.self] }
-        set { self[ThreadCommandsKey.self] = newValue }
-    }
+    /// Keyboard commands for the thread on screen, when the app provides them.
+    @Entry var threadCommands: ThreadCommandCenter? = nil
 }
 
-/// An agent's thread (spec §3, §4): a 760pt column of turns in a scroll view that follows the
-/// tail, with the composer floating over its bottom edge.
+/// An agent's thread (NWThread board): a 760pt column of turns in a scroll view that follows
+/// the tail, with the composer floating over its bottom edge. The store derives every row once
+/// per change; this view only lays them out.
 struct ThreadView: View {
-    var store: NativeThreadStore
+    let store: NativeThreadStore
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request
@@ -33,14 +27,14 @@ struct ThreadView: View {
     var inspectSubagent: ((ChildRun) -> Void)? = nil
     /// The run open in the inspector; its card and ledger row are highlighted.
     var inspectedRunID: String? = nil
-    /// Opens the review pane at a file ("review ›" on edit/write rows).
+    /// Opens the review pane at a file (a changed file, the changes card, an edit call).
     var review: ((String) -> Void)? = nil
     /// The models the host offers, for the composer's model picker.
     var listModels: (() async -> [PiModelCatalog.Entry])? = nil
-    @Environment(\.threadCommands) private var commands
     @FocusState private var composing: Bool
     @State private var follower = NativeScrollFollower()
-    @State private var width: CGFloat = AppLayout.threadMaxWidth + 2 * AppLayout.gutter
+    /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
+    @State private var wide = true
     @State private var hovering = false
     /// Set on send: once the echoed turn is in the tree, scroll to the tail even if the reader
     /// had scrolled up.
@@ -54,17 +48,12 @@ struct ThreadView: View {
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
 
-    /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
-    private var gutter: CGFloat {
-        width >= AppLayout.threadMaxWidth + 2 * AppLayout.gutter ? AppLayout.gutter : AppLayout.gutterCompact
-    }
-
+    private var gutter: CGFloat { wide ? AppLayout.gutter : AppLayout.gutterCompact }
     private var running: Bool { store.loadError == nil && store.settledRunning }
-    private var turns: [NativeTurn] { nativeTurns(store.displayedMessages) }
 
     var body: some View {
-        let turns = turns
-        let placements = nativeSubagentPlacements(store.subagents, turns: turns)
+        let rows = store.rows
+        let running = running
         ZStack(alignment: .bottom) {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -78,29 +67,14 @@ struct ThreadView: View {
                             .disabled(!active || !store.ready || store.loadingOlder)
                             .frame(maxWidth: .infinity)
                         }
-                        if turns.isEmpty { emptyState }
-                        ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
-                            if turn.isUser {
-                                UserTurn(messages: turn.messages, caption: turn.messages.first?.timestamp.map { nativeClockText($0) })
-                                    .id(turn.id)
-                            } else {
-                                let opener = index > 0 && turns[index - 1].isUser ? turns[index - 1] : nil
-                                AgentTurn(
-                                    messages: turn.messages,
-                                    live: running && index == turns.count - 1,
-                                    subagents: placements[turn.id] ?? NativeSubagentPlacement(),
-                                    subagentActions: subagentActions,
-                                    startedAt: opener?.messages.first?.timestamp,
-                                    retry: retryAction(opener),
-                                    review: review
-                                )
-                                .id(turn.id)
-                            }
+                        if rows.isEmpty { emptyState }
+                        ForEach(rows) { row in
+                            turn(row, running: running).id(row.id)
                         }
                         // One persistent tail row for the whole run; a question replaces it with
-                        // the composer's question panel.
-                        if running, store.snapshot?.dialogs.isEmpty != false {
-                            WorkingRow(label: nativeWorkingLabel(store.snapshot?.provisional ?? []))
+                        // the composer's question panel, and live thinking carries its own spinner.
+                        if running, store.snapshot?.dialogs.isEmpty != false, let label = workingLabel(rows.last { !$0.isUser }) {
+                            WorkingRow(label: label)
                         }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
@@ -144,7 +118,7 @@ struct ThreadView: View {
                     scrollToTurnPending = true
                     jumpedTurn = nil
                 }
-                .onChange(of: turns.last(where: \.isUser)?.id) { _, id in
+                .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
                     guard scrollToTurnPending, id != nil else { return }
                     scrollToTurnPending = false
                     Task { @MainActor in
@@ -152,10 +126,9 @@ struct ThreadView: View {
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                 }
-                .onChange(of: commands?.request) { _, request in
-                    guard let request, request.thread == commandKey, active else { return }
-                    handle(request.command, turns: turns, proxy: proxy)
-                }
+                .modifier(ThreadCommandHandler(key: commandKey, active: active) { command in
+                    handle(command, proxy: proxy)
+                })
                 .overlay(alignment: .bottom) {
                     if follower.showsJump(running: running) {
                         Button {
@@ -164,26 +137,26 @@ struct ThreadView: View {
                         } label: {
                             Label("Jump to latest", systemImage: "arrow.down")
                                 .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                                .padding(.horizontal, 12).frame(height: 28)
+                                .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
                                 .background(Color.nw.bgRaised, in: Capsule())
                                 .overlay { Capsule().strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
                         }
                         .buttonStyle(.plain)
-                        .padding(.bottom, composerHeight + 8)
+                        .padding(.bottom, composerHeight + NW.Space.m)
                         .transition(.opacity)
                         .accessibilityLabel("Jump to latest")
                     }
                 }
             }
-            Composer(store: store, active: active, agentName: agentName, hasTurns: !turns.isEmpty, gutter: gutter,
+            Composer(store: store, active: active, agentName: agentName, hasTurns: !rows.isEmpty, gutter: gutter,
                      composing: $composing, listModels: listModels, modelPickerRequest: modelPickerRequest)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         }
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
         .background(Color.nw.bgWindow)
-        .animation(.easeInOut(duration: 0.12), value: follower.showsJump(running: running))
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .animation(.easeInOut(duration: NW.Motion.hover.duration), value: follower.showsJump(running: running))
+        .onGeometryChange(for: Bool.self) { $0.size.width >= AppLayout.threadMaxWidth + 2 * AppLayout.gutter } action: { wide = $0 }
         .onHover { hovering = $0 }
         .onAppear { installWheelMonitor() }
         .onDisappear {
@@ -205,7 +178,29 @@ struct ThreadView: View {
         }
     }
 
+    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool) -> some View {
+        if row.isUser {
+            UserTurn(messages: row.turn.messages, caption: row.turn.messages.first?.timestamp.map { nativeClockText($0) })
+                .equatable()
+        } else if let presentation = row.presentation {
+            AgentTurn(presentation: presentation, live: row.live, subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
+                      subagentActions: subagentActions, startedAt: row.startedAt,
+                      retry: retryAction(row, running: running), review: review)
+                .equatable()
+        }
+    }
+
     private static let bottomID = "thread-bottom"
+
+    /// What the tail row says: nothing under live thinking (it has its own spinner), "Working…"
+    /// under a live activity line, else pi's current activity.
+    private func workingLabel(_ last: NativeThreadRow?) -> String? {
+        if let presentation = last?.presentation, last?.live == true {
+            if presentation.endsInLiveThinking { return nil }
+            if presentation.endsInLiveActivity { return "Working…" }
+        }
+        return nativeWorkingLabel(store.snapshot?.provisional ?? [])
+    }
 
     private var subagentActions: SubagentActions {
         SubagentActions(
@@ -216,14 +211,13 @@ struct ThreadView: View {
     }
 
     /// Retry resends the prompt that opened a turn, once the agent is idle.
-    private func retryAction(_ opener: NativeTurn?) -> (() -> Void)? {
-        guard let opener, !running, store.supports("send") else { return nil }
-        let text = opener.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        return { Task { await store.send(text: text) } }
+    private func retryAction(_ row: NativeThreadRow, running: Bool) -> (() -> Void)? {
+        guard let text = row.promptText, !running, store.supports("send"),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return { [store] in Task { await store.send(text: text) } }
     }
 
-    private func handle(_ command: ThreadCommandCenter.Command, turns: [NativeTurn], proxy: ScrollViewProxy) {
+    private func handle(_ command: ThreadCommandCenter.Command, proxy: ScrollViewProxy) {
         switch command {
         case .modelPicker:
             modelPickerRequest += 1
@@ -231,7 +225,7 @@ struct ThreadView: View {
             if let run = store.subagents.first(where: { !$0.isTerminal }) ?? store.subagents.last { inspectSubagent?(run) }
             else { NSSound.beep() }
         case .previousTurn, .nextTurn:
-            let userTurns = turns.filter(\.isUser).map(\.id)
+            let userTurns = store.rows.filter(\.isUser).map(\.id)
             guard !userTurns.isEmpty else { NSSound.beep(); return }
             let current = jumpedTurn.flatMap(userTurns.firstIndex(of:)) ?? userTurns.count
             let target = command == .previousTurn ? max(0, current - 1) : current + 1
@@ -324,5 +318,21 @@ struct ThreadView: View {
 
     private func quiet(_ text: String) -> some View {
         Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
+    }
+}
+
+/// Watches the command center in its own view, so a command sent to another thread never
+/// re-evaluates this thread's body.
+private struct ThreadCommandHandler: ViewModifier {
+    let key: String?
+    let active: Bool
+    let handle: (ThreadCommandCenter.Command) -> Void
+    @Environment(\.threadCommands) private var commands
+
+    func body(content: Content) -> some View {
+        content.onChange(of: commands?.request) { _, request in
+            guard let request, request.thread == key, active else { return }
+            handle(request.command)
+        }
     }
 }

@@ -4,48 +4,36 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The user's turn: a trailing bubble on `bgBubble`, max 600pt, radius 12 with a 4pt
-/// bottom-trailing corner, the time beneath. No speaker label: shape carries the role.
-struct UserTurn: View {
+/// The user's turn: one `NWUserBubble` per message, the time beneath the last. A follow-up
+/// sent while the agent ran is queued until the turn ends. No speaker label: shape carries
+/// the role.
+struct UserTurn: View, Equatable {
     let messages: [NativeThreadMessage]
-    /// Micro caption under the bubble; "10:58 · from parent" in a child's transcript.
+    /// "2:41 PM"; "10:58 · from parent" in a child's transcript.
     var caption: String?
     var small = false
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 6) {
-            ForEach(messages, id: \.entryID) { message in
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
-                        if block.kind == .unsupportedImage {
-                            Label("Image", systemImage: "photo").font(Font.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-                        } else {
-                            Text(block.text).font(small ? Font.nwSans(13.5) : Font.nw(.body)).foregroundStyle(Color.nw.textPrimary)
-                                .lineSpacing(NWTextStyle.body.lineSpacing).textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color.nw.bgBubble, in: UnevenRoundedRectangle(topLeadingRadius: NW.Radius.l, bottomLeadingRadius: NW.Radius.l,
-                                                                         bottomTrailingRadius: NW.Radius.xs, topTrailingRadius: NW.Radius.l))
-                .opacity(message.status == "pending" ? 0.7 : 1)
-                .frame(maxWidth: AppLayout.userMaxWidth, alignment: .trailing)
-            }
-            if let caption {
-                Text(caption).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
+        VStack(alignment: .trailing, spacing: AppLayout.activitySpacing) {
+            ForEach(Array(messages.enumerated()), id: \.element.entryID) { index, message in
+                let images = message.blocks.count { $0.kind == .unsupportedImage }
+                NWUserBubble(message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"),
+                             attachments: Array(repeating: "Image", count: images),
+                             timestamp: index == messages.count - 1 ? caption : nil,
+                             isQueued: message.status == "queued")
+                    .opacity(message.status == "pending" ? 0.7 : 1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
-        .accessibilityElement(children: .combine)
     }
 }
 
-/// One agent turn (spec §4): thinking, prose, grouped tool calls, subagent cards, then the
-/// footer once the turn has finished.
-struct AgentTurn: View {
-    let messages: [NativeThreadMessage]
+/// One agent turn (NWThread board): thinking, prose, activity lines, subagent cards where their
+/// spawn calls were, then, once it has finished, the changes card and the footer. Everything
+/// it shows was derived once per turn change (`NativeTurnPresentation`), and it redraws only
+/// when that, its placement, or its flags change.
+struct AgentTurn: View, Equatable {
+    let presentation: NativeTurnPresentation
     /// True while this turn is the one streaming.
     let live: Bool
     var small = false
@@ -55,178 +43,175 @@ struct AgentTurn: View {
     var startedAt: Double? = nil
     /// Resend the prompt that opened this turn; nil hides Retry.
     var retry: (() -> Void)? = nil
+    /// Opens the review pane at a file.
     var review: ((String) -> Void)? = nil
+    @State private var openThinking: Set<String> = []
+
+    init(presentation: NativeTurnPresentation, live: Bool, small: Bool = false, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
+         subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil) {
+        self.presentation = presentation
+        self.live = live
+        self.small = small
+        self.subagents = subagents
+        self.subagentActions = subagentActions
+        self.startedAt = startedAt
+        self.retry = retry
+        self.review = review
+    }
+
+    /// A transcript with no store behind it (the subagent inspector): the presentation is
+    /// memoised per turn.
+    init(messages: [NativeThreadMessage], live: Bool, small: Bool = false) {
+        self.init(presentation: TurnPresentationMemo.presentation(messages, live: live), live: live, small: small)
+    }
+
+    static func == (lhs: AgentTurn, rhs: AgentTurn) -> Bool {
+        lhs.presentation == rhs.presentation && lhs.live == rhs.live && lhs.small == rhs.small && lhs.subagents == rhs.subagents
+            && lhs.startedAt == rhs.startedAt && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
+            && (lhs.subagentActions == nil) == (rhs.subagentActions == nil)
+            && lhs.subagentActions?.enabled == rhs.subagentActions?.enabled
+            && lhs.subagentActions?.inspectedRunID == rhs.subagentActions?.inspectedRunID
+    }
+
+    /// Consecutive activity lines sit 6pt apart; everything else 14pt.
+    private enum Part: Identifiable {
+        case item(NativeTurnPresentation.Item)
+        case activity([NativeActivityBurst])
+
+        var id: String {
+            switch self {
+            case .item(let item): item.id
+            case .activity(let bursts): "lines:" + (bursts.first?.id ?? "")
+            }
+        }
+    }
+
+    private var parts: [Part] {
+        var parts: [Part] = []
+        for item in presentation.items {
+            if case .activity(let burst) = item {
+                if case .activity(let bursts)? = parts.last { parts[parts.count - 1] = .activity(bursts + [burst]) }
+                else { parts.append(.activity([burst])) }
+            } else {
+                parts.append(.item(item))
+            }
+        }
+        return parts
+    }
 
     var body: some View {
-        let items = nativeTurnItems(messages)
-        VStack(alignment: .leading, spacing: AppLayout.blockSpacing) {
-            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                switch item {
-                case .thinking(let text):
-                    ThinkingDisclosure(text: text, seconds: thinkingSeconds(before: index, in: items),
-                                       streaming: live && index == items.count - 1)
-                case .prose(let text):
-                    Prose(text: text, small: small)
-                case .tools(let group):
-                    ToolGroup(messages: group, small: small, subagents: subagents, subagentActions: subagentActions, review: review)
-                        .padding(.vertical, 4)
-                case .error(let text, let count):
-                    // A failed provider request is a status line, not prose: pi retries.
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle").font(.system(size: 10, weight: .semibold))
-                        Text("Request failed · \(text)").lineLimit(1).truncationMode(.tail)
-                        if count > 1 { Text("×\(count)").monospacedDigit().foregroundStyle(Color.nw.textTertiary) }
+        VStack(alignment: .leading, spacing: AppLayout.turnItemSpacing) {
+            ForEach(parts) { part in
+                switch part {
+                case .activity(let bursts):
+                    VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
+                        ForEach(bursts) { burst in
+                            ActivityLineView(burst: burst, review: review).equatable()
+                        }
                     }
-                    .font(Font.nw(.caption)).foregroundStyle(Color.nw.failed)
-                    .help(text)
-                case .note(let text):
-                    Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                        .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
-                        .padding(.leading, 10)
-                        .overlay(alignment: .leading) { Color.nw.lineSubtle.frame(width: 2) }
-                        .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
+                case .item(let item):
+                    itemView(item)
                 }
             }
             // Runs with no spawn row in this turn render after it; a folded group already
             // placed them in its strip or ledger unless there was no spawn row to fold into.
             if let subagentActions, !subagents.trailing.isEmpty,
-               subagents.byToolCall.isEmpty || !subagentGroupFolds(subagents) {
+               subagents.byToolCall.isEmpty || !NativeCardLayout(subagents).folds {
                 SubagentStack(runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing, actions: subagentActions)
             }
-            if !live, !items.isEmpty {
-                // Spawn rows the cards replaced are not tool calls the reader can see.
-                TurnFooter(messages: messages.filter { $0.toolCallID.map { subagents.byToolCall[$0] == nil } ?? true },
-                           startedAt: startedAt, subagents: subagents.all, inspect: subagentActions?.inspect, retry: retry)
+            if !live, !presentation.items.isEmpty {
+                if let changes = presentation.changes { changesCard(changes) }
+                footer
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
     }
 
-    /// The thinking duration the host observed for the message carrying the thinking item at
-    /// `index`: thinking items come from messages' thinking blocks, in order.
-    private func thinkingSeconds(before index: Int, in items: [NativeTurnItem]) -> Double? {
-        let durations = messages.flatMap { message in
-            message.blocks.filter { $0.kind == .thinking }.map { _ in message.thinkingSeconds }
+    @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
+        switch item {
+        case .thinking(let id, let text, let seconds, let live, let since):
+            if live {
+                NWThinking(liveSince: since.map { Date(timeIntervalSince1970: $0 / 1000) }, seconds: seconds)
+            } else {
+                NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
+                    get: { openThinking.contains(id) },
+                    set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }))
+            }
+        case .prose(_, _, let blocks):
+            Prose(blocks: blocks).equatable()
+        case .activity(let burst):
+            ActivityLineView(burst: burst, review: review).equatable()
+        case .subagents(_, let callIDs, let all):
+            if let subagentActions {
+                SubagentStack(runs: all ? subagents.all : callIDs.flatMap { subagents.byToolCall[$0] ?? [] },
+                              turnLive: subagents.all.contains { !$0.isTerminal }, actions: subagentActions)
+            }
+        case .note(_, let text):
+            Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) { Color.nw.lineStrong.frame(width: 2) }
+                .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
+        case .error(_, let text, let count, let final):
+            NWTurnError(final ? nativeTurnErrorText(text, toolCalls: presentation.toolCalls) : text,
+                        count: count, retry: final ? retry : nil)
+                .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
         }
-        let ordinal = items[...index].count { if case .thinking = $0 { true } else { false } } - 1
-        return durations.indices.contains(ordinal) ? durations[ordinal] : nil
+    }
+
+    private func changesCard(_ changes: NativeTurnChanges) -> some View {
+        NWChangesCard(
+            title: changes.title, added: changes.added, removed: changes.removed,
+            files: changes.files.map {
+                NWChangedFile(path: $0.path, directory: $0.directory, name: $0.name,
+                              status: NWChangedFile.Status(rawValue: $0.status.rawValue) ?? .modified, added: $0.added, removed: $0.removed)
+            },
+            onReview: review.flatMap { review in changes.files.first.map { file in { review(file.path) } } },
+            onOpen: review)
+    }
+
+    /// Copy and retry, then "2:44 PM · 3m 12s · 23 tool calls" and "3 subagents" as a link to
+    /// the first run.
+    private var footer: some View {
+        let ordered = subagents.all.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
+        let meta = [nativeTurnTimeText(startedAt: startedAt, endedAt: presentation.endedAt),
+                    presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
+            .compactMap { $0 }.joined(separator: " · ")
+        let copy = presentation.copyText
+        return NWTurnFooter(
+            meta: meta,
+            link: ordered.isEmpty || subagentActions == nil ? nil : nativeCount(ordered.count, "subagent"),
+            onLink: ordered.first.flatMap { first in subagentActions.map { actions in { actions.inspect(first) } } },
+            onCopy: copy.isEmpty ? nil : {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(copy, forType: .string)
+            },
+            onRetry: retry)
     }
 }
 
-/// "Thought for 4s", collapsed by default; while streaming, a spinner and "Thinking…".
-/// Expanded: tertiary italic prose on a 2pt rule.
-struct ThinkingDisclosure: View {
-    let text: String
-    var seconds: Double?
-    var streaming = false
-    @State private var expanded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// Presentations for transcripts built outside a store (the subagent inspector), keyed by the
+/// turn's first entry so a live child turn is rebuilt only when its messages change.
+@MainActor
+enum TurnPresentationMemo {
+    private static var entries: [String: (messages: [NativeThreadMessage], live: Bool, value: NativeTurnPresentation)] = [:]
 
-    private var caption: String {
-        if streaming { return "Thinking…" }
-        guard let seconds, seconds >= 0.5 else { return "Thought" }
-        return "Thought for \(seconds < 60 ? "\(Int(seconds.rounded()))s" : nativeDurationText(seconds))"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.12)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: 8) {
-                    if streaming {
-                        ProgressView().progressViewStyle(.nwSpinner(size: 12))
-                    } else {
-                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
-                            .rotationEffect(.degrees(expanded ? 90 : 0)).foregroundStyle(Color.nw.textTertiary).frame(width: 12)
-                    }
-                    Text(caption).font(Font.nw(.caption)).italic().foregroundStyle(Color.nw.textSecondary)
-                }
-                .padding(.vertical, 4)
-                .padding(.trailing, 8)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(caption)
-            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-            if expanded {
-                Text(text).font(Font.nwSans(13)).italic().lineSpacing(3)
-                    .foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 20).padding(.vertical, 4)
-                    .overlay(alignment: .leading) { Color.nw.lineSubtle.frame(width: 2).padding(.leading, 5) }
-                    .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
-            }
-        }
+    static func presentation(_ messages: [NativeThreadMessage], live: Bool) -> NativeTurnPresentation {
+        let key = messages.first?.entryID ?? ""
+        if let entry = entries[key], entry.live == live, entry.messages == messages { return entry.value }
+        let value = nativeTurnPresentation(messages, live: live)
+        if entries.count > 128 { entries.removeAll(keepingCapacity: true) }
+        entries[key] = (messages, live, value)
+        return value
     }
 }
 
-/// After a finished turn (spec §4): copy and retry, then "time · duration · N tool calls" and
-/// "· n subagents" as a link to the first run.
-struct TurnFooter: View {
-    let messages: [NativeThreadMessage]
-    var startedAt: Double?
-    var subagents: [ChildRun] = []
-    var inspect: ((ChildRun) -> Void)?
-    var retry: (() -> Void)?
-    @State private var copied = false
-
-    var body: some View {
-        let tools = messages.count { $0.toolName != nil || $0.role == "toolResult" }
-        let prose = messages.filter { $0.role == "assistant" && $0.toolName == nil }
-            .flatMap(\.blocks).filter { $0.kind == .text }.map(\.text)
-        let time = nativeTurnTimeText(startedAt: startedAt, endedAt: messages.compactMap(\.timestamp).max())
-        let ordered = subagents.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
-        HStack(spacing: 2) {
-            if !prose.isEmpty {
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(prose.joined(separator: "\n\n"), forType: .string)
-                    copied = true
-                    Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
-                } label: { Image(systemName: copied ? "checkmark" : "doc.on.doc") }
-                .buttonStyle(NWIconButtonStyle(bordered: false))
-                .help("Copy the reply")
-                .accessibilityLabel("Copy response")
-            }
-            if let retry {
-                Button(action: retry) { Image(systemName: "arrow.counterclockwise") }
-                    .buttonStyle(NWIconButtonStyle(bordered: false))
-                    .help("Send this turn's prompt again")
-                    .accessibilityLabel("Retry turn")
-            }
-            HStack(spacing: 0) {
-                if let time { Text(time).monospacedDigit() }
-                if tools > 0 {
-                    if time != nil { Text(" · ") }
-                    Text("\(tools) tool call\(tools == 1 ? "" : "s")")
-                }
-                if let first = ordered.first, let inspect {
-                    if time != nil || tools > 0 { Text(" · ") }
-                    Button("\(ordered.count) subagent\(ordered.count == 1 ? "" : "s")") { inspect(first) }
-                        .buttonStyle(NWLinkButtonStyle(font: Font.nw(.micro)))
-                        .accessibilityLabel("Open \(first.role ?? first.label) in the inspector")
-                }
-            }
-            .font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).padding(.leading, 6)
-        }
-    }
-}
-
-/// The tail row while the agent runs: a spinner (a pulsing dot under Reduce Motion) and the
-/// current activity in tertiary italic.
+/// The tail row while the agent runs.
 struct WorkingRow: View {
     let label: String
 
     var body: some View {
-        HStack(spacing: 8) {
-            ProgressView().progressViewStyle(.nwSpinner(size: 12))
-            Text(label).font(Font.nw(.caption)).italic().foregroundStyle(Color.nw.textSecondary)
-        }
-        .frame(height: AppLayout.workingRowHeight)
-        .padding(.leading, 2)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
+        NWWorkingRow(label)
     }
 }
