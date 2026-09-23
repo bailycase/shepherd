@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Durations as the Agents boards write them: short ("48s", "37m", "2h") for rows, ledgers,
-/// and waits; long ("48s", "4m 02s", "1h 02m") where a precise figure helps.
+/// Durations as the boards write them: short ("48s", "37m", "2h", "3d") for rows, ledgers,
+/// sidebar times and waits; long ("48s", "4m 02s", "1h 02m") where a precise figure helps.
 public enum NWDuration {
     public enum Style: Sendable { case short, long }
 
@@ -11,7 +11,8 @@ public enum NWDuration {
         case .short:
             if whole < 60 { return "\(whole)s" }
             if whole < 3600 { return "\(whole / 60)m" }
-            return "\(whole / 3600)h"
+            if whole < 86_400 { return "\(whole / 3600)h" }
+            return "\(whole / 86_400)d"
         case .long:
             if whole < 60 { return "\(whole)s" }
             if whole < 3600 { return String(format: "%dm %02ds", whole / 60, whole % 60) }
@@ -22,7 +23,7 @@ public enum NWDuration {
     /// How long the text for `seconds` stays the same: the step between its changes.
     static func step(at seconds: TimeInterval, _ style: Style) -> TimeInterval {
         switch style {
-        case .short: seconds < 60 ? 1 : seconds < 3600 ? 60 : 3600
+        case .short: seconds < 60 ? 1 : seconds < 3600 ? 60 : seconds < 86_400 ? 3600 : 86_400
         case .long: seconds < 3600 ? 1 : 60
         }
     }

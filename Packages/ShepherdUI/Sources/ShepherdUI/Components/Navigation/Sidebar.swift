@@ -294,8 +294,8 @@ private struct NWSidebarAccessoryView: View {
         case .ask:
             Text("ASK").font(.nwMono(10, .medium)).foregroundStyle(.nw.lanternText).fixedSize()
         case .elapsed(let since, let tone):
-            TimelineView(NWElapsedSchedule(since: since)) { context in
-                Text(NWDuration.short(context.date.timeIntervalSince(since)))
+            TimelineView(NWElapsedSchedule(start: since)) { context in
+                Text(NWDuration.text(context.date.timeIntervalSince(since)))
                     .font(.nwMono(10)).foregroundStyle(color(tone)).monospacedDigit().fixedSize()
             }
         case .text(let text, let tone):

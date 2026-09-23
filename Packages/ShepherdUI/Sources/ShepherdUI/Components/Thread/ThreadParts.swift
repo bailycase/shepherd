@@ -40,32 +40,6 @@ public enum NWThreadMetrics {
     public static let attachmentThumbnail: CGFloat = 20
 }
 
-/// The live elapsed time on a running line: "14s", "1m 02s", "1h 02m".
-public enum NWElapsed {
-    public static func text(_ seconds: Double) -> String {
-        let whole = Int(max(0, seconds))
-        if whole < 60 { return "\(whole)s" }
-        if whole < 3600 { return String(format: "%dm %02ds", whole / 60, whole % 60) }
-        return String(format: "%dh %02dm", whole / 3600, (whole % 3600) / 60)
-    }
-}
-
-/// Ticks once a second from `since`; only this text redraws.
-struct NWElapsedText: View {
-    let since: Date
-    let font: Font
-    let color: Color
-
-    var body: some View {
-        TimelineView(.periodic(from: since, by: 1)) { context in
-            Text(NWElapsed.text(context.date.timeIntervalSince(since)))
-                .font(font)
-                .foregroundStyle(color)
-                .monospacedDigit()
-        }
-    }
-}
-
 enum NWPasteboard {
     static func copy(_ text: String) {
         #if canImport(AppKit)

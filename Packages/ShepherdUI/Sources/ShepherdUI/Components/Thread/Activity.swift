@@ -115,7 +115,7 @@ public struct NWActivityLine: View {
                     Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
                 }
                 if let since {
-                    NWElapsedText(since: since, font: .nwMono(11), color: nw.running).fixedSize()
+                    NWElapsedText(since: since, style: .long).font(.nwMono(11)).foregroundStyle(nw.running).fixedSize()
                 }
             }
             .frame(minHeight: NWThreadMetrics.activityHeight)

@@ -11,7 +11,7 @@ struct NavigationTokenTests {
 
     @Test(arguments: [(0.0, "0s"), (59.9, "59s"), (60, "1m"), (3599, "59m"), (3600, "1h"), (86_399, "23h"), (86_400, "1d"), (-5, "0s")])
     func shortDurationsReadInTheirLargestWholeUnit(seconds: Double, text: String) {
-        #expect(NWDuration.short(seconds) == text)
+        #expect(NWDuration.text(seconds) == text)
     }
 
     /// The elapsed label ticks each second for a minute, then only when the minute (or hour)
@@ -20,7 +20,7 @@ struct NavigationTokenTests {
     func theElapsedScheduleTicksWhenTheLabelWouldChange(elapsed: Double, next: Double) {
         let start = Date(timeIntervalSinceReferenceDate: 1_000)
         let now = start.addingTimeInterval(elapsed)
-        #expect(NWDuration.nextChange(after: now, since: start) == start.addingTimeInterval(next))
+        #expect(NWElapsedSchedule(start: start).boundary(after: now) == start.addingTimeInterval(next))
     }
 
     @Test func thePaletteSitsEighteenPercentDownAtItsDesignedWidth() {
