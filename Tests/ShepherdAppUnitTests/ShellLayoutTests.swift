@@ -66,6 +66,20 @@ struct ShellLayoutTests {
         #expect(pane == ShellLayout.Pane(mode: mode, width: width, contentWidth: content))
     }
 
+    @Test(arguments: [
+        // position, span → ratio
+        (500.0, 1001.0, 500.0 / 1001),
+        // Each side keeps 160pt of the 1000 beside the divider…
+        (20.0, 1001.0, 0.16), (990.0, 1001.0, 0.84),
+        // …and never less than 15% or more than 85% in a long split.
+        (10.0, 2001.0, 0.15), (1990.0, 2001.0, 0.85),
+        // Too short for two 160pt sides: the divider stays centred.
+        (40.0, 301.0, 0.5), (0.0, 0.0, 0.5),
+    ])
+    func aDividerDragLeavesEachSideItsMinimum(position: Double, span: Double, ratio: Double) {
+        #expect(abs(ShellLayout.splitRatio(position: position, span: span) - ratio) < 0.000_1)
+    }
+
     @Test(arguments: Array(stride(from: 0.0, through: 2400, by: 37)))
     func thePaneNeverProducesANegativeOrOversizedWidth(column: Double) {
         for preferred in [nil, 0, 200, 600, 5000] as [Double?] {
