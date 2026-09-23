@@ -45,7 +45,7 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                     .frame(width: showPane && docked ? layout.contentWidth : total, height: geo.size.height)
                 if showPane {
                     HStack(spacing: 0) {
-                        handle(total: total)
+                        handle(total: total, width: layout.width)
                         pane()
                             .frame(width: layout.width, height: geo.size.height)
                             .clipped()
@@ -59,7 +59,8 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
         .coordinateSpace(.named("right-pane"))
     }
 
-    private func handle(total: CGFloat) -> some View {
+    /// The pane's leading edge and drag handle (adjustable with VoiceOver).
+    private func handle(total: CGFloat, width: CGFloat) -> some View {
         Color.nw.lineSubtle
             .frame(width: 1)
             .overlay {
@@ -77,6 +78,12 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                         })
             }
             .zIndex(1)
-            .accessibilityLabel("Resize pane")
+            .accessibilityElement()
+            .accessibilityLabel("Pane width")
+            .accessibilityValue("\(Int(width)) points")
+            .accessibilityAdjustableAction { direction in
+                let step: CGFloat = direction == .increment ? 40 : direction == .decrement ? -40 : 0
+                state.width = ShellLayout.rightPane(containerWidth: total, preferredWidth: width + step).width
+            }
     }
 }
