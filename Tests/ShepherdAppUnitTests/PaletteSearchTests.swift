@@ -111,9 +111,46 @@ struct PaletteEntryTests {
     @Test func rowsKeepTheirIndexInTheResults() {
         let entries = PaletteEntry.entries([item("a", .commands), item("b", .agents)])
         let indices = entries.compactMap { entry -> Int? in
-            if case .row(let index, _) = entry { return index }
+            if case .row(let index, _, _) = entry { return index }
             return nil
         }
         #expect(indices == [0, 1])
+    }
+
+    /// Transcript matches follow the filtered rows except in the Commands scope, and the list
+    /// is built from both at once.
+    @Test(arguments: [(PaletteItem.Scope.all, ["new agent", "found"]), (.commands, ["new agent"])])
+    func resultsAppendTranscriptMatchesOutsideTheCommandsScope(scope: PaletteItem.Scope, titles: [String]) {
+        var found = item("found", .conversations)
+        found.contentSnippet = "…the login redirect…"
+        let results = PaletteResults(items: [item("new agent", .commands), item("fix", .agents)], query: "new", scope: scope,
+                                     contentRows: [found])
+        #expect(results.rows.map(\.title) == titles)
+        #expect(results.entries.count == titles.count + Set(results.rows.map(\.section)).count)
+    }
+
+    /// The highlight is found once, when the list is built: a row carries its snippet split
+    /// around the query's first match, case-insensitively.
+    @Test(arguments: [
+        ("REDIRECT", "…fix the ", "redirect", " loop…"),
+        (" redirect ", "…fix the ", "redirect", " loop…"),
+        ("absent", "…fix the redirect loop…", "", ""),
+        ("", "…fix the redirect loop…", "", ""),
+    ])
+    func aSnippetIsSplitAroundTheQuery(query: String, before: String, match: String, after: String) throws {
+        var found = item("found", .conversations)
+        found.contentSnippet = "…fix the redirect loop…"
+        let entry = try #require(PaletteEntry.entries([found], highlighting: query).last)
+        guard case .row(_, _, let snippet) = entry else { Issue.record("expected a row"); return }
+        #expect(snippet == PaletteSnippet("…fix the redirect loop…", term: query))
+        #expect(snippet?.before == before && snippet?.match == match && snippet?.after == after)
+    }
+
+    @Test func aRowWithoutATranscriptMatchHasNoSnippet() {
+        guard case .row(_, _, let snippet)? = PaletteEntry.entries([item("a", .commands)], highlighting: "a").last else {
+            Issue.record("expected a row")
+            return
+        }
+        #expect(snippet == nil)
     }
 }
