@@ -558,7 +558,8 @@ and the review. When both exist, the inspector wins.
   accent in the state's color). Live runs get Pause/Continue and Stop; ‹ › step through
   siblings; then ⋯ and close.
 - `NWRunBrief` on `bgSunken`: GOAL (with "step n / m · 62%" while live) and, once finished,
-  RESULT (inline Markdown) in the state's color with the touched files (up to five) beneath.
+  RESULT (inline Markdown) in the state's color with the touched files beneath: up to five
+  `running` links that open the review, then "n more files".
 - The run's own transcript, drawn with the thread's components one step smaller. It follows
   live, with "n earlier turns · Show all" and "Following live" beneath.
 - A Steer composer (the composer card: radius 8, `lineStrong`) whose placeholder and "to:

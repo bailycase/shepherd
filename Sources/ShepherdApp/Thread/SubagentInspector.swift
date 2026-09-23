@@ -157,18 +157,19 @@ struct SubagentInspector: View {
                     }
                 } label: {
                     HStack(spacing: NW.Space.s) {
-                        Text(file.path).foregroundStyle(Color.nw.textSecondary).lineLimit(1).truncationMode(.middle)
+                        Text(file.path).foregroundStyle(Color.nw.running).lineLimit(1).truncationMode(.middle)
                         NWDiffStat(added: file.added, removed: file.removed, font: .nwMono(11))
                     }
                     .font(.nwMono(11))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .pointerStyle(.link)
                 .help(review == nil ? "Reveal in Finder" : "Review this file")
                 .accessibilityLabel("\(file.path), \(file.added) added, \(file.removed) removed")
             }
             if files.count > AppLayout.inspectorMaxFiles {
-                Text("\(files.count - AppLayout.inspectorMaxFiles) more files").font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary)
+                Text(SubagentPresentation.moreFiles(files.count)).font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary)
             }
         }
     }
