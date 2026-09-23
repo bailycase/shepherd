@@ -191,11 +191,11 @@ output grows.
 
 The pure derivations live in ShepherdRemote:
 
-- **`NativeTurnPresentation`:** a reply's items, built once per turn change, in order:
-  thinking (folded into one block per stretch of work between prose), prose (Markdown parsed
-  once), activity lines, the positions of subagent cards (a spawn call with a card leaves the
-  activity), notes, and errors. It also carries the changes card, the countable tool calls, and
-  the copy text.
+- **`NativeTurnPresentation`:** a reply's items, built once per turn change, in the order they
+  happened: thinking (folded into one block at the start of each stretch of work between
+  prose), prose (Markdown parsed once), activity lines, the positions of subagent cards (a spawn
+  call with a card leaves the activity), notes, and errors. It also carries the changes card,
+  the countable tool calls, and the copy text.
 - **`NativeActivity`:** tool calls as activity lines. `NativeActivityCall` reads one call (its
   kind, label, path or command, stat, output head, and live tail); `nativeActivityBursts` merges
   consecutive calls of one kind into lines (a failed or running call stands alone);

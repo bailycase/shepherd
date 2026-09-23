@@ -494,9 +494,10 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   runs is **queued**: a dashed outline with no fill, secondary text, and "queued · sends when the
   turn ends" beneath.
 
-**Agent turn** (`AgentTurn`): consecutive assistant messages render as one turn, in this order:
-thinking, prose, activity lines, subagent cards where their spawn calls were, notes, and errors.
-Once the turn has finished, the changes card and the footer end it.
+**Agent turn** (`AgentTurn`): consecutive assistant messages render as one turn. Its parts are
+thinking, prose, activity lines, subagent cards where their spawn calls were, notes, and errors,
+in the order they happened (each stretch of work between prose opens with its thinking). Once
+the turn has finished, the changes card and the footer end it.
 
 - **Prose** (`Prose` in `Thread/ThreadMarkdown.swift`, on `NWAgentProse`): body 13.5/1.6 in
   `textPrimary` at the 640pt measure, blocks 12pt apart. Markdown is parsed once per turn:
