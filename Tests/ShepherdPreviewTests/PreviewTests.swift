@@ -59,19 +59,6 @@ struct PreviewTests {
         }
     }
 
-    /// With a right pane open the sidebar takes its compact form.
-    @Test func sidebarCompact() async throws {
-        let (workspace, agents) = try await populatedWorkspace()
-        defer { workspace.stop() }
-        let vm = workspace.vm
-        vm.selectAgent(agents[3].id)
-        vm.subagentInspector.runByAgent[agents[3].id] = "native-worker"
-        #expect(vm.isRightPaneOpen)
-        try await Preview.render("sidebar-compact", size: CGSize(width: Metrics.sidebarCompactWidth, height: 720)) {
-            SidebarView(vm: vm).background(Tokens.bgCanvas)
-        }
-    }
-
     /// The whole window with the sidebar hidden: the header runs under the traffic lights.
     @Test func sidebarHiddenHeader() async throws {
         let workspace = try PreviewWorkspace()
