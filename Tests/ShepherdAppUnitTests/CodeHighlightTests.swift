@@ -68,6 +68,28 @@ struct CodeHighlightTests {
         #expect(String(line.characters) == source)
     }
 
+    @Test(arguments: [("main.go", true), ("App.swift", true), ("script.py", true), ("notes.txt", false), ("Makefile", false)])
+    func onlyGrammarsWeShipAreSupported(path: String, supported: Bool) {
+        #expect(CodeHighlight.supports(path: path) == supported)
+    }
+
+    /// The review highlights off the main thread while the thread's code blocks highlight on it:
+    /// concurrent calls share compiled grammars and must agree.
+    @Test func concurrentCallsGiveTheSameColors() async {
+        let source = [#"var value = "hello" // done"#, "func f() int { return 42 }"]
+        let style = style
+        let expected = CodeHighlight.highlightLines(source, path: "main.go", style: style)
+        let results = await withTaskGroup(of: [AttributedString].self) { group in
+            for _ in 0..<8 {
+                group.addTask { CodeHighlight.highlightLines(source, path: "main.go", style: style) }
+            }
+            var results: [[AttributedString]] = []
+            for await result in group { results.append(result) }
+            return results
+        }
+        #expect(results.count == 8 && results.allSatisfy { $0 == expected })
+    }
+
     @Test func outputHasOneLinePerInputLine() {
         #expect(CodeHighlight.highlightLines([], path: "main.go", style: style).isEmpty)
         #expect(CodeHighlight.highlightLines(["a", "", "b"], path: "main.go", style: style).map { String($0.characters) } == ["a", "", "b"])
