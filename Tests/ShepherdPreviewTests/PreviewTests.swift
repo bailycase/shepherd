@@ -131,7 +131,7 @@ struct PreviewTests {
 
     @Test func renameDialog() async throws {
         try await Preview.render("sheet-rename", size: CGSize(width: 420, height: 180)) {
-            RenameDialog(title: "Rename agent", text: .constant("Fix the login redirect"), onRename: {}, onCancel: {})
+            RenameDialog(title: "Rename agent", name: "Fix the login redirect", onRename: { _ in }, onCancel: {})
         }
     }
 
@@ -139,7 +139,7 @@ struct PreviewTests {
         try await Preview.render("sheet-delete-worktree", size: CGSize(width: 460, height: 280)) {
             DialogSheet(title: "Delete “Fix the login redirect”?", subtitle: "The agent stops and its thread is removed from Shepherd.",
                         actions: [DialogAction("Cancel", kind: .cancel) {}, DialogAction("Delete Agent and Worktree", kind: .destructive) {}]) {
-                DialogWarning(text: "3 uncommitted changes and 2 commits only on worktree/fix-login will be lost.")
+                DialogBanner(title: "Unreconciled work", message: "3 uncommitted changes and 2 commits only on worktree/fix-login will be lost.")
                 SheetRow("Worktree") {
                     Text("~/Developer/Shepherd-worktree-fix-login").font(Font.nw(.mono)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
                 }

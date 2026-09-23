@@ -1,189 +1,207 @@
 import SwiftUI
 import ShepherdUI
 
-/// One flat labeled row shared by every sheet and dialog: a label column, the control on the
-/// right, a hairline underneath (DESIGN.md "Dialogs") — no Form chrome, no grouped boxes.
-struct SheetRow<Content: View>: View {
-    let label: String
-    @ViewBuilder var control: () -> Content
+/// One labeled row shared by every sheet and dialog (`NWSheetRow`): a label column, the
+/// control on the right, a hairline underneath. No form chrome, no grouped boxes.
+typealias SheetRow = NWSheetRow
 
-    init(_ label: String, @ViewBuilder control: @escaping () -> Content) {
-        self.label = label
-        self.control = control
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text(label)
-                    .font(Font.nw(.ui))
-                    .foregroundStyle(Color.nw.textSecondary)
-                    .frame(width: 96, alignment: .leading)
-                control()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, 20)
-            .frame(minHeight: 44)
-            NWHairline()
-                .padding(.leading, 20)
-        }
-    }
-}
-
-/// A footer action for `DialogSheet`. Exactly one action should be
-/// `.prominent` (the single sheet default button, per DESIGN.md);
-/// `.destructive` is deliberately never the ↩ default — destroying things
-/// takes a click.
+/// A footer action for `DialogSheet`. Exactly one action should be `.prominent` (the sheet's
+/// ⏎ default); `.destructive` is never the default: destroying things takes a click.
 struct DialogAction: Identifiable {
     enum Kind {
-        case cancel, normal, prominent, destructive
+        /// Secondary, ⎋.
+        case cancel
+        case normal
+        /// Primary (lantern), ⏎.
+        case prominent
+        /// The failed fill of a confirmed destructive action, never ⏎.
+        case destructive
     }
 
-    let id = UUID()
     let label: String
-    var kind: Kind = .normal
+    let kind: Kind
+    let isEnabled: Bool
     let action: () -> Void
 
-    init(_ label: String, kind: Kind = .normal, action: @escaping () -> Void) {
+    /// The label: stable across renders (a fresh id per render would rebuild every button),
+    /// and unique within one dialog.
+    var id: String { label }
+
+    init(_ label: String, kind: Kind = .normal, isEnabled: Bool = true, action: @escaping () -> Void) {
         self.label = label
         self.kind = kind
+        self.isEnabled = isEnabled
         self.action = action
     }
 }
 
-/// The app's modal dialog: replaces NSAlert-style `.alert()` everywhere. Same anatomy as the
-/// creation sheets — title and explanation, optional labeled rows, footer buttons — so a
-/// confirmation reads like the rest of Shepherd instead of a system alert.
+/// The app's modal dialog, in place of system alerts and confirmation dialogs everywhere: the
+/// same anatomy as the creation sheets (`NWDialog`), so a confirmation reads like the rest of
+/// Shepherd.
 struct DialogSheet<Content: View>: View {
     let title: String
     var subtitle: String?
-    var width: CGFloat = 460
+    var width: CGFloat = NWDialogMetrics.width
+    /// A caption at the footer's leading edge ("Checking for unsaved work…").
+    var status: String?
     let actions: [DialogAction]
     @ViewBuilder var content: () -> Content
 
     init(
         title: String,
         subtitle: String? = nil,
-        width: CGFloat = 460,
+        width: CGFloat = NWDialogMetrics.width,
+        status: String? = nil,
         actions: [DialogAction],
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
         self.subtitle = subtitle
         self.width = width
+        self.status = status
         self.actions = actions
         self.content = content
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(Font.nw(.title))
-                    .foregroundStyle(Color.nw.textPrimary)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(Font.nw(.body))
-                        .foregroundStyle(Color.nw.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .lineSpacing(2)
-                }
-            }
-            .padding(EdgeInsets(top: 20, leading: 20, bottom: 12, trailing: 20))
-
+        NWDialog(title, message: subtitle, width: width) {
             content()
-
-            HStack(spacing: 8) {
-                Spacer(minLength: 12)
-                ForEach(actions) { action in
-                    button(for: action)
-                }
-            }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 20, trailing: 20))
+        } status: {
+            if let status { NWDialogStatus(status) }
+        } actions: {
+            ForEach(actions) { button(for: $0) }
         }
-        .frame(width: width)
-        .background(Color.nw.bgWindow)
     }
 
     @ViewBuilder
     private func button(for action: DialogAction) -> some View {
+        let button = Button(action.label, action: action.action).disabled(!action.isEnabled)
         switch action.kind {
         case .cancel:
-            Button(action.label, action: action.action)
-                .buttonStyle(NWButtonStyle(.secondary))
-                .keyboardShortcut(.cancelAction)
+            button.buttonStyle(.nw(.secondary)).keyboardShortcut(.cancelAction)
         case .normal:
-            Button(action.label, action: action.action)
-                .buttonStyle(NWButtonStyle(.secondary))
+            button.buttonStyle(.nw(.secondary))
         case .prominent:
-            Button(action.label, action: action.action)
-                .buttonStyle(NWButtonStyle(.primary))
-                .keyboardShortcut(.defaultAction)
+            button.buttonStyle(.nw(.primary)).keyboardShortcut(.defaultAction)
         case .destructive:
-            Button(action.label, action: action.action)
-                .buttonStyle(NWButtonStyle(.danger))
+            button.buttonStyle(.nw(.dangerFill))
         }
     }
 }
 
 extension DialogSheet where Content == EmptyView {
     /// Text-only dialog: title, subtitle, buttons.
-    init(title: String, subtitle: String? = nil, width: CGFloat = 460, actions: [DialogAction]) {
-        self.init(title: title, subtitle: subtitle, width: width, actions: actions) { EmptyView() }
+    init(title: String, subtitle: String? = nil, width: CGFloat = NWDialogMetrics.width, status: String? = nil,
+         actions: [DialogAction]) {
+        self.init(title: title, subtitle: subtitle, width: width, status: status, actions: actions) { EmptyView() }
     }
 }
 
-/// The attention strip inside a dialog: work that a destructive action would destroy, in the
-/// warning role behind a 2pt bar of the same color — not a yellow system triangle.
-struct DialogWarning: View {
-    let text: String
+/// A banner inside a dialog, at the dialog's margins: what a destructive action would destroy
+/// (`.attention`), or why something failed (`.failed`). Never a system alert triangle.
+struct DialogBanner: View {
+    var state: AgentState = .attention
+    let title: String
+    var message: String?
 
     var body: some View {
-        HStack(spacing: 10) {
-            Rectangle()
-                .fill(Color.nw.lantern)
-                .frame(width: 2)
-            Text(text)
-                .font(Font.nw(.caption))
-                .foregroundStyle(Color.nw.lanternText)
-                .fixedSize(horizontal: false, vertical: true)
-                .lineSpacing(2)
-            Spacer(minLength: 0)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        NWBanner(state, title: title, message: message)
+            .padding(.horizontal, NWDialogMetrics.inset)
+            .padding(.top, NW.Space.l)
     }
 }
 
-/// Shared rename dialog: one focused field, ↩ confirms, ⎋ cancels.
+/// Shared rename dialog: one focused field seeded with the current name, ⏎ confirms, ⎋
+/// cancels. An empty name cannot be confirmed.
 struct RenameDialog: View {
     let title: String
-    var caption: String? = nil
-    @Binding var text: String
-    let onRename: () -> Void
+    var caption: String?
+    let onRename: (String) -> Void
     let onCancel: () -> Void
+    @State private var name: String
     @FocusState private var focused: Bool
+
+    init(title: String, caption: String? = nil, name: String, onRename: @escaping (String) -> Void,
+         onCancel: @escaping () -> Void) {
+        self.title = title
+        self.caption = caption
+        self.onRename = onRename
+        self.onCancel = onCancel
+        _name = State(initialValue: name)
+    }
+
+    private var canRename: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         DialogSheet(
             title: title,
             subtitle: caption,
-            width: 420,
+            width: AppLayout.renameSheetWidth,
             actions: [
                 DialogAction("Cancel", kind: .cancel, action: onCancel),
-                DialogAction("Rename", kind: .prominent, action: onRename),
+                DialogAction("Rename", kind: .prominent, isEnabled: canRename) { onRename(name) },
             ]
         ) {
-            TextField("", text: $text)
-                .textFieldStyle(.plain)
-                .font(Font.nw(.body))
-                .foregroundStyle(Color.nw.textPrimary)
+            TextField("Name", text: $name)
                 .focused($focused)
-                .onSubmit(onRename)
+                .onSubmit { if canRename { onRename(name) } }
                 .nwField(focused: focused)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, NWDialogMetrics.inset)
+                .padding(.top, NW.Space.xs)
         }
         .onAppear { focused = true }
+    }
+}
+
+/// Stop while subagents run: stop only the agent, or the agent and every subagent.
+struct StopAllDialog: View {
+    let runningSubagents: Int
+    let stopAgent: () -> Void
+    let stopAll: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        DialogSheet(title: "Stop the agent and every running subagent?",
+                    subtitle: "\(runningSubagents) subagents are still running.",
+                    actions: [
+                        DialogAction("Cancel", kind: .cancel, action: cancel),
+                        DialogAction("Stop only the agent", action: stopAgent),
+                        DialogAction("Stop all", kind: .destructive, action: stopAll),
+                    ])
+    }
+}
+
+/// The review pane's per-file Revert: tracked files return to HEAD, new files move to the Trash.
+struct RevertFileDialog: View {
+    let path: String
+    let isNew: Bool
+    let revert: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        DialogSheet(title: "Discard the changes to \(path)?",
+                    subtitle: isNew ? "The new file moves to the Trash."
+                        : "The file returns to its last committed version. This cannot be undone from Shepherd.",
+                    actions: [
+                        DialogAction("Cancel", kind: .cancel, action: cancel),
+                        DialogAction("Discard changes", kind: .destructive, action: revert),
+                    ])
+    }
+}
+
+/// A failed agent action (rename, delete, a remote request): the error, selectable.
+struct ActionErrorDialog: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        DialogSheet(title: "Agent action failed", actions: [DialogAction("OK", kind: .prominent, action: dismiss)]) {
+            Text(message)
+                .nwText(.body)
+                .foregroundStyle(Color.nw.textSecondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, NWDialogMetrics.inset)
+        }
     }
 }

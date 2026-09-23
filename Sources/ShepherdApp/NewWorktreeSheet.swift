@@ -32,72 +32,49 @@ struct NewWorktreeSheet: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("New worktree")
-                    .font(Font.nw(.title))
-                    .foregroundStyle(Color.nw.textPrimary)
-                Text("Creates a git worktree beside \(space.name) on a new branch and starts an agent in it.")
-                    .font(Font.nw(.body))
-                    .foregroundStyle(Color.nw.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        NWDialog("New worktree",
+                 message: "Creates a git worktree beside \(space.name) on a new branch and starts an agent in it.",
+                 width: AppLayout.newWorktreeSheetWidth) {
+            SheetRow("Branch") {
+                TextField("Branch", text: $branch, prompt: Text("branch name").foregroundStyle(Color.nw.textTertiary))
+                    .focused($branchFocused)
+                    .nwField(focused: branchFocused, mono: true)
+                    .onSubmit(create)
             }
-            .padding(EdgeInsets(top: 20, leading: 20, bottom: 8, trailing: 20))
-
-            VStack(spacing: 0) {
-                SheetRow("Branch") {
-                    TextField("", text: $branch,
-                              prompt: Text("branch name").foregroundStyle(Color.nw.textTertiary))
-                        .textFieldStyle(.plain)
-                        .font(Font.nw(.mono))
-                        .foregroundStyle(Color.nw.textPrimary)
-                        .nwField(focused: branchFocused, mono: true)
-                        .focused($branchFocused)
-                        .onSubmit(create)
-                }
-                SheetRow("Base") {
-                    HStack(spacing: 8) {
-                        TextField("", text: $base,
-                                  prompt: Text("resolving…").foregroundStyle(Color.nw.textTertiary))
-                            .textFieldStyle(.plain)
-                            .font(Font.nw(.mono))
-                            .foregroundStyle(Color.nw.textPrimary)
-                            .nwField(mono: true)
-                            .frame(maxWidth: 200)
-                        Text(baseNote)
-                            .font(Font.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .lineLimit(1)
-                    }
-                }
-                SheetRow("Checkout") {
-                    Text(destination)
-                        .font(Font.nw(.mono))
+            SheetRow("Base") {
+                HStack(spacing: NW.Space.m) {
+                    TextField("Base", text: $base, prompt: Text("resolving…").foregroundStyle(Color.nw.textTertiary))
+                        .textFieldStyle(.nw(mono: true))
+                        .frame(maxWidth: AppLayout.baseFieldMaxWidth)
+                    Text(baseNote)
+                        .font(.nw(.caption))
                         .foregroundStyle(Color.nw.textTertiary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
                 }
             }
-            .padding(.top, 6)
-
-            HStack(spacing: 10) {
-                Text(errorText ?? "")
-                    .font(Font.nw(.caption))
-                    .foregroundStyle(Color.nw.failed)
-                    .lineLimit(2)
-                Spacer(minLength: 12)
-                Button("Cancel") { vm.worktreeSheetTarget = nil }
-                    .keyboardShortcut(.cancelAction)
-                Button(creating ? "Creating…" : "Create and open") { create() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(NWButtonStyle(.primary))
-                    .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
+            SheetRow("Checkout") {
+                Text(destination)
+                    .font(.nw(.mono))
+                    .foregroundStyle(Color.nw.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(destination)
+                    .textSelection(.enabled)
             }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 20, trailing: 20))
+            if let errorText {
+                DialogBanner(state: .failed, title: "Couldn't create the worktree", message: errorText)
+            }
+        } status: {
+            if creating { NWDialogStatus("Creating the worktree…") }
+        } actions: {
+            Button("Cancel") { vm.worktreeSheetTarget = nil }
+                .buttonStyle(.nw(.secondary))
+                .keyboardShortcut(.cancelAction)
+            Button(creating ? "Creating…" : "Create and open") { create() }
+                .buttonStyle(.nw(.primary))
+                .keyboardShortcut(.defaultAction)
+                .disabled(creating || trimmedBranch.isEmpty || !baseResolved)
         }
-        .frame(width: 520)
-        .background(Color.nw.bgWindow)
-        .buttonStyle(NWButtonStyle(.secondary))
         .onAppear { branchFocused = true }
         .task { await resolveBase() }
     }
@@ -119,41 +96,41 @@ struct NewWorktreeSheet: View {
     }
 
     private func create() {
-        guard !creating, !trimmedBranch.isEmpty else { return }
+        guard !creating, baseResolved, !trimmedBranch.isEmpty else { return }
         creating = true
         errorText = nil
-
-        // Worktree first, synchronously: a failure (branch exists, bad base)
-        // must surface in the sheet before any agent exists. The base field
-        // is the start point — empty falls back to git's HEAD default.
+        let repo = space.path
+        let branch = trimmedBranch
+        // The base field is the start point — empty falls back to git's HEAD default.
         let trimmedBase = base.trimmingCharacters(in: .whitespaces)
-        let path: String
-        do {
-            path = try GitWorktree.add(
-                repo: space.path,
-                branch: trimmedBranch,
-                from: trimmedBase.isEmpty ? nil : trimmedBase
-            )
-        } catch {
-            errorText = error.localizedDescription
-            creating = false
-            return
-        }
 
-        // The agent starts as the branch leaf ("calm-stone-3831") and is
-        // retitled by the namer once it gets its first prompt — worktree
-        // identity lives in `worktreeBranch`, not the name.
-        let config = NewAgentConfig(
-            spaceID: space.id,
-            workingDirectory: path,
-            model: vm.settings.agentDefaults.model,
-            thinking: vm.settings.agentDefaults.thinking,
-            initialPrompt: nil,
-            initialName: (trimmedBranch as NSString).lastPathComponent,
-            worktreeBranch: trimmedBranch,
-            worktreeBase: trimmedBase.isEmpty ? nil : trimmedBase
-        )
         Task {
+            // Worktree first, off the main thread: a failure (branch exists, bad base) must
+            // surface in the sheet before any agent exists.
+            let path: String
+            do {
+                path = try await Task.detached(priority: .userInitiated) {
+                    try GitWorktree.add(repo: repo, branch: branch, from: trimmedBase.isEmpty ? nil : trimmedBase)
+                }.value
+            } catch {
+                errorText = error.localizedDescription
+                creating = false
+                return
+            }
+
+            // The agent starts as the branch leaf ("calm-stone-3831") and is retitled by the
+            // namer once it gets its first prompt — worktree identity lives in
+            // `worktreeBranch`, not the name.
+            let config = NewAgentConfig(
+                spaceID: space.id,
+                workingDirectory: path,
+                model: vm.settings.agentDefaults.model,
+                thinking: vm.settings.agentDefaults.thinking,
+                initialPrompt: nil,
+                initialName: (branch as NSString).lastPathComponent,
+                worktreeBranch: branch,
+                worktreeBase: trimmedBase.isEmpty ? nil : trimmedBase
+            )
             do {
                 try await vm.startAgent(config)
                 vm.worktreeSheetTarget = nil
