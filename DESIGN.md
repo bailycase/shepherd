@@ -60,8 +60,8 @@ And the rules that follow from them:
   Separation is a hairline, never a shadow.
 - **One shadow.** `.nwPopover()` (menus, the palette, popovers) carries the system's only
   shadow. The sidebar and the right pane borrow it (`.nwFloatShadow(_:)`) only while they float
-  over the window, and the switch and slider knobs have a small knob shadow. No vibrancy, no translucency, no
-  gradients except the fade above the composer.
+  over the window, and the switch and slider knobs have a small knob shadow. No vibrancy, no
+  translucency, no gradients except the fade above the composer.
 - **Honest affordances.** Never show a control that does nothing, a shortcut that isn't wired,
   or sample data in place of real data. Hide unsupported capabilities, or explain them.
 - **No permission model.** Shepherd never invents approval UI. When pi or an extension asks a
@@ -473,8 +473,9 @@ change (`NativeTurnPresentation`, `NativeActivity` in ShepherdRemote); the views
 Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
 
 - **Layout:** a scroll view with the column centered, at most 820pt wide with 32pt gutters (16pt
-  in a thread narrower than the column and both gutters, 884pt; `AppLayout.threadGutter`). 28pt top margin, 28pt between turns, 14pt between a
-  turn's parts, and 6pt between consecutive activity lines.
+  in a thread narrower than the column and both gutters, 884pt; `AppLayout.threadGutter`). 28pt
+  top margin, 28pt between turns, 14pt between a turn's parts, and 6pt between consecutive
+  activity lines.
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
   growth, the composer resizing, and history swaps never do. "↓ Jump to latest" (a
@@ -489,7 +490,8 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   Shepherd on the host", "Some earlier output is clipped".
 - **Empty thread:** "Starting pi…" with a spinner while connecting. Then a framed
   `NWEmptyState` (a dashed `lineStrong` border, no crook): "New agent in `~/path`" (the path in
-  mono), with "Describe the task. Drop or paste images to attach them, or type / for commands."
+  Geist Mono 15 medium within the 17pt title), with "Describe the task. Drop or paste images to
+  attach them, or type / for commands."
 
 **User turn** (`UserTurn` in `Thread/ThreadTurns.swift`, on `NWUserBubble`):
 
@@ -1021,8 +1023,8 @@ None open. When a change leaves code breaking this document, list the place here
 fixed toward it.
 
 Deliberate exceptions stay with their rules rather than here: the layout's 1pt dividers and the
-strokes of status glyphs (see Hairlines), and the one-off sizes the boards give outside the type
-ramp, set with `Font.nwSans`/`Font.nwMono` (see Typography).
+strokes of status glyphs (see Hairlines), and one-off type sizes outside the ramp, set with
+`Font.nwSans`/`Font.nwMono` (the boards' in Typography, and the empty thread's path).
 
 ## iOS
 
