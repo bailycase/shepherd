@@ -515,8 +515,8 @@ The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPrese
     percent shows the context window used. The card never grows while it runs.
   - **Paused / Queued:** an outlined pill ("Paused" or "Queued") and why it waits.
   - **Needs you:** a `lantern` border; "waiting on your answer · 2m" (the wait counts from the
-    child's `shepherd_parent_message` call, or shows no figure); the question on `lanternTint`
-    with its answers as buttons (the first primary) and Reply… for free text.
+    child's `shepherd_parent_message` call, or shows no figure); the question (inline Markdown)
+    on `lanternTint` with its answers as buttons (the first primary) and Reply… for free text.
   - **Done:** "what it did · n tools · duration".
   - **Failed:** the reason, then Open replay and Re-run.
 
@@ -556,7 +556,7 @@ and the review. When both exist, the inspector wins.
   accent in the state's color). Live runs get Pause/Continue and Stop; ‹ › step through
   siblings; then ⋯ and close.
 - `NWRunBrief` on `bgSunken`: GOAL (with "step n / m · 62%" while live) and, once finished,
-  RESULT in the state's color with the touched files (up to five) beneath.
+  RESULT (inline Markdown) in the state's color with the touched files (up to five) beneath.
 - The run's own transcript, drawn with the thread's components one step smaller. It follows
   live, with "n earlier turns · Show all" and "Following live" beneath.
 - A Steer composer (the composer card: radius 8, `lineStrong`) whose placeholder and "to:

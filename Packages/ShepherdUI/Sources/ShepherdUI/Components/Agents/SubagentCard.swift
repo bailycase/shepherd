@@ -173,7 +173,7 @@ public struct NWSubagentCard: View, Equatable {
     private func questionBox(_ question: NWSubagentQuestion) -> some View {
         let nw = Color.nw
         return VStack(alignment: .leading, spacing: NW.Space.s) {
-            Text(NWInlineMarkup.attributed(question.text, codeSize: 11.5))
+            NWInlineText(text: question.text, codeSize: 11.5).equatable()
                 .font(.nw(.ui, weight: .regular))
                 .lineSpacing(NW.Space.xxs)
                 .foregroundStyle(nw.textPrimary)
