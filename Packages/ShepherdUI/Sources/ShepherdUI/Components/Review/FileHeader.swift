@@ -53,6 +53,8 @@ public struct NWFileHeader: View {
     let revert: (() -> Void)?
     let open: (() -> Void)?
     let openLabel: String
+    /// Counts each time the file is marked viewed: the check pops then, not when it is cleared.
+    @State private var viewedPops = 0
 
     /// `revert` and `open` are left out where the diff cannot change the files (a PR or a remote
     /// review). `openLabel` names the editor ("Open in Xcode").
@@ -86,6 +88,7 @@ public struct NWFileHeader: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(nw.textTertiary)
                     .rotationEffect(.degrees(isExpanded ? 0 : -90))
+                    .nwAnimation(.disclosure, value: isExpanded)
                     .frame(width: 14, height: 14)
                     .contentShape(Rectangle())
             }
@@ -107,6 +110,8 @@ public struct NWFileHeader: View {
                     .font(.nw(.micro, weight: .regular))
                     .foregroundStyle(nw.running)
                     .fixedSize()
+                    .nwContentTransition(.numeric())
+                    .nwTransition(.content)
             }
             Spacer(minLength: NW.Space.s)
             HStack(spacing: 0) {
@@ -122,12 +127,15 @@ public struct NWFileHeader: View {
                         .help("Revert this file")
                         .accessibilityLabel("Revert \(name)")
                 }
-                Button(action: toggleViewed) { Image(systemName: "checkmark") }
+                Button(action: toggleViewed) { Image(systemName: "checkmark").nwPop(trigger: viewedPops) }
                     .buttonStyle(.nwIcon(size: NW.Height.controlS, tint: isViewed ? nw.done : nil))
+                    .nwAnimation(.content, value: isViewed)
                     .help(isViewed ? "Mark unviewed" : "Mark viewed")
                     .accessibilityLabel(isViewed ? "Mark \(name) unviewed" : "Mark \(name) viewed")
             }
         }
+        .nwAnimation(.content, value: commentCount)
+        .onChange(of: isViewed) { _, viewed in if viewed { viewedPops += 1 } }
         .padding(.leading, NWFileHeader.leadingInset)
         .padding(.trailing, NW.Space.s)
         .frame(minHeight: NW.Height.controlL)

@@ -44,6 +44,8 @@ public struct NWReviewComposer: View {
                 Text("\(inlineCount) inline")
                     .font(.nw(.micro, weight: .regular))
                     .foregroundStyle(nw.textTertiary)
+                    .nwContentTransition(.numeric())
+                    .nwAnimation(.content, value: inlineCount)
                     .padding(.horizontal, NW.Space.s)
                     .accessibilityLabel("\(inlineCount) inline comment\(inlineCount == 1 ? "" : "s")")
                 Spacer(minLength: 0)

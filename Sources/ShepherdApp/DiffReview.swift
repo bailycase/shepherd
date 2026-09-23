@@ -58,10 +58,14 @@ final class ReviewSession: Identifiable {
         didSet {
             updateTotals()
             filesVersion &+= 1
+            if filesArePR != isPRMode { filesArePR = isPRMode }
         }
     }
     /// Bumped whenever `files` is set, so per-file caches check freshness without comparing lines.
     private(set) var filesVersion = 0
+    /// Whether `files` hold the PR diff. Follows `isPRMode` only once that side's files land, so
+    /// the pane swaps one whole diff for the other rather than the old files for a spinner.
+    private(set) var filesArePR = false
     /// Lines added and removed across `files`, kept with them so the header never sums.
     private(set) var addedCount = 0
     private(set) var removedCount = 0
@@ -358,7 +362,18 @@ final class ReviewPaneModel {
     var currentFile: String?
     var currentHunk: String?
     private(set) var highlights: [String: ReviewHighlight] = [:]
+    /// Counts the changes the diff eases open or shut in place: a file folding, a fold of hidden
+    /// lines opening, a comment or its editor coming or going. A big file, a whole file opened
+    /// at once, and Expand or Collapse All land at once.
+    private(set) var disclosures = 0
+    /// Whether the current file last moved by j/k/n/p: keyboard navigation lands at once, where
+    /// a click or a "review ›" link scrolls there.
+    @ObservationIgnored private(set) var movedByKey = false
+    @ObservationIgnored private var keyFocusRequest: UUID?
     @ObservationIgnored private var rowCache: [String: CachedRows] = [:]
+
+    /// The most rows a fold eases open or shut; past it the diff changes at once.
+    static let easedRowLimit = 60
 
     private struct CachedRows {
         let file: DiffFile
@@ -424,6 +439,7 @@ final class ReviewPaneModel {
     // MARK: Files
 
     func toggleFolded(_ fileID: String) {
+        easeFold(of: fileID)
         if isFolded(fileID) {
             collapsed.remove(fileID)
             session.viewed.remove(fileID)
@@ -432,13 +448,27 @@ final class ReviewPaneModel {
         }
     }
 
+    /// Marking a file viewed folds it; unmarking it opens it again.
     func toggleViewed(_ fileID: String) {
+        easeFold(of: fileID)
         if session.viewed.contains(fileID) { session.viewed.remove(fileID) } else { session.viewed.insert(fileID) }
     }
 
     /// Opens one fold.
     func expandFold(_ key: String, in fileID: String) {
+        let hidden = session.files.first { $0.id == fileID }.flatMap { file in
+            rows(for: file).lazy.compactMap { row -> Int? in
+                if case .fold(key, let count, _, _) = row { count } else { nil }
+            }.first
+        }
+        if let hidden, hidden <= Self.easedRowLimit { disclosures += 1 }
         expandedRuns[fileID, default: []].insert(key)
+    }
+
+    /// Eases a file's fold when its rows are few enough.
+    private func easeFold(of fileID: String) {
+        guard let file = session.files.first(where: { $0.id == fileID }), rows(for: file).count <= Self.easedRowLimit else { return }
+        disclosures += 1
     }
 
     /// Opens every fold in a file (⌥-click on a fold).
@@ -455,16 +485,29 @@ final class ReviewPaneModel {
         collapsed = Set(session.files.map(\.id))
     }
 
-    /// Asks the diff to scroll to a file (the strip, n/p).
+    /// Asks the diff to scroll to a file (a click on its chip).
     func select(_ fileID: String) {
+        requestFocus(fileID, byKey: false)
+    }
+
+    private func requestFocus(_ fileID: String, byKey: Bool) {
         session.focusFile = fileID
         session.focusRequest = UUID()
+        keyFocusRequest = byKey ? session.focusRequest : nil
+    }
+
+    /// A click on a file's header makes it current.
+    func point(at fileID: String) {
+        movedByKey = false
+        currentFile = fileID
     }
 
     /// The file a pending focus request names, unfolded and made current; nil when none is
-    /// pending or it names no file in the diff.
+    /// pending or it names no file in the diff. `movedByKey` then says whether n/p asked.
     func takeFocusRequest() -> String? {
         guard let path = session.focusFile, let file = reviewFile(matching: path, in: session.files) else { return nil }
+        movedByKey = keyFocusRequest == session.focusRequest
+        keyFocusRequest = nil
         session.focusFile = nil
         collapsed.remove(file.id)
         session.viewed.remove(file.id)
@@ -475,15 +518,18 @@ final class ReviewPaneModel {
     // MARK: Comments
 
     func startComment(fileID: String, lineID: Int) {
+        disclosures += 1
         editing = ReviewSession.CommentKey(fileID: fileID, lineID: lineID)
     }
 
     func cancelComment() {
+        disclosures += 1
         editing = nil
     }
 
     /// Saves the comment on a line; blank text removes it.
     func saveComment(_ text: String, fileID: String, lineID: Int) {
+        disclosures += 1
         defer { editing = nil }
         guard let file = session.files.first(where: { $0.id == fileID }),
               let line = file.hunks.lazy.flatMap(\.lines).first(where: { $0.id == lineID }) else { return }
@@ -495,6 +541,7 @@ final class ReviewPaneModel {
     }
 
     func deleteComment(fileID: String, lineID: Int) {
+        disclosures += 1
         session.setComment(nil, fileID: fileID, lineID: lineID)
         if editing == ReviewSession.CommentKey(fileID: fileID, lineID: lineID) { editing = nil }
     }
@@ -510,12 +557,13 @@ final class ReviewPaneModel {
         switch key {
         case "n", "p":
             let next = min(files.count - 1, max(0, fileIndex + (key == "n" ? 1 : -1)))
-            select(files[next].id)
+            requestFocus(files[next].id, byKey: true)
         case "j", "k":
             let hunks = files.flatMap { file in file.hunks.map { (file: file.id, key: "\(file.id)\u{0}\($0.id)") } }
             let current = currentHunk.flatMap { hunk in hunks.firstIndex { $0.key == hunk } } ?? -1
             let next = min(hunks.count - 1, max(0, current + (key == "j" ? 1 : -1)))
             guard hunks.indices.contains(next) else { return true }
+            movedByKey = true
             currentHunk = hunks[next].key
             currentFile = hunks[next].file
         case "v":
@@ -524,6 +572,8 @@ final class ReviewPaneModel {
             let file = files[fileIndex]
             let hunk = currentHunk.flatMap { key in file.hunks.first { "\(file.id)\u{0}\($0.id)" == key } } ?? file.hunks.first
             if let line = hunk?.lines.first(where: { $0.kind != .context }) ?? hunk?.lines.first {
+                // Opening a folded file for the comment follows the fold's own rule.
+                if isFolded(file.id) { easeFold(of: file.id) }
                 collapsed.remove(file.id)
                 session.viewed.remove(file.id)
                 startComment(fileID: file.id, lineID: line.id)
