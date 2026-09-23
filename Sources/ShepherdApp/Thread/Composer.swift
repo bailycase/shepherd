@@ -6,9 +6,9 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// The composer (spec §3, §6, §11): pinned under the thread in the same 760pt column, a fade
-/// above it, the raised card with the field (or a pending question) and one action row:
-/// attach · / commands · model · thinking · Send or Stop. Menus open above the card.
+/// The composer (NWComposer board): pinned under the thread in the same 760pt column, a fade
+/// above it, the `NWComposer` card with the field (or a pending question) and one row of
+/// controls: attach · / commands · model · thinking · Send or Stop. Menus open above the card.
 struct Composer: View {
     @Bindable var store: NativeThreadStore
     let active: Bool
@@ -28,8 +28,9 @@ struct Composer: View {
     @State private var menu: Menu?
     @State private var models: [PiModelCatalog.Entry] = []
     @State private var confirmingStopAll = false
+    @State private var picking = false
 
-    private enum Menu: Equatable { case models }
+    private enum Menu: Equatable { case models, thinking }
 
     // One effective state, shared with the header pill: a lost connection wins over a cached
     // running snapshot (error maps to Send + an inline error, never Stop).
@@ -59,12 +60,13 @@ struct Composer: View {
 
     var body: some View {
         let widgets = (store.snapshot?.widgets ?? []).filter { $0.kind != .unknown }
-        VStack(alignment: .leading, spacing: 8) {
+        let query = commandQuery
+        VStack(alignment: .leading, spacing: AppLayout.menuGap) {
             if !widgets.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: NW.Space.xs) {
                     ForEach(widgets) { WidgetRow(widget: $0) }
                 }
-                .padding(.horizontal, 4)
+                .padding(.horizontal, NW.Space.xs)
             }
             if let error = store.loadError {
                 NWBanner(.failed, title: "Lost connection to the agent process.", message: error) {
@@ -74,35 +76,55 @@ struct Composer: View {
             } else if let attachmentError {
                 NWBanner(.failed, title: attachmentError)
             } else if let notice = store.notice {
-                Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled).padding(.horizontal, 4)
+                Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).textSelection(.enabled)
+                    .padding(.horizontal, NW.Space.xs)
             }
-            if commandQuery != nil {
-                SlashMenu(matches: commandMatches, total: commands.count, query: commandQuery ?? "", selected: $commandIndex) { choose($0) }
+            if let query {
+                let matches = commandMatches
+                NWSlashMenu(commands: matches.map(Self.slashCommand), total: commands.count, query: query,
+                            selection: $commandIndex) { command in
+                    if let match = matches.first(where: { $0.name == command.name }) { choose(match) }
+                }
             }
             if menu == .models {
-                ModelPicker(current: store.snapshot?.model, models: models, agentName: agentName) { model in
+                ModelPicker(current: store.snapshot?.model, models: models) { model in
                     menu = nil
                     composing.wrappedValue = true
                     RecentModels.record(model, thread: agentName)
                     Task { await store.setModel(model) }
                 } close: { menu = nil; composing.wrappedValue = true }
             }
+            if menu == .thinking, let thinking = store.snapshot?.thinking {
+                NWThinkingMenu(options: Self.thinkingLevels, current: thinking) { level in
+                    menu = nil
+                    composing.wrappedValue = true
+                    Task { await store.setThinking(level.id) }
+                } onClose: { menu = nil; composing.wrappedValue = true }
+            }
             card
         }
         .frame(maxWidth: AppLayout.threadMaxWidth)
         .padding(.horizontal, gutter)
-        .padding(.bottom, 16)
+        .padding(.bottom, AppLayout.composerBottom)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
             // The thread fades under the composer.
             LinearGradient(colors: [Color.nw.bgWindow.opacity(0), Color.nw.bgWindow], startPoint: .top, endPoint: .bottom)
-                .frame(height: 48).offset(y: -48).allowsHitTesting(false)
+                .frame(height: AppLayout.composerFade).offset(y: -AppLayout.composerFade).allowsHitTesting(false)
         }
         .background(Color.nw.bgWindow)
-        .onChange(of: commandQuery) { _, _ in commandIndex = 0 }
+        .onChange(of: query) { _, _ in commandIndex = 0 }
         // The catalog decides whether the thinking chip applies; it is cached per process.
         .task { if models.isEmpty { await loadModels() } }
         .onChange(of: modelPickerRequest) { _, _ in openModels() }
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            attachmentError = nil
+            Task {
+                let resolved = await AppImageDrop.resolve(urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
+                attach(urls: resolved)
+            }
+        }
         .confirmationDialog("Stop the agent and every running subagent?", isPresented: $confirmingStopAll) {
             Button("Stop All", role: .destructive) { Task { await store.abortAll() } }
             Button("Stop Only the Agent") { Task { await store.abort() } }
@@ -111,20 +133,30 @@ struct Composer: View {
         }
     }
 
+    private static func slashCommand(_ command: NativeCommand) -> NWSlashCommand {
+        NWSlashCommand(name: command.name, description: command.description,
+                       tag: command.source.flatMap { $0 == "extension" ? nil : $0 })
+    }
+
+    /// Off / Low / Medium / High, with the board's notes.
+    private static let thinkingLevels = [
+        NWThinkingOption(id: "off", title: "Off"),
+        NWThinkingOption(id: "low", title: "Low", note: "quick"),
+        NWThinkingOption(id: "medium", title: "Medium", note: "default"),
+        NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
+    ]
+
     // MARK: Card
 
     private var card: some View {
         let focused = composing.wrappedValue || dropTargeted || menuOpen
-        return VStack(alignment: .leading, spacing: 0) {
-            if !attachments.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(attachments) { attachment in
-                        NWAttachmentChip(attachment.name) { attachments.removeAll { $0.id == attachment.id } }
-                    }
+        return NWComposer(isFocused: focused) {
+            ForEach(attachments) { attachment in
+                NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
+                    attachments.removeAll { $0.id == attachment.id }
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 12)
             }
+        } field: {
             if let dialog = dialogs.first, let snapshot = store.snapshot {
                 // The card swaps its field for the question so it can never scroll out of view.
                 QuestionPanel(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
@@ -134,16 +166,12 @@ struct Composer: View {
                     }
                 }
                 .id(snapshot.generation + ":" + snapshot.piSessionID + ":" + dialog.id)
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 6)
             } else {
                 field
             }
+        } controls: {
             actionRow
         }
-        .nwCard(line: .nw.lineStrong)
-        .nwFocusRing(focused, radius: NW.Radius.m)
         .onDrop(of: [.image, .fileURL], isTargeted: canAttach ? $dropTargeted : nil) { providers in
             guard canAttach else { return false }
             attach(providers)
@@ -158,19 +186,21 @@ struct Composer: View {
     }
 
     private var field: some View {
-        TextField(placeholder, text: $store.draft, axis: .vertical)
-            .lineLimit(1...AppLayout.composerMaxRows)
+        TextField(text: $store.draft, prompt: Text(placeholder).foregroundStyle(Color.nw.textTertiary), axis: .vertical) {
+            Text("Message the agent")
+        }
+            .lineLimit(1...NWComposerMetrics.fieldMaxLines)
             .textFieldStyle(.plain)
             .font(Font.nw(.body))
-            .lineSpacing(NWTextStyle.body.lineSpacing)
+            .lineSpacing(max(0, NWTextStyle.body.lineSpacing - 1))
             .foregroundStyle(Color.nw.textPrimary)
             .autocorrectionDisabled()
             .focused(composing)
-            .padding(EdgeInsets(top: 14, leading: 16, bottom: 6, trailing: 16))
             .onKeyPress(.return, phases: .down) { press in
                 if press.modifiers.contains(.shift) { store.draft += "\n"; return .handled }
                 if commandQuery != nil {
-                    if commandMatches.indices.contains(commandIndex) { choose(commandMatches[commandIndex]) }
+                    let matches = commandMatches
+                    if matches.indices.contains(commandIndex) { choose(matches[commandIndex]) }
                     return .handled
                 }
                 guard canSend, !store.busy else { return .handled }
@@ -178,8 +208,9 @@ struct Composer: View {
                 return .handled
             }
             .onKeyPress(.tab) {
-                guard commandQuery != nil, commandMatches.indices.contains(commandIndex) else { return .ignored }
-                complete(commandMatches[commandIndex])
+                let matches = commandMatches
+                guard commandQuery != nil, matches.indices.contains(commandIndex) else { return .ignored }
+                complete(matches[commandIndex])
                 return .handled
             }
             .onKeyPress(.upArrow) {
@@ -193,6 +224,7 @@ struct Composer: View {
                 return .handled
             }
             .onKeyPress(.escape) {
+                if menu != nil { menu = nil; return .handled }
                 guard commandQuery != nil else { return .ignored }
                 dismissedQuery = store.draft
                 return .handled
@@ -201,45 +233,43 @@ struct Composer: View {
                 guard canAttach else { return }
                 attach(providers)
             }
-            .accessibilityLabel("Message")
+            .accessibilityLabel("Message the agent")
     }
 
-    private var actionRow: some View {
-        HStack(spacing: 4) {
-            if canAttach {
-                Button { pickImages() } label: {
-                    Image(systemName: "paperclip").font(.system(size: 14, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
-                        .frame(width: NW.Height.controlL, height: NW.Height.controlL).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+    @ViewBuilder private var actionRow: some View {
+        if canAttach {
+            Button { picking = true } label: { Image(systemName: "paperclip") }
+                .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
                 .disabled(attachments.count >= NativeImage.maxPerSend)
                 .help("Attach images (drop or paste also works), up to \(NativeImage.maxPerSend)")
                 .accessibilityLabel("Attach file")
-            }
-            if !commands.isEmpty {
-                Button {
-                    store.draft = "/"
-                    dismissedQuery = nil
-                    composing.wrappedValue = true
-                } label: {
-                    HStack(spacing: 6) { Text("/").foregroundStyle(Color.nw.textTertiary); Text("commands") }.font(Font.nwMono(12))
-                }
-                .buttonStyle(NWComposerChipStyle(active: commandQuery != nil))
-                .accessibilityLabel("Commands")
-            }
-            modelChip
-            thinkingChip
-            if running, !store.draft.isEmpty { deliveryChip }
-            Spacer(minLength: 8)
-            primary
         }
-        .padding(EdgeInsets(top: 6, leading: 8, bottom: 8, trailing: 8))
+        if !commands.isEmpty {
+            Button {
+                store.draft = "/"
+                dismissedQuery = nil
+                menu = nil
+                composing.wrappedValue = true
+            } label: {
+                HStack(spacing: NW.Space.s) {
+                    Text("/").font(Font.nwMono(12))
+                    Text("commands")
+                }
+            }
+            .buttonStyle(.nwComposerChip(active: commandQuery != nil))
+            .accessibilityLabel("Commands")
+        }
+        modelChip
+        thinkingChip
+        if running, !store.draft.isEmpty { deliveryChip }
+        Spacer(minLength: NW.Space.m)
+        primary
     }
 
     @ViewBuilder private var primary: some View {
         if store.busy {
             ProgressView().progressViewStyle(.nwSpinner(size: 13, color: Color.nw.textTertiary))
-                .frame(width: NW.Height.controlL, height: NW.Height.controlL)
+                .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
                 .accessibilityLabel("Waiting for pi")
         } else if running, dialogs.isEmpty, store.draft.isEmpty {
             NWComposerActionButton(.stop, enabled: active && store.supports("abort")) { stop() }
@@ -261,12 +291,12 @@ struct Composer: View {
         if let model = store.snapshot?.model {
             let settable = store.snapshot?.supportedActions.contains("setModel") == true
             Button { openModels() } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: NW.Space.s) {
                     Text(nativeModelShortName(model)).font(Font.nwMono(12))
                     if settable { NWChipChevron() }
                 }
             }
-            .buttonStyle(NWComposerChipStyle(active: menu == .models))
+            .buttonStyle(.nwComposerChip(active: menu == .models))
             .disabled(!settable || !store.supports("setModel"))
             .help("Model: \(model)")
             .accessibilityLabel("Model \(model)")
@@ -278,31 +308,17 @@ struct Composer: View {
     @ViewBuilder private var thinkingChip: some View {
         if let thinking = store.snapshot?.thinking, store.snapshot?.supportedActions.contains("setThinking") == true,
            reasoningAvailable {
-            SwiftUI.Menu {
-                ForEach(["off", "low", "medium", "high"], id: \.self) { level in
-                    Button {
-                        Task { await store.setThinking(level) }
-                    } label: {
-                        if level == thinking { Label(level.capitalized, systemImage: "checkmark") } else { Text(level.capitalized) }
-                    }
-                }
+            Button {
+                menu = menu == .thinking ? nil : .thinking
             } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "lightbulb").font(.system(size: 11)).foregroundStyle(Color.nw.textSecondary)
+                HStack(spacing: NW.Space.s) {
+                    Image(systemName: "lightbulb").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
                     Text("Thinking")
                     Text(thinking.capitalized).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
                     NWChipChevron()
                 }
-                .font(Font.nw(.caption))
-                .foregroundStyle(Color.nw.textSecondary)
-                .padding(.horizontal, 10)
-                .frame(height: NW.Height.controlL)
-                .contentShape(Rectangle())
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
+            .buttonStyle(.nwComposerChip(active: menu == .thinking))
             .disabled(!store.supports("setThinking"))
             .accessibilityLabel("Thinking level: \(thinking)")
         }
@@ -323,12 +339,12 @@ struct Composer: View {
             .pickerStyle(.inline)
             .labelsHidden()
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: NW.Space.s) {
                 Text(store.delivery == .steer ? "Steer" : "Follow-up")
                 NWChipChevron()
             }
-            .font(Font.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
-            .padding(.horizontal, 10).frame(height: NW.Height.controlL).contentShape(Rectangle())
+            .font(Font.nwSans(12)).foregroundStyle(Color.nw.textSecondary)
+            .padding(.horizontal, NW.Space.m).frame(height: NWComposerMetrics.chipHeight).contentShape(Rectangle())
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
         .accessibilityLabel("Delivery")
@@ -397,214 +413,48 @@ struct Composer: View {
             attachments.append(attachment)
         }
     }
-
-    private func pickImages() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.image]
-        panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = false
-        guard panel.runModal() == .OK else { return }
-        attachmentError = nil
-        Task {
-            let urls = await AppImageDrop.resolve(panel.urls.map { NSItemProvider(contentsOf: $0) ?? NSItemProvider() })
-            attach(urls: urls)
-        }
-    }
-}
-
-// MARK: Slash menu
-
-/// SlashMenu (spec §11): pi's commands filtered by what follows "/", above the card. Row 36pt:
-/// the command in mono with the typed prefix bold, its description, a source tag, ⏎ on the
-/// highlighted row. ↑↓ ⏎ ⇥ esc are handled by the field, which keeps focus.
-struct SlashMenu: View {
-    let matches: [NativeCommand]
-    let total: Int
-    let query: String
-    @Binding var selected: Int
-    let choose: (NativeCommand) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Commands").nwSectionLabel()
-                Text("· \(matches.count) of \(total)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 30)
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(matches.enumerated()), id: \.element.name) { index, command in
-                            row(command, highlighted: index == selected)
-                                .onHover { if $0 { selected = index } }
-                                .onTapGesture { choose(command) }
-                                .id(index)
-                        }
-                        if matches.isEmpty {
-                            Text("No command matches “/\(query)”").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-                                .padding(.horizontal, 14).frame(height: AppLayout.menuRowHeight)
-                        }
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.bottom, 6)
-                }
-                .frame(height: min(CGFloat(max(matches.count, 1)), CGFloat(AppLayout.menuMaxRows)) * AppLayout.menuRowHeight + 6)
-                .onChange(of: selected) { _, index in proxy.scrollTo(index) }
-            }
-        }
-        .nwPopover()
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Commands")
-    }
-
-    private func row(_ command: NativeCommand, highlighted: Bool) -> some View {
-        HStack(spacing: 12) {
-            commandText(command.name)
-                .frame(width: 150, alignment: .leading)
-            Text(command.description ?? "").font(Font.nw(.caption)).foregroundStyle(Color.nw.textSecondary).lineLimit(1)
-            Spacer(minLength: 8)
-            if let source = command.source, source != "extension" { NWTag(source) }
-            if highlighted {
-                Image(systemName: "return").font(.system(size: 10, weight: .semibold)).foregroundStyle(Color.nw.textTertiary)
-            }
-        }
-        .padding(.horizontal, 10)
-        .frame(height: AppLayout.menuRowHeight)
-        .nwRowBackground(selected: highlighted, hovering: false, selectedFill: Color.nw.runningTint)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("/\(command.name), \(command.description ?? "")")
-        .accessibilityAddTraits(highlighted ? [.isButton, .isSelected] : .isButton)
-    }
-
-    private func commandText(_ name: String) -> Text {
-        let typed = name.lowercased().hasPrefix(query) ? query.count : 0
-        let head = String(name.prefix(typed)), tail = String(name.dropFirst(typed))
-        let slash = Text("/").foregroundStyle(Color.nw.textTertiary)
-        let typedPart = Text(head).fontWeight(.bold).foregroundStyle(Color.nw.textPrimary)
-        return Text("\(slash)\(typedPart)\(Text(tail).foregroundStyle(Color.nw.textPrimary))")
-            .font(Font.nw(.mono))
-    }
 }
 
 // MARK: Model picker
 
-/// ModelPicker (spec §11): 380pt, search on top, Recent then one group per provider; row 40pt:
-/// a check for the current model, the id in mono with a note, the context size.
+/// The model picker over `NWModelPicker`: Recent (up to 4), then one section per provider.
+/// Recent models are read once when the picker opens.
 struct ModelPicker: View {
     let current: String?
     let models: [PiModelCatalog.Entry]
-    let agentName: String?
     let choose: (String) -> Void
     let close: () -> Void
     @State private var query = ""
-    @State private var selected = 0
-    @FocusState private var searching: Bool
-
-    private var filtered: [PiModelCatalog.Entry] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        return q.isEmpty ? models : models.filter { $0.id.lowercased().contains(q) }
-    }
-
-    private var groups: [(title: String, rows: [(entry: PiModelCatalog.Entry, note: String?)])] {
-        let entries = filtered
-        let recent = RecentModels.load()
-        let recentRows = recent.compactMap { item -> (PiModelCatalog.Entry, String?)? in
-            let entry = entries.first { $0.id == item.id } ?? (query.isEmpty ? PiModelCatalog.Entry(id: item.id, context: nil) : nil)
-            guard let entry else { return nil }
-            let note = item.id == current ? "Current · this thread" : item.note
-            return (entry, note)
-        }
-        var result: [(String, [(entry: PiModelCatalog.Entry, note: String?)])] = []
-        if !recentRows.isEmpty { result.append(("Recent", recentRows.map { (entry: $0.0, note: $0.1) })) }
-        let recentIDs = Set(recent.map(\.id))
-        var providers: [String] = []
-        var byProvider: [String: [PiModelCatalog.Entry]] = [:]
-        for entry in entries where !recentIDs.contains(entry.id) {
-            if byProvider[entry.provider] == nil { providers.append(entry.provider) }
-            byProvider[entry.provider, default: []].append(entry)
-        }
-        for provider in providers {
-            result.append((provider, byProvider[provider]!.map { (entry: $0, note: $0.id == current ? "Current · this thread" : nil) }))
-        }
-        return result
-    }
+    @State private var selection = 0
+    @State private var recent: [RecentModels.Item] = []
 
     var body: some View {
-        let groups = groups
-        let flat = groups.flatMap(\.rows)
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").font(.system(size: 12)).foregroundStyle(Color.nw.textTertiary)
-                TextField("Search models", text: $query).textFieldStyle(.plain).font(Font.nw(.body)).focused($searching)
-                    .onKeyPress(.downArrow) { selected = min(flat.count - 1, selected + 1); return .handled }
-                    .onKeyPress(.upArrow) { selected = max(0, selected - 1); return .handled }
-                    .onKeyPress(.return) { if flat.indices.contains(selected) { choose(flat[selected].entry.id) }; return .handled }
-                    .onKeyPress(.escape) { close(); return .handled }
-                Text(KeybindingsStore.shared.display(.modelPicker)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-            }
-            .padding(.horizontal, 12)
-            .frame(height: 38)
-            .overlay(alignment: .bottom) { NWHairline() }
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if models.isEmpty {
-                        HStack(spacing: 8) { ProgressView().progressViewStyle(.nwSpinner(size: 12)); Text("Loading models…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
-                            .padding(14)
-                    }
-                    ForEach(Array(groups.enumerated()), id: \.offset) { _, group in
-                        Text(group.title).nwSectionLabel().padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
-                        ForEach(Array(group.rows.enumerated()), id: \.offset) { index, row in
-                            let position = flatIndex(group: group.title, index: index, in: groups)
-                            modelRow(row.entry, note: row.note, highlighted: position == selected)
-                                .onHover { if $0 { selected = position } }
-                                .onTapGesture { choose(row.entry.id) }
-                        }
-                    }
-                }
-                .padding(.horizontal, 6)
-                .padding(.bottom, 6)
-            }
-            .frame(maxHeight: 360)
-        }
-        .frame(width: AppLayout.modelPickerWidth)
-        .fixedSize(horizontal: false, vertical: true)
-        .nwPopover()
-        .onAppear { searching = true }
-        .onChange(of: query) { _, _ in selected = 0 }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Choose a model")
+        NWModelPicker(query: $query, sections: sections, loading: models.isEmpty, selection: $selection,
+                      onChoose: { choose($0.id) }, onClose: close)
+            .onAppear { recent = RecentModels.load() }
     }
 
-    private func flatIndex(group: String, index: Int, in groups: [(title: String, rows: [(entry: PiModelCatalog.Entry, note: String?)])]) -> Int {
-        var position = 0
-        for candidate in groups {
-            if candidate.title == group { return position + index }
-            position += candidate.rows.count
+    private var sections: [NWModelSection] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let entries = q.isEmpty ? models : models.filter { $0.id.lowercased().contains(q) }
+        func option(_ entry: PiModelCatalog.Entry) -> NWModelOption {
+            NWModelOption(id: entry.id, title: nativeModelShortName(entry.id), note: entry.context, isCurrent: entry.id == current)
         }
-        return position
-    }
-
-    private func modelRow(_ entry: PiModelCatalog.Entry, note: String?, highlighted: Bool) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(Color.nw.running).opacity(entry.id == current ? 1 : 0).frame(width: 12)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(nativeModelShortName(entry.id)).font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-                if let note { Text(note).font(Font.nwSans(11)).foregroundStyle(Color.nw.textSecondary).lineLimit(1) }
-            }
-            Spacer(minLength: 8)
-            if let context = entry.context { Text(context).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary) }
+        var result: [NWModelSection] = []
+        let recentOptions = recent.compactMap { item -> NWModelOption? in
+            if let entry = entries.first(where: { $0.id == item.id }) { return option(entry) }
+            return q.isEmpty ? NWModelOption(id: item.id, title: nativeModelShortName(item.id), isCurrent: item.id == current) : nil
         }
-        .padding(.horizontal, 8)
-        .frame(height: note == nil ? 32 : AppLayout.modelRowHeight)
-        .nwRowBackground(selected: highlighted, hovering: false, selectedFill: Color.nw.runningTint)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(entry.id + (entry.id == current ? ", current" : ""))
-        .accessibilityAddTraits(.isButton)
+        if !recentOptions.isEmpty { result.append(NWModelSection(title: "Recent", options: recentOptions)) }
+        let recentIDs = Set(recent.map(\.id))
+        var providers: [String] = []
+        var byProvider: [String: [NWModelOption]] = [:]
+        for entry in entries where !recentIDs.contains(entry.id) {
+            if byProvider[entry.provider] == nil { providers.append(entry.provider) }
+            byProvider[entry.provider, default: []].append(option(entry))
+        }
+        for provider in providers { result.append(NWModelSection(title: provider, options: byProvider[provider] ?? [])) }
+        return result
     }
 }
 
@@ -614,12 +464,6 @@ enum RecentModels {
         var id: String
         var at: Date
         var thread: String?
-
-        var note: String? {
-            let age = Date().timeIntervalSince(at)
-            let when = age < 3600 ? "\(max(1, Int(age / 60)))m ago" : age < 86_400 ? "\(Int(age / 3600))h ago" : "\(Int(age / 86_400))d ago"
-            return thread.map { "Used \(when) in “\($0)”" } ?? "Used \(when)"
-        }
     }
 
     static let key = "shepherd.recentModels"
@@ -654,13 +498,13 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
     guard let stats else { return "" }
     var parts: [String] = []
     if let tokens = stats.contextTokens {
-        var line = "\(tokens) context tokens"
+        var line = "\(tokens.formatted()) context tokens"
         if let window = stats.contextWindow { line += " of \(nativeTokenCount(window))" }
         if let percent = stats.contextPercent { line += " (\(Int(percent.rounded()))%)" }
         parts.append(line)
     }
     if let total = stats.totalTokens { parts.append("\(nativeTokenCount(total)) tokens this session") }
-    if let cost = stats.cost { parts.append(String(format: "$%.2f", cost)) }
+    if let cost = stats.cost { parts.append(cost.formatted(.currency(code: "USD"))) }
     return parts.joined(separator: " · ")
 }
 
@@ -688,7 +532,7 @@ struct QuestionPanel: View {
     var body: some View {
         let blocked = !enabled || dialog.unavailable != nil
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
                 NWStateGlyph(.attention, size: 13)
                 Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -701,9 +545,9 @@ struct QuestionPanel: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 140)
-                .padding(.horizontal, 12).padding(.vertical, 8)
+                .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.m)
                 .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                .overlay { RoundedRectangle(cornerRadius: NW.Radius.m).strokeBorder(Color.nw.lineSubtle, lineWidth: 1) }
+                .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)
             }
             if let unavailable = dialog.unavailable {
                 Text(unavailable == "external-editor" ? "An external editor is open · finish it before answering here" : "This question is too large to show here")
@@ -712,7 +556,7 @@ struct QuestionPanel: View {
             Group {
                 switch dialog.kind {
                 case .confirm:
-                    HStack(spacing: 8) {
+                    HStack(spacing: NW.Space.m) {
                         Button("Yes") { answer(.confirm(value: true)) }.buttonStyle(NWButtonStyle(.primary, size: .m))
                         Button("No") { answer(.confirm(value: false)) }.buttonStyle(NWButtonStyle(.secondary))
                         Spacer(minLength: 0)
@@ -727,7 +571,7 @@ struct QuestionPanel: View {
                         return .handled
                     }
                 case .select:
-                    FlowLayout(spacing: 6) {
+                    FlowLayout(spacing: NW.Space.s) {
                         ForEach(Array((dialog.options ?? []).enumerated()), id: \.offset) { index, option in
                             Button(option) { answer(.select(value: option)) }
                                 .buttonStyle(NWButtonStyle(index == 0 ? .primary : .secondary))
@@ -741,7 +585,7 @@ struct QuestionPanel: View {
                         .nwField(mono: dialog.kind == .editor)
                         .autocorrectionDisabled()
                         .accessibilityLabel(dialog.kind == .editor ? "Editor answer" : "Answer")
-                    HStack(spacing: 8) {
+                    HStack(spacing: NW.Space.m) {
                         Button("Submit") { answer(dialog.kind == .editor ? .editor(value: text) : .input(value: text)) }
                             .buttonStyle(NWButtonStyle(.primary))
                         Button("Dismiss") { answer(.cancel) }.buttonStyle(NWButtonStyle(.ghost))
@@ -753,6 +597,7 @@ struct QuestionPanel: View {
                 Text("pi may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
         }
+        .padding(.top, NW.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Question: \(dialog.title)")
@@ -766,7 +611,7 @@ struct WidgetRow: View {
     let widget: NativeThreadWidget
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
             Text(widget.title ?? "\(widget.namespace) · \(widget.key)").nwSectionLabel()
             Text(widget.text).font(Font.nw(.micro)).foregroundStyle(Color.nw.textSecondary)
                 .lineLimit(widget.kind == .status ? 1 : 4)
@@ -776,11 +621,13 @@ struct WidgetRow: View {
     }
 }
 
-/// A resized image waiting in the composer. `image.data` is the bytes pi will receive.
+/// A resized image waiting in the composer. `image.data` is the bytes pi will receive; the
+/// thumbnail is decoded once, here.
 struct ImageAttachment: Identifiable {
     let id = UUID()
     let name: String
     let image: NativeImage
+    let thumbnail: Image?
 
     /// nil when the file is not a raster image.
     init?(url: URL) {
@@ -788,34 +635,43 @@ struct ImageAttachment: Identifiable {
               let data = try? Data(contentsOf: url), NSBitmapImageRep(data: data) != nil else { return nil }
         name = url.lastPathComponent
         image = NativeImage(mimeType: type == .jpeg ? "image/jpeg" : type == .gif ? "image/gif" : type == .webP ? "image/webp" : "image/png", data: data)
+        thumbnail = NSImage(data: data).map { Image(nsImage: $0) }
     }
 }
 
-/// Left-to-right wrapping row (answer buttons, a result's file links).
+/// Left-to-right wrapping row (answer buttons, a result's file links). `lineSpacing` separates
+/// wrapped rows (the item spacing unless given); items wider than the row are offered its width.
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
+    var lineSpacing: CGFloat?
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         place(in: proposal.width ?? .infinity, subviews: subviews).size
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        for (subview, origin) in zip(subviews, place(in: bounds.width, subviews: subviews).origins) {
-            subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y), proposal: .unspecified)
+        let placement = place(in: bounds.width, subviews: subviews)
+        for (index, subview) in subviews.enumerated() {
+            let origin = placement.origins[index]
+            subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                          proposal: ProposedViewSize(placement.sizes[index]))
         }
     }
 
-    private func place(in width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint]) {
+    private func place(in width: CGFloat, subviews: Subviews) -> (size: CGSize, origins: [CGPoint], sizes: [CGSize]) {
         var origins: [CGPoint] = []
+        var sizes: [CGSize] = []
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0, maxX: CGFloat = 0
         for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            if x > 0, x + size.width > width { x = 0; y += rowHeight + 6; rowHeight = 0 }
+            var size = subview.sizeThatFits(.unspecified)
+            if size.width > width { size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil)) }
+            if x > 0, x + size.width > width { x = 0; y += rowHeight + (lineSpacing ?? spacing); rowHeight = 0 }
             origins.append(CGPoint(x: x, y: y))
+            sizes.append(size)
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
             maxX = max(maxX, x - spacing)
         }
-        return (CGSize(width: maxX, height: y + rowHeight), origins)
+        return (CGSize(width: maxX, height: y + rowHeight), origins, sizes)
     }
 }
