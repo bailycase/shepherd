@@ -45,6 +45,6 @@ appearances). N/A for changes with no visible effect.
 
 - [ ] I reviewed my own diff.
 - [ ] New or changed behavior has tests in the right tier (unit for pure logic, integration for server/process/git/window behavior), or I explained why none applies.
-- [ ] UI changes follow `DESIGN.md`, use `ShepherdDesign` tokens and components, and include light and dark previews.
+- [ ] UI changes follow `DESIGN.md`, use ShepherdUI tokens and components, and include light and dark previews.
 - [ ] Protocol or extension changes update every consumer, the embedded Swift copy, and the round-trip tests.
 - [ ] Documentation (`AGENTS.md`, `ARCHITECTURE.md`, `DESIGN.md`, `docs/`) matches the change.

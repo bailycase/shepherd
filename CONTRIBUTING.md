@@ -10,8 +10,9 @@ feature or behavior change, open an issue before writing the implementation.
   break (protocol contracts, embedded extensions, concurrency, tokens, keybindings, repository
   mutations).
 - [ARCHITECTURE.md](ARCHITECTURE.md): module boundaries, ownership, and data flow.
-- [DESIGN.md](DESIGN.md): the authority on UI and interaction. The original handoff and boards are
-  in [docs/design-spec/](docs/design-spec/).
+- [DESIGN.md](DESIGN.md): the authority on UI and interaction, and the reference for Night
+  Watch, the design system in `Packages/ShepherdUI`. The older handoff in
+  [docs/design-spec/](docs/design-spec/) is superseded and kept only as history.
 
 ## Branches
 
@@ -22,8 +23,12 @@ Branch from `nightly` and target `nightly` with your pull request. Use `feat/…
 
 ```sh
 swift build
-xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' build
+xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
+  -onlyUsePackageVersionsFromResolvedFile build
 ```
+
+Keep `-onlyUsePackageVersionsFromResolvedFile`: without it, a build from a fresh DerivedData can
+rewrite the Xcode project's `Package.resolved` with newer package versions.
 
 Run the app through the `Shepherd (Dev)` scheme in Xcode; there is no `swift run` path for the
 GUI. The Dev scheme keeps its state in `~/Library/Application Support/Shepherd-dev`, so it never
@@ -60,8 +65,9 @@ configuration, sessions, or a running Shepherd.
 - When you change a protocol message, update every consumer and its round-trip test.
 - Edit an `Extensions/` source and its embedded Swift literal together
   (`scripts/sync-embedded-extension.py`); a test enforces byte identity.
-- Use ShepherdUI (`Color.nw`, `Font.nw`, `NW.Space`/`Radius`/`Height`) and its shared components, never
-  hardcoded colors, fonts, or sizes. A new color role must pass the contrast tests in both
+- Use ShepherdUI (`Color.nw`, `Font.nw`, `NW.Space`/`Radius`/`Height`) and its shared
+  components, never hardcoded colors, fonts, or sizes. A screen's own dimensions go in its
+  domain's `AppLayout+<Domain>.swift`. A new color role must pass the contrast tests in both
   variants.
 - Check visible changes in both light and dark appearance, with previews and in the running app.
   Debug builds have a Component Gallery in the View menu.
