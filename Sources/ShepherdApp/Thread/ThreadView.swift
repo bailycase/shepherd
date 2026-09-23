@@ -40,6 +40,8 @@ struct ThreadView: View {
     @Environment(\.threadCommands) private var commands
     @FocusState private var composing: Bool
     @State private var follower = NativeScrollFollower()
+    /// The last observed distance from the bottom, for judging where a turn jump landed.
+    @State private var lastDistance: CGFloat = 0
     @State private var width: CGFloat = Metrics.threadMaxWidth + 2 * Metrics.gutter
     @State private var hovering = false
     /// Set on send: once the echoed turn is in the tree, scroll to the tail even if the reader
@@ -243,9 +245,14 @@ struct ThreadView: View {
                 return
             }
             jumpedTurn = userTurns[target]
-            follower.sticky = false
+            follower.beginJump()
             withAnimation(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : .easeOut(duration: 0.15)) {
                 proxy.scrollTo(userTurns[target], anchor: .top)
+            }
+            // Judge where the jump landed once its animation (0.15s) and layout have settled.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(250))
+                follower.endJump(distanceFromBottom: lastDistance)
             }
         }
     }
@@ -274,6 +281,7 @@ struct ThreadView: View {
     /// callbacks, so "moved up without a size change" misfires on every provisional→history
     /// swap.
     private func observe(old: ScrollProbe, new: ScrollProbe) {
+        lastDistance = new.distance
         let gesture = Date() <= wheelIntentUntil || follower.userScrolling
         let intent = gesture && new.distance > old.distance && !new.layoutDiffers(from: old)
         // Content that fits the viewport has a negative distance; growth from there is layout.
