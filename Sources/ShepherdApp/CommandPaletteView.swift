@@ -4,10 +4,10 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The ⌘K palette (spec §12): a 640pt card 120pt from the top over a scrim. A 56pt search row
-/// with All · Commands · Agents scope pills, then results grouped under caps headers —
-/// Commands, This thread, Subagents, and Agents/Spaces once there is a query. Rows show
-/// a stroke icon, the label, dim context, and the real shortcut as keycaps.
+/// The ⌘K palette (Composer board, `.nwCommandPalette`): a 620pt card 18% from the top over the
+/// scrim, capped to the window. A 44pt search row with All · Commands · Agents scopes, then
+/// results under mono caps headers — Commands, This thread, Subagents, and Agents/Spaces once
+/// there is a query. Rows show an icon, the label, dim context, and the real shortcut.
 ///
 /// Queries of 3+ characters also search agents' session transcripts in the background
 /// (bounded tail scan, debounced), so a thread is findable by remembered conversation text;
@@ -47,19 +47,21 @@ struct PaletteCard: View {
     @State private var contentRows: [PaletteItem] = []
     @State private var contentSearchTask: Task<Void, Never>?
     @FocusState private var fieldFocused: Bool
+    @Environment(\.nwPaletteMaxListHeight) private var maxListHeight
 
     private var results: [PaletteItem] {
         PaletteSearch.filter(items, query: query, scope: scope) + (scope == .commands ? [] : contentRows)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchRow
-            NWHairline()
+        NWPaletteCard {
+            NWPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $fieldFocused, submit: runSelected) {
+                NWSegmentedPicker("Scope", selection: $scope, options: PaletteItem.Scope.allCases.map { ($0, $0.title) }, size: .s)
+                    .nwHelp("Switch scope", shortcut: "⇥")
+            }
+        } results: {
             resultsList
         }
-        .frame(width: AppLayout.paletteWidth)
-        .nwPopover()
         .onAppear {
             query = initialQuery
             fieldFocused = true
@@ -90,74 +92,35 @@ struct PaletteCard: View {
         .accessibilityLabel("Command palette")
     }
 
-    // MARK: Search
-
-    private var searchRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 16, weight: .regular))
-                .foregroundStyle(Color.nw.textSecondary)
-            TextField("Search commands, agents, subagents…", text: $query)
-                .textFieldStyle(.plain)
-                .font(Font.nwSans(16))
-                .foregroundStyle(Color.nw.textPrimary)
-                .focused($fieldFocused)
-                .onSubmit(runSelected)
-            HStack(spacing: 2) {
-                ForEach(PaletteItem.Scope.allCases, id: \.self) { option in
-                    Button { scope = option } label: {
-                        Text(option.title)
-                            .font(Font.nwSans(12.5, option == scope ? .semibold : .regular))
-                            .foregroundStyle(option == scope ? Color.nw.textOnLantern : Color.nw.textSecondary)
-                            .padding(.horizontal, 8)
-                            .frame(height: 24)
-                            .background(option == scope ? Color.nw.lantern : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(option == scope ? .isSelected : [])
-                }
-            }
-            .help("⇥ switches scope")
-        }
-        .padding(.horizontal, 18)
-        .frame(height: AppLayout.paletteSearchHeight)
-    }
-
     // MARK: Results
 
     private var resultsList: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 2) {
+                // Eager: the card hugs its results up to the cap, which needs their real height
+                // (a lazy stack reports only what it has realized). The list stays short.
+                VStack(alignment: .leading, spacing: 0) {
                     let rows = results
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
-                        if index == 0 || rows[index - 1].section != item.section {
-                            Text(item.section.title.uppercased())
-                                .font(Font.nw(.micro))
-                                .tracking(0.6)
-                                .foregroundStyle(Color.nw.textTertiary)
-                                .padding(.horizontal, 12)
-                                .padding(.top, index == 0 ? 8 : 12)
-                                .padding(.bottom, 4)
+                    ForEach(PaletteEntry.entries(rows)) { entry in
+                        switch entry {
+                        case .header(let section):
+                            NWPaletteSectionHeader(section.title)
+                        case .row(let index, let item):
+                            PaletteRow(item: item, selected: index == selectedIndex,
+                                       highlightTerm: item.contentSnippet != nil ? query : nil) { run(item) }
+                                .onHover { if $0 { selectedIndex = index } }
                         }
-                        PaletteRow(item: item, selected: index == selectedIndex,
-                                   highlightTerm: item.contentSnippet != nil ? query : nil) { run(item) }
-                            .id(item.id)
-                            .onHover { if $0 { selectedIndex = index } }
                     }
                     if rows.isEmpty {
                         Text(query.isEmpty ? "Nothing here yet" : "No matches")
                             .font(Font.nw(.caption))
                             .foregroundStyle(Color.nw.textTertiary)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: AppLayout.paletteRowHeight)
+                            .frame(maxWidth: .infinity, minHeight: NWPaletteMetrics.sectionHeight * 2)
                     }
                 }
-                .padding(8)
             }
             .scrollIndicators(.hidden)
-            .frame(maxHeight: AppLayout.paletteRowHeight * 14)
+            .frame(maxHeight: maxListHeight)
             .fixedSize(horizontal: false, vertical: true)
             .onChange(of: selectedIndex) {
                 if results.indices.contains(selectedIndex) { proxy.scrollTo(results[selectedIndex].id) }
@@ -188,6 +151,30 @@ struct PaletteCard: View {
     }
 }
 
+/// One line of the results list: a section header or a result, each a single lazy-stack view
+/// with a stable id (a result's own id, so `scrollTo` finds it).
+enum PaletteEntry: Identifiable {
+    case header(PaletteItem.Section)
+    case row(index: Int, item: PaletteItem)
+
+    var id: String {
+        switch self {
+        case .header(let section): "section.\(section.rawValue)"
+        case .row(_, let item): item.id
+        }
+    }
+
+    /// Headers go before the first row of each section; `index` is the row's place in `rows`.
+    static func entries(_ rows: [PaletteItem]) -> [PaletteEntry] {
+        var entries: [PaletteEntry] = []
+        for (index, item) in rows.enumerated() {
+            if index == 0 || rows[index - 1].section != item.section { entries.append(.header(item.section)) }
+            entries.append(.row(index: index, item: item))
+        }
+        return entries
+    }
+}
+
 private struct PaletteRow: View {
     let item: PaletteItem
     let selected: Bool
@@ -196,53 +183,25 @@ private struct PaletteRow: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 10) {
-                    Image(systemName: item.icon)
-                        .font(.system(size: 13, weight: .regular))
-                        .foregroundStyle(iconColor)
-                        .frame(width: 18)
-                    Text(item.title)
-                        .font(Font.nw(.body))
-                        .foregroundStyle(Color.nw.textPrimary)
-                        .lineLimit(1)
-                        .layoutPriority(1)
-                    if let subtitle = item.subtitle {
-                        Text(subtitle)
-                            .font(Font.nw(.caption))
-                            .foregroundStyle(Color.nw.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                    }
-                    Spacer(minLength: 12)
-                    if let shortcut = item.shortcut { NWKeycap(shortcut) }
-                }
-                if let snippet = item.contentSnippet {
-                    snippetText(snippet)
-                        .font(Font.nw(.caption))
-                        .lineLimit(1)
-                        .padding(.leading, 28)
-                }
+        NWPaletteRow(item.title, systemImage: item.icon, context: item.subtitle, shortcut: item.shortcut,
+                     highlighted: selected, iconColor: iconColor, action: action) {
+            if let snippet = item.contentSnippet {
+                snippetText(snippet)
+                    .font(Font.nw(.caption))
+                    .lineLimit(1)
+                    .padding(.leading, 24)
+                    .padding(.bottom, NW.Space.xs)
             }
-            .padding(.horizontal, 12)
-            .frame(minHeight: AppLayout.paletteRowHeight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(selected ? Color.nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel([item.title, item.subtitle].compactMap { $0 }.joined(separator: ", "))
-        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// Subagent rows wear their run state's color; the highlighted row's icon turns accent.
-    private var iconColor: Color {
+    /// Subagent rows wear their run state's color; otherwise the row decides.
+    private var iconColor: Color? {
         switch item.kind {
         case .child(_, let child), .remoteChild(_, _, let child):
             SubagentStyle.color(nativeSubagentState(child))
         default:
-            selected ? Color.nw.running : Color.nw.textSecondary
+            nil
         }
     }
 
