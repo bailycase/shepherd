@@ -47,10 +47,11 @@ struct ReviewPaneHost: View {
     let session: ReviewSession
     let actions: ReviewActions
     var store: NativeThreadStore
+    @State private var touched = ReviewTouchedPaths()
 
     var body: some View {
         ReviewPane(session: session, actions: actions,
-                   touchedPaths: nativeTouchedPaths(store.messages, running: store.snapshot?.running ?? false))
+                   touchedPaths: touched.paths(store.messages, running: store.snapshot?.running ?? false))
     }
 }
 

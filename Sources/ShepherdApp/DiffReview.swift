@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdSessions
 import ShepherdRemote
 
@@ -294,6 +295,44 @@ final class ReviewHighlight: Sendable {
         self.file = file
         self.version = version
         self.lines = lines
+    }
+}
+
+// MARK: Touched files
+
+/// The files the running agent is editing (`nativeTouchedPaths`), reparsed only when the turn's
+/// edit and write calls change. The review's host re-renders on every thread publish (each
+/// streamed token, each keystroke in the thread's composer), and a write call's arguments hold
+/// the whole file.
+@MainActor
+final class ReviewTouchedPaths {
+    private struct Call: Equatable {
+        let entryID: String
+        let arguments: String?
+    }
+
+    private let compute: ([NativeThreadMessage], Bool) -> Set<String>
+    private var calls: [Call]?
+    private var paths: Set<String> = []
+
+    init(compute: @escaping ([NativeThreadMessage], Bool) -> Set<String> = nativeTouchedPaths) {
+        self.compute = compute
+    }
+
+    func paths(_ messages: [NativeThreadMessage], running: Bool) -> Set<String> {
+        guard running else {
+            calls = nil
+            return []
+        }
+        let turn = messages.lastIndex { $0.role == "user" }.map { messages.index(after: $0) } ?? messages.startIndex
+        let calls = messages[turn...].compactMap { message in
+            message.toolName == "edit" || message.toolName == "write" ? Call(entryID: message.entryID, arguments: message.argumentsText) : nil
+        }
+        if calls != self.calls {
+            self.calls = calls
+            paths = compute(messages, true)
+        }
+        return paths
     }
 }
 
