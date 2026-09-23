@@ -263,9 +263,12 @@ appearances in `Previews/`. Use a component before composing chrome by hand. Deb
 
 App-level building blocks sit on top of these:
 
-- `SettingsPage`, `SettingsGroup`, `SettingsRow`, `SettingsSwitch`, `PathRow`
-  (`SettingsComponents.swift`)
-- `DialogSheet`, `SheetRow`, `DialogAction`, `DialogWarning`, `RenameDialog` (`DialogSheet.swift`)
+- `SettingsPage`, `SettingsGroup`, `SettingsRow`, `SettingsActionRow`, `SettingsSwitch`,
+  `SettingsTextField`, `PathRow` (`SettingsComponents.swift`), on `NWSettingsNavRow`,
+  `NWGroupCard` and `NWCardRow`
+- `DialogSheet`, `DialogAction`, `DialogBanner`, `RenameDialog` (`DialogSheet.swift`), on
+  `NWDialog`, `NWSheetRow` (`SheetRow`), `NWDialogStatus` and `NWChecklistRow`
+  (`Components/Dialogs`); `AppDialogs` presents them
 - `CodeBlockView` for fenced code
 
 **Reading the surface sections below.** They predate Night Watch and still name the old roles.
@@ -625,27 +628,34 @@ a strong border, and the menu shadow.
 Settings replaces the window content in place. ⌘, toggles it, and "Back to Shepherd" or Esc
 returns.
 
-- **Navigation:** a 232pt nav on `bgCanvas`. It holds Back to Shepherd, a search field (⌘F), then
+- **Navigation:** a 232pt nav on `bgBase` with the sidebar's row anatomy (`NWSettingsNavRow`:
+  28pt rows × density, radius 6, a 13.5pt medium icon, `ui` names, `bgSelected` and semibold when
+  selected). It holds Back to Shepherd, the search field (`NWSearchField`, ⌘F), then
   Appearance · Terminal · Agents · Worktrees · Pi · Remote · Keyboard · Advanced, with
-  "Shepherd x.y.z · pi x.y.z" pinned at the bottom in `micro`. Searching lists matching rows by
-  section.
-- **Content:** a 720pt column with 44pt top padding. Each page has a title in `display` and a
-  one-line explanation, then small section headings over `GroupCard`s of rows. A row is at least
-  52pt: title in `rowTitle`, description in `description`/tertiary, control trailing.
-- **Controls:**
-  - `SegmentedControl` for 2–4 options
-  - the accent switch for booleans
-  - `PopupMenu` for longer lists
-  - `ShepherdStepper`
-  - `ValueSlider`
-  - `Keycaps` for shortcuts (click to record, with a "Reset" link when changed)
-  - secondary buttons (danger text when destructive)
-- **Footnotes and problems:** footnotes are 12pt sans `textMuted`. Inline problems (like the
-  listener's bind error) sit in the row in `dangerText` under the description.
+  "Shepherd x.y.z · pi x.y.z" pinned at the bottom in `micro`. Searching lists matching rows,
+  as buttons, under their page.
+- **Content:** a 720pt column with 44pt top padding and a 32pt gutter. Each page has a title in
+  `display` and a one-line explanation in `body`/`textSecondary`, then groups 28pt apart: a
+  section label (`NWSectionHeader`) over an `NWGroupCard` of `NWCardRow`s. A row is at least 52pt
+  (× density): title in `ui`, description in `caption`/`textSecondary`, the control trailing.
+  Rows without a title (a form's Save, pi's update buttons) are `SettingsActionRow`s.
+- **Controls** are the Controls board's, nothing hand-drawn per page:
+  - `NWSegmentedPicker` for 2–4 options, `NWPopupMenu` (200pt) for longer lists
+  - the lantern switch for booleans (`SettingsSwitch`)
+  - `NWStepper`, and `NWValueSlider`: a 200pt, 3pt `lineStrong` track filled with lantern to a
+    14pt knob, with its value in mono (double-click resets)
+  - `SettingsTextField`: 220pt fields labelled for VoiceOver, the example as the prompt
+  - `NWKeycap`s for shortcuts (click to record, with a "Reset" link when changed)
+  - small secondary buttons (danger when destructive)
+- **Footnotes and problems:** footnotes are `caption` in `textTertiary`. Inline problems (like
+  the listener's bind error) sit in the row in `failed` under the description. A remote host's
+  status is a state dot plus its word.
+- **Never in `body`:** the installed font families are enumerated once per launch
+  (`TerminalFontCatalog`), and pi's config and model catalog load in a task.
 
 | Page | Contents |
 | --- | --- |
-| **Appearance** | Theme (Night Watch), mode (System/Light/Dark), density, text size, sidebar width |
+| **Appearance** | Theme (Night Watch, the one theme, shown as a name), mode (System/Light/Dark), density, text size, sidebar width |
 | **Terminal** | Pane font family and size, a live preview, the shell |
 | **Agents** | Default model, default thinking level |
 | **Worktrees** | Base branch (Remote default / Current branch), fetch before creating, and finalize: commit remaining work, generate PR descriptions, delete local branch, merge automatically (+ method) |
@@ -656,15 +666,27 @@ returns.
 
 ### Dialogs and sheets
 
-Creation sheets (New Agent, New Worktree, Finalize Worktree, remote directory and worktree sheets)
-and confirmations (`DialogSheet`) share one anatomy on `bgSurface`:
+Creation sheets (New Agent, New Worktree, Finalize Worktree, the directory picker, the remote
+worktree sheet) and every confirmation share one anatomy, `NWDialog`, flat on `bgWindow`:
 
-- a title in `title`, and optional labeled rows (`SheetRow`)
-- a footer of `ShepherdButtonStyle` buttons
-- exactly one primary action as the ⏎ default. A destructive action is never the default:
-  destroying things takes a click.
-- anything a destructive action would destroy is called out in a `DialogWarning` strip
-  (`warningBg`/`warningText`)
+- a 24pt inset; the title in `title`, an optional explanation in `body`/`textSecondary`
+- labeled rows (`NWSheetRow`): a 96pt `ui`/`textSecondary` label column, the control, a
+  hairline; at least 44pt
+- lists of steps or checks (`NWChecklistRow`): the state glyph (spinner, check, cross, ring), the
+  label in `ui`, a trailing `caption` detail, and a failed check's remedy underneath
+- a footer: an optional status on the leading edge (`NWDialogStatus`, a spinner while working),
+  the actions trailing. Actions never truncate.
+- exactly one primary action as the ⏎ default, ⎋ on Cancel. A destructive action is the
+  `dangerFill` button and never the default: destroying things takes a click.
+- anything a destructive action would destroy is called out in an attention `NWBanner`
+  (`DialogBanner`); an error is a failed banner. Never a system alert.
+
+`AppDialogs` presents every sheet of the main window with `sheet(item:)`, so a sheet keeps the
+value it opened with while it animates away. There is no `.alert` or `confirmationDialog` in the
+app: Stop all (`StopAllDialog`), the review's per-file Revert (`RevertFileDialog`), a failed
+agent action (`ActionErrorDialog`) and Reset settings are `DialogSheet`s too. Git probes and
+directory listings run off the main thread; the Delete Worktree Agent dialog keeps its
+destructive action disabled until the unreconciled-work check is in.
 
 ## Status language
 
@@ -734,8 +756,8 @@ Review-pane and menu keys are listed with their surfaces.
 
 These places in the code break this document and should be fixed toward it:
 
-- **System dialogs:** the Stop-all and per-file Revert confirmations use `confirmationDialog`. A
-  failed agent action shows a system alert, and quitting with working agents shows an `NSAlert`.
+- **System dialogs:** quitting with working agents still shows an `NSAlert`: the quit reply comes
+  from the app delegate, which may have no window to present a sheet in.
 - **Hardcoded chords:** two hints hardcode a rebindable chord. The model picker's search row shows
   "⇧⌘M", and the subagent card shows "Inspect ⌘I".
 
