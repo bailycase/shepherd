@@ -6,7 +6,7 @@ import ShepherdSessions
 // MARK: Agents
 
 struct AgentSettings: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
     @State private var modelOptions: [String] = []
     /// pi's own default from its settings.json, read with the catalog (never in `body`).
     @State private var piDefaultModel = "pi's own default"
