@@ -246,6 +246,24 @@ enum Threads {
             tool("b1", "bash", #"{"command":"swift build --target ShepherdRemote"}"#, "", running: true),
         ], olderCursor: "c:a1", earlierCount: 72)
     }
+
+    /// The finished tests run's whole transcript: its task, the work, a steer from the parent.
+    static var testsTranscript: NativeSubagentTranscript {
+        let t0 = Date().timeIntervalSince1970 * 1000 - 8 * 60_000
+        func tool(_ id: String, _ name: String, _ args: String, _ output: String) -> NativeThreadMessage {
+            NativeThreadMessage(entryID: "t:\(id)", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: output)],
+                                toolName: name, toolCallID: id, argumentsText: args, status: "complete", isError: false)
+        }
+        return NativeSubagentTranscript(runID: "native-tests", messages: [
+            NativeThreadMessage(entryID: "t:u1", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Add presentation tests for the new tool-row derivations. Don't touch app code.")], timestamp: t0),
+            NativeThreadMessage(entryID: "t:a1", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Reading the presentation file first to see which derivations are pure and testable.")]),
+            tool("r1", "read", #"{"path":"Sources/ShepherdRemote/NativeThreadPresentation.swift"}"#, "public func nativeToolPreview"),
+            tool("e1", "edit", #"{"path":"Tests/ShepherdRemoteUnitTests/NativePresentationTests.swift","edits":[{"oldText":"a","newText":"a\nb\nc"}]}"#, "Successfully replaced 1 block(s)"),
+            tool("b1", "bash", #"{"command":"swift test --filter NativePresentationTests"}"#, "Test run with 14 tests passed"),
+            NativeThreadMessage(entryID: "t:u2", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Run the iOS simulator variant too.")], timestamp: t0 + 3 * 60_000),
+            NativeThreadMessage(entryID: "t:a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "All 14 pass on macOS and the iOS simulator.")]),
+        ])
+    }
 }
 
 // MARK: Review

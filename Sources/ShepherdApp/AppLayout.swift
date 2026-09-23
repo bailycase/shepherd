@@ -39,13 +39,6 @@ enum AppLayout {
     static let diffCollapsedRunHeight: CGFloat = 24
     static let diffCollapseThreshold = 8
 
-    // Subagents
-    static let subagentHeaderHeight: CGFloat = 40
-    static let ledgerHeaderHeight: CGFloat = 36
-    static let ledgerRowHeight: CGFloat = 44
-    static let ledgerNameWidth: CGFloat = 72
-    static let runCell: CGFloat = 8
-
     // Palette and settings
     static let paletteWidth: CGFloat = 640
     static let paletteTop: CGFloat = 120
