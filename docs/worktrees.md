@@ -79,7 +79,9 @@ state files. The sidebar marks worktree agents with `⎇`.
 ## Finalizing
 
 **Finalize Worktree…** is in a worktree agent's context menu. The sheet goes through these
-phases: checking → setup (only if a check fails) → input → running → done or failed.
+phases: checking → setup (only if a check fails) → input → running → done or failed. It is an
+`NWDialog` like every sheet ([DESIGN.md](../DESIGN.md#dialogs-and-sheets)): the checks and the
+pipeline steps are checklist rows, each a state glyph, a label, and a one-line detail.
 
 ### Setup checks
 
@@ -90,7 +92,7 @@ phases: checking → setup (only if a check fails) → input → running → don
 | --- | --- | --- |
 | Git installed | "git not found on PATH", or "Apple's Command Line Tools are not installed" | "Install command line tools…" (runs `xcode-select --install`) |
 | Git identity | "git user.name / user.email are not set" | Name and email fields, then Apply (`git config --global`) |
-| Origin reachable | the last line of `git ls-remote` stderr, or "origin remote missing or unreachable" when stderr is empty | Add an `origin` you can push to |
+| Origin reachable | the last line of `git ls-remote` stderr that isn't git's closing advice ("fatal: Could not read from remote repository." and its access-rights lines), or "origin remote missing or unreachable" when nothing else is left | Add an `origin` you can push to |
 | GitHub CLI | "GitHub CLI not installed" | `brew install gh`, with a Copy button |
 | GitHub CLI signed in | "not authenticated — run gh auth login" | "Open a terminal for gh login…" |
 
@@ -110,7 +112,7 @@ allowing auto-merge. It is informational only and never blocks Continue.
   feature branch from opening a PR against the default branch.
 - **Commit count:** the sheet shows "Will include N commit(s)", from
   `git rev-list --count origin/<base>..HEAD` (falling back to `<base>..HEAD`). The count turns
-  warning-colored above 20, because an inflated count usually means the base is wrong.
+  lantern (`lanternText`) above 20, because an inflated count usually means the base is wrong.
 - **Title and body:** with "Generate PR descriptions" on, pi drafts the body.
   `SHEPHERD_PR_DESCRIPTION_MODEL` overrides the model it uses.
 
@@ -134,19 +136,27 @@ next one starts.
    agent. Then it runs `git worktree remove <path>`, without `--force`.
 7. **Delete local branch:** `git branch -D <branch>`, unless "Delete local branch" is off.
 
+A failed step's detail leads with the line that names the problem: a rejected ref
+(`! [rejected] feat/x -> feat/x (non-fast-forward)`), else the first `fatal:` or `error:` line
+that isn't git's closing advice, ahead of git's `To <remote>` header and hints. The row's tooltip
+keeps every line (`WorktreeFinalizer.failureDetail`).
+
 Nothing destructive happens before the clean gate. The remote branch is never deleted, because
 deleting it would close the PR you just opened. GitHub's auto-delete-on-merge cleans it up
 instead. A local finalize retires the agent when you press Done.
 
 ## Deleting a worktree agent
 
-**Delete Worktree Agent…** opens a dialog showing the worktree and branch. Before it opens,
-`GitWorktree.unreconciledWork` counts uncommitted changes and commits that exist on no other
-branch or remote. Any such work is called out ("N uncommitted changes and M commits only on this
-branch will be lost with the worktree"). You can choose:
+**Delete Worktree Agent…** opens a dialog (`WorktreeDeleteDialog`) showing the worktree and
+branch. While it is open, `GitWorktree.unreconciledWork` counts, off the main thread,
+uncommitted changes and commits that exist on no other branch or remote. Until it answers, the
+footer reads "Checking for unsaved work…" and the destructive action stays disabled, so the
+warning can never arrive after the click. Any such work is called out in an "Unreconciled work"
+banner ("N uncommitted changes and M commits only on this branch will be lost with the
+worktree"). You can choose:
 
-- **Delete Agent, Keep Worktree:** retires the agent and leaves the checkout and branch alone.
-- **Delete Agent & Worktree** (destructive, never the default):
+- **Delete agent only:** retires the agent and leaves the checkout and branch alone.
+- **Delete agent and worktree** (destructive, never the default):
   1. Checks the checkout is not in use elsewhere.
   2. Fingerprints its contents.
   3. Retires the agent and waits up to 10 s for its processes to exit.
