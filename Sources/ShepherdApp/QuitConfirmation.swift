@@ -124,7 +124,8 @@ struct QuitDialog: View {
 /// Asks before a quit stops working agents. `applicationShouldTerminate` answers
 /// `.terminateLater` and the dialog goes on the main window as a sheet, over any sheet already
 /// there; the choice becomes `reply(toApplicationShouldTerminate:)`. With the window closed it
-/// is reopened first. Only one quit asks at a time.
+/// is reopened first, and if it does not come back the dialog opens on its own. Only one quit
+/// asks at a time.
 @MainActor
 final class QuitConfirmation {
     static let shared = QuitConfirmation()
@@ -135,6 +136,8 @@ final class QuitConfirmation {
     private var pending: QuitPrompt?
     /// The dialog once shown.
     private var panel: NSPanel?
+    /// How long a reopened main window has to come back before the dialog opens on its own.
+    private static let reopenGrace: TimeInterval = 1
 
     func watchForPowerOff() {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil,
@@ -177,7 +180,7 @@ final class QuitConfirmation {
     /// finished coming on screen.
     func mainWindowAppeared(_ window: NSWindow) {
         guard pending != nil, panel == nil else { return }
-        DispatchQueue.main.async { MainActor.assumeIsolated { self.attach(to: window) } }
+        Self.onMainRunLoop { self.attach(to: window) }
     }
 
     private func present() {
@@ -188,16 +191,33 @@ final class QuitConfirmation {
             attach(to: window)
         } else if let open = MainWindow.open {
             // A new window reports itself through `mainWindowAppeared`; one SwiftUI kept and
-            // only brings back has no new view to report it, so look for it too.
+            // only brings back has no new view to report it, so look for it next turn. If none
+            // is back in time the dialog gets a window of its own: AppKit disables Quit while a
+            // quit waits, so with nothing on screen the app could neither quit nor carry on.
             open()
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    if let window = MainWindow.window, window.isVisible { self.attach(to: window) }
-                }
-            }
+            Self.onMainRunLoop { self.attachToMainWindow(orAlone: false) }
+            Self.onMainRunLoop(after: Self.reopenGrace) { self.attachToMainWindow(orAlone: true) }
         } else {
             presentAlone(prompt)
         }
+    }
+
+    private func attachToMainWindow(orAlone: Bool) {
+        guard let prompt = pending, panel == nil else { return }
+        if let window = MainWindow.window, window.isVisible {
+            attach(to: window)
+        } else if orAlone {
+            presentAlone(prompt)
+        }
+    }
+
+    /// Runs `body` on a later turn of the main run loop, in every common mode. AppKit waits for
+    /// the answer in its modal-panel mode, and a quit that began inside a main-queue block (a
+    /// main-actor task) leaves the main queue undrained until it ends, so `DispatchQueue.main`
+    /// could never run it.
+    private static func onMainRunLoop(after delay: TimeInterval = 0, _ body: @escaping @MainActor @Sendable () -> Void) {
+        let timer = Timer(timeInterval: delay, repeats: false) { _ in MainActor.assumeIsolated(body) }
+        RunLoop.main.add(timer, forMode: .common)
     }
 
     private func attach(to window: NSWindow) {
@@ -211,7 +231,8 @@ final class QuitConfirmation {
         window.beginCriticalSheet(panel)
     }
 
-    /// No main window to ask in (it never appeared): the dialog in a window of its own.
+    /// No main window to ask in (it never appeared, or did not come back): the dialog in a
+    /// window of its own.
     private func presentAlone(_ prompt: QuitPrompt) {
         guard panel == nil else { return }
         let panel = makePanel(prompt, alone: true)
