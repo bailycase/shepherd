@@ -14,6 +14,7 @@ struct SettingsView: View {
     private var piUpdates: PiUpdateManager { .shared }
     @State private var searchText = ""
     @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -32,9 +33,10 @@ struct SettingsView: View {
         .background { WindowChrome() }
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
-        // Settings replaces the window content: it cross-fades in and out with whatever
-        // animates `showSettings` (⌘,, Back, Esc).
-        .nwTransition(.content)
+        // Settings replaces the window content: it cross-fades in and out on the sheet motion
+        // however `showSettings` changed (⌘,, the app menu, Back, Esc, the palette).
+        .transition(NW.Motion.content.transition(reduceMotion: reduceMotion)
+            .animation(NW.Motion.sheet.animation(reduceMotion: reduceMotion)))
         .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
         .background {
             // ⌘F focuses the search field.
@@ -54,7 +56,7 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
 
-            Button { withNWAnimation(.sheet) { vm.showSettings = false } } label: {
+            Button { vm.showSettings = false } label: {
                 HStack(spacing: NW.Space.m) {
                     Image(systemName: "chevron.left")
                         .font(.nw(.ui, weight: .semibold))

@@ -263,6 +263,27 @@ struct SettingsMotionTests {
         #expect(recording.inBetween.isEmpty)
     }
 
+    /// Settings replaces the window content as a cross-fade however `showSettings` changes: here
+    /// a plain view-model mutation, as the palette's Settings item makes, both ways. Under Reduce
+    /// Motion it is still a (shorter) cross-fade.
+    @Test(arguments: [false, true])
+    func settingsCrossFadesInAndOutHoweverItOpens(reduceMotion: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let window = OffscreenWindow(size: Self.window, dark: false,
+                                     RootView(vm: vm).environment(\._accessibilityReduceMotion, reduceMotion))
+        defer { window.close() }
+        let strip = CGRect(x: 0, y: Self.window.height / 2, width: Self.window.width, height: 1)
+
+        let opening = await MotionProbe.record(window, region: strip) { vm.showSettings = true }
+        #expect(!opening.settled.matches(opening.before), "Settings showed")
+        #expect(!opening.inBetween.isEmpty, "it cross-fades in")
+        let closing = await MotionProbe.record(window, region: strip) { vm.showSettings = false }
+        #expect(closing.settled.matches(opening.before), "the workspace is back")
+        #expect(!closing.inBetween.isEmpty, "it cross-fades out")
+    }
+
     /// Merge PR automatically reveals the merge method: the card grows and the footnote under it
     /// moves down through the frames between, cross-fading under Reduce Motion but never jumping.
     @Test(arguments: [false, true])
