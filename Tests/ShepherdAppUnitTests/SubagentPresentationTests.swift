@@ -183,7 +183,7 @@ struct SubagentPresentationTests {
         #expect(strip.title == "5 subagents")
         #expect(strip.states == "3 done · 1 running · 1 needs you")
         #expect(strip.state == .attention)
-        #expect(strip.cells == [.done, .done, .done, .running, .attention])
+        #expect(strip.cells.map(\.state) == [.done, .done, .done, .running, .attention])
         #expect(strip.tokens == "1.6m tok")
         #expect(strip.since == Date(timeIntervalSince1970: Self.t0 / 1000))
         #expect(strip.until == nil)
@@ -195,9 +195,25 @@ struct SubagentPresentationTests {
         paused.paused = true
         let runs = Self.finished + [Self.run("live", startedAt: Self.t0 + 2_000), Self.run("next", state: "queued", startedAt: Self.t0 + 3_000), paused]
         let strip = SubagentPresentation.strip(runs)
-        #expect(strip.cells.filter { $0 == .queued }.count == 2)
+        #expect(strip.cells.filter { $0.state == .queued }.count == 2)
         #expect(strip.states == "3 done · 1 running · 1 queued · 1 paused")
         #expect(strip.state == .running)
+    }
+
+    /// Each segment opens its run, so it carries the run's id, and is named and worded as the
+    /// run's card and the tally name it.
+    @Test func theStripsSegmentsNameTheirRunsInSpawnOrder() {
+        var paused = Self.run("paused", label: "docs: rewrite", role: "docs", startedAt: Self.t0 + 1_000)
+        paused.paused = true
+        var lane = Self.run("wf", label: "lane-2", role: "worker", startedAt: Self.t0 + 2_000)
+        lane.childIndex = 2
+        var asking = Self.run("ask", startedAt: Self.t0 + 3_000)
+        asking.needsAttention = true
+        let strip = SubagentPresentation.strip(Self.finished + [asking, lane, paused])
+        #expect(strip.cells.map(\.id) == ["w", "paused", "wf#2", "ask", "r", "t"])
+        #expect(strip.cells.map(\.help) == ["worker, done", "docs, paused", "lane-2, running", "worker, needs you",
+                                            "reviewer, done", "tests, done"])
+        #expect(strip.cells[1].accessibilityLabel == "docs, paused — open")
     }
 
     @Test func aStripWhoseLiveRunsAllWaitShowsTheWaitingGlyph() {

@@ -21,7 +21,8 @@ private enum AgentsSamples {
     ])
 
     static let strip = NWRunsStripSummary(title: "12 subagents", state: .attention,
-                                          cells: Array(repeating: .done, count: 7) + [.running, .running, .running, .attention, .failed],
+                                          cells: (Array(repeating: AgentState.done, count: 7) + [.running, .running, .running, .attention, .failed])
+                                              .enumerated().map { NWRunsStripCell(id: "run-\($0.offset)", name: "lane-\($0.offset + 1)", state: $0.element) },
                                           states: "7 done · 3 running · 1 needs you · 1 failed", tokens: "3.6m tok",
                                           since: Date().addingTimeInterval(-720))
 }
@@ -44,7 +45,7 @@ private enum AgentsSamples {
     @Previewable @State var selection: String? = "tests"
     NWPreviewBoth {
         VStack(spacing: NW.Space.l) {
-            NWRunsStrip(AgentsSamples.strip, isExpanded: $expanded)
+            NWRunsStrip(AgentsSamples.strip, isExpanded: $expanded) { selection = $0 }
             NWRunLedger(AgentsSamples.ledger, selection: $selection)
         }
         .frame(width: 560)

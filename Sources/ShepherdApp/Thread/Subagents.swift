@@ -4,9 +4,9 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Subagents (Agents board): a subagent is a turn inside a turn. Its card sits where its spawn
-// call was; more than three live siblings fold into a runs strip; once every run in the group
-// has finished, the cards become one run ledger. Pause waits at the child's next model-request
-// boundary; Continue releases it.
+// call was; more than three live siblings fold into a runs strip (each of its segments opens its
+// run); once every run in the group has finished, the cards become one run ledger. Pause waits
+// at the child's next model-request boundary; Continue releases it.
 
 /// What a card can ask the thread to do. `inspect` opens the inspector for the run.
 struct SubagentActions {
@@ -54,7 +54,11 @@ private struct SubagentGroup: View, Equatable {
             case .ledger:
                 NWRunLedger(SubagentPresentation.ledger(ordered), selection: selection(ordered)).equatable()
             case .strip:
-                NWRunsStrip(SubagentPresentation.strip(ordered), isExpanded: $stripExpanded).equatable()
+                NWRunsStrip(SubagentPresentation.strip(ordered), isExpanded: $stripExpanded) { id in
+                    // A segment opens its run as the run's card does.
+                    if let run = ordered.first(where: { $0.id == id }) { inspect(run) }
+                }
+                .equatable()
                 ForEach(ordered.filter { stripExpanded || $0.needsAttention }, id: \.id, content: card)
             case .cards:
                 ForEach(ordered, id: \.id, content: card)

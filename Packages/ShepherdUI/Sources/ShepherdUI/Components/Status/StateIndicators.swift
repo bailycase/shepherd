@@ -198,17 +198,27 @@ public struct NWStepStrip: View {
         self.segmentWidth = segmentWidth
     }
 
+    /// The gap between segments.
+    static let spacing: CGFloat = 3
+    static let segmentHeight: CGFloat = 3
+    static let cornerRadius: CGFloat = 2
+
     public var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: Self.spacing) {
             ForEach(Array(steps.enumerated()), id: \.offset) { _, step in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(step.map { $0 == .idle || $0 == .queued ? Color.nw.lineStrong : $0.color } ?? Color.nw.lineStrong)
+                RoundedRectangle(cornerRadius: Self.cornerRadius)
+                    .fill(Self.fill(step))
                     .frame(minWidth: segmentWidth ?? 14, maxWidth: segmentWidth ?? .infinity)
-                    .frame(height: 3)
+                    .frame(height: Self.segmentHeight)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.summary(steps))
+    }
+
+    /// A segment's color: its state's, with pending and waiting steps in `lineStrong`.
+    @MainActor static func fill(_ step: AgentState?) -> Color {
+        step.map { $0 == .idle || $0 == .queued ? Color.nw.lineStrong : $0.color } ?? Color.nw.lineStrong
     }
 
     static func summary(_ steps: [AgentState?]) -> String {

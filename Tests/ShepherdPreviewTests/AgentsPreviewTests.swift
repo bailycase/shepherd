@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 import ShepherdCore
-import ShepherdUI
+@testable import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 import SwiftUI
@@ -10,8 +10,9 @@ import Testing
 @testable import ShepherdApp
 
 /// Subagent surfaces (Agents board) in light and dark: the cards in every state, the runs
-/// strip, the ledger, a live group and a finished one in a thread, and the inspector on a live
-/// and a finished run. See `PreviewTests` for how previews run.
+/// strip at rest and with a segment hovered, the ledger, a live group and a finished one in a
+/// thread, and the inspector on a live and a finished run. See `PreviewTests` for how previews
+/// run.
 @Suite("Agents previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct AgentsPreviewTests {
@@ -81,6 +82,28 @@ struct AgentsPreviewTests {
                     SubagentStack(runs: Self.manyRuns.filter { !$0.needsAttention }, turnLive: true, actions: actions)
                 }
                 .frame(width: 368)
+                Spacer(minLength: 0)
+            }
+            .padding(32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    /// Each segment opens its run: at rest the strip is unchanged, and the hovered segment
+    /// thickens.
+    @Test func runsStripSegments() async throws {
+        let summary = SubagentPresentation.strip(Self.manyRuns)
+        let running = try #require(summary.cells.first { $0.state == .running }).id
+        let asking = try #require(summary.cells.first { $0.state == .attention }).id
+        try await Preview.render("runs-strip", size: CGSize(width: 760, height: 300)) {
+            VStack(alignment: .leading, spacing: NW.Space.l) {
+                Text("At rest").nwSectionLabel()
+                NWRunsStrip(summary, isExpanded: .constant(false)) { _ in }
+                Text("Hovering a running segment").nwSectionLabel()
+                NWRunsStrip(summary, isExpanded: .constant(false), hovered: running) { _ in }
+                Text("Hovering the segment that needs you").nwSectionLabel()
+                NWRunsStrip(summary, isExpanded: .constant(true), hovered: asking) { _ in }
                 Spacer(minLength: 0)
             }
             .padding(32)

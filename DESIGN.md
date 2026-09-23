@@ -533,6 +533,11 @@ The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPrese
   tokens and the group's elapsed time, and a disclosure for every card. When the row runs out of
   room the totals give way (tokens first) before the tally truncates. Needs-you runs keep their
   own card.
+  - Each step is its own button: a click opens that run in the inspector, as its card does. Its
+    target is the step plus half the gap on each side, the row's full height, so steps tile with
+    no dead gap. Its tooltip names the run and state ("worker, running"), and VoiceOver reads
+    "worker, running — open". A hovered step thickens to 5pt; at rest nothing changes.
+  - A click anywhere else on the row expands or collapses the cards.
 - **`NWRunLedger`:** once every run in the group has finished, the cards are replaced in place
   by a permanent ledger.
   - A 32pt `bgSunken` header: glyph, "n subagents", one 14pt step per run, "all done · 45m",
@@ -744,6 +749,7 @@ Review-pane and menu keys are listed with their surfaces.
 - **Rows read as one element:**
   - agent rows: "title, [worktree,] status word"
   - subagent rows: "name, subagent, state"
+  - runs strip steps: "name, state — open"
   - automation rows: "name, automation, state"
   - tool rows: "read, ThreadView.swift, 160 lines, done", with "Show call" as a named action
 - **Color:** status color is always paired with a word or a glyph shape. Contrast follows the

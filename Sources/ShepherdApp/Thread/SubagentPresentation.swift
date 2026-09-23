@@ -117,32 +117,22 @@ enum SubagentPresentation {
     }
 
     /// The strip counts each run as its cell and pill draw it: queued and paused runs wait
-    /// (hollow cells), so neither is tallied as running.
+    /// (hollow cells), so neither is tallied as running. A cell is named as its card is, so its
+    /// tooltip matches the card it opens.
     static func strip(_ runs: [ChildRun]) -> NWRunsStripSummary {
         let ordered = ordered(runs)
-        let cells = ordered.map(state)
-        let words = ordered.map(tallyWord)
+        let cells = ordered.map { NWRunsStripCell(id: $0.id, name: names($0).name, state: state($0), stateLabel: stateLabel($0)) }
+        let states = cells.map(\.state)
         let tally = ["done", "running", "queued", "paused", "needs you", "failed"].compactMap { word -> String? in
-            let n = words.count { $0 == word }
+            let n = cells.count { $0.word == word }
             return n > 0 ? "\(n) \(word)" : nil
         }
         let tokens = ordered.compactMap(\.tokens).reduce(0, +)
-        let glyph = [AgentState.attention, .running, .queued, .failed].first(where: cells.contains) ?? .done
+        let glyph = [AgentState.attention, .running, .queued, .failed].first(where: states.contains) ?? .done
         let span = span(ordered)
         return NWRunsStripSummary(title: plural(ordered.count, "subagent"), state: glyph, cells: cells,
                                   states: tally.joined(separator: " · "), tokens: tokens > 0 ? "\(nativeCompactTokens(tokens)) tok" : nil,
                                   since: span?.since, until: span?.until)
-    }
-
-    /// A run's word in the strip's tally: its pill's word, lowercased.
-    private static func tallyWord(_ run: ChildRun) -> String {
-        switch state(run) {
-        case .attention: "needs you"
-        case .done: "done"
-        case .failed: "failed"
-        case .queued: stateLabel(run) == nil ? "queued" : "paused"
-        default: "running"
-        }
     }
 
     /// The group's time: from its first start, until its last end once every run finished.

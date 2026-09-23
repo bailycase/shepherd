@@ -150,6 +150,8 @@ enum NWRunLayout {
     static let stepWidth: CGFloat = 14
     /// The strip holds many runs, so its steps are narrower.
     static let stripCellWidth: CGFloat = 8
+    /// A hovered strip segment thickens to show it is the one a click opens.
+    static let stripHoverHeight: CGFloat = 5
     static let nameWidth: CGFloat = 70
     static let selectionRule: CGFloat = 2
 }
