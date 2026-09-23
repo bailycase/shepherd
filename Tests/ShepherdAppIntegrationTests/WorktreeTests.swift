@@ -51,7 +51,7 @@ struct GitWorktreeTests {
         #expect(path == sandbox.root.appendingPathComponent("proj-agent-fix-thing").path)
         #expect(GitWorktree.isRepo(path))
         #expect(GitWorktree.currentBranch(repo: path) == "agent/fix-thing")
-        #expect(throws: (any Error).self, "the branch already exists") {
+        #expect(throws: GitWorktree.Failure.self, "the branch already exists") {
             try GitWorktree.add(repo: sandbox.repo.path, branch: "agent/fix-thing")
         }
     }
@@ -121,7 +121,7 @@ struct GitWorktreeTests {
 
         #expect(fresh.startPoint == "origin/main" && fresh.note == "cached — fetch disabled in settings")
         #expect(try git(["rev-list", "--count", "origin/main..wt/clean"], in: sandbox.repo).trimmingCharacters(in: .whitespacesAndNewlines) == "0")
-        #expect(throws: (any Error).self, "no upstream is configured") {
+        #expect(throws: CommandFailure.self, "no upstream is configured") {
             try git(["config", "--get", "branch.wt/clean.merge"], in: sandbox.repo)
         }
         #expect(GitWorktree.isRepo(path))
@@ -141,7 +141,7 @@ struct GitWorktreeTests {
         #expect(identity.path == canonical(linked))
         #expect(identity.branch == "worktree/imported")
         #expect(GitWorktree.importDirectory(repo: sandbox.repo.path) == canonical(sandbox.root.appendingPathComponent("linked")))
-        #expect(throws: (any Error).self, "the primary checkout is not a linked worktree") {
+        #expect(throws: GitWorktree.Failure.self, "the primary checkout is not a linked worktree") {
             try GitWorktree.identity(at: sandbox.repo.path)
         }
     }

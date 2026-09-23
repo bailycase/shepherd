@@ -153,6 +153,15 @@ extension AppHarness {
 
 // MARK: Remote
 
+extension RemoteHostClientError {
+    /// The code the host rejected a request with; nil for any other failure (a dropped
+    /// connection, a timeout), so a refusal test cannot pass on the wrong failure.
+    var rejectionCode: String? {
+        if case .rejected(let code, _) = self { return code }
+        return nil
+    }
+}
+
 /// A second, in-process Shepherd acting as a remote host: its own server (and optionally its
 /// own view model, which answers host-side requests), serving over TCP on an ephemeral port.
 @MainActor
