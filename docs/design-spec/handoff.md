@@ -1,11 +1,12 @@
 # Handoff spec — Shepherd native thread UI
 
-> This is the design handoff as delivered, lightly formatted as Markdown. The per-board
+> **Superseded by [`DESIGN.md`](../../DESIGN.md).** This is the first design handoff, as
+> delivered and lightly formatted as Markdown, kept as history. Shepherd now implements Night
+> Watch, the design system `DESIGN.md` describes (`Packages/ShepherdUI`), and most of what
+> follows is gone from the code: the `Tokens`/`Fonts`/`Metrics` names, the mock palette, the
+> type ramp, one-line tool rows and tool groups, the 52pt header, and many dimensions. Don't
+> implement from this file; where it disagrees with `DESIGN.md`, `DESIGN.md` wins. The per-board
 > renders live in [`boards/`](boards/) (iOS boards under [`boards/ios/`](boards/ios/)).
-> [`DESIGN.md`](../../DESIGN.md) is the authority for Shepherd: it condenses this sheet and
-> records where the app deliberately deviates from it (system fonts, a denser sidebar, no
-> runtime choice, Basalt instead of the mock palette, macOS first). Where the two disagree,
-> DESIGN.md wins.
 
 For the implementing agent. Source of truth for values: tokens.json (light + dark). Visual
 reference: the Option A, Running, Tool row states, Foundations and Components artboards on
