@@ -52,6 +52,6 @@ struct SettingsResetTests {
         #expect(app.settings.defaultModel == "openai/gpt-5")
         #expect(!app.settings.autoNameAgents)
         #expect(app.keybindings.overrides[.newAgent] == KeyChord(key: "p", command: true))
-        #expect(app.themeManager.current.id == "basalt-light")
+        #expect(app.themeManager.current.id == "night-watch-light")
     }
 }
