@@ -160,9 +160,13 @@ struct WorktreeDeleteDialog: View {
         }
         .task(id: agent.id) {
             let (path, branch) = (path, branch)
-            warning = await Task.detached(priority: .userInitiated) {
-                GitWorktree.unreconciledWork(worktree: path, branch: branch)
-            }.value
+            // No checkout to probe (its space is gone): `git -C ""` would probe the app's own
+            // working directory instead.
+            if !path.isEmpty {
+                warning = await Task.detached(priority: .userInitiated) {
+                    GitWorktree.unreconciledWork(worktree: path, branch: branch)
+                }.value
+            }
             checked = true
         }
     }
