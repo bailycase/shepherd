@@ -175,7 +175,7 @@ private final class ThreadHarness {
 
 /// Serialized: each test owns a window and reads it back, and the main thread's layout
 /// passes are the thing under test.
-@Suite("Thread scroll following", .serialized, .runsProcesses)
+@Suite("Thread scroll following", .serialized)
 @MainActor
 struct ThreadScrollingTests {
     @Test func aThreadOpensAtItsTailWithNoBlankSpaceBelowTheLastTurn() async throws {
@@ -316,10 +316,9 @@ struct ThreadScrollingTests {
     }
 
     /// ⌥⌘↑ from the tail to a turn just over the follower's threshold above it: the jump's
-    /// animation starts inside the threshold, `NativeScrollFollower.observe` re-sticks on those
-    /// first frames, and the next streamed chunk yanks the reader back to the bottom (no pill).
-    @Test(.disabled("bug: a turn jump that starts at the tail re-sticks mid-animation, so streaming pulls the reader back down"))
-    func aJumpFromTheTailToANearbyTurnStaysDetachedWhileStreaming() async throws {
+    /// animation starts inside the threshold, and those first frames once re-stuck the follower,
+    /// so the next streamed chunk yanked the reader back to the bottom (no pill).
+    @Test func aJumpFromTheTailToANearbyTurnStaysDetachedWhileStreaming() async throws {
         let thread = ThreadHarness(messages: 24, running: true, paragraphs: 16)
         defer { thread.close() }
         try await thread.waitUntilReady()

@@ -649,6 +649,9 @@ public struct NativeScrollFollower: Equatable, Sendable {
     public var userScrolling = false
     /// Content grew while detached; cleared on re-stick.
     public var unseen = false
+    /// A programmatic jump (previous/next turn) is still animating: the positions it passes
+    /// through are not the reader's, so they neither re-stick nor detach.
+    public var jumping = false
 
     public init(sticky: Bool = true, userScrolling: Bool = false, unseen: Bool = false) {
         self.sticky = sticky
@@ -662,6 +665,10 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// view detached at the bottom with the jump pill showing). `contentGrew` is the content
     /// height rising.
     public mutating func observe(distanceFromBottom: Double, userIntent: Bool = false, contentGrew: Bool = false) {
+        if jumping {
+            if contentGrew { unseen = true }
+            return
+        }
         if distanceFromBottom <= Self.threshold {
             sticky = true
             unseen = false
@@ -675,6 +682,22 @@ public struct NativeScrollFollower: Equatable, Sendable {
     public mutating func jumpToLatest() {
         sticky = true
         unseen = false
+        jumping = false
+    }
+
+    /// A jump to an earlier turn starts: detach, and ignore the animation's positions (starting
+    /// at the tail, its first frames sit inside the threshold and used to re-stick).
+    public mutating func beginJump() {
+        sticky = false
+        jumping = true
+    }
+
+    /// The jump's scroll settled at `distanceFromBottom`: judge that position like any other.
+    /// A jump that landed at the bottom (nothing to move to) follows the tail again.
+    public mutating func endJump(distanceFromBottom: Double) {
+        guard jumping else { return }
+        jumping = false
+        observe(distanceFromBottom: distanceFromBottom)
     }
 
     /// The pill shows while detached and something is happening or already happened below.
