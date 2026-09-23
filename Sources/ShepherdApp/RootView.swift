@@ -41,7 +41,7 @@ struct RootView: View {
                 SidebarView(vm: vm)
                     .frame(width: sidebar.width)
                     .background(Color.nw.bgBase.ignoresSafeArea())
-                sidebarResizeHandle
+                sidebarResizeHandle(width: sidebar.width)
             }
 
             VStack(spacing: 0) {
@@ -360,9 +360,9 @@ struct RootView: View {
         }
     }
 
-    /// The sidebar's trailing edge, and its drag handle. Dragging never narrows the main
-    /// column below its minimum.
-    private var sidebarResizeHandle: some View {
+    /// The sidebar's trailing edge, and its drag handle (adjustable with VoiceOver). Resizing
+    /// never narrows the main column below its minimum.
+    private func sidebarResizeHandle(width: CGFloat) -> some View {
         Color.nw.lineSubtle
             .frame(width: 1)
             .overlay {
@@ -372,10 +372,7 @@ struct RootView: View {
                     .pointerStyle(.columnResize)
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("root-layout"))
-                            .onChanged { value in
-                                let room = Double(windowWidth - 1 - AppLayout.mainColumnMinWidth)
-                                liveSidebarWidth = AppSettings.clampSidebarWidth(min(Double(value.location.x), room))
-                            }
+                            .onChanged { liveSidebarWidth = fittedSidebarWidth(Double($0.location.x)) }
                             .onEnded { _ in
                                 if let width = liveSidebarWidth {
                                     appearance.sidebarWidth = width
@@ -385,7 +382,18 @@ struct RootView: View {
                     )
             }
             .zIndex(1)
-            .accessibilityLabel("Resize sidebar")
+            .accessibilityElement()
+            .accessibilityLabel("Sidebar width")
+            .accessibilityValue("\(Int(width)) points")
+            .accessibilityAdjustableAction { direction in
+                let step: Double = direction == .increment ? 16 : direction == .decrement ? -16 : 0
+                appearance.sidebarWidth = fittedSidebarWidth(Double(width) + step)
+            }
+    }
+
+    /// A sidebar width within its range that leaves the main column its minimum.
+    private func fittedSidebarWidth(_ width: Double) -> Double {
+        AppSettings.clampSidebarWidth(min(width, Double(windowWidth - 1 - AppLayout.mainColumnMinWidth)))
     }
 }
 
