@@ -338,12 +338,12 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 **Adaptive rules** (`ShellLayout`, pure and unit-tested in `ShellLayoutTests`):
 
 - **Sidebar.** It docks while the main column keeps 720pt beside it, narrowing to fit (to no
-  less than 190pt). In a narrower window, below its fit point (sidebar width + 1 + 720), it hides
-  on its own, and ⇧⌘S or the toolbar's sidebar button shows it as an overlay: at most the window
-  width minus 48pt, over the workspace with the popover shadow. Picking a row or clicking outside
-  closes the overlay. ⇧⌘S in a wide window hides and shows the docked sidebar.
-- **Toolbar inset.** While the sidebar is not docked, the toolbar starts 70pt in to clear the
-  window controls (0 in full screen) and leads with a sidebar button.
+  less than 190pt). In a window narrower than that allows (190 + 1 + 720 = 911pt), it hides on
+  its own, and ⇧⌘S or the toolbar's sidebar button shows it as an overlay: its width, at most the
+  window width minus 48pt, over the workspace with the popover shadow. Picking a row or clicking
+  outside closes the overlay. ⇧⌘S in a wide window hides and shows the docked sidebar.
+- **Toolbar inset.** While the sidebar is not docked, the toolbar's content moves a further 70pt
+  in to clear the window controls (none in full screen) and leads with a sidebar button.
 - **Right pane** (review or subagent inspector, `RightPaneSplit`). It docks while the main
   column is at least 881pt (thread 400 + 1 + pane 480): 600pt by default, at least 480, at most
   half the column, and the thread always keeps 400. Narrower, the pane overlays the thread from
