@@ -8,7 +8,6 @@ import ShepherdRemote
 struct RootView: View {
     @Bindable var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
-    @ObservedObject private var appearance: AppSettings
     @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.openWindow) private var openWindow
     @State private var liveSidebarWidth: Double?
@@ -16,10 +15,7 @@ struct RootView: View {
     /// In full screen the window controls are gone, so nothing needs to clear them.
     @State private var isFullScreen = false
 
-    init(vm: ShepherdViewModel) {
-        self.vm = vm
-        _appearance = ObservedObject(wrappedValue: vm.settings)
-    }
+    private var appearance: AppSettings { vm.settings }
 
     private var sidebar: ShellLayout.Sidebar {
         ShellLayout.sidebar(windowWidth: windowWidth, preferredWidth: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth),

@@ -26,7 +26,8 @@ enum WorktreeMergeMethod: String, CaseIterable {
 /// chrome, not shared session state. Every setting here is wired to real
 /// behavior; a preference nothing reads is a bug, not a placeholder.
 @MainActor
-final class AppSettings: ObservableObject {
+@Observable
+final class AppSettings {
     static let shared: AppSettings = {
         let settings = AppSettings()
         settings.drivesDesignScale = true
@@ -36,7 +37,7 @@ final class AppSettings: ObservableObject {
 
     /// Only the app's own settings object feeds the design system's text scale and density;
     /// isolated instances in tests must not restyle anything.
-    private var drivesDesignScale = false
+    @ObservationIgnored private var drivesDesignScale = false
 
     private func publishDesignScale() {
         guard drivesDesignScale else { return }
@@ -108,66 +109,66 @@ final class AppSettings: ObservableObject {
 
     /// Terminal surfaces are rebuilt on change, so both font values are
     /// applied to every live pane the moment they are edited.
-    @Published var terminalFontFamily: String {
+    var terminalFontFamily: String {
         didSet { store.set(terminalFontFamily, forKey: Key.terminalFontFamily) }
     }
 
-    @Published var terminalFontSize: Double {
+    var terminalFontSize: Double {
         didSet { store.set(terminalFontSize, forKey: Key.terminalFontSize) }
     }
 
     /// Empty means "whatever pi picks" — Shepherd never invents a model id.
-    @Published var defaultModel: String {
+    var defaultModel: String {
         didSet { store.set(defaultModel, forKey: Key.defaultModel) }
     }
 
-    @Published var defaultThinking: ThinkingLevel {
+    var defaultThinking: ThinkingLevel {
         didSet { store.set(defaultThinking.rawValue, forKey: Key.defaultThinking) }
     }
 
     /// Off means agents keep their provisional name (the truncated opening
     /// prompt) and the namer extension is never passed to pi.
-    @Published var autoNameAgents: Bool {
+    var autoNameAgents: Bool {
         didSet { store.set(autoNameAgents, forKey: Key.autoNameAgents) }
     }
 
-    @Published var piThemeExtension: Bool {
+    var piThemeExtension: Bool {
         didSet { store.set(piThemeExtension, forKey: Key.piThemeExtension) }
     }
 
-    @Published var piPanesExtension: Bool {
+    var piPanesExtension: Bool {
         didSet { store.set(piPanesExtension, forKey: Key.piPanesExtension) }
     }
 
-    @Published var piReviewExtension: Bool {
+    var piReviewExtension: Bool {
         didSet { store.set(piReviewExtension, forKey: Key.piReviewExtension) }
     }
 
-    @Published var piSubagentsExtension: Bool {
+    var piSubagentsExtension: Bool {
         didSet { store.set(piSubagentsExtension, forKey: Key.piSubagentsExtension) }
     }
 
-    @Published var piNativeSubagents: Bool {
+    var piNativeSubagents: Bool {
         didSet { store.set(piNativeSubagents, forKey: Key.piNativeSubagents) }
     }
 
-    @Published var childConcurrency: Int {
+    var childConcurrency: Int {
         didSet { store.set(childConcurrency, forKey: Key.childConcurrency) }
     }
 
-    @Published var childModel: String {
+    var childModel: String {
         didSet { store.set(childModel, forKey: Key.childModel) }
     }
 
-    @Published var childThinking: String {
+    var childThinking: String {
         didSet { store.set(childThinking, forKey: Key.childThinking) }
     }
 
-    @Published var childContext: String {
+    var childContext: String {
         didSet { store.set(childContext, forKey: Key.childContext) }
     }
 
-    @Published var childScope: String {
+    var childScope: String {
         didSet { store.set(childScope, forKey: Key.childScope) }
     }
 
@@ -179,23 +180,23 @@ final class AppSettings: ObservableObject {
          "SHEPHERD_CHILD_SCOPE": childScope]
     }
 
-    @Published var autoUpdatePi: Bool {
+    var autoUpdatePi: Bool {
         didSet { store.set(autoUpdatePi, forKey: Key.autoUpdatePi) }
     }
 
-    @Published var autoUpdateExtensions: Bool {
+    var autoUpdateExtensions: Bool {
         didSet { store.set(autoUpdateExtensions, forKey: Key.autoUpdateExtensions) }
     }
 
     /// Shell for panes that are not an agent's pi process (⌘D splits, space
     /// workspaces, panes an agent opens for itself).
-    @Published var shellPath: String {
+    var shellPath: String {
         didSet { store.set(shellPath, forKey: Key.shellPath) }
     }
 
     /// Row-height multiplier for app chrome (sidebar rows, headers). 1.0 is
     /// the designed density; smaller packs more agents on screen.
-    @Published var uiDensity: Double {
+    var uiDensity: Double {
         didSet {
             store.set(uiDensity, forKey: Key.uiDensity)
             publishDesignScale()
@@ -204,31 +205,31 @@ final class AppSettings: ObservableObject {
 
     /// Multiplier on every chrome font size (never the terminal's — that is
     /// `terminalFontSize`).
-    @Published var uiTextScale: Double {
+    var uiTextScale: Double {
         didSet {
             store.set(uiTextScale, forKey: Key.uiTextScale)
             publishDesignScale()
         }
     }
 
-    @Published var sidebarWidth: Double {
+    var sidebarWidth: Double {
         didSet { store.set(sidebarWidth, forKey: Key.sidebarWidth) }
     }
 
     /// Sidebar and menu row height (Compact 22 · Standard 28 · Comfortable 36), before the
     /// density scale.
-    @Published var sidebarRowDensity: NWDensity {
+    var sidebarRowDensity: NWDensity {
         didSet { store.set(sidebarRowDensity.rawValue, forKey: Key.sidebarRowDensity) }
     }
 
     /// Serve this Mac's sessions to remote Shepherd clients (the mini role).
     /// Applied at launch and on toggle; persists so a host stays a host
     /// across reboots.
-    @Published var remoteListenerEnabled: Bool {
+    var remoteListenerEnabled: Bool {
         didSet { store.set(remoteListenerEnabled, forKey: Key.remoteListenerEnabled) }
     }
 
-    @Published var remoteListenerPort: Int {
+    var remoteListenerPort: Int {
         didSet { store.set(remoteListenerPort, forKey: Key.remoteListenerPort) }
     }
 
@@ -237,32 +238,32 @@ final class AppSettings: ObservableObject {
     /// = the primary checkout's current branch, for deliberately stacking on
     /// in-progress work. The New Worktree sheet shows and lets the user
     /// override the resolved base either way.
-    @Published var worktreeBaseMode: WorktreeBaseMode {
+    var worktreeBaseMode: WorktreeBaseMode {
         didSet { store.set(worktreeBaseMode.rawValue, forKey: Key.worktreeBaseMode) }
     }
 
     /// Fetch the base branch from origin before creating a worktree, so
     /// "fresh" means the remote's latest, not a stale local snapshot. Off =
     /// no network at creation; the cached ref is used.
-    @Published var worktreeFetchBeforeCreate: Bool {
+    var worktreeFetchBeforeCreate: Bool {
         didSet { store.set(worktreeFetchBeforeCreate, forKey: Key.worktreeFetchBeforeCreate) }
     }
 
     /// Finalize commits remaining work automatically. Off = finalize stops
     /// on a dirty worktree and asks the user to commit themselves.
-    @Published var worktreeAutoCommit: Bool {
+    var worktreeAutoCommit: Bool {
         didSet { store.set(worktreeAutoCommit, forKey: Key.worktreeAutoCommit) }
     }
 
     /// Generate an editable pull-request description when Finalize opens.
     /// Failure falls back to the branch's commit subjects.
-    @Published var worktreeGeneratePRDescription: Bool {
+    var worktreeGeneratePRDescription: Bool {
         didSet { store.set(worktreeGeneratePRDescription, forKey: Key.worktreeGeneratePRDescription) }
     }
 
     /// Finalize deletes the local branch after the worktree is removed. Off
     /// keeps it (the remote branch is never touched either way).
-    @Published var worktreeDeleteLocalBranch: Bool {
+    var worktreeDeleteLocalBranch: Bool {
         didSet { store.set(worktreeDeleteLocalBranch, forKey: Key.worktreeDeleteLocalBranch) }
     }
 
@@ -271,12 +272,12 @@ final class AppSettings: ObservableObject {
     /// strictly opt-in. On: GitHub auto-merge first (respects branch
     /// protection and checks), immediate merge as fallback; failure leaves
     /// the PR open and never blocks cleanup.
-    @Published var worktreeAutoMergePR: Bool {
+    var worktreeAutoMergePR: Bool {
         didSet { store.set(worktreeAutoMergePR, forKey: Key.worktreeAutoMergePR) }
     }
 
     /// Merge method for auto-merged finalize PRs.
-    @Published var worktreeMergeMethod: WorktreeMergeMethod {
+    var worktreeMergeMethod: WorktreeMergeMethod {
         didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
     }
 

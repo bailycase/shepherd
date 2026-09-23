@@ -8,7 +8,7 @@ import ShepherdUI
 /// Agents are native threads and never use these.
 struct TerminalSettings: View {
     var vm: ShepherdViewModel
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
     @State private var families: [String] = []
     @State private var shells: [String] = []
 

@@ -6,7 +6,7 @@ import ShepherdUI
 struct AppearanceSettings: View {
     var vm: ShepherdViewModel
     @ObservedObject private var themes = ThemeManager.shared
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
     @Environment(\.colorScheme) private var systemColorScheme
 
     var body: some View {

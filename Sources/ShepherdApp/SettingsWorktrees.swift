@@ -7,7 +7,7 @@ import ShepherdUI
 /// behavior in the worktree flows is opt-out here. The remote branch is never Shepherd's to
 /// delete regardless (deleting an open PR's head branch closes the PR).
 struct WorktreeSettings: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
 
     var body: some View {
         SettingsPage(title: "Worktrees",

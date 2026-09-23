@@ -3,7 +3,7 @@ import ShepherdUI
 import ShepherdSessions
 
 struct PiSettings: View {
-    @ObservedObject private var settings = AppSettings.shared
+    @Bindable private var settings = AppSettings.shared
     @ObservedObject private var updates = PiUpdateManager.shared
     @State private var modelOptions: [String] = []
 
