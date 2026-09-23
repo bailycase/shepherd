@@ -174,6 +174,8 @@ private struct NWIconButton: View {
             .contentShape(Circle())
             .onHover { hovering = $0 }
             .nwAnimation(.hover, value: hovering)
+            // A pane toggle lights up however its pane opened (a menu, a shortcut, an agent).
+            .nwComponentAnimation(.hover, value: style.isOn)
             .nwFocusRingCircle()
     }
 }
@@ -256,6 +258,8 @@ private struct NWRowButton: View {
             .nwRowBackground(selected: style.selected, hovering: hovering, radius: style.radius,
                              selectedFill: style.selectedFill, hoverFill: style.hoverFill)
             .onHover { hovering = $0 }
+            // Keyed on the pointer only: a selection moved by the keyboard lands at once.
+            .nwAnimation(.hover, value: hovering)
             .nwFocusRing(radius: style.radius)
     }
 }

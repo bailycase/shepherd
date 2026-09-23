@@ -70,10 +70,13 @@ public struct NWCountBadge: View {
             .font(.nwMono(10, .semibold))
             .monospacedDigit()
             .foregroundStyle(text)
+            .nwContentTransition(.numeric())
             .padding(.horizontal, 5)
             .frame(minWidth: 18, minHeight: 16)
             .background(fill, in: Capsule())
             .fixedSize()
+            .nwComponentAnimation(.content, value: count)
+            .nwComponentAnimation(.content, value: tone)
     }
 }
 

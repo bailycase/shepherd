@@ -36,7 +36,9 @@ private struct NWSwitch: View {
                             .padding(2)
                     }
                     .contentShape(Capsule())
-                    .nwAnimation(.hover, value: on)
+                    // The knob slides and the fill turns lantern however the value changed
+                    // (a click, Space, a reset, another window).
+                    .nwComponentAnimation(.content, value: on)
                     .nwFocusRing(radius: 9)
             }
             .buttonStyle(.plain)
@@ -85,6 +87,9 @@ private struct NWCheckbox: View {
                     }
                 }
                 .frame(width: 14, height: 14)
+                // The fill and the mark fade in place, only in the box: the label never moves.
+                .nwComponentAnimation(.content, value: filled)
+                .nwComponentAnimation(.content, value: configuration.isMixed)
                 .nwFocusRing(radius: NW.Radius.xs)
                 if labelsVisibility != .hidden { configuration.label }
             }

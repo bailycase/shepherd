@@ -11,6 +11,9 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
     let label: String
     let options: [(value: Value, title: String)]
     let size: Size
+    @Namespace private var pill
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isEnabled) private var enabled
 
     public init(_ label: String = "", selection: Binding<Value>, options: [(Value, String)], size: Size = .m) {
         _selection = selection
@@ -31,22 +34,33 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
                         .lineLimit(1)
                         .padding(.horizontal, size == .s ? NW.Space.m : 10)
                         .frame(height: size == .s ? 20 : NW.Height.controlS)
-                        .background {
-                            if selected {
-                                RoundedRectangle(cornerRadius: NW.Radius.xs).fill(nw.bgSelected)
-                                    .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
-                            }
-                        }
+                        .matchedGeometryEffect(id: option.value, in: pill)
                         .contentShape(Rectangle())
                         .nwFocusRing(radius: NW.Radius.xs)
                 }
                 .buttonStyle(.plain)
             }
         }
+        .background {
+            // One pill behind every segment takes the selected one's frame, so it slides under
+            // the labels between. Under Reduce Motion each selection gets its own pill, and they
+            // cross-fade in place.
+            if options.contains(where: { $0.value == selection }) {
+                RoundedRectangle(cornerRadius: NW.Radius.xs).fill(nw.bgSelected)
+                    .nwBorder(nw.lineStrong, radius: NW.Radius.xs)
+                    // Dimmed with the disabled segments, as a plain button dims its label.
+                    .opacity(enabled ? 1 : 0.5)
+                    .matchedGeometryEffect(id: selection, in: pill, isSource: false)
+                    .id(reduceMotion ? AnyHashable(selection) : AnyHashable(Self.pillID))
+            }
+        }
         .padding(NW.Space.xxs)
         .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.s))
         .nwBorder(nw.lineSubtle, radius: NW.Radius.s)
         .fixedSize()
+        // A click, ⇥ in the palette, or the value changing elsewhere: the pill moves however the
+        // value did, and what the value drives outside the picker is left alone.
+        .nwComponentAnimation(.content, value: selection)
         .accessibilityRepresentation {
             Picker(label, selection: $selection) {
                 ForEach(options, id: \.value) { Text($0.title).tag($0.value) }
@@ -54,6 +68,8 @@ public struct NWSegmentedPicker<Value: Hashable>: View {
             .pickerStyle(.segmented)
         }
     }
+
+    private static var pillID: String { "selection" }
 }
 
 /// The popup for longer option lists (Controls board): raised, 1px strong line, a chevron, 28pt.
@@ -123,6 +139,8 @@ public struct NWValueSlider: View {
     let step: Double
     let format: (Double) -> String
     let neutral: Double?
+    /// Bumped by each reset, the one change that animates: a drag or an arrow key tracks at once.
+    @State private var resets = 0
 
     public init(_ label: String = "", value: Binding<Double>, in range: ClosedRange<Double>, step: Double,
                 neutral: Double? = nil, format: @escaping (Double) -> String) {
@@ -141,18 +159,30 @@ public struct NWValueSlider: View {
                     Slider(value: $value, in: range, step: step) { Text(label) }
                         .accessibilityValue(format(value))
                         .accessibilityActions {
-                            if let neutral { Button("Reset to \(format(neutral))") { value = neutral } }
+                            if let neutral { Button("Reset to \(format(neutral))") { reset(to: neutral) } }
                         }
                 }
             Text(format(value))
                 .font(.nw(.mono))
                 .foregroundStyle(.nw.textSecondary)
+                .nwContentTransition(.numeric())
                 .frame(minWidth: NWSliderMetrics.valueMinWidth, alignment: .trailing)
                 .contentShape(Rectangle())
-                .onTapGesture(count: 2) { if let neutral { value = neutral } }
+                .onTapGesture(count: 2) { if let neutral { reset(to: neutral) } }
                 .help(neutral == nil ? "" : "Double-click to reset")
                 .accessibilityHidden(true)
         }
+        // Scoped to the slider: what the value drives elsewhere (text size, density, a sidebar's
+        // width) still changes at once.
+        .nwComponentAnimation(.content, value: resets)
+        // Resetting the text size moves everything around the slider at once; it moves with it.
+        .geometryGroup()
+    }
+
+    private func reset(to neutral: Double) {
+        guard value != neutral else { return }
+        value = neutral
+        resets += 1
     }
 }
 
@@ -224,6 +254,8 @@ public struct NWStepper: View {
     let label: String
     let range: ClosedRange<Int>
     let format: (Int) -> String
+    /// Which way the digits roll: down after −.
+    @State private var countsDown = false
 
     public init(_ label: String = "", value: Binding<Int>, in range: ClosedRange<Int>, format: @escaping (Int) -> String = { "\($0)" }) {
         _value = value
@@ -235,15 +267,23 @@ public struct NWStepper: View {
     public var body: some View {
         let nw = Color.nw
         HStack(spacing: 0) {
-            button("minus", label: "Less", enabled: value > range.lowerBound) { value -= 1 }
+            button("minus", label: "Less", enabled: value > range.lowerBound) {
+                countsDown = true
+                value -= 1
+            }
             Text(format(value))
                 .font(.nwMono(12))
                 .foregroundStyle(nw.textPrimary)
+                .nwContentTransition(.numeric(countsDown: countsDown))
+                .nwComponentAnimation(.content, value: value)
                 .frame(minWidth: 52)
                 .frame(height: 26)
                 .overlay(alignment: .leading) { NWHairline(.vertical) }
                 .overlay(alignment: .trailing) { NWHairline(.vertical) }
-            button("plus", label: "More", enabled: value < range.upperBound) { value += 1 }
+            button("plus", label: "More", enabled: value < range.upperBound) {
+                countsDown = false
+                value += 1
+            }
         }
         .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
         .nwBorder(nw.lineStrong, radius: NW.Radius.s)
