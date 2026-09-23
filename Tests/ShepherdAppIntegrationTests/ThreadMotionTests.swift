@@ -101,6 +101,38 @@ struct ThreadMotionTests {
         #expect(outputRecording.inBetween.isEmpty, "the output lines go at once")
     }
 
+    /// When a turn ends its reply stays exactly as it streamed (the saved copy is the same view,
+    /// part for part) while the footer rises in beneath it.
+    @Test func aTurnThatEndsKeepsItsReplyStillAndBringsItsFooterIn() async throws {
+        let asked = 1_700_000_000_000.0
+        let prompt = NativeThreadMessage(entryID: "u2", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Answer me")],
+                                         truncated: false, timestamp: asked)
+        let text = "Here is the answer, streamed in full before the turn ends."
+        let turn = Fixtures.history(2) + [prompt]
+        let thread = MotionThread(Fixtures.snapshot(turn, provisional: [Fixtures.streaming(text)], running: true))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        // From the bottom: the working row, then the reply's one line of prose.
+        let lines = thread.textRows()
+        try #require(lines.count >= 2, "rows of text: \(lines)")
+        let prose = Int(lines[lines.count - 2])
+        let saved = NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)],
+                                        truncated: false, timestamp: asked + 5000)
+        // The prose and, below it, the end of the footer's time ("4:13 PM · 5s"), clear of the
+        // working row's label and the footer's buttons.
+        let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 90, y: CGFloat(prose - 8), width: 210, height: 64)
+
+        let recording = await MotionProbe.record(thread.window, region: column) { thread.serve(Fixtures.snapshot(turn + [saved], revision: 2)) }
+
+        let proseRows = 0..<16
+        #expect(recording.frames.allSatisfy { frame in !proseRows.contains { frame.differs(from: recording.before, row: $0) } },
+                "the reply never redrew")
+        let rest = try #require(recording.settled.lastRow(differingFrom: recording.before, by: Self.visible), "the footer came")
+        let bottoms = recording.inBetween.compactMap { $0.lastRow(differingFrom: recording.before, by: Self.visible) }
+        #expect(!bottoms.isEmpty, "it comes in over frames")
+        #expect(bottoms.contains { $0 > rest }, "it rises from below its place: \(bottoms), resting at \(rest)")
+    }
+
     /// Switching back to an agent is a visibility flip: what it did while hidden (new turns, a
     /// question waiting in the composer) is simply there once its thread catches up, while the
     /// same changes on screen make their entrances.
@@ -132,6 +164,30 @@ struct ThreadMotionTests {
         #expect(!onScreen.inBetween.isEmpty)
     }
 
+    /// Detaching from the tail brings "Jump to latest" in over frames (growing from above the
+    /// composer, or under Reduce Motion fading), whatever the rows beside it do.
+    @Test(arguments: [false, true]) func theJumpPillComesInAsTheThreadDetaches(reduceMotion: Bool) async throws {
+        let size = CGSize(width: 900, height: 600)
+        let long = (0..<24).map { i in
+            i % 2 == 0 ? Fixtures.user("m\(i)", "Question \(i)")
+                : Fixtures.assistant("m\(i)", Array(repeating: "Answer \(i) with enough words to wrap a line or two in the column.",
+                                                    count: 20).joined(separator: "\n\n"))
+        }
+        let thread = MotionThread(Fixtures.snapshot(long), reduceMotion: reduceMotion, size: size)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        // Well above the tail first (not the reader: still following), so the jump lands clear of it.
+        thread.scroll(toDistance: 900)
+        try await thread.settle()
+        // Right of the column's text, through the pill's end, above the composer.
+        let pill = CGRect(x: size.width / 2 + 55, y: 440, width: 1, height: 64)
+
+        let recording = await MotionProbe.record(thread.window, region: pill) { thread.commands.send(.previousTurn, to: "motion") }
+
+        #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the pill came")
+        #expect(!recording.inBetween.isEmpty, "it came in over frames")
+    }
+
     // MARK: Composer
 
     /// ⇧⌘M's picker comes in over frames (growing from the chip's corner, or under Reduce Motion
@@ -150,6 +206,23 @@ struct ThreadMotionTests {
 
         let closing = await MotionProbe.record(thread.window, region: column) { thread.commands.send(.modelPicker, to: "motion") }
         #expect(closing.settled.matches(opening.before), "the picker closed")
+        #expect(!closing.inBetween.isEmpty, "it went over frames")
+    }
+
+    /// Starting a draft with "/" grows the command menu in over frames, and clearing it takes
+    /// the menu away the same way: the typing path, beside ⇧⌘M's.
+    @Test func theSlashMenuComesAndGoesWithTheDraftsSlash() async throws {
+        let thread = MotionThread(Fixtures.snapshot([]))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 60, y: 300, width: 1, height: 380)
+
+        let opening = await MotionProbe.record(thread.window, region: column) { thread.store.draft = "/" }
+        #expect(opening.settled.firstRow(differingFrom: opening.before) != nil, "the menu opened")
+        #expect(!opening.inBetween.isEmpty, "it came in over frames")
+
+        let closing = await MotionProbe.record(thread.window, region: column) { thread.store.draft = "" }
+        #expect(closing.settled.matches(opening.before), "the menu closed")
         #expect(!closing.inBetween.isEmpty, "it went over frames")
     }
 
@@ -384,9 +457,9 @@ private final class MotionThread {
     private var snapshot: NativeThreadSnapshot
     let window: OffscreenWindow
 
-    init(_ snapshot: NativeThreadSnapshot, reduceMotion: Bool = false) {
+    init(_ snapshot: NativeThreadSnapshot, reduceMotion: Bool = false, size: CGSize = ThreadMotionTests.size) {
         self.snapshot = snapshot
-        window = OffscreenWindow(size: ThreadMotionTests.size, dark: false)
+        window = OffscreenWindow(size: size, dark: false)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
             if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
@@ -446,6 +519,21 @@ private final class MotionThread {
     func close() {
         store.stop()
         window.close()
+    }
+
+    /// Scrolls the clip view so the visible bottom sits `distance` above the end, as a program
+    /// would (not the reader: following is unchanged).
+    func scroll(toDistance distance: CGFloat) {
+        func find(_ view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView { return scroll }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        guard let scrollView = find(window.host), let document = scrollView.documentView else { return }
+        let clip = scrollView.contentView
+        let y = document.bounds.height - clip.bounds.height + scrollView.contentInsets.bottom - distance
+        clip.scroll(to: clip.constrainBoundsRect(NSRect(origin: NSPoint(x: 0, y: y), size: clip.bounds.size)).origin)
+        scrollView.reflectScrolledClipView(clip)
+        window.layout()
     }
 
     /// A band clear of the spinners at the start of running lines, which never hold still.
@@ -524,6 +612,11 @@ extension MotionRecording.Frame {
     /// The last row where this frame's lightness is more than `threshold` from `other`'s.
     fileprivate func lastRow(differingFrom other: MotionRecording.Frame, by threshold: Double) -> Int? {
         (0..<bitmap.pixelsHigh).reversed().first { differs(from: other, row: $0, by: threshold) }
+    }
+
+    /// Whether any pixel of row `y` differs from `other` at all.
+    fileprivate func differs(from other: MotionRecording.Frame, row y: Int) -> Bool {
+        (0..<bitmap.pixelsWide).contains { x in lightness(x: x, y: y) != other.lightness(x: x, y: y) }
     }
 
     private func differs(from other: MotionRecording.Frame, row y: Int, by threshold: Double) -> Bool {
