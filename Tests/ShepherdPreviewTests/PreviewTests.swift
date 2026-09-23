@@ -62,8 +62,19 @@ struct PreviewTests {
         defer { fixture.store.stop() }
         let entries = [("anthropic/claude-opus-4-5", "200K"), ("anthropic/claude-sonnet-4-5", "1M"), ("anthropic/claude-haiku-4-5", "200K"),
                        ("openai/gpt-5", "400K"), ("google/gemini-2.5-pro", "1M")].map { PiModelCatalog.Entry(id: $0.0, context: $0.1) }
-        try await Preview.render("composer-model-picker", size: CGSize(width: 1000, height: 820), ready: { fixture.store.ready },
-                                 afterReady: { fixture.commands.send(.modelPicker, to: "preview") }) {
+        final class Opened { var at: Date? }
+        let opened = Opened()
+        try await Preview.render("composer-model-picker", size: CGSize(width: 1000, height: 820), ready: {
+            guard fixture.store.ready else { return false }
+            // The picker grows from its chip: open it, then capture it at rest.
+            if opened.at == nil {
+                opened.at = Date()
+                fixture.commands.send(.modelPicker, to: "preview")
+            }
+            return Date().timeIntervalSince(opened.at ?? Date()) > ThreadPreviewTests.motionAtRest
+        }) {
+            // Each appearance renders in a new window: open the picker in each.
+            let _ = opened.at = nil
             fixture.thread(listModels: { entries })
         }
     }
