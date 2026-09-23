@@ -48,6 +48,9 @@ struct ThreadView: View {
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
+    /// The thread has loaded since it came on screen. Until then (opening it, or the first
+    /// pull after switching back to the agent) whatever changes lands at once.
+    @State private var caughtUp = false
 
     private var running: Bool { store.loadError == nil && store.settledRunning }
 
@@ -81,7 +84,8 @@ struct ThreadView: View {
                         }
                         if rows.isEmpty { emptyState }
                         ForEach(rows) { row in
-                            turn(row, running: running, working: row.live ? working : nil, arriving: arrived.contains(row.id))
+                            turn(row, running: running, working: row.live ? working : nil, arriving: arrived.contains(row.id),
+                                 settled: caughtUp)
                                 .id(row.id)
                         }
                         if let working, liveRow == nil { WorkingRow(label: working).nwArrival(settled) }
@@ -146,6 +150,12 @@ struct ThreadView: View {
                      composing: $composing, listModels: listModels, modelPickerRequest: modelPickerRequest)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         }
+        // Switching back to an agent is a visibility flip: the pull that catches its thread up
+        // runs none of the thread's or the composer's view-attached motion.
+        .transaction { if !caughtUp { $0.disablesAnimations = true } }
+        .task(id: [active, store.ready]) {
+            if !active { caughtUp = false } else if store.ready { caughtUp = true }
+        }
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
         .background(Color.nw.bgWindow)
@@ -172,7 +182,7 @@ struct ThreadView: View {
     }
 
     /// A sent message rises into the thread; a reply's parts make their own entrances.
-    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?, arriving: Bool) -> some View {
+    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?, arriving: Bool, settled: Bool) -> some View {
         if row.isUser {
             UserTurn(messages: row.turn.messages, caption: row.turn.messages.first?.timestamp.map { nativeClockText($0) })
                 .equatable()
@@ -180,7 +190,8 @@ struct ThreadView: View {
         } else if let presentation = row.presentation {
             AgentTurn(presentation: presentation, live: row.live, subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
                       subagentActions: subagentActions, startedAt: row.startedAt,
-                      retry: retryAction(row, running: running), review: review, working: working, arriving: arriving)
+                      retry: retryAction(row, running: running), review: review, working: working, arriving: arriving,
+                      settled: settled)
                 .equatable()
         }
     }

@@ -167,34 +167,35 @@ struct ThreadMotionTests {
         #expect(bottoms.contains { $0 > rest }, "it rises from below its place: \(bottoms), resting at \(rest)")
     }
 
-    /// Switching back to an agent is a visibility flip: what it did while hidden (new turns, a
-    /// question waiting in the composer) is simply there once its thread catches up, while the
-    /// same changes on screen make their entrances.
+    /// Switching back to an agent is a visibility flip: what it did while hidden (the reply it
+    /// was streaming finished, new turns, a question waiting in the composer, Retry back on
+    /// old turns) is simply there once its thread catches up, while the same changes on screen
+    /// make their entrances.
     @Test func anAgentSwitchedBackToCatchesUpAtOnce() async throws {
         let dialog = NativeThreadDialog(id: "d1", kind: .confirm, title: "Deploy to production?", message: "This pushes main to the fleet.")
-        let later = Fixtures.snapshot(Fixtures.history(2) + [Fixtures.user("u2", "While you were away"),
-                                                             Fixtures.assistant("a2", "Done while hidden, with a reply long enough to read.")],
+        let asked = Fixtures.history(2) + [Fixtures.user("u2", "Build it")]
+        let later = Fixtures.snapshot(asked + [Fixtures.assistant("a2", "Building now, and done."), Fixtures.user("u3", "And then?"),
+                                               Fixtures.assistant("a3", "Done while hidden, with a reply long enough to read.")],
                                       dialogs: [dialog], revision: 2)
-        let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
+        let thread = MotionThread(Fixtures.snapshot(asked, provisional: [Fixtures.streaming("Building now")], running: true))
         defer { thread.close() }
         try await thread.waitUntilReady()
         thread.visibility.active = false
         try await eventuallyOnMain("the hidden thread to stop polling") { !thread.store.ready }
+        // Hidden, it stopped running: let Stop finish turning back into Send before looking.
+        try await thread.settle(whole: true)
         thread.stage(later)
 
-        // Right of the old turns' footer buttons: Retry comes back as the store gets ready, a
-        // control enabling with its own fade.
-        let content = CGRect(x: 100, y: 0, width: Self.size.width - 100, height: Self.size.height)
-        let recording = await MotionProbe.record(thread.window, region: content) { thread.visibility.active = true }
+        let recording = await MotionProbe.record(thread.window) { thread.visibility.active = true }
 
         #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the thread caught up")
         #expect(recording.inBetween.isEmpty, "\(recording.inBetween.count) frames between the stale thread and the caught-up one")
 
-        // The control: on screen, the same change animates.
+        // The control: on screen, the same kind of change animates.
         let shown = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
         defer { shown.close() }
         try await shown.waitUntilReady()
-        let onScreen = await MotionProbe.record(shown.window, region: content) { shown.serve(later) }
+        let onScreen = await MotionProbe.record(shown.window) { shown.serve(later) }
         #expect(!onScreen.inBetween.isEmpty)
     }
 
@@ -544,11 +545,14 @@ private final class MotionThread {
         try await settle()
     }
 
-    /// Waits until the window stops changing (loading, first layout, arrivals).
-    func settle() async throws {
-        var last = snapshotHash(), still = 0
+    /// Waits until the window stops changing (loading, first layout, arrivals). By default it
+    /// watches a band clear of running spinners; `whole` watches everything (a thread with none).
+    func settle(whole: Bool = false) async throws {
+        let band = whole ? CGRect(origin: .zero, size: window.host.bounds.size)
+            : CGRect(x: 60, y: 0, width: 240, height: ThreadMotionTests.size.height)
+        var last = snapshotHash(band), still = 0
         try await eventuallyOnMain("the thread to come to rest", timeout: .seconds(10), poll: .milliseconds(20)) {
-            let now = snapshotHash()
+            let now = snapshotHash(band)
             still = now == last ? still + 1 : 0
             last = now
             return still >= 6
@@ -594,9 +598,8 @@ private final class MotionThread {
         window.layout()
     }
 
-    /// A band clear of the spinners at the start of running lines, which never hold still.
-    private func snapshotHash() -> Int {
-        let frame = capture(CGRect(x: 60, y: 0, width: 240, height: ThreadMotionTests.size.height))
+    private func snapshotHash(_ band: CGRect) -> Int {
+        let frame = capture(band)
         guard let data = frame.bitmap.bitmapData else { return 0 }
         return Data(bytes: data, count: frame.bitmap.bytesPerPlane).hashValue
     }

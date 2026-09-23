@@ -52,12 +52,15 @@ struct AgentTurn: View, Equatable {
     /// The turn just arrived in a thread on screen: its first parts make their entrance too.
     /// Read only when the turn is created; not part of equality.
     var arriving = false
+    /// The thread is on screen and caught up: parts that stream in make their entrance. False
+    /// while it loads, so what a catch-up brings is simply there. Not part of equality.
+    var settled = true
     @State private var openThinking: Set<String> = []
     @State private var shown = TurnShown()
 
     init(presentation: NativeTurnPresentation, live: Bool, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
-         working: String? = nil, arriving: Bool = false) {
+         working: String? = nil, arriving: Bool = false, settled: Bool = true) {
         self.presentation = presentation
         self.live = live
         self.subagents = subagents
@@ -67,6 +70,7 @@ struct AgentTurn: View, Equatable {
         self.review = review
         self.working = working
         self.arriving = arriving
+        self.settled = settled
     }
 
     /// A transcript with no store behind it (the subagent inspector): the presentation is
@@ -114,7 +118,7 @@ struct AgentTurn: View, Equatable {
     /// errors) fade in, and the changes card and footer that end it rise into place. Text inside
     /// a part, and the parts a turn opens or scrolls back in with, appear at once.
     var body: some View {
-        let entering = shown.appeared || arriving
+        let entering = (shown.appeared || arriving) && settled
         VStack(alignment: .leading, spacing: AppLayout.turnItemSpacing) {
             ForEach(parts) { part in
                 switch part {
@@ -136,7 +140,7 @@ struct AgentTurn: View, Equatable {
                     .nwArrival(entering)
             }
             // The tail row passes from the thread into its reply unchanged: it never re-enters.
-            if let working { WorkingRow(label: working).nwArrival(shown.appeared) }
+            if let working { WorkingRow(label: working).nwArrival(shown.appeared && settled) }
             if !live, !presentation.items.isEmpty {
                 Group {
                     if let changes = presentation.changes { changesCard(changes) }
