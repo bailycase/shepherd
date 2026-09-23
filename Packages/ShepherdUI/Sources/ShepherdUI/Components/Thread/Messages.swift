@@ -284,9 +284,9 @@ public struct NWThinking: View {
                 ProgressView().progressViewStyle(.nwSpinner(size: 12, color: nw.textSecondary))
                 Text(title).font(.nwSans(12)).italic().foregroundStyle(nw.textSecondary)
                 if let since {
-                    NWElapsedText(since: since, font: .nwMono(10.5), color: nw.textTertiary)
+                    NWElapsedText(since: since, style: .long).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
                 } else if let seconds {
-                    Text(NWElapsed.text(seconds)).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
+                    Text(NWDuration.text(seconds, .long)).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
                 }
             }
             .frame(minHeight: NWThreadMetrics.activityHeight)

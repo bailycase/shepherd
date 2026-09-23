@@ -311,7 +311,7 @@ struct AgentRow: View {
 enum SidebarTime {
     /// "12s", "4m", "2h", "3d" — the sidebar's coarse elapsed time.
     static func elapsed(since start: Date, now: Date) -> String {
-        NWDuration.short(now.timeIntervalSince(start))
+        NWDuration.text(now.timeIntervalSince(start))
     }
 }
 
