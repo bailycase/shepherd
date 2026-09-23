@@ -554,6 +554,14 @@ final class WorktreeFinalizer {
         states = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, .pending) })
     }
 
+    /// A pipeline already at `steps` (unlisted steps pending), for previews; it never runs.
+    init(staged steps: [Step: StepState], prURL: String? = nil) {
+        states = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, steps[$0] ?? .pending) })
+        self.prURL = prURL
+        let failed = steps.values.contains { if case .failed = $0 { true } else { false } }
+        phase = failed ? .failed : states.values.contains { $0 == .pending || $0 == .running } ? .running : .succeeded
+    }
+
     func run(_ ctx: Context) async {
         guard phase == .idle else { return }
         phase = .running

@@ -31,18 +31,42 @@ struct FinalizeWorktreeSheet: View {
     /// Why Finalize could not start (another operation holds the checkout).
     @State private var startError: String?
     @FocusState private var focusedField: Field?
+    /// Set only by previews: the sheet opens in that state and runs no probes.
+    private let staged: Staged?
 
-    private enum Phase {
+    enum Phase {
         case checking, setup, input, running, done, failed
+    }
+
+    /// A phase with its form and pipeline already filled, so a preview renders the sheet there
+    /// without git, gh or the network.
+    struct Staged {
+        var phase: Phase
+        var base = "main"
+        var title = ""
+        var body = ""
+        var includedCommits: Int?
+        var steps: [WorktreeFinalizer.Step: WorktreeFinalizer.StepState] = [:]
+        var prURL: String?
     }
 
     private enum Field { case base, title, description }
 
-    init(vm: ShepherdViewModel, agent: Agent, space: Space) {
+    init(vm: ShepherdViewModel, agent: Agent, space: Space, staged: Staged? = nil) {
         self.vm = vm
         self.agent = agent
         self.space = space
+        self.staged = staged
         _setup = State(initialValue: WorktreeSetupModel(repoPath: space.path))
+        if let staged {
+            _phase = State(initialValue: staged.phase)
+            _base = State(initialValue: staged.base)
+            _title = State(initialValue: staged.title)
+            _prBody = State(initialValue: staged.body)
+            _descriptionPrepared = State(initialValue: true)
+            _includedCommits = State(initialValue: staged.includedCommits)
+            _finalizer = State(initialValue: WorktreeFinalizer(staged: staged.steps, prURL: staged.prURL))
+        }
     }
 
     private var branch: String { agent.worktreeBranch ?? "" }
@@ -70,7 +94,10 @@ struct FinalizeWorktreeSheet: View {
         } actions: {
             actions
         }
-        .task { await initialChecks() }
+        .task {
+            guard staged == nil else { return }
+            await initialChecks()
+        }
     }
 
     private var headerTitle: String {
@@ -291,6 +318,7 @@ struct FinalizeWorktreeSheet: View {
                 }
             }
             .task(id: base) {
+                guard staged == nil else { return }
                 // Debounced: each count runs git in a login shell.
                 try? await Task.sleep(for: .milliseconds(250))
                 guard !Task.isCancelled else { return }
