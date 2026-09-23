@@ -504,29 +504,38 @@ A subagent is a turn inside a turn. Its spawn call renders as a card where the c
 wait or status dumps never appear. Behavior is specified in
 [native-subagents.md](docs/native-subagents.md).
 
-- **SubagentCard:** a 40pt header with the branch glyph, name (`labelStrong`), "mode · model ·
-  thinking" in `micro`/tertiary, and a trailing state (Running + elapsed, Paused, Needs you, Done
-  + duration, Failed). The rest depends on the state:
-  - **Running:** step n/m and the 4pt `ProgressBar` when steps are reported, "turns · tools ·
-    tokens", and **one** live activity line in tool-row form. The card never grows while it runs.
-  - **Needs you:** the header is on `warningBg`. The question is shown as prose, its choices as
-    buttons (the recommended one primary), and Reply… for free text.
-  - **Done:** summary, stats, and Open transcript. It folds to its header while siblings still
-    run.
-  - **Failed:** one row on `dangerBg`, with Retry and Transcript.
+The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPresentation` maps a
+`ChildRun` onto their values, and state always comes from `AgentState`.
 
-  Its actions are Inspect (⌘I), Steer…, Pause/Continue, and Stop (`dangerText`, trailing). The
-  inspected card gets the accent border and ring.
-- **RunsStrip:** more than three sibling runs fold into one row: count, one 8pt cell per run,
-  "7 done · 3 running · 1 needs you · 1 failed", and totals. Needs-you runs keep their own card.
-- **RunLedger:** once every run in the group has finished, the cards are replaced in place by a
-  permanent ledger.
-  - A 36pt `bgMuted` header: glyph, "n subagents", state cells, "all done · wall · tokens", and
-    the combined DiffStat and files.
-  - One 44pt row per run in spawn order: glyph, name in a 72pt column, a one-line summary,
-    "files · tools · duration", and a chevron.
-  - Rows open the read-only inspector. The open row is `accentBg` with a 3pt accent rule on the
-    pane side.
+- **`NWSubagentCard`:** a `bgRaised` card (padding 10×12, radius 8, 1px `lineSubtle`) that
+  opens the run in the inspector when clicked. Its header is the 13pt branch glyph, the name
+  (12.5/600), a role tag when it differs from the name, a mono model tag, and the state pill.
+  Under it, one mono 11 `textSecondary` line; the rest depends on the state:
+  - **Running:** the line is the last call ("edit ThreadView.swift"), and a 4pt bar with its
+    percent shows the context window used. The card never grows while it runs.
+  - **Paused / Queued:** an outlined pill ("Paused" or "Queued") and why it waits.
+  - **Needs you:** a `lantern` border; "waiting on your answer · 2m" (the wait counts from the
+    child's `shepherd_parent_message` call, or shows no figure); the question on `lanternTint`
+    with its answers as buttons (the first primary) and Reply… for free text.
+  - **Done:** "what it did · n tools · duration".
+  - **Failed:** the reason, then Open replay and Re-run.
+
+  Pause/Continue, Stop, and Re-run live in the card's context menu and accessibility actions;
+  the inspector shows them. The inspected card gets a `running` border and a 3pt `runningTint`
+  ring. Only elapsed text re-renders on a clock (`NWElapsedText`, ticking when its text changes,
+  anchored to when it counts from, static once finished).
+- **`NWRunsStrip`:** more than three live sibling runs fold into one 32pt row on `bgSunken`:
+  glyph, "n subagents", one 8pt step per run, "7 done · 3 running · 1 needs you · 1 failed",
+  tokens and the group's elapsed time, and a disclosure for every card. Needs-you runs keep their
+  own card.
+- **`NWRunLedger`:** once every run in the group has finished, the cards are replaced in place
+  by a permanent ledger.
+  - A 32pt `bgSunken` header: glyph, "n subagents", one 14pt step per run, "all done · 45m",
+    and the combined DiffStat.
+  - One 36pt row per run in spawn order: state dot, name in a 70pt column, a one-line summary,
+    "files · duration", and a chevron.
+  - Rows open the read-only inspector. The open row is `runningTint` with a 2pt `running` rule
+    on the pane side.
 
 ### Right pane: subagent inspector and review
 
@@ -542,18 +551,18 @@ and the review. When both exist, the inspector wins.
 
 **Subagent inspector:**
 
-- A header with the name, "k of n", a state word, and "mode · model · turns · tools · tokens".
-  Live runs also get Pause/Continue and Stop, plus a ⋯ menu.
-- A Goal strip.
-- The run's own transcript, drawn with the thread's components one step smaller (34pt tool rows,
-  14pt prose). It follows live, with "n earlier turns · Show all" above.
-- A Steer composer whose placeholder and "to: worker · not the parent" line name the recipient.
-- **A finished run is read-only:**
-  - ‹ › step through siblings.
-  - A Result block shows the summary and touched files.
-  - Messages from the parent are captioned "from parent".
-  - The bottom bar has Re-run · Fork as new agent · Copy transcript · "kept with the thread"
-    instead of the composer.
+- `NWInspectorHeader`, 52pt to line up with the thread's: glyph, "name · k of n", and a mono
+  line ("model · thinking · turns · tokens" live; "model · turns · done 11:02" finished, the
+  accent in the state's color). Live runs get Pause/Continue and Stop; ‹ › step through
+  siblings; then ⋯ and close.
+- `NWRunBrief` on `bgSunken`: GOAL (with "step n / m · 62%" while live) and, once finished,
+  RESULT in the state's color with the touched files (up to five) beneath.
+- The run's own transcript, drawn with the thread's components one step smaller. It follows
+  live, with "n earlier turns · Show all" and "Following live" beneath.
+- A Steer composer (the composer card: radius 8, `lineStrong`) whose placeholder and "to:
+  worker · not the parent" line name the recipient.
+- **A finished run is read-only:** messages from the parent are captioned "from parent", and
+  `NWRunActions` (Re-run · Fork · Copy transcript) replaces the composer.
 
 **Review** (`ReviewPane`, `DiffReviewView.swift`):
 
