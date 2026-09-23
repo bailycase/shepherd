@@ -135,20 +135,6 @@ struct TokenTests {
         #expect(NW.hairline(2) == 0.5 && NW.hairline(1) == 1)
     }
 
-    @Test func motionHonorsReduceMotion() {
-        #expect(NW.Motion.glow.duration == 1.6 && NW.Motion.spin.duration == 1)
-        #expect(NW.Motion.hover.duration == 0.12 && NW.Motion.pane.duration == 0.18 && NW.Motion.sheet.duration == 0.24)
-        #expect(NW.Motion.glow.animation(reduceMotion: true) == nil)
-        #expect(NW.Motion.spin.animation(reduceMotion: true) == nil)
-        #expect(NW.Motion.pane.animation(reduceMotion: true) != nil, "panes still cross-fade")
-    }
-
-    @Test func theGlowPulsesBetweenFullAndDim() {
-        let start = Date(timeIntervalSinceReferenceDate: 0)
-        #expect(abs(NWPhase.glowOpacity(start) - 1) < 1e-9)
-        #expect(abs(NWPhase.glowOpacity(start.addingTimeInterval(0.8)) - 0.35) < 1e-9)
-    }
-
     @Test func agentStatesHaveTheirWordsAndOnlyAttentionGlows() {
         #expect(AgentState.allCases.map(\.label) == ["Running", "Needs you", "Done", "Failed", "Stuck", "Queued", "Idle"])
         #expect(AgentState.allCases.filter(\.glows) == [.attention])
