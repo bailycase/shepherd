@@ -644,8 +644,9 @@ a `runningTint` highlight. ↑↓ move, ⏎ chooses, Esc closes and returns focu
 
 - **Slash menu** (`NWSlashMenu`, 448pt): opens when the draft is "/…" (or from the chip).
   "Commands · n of m"; rows show the command in mono 12 with the typed prefix in semibold
-  `textPrimary` (a 150pt column), its description, and a tag for prompt templates. At most 8 rows
-  show. ⇥ completes with a space. The list is pi's command registry, never hard-coded.
+  `textPrimary` (a 150pt column), its description, and its source as a tag for prompt templates
+  and skills (none for extension commands). At most 8 rows show. ⇥ completes with a space. The
+  list is pi's command registry, never hard-coded.
 - **Model picker** (`ModelPicker` on `NWModelPicker`, 260pt, at most 360pt tall): from the
   model chip or ⇧⌘M. A search field, then Recent (up to four, from any thread), then one section
   per provider. Rows show the model in mono 12 and a running check on the current one, or its
