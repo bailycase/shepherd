@@ -5,9 +5,9 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The inspector for one subagent run (spec §10): header, Goal strip, the run's own transcript
-/// one step smaller than the thread, following live, and a Steer composer. A finished run is
-/// read-only: a Result block, "from parent" captions, and Re-run / Fork / Copy instead.
+/// The inspector for one subagent run (Agents board): header, the run's brief, its own
+/// transcript one step smaller than the thread, following live, and a Steer composer. A
+/// finished run is read-only: its result, "from parent" captions, and Re-run · Fork · Copy.
 struct SubagentInspector: View {
     var store: NativeThreadStore
     let runID: String
@@ -19,7 +19,8 @@ struct SubagentInspector: View {
     var fork: ((ChildRun) async -> String?)? = nil
     /// Opens a touched file in the review pane.
     var review: ((String) -> Void)? = nil
-    @StateObject private var transcript = SubagentTranscriptModel()
+    @State private var transcript = SubagentTranscriptModel()
+    @State private var siblings: [ChildRun] = []
     @State private var draft = ""
     @State private var forkError: String?
     @State private var forking = false
@@ -27,76 +28,88 @@ struct SubagentInspector: View {
     @FocusState private var composing: Bool
 
     private var run: ChildRun? { store.subagents.first { $0.runID == runID } }
-    private var role: String { run?.role ?? run?.label ?? "subagent" }
     private var canAct: Bool { active && store.supports("subagents") }
-    private var terminal: Bool { run?.isTerminal == true }
-    private var siblings: [ChildRun] { nativeSubagentSiblings(of: runID, in: store.subagents, turns: nativeTurns(store.displayedMessages)) }
 
     var body: some View {
+        let run = run
         VStack(spacing: 0) {
-            header
-            goal
-            if terminal, let run { result(run) }
-            NWHairline()
-            transcriptView
-            footerLine
-            if terminal { terminalBar } else { composer }
+            header(run)
+            brief(run)
+            transcriptView(run)
+            footerLine(run)
+            if let run, run.isTerminal { finishedBar(run) } else { composer(run) }
         }
         .background(Color.nw.bgWindow)
-        .task(id: "\(runID):\(active):\(run?.startedAt ?? 0)") {
+        .task(id: FollowKey(runID: runID, active: active, startedAt: run?.startedAt)) {
             guard active else { return }
-            await transcript.follow(store: store, runID: runID) { run?.isTerminal != true }
+            let store = store, runID = runID
+            await transcript.follow(store: store, runID: runID) { store.subagents.first { $0.runID == runID }?.isTerminal != true }
+        }
+        .onChange(of: SiblingKey(store: store), initial: true) {
+            siblings = nativeSubagentSiblings(of: runID, in: store.subagents, turns: nativeTurns(store.displayedMessages))
         }
         .onChange(of: runID) { _, _ in
             draft = ""
             forkError = nil
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Inspector for \(role)")
+        .accessibilityLabel("Inspector for \(Self.role(run))")
+    }
+
+    private static func role(_ run: ChildRun?) -> String {
+        run.map { SubagentPresentation.names($0).name } ?? "subagent"
+    }
+
+    /// Restarts the transcript follow when the run, the pane's visibility, or a re-run changes.
+    private struct FollowKey: Hashable {
+        var runID: String
+        var active: Bool
+        var startedAt: Double?
+    }
+
+    /// Siblings change only when the runs or the parent's history do; the rest of each poll
+    /// leaves them alone.
+    private struct SiblingKey: Equatable {
+        var runs: [String]
+        var messages: Int
+        var provisional: Int
+
+        @MainActor init(store: NativeThreadStore) {
+            runs = store.subagents.map(\.id)
+            messages = store.messages.count
+            provisional = store.snapshot?.provisional.count ?? 0
+        }
     }
 
     // MARK: Header
 
-    private var header: some View {
-        let state = run.map(nativeSubagentState) ?? .done
-        let siblings = siblings
+    private func header(_ run: ChildRun?) -> some View {
         let position = siblings.firstIndex { $0.runID == runID }
-        return HStack(spacing: 10) {
-            NWBranchGlyph(AgentState(state))
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(role).font(Font.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-                    if let position, siblings.count > 1 {
-                        Text("\(position + 1) of \(siblings.count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
-                    }
-                    if let run, run.isTerminal {
-                        Text(run.state == "complete" ? "done" : run.state).font(Font.nw(.micro))
-                            .foregroundStyle(state == .done ? Color.nw.done : Color.nw.failed)
-                    }
-                }
-                Text(meta).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.tail).help(meta)
-            }
-            Spacer(minLength: 8)
-            if let select, let position, siblings.count > 1 {
-                HStack(spacing: 2) {
-                    Button { select(siblings[position - 1]) } label: { Image(systemName: "chevron.left") }
-                        .buttonStyle(NWIconButtonStyle(bordered: false)).disabled(position == 0)
-                        .accessibilityLabel("Previous subagent")
-                    Button { select(siblings[position + 1]) } label: { Image(systemName: "chevron.right") }
-                        .buttonStyle(NWIconButtonStyle(bordered: false)).disabled(position == siblings.count - 1)
-                        .accessibilityLabel("Next subagent")
-                }
-            }
+        let (meta, accent) = run.map { SubagentPresentation.inspectorMeta($0) } ?? ("no longer listed", nil)
+        let role = Self.role(run)
+        return NWInspectorHeader(role, position: position.flatMap { siblings.count > 1 ? "\($0 + 1) of \(siblings.count)" : nil },
+                                 state: run.map(SubagentPresentation.state) ?? .idle, meta: meta, accent: accent,
+                                 minHeight: AppLayout.headerHeight) {
             if let run, !run.isTerminal {
                 Button(run.paused == true ? "Continue" : "Pause") {
                     Task { await store.subagentCommand(runID: runID, action: run.paused == true ? .continue : .pause) }
                 }
-                .buttonStyle(NWButtonStyle(.secondary, size: .s))
+                .buttonStyle(.nw(.secondary, size: .s))
                 .disabled(!canAct)
+                .help("Pause before the next model request; current tools finish normally")
                 Button("Stop") { Task { await store.subagentCommand(runID: runID, action: .cancel) } }
-                    .buttonStyle(NWButtonStyle(.danger, size: .s))
+                    .buttonStyle(.nw(.danger, size: .s))
                     .disabled(!canAct)
                     .accessibilityLabel("Stop \(role)")
+                    .padding(.trailing, NW.Space.xs)
+            }
+            if let select, let position, siblings.count > 1 {
+                Button { select(siblings[position - 1]) } label: { Image(systemName: "chevron.left") }
+                    .buttonStyle(.nwIcon).disabled(position == 0)
+                    .accessibilityLabel("Previous subagent")
+                Button { select(siblings[position + 1]) } label: { Image(systemName: "chevron.right") }
+                    .buttonStyle(.nwIcon).disabled(position == siblings.count - 1)
+                    .accessibilityLabel("Next subagent")
             }
             Menu {
                 if let run, run.isTerminal {
@@ -108,124 +121,87 @@ struct SubagentInspector: View {
                     Button("Refresh Transcript") { Task { await transcript.reload(store: store, runID: runID) } }
                 }
             } label: {
-                Image(systemName: "ellipsis").font(.system(size: 12, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
-                    .frame(width: NW.Height.controlM, height: NW.Height.controlM)
-                    .background(Color.nw.bgWindow, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                    .overlay { RoundedRectangle(cornerRadius: NW.Radius.s).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
+                Image(systemName: "ellipsis")
             }
-            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+            .menuStyle(.button).buttonStyle(.nwIcon).menuIndicator(.hidden).fixedSize()
             .accessibilityLabel("Inspector options")
             Button(action: close) { Image(systemName: "xmark") }
-                .buttonStyle(NWIconButtonStyle(bordered: false))
+                .buttonStyle(.nwIcon)
                 .help("Close the inspector")
                 .accessibilityLabel("Close inspector")
         }
-        .padding(.horizontal, 14)
-        .frame(height: AppLayout.headerHeight)
-        .overlay(alignment: .bottom) { NWHairline() }
     }
 
-    /// "background · claude-fable-5-1 · thinking high · 78 turns · 82 tools · 922k tok"
-    private var meta: String {
-        guard let run else { return "no longer listed" }
-        var parts: [String] = []
-        if let context = run.context { parts.append(context) }
-        if let model = run.model { parts.append(nativeModelShortName(model)) }
-        if let thinking = run.thinking, thinking != "off", !run.isTerminal { parts.append("thinking \(thinking)") }
-        let counters = nativeSubagentCounters(run)
-        if !counters.isEmpty { parts.append(counters) }
-        return parts.joined(separator: " · ")
-    }
+    // MARK: Brief
 
-    // MARK: Goal and result
-
-    private var goal: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Goal").nwSectionLabel()
-                Spacer()
-                if let run {
-                    Text(stepText(run)).font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
-                }
-            }
-            Text(run?.task ?? run?.label ?? "").font(Font.nw(.body)).lineSpacing(NWTextStyle.body.lineSpacing)
-                .foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
-                .lineLimit(6).frame(maxWidth: .infinity, alignment: .leading)
+    private func brief(_ run: ChildRun?) -> some View {
+        let state = run.map(SubagentPresentation.state) ?? .idle
+        let result: String? = run.flatMap { run in
+            guard run.isTerminal else { return nil }
+            let text = state == .failed ? (run.exitReason ?? run.summary) : (run.summary ?? run.output)
+            return text?.isEmpty == false ? text : nil
         }
-        .padding(14)
-        .frame(maxWidth: .infinity)
-        .background(Color.nw.bgSunken)
-        .accessibilityElement(children: .combine)
+        return NWRunBrief(goal: run?.task ?? run?.label ?? "", note: run.flatMap(SubagentPresentation.goalNote),
+                          result: result, resultState: state) {
+            if let run, let files = run.files, !files.isEmpty { touchedFiles(files, run: run) }
+        }
     }
 
-    private func stepText(_ run: ChildRun) -> String {
-        var parts: [String] = []
-        if let step = run.step { parts.append("step \(step.index) / \(step.total)") }
-        if let percent = run.contextPercent { parts.append("\(Int(percent.rounded()))%") }
-        return parts.joined(separator: " · ")
-    }
-
-    private func result(_ run: ChildRun) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Result").nwSectionLabel().foregroundStyle(run.state == "complete" ? Color.nw.done : Color.nw.failed)
-            if let summary = run.summary ?? run.output, !summary.isEmpty {
-                Text(Prose.inline(summary)).font(Font.nw(.body)).lineSpacing(NWTextStyle.body.lineSpacing)
-                    .foregroundStyle(Color.nw.textPrimary).textSelection(.enabled).lineLimit(8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if let reason = run.exitReason {
-                Text(reason).font(Font.nw(.body)).foregroundStyle(Color.nw.failed).frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let files = run.files, !files.isEmpty {
-                FlowLayout(spacing: 12) {
-                    ForEach(files, id: \.path) { file in
-                        Button {
-                            if let review { review(file.path) } else {
-                                let url = URL(fileURLWithPath: file.path, relativeTo: run.cwd.map { URL(fileURLWithPath: $0, isDirectory: true) }).absoluteURL
-                                NSWorkspace.shared.activateFileViewerSelecting([url])
-                            }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text(file.path).font(Font.nw(.micro)).foregroundStyle(Color.nw.running).lineLimit(1)
-                                NWDiffStat(added: file.added, removed: file.removed)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .help(review == nil ? "Reveal in Finder" : "Review this file")
+    private func touchedFiles(_ files: [ChildFileChange], run: ChildRun) -> some View {
+        VStack(alignment: .leading, spacing: NW.Space.xs) {
+            ForEach(files.prefix(AppLayout.inspectorMaxFiles), id: \.path) { file in
+                Button {
+                    if let review { review(file.path) } else {
+                        let base = run.cwd.map { URL(fileURLWithPath: $0, isDirectory: true) }
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: file.path, relativeTo: base).absoluteURL])
                     }
+                } label: {
+                    HStack(spacing: NW.Space.s) {
+                        Text(file.path).foregroundStyle(Color.nw.textSecondary).lineLimit(1).truncationMode(.middle)
+                        NWDiffStat(added: file.added, removed: file.removed, font: .nwMono(11))
+                    }
+                    .font(.nwMono(11))
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help(review == nil ? "Reveal in Finder" : "Review this file")
+                .accessibilityLabel("\(file.path), \(file.added) added, \(file.removed) removed")
+            }
+            if files.count > AppLayout.inspectorMaxFiles {
+                Text("\(files.count - AppLayout.inspectorMaxFiles) more files").font(.nwMono(11)).foregroundStyle(Color.nw.textTertiary)
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.nw.bgSunken)
-        .overlay(alignment: .top) { NWHairline() }
     }
 
     // MARK: Transcript
 
-    private var transcriptView: some View {
-        ScrollViewReader { proxy in
+    private static let bottomID = "inspector-bottom"
+
+    private func transcriptView(_ run: ChildRun?) -> some View {
+        let terminal = run?.isTerminal == true
+        return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 22) {
-                    if transcript.messages.isEmpty, transcript.loaded {
-                        Text(run == nil ? "This run is no longer listed." : "No transcript yet.").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                LazyVStack(alignment: .leading, spacing: AppLayout.inspectorTurnSpacing) {
+                    if transcript.turns.isEmpty, transcript.loaded {
+                        Text(run == nil ? "This run is no longer listed." : "No transcript yet.")
+                            .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                     }
-                    let turns = nativeTurns(transcript.messages)
+                    let turns = transcript.turns
                     ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
                         if turn.isUser {
                             // In the child's session every user message after the first is the
                             // parent (a steer or a resume); the first is the task itself.
-                            UserTurn(messages: turn.messages, caption: index > 0 ? parentCaption(turn) : nil, small: true).id(turn.id)
+                            UserTurn(messages: turn.messages, caption: index > 0 ? parentCaption(turn) : nil, small: true)
                         } else {
-                            AgentTurn(messages: turn.messages, live: run?.isTerminal == false && index == turns.count - 1, small: true).id(turn.id)
+                            AgentTurn(messages: turn.messages, live: !terminal && run != nil && index == turns.count - 1, small: true)
                         }
                     }
                     if let run, !run.isTerminal {
                         WorkingRow(label: run.paused == true ? "Pause requested" : run.currentTool.map { "Running \($0)…" } ?? "Thinking…")
                     }
-                    Color.clear.frame(height: 1).id("inspector-bottom")
+                    Color.clear.frame(height: 1).id(Self.bottomID)
                 }
-                .padding(14)
+                .padding(AppLayout.inspectorPadding)
             }
             .defaultScrollAnchor(terminal ? .top : .bottom, for: .initialOffset)
             .defaultScrollAnchor(transcript.following && !terminal ? .bottom : nil, for: .sizeChanges)
@@ -237,27 +213,27 @@ struct SubagentInspector: View {
             .onScrollPhaseChange { _, phase in
                 if phase == .interacting { transcript.setFollowing(false) }
             }
-            .onChange(of: transcript.messages) { _, _ in
-                if transcript.following, !terminal { proxy.scrollTo("inspector-bottom", anchor: .bottom) }
+            .onChange(of: transcript.tail) { _, _ in
+                if transcript.following, !terminal { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
             }
         }
     }
 
-    /// "n earlier turns · Show all" · "Following live" (live) or the turn count (finished).
-    private var footerLine: some View {
-        HStack(spacing: 6) {
+    /// "n earlier turns · Show all" · "Following live" (live runs only).
+    private func footerLine(_ run: ChildRun?) -> some View {
+        HStack(spacing: NW.Space.s) {
             if transcript.earlierCount > 0 {
-                Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")")
+                Text("\(transcript.earlierCount) earlier turn\(transcript.earlierCount == 1 ? "" : "s")").font(.nwMono(11))
                 Button(transcript.loadingOlder ? "Loading…" : "Show all") { Task { await transcript.loadAll(store: store, runID: runID) } }
-                    .buttonStyle(NWLinkButtonStyle(font: Font.nw(.micro)))
+                    .buttonStyle(.nwLink(font: .nwSans(11)))
                     .disabled(transcript.loadingOlder)
             }
             Spacer()
-            if !terminal { Text(transcript.following ? "Following live" : "Reading earlier output") }
+            if run?.isTerminal != true { Text(transcript.following ? "Following live" : "Reading earlier output") }
         }
-        .font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-        .padding(.horizontal, 14)
-        .frame(height: 28)
+        .font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary)
+        .padding(.horizontal, AppLayout.inspectorPadding)
+        .frame(minHeight: AppLayout.inspectorFooterHeight)
     }
 
     /// "10:58 · from parent"; the time is omitted when pi gave none.
@@ -268,63 +244,77 @@ struct SubagentInspector: View {
 
     // MARK: Footer bars
 
-    private var terminalBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
+    private func finishedBar(_ run: ChildRun) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            NWRunActions {
                 Button("Re-run") { Task { await store.subagentCommand(runID: runID, action: .resume) } }
-                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
+                    .buttonStyle(.nw(.secondary, size: .s))
                     .disabled(!canAct)
-                    .accessibilityLabel("Re-run \(role)")
-                if let fork, let run {
-                    Button(forking ? "Forking…" : "Fork as new agent") {
+                    .accessibilityLabel("Re-run \(Self.role(run))")
+                if let fork {
+                    Button {
                         forking = true
                         Task { forkError = await fork(run); forking = false }
+                    } label: {
+                        Label(forking ? "Forking…" : "Fork", systemImage: "arrow.branch")
                     }
-                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
+                    .buttonStyle(.nw(.secondary, size: .s))
                     .disabled(!active || forking || run.sessionFile == nil)
+                    .help("Fork as a new agent with this run's transcript")
+                    .accessibilityLabel("Fork \(Self.role(run)) as a new agent")
                 }
                 Button("Copy transcript") { copyTranscript() }
-                    .buttonStyle(NWButtonStyle(.secondary, size: .s))
+                    .buttonStyle(.nw(.ghost, size: .s))
                     .disabled(transcript.messages.isEmpty || copying)
-                Spacer(minLength: 8)
-                Text("kept with the thread").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
-            if let notice = forkError ?? store.notice {
-                Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
-            }
+            notice(forkError ?? store.notice)
         }
-        .padding(14)
+    }
+
+    private func composer(_ run: ChildRun?) -> some View {
+        let role = Self.role(run)
+        let nw = Color.nw
+        return VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                TextField("Steer \(role) — delivered before its next turn", text: $draft, axis: .vertical)
+                    .lineLimit(1...AppLayout.steerMaxLines).textFieldStyle(.plain).font(.nw(.body)).autocorrectionDisabled()
+                    .foregroundStyle(nw.textPrimary).tint(nw.lantern)
+                    .focused($composing)
+                    .padding(EdgeInsets(top: 10, leading: NW.Space.l, bottom: NW.Space.xxs, trailing: NW.Space.l))
+                    .onKeyPress(.return, phases: .down) { press in
+                        if press.modifiers.contains(.shift) { draft += "\n"; return .handled }
+                        send()
+                        return .handled
+                    }
+                    .accessibilityLabel("Steer \(role)")
+                HStack(spacing: NW.Space.s) {
+                    Text("to: \(role) · not the parent").font(.nwMono(11)).foregroundStyle(nw.textTertiary)
+                        .lineLimit(1).padding(.horizontal, NW.Space.s)
+                    Spacer(minLength: NW.Space.s)
+                    Button("Steer") { send() }
+                        .buttonStyle(.nw(.primary, size: .m))
+                        .disabled(!canAct || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding(EdgeInsets(top: NW.Space.xs, leading: NW.Space.s, bottom: NW.Space.s, trailing: NW.Space.s))
+            }
+            .background(nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+            .nwBorder(composing ? nw.textTertiary : nw.lineStrong, radius: NW.Radius.m)
+            .background {
+                if composing { RoundedRectangle(cornerRadius: NW.Radius.m + 3).fill(nw.bgSelected).padding(-3) }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { composing = true }
+            .padding(EdgeInsets(top: 10, leading: NW.Space.l, bottom: NW.Space.l, trailing: NW.Space.l))
+            notice(store.notice)
+        }
         .overlay(alignment: .top) { NWHairline() }
     }
 
-    private var composer: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            TextField("Steer \(role) — delivered before its next turn", text: $draft, axis: .vertical)
-                .lineLimit(1...6).textFieldStyle(.plain).font(Font.nw(.body)).autocorrectionDisabled()
-                .focused($composing)
-                .padding(EdgeInsets(top: 12, leading: 14, bottom: 6, trailing: 14))
-                .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) { draft += "\n"; return .handled }
-                    send()
-                    return .handled
-                }
-                .accessibilityLabel("Message to \(role)")
-            HStack {
-                Text("to: \(role) · not the parent").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
-                Spacer()
-                Button("Steer") { send() }
-                    .buttonStyle(NWButtonStyle(.primary, size: .s))
-                    .disabled(!canAct || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-            .padding(EdgeInsets(top: 4, leading: 14, bottom: 8, trailing: 8))
-            if let notice = store.notice {
-                Text(notice).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(.horizontal, 14).padding(.bottom, 8)
-            }
+    @ViewBuilder private func notice(_ text: String?) -> some View {
+        if let text {
+            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                .padding(.horizontal, NW.Space.l).padding(.bottom, NW.Space.m)
         }
-        .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.l))
-        .overlay { RoundedRectangle(cornerRadius: NW.Radius.l).strokeBorder(Color.nw.lineStrong, lineWidth: 1) }
-        .nwFocusRing(composing, radius: NW.Radius.l)
-        .padding(12)
     }
 
     private func send() {
@@ -362,26 +352,37 @@ struct SubagentInspector: View {
 
 /// Pages of one child's transcript. Reloads on the store's cadence while the run lives; a
 /// reload keeps everything already paged in (older pages are fetched only on "Show all").
-@MainActor
-final class SubagentTranscriptModel: ObservableObject {
-    @Published private(set) var messages: [NativeThreadMessage] = []
-    @Published private(set) var earlierCount = 0
-    @Published private(set) var loaded = false
-    @Published private(set) var loadingOlder = false
-    /// Set while the newest page is at the tail; "Show all" keeps the reader's place instead.
-    @Published private(set) var following = true
-    private var olderCursor: String?
-    private var runID: String?
-    private var generation = UUID()
-    private var reloadTicket = UUID()
+/// Turns are grouped once per change, and views watch `tail`, not the whole array.
+@MainActor @Observable
+final class SubagentTranscriptModel {
+    /// What a follower needs to know changed: the count and the newest entry.
+    struct Tail: Equatable {
+        var count = 0
+        var lastEntryID: String?
+    }
 
-    func setFollowing(_ value: Bool) { following = value }
+    private(set) var messages: [NativeThreadMessage] = []
+    private(set) var turns: [NativeTurn] = []
+    private(set) var tail = Tail()
+    private(set) var earlierCount = 0
+    private(set) var loaded = false
+    private(set) var loadingOlder = false
+    /// Set while the newest page is at the tail; "Show all" keeps the reader's place instead.
+    private(set) var following = true
+    @ObservationIgnored private var olderCursor: String?
+    @ObservationIgnored private var runID: String?
+    @ObservationIgnored private var generation = UUID()
+    @ObservationIgnored private var reloadTicket = UUID()
+
+    func setFollowing(_ value: Bool) {
+        if following != value { following = value }
+    }
 
     func follow(store: NativeThreadStore, runID: String, live: @escaping () -> Bool) async {
         reset(runID: runID)
         let epoch = generation
         // The thread must be connected first: the transcript request carries its session id.
-        while !Task.isCancelled, store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        while !Task.isCancelled, !store.ready { try? await Task.sleep(for: .milliseconds(100)) }
         guard !Task.isCancelled, generation == epoch else { return }
         await reload(store: store, runID: runID)
         while !Task.isCancelled, generation == epoch {
@@ -397,20 +398,28 @@ final class SubagentTranscriptModel: ObservableObject {
         let ticket = UUID()
         reloadTicket = ticket
         guard let page = await store.subagentTranscript(runID: runID) else {
-            if generation == epoch, self.runID == runID { loaded = true }
+            // A refusal is an answer; a thread that is reconnecting is not.
+            if generation == epoch, self.runID == runID, store.ready { setLoaded() }
             return
         }
         guard !Task.isCancelled, generation == epoch, reloadTicket == ticket, self.runID == runID else { return }
-        // Keep older pages the reader already loaded: splice the fresh newest page over its overlap.
-        if let first = page.messages.first, let overlap = messages.firstIndex(where: { $0.entryID == first.entryID }) {
-            messages = Array(messages[..<overlap]) + page.messages
-        } else {
-            messages = page.messages
+        let spliced = Self.splice(messages, newest: page)
+        setMessages(spliced.messages)
+        if spliced.replaced {
             olderCursor = page.olderCursor
-            earlierCount = page.earlierCount
+            setEarlierCount(page.earlierCount)
         }
-        if page.olderCursor == nil { earlierCount = 0; olderCursor = nil }
-        loaded = true
+        if page.olderCursor == nil { setEarlierCount(0); olderCursor = nil }
+        setLoaded()
+    }
+
+    /// Keeps older pages the reader already loaded: the fresh newest page replaces everything
+    /// from its first entry on. With no overlap the page replaces the whole transcript.
+    nonisolated static func splice(_ current: [NativeThreadMessage], newest page: NativeSubagentTranscript) -> (messages: [NativeThreadMessage], replaced: Bool) {
+        if let first = page.messages.first, let overlap = current.firstIndex(where: { $0.entryID == first.entryID }) {
+            return (Array(current[..<overlap]) + page.messages, false)
+        }
+        return (page.messages, true)
     }
 
     /// Pages backwards until the first entry.
@@ -418,27 +427,43 @@ final class SubagentTranscriptModel: ObservableObject {
         guard !loadingOlder else { return }
         let epoch = generation
         loadingOlder = true
-        following = false
+        setFollowing(false)
         defer { if generation == epoch { loadingOlder = false } }
         while !Task.isCancelled, let cursor = olderCursor, self.runID == runID, generation == epoch {
             guard let page = await store.subagentTranscript(runID: runID, beforeEntryID: cursor),
                   !Task.isCancelled, generation == epoch, self.runID == runID else { break }
             guard page.olderCursor != cursor else { break }
             let ids = Set(messages.map(\.entryID))
-            messages = page.messages.filter { !ids.contains($0.entryID) } + messages
+            setMessages(page.messages.filter { !ids.contains($0.entryID) } + messages)
             olderCursor = page.olderCursor
-            earlierCount = page.earlierCount
+            setEarlierCount(page.earlierCount)
         }
+    }
+
+    private func setMessages(_ value: [NativeThreadMessage]) {
+        guard value != messages else { return }
+        messages = value
+        turns = nativeTurns(value)
+        let next = Tail(count: value.count, lastEntryID: value.last?.entryID)
+        if next != tail { tail = next }
+    }
+
+    private func setEarlierCount(_ value: Int) {
+        if earlierCount != value { earlierCount = value }
+    }
+
+    private func setLoaded() {
+        if !loaded { loaded = true }
     }
 
     private func reset(runID: String) {
         self.runID = runID
         generation = UUID()
         loadingOlder = false
-        messages = []
-        earlierCount = 0
+        setMessages([])
+        setEarlierCount(0)
         olderCursor = nil
         loaded = false
-        following = true
+        setFollowing(true)
     }
 }
