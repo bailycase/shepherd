@@ -189,6 +189,24 @@ struct SubagentPresentationTests {
         #expect(strip.until == nil)
     }
 
+    /// Queued and paused runs draw as waiting cells, so the tally counts them as waiting too.
+    @Test func theStripTalliesQueuedAndPausedRunsAsTheirCellsDrawThem() {
+        var paused = Self.run("paused", startedAt: Self.t0 + 1_000)
+        paused.paused = true
+        let runs = Self.finished + [Self.run("live", startedAt: Self.t0 + 2_000), Self.run("next", state: "queued", startedAt: Self.t0 + 3_000), paused]
+        let strip = SubagentPresentation.strip(runs)
+        #expect(strip.cells.filter { $0 == .queued }.count == 2)
+        #expect(strip.states == "3 done · 1 running · 1 queued · 1 paused")
+        #expect(strip.state == .running)
+    }
+
+    @Test func aStripWhoseLiveRunsAllWaitShowsTheWaitingGlyph() {
+        let runs = Self.finished + [Self.run("next", state: "queued", startedAt: Self.t0 + 60_000)]
+        let strip = SubagentPresentation.strip(runs)
+        #expect(strip.states == "3 done · 1 queued")
+        #expect(strip.state == .queued)
+    }
+
     @Test func aStripWithoutTokensShowsOnlyItsTime() {
         #expect(SubagentPresentation.strip(Self.finished).tokens == nil)
         #expect(SubagentPresentation.strip(Self.finished).until == Date(timeIntervalSince1970: (Self.t0 + 45 * 60_000) / 1000))
