@@ -140,6 +140,9 @@ public struct NWValueSlider: View {
                 .accessibilityRepresentation {
                     Slider(value: $value, in: range, step: step) { Text(label) }
                         .accessibilityValue(format(value))
+                        .accessibilityActions {
+                            if let neutral { Button("Reset to \(format(neutral))") { value = neutral } }
+                        }
                 }
             Text(format(value))
                 .font(.nw(.mono))
@@ -176,9 +179,10 @@ private struct NWSliderTrack: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(nw.lineStrong).frame(height: NWSliderMetrics.track)
                 Capsule().fill(nw.lantern).frame(width: x + knob / 2, height: NWSliderMetrics.track)
+                // The 1pt ring sits outside the 14pt knob, as the board's spread shadow does.
                 Circle()
                     .fill(nw.knobOn)
-                    .overlay { Circle().strokeBorder(nw.lineStrong, lineWidth: 1) }
+                    .background { Circle().fill(nw.lineStrong).padding(-1) }
                     .shadow(color: nw.knobShadow, radius: 1.5, y: 1)
                     .frame(width: knob, height: knob)
                     .offset(x: x)
@@ -193,7 +197,8 @@ private struct NWSliderTrack: View {
         .frame(width: NWSliderMetrics.width, height: NWSliderMetrics.height)
         .opacity(enabled ? 1 : 0.4)
         .nwFocusRing(radius: NWSliderMetrics.height / 2)
-        .focusable()
+        // Keyboard navigation only, like a native slider: a click must not take focus or ring it.
+        .focusable(interactions: .activate)
         .focusEffectDisabled()
         .onKeyPress(.leftArrow) { set(value - step); return .handled }
         .onKeyPress(.rightArrow) { set(value + step); return .handled }
