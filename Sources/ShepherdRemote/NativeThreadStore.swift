@@ -55,6 +55,9 @@ public final class NativeThreadStore {
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:]
     public private(set) var subagents: [NativeSubagent] = []
+    /// When the prompt that opened the current turn was sent (ms): the running pill's start. A
+    /// queued follow-up has not opened a turn yet; nil while the newest prompt is an echo.
+    public private(set) var lastPromptAt: Double?
 
     public init() {}
 
@@ -130,6 +133,8 @@ public final class NativeThreadStore {
         }
         let displayed = messages + pending.filter { $0.status != "queued" } + provisional + pending.filter { $0.status == "queued" }
         if displayed != displayedMessages { displayedMessages = displayed }
+        let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" }?.timestamp
+        if promptAt != lastPromptAt { lastPromptAt = promptAt }
         let turns = nativeTurns(displayed, aliases: aliases)
         if turns != self.turns { self.turns = turns }
         let runs = snapshot?.subagents ?? []

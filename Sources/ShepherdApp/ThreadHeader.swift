@@ -122,7 +122,7 @@ func threadPillState(_ store: NativeThreadStore) -> AgentState {
 /// Time since the turn began: the last user message's timestamp while running.
 @MainActor
 func threadRunElapsed(_ store: NativeThreadStore, now: Date) -> String {
-    let start = store.displayedMessages.last { $0.role == "user" }?.timestamp.map { Date(timeIntervalSince1970: $0 / 1000) } ?? now
+    let start = store.lastPromptAt.map { Date(timeIntervalSince1970: $0 / 1000) } ?? now
     return nativeDurationText(max(0, now.timeIntervalSince(start)), live: true)
 }
 

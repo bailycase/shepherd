@@ -451,6 +451,19 @@ struct NativeThreadStoreTests {
         #expect(store.rows.map(\.live) == [false, true, false], "the streaming reply stays live above the queued prompt")
     }
 
+    @Test func aQueuedFollowUpDoesNotRestartTheRunningTurnsClock() async throws {
+        var prompt = F.user(id: "u0")
+        prompt.timestamp = 1_000
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt, hi], provisional: [F.assistant("streaming", id: "live")]))
+        defer { task.cancel() }
+        #expect(store.lastPromptAt == 1_000)
+        host.acceptAll()
+        store.draft = "and then this"
+        await store.send()
+        #expect(store.pending.first?.status == "queued")
+        #expect(store.lastPromptAt == 1_000)
+    }
+
     @Test func aPersistedPromptKeepsTheTurnIdentityOfItsEcho() async throws {
         let (store, host, task) = await started()
         defer { task.cancel() }
