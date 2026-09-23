@@ -59,7 +59,7 @@ enum SubagentsExtension {
           if (!agentID || !socketPath) return;
 
           // Only the root interactive session publishes; a headless child runtime
-          // must never fight the pane's agent over sidebar state.
+          // must never fight the pane's agent over its published runs.
           let rootSession = false;
           let sessionGeneration = 0;
           let rpcReady = false;
@@ -153,7 +153,7 @@ enum SubagentsExtension {
 
           // The RPC status reply carries a bounded, versioned display snapshot
           // (pi-subagents.async-status-snapshot v1). A workflow run flattens one
-          // level so each lane gets its own sidebar row (the run key is the label);
+          // level so each lane gets its own row (the run key is the label);
           // a single-agent run is itself the row. Deeper nesting stays a pi concern.
           function snapshotChildren(snapshot: unknown): unknown[] | undefined {
             if (typeof snapshot !== "object" || snapshot === null) return undefined;
@@ -368,7 +368,7 @@ enum SubagentsExtension {
           });
 
           // The parent consuming results and moving on is the batch boundary; clear
-          // terminal rows so the sidebar only ever shows current work. Live rows
+          // terminal rows so Shepherd only ever shows current work. Live rows
           // survive (a rolling fanout keeps its running children).
           pi.on("agent_start", () => {
             if (!rootSession) return;

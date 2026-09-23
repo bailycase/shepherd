@@ -159,7 +159,7 @@ test("card helpers: tool preview follows the desktop rule and edit diffs cancel 
   assert.equal(long.length, 240); assert(long.endsWith("…"));
 });
 
-test("merged sidebar projection prioritizes active native and legacy runs before terminal attention and history", async () => {
+test("merged projection prioritizes active native and legacy runs before terminal attention and history", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "shepherd-merge-"));
   const saved = { ...process.env }, reports = [], handlers = new Map(), bus = new Map();
   const server = net.createServer((socket) => socket.on("data", mod.jsonLines((data) => reports.push(data.children), assert.fail)));
