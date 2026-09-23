@@ -266,9 +266,10 @@ struct MachineCommands: Commands {
     }
 }
 
+/// Reads the mode in its own body, so a change re-renders this menu alone.
 struct AppearanceCommands: Commands {
     let vm: ShepherdViewModel
-    let mode: AppearanceMode
+    let themes: ThemeManager
 
     var body: some Commands {
         CommandMenu("Appearance") {
@@ -276,7 +277,7 @@ struct AppearanceCommands: Commands {
                 Button {
                     later { vm.selectAppearance(option, systemColorScheme: ThemeManager.effectiveSystemColorScheme) }
                 } label: {
-                    if mode == option {
+                    if themes.mode == option {
                         Label(option.title, systemImage: "checkmark")
                     } else {
                         Text(option.title)
