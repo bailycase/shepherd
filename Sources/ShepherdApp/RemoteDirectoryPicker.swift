@@ -21,6 +21,11 @@ enum DirectoryCompletion {
 /// The same directory listing the host serves remotely, for this Mac — so
 /// local and remote space pickers are one UI with two listing sources.
 enum LocalDirectoryLister {
+    /// Lists off the main thread: a slow or network volume must not stall the sheet.
+    static func load(path: String) async throws -> RemoteHostClient.DirListing {
+        try await Task.detached(priority: .userInitiated) { try list(path: path) }.value
+    }
+
     static func list(path: String) throws -> RemoteHostClient.DirListing {
         let fm = FileManager.default
         let resolved = path.isEmpty
@@ -47,7 +52,7 @@ enum LocalDirectoryLister {
 /// over the wire. Editable path field (⏎ jumps), hidden-dirs toggle,
 /// click to descend, `..` to go up.
 struct RemoteDirectoryPicker: View {
-    var title = "Choose Directory"
+    var title = "Choose directory"
     var actionTitle = "Choose"
     let hostName: String
     /// Where browsing begins; empty = the machine's home directory. A cwd
@@ -68,6 +73,7 @@ struct RemoteDirectoryPicker: View {
     @State private var pathDraft = ""
     /// Partial last path component typed so far, used as a listing filter.
     @State private var filter = ""
+    @State private var loadRequest = UUID()
     @FocusState private var pathFocused: Bool
 
     /// Hidden dirs shown only on request (or when the typed filter asks for
@@ -90,80 +96,65 @@ struct RemoteDirectoryPicker: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("\(title) on \(hostName)")
-                    .font(Font.nw(.title))
-                    .foregroundStyle(Color.nw.textPrimary)
-                // The path is editable: typing filters the listing to what's
-                // under the typed path, and ⏎ chooses it in one go.
-                TextField("", text: $pathDraft)
-                    .textFieldStyle(.plain)
-                    .font(Font.nw(.mono))
-                    .foregroundStyle(Color.nw.textPrimary)
-                    .focused($pathFocused)
-                    .nwField(focused: pathFocused, mono: true)
-                    .onChange(of: pathDraft) { draftChanged() }
-                    .onSubmit { submit() }
-                    .onKeyPress(.tab) {
-                        completePath()
-                        return .handled
-                    }
-            }
-            .padding(EdgeInsets(top: 20, leading: 20, bottom: 12, trailing: 20))
+        let visible = visibleDirs
+        NWDialog("\(title) on \(hostName)", width: AppLayout.directoryPickerWidth) {
+            // The path is editable: typing filters the listing to what's
+            // under the typed path, and ⏎ chooses it in one go.
+            TextField("Path", text: $pathDraft)
+                .focused($pathFocused)
+                .nwField(focused: pathFocused, mono: true)
+                .onChange(of: pathDraft) { draftChanged() }
+                .onSubmit { submit() }
+                .onKeyPress(.tab) {
+                    completePath()
+                    return .handled
+                }
+                .padding(.horizontal, NWDialogMetrics.inset)
+                .padding(.bottom, NW.Space.l)
 
             NWHairline()
-
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if let parent {
-                        row(label: "..", isUp: true) { load(parent) }
+                        RemoteDirRow(label: "..", isUp: true) { load(parent) }
                     }
-                    ForEach(visibleDirs, id: \.self) { name in
-                        row(label: name, isUp: false) {
+                    ForEach(visible, id: \.self) { name in
+                        RemoteDirRow(label: name, isUp: false) {
                             load((path as NSString).appendingPathComponent(name))
                         }
                     }
-                    if !loading, visibleDirs.isEmpty {
+                    if !loading, visible.isEmpty {
                         Text("No subdirectories")
-                            .font(Font.nw(.caption))
+                            .font(.nw(.caption))
                             .foregroundStyle(Color.nw.textTertiary)
-                            .padding(12)
+                            .padding(NW.Space.l)
                     }
                 }
+                .padding(NW.Space.s)
             }
-            .frame(height: 260)
-            .background(Color.nw.bgWindow)
-
+            .frame(height: AppLayout.directoryListHeight)
+            .background(Color.nw.bgSunken)
             NWHairline()
-
-            HStack(spacing: 10) {
-                Text(errorText ?? (loading ? "Loading…" : "\(visibleDirs.count) directories"))
-                    .font(Font.nw(.caption))
-                    .foregroundStyle(errorText == nil ? Color.nw.textSecondary : Color.nw.failed)
-                    .lineLimit(1)
-                Spacer(minLength: 12)
-                Toggle("Show hidden", isOn: $showHidden)
-                    .toggleStyle(.nwSwitch)
-                    .font(Font.nw(.caption))
-                    .foregroundStyle(Color.nw.textSecondary)
-                Button("Cancel", action: cancel)
-                    .keyboardShortcut(.cancelAction)
-                Button(actionTitle) { submit() }
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(NWButtonStyle(.primary))
-                    .disabled(path.isEmpty || loading)
-            }
-            .padding(EdgeInsets(top: 12, leading: 20, bottom: 20, trailing: 20))
+        } status: {
+            NWDialogStatus(errorText ?? (loading ? "Loading…" : "\(visible.count) directories"), isError: errorText != nil)
+        } actions: {
+            Toggle("Show hidden", isOn: $showHidden)
+                .toggleStyle(.nwSwitch)
+                .font(.nw(.caption))
+                .foregroundStyle(Color.nw.textSecondary)
+                .padding(.trailing, NW.Space.s)
+            Button("Cancel", action: cancel)
+                .buttonStyle(.nw(.secondary))
+                .keyboardShortcut(.cancelAction)
+            Button(actionTitle) { submit() }
+                .buttonStyle(.nw(.primary))
+                .keyboardShortcut(.defaultAction)
+                .disabled(path.isEmpty || loading)
         }
-        .frame(width: 480)
-        .background(Color.nw.bgWindow)
-        .buttonStyle(NWButtonStyle(.secondary))
-        .onAppear { load(startPath) }
-    }
-
-    private func row(label: String, isUp: Bool, action: @escaping () -> Void) -> some View {
-        RemoteDirRow(label: label, isUp: isUp, action: action)
+        .onAppear {
+            pathFocused = true
+            load(startPath)
+        }
     }
 
     /// Live-sync the listing with the field: everything before the last "/"
@@ -217,9 +208,13 @@ struct RemoteDirectoryPicker: View {
     private func load(_ target: String, keepDraft: Bool = false) {
         loading = true
         errorText = nil
+        let request = UUID()
+        loadRequest = request
         Task {
             do {
                 let listing = try await list(target)
+                // Typing lists as it goes: only the newest request may land.
+                guard loadRequest == request else { return }
                 path = listing.path
                 if !keepDraft {
                     pathDraft = listing.path
@@ -229,6 +224,7 @@ struct RemoteDirectoryPicker: View {
                 dirs = listing.dirs
                 loading = false
             } catch {
+                guard loadRequest == request else { return }
                 // A bogus initial path (stale cwd) falls back to home;
                 // a failed jump (typo) keeps the current listing and
                 // restores the draft to where you actually are.
@@ -244,29 +240,32 @@ struct RemoteDirectoryPicker: View {
     }
 }
 
+/// A directory in the listing: a real button, so it carries button traits and takes Space.
 private struct RemoteDirRow: View {
     let label: String
     let isUp: Bool
     let action: () -> Void
-    @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "folder")
-                .font(.system(size: 10.5))
-                .foregroundStyle(isUp ? Color.nw.textTertiary : Color.nw.textSecondary)
-            Text(label)
-                .font(Font.nw(.body))
-                .foregroundStyle(isUp ? Color.nw.textTertiary : Color.nw.textPrimary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
+        Button(action: action) {
+            HStack(spacing: NW.Space.m) {
+                Image(systemName: isUp ? "arrow.turn.left.up" : "folder")
+                    .font(.nw(.ui))
+                    .foregroundStyle(isUp ? Color.nw.textTertiary : Color.nw.textSecondary)
+                    .frame(width: NW.Space.xl)
+                    .accessibilityHidden(true)
+                Text(label)
+                    .font(.nw(.ui))
+                    .foregroundStyle(isUp ? Color.nw.textSecondary : Color.nw.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, NW.Space.m)
+            .frame(minHeight: NW.Height.row)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 14)
-        .frame(height: AppLayout.menuRowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(hovering ? Color.nw.bgHover : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
+        .buttonStyle(.nwRow())
+        .accessibilityLabel(isUp ? "Parent directory" : label)
     }
 }
