@@ -371,7 +371,8 @@ final class WorktreeSetupModel {
             .last { !$0.isEmpty && !gitRemoteBoilerplate.contains($0) }
     }
 
-    private static let gitRemoteBoilerplate: Set<String> = [
+    /// git's closing advice after a failed remote operation; it never names the problem.
+    nonisolated static let gitRemoteBoilerplate: Set<String> = [
         "fatal: Could not read from remote repository.",
         "Please make sure you have the correct access rights",
         "and the repository exists.",
@@ -660,10 +661,25 @@ final class WorktreeFinalizer {
         }
     }
 
-    private func detail(_ output: LoginShell.Output) -> String {
+    private func detail(_ output: LoginShell.Output) -> String { Self.failureDetail(output) }
+
+    /// A failed step's text: stderr, else stdout, else the exit status. The sheet shows only the
+    /// first line (the rest is its tooltip), so the line that names the problem moves to the
+    /// front: a rejected ref, else the first `fatal:`/`error:` that isn't git's closing
+    /// boilerplate, ahead of the `To <remote>` header and hints.
+    static func failureDetail(_ output: LoginShell.Output) -> String {
         let err = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !err.isEmpty { return err }
         let out = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        return out.isEmpty ? "exit \(output.status)" : out
+        let text = err.isEmpty ? out : err
+        guard !text.isEmpty else { return "exit \(output.status)" }
+        let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+        let candidates = lines.indices.filter { !WorktreeSetupModel.gitRemoteBoilerplate.contains(lines[$0]) }
+        let telling = candidates.first { lines[$0].hasPrefix("! [") }
+            ?? candidates.first { index in ["fatal:", "error:"].contains { lines[index].lowercased().hasPrefix($0) } }
+        var reordered = lines
+        if let telling, telling > 0 { reordered.insert(reordered.remove(at: telling), at: 0) }
+        // git pads its ref columns ("! [rejected]        a -> a"); the one-line summary doesn't.
+        reordered[0] = reordered[0].split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return reordered.joined(separator: "\n")
     }
 }
