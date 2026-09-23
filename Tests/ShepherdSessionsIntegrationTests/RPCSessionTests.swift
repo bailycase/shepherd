@@ -18,7 +18,7 @@ struct RPCSessionTests {
         let exit = Locked<(done: Bool, code: Int32?)>((false, nil))
 
         init(command: [String] = StubPi.command, env: [String: String]? = nil) throws {
-            dir = try uniqueDirectory("rpc")
+            dir = try makeScratchDirectory("rpc")
             queue = DispatchQueue(label: "test.rpc")
             session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: command, env: env, runtime: .rpc), queue: queue)
             session.onEvent = { [events] event in events.withValue { $0.append(event) } }

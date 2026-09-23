@@ -71,7 +71,7 @@ struct TerminalBenchmarks {
     }
 
     @Test func stateUpdateCostByFleetSize() throws {
-        let dir = try uniqueDirectory("bench")
+        let dir = try makeScratchDirectory("bench")
         defer { try? FileManager.default.removeItem(at: dir) }
         for agentCount in [10, 50, 200] {
             let store = StateStore(url: dir.appendingPathComponent("state-\(agentCount).json"))

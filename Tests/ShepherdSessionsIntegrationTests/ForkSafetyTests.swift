@@ -13,7 +13,7 @@ struct ForkSafetyTests {
     /// runtime's metadata lock: about half of 150 forks died pre-exec. The child side is now C
     /// (ShepherdPTYSpawn).
     @Test func freshSessionsSurviveForkingWhileOtherThreadsUseTheSwiftRuntime() async throws {
-        let h = try ScratchServer(dir: uniqueDirectory("fork"))
+        let h = try ScratchServer(dir: makeScratchDirectory("fork"))
         defer { h.stop() }
         let exits = Locked<[SessionID: Int32?]>([:])
         h.server.onSessionExited = { id, code in exits.withValue { $0[id] = code } }

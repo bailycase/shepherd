@@ -174,15 +174,14 @@ struct AgentLifecycleTests {
 }
 
 /// Agents launched the way the app launches them: `zsh -l -c "exec pi --mode rpc …"` with
-/// the stub standing in for `pi` on PATH. Serialized: PATH, ZDOTDIR, and the support
-/// directory are process-global.
-@Suite("Agents launched like the app", .serialized)
+/// the stub standing in for `pi` on PATH.
+@Suite("Agents launched like the app")
 @MainActor
 struct AgentLaunchTests {
     @Test func startingAnAgentSpawnsPiOverRPCAndSendsTheOpeningPrompt() async throws {
         let pi = try StubPiOnPath()
         let app = try AppHarness()
-        defer { app.stop(); pi.restore() }
+        defer { app.stop(); pi.removeSeededSessions() }
         pi.cleansSessions(in: app.dir.path)
         let space = Fixture.space(path: app.dir.path)
         let other = Fixture.agent("other", in: space)
@@ -212,7 +211,7 @@ struct AgentLaunchTests {
     @Test func aRestoredAgentWithoutARunningPiRespawnsWhenItsPaneMounts() async throws {
         let pi = try StubPiOnPath()
         let app = try AppHarness()
-        defer { app.stop(); pi.restore() }
+        defer { app.stop(); pi.removeSeededSessions() }
         pi.cleansSessions(in: app.dir.path)
         let space = Fixture.space(path: app.dir.path)
         // A layout from a previous run: bound to a session that died with that run.
@@ -230,7 +229,7 @@ struct AgentLaunchTests {
     @Test func importingALinkedWorktreeStartsAnAgentCarryingItsIdentity() async throws {
         let pi = try StubPiOnPath()
         let app = try AppHarness()
-        defer { app.stop(); pi.restore() }
+        defer { app.stop(); pi.removeSeededSessions() }
         let repo = try makeScratchRepo()
         let worktree = repo.deletingLastPathComponent().appendingPathComponent("imported-\(UUID().uuidString.prefix(6))")
         defer { try? FileManager.default.removeItem(at: repo); try? FileManager.default.removeItem(at: worktree) }

@@ -17,7 +17,7 @@ struct ThreadEventTests {
         let dir: URL
 
         init(bootstrap: Bool = true) throws {
-            dir = try uniqueDirectory("thread")
+            dir = try makeScratchDirectory("thread")
             session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command, runtime: .rpc), queue: queue)
             state = RPCThreadState(session: session, queue: queue)
             session.onEvent = { [weak state] event in state?.handle(event) }

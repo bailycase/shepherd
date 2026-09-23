@@ -46,7 +46,6 @@ struct TerminalSessionStoreTests {
     /// later recovers it from the server's screen, and a mounted-but-hidden view still streams.
     @Test(arguments: [false, true])
     func aShellKeepsRunningWithoutAViewAndItsScreenReturnsWhenOneMounts(mountedFirst: Bool) async throws {
-        IsolatedSupportDirectory.install()
         let scratch = try ScratchServer()
         defer { scratch.stop() }
         let server = scratch.server
@@ -90,7 +89,6 @@ struct TerminalSessionStoreTests {
     /// finally attaches sees the snapshot plus later output exactly once.
     @Test(arguments: [false, true])
     func aStaleAttachReplyIsDroppedAndTheNextViewSeesOutputExactlyOnce(replaced: Bool) async throws {
-        IsolatedSupportDirectory.install()
         let scratch = try ScratchServer()
         defer { scratch.stop() }
         let server = scratch.server
@@ -148,7 +146,6 @@ struct TerminalSessionStoreTests {
 
     /// A shell pane whose layout disappears while it waits for its first grid never spawns.
     @Test func aPaneRemovedBeforeItsShellStartsNeverSpawnsOne() async throws {
-        IsolatedSupportDirectory.install()
         let scratch = try ScratchServer()
         defer { scratch.stop() }
         let server = scratch.server
@@ -172,7 +169,6 @@ struct TerminalSessionStoreTests {
     /// An RPC agent's pane binds its pi without a Ghostty surface, grid wait, or attach; the
     /// binding survives surface rebuilds and cold parking; pi exiting still closes the pane.
     @Test func anRPCAgentPaneBindsWithoutASurfaceAndClosesWhenPiExits() async throws {
-        IsolatedSupportDirectory.install()
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)

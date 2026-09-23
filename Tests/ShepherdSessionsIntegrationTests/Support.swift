@@ -37,21 +37,10 @@ enum Fixture {
     }
 }
 
-/// A fresh, uniquely named scratch directory. `makeScratchDirectory` draws from a million
-/// names without checking for an existing directory, so a few hundred parallel servers can
-/// collide on one socket path; `mkdtemp` cannot.
-func uniqueDirectory(_ label: String = "shp") throws -> URL {
-    var base = FileManager.default.temporaryDirectory.path
-    if base.utf8.count > 60 { base = "/tmp" }
-    var template = Array("\(base)/\(label)-XXXXXX".utf8CString)
-    guard mkdtemp(&template) != nil else { throw WireError("mkdtemp: errno \(errno)") }
-    return URL(fileURLWithPath: template.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }, isDirectory: true)
-}
-
 extension ScratchServer {
-    /// A server on a directory no other test can be using.
+    /// A server on a directory no other test can be using (`makeScratchDirectory` is `mkdtemp`).
     static func fresh() throws -> ScratchServer {
-        try ScratchServer(dir: uniqueDirectory("srv"))
+        try ScratchServer()
     }
 
     /// Replace the state and wait for its broadcast, then forget every broadcast so a test

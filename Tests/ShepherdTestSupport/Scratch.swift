@@ -1,16 +1,7 @@
+// Every integration test that imports this module also gets ShepherdTestKit (scratch
+// directories, ScratchDefaults, Locked) and, through it, the load-time process isolation.
+@_exported import ShepherdTestKit
 import Foundation
-
-/// A new, uniquely named, short-pathed scratch directory, removed by the caller. `mkdtemp`
-/// guarantees no two parallel tests share one (a random name could collide on a socket path);
-/// `sun_path` caps socket paths at 104 bytes, so it lives under /tmp when the temporary
-/// directory is long.
-public func makeScratchDirectory(_ label: String = "shepherd") throws -> URL {
-    var base = FileManager.default.temporaryDirectory.path
-    if base.utf8.count > 60 { base = "/tmp" }
-    var template = Array("\(base)/\(label)-XXXXXX".utf8CString)
-    guard mkdtemp(&template) != nil else { throw WaitTimeout(what: "mkdtemp to succeed (errno \(errno))") }
-    return URL(fileURLWithPath: template.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }, isDirectory: true)
-}
 
 /// A git repository in a scratch directory with one commit, for review and worktree tests.
 public func makeScratchRepo(files: [String: String] = ["README.md": "# scratch\n"]) throws -> URL {

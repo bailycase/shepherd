@@ -94,42 +94,11 @@ enum Preview {
     }
 }
 
-/// Process-wide isolation for previews that build real app surfaces: a scratch support
-/// directory (extensions and themes install there, never into the user's), a scratch ZDOTDIR,
-/// and a fake `pi` first on PATH that answers `--list-models` with a fixed catalog and
-/// otherwise runs the scripted stub. Previews run only when explicitly requested, so this is
-/// installed once and left in place for the process.
+/// Previews that build real app surfaces launch pi the way the app does; the stub stands in on
+/// PATH and answers `--list-models` with a fixed catalog. The support directory and ZDOTDIR are
+/// already scratch for the whole test process (ShepherdTestKit).
 enum PreviewEnvironment {
-    nonisolated(unsafe) private static var installed = false
-    private static let lock = NSLock()
-
-    static let models = """
-    provider   model                      context  max-out  thinking  images
-    anthropic  claude-opus-4-5            200K     64K      yes       yes
-    anthropic  claude-sonnet-4-5          1M       64K      yes       yes
-    anthropic  claude-haiku-4-5           200K     64K      yes       yes
-    openai     gpt-5                      400K     128K     yes       yes
-    google     gemini-2.5-pro             1M       64K      yes       yes
-    """
-
     static func install() throws {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !installed else { return }
-        let root = try makeScratchDirectory("previews")
-        let bin = root.appendingPathComponent("bin"), zdotdir = root.appendingPathComponent("zdotdir"), support = root.appendingPathComponent("support")
-        for dir in [bin, zdotdir, support] { try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
-        try FileManager.default.createFile(atPath: root.appendingPathComponent("models.txt").path, contents: Data(models.utf8))
-        let pi = bin.appendingPathComponent("pi")
-        try """
-        #!/bin/sh
-        if [ "$1" = "--list-models" ]; then cat '\(root.appendingPathComponent("models.txt").path)'; exit 0; fi
-        exec /usr/bin/env python3 '\(StubPi.path)'
-        """.write(to: pi, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: pi.path)
-        setenv("PATH", "\(bin.path):\(ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin")", 1)
-        setenv("ZDOTDIR", zdotdir.path, 1)
-        setenv("SHEPHERD_SUPPORT_DIR", support.path, 1)
-        installed = true
+        try StubPi.installOnPath()
     }
 }

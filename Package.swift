@@ -100,9 +100,13 @@ let package = Package(
         .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp"]),
         .testTarget(name: "ShepherdCLIUnitTests", dependencies: ["shepherd-cli"]),
         .testTarget(name: "TerminalSurfaceKitUnitTests", dependencies: ["TerminalSurfaceKit"]),
+        // Test helpers every tier can use, with no Shepherd dependencies. Loading them isolates
+        // the whole test process (scratch support directory, PATH, ZDOTDIR) before any test runs.
+        .target(name: "ShepherdTestIsolation", path: "Tests/ShepherdTestIsolation"),
+        .target(name: "ShepherdTestKit", dependencies: ["ShepherdTestIsolation"], path: "Tests/ShepherdTestKit"),
         .target(
             name: "ShepherdTestSupport",
-            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdSessions"],
+            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "ShepherdTestKit"],
             path: "Tests/ShepherdTestSupport",
             resources: [.copy("Resources/stub-pi.py")]
         ),

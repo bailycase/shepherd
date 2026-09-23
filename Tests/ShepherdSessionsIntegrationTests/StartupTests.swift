@@ -111,7 +111,7 @@ struct StartupTests {
     }
 
     @Test func aStaleSocketFileIsReplaced() throws {
-        let dir = try uniqueDirectory("stale")
+        let dir = try makeScratchDirectory("stale")
         let path = dir.appendingPathComponent("s.sock").path
         // A bound-then-abandoned socket: the file exists, nobody listens.
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
