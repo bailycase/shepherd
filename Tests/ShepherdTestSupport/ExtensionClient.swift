@@ -27,6 +27,7 @@ public final class ExtensionClient {
         guard r == 0 else {
             let err = errno
             close(fd)
+            closed = true // deinit must not close the number again: another socket may own it now
             throw SocketError(message: "connect failed: errno \(err)")
         }
         var one: Int32 = 1
