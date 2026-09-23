@@ -11,8 +11,23 @@ struct TurnTests {
         let user = F.user(id: "u1"), prose = F.assistant("Doing it.", id: "p"), read = F.tool("read", id: "r")
         let turns = nativeTurns([user, prose, read, F.user(id: "u2")])
         #expect(turns.map(\.isUser) == [true, false, true])
-        #expect(turns.map(\.id) == ["u1", "p", "u2"], "a turn is identified by its first entry")
+        #expect(turns.map(\.id) == ["u1", "u1/reply", "u2"], "a user turn is its first entry; a reply is the turn it answers")
         #expect(turns[1].messages == [prose, read])
+    }
+
+    @Test func aReplyKeepsItsIdentityWhenPiPersistsIt() {
+        let live = nativeTurns([F.user(id: "u1"), F.assistant("streaming", id: "provisional:assistant:1")])
+        let saved = nativeTurns([F.user(id: "u1"), F.assistant("streaming", id: "entry-7")])
+        #expect(live.map(\.id) == saved.map(\.id))
+    }
+
+    @Test func aSavedPromptKeepsTheIdentityOfTheEchoItReplaced() {
+        let turns = nativeTurns([F.user(id: "saved"), F.assistant("reply")], aliases: ["saved": "pending:1"])
+        #expect(turns.map(\.id) == ["pending:1", "pending:1/reply"])
+    }
+
+    @Test func aReplyAtTheStartOfAPagedHistoryIsItsFirstEntry() {
+        #expect(nativeTurns([F.assistant("tail of an older turn", id: "a0"), F.user(id: "u")]).map(\.id) == ["a0", "u"])
     }
 
     @Test func consecutiveUserMessagesShareATurn() {

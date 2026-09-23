@@ -254,7 +254,11 @@ public struct NativeTurn: Identifiable, Equatable, Sendable {
     public var messages: [NativeThreadMessage]
 }
 
-public func nativeTurns(_ messages: [NativeThreadMessage]) -> [NativeTurn] {
+/// Turns keep their identity while pi persists them: a user turn is its first message (or the
+/// optimistic echo it replaced, through `aliases`), and a reply is the user turn it answers,
+/// so the live reply and its saved copy are one view. A reply with no user turn above it (the
+/// start of a paged history) is its first message.
+public func nativeTurns(_ messages: [NativeThreadMessage], aliases: [String: String] = [:]) -> [NativeTurn] {
     var turns: [NativeTurn] = []
     // pi's system entries (prompt-section updates) and blank messages have nothing to read; kept,
     // they render as stray notes and stretch the turn's duration to the next system update.
@@ -266,7 +270,9 @@ public func nativeTurns(_ messages: [NativeThreadMessage]) -> [NativeTurn] {
         if let last = turns.last, last.isUser == isUser {
             turns[turns.count - 1].messages.append(message)
         } else {
-            turns.append(NativeTurn(id: message.entryID, isUser: isUser, messages: [message]))
+            let id = isUser ? aliases[message.entryID] ?? message.entryID
+                : turns.last.map { $0.id + "/reply" } ?? message.entryID
+            turns.append(NativeTurn(id: id, isUser: isUser, messages: [message]))
         }
     }
     return turns
