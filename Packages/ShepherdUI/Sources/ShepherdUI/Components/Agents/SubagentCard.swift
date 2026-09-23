@@ -113,6 +113,7 @@ public struct NWSubagentCard: View, Equatable {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             if run.state == .attention, let question = run.question {
                 questionBox(question)
+                    .nwTransition(.disclosure)
             }
             if run.state == .failed {
                 HStack(spacing: NW.Space.s) {
@@ -122,6 +123,7 @@ public struct NWSubagentCard: View, Equatable {
                             .accessibilityLabel("Re-run \(run.name)")
                     }
                 }
+                .nwTransition(.disclosure)
             }
         }
         .padding(.vertical, 10)
@@ -136,7 +138,18 @@ public struct NWSubagentCard: View, Equatable {
         }
         .contentShape(shape)
         .onTapGesture(perform: inspect)
+        // A new state recolors the card and discloses what it brings (a question, the failed
+        // run's actions); the inspected card's ring fades. Live details (the last call, the
+        // context bar) change without the card moving.
+        .nwAnimation(.disclosure, value: Phase(state: run.state, asks: run.question != nil))
+        .nwAnimation(.hover, value: isSelected)
         .accessibilityElement(children: .contain)
+    }
+
+    /// What reshapes the card: its state, and whether it carries a question.
+    private struct Phase: Equatable {
+        let state: AgentState
+        let asks: Bool
     }
 
     /// The selection ring outside the inspected card.
@@ -149,13 +162,15 @@ public struct NWSubagentCard: View, Equatable {
                 NWBranchGlyph(run.state, size: 13)
                 Text(run.name).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
                     .layoutPriority(2)
-                // In a narrow thread the tags give way (model first) before the name truncates.
+                // In a narrow thread the tags give way (model first) before the name truncates,
+                // at once: a width change never animates which of them fits.
                 ViewThatFits(in: .horizontal) {
                     tags(role: run.role, model: run.model)
                     tags(role: run.role, model: nil)
                     Color.clear.frame(width: 0, height: 0)
                 }
                 .layoutPriority(1)
+                .nwInstant()
                 Spacer(minLength: NW.Space.m)
                 NWStatusPill(run.state, label: run.stateLabel)
             }
@@ -177,9 +192,11 @@ public struct NWSubagentCard: View, Equatable {
                         .accessibilityLabel(run.progressLabel ?? "Progress")
                     Text("\(run.percent ?? 0)%")
                         .font(.nwMono(10)).foregroundStyle(nw.textTertiary).monospacedDigit().fixedSize()
+                        .nwContentTransition(.numeric())
                         .accessibilityHidden(true)
                 }
                 .help(run.progressLabel ?? "")
+                .nwAnimation(.content, value: run.percent)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -208,12 +225,14 @@ public struct NWSubagentCard: View, Equatable {
                     HStack(spacing: NW.Space.s) { answers(question, answer: answer) }
                     VStack(alignment: .leading, spacing: NW.Space.s) { answers(question, answer: answer) }
                 }
-                if replying { replyField(answer: answer) }
+                .nwInstant()
+                if replying { replyField(answer: answer).nwTransition(.disclosure) }
             }
         }
         .padding(.vertical, NW.Space.m)
         .padding(.horizontal, 10)
         .background(nw.lanternTint, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+        .nwAnimation(.disclosure, value: replying)
     }
 
     @ViewBuilder private func answers(_ question: NWSubagentQuestion, answer: @escaping (String) -> Void) -> some View {

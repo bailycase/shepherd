@@ -137,6 +137,7 @@ private struct NWRunLedgerRow: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .nwAnimation(.hover, value: hovering)
+        .nwAnimation(.hover, value: selected)
         .accessibilityLabel("\(entry.name), \(entry.state.label), \(entry.summary)")
         .accessibilityValue(entry.meta)
         .accessibilityHint("Opens the run in the inspector")

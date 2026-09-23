@@ -49,26 +49,54 @@ private struct SubagentGroup: View, Equatable {
 
     var body: some View {
         let ordered = SubagentPresentation.ordered(runs)
+        let layout = SubagentPresentation.layout(ordered, turnLive: turnLive)
+        let cards = switch layout {
+        case .ledger: [ChildRun]()
+        case .strip: ordered.filter { stripExpanded || $0.needsAttention }
+        case .cards: ordered
+        }
+        // One list of cards in every layout, so a card keeps its identity when the group folds
+        // into the strip: the cards that fold away leave, the strip arrives, and the ledger
+        // replaces them all in place once the group finishes.
         VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
-            switch SubagentPresentation.layout(ordered, turnLive: turnLive) {
-            case .ledger:
+            if layout == .ledger {
                 NWRunLedger(SubagentPresentation.ledger(ordered), selection: selection(ordered)).equatable()
-            case .strip:
+                    .nwTransition(.content)
+            }
+            if layout == .strip {
                 NWRunsStrip(SubagentPresentation.strip(ordered), isExpanded: $stripExpanded) { id in
                     // A segment opens its run as the run's card does.
                     if let run = ordered.first(where: { $0.id == id }) { inspect(run) }
                 }
                 .equatable()
-                ForEach(ordered.filter { stripExpanded || $0.needsAttention }, id: \.id, content: card)
-            case .cards:
-                ForEach(ordered, id: \.id, content: card)
+                .nwTransition(.content)
             }
+            ForEach(cards, id: \.id, content: card)
+        }
+        .nwAnimation(.list, value: Arrangement(layout: layout, cards: cards.map { CardPhase($0) }))
+    }
+
+    /// What moves the group's rows: its layout, which cards show, and each card's state (a card
+    /// that grows a question pushes the cards under it down with it).
+    private struct Arrangement: Equatable {
+        let layout: SubagentPresentation.Layout
+        let cards: [CardPhase]
+    }
+
+    private struct CardPhase: Equatable {
+        let id: String
+        let state: AgentState
+
+        init(_ run: ChildRun) {
+            id = run.id
+            state = SubagentPresentation.state(run)
         }
     }
 
     private func card(_ run: ChildRun) -> some View {
         SubagentCard(run: run, selected: run.runID == inspectedRunID, enabled: enabled, inspect: inspect, command: command)
             .equatable()
+            .nwTransition(.list)
     }
 
     /// The ledger row of the inspected run; choosing a row inspects it (again closes it).
