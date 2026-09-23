@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(macOS)
+import AppKit
+#endif
 
 /// A diff line's kind: unchanged context, an addition, or a removal.
 public enum NWDiffLineKind: Sendable, Hashable {
@@ -205,18 +208,20 @@ public struct NWHunkHeader: View {
 
 /// Lines folded out of a long run (Review board): a 24pt `bgSunken` strip between 1px rules,
 /// "+ 13 more removed lines · 18–32" in micro mono, aligned 6pt into the code column. Clicking it
-/// shows the lines.
+/// shows the lines; with `expandFile`, ⌥-click (or the VoiceOver action) shows the whole file.
 public struct NWFoldRow: View {
     let count: Int
     let kind: NWDiffLineKind
     let range: String
     let action: () -> Void
+    let expandFile: (() -> Void)?
 
-    public init(count: Int, kind: NWDiffLineKind, range: String, action: @escaping () -> Void) {
+    public init(count: Int, kind: NWDiffLineKind, range: String, action: @escaping () -> Void, expandFile: (() -> Void)? = nil) {
         self.count = count
         self.kind = kind
         self.range = range
         self.action = action
+        self.expandFile = expandFile
     }
 
     /// "+ 13 more removed lines · 18–32" (the range is left off when empty).
@@ -226,12 +231,21 @@ public struct NWFoldRow: View {
     }
 
     public var body: some View {
-        Button(action: action) {
+        Button {
+            #if os(macOS)
+            if let expandFile, NSEvent.modifierFlags.contains(.option) { return expandFile() }
+            #endif
+            action()
+        } label: {
             Text(Self.label(count: count, kind: kind, range: range))
                 .lineLimit(1)
         }
         .buttonStyle(NWFoldRowStyle())
+        .help(expandFile == nil ? "Show these lines" : "Show these lines (⌥-click shows the whole file)")
         .accessibilityHint("Shows the folded lines")
+        .accessibilityActions {
+            if let expandFile { Button("Show the whole file", action: expandFile) }
+        }
     }
 }
 
@@ -275,29 +289,32 @@ public struct NWDiffView<Annotation: View>: View {
     let rows: [NWDiffRow]
     let onComment: ((NWDiffLineContent) -> Void)?
     let onExpand: (String) -> Void
+    let onExpandFile: (() -> Void)?
     let annotation: (NWDiffLineContent) -> Annotation
 
-    /// `onExpand` gets a fold's id. The annotation is inset under its line
-    /// (`NWDiffMetrics.annotationInsets`).
+    /// `onExpand` gets a fold's id; `onExpandFile` (⌥-click on a fold) opens every fold. The
+    /// annotation is inset under its line (`NWDiffMetrics.annotationInsets`).
     public init(_ rows: [NWDiffRow], onComment: ((NWDiffLineContent) -> Void)? = nil, onExpand: @escaping (String) -> Void,
-                @ViewBuilder annotation: @escaping (NWDiffLineContent) -> Annotation) {
+                onExpandFile: (() -> Void)? = nil, @ViewBuilder annotation: @escaping (NWDiffLineContent) -> Annotation) {
         self.rows = rows
         self.onComment = onComment
         self.onExpand = onExpand
+        self.onExpandFile = onExpandFile
         self.annotation = annotation
     }
 
     public var body: some View {
         ForEach(rows) { row in
-            NWDiffRowView(row: row, onComment: onComment, onExpand: onExpand, annotation: annotation)
+            NWDiffRowView(row: row, onComment: onComment, onExpand: onExpand, onExpandFile: onExpandFile, annotation: annotation)
         }
     }
 }
 
 extension NWDiffView where Annotation == EmptyView {
     /// A diff without annotations.
-    public init(_ rows: [NWDiffRow], onComment: ((NWDiffLineContent) -> Void)? = nil, onExpand: @escaping (String) -> Void) {
-        self.init(rows, onComment: onComment, onExpand: onExpand) { _ in EmptyView() }
+    public init(_ rows: [NWDiffRow], onComment: ((NWDiffLineContent) -> Void)? = nil, onExpand: @escaping (String) -> Void,
+                onExpandFile: (() -> Void)? = nil) {
+        self.init(rows, onComment: onComment, onExpand: onExpand, onExpandFile: onExpandFile) { _ in EmptyView() }
     }
 }
 
@@ -306,6 +323,7 @@ private struct NWDiffRowView<Annotation: View>: View {
     let row: NWDiffRow
     let onComment: ((NWDiffLineContent) -> Void)?
     let onExpand: (String) -> Void
+    let onExpandFile: (() -> Void)?
     let annotation: (NWDiffLineContent) -> Annotation
 
     var body: some View {
@@ -317,7 +335,7 @@ private struct NWDiffRowView<Annotation: View>: View {
                 NWDiffLine(line, onComment: onComment.map { comment in { comment(line) } })
                 annotation(line).padding(NWDiffMetrics.annotationInsets)
             case .fold(let id, let count, let kind, let range):
-                NWFoldRow(count: count, kind: kind, range: range) { onExpand(id) }
+                NWFoldRow(count: count, kind: kind, range: range, action: { onExpand(id) }, expandFile: onExpandFile)
             }
         }
     }

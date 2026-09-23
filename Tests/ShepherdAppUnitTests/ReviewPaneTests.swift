@@ -196,7 +196,7 @@ struct ReviewPaneModelTests {
         #expect(first.withUnsafeBufferPointer { a in model.rows(for: file).withUnsafeBufferPointer { a.baseAddress == $0.baseAddress } })
         let fold = try #require(first.first { if case .fold = $0 { true } else { false } })
 
-        model.expandFold(fold.id, in: file.id, wholeFile: false)
+        model.expandFold(fold.id, in: file.id)
 
         #expect(model.rows(for: file).count == 1 + 13)
     }
@@ -205,7 +205,7 @@ struct ReviewPaneModelTests {
         let lines = ReviewSample.lines(.removed, 1...13) + ReviewSample.lines(.context, 20...32)
         let file = Fixture.diffFile("a.txt", hunks: [DiffHunk(header: "@@ -1,26 +1,13 @@", lines: lines)])
         let model = ReviewSample.model(files: [file])
-        model.expandFold("any", in: file.id, wholeFile: true)
+        model.expandFile(file.id)
         #expect(model.rows(for: file).count == 1 + 26)
     }
 

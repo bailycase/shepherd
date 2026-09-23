@@ -328,7 +328,7 @@ private struct DiffFileSection: View, Equatable {
                         .padding(.leading, NWDiffMetrics.annotationLeading)
                 } else {
                     NWDiffView(rows, onComment: { model.startComment(fileID: file.id, lineID: $0.key) },
-                               onExpand: { model.expandFold($0, in: file.id, wholeFile: NSEvent.modifierFlags.contains(.option)) }) { line in
+                               onExpand: { model.expandFold($0, in: file.id) }, onExpandFile: { model.expandFile(file.id) }) { line in
                         annotation(line)
                     }
                 }
