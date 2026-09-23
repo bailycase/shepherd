@@ -20,6 +20,7 @@ public struct NWStatusPill: View {
                 .foregroundStyle(state.textColor)
                 .lineLimit(1)
                 .monospacedDigit()
+                .nwContentTransition(.crossFade)
         }
         .padding(.leading, NW.Space.s)
         .padding(.trailing, 7)
@@ -27,6 +28,9 @@ public struct NWStatusPill: View {
         .background(state.tint ?? .clear, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
         .nwBorder(state.tint == nil ? Color.nw.lineStrong : .clear, radius: NW.Radius.xs)
         .fixedSize()
+        // Keyed on the state: a new word and tint fade in, while a label that ticks (an elapsed
+        // time) changes at once.
+        .nwComponentAnimation(.content, value: state)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
     }
@@ -58,6 +62,7 @@ public struct NWStatusDot: View {
             }
         }
         .frame(width: size, height: size)
+        .nwComponentAnimation(.content, value: state)
         .accessibilityHidden(true)
     }
 }
@@ -138,6 +143,7 @@ public struct NWBarProgressStyle: ProgressViewStyle {
                 }
             }
             .frame(height: 4)
+            .nwComponentAnimation(.content, value: fraction)
             .accessibilityElement()
             .accessibilityValue("\(Int((fraction * 100).rounded())) percent")
     }
@@ -171,6 +177,8 @@ public struct NWStateGlyph: View {
             }
         }
         .frame(width: size, height: size)
+        // The spinner gives way to its outcome, and one outcome's symbol to another's.
+        .nwComponentAnimation(.content, value: state)
         .accessibilityHidden(true)
     }
 
@@ -178,6 +186,7 @@ public struct NWStateGlyph: View {
         Image(systemName: state.symbolName)
             .font(.system(size: size - 3, weight: .semibold))
             .foregroundStyle(state.color)
+            .nwContentTransition(.symbol)
     }
 }
 
@@ -208,6 +217,7 @@ public struct NWStepStrip: View {
                     .frame(height: Self.segmentHeight)
             }
         }
+        .nwComponentAnimation(.content, value: steps)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.summary(steps))
     }
