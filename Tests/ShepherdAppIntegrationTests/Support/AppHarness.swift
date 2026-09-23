@@ -8,23 +8,13 @@ import ShepherdTestSupport
 import Testing
 @testable import ShepherdApp
 
-/// A throwaway `UserDefaults` suite; `remove()` deletes it.
-final class ScratchDefaults {
-    let name = "shepherd.tests.\(UUID().uuidString)"
-    let defaults: UserDefaults
-
-    init() { defaults = UserDefaults(suiteName: name)! }
-
-    func remove() { defaults.removePersistentDomain(forName: name) }
-}
-
 /// A real server on scratch paths plus a view model wired exactly like the app's, but with
 /// isolated settings, keybindings, theme, remote hosts, and sidebar defaults so no test reads
 /// or writes the user's preferences. Call `stop()` when done.
 @MainActor
 final class AppHarness {
     let scratch: ScratchServer
-    let scratchDefaults = ScratchDefaults()
+    let defaults = ScratchDefaults()
     let settings: AppSettings
     let keybindings: KeybindingsStore
     let themeManager: ThemeManager
@@ -33,14 +23,13 @@ final class AppHarness {
 
     var server: SessionServer { scratch.server }
     var dir: URL { scratch.dir }
-    var defaults: UserDefaults { scratchDefaults.defaults }
 
     init() throws {
         scratch = try ScratchServer()
-        settings = AppSettings(store: scratchDefaults.defaults)
-        keybindings = KeybindingsStore(store: scratchDefaults.defaults)
-        themeManager = ThemeManager(store: scratchDefaults.defaults, environmentTheme: nil, systemColorScheme: .dark)
-        remoteHosts = RemoteHostStore(defaults: scratchDefaults.defaults)
+        settings = AppSettings(store: defaults)
+        keybindings = KeybindingsStore(store: defaults)
+        themeManager = ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark)
+        remoteHosts = RemoteHostStore(defaults: defaults)
     }
 
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
@@ -67,7 +56,6 @@ final class AppHarness {
         for connection in remoteHosts.connections { remoteHosts.removeHost(id: connection.id) }
         vm = nil
         scratch.stop()
-        scratchDefaults.remove()
     }
 }
 

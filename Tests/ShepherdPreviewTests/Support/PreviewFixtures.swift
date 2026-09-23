@@ -15,8 +15,7 @@ import SwiftUI
 @MainActor
 final class PreviewWorkspace {
     let scratch: ScratchServer
-    let defaultsName = "shepherd.previews.\(UUID().uuidString)"
-    let defaults: UserDefaults
+    let defaults = ScratchDefaults()
     let settings: AppSettings
     let vm: ShepherdViewModel
     var server: SessionServer { scratch.server }
@@ -25,7 +24,6 @@ final class PreviewWorkspace {
     init() throws {
         try PreviewEnvironment.install()
         scratch = try ScratchServer()
-        defaults = UserDefaults(suiteName: defaultsName)!
         settings = AppSettings(store: defaults)
         // Never ask a real model to write a PR description while rendering the finalize sheet.
         settings.worktreeGeneratePRDescription = false
@@ -61,7 +59,6 @@ final class PreviewWorkspace {
     func stop() {
         for connection in vm.remoteHosts.connections { vm.remoteHosts.removeHost(id: connection.id) }
         scratch.stop()
-        defaults.removePersistentDomain(forName: defaultsName)
     }
 }
 

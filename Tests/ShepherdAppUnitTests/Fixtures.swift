@@ -1,17 +1,14 @@
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdTestKit
 @testable import ShepherdApp
 
 /// Small builders shared by the suites in this target.
 enum Fixture {
-    /// A throwaway defaults suite — never `.standard`, which belongs to the running app.
-    static func defaults() -> UserDefaults {
-        let name = "shepherd.unit.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: name)!
-        defaults.removePersistentDomain(forName: name)
-        return defaults
-    }
+    /// A throwaway defaults suite — never `.standard`, which belongs to the running app. It
+    /// cleans itself up once the test drops the last reference.
+    static func defaults() -> UserDefaults { ScratchDefaults() }
 
     static func space(_ name: String, path: String? = nil, hidden: Bool = false) -> Space {
         Space(name: name, path: path ?? "/tmp/\(name)", hidden: hidden)
