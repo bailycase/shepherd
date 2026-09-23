@@ -52,7 +52,7 @@ enum SubagentPresentation {
             card.waitingSince = askedAt(run)
             card.question = NWSubagentQuestion(text: run.question?.text ?? run.attentionText ?? "", options: run.question?.options ?? [])
         case .done:
-            let summary = nativeFirstSentence(run.summary ?? run.output ?? "", limit: summaryLimit)
+            let summary = summaryLine(run)
             card.detail = summary.isEmpty ? "finished" : lineWithoutFinalPeriod(summary)
             card.detailMeta = [(run.toolCalls ?? run.result?.tools).flatMap { $0 > 0 ? plural($0, "tool") : nil },
                                duration(run).map { NWDuration.text($0) }].compactMap { $0 }.joined(separator: " · ")
@@ -102,7 +102,7 @@ enum SubagentPresentation {
         let ordered = ordered(runs)
         let entries = ordered.map { run -> NWRunLedgerEntry in
             let state = state(run)
-            let summary = state == .failed ? (run.exitReason ?? run.state) : nativeFirstSentence(run.summary ?? run.output ?? "", limit: summaryLimit)
+            let summary = state == .failed ? (run.exitReason ?? run.state) : summaryLine(run)
             let files = run.result?.files ?? run.files?.count ?? 0
             let meta = [files > 0 ? plural(files, "file") : nil, duration(run).map { NWDuration.text($0) }].compactMap { $0 }
             return NWRunLedgerEntry(id: run.id, name: names(run).name, state: state, summary: summary, meta: meta.joined(separator: " · "))
@@ -173,6 +173,16 @@ enum SubagentPresentation {
 
     /// The layout truncates; this only keeps a runaway first sentence short.
     static let summaryLimit = 160
+
+    /// What a finished run did, as one plain line: the first sentence of its summary (else its
+    /// output) without inline Markdown markers ("**macOS**" reads "macOS").
+    static func summaryLine(_ run: ChildRun) -> String {
+        let sentence = nativeFirstSentence(run.summary ?? run.output ?? "", limit: summaryLimit)
+        guard let parsed = try? AttributedString(markdown: sentence, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
+            return sentence
+        }
+        return String(parsed.characters)
+    }
 
     /// "claude-sonnet" from "anthropic/claude-sonnet".
     static func modelTag(_ model: String) -> String {
