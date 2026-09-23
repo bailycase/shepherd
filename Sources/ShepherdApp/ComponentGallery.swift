@@ -3,7 +3,7 @@ import ShepherdUI
 
 /// Every shared Night Watch component in its states, laid out like the Controls and Status
 /// boards, for checking the library against the spec in both appearances. Debug builds open it
-/// from the command palette ("Component Gallery").
+/// from the View menu (View ▸ Component Gallery).
 struct ComponentGallery: View {
     @State private var segment = "pr"
     @State private var toggle = true
