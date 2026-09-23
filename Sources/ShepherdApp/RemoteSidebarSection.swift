@@ -80,13 +80,9 @@ struct RemoteHostBlock: View {
     @ViewBuilder
     private func remoteAgentRow(_ agent: Agent) -> some View {
         let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
-        let selected = vm.selectedRemoteAgent == ref
-        let badge = vm.showAgentShortcutBadges && vm.selectedRemoteAgent?.hostID == connection.id
-            ? vm.remoteOrderedAgents(hostID: connection.id).firstIndex(where: { $0.id == agent.id }).flatMap { $0 < 9 ? $0 + 1 : nil }
-            : nil
-        let model = SidebarAgentRowModel(agent: agent, selected: selected, depth: 1, badge: badge,
-                                         children: connection.children[agent.id] ?? [])
-        AgentRow(model: model) { vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id) }
+        AgentRow(model: vm.remoteSidebarRowModel(for: agent, on: connection)) {
+            vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id)
+        }
             .onDrag { vm.beginSidebarDrag(ShepherdViewModel.dragPayload(remote: ref)) }
             .sidebarDropTarget(vm: vm, allowsBelow: true) { payload, edge, validateOnly in
                 vm.dropRemoteAgent(payload: payload, on: ref, edge: edge, validateOnly: validateOnly)
