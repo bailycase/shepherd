@@ -6,7 +6,7 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
-/// The composer (NWComposer board): pinned under the thread in the same 760pt column, a fade
+/// The composer (NWComposer board): pinned under the thread in the same 820pt column, a fade
 /// above it, the `NWComposer` card with the field (or a pending question) and one row of
 /// controls: attach · / commands · model · thinking · Send or Stop. Menus open above the card.
 struct Composer: View {
