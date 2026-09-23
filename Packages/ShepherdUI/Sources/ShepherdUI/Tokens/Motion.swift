@@ -251,14 +251,14 @@ extension View {
         modifier(NWPopModifier(trigger: trigger))
     }
 
-    /// Changes in this subtree apply at once, whatever animation the change arrived with. For
-    /// what must never animate: terminal surfaces (a resize per frame is a PTY resize storm),
-    /// streaming text, and anything keyboard navigation moves.
+    /// Changes in this subtree apply at once, whatever animation the change arrived with (an
+    /// ancestor's `nwAnimation`, a `withNWAnimation`). For what must never animate: terminal
+    /// surfaces (SwiftUI resizes a hosted NSView every frame of an animated layout change, and
+    /// each is a PTY resize), streaming text, and anything keyboard navigation moves. Motion
+    /// attached inside the subtree with `nwAnimation` still runs, so put it on what must not
+    /// move rather than on a whole pane.
     public func nwInstant() -> some View {
-        transaction { transaction in
-            transaction.animation = nil
-            transaction.disablesAnimations = true
-        }
+        transaction { $0.animation = nil }
     }
 }
 
