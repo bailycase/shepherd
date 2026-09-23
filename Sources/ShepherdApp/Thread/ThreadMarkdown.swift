@@ -69,25 +69,27 @@ struct Prose: View, Equatable {
 
 /// A fenced block, plain on its first frame and syntax colored once tree-sitter has run off the
 /// main actor in the block's task. Results are cached, so a block that scrolls back in is
-/// colored at once.
+/// colored at once. A streaming block keeps its last colors while the longer text is colored.
 struct HighlightedCodeBlock: View {
     let code: String
     let language: String?
-    @State private var highlighted: AttributedString?
+    /// The last colors this block rendered, with the code they color: the block keeps its
+    /// identity while a reply streams into it.
+    @State private var rendered: CodeHighlightCache.Rendered?
 
-    private var key: CodeHighlightCache.Key { CodeHighlightCache.Key(code: trimmed, language: language) }
-    private var trimmed: String { code.trimmingCharacters(in: .newlines) }
+    private var key: CodeHighlightCache.Key { CodeHighlightCache.Key(fence: code, language: language) }
 
     var body: some View {
-        NWCodeBlock(trimmed, language: language, highlighted: highlighted ?? CodeHighlightCache.cached(key))
+        let key = key
+        NWCodeBlock(key.code, language: language,
+                    highlighted: CodeHighlightCache.colors(for: key, last: rendered, cached: CodeHighlightCache.cached(key)))
             .task(id: key) {
-                let key = key
                 guard CodeHighlightCache.cached(key) == nil, CodeHighlight.path(forFenceLanguage: key.language) != nil else { return }
                 let style = CodeHighlight.Style.theme
                 let value = await Task.detached(priority: .userInitiated) { CodeHighlightCache.render(key, style: style) }.value
                 guard !Task.isCancelled, let value else { return }
                 CodeHighlightCache.store(value, for: key)
-                highlighted = value
+                rendered = CodeHighlightCache.Rendered(key: key, value: value)
             }
     }
 }
@@ -97,6 +99,32 @@ enum CodeHighlightCache {
     struct Key: Hashable, Sendable {
         var code: String
         var language: String?
+
+        init(code: String, language: String?) {
+            self.code = code
+            self.language = language
+        }
+
+        /// A fence's code as the block draws it: without its leading and trailing newlines.
+        init(fence code: String, language: String?) {
+            self.init(code: code.trimmingCharacters(in: .newlines), language: language)
+        }
+    }
+
+    /// A block's colors and the code they color.
+    struct Rendered {
+        var key: Key
+        var value: AttributedString
+    }
+
+    /// The colors to draw `key` with: its own once rendered or cached. While a block that grew
+    /// (a streaming reply) is colored again, its last colors with the new text plain after
+    /// them; colors for other code are never drawn. nil draws the block plain.
+    static func colors(for key: Key, last: Rendered?, cached: AttributedString?) -> AttributedString? {
+        if let last, last.key == key { return last.value }
+        if let cached { return cached }
+        guard let last, last.key.language == key.language, key.code.hasPrefix(last.key.code) else { return nil }
+        return last.value + AttributedString(String(key.code.dropFirst(last.key.code.count)))
     }
 
     @MainActor private static var values: [Key: AttributedString] = [:]

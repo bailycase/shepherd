@@ -84,6 +84,34 @@ struct CodeHighlightTests {
         #expect(CodeHighlightCache.render(CodeHighlightCache.Key(code: "+++", language: "brainfuck"), style: style) == nil)
     }
 
+    /// A block draws only colors of its own code. While a streaming block grows, its last colors
+    /// stay and the new text follows plain; changed or other code draws plain until colored.
+    @Test(arguments: [
+        ("var a = 1", "go", "var a = 1", "var a = 1"),
+        ("var a = 1\n// done", "go", "var a = 1", "var a = 1\n// done"),
+        ("var b = 2", "go", "var a = 1", nil),
+        ("var a = 1\n// done", "python", "var a = 1", nil),
+    ] as [(String, String, String, String?)])
+    func aBlockDrawsOnlyColorsOfItsOwnCode(code: String, language: String, lastCode: String, drawn: String?) throws {
+        let last = CodeHighlightCache.Key(code: lastCode, language: "go")
+        let lastColors = try #require(CodeHighlightCache.render(last, style: style))
+        let key = CodeHighlightCache.Key(code: code, language: language)
+        let colors = CodeHighlightCache.colors(for: key, last: CodeHighlightCache.Rendered(key: last, value: lastColors), cached: nil)
+        #expect(colors.map { String($0.characters) } == drawn)
+        if let colors { #expect(color(of: "var", in: colors) == style.keyword) }
+    }
+
+    /// Colors cached for the block's current code win over the last ones it rendered, and a
+    /// fence's surrounding newlines are not part of its key.
+    @Test func cachedColorsForTheCurrentCodeWin() throws {
+        let key = CodeHighlightCache.Key(fence: "\nvar b = 2\n", language: "go")
+        #expect(key.code == "var b = 2")
+        let cached = try #require(CodeHighlightCache.render(key, style: style))
+        let last = CodeHighlightCache.Rendered(key: CodeHighlightCache.Key(code: "var", language: "go"), value: AttributedString("var"))
+        #expect(CodeHighlightCache.colors(for: key, last: last, cached: cached) == cached)
+        #expect(CodeHighlightCache.colors(for: key, last: nil, cached: nil) == nil)
+    }
+
     /// The review and the thread's code blocks both highlight off the main thread: concurrent
     /// calls share compiled grammars and must agree.
     @Test func concurrentCallsGiveTheSameColors() async {
