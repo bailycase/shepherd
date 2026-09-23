@@ -1,8 +1,9 @@
 import SwiftUI
 import ShepherdUI
 
-/// The window, sidebar, toolbar, right pane, and palette (Navigation board). Row heights come
-/// from `NWDensity` (Settings ▸ Appearance ▸ Sidebar rows) through the environment.
+/// The window, its dividers and workspace, the sidebar, toolbar, right pane, and palette
+/// (Navigation board). Row heights come from `NWDensity` (Settings ▸ Appearance ▸ Sidebar rows)
+/// through the environment.
 extension AppLayout {
     // Window
     static let windowMinWidth: CGFloat = 720
@@ -17,14 +18,37 @@ extension AppLayout {
     /// How far a toolbar that runs under the window controls starts from the leading edge.
     static let trafficLightInset: CGFloat = 70
 
+    // Dividers
+    /// The layout's dividers: pane splits and the edges of the docked sidebar and right pane.
+    /// 1pt rather than a hairline, because the window's arithmetic counts them.
+    static let dividerWidth: CGFloat = 1
+    /// A divider's drag target, centred on it.
+    static let resizeHandleWidth: CGFloat = 9
+    /// VoiceOver's adjustment step for the sidebar's width and the right pane's.
+    static let sidebarAdjustStep: CGFloat = 16
+    static let paneAdjustStep: CGFloat = 40
+
     // Sidebar
     static let sidebarDefaultWidth: CGFloat = 232
     static let sidebarMinWidth: CGFloat = 190
     static let sidebarMaxWidth: CGFloat = 340
     static let sidebarPadding: CGFloat = NWSidebarMetrics.treeInset
     static let sidebarIndent: CGFloat = NWSidebarMetrics.indentStep
+    static let sidebarRowSpacing: CGFloat = NWSidebarMetrics.rowSpacing
+    /// The hover `+` in section and space headers, and its glyph.
+    static let sidebarPlusSize: CGFloat = 18
+    static let sidebarPlusGlyph: CGFloat = 11
+    /// A finished subagent group's chevron, in a column as wide as the rows' 6pt state dots.
+    static let subagentGroupChevron: CGFloat = 8
+    static let subagentGroupChevronWidth: CGFloat = 6
     /// An overlaid sidebar leaves this much of the window uncovered.
     static let sidebarOverlayMargin: CGFloat = 48
+
+    // Workspace
+    /// The empty workspace's measure (no agent on screen).
+    static let emptyWorkspaceMaxWidth: CGFloat = 420
+    /// How far a terminal pane's placeholder ("starting session…") sits from its corner.
+    static let panePlaceholderPadding: CGFloat = 10
 
     // Toolbar
     static let headerHeight: CGFloat = NWToolbarMetrics.height
@@ -65,7 +89,7 @@ enum ShellLayout {
     /// and ⇧⌘S overlays it.
     static func sidebar(windowWidth: CGFloat, preferredWidth: CGFloat, userHidden: Bool, overlayShown: Bool) -> Sidebar {
         let preferred = min(max(preferredWidth, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth)
-        let room = windowWidth - 1 - AppLayout.mainColumnMinWidth
+        let room = windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth
         if room >= AppLayout.sidebarMinWidth {
             return Sidebar(mode: userHidden ? .hidden : .docked, width: min(preferred, room), autoHidden: false)
         }
@@ -75,7 +99,7 @@ enum ShellLayout {
 
     /// The narrowest window that docks the sidebar at `width`.
     static func sidebarFitWidth(_ width: CGFloat) -> CGFloat {
-        min(max(width, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth) + 1 + AppLayout.mainColumnMinWidth
+        min(max(width, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth) + AppLayout.dividerWidth + AppLayout.mainColumnMinWidth
     }
 
     enum PaneMode: Equatable {
@@ -90,7 +114,7 @@ enum ShellLayout {
     }
 
     /// Narrower than this, the pane overlays the thread instead of squeezing it.
-    static let paneDockThreshold = AppLayout.threadMinWidth + 1 + AppLayout.paneMinWidth
+    static let paneDockThreshold = AppLayout.threadMinWidth + AppLayout.dividerWidth + AppLayout.paneMinWidth
 
     /// The right pane in a main column `containerWidth` wide. Docked, it is 600 by default, at
     /// least 480, at most half the column (480 wins), and the thread keeps 400; below that the
@@ -100,11 +124,12 @@ enum ShellLayout {
         let total = max(0, containerWidth)
         let preferred = max(preferredWidth.flatMap { $0 > 0 ? $0 : nil } ?? AppLayout.paneDefaultWidth, AppLayout.paneMinWidth)
         if total >= paneDockThreshold {
-            let widest = max(AppLayout.paneMinWidth, min(total * AppLayout.paneMaxFraction, total - 1 - AppLayout.threadMinWidth))
+            let edge = AppLayout.dividerWidth
+            let widest = max(AppLayout.paneMinWidth, min(total * AppLayout.paneMaxFraction, total - edge - AppLayout.threadMinWidth))
             let width = min(preferred, widest)
-            return Pane(mode: .docked, width: width, contentWidth: total - 1 - width)
+            return Pane(mode: .docked, width: width, contentWidth: total - edge - width)
         }
-        return Pane(mode: .overlay, width: min(preferred, max(0, total - 1)), contentWidth: total)
+        return Pane(mode: .overlay, width: min(preferred, max(0, total - AppLayout.dividerWidth)), contentWidth: total)
     }
 
     /// The divider ratio for a drag at `position` along a split `span` long (its 1pt divider
@@ -112,7 +137,7 @@ enum ShellLayout {
     /// stays centred).
     static func splitRatio(position: CGFloat, span: CGFloat) -> Double {
         let span = max(1, span)
-        let floor = min(0.5, AppLayout.splitPaneMinSpan / max(1, span - 1))
+        let floor = min(0.5, AppLayout.splitPaneMinSpan / max(1, span - AppLayout.dividerWidth))
         return min(min(0.85, 1 - floor), max(max(0.15, floor), position / span))
     }
 }

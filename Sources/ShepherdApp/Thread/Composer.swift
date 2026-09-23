@@ -262,7 +262,7 @@ struct Composer: View {
                     composing.wrappedValue = true
                 } label: {
                     HStack(spacing: NW.Space.s) {
-                        Text("/").font(Font.nwMono(12))
+                        Text("/").font(Font.nw(.code))
                         if !compact { Text("commands") }
                     }
                 }
@@ -280,7 +280,7 @@ struct Composer: View {
 
     @ViewBuilder private var primary: some View {
         if store.busy {
-            ProgressView().progressViewStyle(.nwSpinner(size: 13, color: Color.nw.textTertiary))
+            ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
                 .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
                 .accessibilityLabel("Waiting for pi")
         } else if running, dialogs.isEmpty, store.draft.isEmpty {
@@ -304,7 +304,7 @@ struct Composer: View {
             let settable = store.snapshot?.supportedActions.contains("setModel") == true
             Button { openModels() } label: {
                 HStack(spacing: NW.Space.s) {
-                    Text(nativeModelShortName(model)).font(Font.nwMono(12))
+                    Text(nativeModelShortName(model)).font(Font.nw(.code))
                     if settable { NWChipChevron() }
                 }
             }
@@ -324,7 +324,7 @@ struct Composer: View {
                 menu = menu == .thinking ? nil : .thinking
             } label: {
                 HStack(spacing: NW.Space.s) {
-                    Image(systemName: "lightbulb").font(.system(size: 11, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
+                    Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
                     if !compact { Text("Thinking") }
                     Text(thinking.capitalized).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
                     NWChipChevron()
@@ -543,9 +543,9 @@ struct QuestionPanel: View {
 
     var body: some View {
         let blocked = !enabled || dialog.unavailable != nil
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: AppLayout.questionSpacing) {
             HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                NWStateGlyph(.attention, size: 13)
+                NWStateGlyph(.attention, size: AppLayout.questionGlyph)
                 Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -556,7 +556,7 @@ struct QuestionPanel: View {
                     Text(message).font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 140)
+                .frame(maxHeight: AppLayout.questionMessageMaxHeight)
                 .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.m)
                 .background(Color.nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
                 .nwBorder(Color.nw.lineSubtle, radius: NW.Radius.m)

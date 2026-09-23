@@ -59,8 +59,8 @@ And the rules that follow from them:
   (the thread) to `bgRaised` (cards, the composer, menus), with `bgSunken` for code and headers.
   Separation is a hairline, never a shadow.
 - **One shadow.** `.nwPopover()` (menus, the palette, popovers) carries the system's only
-  shadow. The sidebar and the right pane borrow it only while they float over the window, and
-  the switch and slider knobs have a small knob shadow. No vibrancy, no translucency, no
+  shadow. The sidebar and the right pane borrow it (`.nwFloatShadow(_:)`) only while they float
+  over the window, and the switch and slider knobs have a small knob shadow. No vibrancy, no translucency, no
   gradients except the fade above the composer.
 - **Honest affordances.** Never show a control that does nothing, a shortcut that isn't wired,
   or sample data in place of real data. Hide unsupported capabilities, or explain them.
@@ -277,6 +277,8 @@ leading from the face's real metrics); `.font(.nw(_:))` alone suits single lines
 - **Elevation:**
   - `.nwCard()`: flat, a raised fill and a 1px line (`lineSubtle` unless given).
   - `.nwPopover()`: a raised fill, a 1px `lineStrong` line, radius 12, and the only shadow.
+  - `.nwFloatShadow(_:)`: the popover's shadow on the sidebar or right pane while it overlays
+    the window, and nothing while docked.
   - `.nwFocusRing()`: running blue at `focusRing`, 2pt wide, drawn outside the control, for
     keyboard focus only (`.nwFocusRing(_ visible:)` for a field or card whose focus the caller
     tracks; `.nwFocusRingCircle()` for icon buttons).
@@ -1015,12 +1017,12 @@ Review-pane and menu keys are listed with their surfaces.
 
 ## Known gaps
 
-These places in the code break this document and should be fixed toward it:
+None open. When a change leaves code breaking this document, list the place here until it is
+fixed toward it.
 
-- **Literal dimensions in app views:** the tool-output sheet's size and padding
-  (`ToolOutputSheet`), the question panel's 140pt message cap, the empty thread's top offsets,
-  the empty workspace's 420pt measure, and `PanePlaceholder`'s padding should move into
-  `AppLayout+Thread.swift` and `AppLayout+Navigation.swift`.
+Deliberate exceptions stay with their rules rather than here: the layout's 1pt dividers and the
+strokes of status glyphs (see Hairlines), and the one-off sizes the boards give outside the type
+ramp, set with `Font.nwSans`/`Font.nwMono` (see Typography).
 
 ## iOS
 

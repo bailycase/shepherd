@@ -194,7 +194,7 @@ private struct ReviewBody: View, Equatable {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             } else if session.isLoading && session.files.isEmpty {
                 HStack(spacing: NW.Space.m) {
-                    ProgressView().progressViewStyle(.nwSpinner(size: 12))
+                    ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.reviewLoadingSpinner))
                     Text("Loading the diff…").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -13,6 +13,7 @@ struct ComponentGallery: View {
     @State private var stepper = 4
     @State private var field = ""
     @State private var search = ""
+    @FocusState private var paletteFocused: Bool
     private var keys: KeybindingsStore { .shared }
 
     var body: some View {
@@ -22,7 +23,7 @@ struct ComponentGallery: View {
                     NWWordmark(size: .large)
                     Text("Every block is one SwiftUI view in ShepherdUI.").font(.nw(.body)).foregroundStyle(.nw.textSecondary)
                 }
-                Grid(horizontalSpacing: 40, verticalSpacing: NW.Space.xxxl) {
+                Grid(horizontalSpacing: AppLayout.galleryColumnGap, verticalSpacing: NW.Space.xxxl) {
                     GridRow(alignment: .top) {
                         column("Buttons") { buttons }
                         column("Selection") { selection }
@@ -36,36 +37,36 @@ struct ComponentGallery: View {
                 }
                 palette
             }
-            .padding(.horizontal, 48)
-            .padding(.vertical, 40)
+            .padding(.horizontal, AppLayout.galleryGutter)
+            .padding(.vertical, AppLayout.galleryTop)
         }
         .background(Color.nw.bgWindow)
     }
 
     private func column<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: AppLayout.galleryBlockSpacing) {
             NWSectionHeader(title)
             content()
         }
-        .frame(width: 400, alignment: .topLeading)
+        .frame(width: AppLayout.galleryColumnWidth, alignment: .topLeading)
     }
 
     private var buttons: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: AppLayout.galleryItemSpacing) {
+            HStack(spacing: AppLayout.galleryItemSpacing) {
                 Button("Launch") {}.buttonStyle(.nw(.primary))
                 Button("Review") {}.buttonStyle(.nw(.secondary))
                 Button("Cancel") {}.buttonStyle(.nw(.ghost))
                 Button("Stop") {}.buttonStyle(.nw(.danger))
                 Button("Delete") {}.buttonStyle(.nw(.dangerFill))
             }
-            HStack(spacing: 10) {
+            HStack(spacing: AppLayout.galleryItemSpacing) {
                 Button("Small") {}.buttonStyle(.nw(.secondary, size: .s))
                 Button("Large") {}.buttonStyle(.nw(.primary, size: .l))
                 Button("Disabled") {}.buttonStyle(.nw(.secondary)).disabled(true)
                 Button("Show all") {}.buttonStyle(.nwLink)
             }
-            HStack(spacing: 10) {
+            HStack(spacing: AppLayout.galleryItemSpacing) {
                 Button {} label: { Image(systemName: "sidebar.left") }.buttonStyle(.nwIcon).accessibilityLabel("Sidebar")
                 Button {} label: { Image(systemName: "plus.forwardslash.minus") }.buttonStyle(.nwIcon(isOn: true)).accessibilityLabel("Review")
                 Button {} label: { Image(systemName: "ellipsis") }.buttonStyle(.nwIcon(bordered: true)).accessibilityLabel("Options")
@@ -75,9 +76,9 @@ struct ComponentGallery: View {
                 NWComposerActionButton(.stop) {}
             }
             HStack(spacing: NW.Space.s) {
-                Button {} label: { HStack(spacing: 6) { Text("/").foregroundStyle(.nw.textTertiary); Text("commands") }.font(.nw(.mono)) }
+                Button {} label: { HStack(spacing: NW.Space.s) { Text("/").foregroundStyle(.nw.textTertiary); Text("commands") }.font(.nw(.mono)) }
                     .buttonStyle(.nwComposerChip())
-                Button {} label: { HStack(spacing: 6) { Text("claude-opus").font(.nw(.mono)); NWChipChevron() } }
+                Button {} label: { HStack(spacing: NW.Space.s) { Text("claude-opus").font(.nw(.mono)); NWChipChevron() } }
                     .buttonStyle(.nwComposerChip(active: true))
                 NWAttachmentChip("screenshot.png") {}
             }
@@ -85,10 +86,10 @@ struct ComponentGallery: View {
     }
 
     private var selection: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: AppLayout.galleryBlockSpacing) {
             NWSegmentedPicker("Source", selection: $segment, options: [("local", "Local"), ("pr", "PR #24")])
             NWSegmentedPicker("Mode", selection: $segment, options: [("local", "System"), ("pr", "Light"), ("dark", "Dark")], size: .s)
-            HStack(spacing: 14) {
+            HStack(spacing: AppLayout.galleryBlockSpacing) {
                 Toggle("On", isOn: $toggle).toggleStyle(.nwSwitch).labelsHidden()
                 Toggle("Off", isOn: $toggleOff).toggleStyle(.nwSwitch).labelsHidden()
                 Toggle("Done when", isOn: $check).toggleStyle(.nwCheckbox)
@@ -122,15 +123,15 @@ struct ComponentGallery: View {
     private var states: some View {
         VStack(alignment: .leading, spacing: NW.Space.m) {
             ForEach(AgentState.allCases, id: \.self) { state in
-                HStack(spacing: 14) {
+                HStack(spacing: AppLayout.galleryBlockSpacing) {
                     NWStatusPill(state)
                     NWStatusDot(state)
                     NWStateGlyph(state)
                     NWBranchGlyph(state)
                 }
             }
-            ProgressView(value: 0.62).progressViewStyle(.nwBar).frame(width: 240)
-            NWStepStrip([.done, .done, .running, .attention, .failed, nil]).frame(width: 240)
+            ProgressView(value: 0.62).progressViewStyle(.nwBar).frame(width: AppLayout.galleryBarWidth)
+            NWStepStrip([.done, .done, .running, .attention, .failed, nil]).frame(width: AppLayout.galleryBarWidth)
             HStack(spacing: NW.Space.l) {
                 ProgressView().progressViewStyle(.nwSpinner)
                 NWSparkline([2, 4, 3, 7, 5, 9, 4, 6, 5, 8])
@@ -153,43 +154,32 @@ struct ComponentGallery: View {
     }
 
     private var feedback: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: AppLayout.galleryBlockSpacing) {
             NWBanner(.failed, title: "Lost connection to the agent process.") {
                 Button("Reconnect") {}.buttonStyle(.nw(.secondary, size: .s))
             }
             NWBanner(.attention, title: "ios asks: keep MobileTokens as an alias?", message: "Migrating touches 31 call sites.")
-            NWEmptyState(Text("New agent in \(Text("~/dev/shepherd").font(.nwMono(15, .medium)))"),
+            NWEmptyState(Text("New agent in \(Text("~/dev/shepherd").font(.nwMono(AppLayout.emptyThreadPathSize, .medium)))"),
                          message: "Describe the task. Drop or paste images to attach them, or type / for commands.", showsMark: false, framed: true)
         }
     }
 
+    /// The palette's own components, as the command palette lays them out.
     private var palette: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: AppLayout.galleryBlockSpacing) {
             NWSectionHeader("Popover")
-            VStack(alignment: .leading, spacing: 0) {
-                NWSearchField("Search commands, agents, subagents…", text: $search, large: true)
-                NWHairline()
-                VStack(alignment: .leading, spacing: 2) {
-                    NWSectionHeader("Commands").padding(.horizontal, 12).padding(.vertical, 6)
-                    menuRow("New agent", icon: "plus", chord: keys.display(.newAgent), selected: true)
-                    menuRow("Settings", icon: "gearshape", chord: "⌘,", selected: false)
+            NWPaletteCard {
+                NWPaletteSearchRow("Search commands, agents, subagents…", text: $search, focus: $paletteFocused, submit: {}) {
+                    EmptyView()
                 }
-                .padding(NW.Space.m)
+            } results: {
+                VStack(alignment: .leading, spacing: 0) {
+                    NWPaletteSectionHeader("Commands")
+                    NWPaletteRow("New agent", systemImage: "plus", shortcut: keys.display(.newAgent), highlighted: true) {}
+                    NWPaletteRow("Settings…", systemImage: "gearshape", shortcut: "⌘,") {}
+                }
             }
             .frame(width: AppLayout.paletteWidth)
-            .nwPopover()
         }
-    }
-
-    private func menuRow(_ title: String, icon: String, chord: String, selected: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 13)).foregroundStyle(selected ? Color.nw.running : .nw.textSecondary).frame(width: 18)
-            Text(title).font(.nwSans(14)).foregroundStyle(.nw.textPrimary)
-            Spacer()
-            NWKeycap(chord)
-        }
-        .padding(.horizontal, 12)
-        .frame(height: AppLayout.paletteRowHeight)
-        .nwRowBackground(selected: selected, hovering: false, selectedFill: .nw.runningTint)
     }
 }

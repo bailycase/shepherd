@@ -20,6 +20,18 @@ extension AppLayout {
     static let activitySpacing: CGFloat = 6
     /// Between blocks inside one part (subagent cards in a stack).
     static let blockSpacing: CGFloat = 10
+    /// A note's text sits this far past its rule (`NWThreadMetrics.ruleWidth`).
+    static let noteIndent: CGFloat = 10
+
+    // Empty thread
+    /// "Starting pi…" while connecting: its spinner, the gap after it, and how far down it sits.
+    static let startingSpinner: CGFloat = 14
+    static let startingSpacing: CGFloat = 10
+    static let startingTop: CGFloat = 120
+    /// A fresh agent's framed empty state sits this far down, with its path in Geist Mono at
+    /// this size ("New agent in ~/path").
+    static let emptyThreadTop: CGFloat = 80
+    static let emptyThreadPathSize: CGFloat = 15
 
     // Subagent card activity rows (Subagents.swift)
     static let toolNameWidth: CGFloat = 40
@@ -30,6 +42,13 @@ extension AppLayout {
     static let composerFade: CGFloat = 48
     /// A menu opens this far above the card.
     static let menuGap: CGFloat = 8
+    /// The thinking chip's lightbulb.
+    static let chipSymbol: CGFloat = 11
+    // The question panel, in the composer card: between its title, message, and answers; its
+    // attention glyph; and the message's height before it scrolls.
+    static let questionSpacing: CGFloat = 10
+    static let questionGlyph: CGFloat = 13
+    static let questionMessageMaxHeight: CGFloat = 140
     /// Row height of the directory picker's list (RemoteDirectoryPicker).
     static let menuRowHeight: CGFloat = 36
     /// The New Agent sheet's model list.

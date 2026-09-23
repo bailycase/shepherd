@@ -88,7 +88,7 @@ struct SettingsView: View {
                 }
 
             ScrollView(.vertical) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: AppLayout.settingsNavRowSpacing) {
                     ForEach(sections) { section in
                         NWSettingsNavRow(section.title, systemImage: section.symbol, selected: vm.settingsSection == section) {
                             vm.settingsSection = section

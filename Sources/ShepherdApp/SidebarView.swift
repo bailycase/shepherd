@@ -20,7 +20,7 @@ struct SidebarView: View {
                   jump: { vm.showCommandPalette = true }, jumpShortcut: keys.display(.commandPalette)) {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 1) {
+                    VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
                         LocalMachineSection(vm: vm)
                         ForEach(vm.remoteHosts.connections) { connection in
                             RemoteHostBlock(vm: vm, connection: connection)
@@ -85,9 +85,9 @@ struct SidebarPlus: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus").font(.system(size: 11, weight: .medium))
+            Image(systemName: "plus").font(.system(size: AppLayout.sidebarPlusGlyph, weight: .medium))
         }
-        .buttonStyle(.nwIcon(size: 18))
+        .buttonStyle(.nwIcon(size: AppLayout.sidebarPlusSize))
         .nwHelp(help)
         .accessibilityLabel(help)
     }
@@ -354,10 +354,10 @@ private struct SubagentGroupRow: View {
 
     var body: some View {
         HStack(spacing: NW.Space.s) {
-            Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+            Image(systemName: "chevron.right").font(.system(size: AppLayout.subagentGroupChevron, weight: .semibold))
                 .rotationEffect(.degrees(folded ? 0 : 90))
                 .foregroundStyle(Color.nw.textTertiary)
-                .frame(width: 6)
+                .frame(width: AppLayout.subagentGroupChevronWidth)
             Text(label).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
             Spacer(minLength: 0)
         }
@@ -421,13 +421,13 @@ private struct AutomationsFooter: View {
     var body: some View {
         let automations = vm.state.automations
         let blocked = automations.contains { vm.automationAgent($0)?.status == .blocked }
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
             NWSidebarFooter("Automations", systemImage: "bolt", count: automations.count,
                             tone: blocked ? .attention : .neutral, expanded: vm.automationsExpanded) {
                 vm.automationsExpanded.toggle()
             }
             if vm.automationsExpanded {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
                     ForEach(automations) { automation in
                         let agent = vm.automationAgent(automation)
                         AutomationRow(automation: automation, agent: agent,

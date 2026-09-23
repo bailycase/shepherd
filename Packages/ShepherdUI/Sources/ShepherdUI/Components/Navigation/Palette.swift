@@ -13,6 +13,11 @@ public enum NWPaletteMetrics {
     public static let margin: CGFloat = 16
     /// The tallest list, in rows, before it scrolls.
     public static let maxVisibleRows = 14
+    /// A row's icon column and the gap after it; a row's detail line starts at `titleInset`,
+    /// under the title.
+    public static let iconWidth: CGFloat = 14
+    public static let iconGap: CGFloat = 10
+    public static var titleInset: CGFloat { iconWidth + iconGap }
 
     public struct Placement: Equatable, Sendable {
         public let top: CGFloat
@@ -183,11 +188,11 @@ public struct NWPaletteRow<Detail: View>: View {
     public var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                HStack(spacing: 10) {
+                HStack(spacing: NWPaletteMetrics.iconGap) {
                     Image(systemName: systemImage)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(iconColor ?? (highlighted ? Color.nw.running : Color.nw.textSecondary))
-                        .frame(width: 14)
+                        .frame(width: NWPaletteMetrics.iconWidth)
                     Text(title)
                         .font(density.rowTitleFont())
                         .foregroundStyle(.nw.textPrimary)

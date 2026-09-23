@@ -143,7 +143,7 @@ private struct NWProseBlocks<Code: View>: View {
                 Text(text).nwText(.body, size: size).italic().foregroundStyle(nw.textSecondary).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, NW.Space.l)
-                    .overlay(alignment: .leading) { nw.lineStrong.frame(width: 2) }
+                    .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
             case .code(let text, let language):
                 code(text, language)
             case .rule:
@@ -316,7 +316,7 @@ public struct NWThinking: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, NW.Space.xxs)
                         .padding(.leading, NW.Space.l)
-                        .overlay(alignment: .leading) { nw.lineStrong.frame(width: 2) }
+                        .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
                         .frame(maxWidth: NWThreadMetrics.proseMeasure, alignment: .leading)
                 }
             }

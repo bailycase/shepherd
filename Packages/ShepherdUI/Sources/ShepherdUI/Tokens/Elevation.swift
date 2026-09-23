@@ -13,6 +13,12 @@ extension View {
         modifier(NWPopoverModifier(radius: radius))
     }
 
+    /// The popover's shadow, borrowed by a pane while it floats over the window (the overlaid
+    /// sidebar and right pane); none while `floating` is false.
+    public func nwFloatShadow(_ floating: Bool = true) -> some View {
+        shadow(color: floating ? .nw.popoverShadow : .clear, radius: NWPopoverModifier.shadowRadius)
+    }
+
     /// The keyboard focus ring for custom controls: running blue, 2pt wide, 2pt outside the
     /// control. Shown only while the control has keyboard focus (`isFocused`), never on click.
     /// Native controls keep the system's ring.
@@ -98,6 +104,7 @@ private struct NWCardModifier: ViewModifier {
 }
 
 private struct NWPopoverModifier: ViewModifier {
+    static let shadowRadius: CGFloat = 16
     let radius: CGFloat
 
     func body(content: Content) -> some View {
@@ -105,7 +112,7 @@ private struct NWPopoverModifier: ViewModifier {
             .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: radius))
             .clipShape(RoundedRectangle(cornerRadius: radius))
             .nwBorder(.nw.lineStrong, radius: radius)
-            .shadow(color: .nw.popoverShadow, radius: 16, y: 12)
+            .shadow(color: .nw.popoverShadow, radius: Self.shadowRadius, y: 12)
     }
 }
 
