@@ -136,10 +136,15 @@ enum GitWorktree {
         return destination
     }
 
-    /// The repo's default branch short name ("main"), from the local
-    /// origin/HEAD symref, refreshing it from the network when missing
-    /// (`git remote set-head origin --auto`). Nil when there is no origin.
-    static func defaultBranch(repo: String) -> String? {
+    /// Network git commands (fetch, set-head) give up after this long rather than hanging the
+    /// worktree sheet on a dead network or a stalled remote.
+    static let networkTimeout: TimeInterval = 20
+
+    /// The repo's default branch short name ("main"), from the local origin/HEAD symref. When
+    /// that is missing it asks the remote (`git remote set-head origin --auto`) only if `network`
+    /// is allowed, and otherwise falls back to a local origin/main or origin/master. Nil when
+    /// there is no origin.
+    static func defaultBranch(repo: String, network: Bool = true) -> String? {
         let repoPath = (repo as NSString).expandingTildeInPath
         func read() -> String? {
             guard let out = try? run(["-C", repoPath, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"]) else {
@@ -149,13 +154,18 @@ enum GitWorktree {
             return short.hasPrefix("origin/") ? String(short.dropFirst("origin/".count)) : short
         }
         if let branch = read() { return branch }
-        _ = try? run(["-C", repoPath, "remote", "set-head", "origin", "--auto"])
-        return read()
+        if network {
+            _ = try? run(["-C", repoPath, "remote", "set-head", "origin", "--auto"], timeout: networkTimeout)
+            if let branch = read() { return branch }
+        }
+        return ["main", "master"].first { name in
+            (try? run(["-C", repoPath, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/\(name)"])) != nil
+        }
     }
 
     /// `git fetch origin <branch>`; false on failure (offline, no remote).
     static func fetch(repo: String, branch: String) -> Bool {
-        (try? run(["-C", (repo as NSString).expandingTildeInPath, "fetch", "--quiet", "origin", branch])) != nil
+        (try? run(["-C", (repo as NSString).expandingTildeInPath, "fetch", "--quiet", "origin", branch], timeout: networkTimeout)) != nil
     }
 
     /// The current branch of the primary checkout ("feat/x"), or nil when
@@ -193,7 +203,8 @@ enum GitWorktree {
                 note: "current branch of the checkout"
             )
         case .fresh:
-            guard let branch = defaultBranch(repo: repo) else {
+            // With fetching off, never touch the network to find the default branch either.
+            guard let branch = defaultBranch(repo: repo, network: fetchFirst) else {
                 let current = currentBranch(repo: repo)
                 return BaseResolution(
                     startPoint: nil,
@@ -304,9 +315,10 @@ enum GitWorktree {
 
     /// Run git, returning stdout; nonzero exit throws stderr as `Failure`.
     /// Prompting is disabled so network commands (fetch, set-head) fail fast
-    /// instead of hanging a non-TTY child on a credential prompt.
+    /// instead of hanging a non-TTY child on a credential prompt; `timeout`
+    /// terminates a command that still hangs (a stalled connection).
     @discardableResult
-    private static func run(_ arguments: [String]) throws -> String {
+    private static func run(_ arguments: [String], timeout: TimeInterval? = nil) throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = arguments
@@ -322,11 +334,22 @@ enum GitWorktree {
         } catch {
             throw Failure(message: "git not available: \(error.localizedDescription)")
         }
+        let timedOut = TimeoutFlag()
+        if let timeout {
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak process] in
+                guard let process, process.isRunning else { return }
+                timedOut.set()
+                process.terminate()
+            }
+        }
         // Drain stdout before waiting so a chatty command cannot fill the
         // pipe and deadlock. ponytail: stderr is drained after exit — fine
         // for git's short diagnostics; stream both if that ever changes.
         let output = stdout.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
+        if timedOut.value {
+            throw Failure(message: "git \(arguments.dropFirst(2).joined(separator: " ")) timed out after \(Int(timeout ?? 0))s")
+        }
         guard process.terminationStatus == 0 else {
             let detail = String(
                 decoding: stderr.fileHandleForReading.readDataToEndOfFile(),
@@ -336,4 +359,12 @@ enum GitWorktree {
         }
         return String(decoding: output, as: UTF8.self)
     }
+}
+
+/// Set once from the timeout's queue, read after the process exits.
+private final class TimeoutFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+    func set() { lock.lock(); fired = true; lock.unlock() }
+    var value: Bool { lock.lock(); defer { lock.unlock() }; return fired }
 }
