@@ -40,7 +40,9 @@ public struct NWMenuHeader: View {
 }
 #endif
 
-/// A 28pt menu row: `runningTint` while highlighted. The row is a button; hovering highlights it.
+/// A 28pt menu row: `runningTint` while highlighted, hovering highlights it, and a click (or
+/// VoiceOver's press) chooses it. It is not a `Button`: each button brings an AppKit focus-ring
+/// view, and a long menu scrolls rows in and out; the field or the menu keeps keyboard focus.
 struct NWMenuRow<Label: View>: View {
     let highlighted: Bool
     /// 10pt between parts; the slash menu's columns sit 12pt apart.
@@ -53,17 +55,17 @@ struct NWMenuRow<Label: View>: View {
         #if DEBUG
         let _ = NWMenuDiagnostics.rowBodies += 1
         #endif
-        Button(action: action) {
-            HStack(spacing: spacing) { label() }
-                .padding(.horizontal, NW.Space.m)
-                .frame(minHeight: NWComposerMetrics.menuRowHeight)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(highlighted ? Color.nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
-        }
-        .buttonStyle(.plain)
-        .onHover { if $0 { onHover() } }
-        .accessibilityAddTraits(highlighted ? .isSelected : [])
+        HStack(spacing: spacing) { label() }
+            .padding(.horizontal, NW.Space.m)
+            .frame(minHeight: NWComposerMetrics.menuRowHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(highlighted ? Color.nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
+            .onTapGesture(perform: action)
+            .onHover { if $0 { onHover() } }
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(highlighted ? [.isButton, .isSelected] : .isButton)
+            .accessibilityAction { action() }
     }
 }
 
