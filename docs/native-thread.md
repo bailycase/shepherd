@@ -47,6 +47,13 @@ a zsh login shell, so the user's `PATH` resolves:
   - `SHEPHERD_AUTOMATION=1` for automation runs.
   - `SHEPHERD_MODEL` when a model is passed.
   - `RPCSession` strips terminal variables (`TMUX`, `STY`, …) and sets no `TERM`.
+- **Online:** pi is not launched with `--offline` (`PI_OFFLINE=1`). In RPC mode pi already
+  refreshes its model catalogs in the background, so offline mode buys little of its boot, and
+  it would cost the agent for its whole life: no catalog refresh (a model published since the
+  last one could not be picked, though Shepherd's picker lists it), no install of a package
+  newly added to pi's settings, and a `PI_OFFLINE` that every extension and subagent inherits
+  (pi-subagents then stops finding agents and skills in the global npm root). A slow boot is
+  covered instead by the thread drawing at once (below).
 - **The opening prompt** is the first native `send`, delivered once pi's session is ready (the
   server's servable signal, below, ends the wait). It is not a positional argument, because RPC
   mode ignores positional messages.
