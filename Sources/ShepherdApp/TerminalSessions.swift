@@ -209,6 +209,8 @@ final class TerminalSessionStore {
     /// this guard that respawn path raced the creation flow and spawned a
     /// second pi into the same pane (two splash screens, doubled output).
     private var reservedPanes: Set<PaneID> = []
+    /// How long a pane's start waits for the server to own it before giving up.
+    private let ownershipTimeout: Duration
 
     /// Claim a pane for `createAgentSession` before the agent is added to
     /// server state. Must be called before `addAgent` broadcasts.
@@ -263,8 +265,9 @@ final class TerminalSessionStore {
     private(set) var startQueue = AgentStartQueue()
     private var queuedStarts: [AgentID: () async -> Bool] = [:]
 
-    init(server: SessionServer) {
+    init(server: SessionServer, ownershipTimeout: Duration = .seconds(3)) {
         self.server = server
+        self.ownershipTimeout = ownershipTimeout
         server.onSequencedOutput = { [weak self] sessionID, data, sequence in
             self?.session(forSessionID: sessionID)?.receive(data, sequence: sequence)
         }
@@ -736,10 +739,9 @@ final class TerminalSessionStore {
         _ session: PaneSession,
         pane: LeafPane,
         tabID: TabID,
-        expectedAgentID: AgentID?,
-        timeout: Duration = .seconds(3)
+        expectedAgentID: AgentID?
     ) async -> Bool {
-        let deadline = ContinuousClock.now + timeout
+        let deadline = ContinuousClock.now + ownershipTimeout
         while true {
             if ownsPane(session, pane: pane, tabID: tabID, expectedAgentID: expectedAgentID) { return true }
             guard ContinuousClock.now < deadline, sessions[pane.id] === session else { return false }
