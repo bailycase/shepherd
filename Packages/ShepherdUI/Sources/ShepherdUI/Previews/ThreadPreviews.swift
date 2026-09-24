@@ -3,7 +3,8 @@ import SwiftUI
 #Preview("Messages") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.xl) {
-            NWUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM")
+            NWUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM",
+                         revealed: true)
             NWUserBubble("Also bump the tool row height to 28.", isQueued: true, onEdit: {}, onSendNow: {})
             HStack(spacing: NW.Space.s) {
                 NWAttachmentChip("Spec.dc.html") {}
@@ -28,7 +29,8 @@ import SwiftUI
             NWThinking("Thought for 4s", text: "", isExpanded: .constant(false))
             NWThinking("Thought for 6s", text: "I'll keep it a minimum, not a fixed height, so large text sizes still fit.", isExpanded: .constant(true))
             NWThinking(liveSince: Date().addingTimeInterval(-4))
-            NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {})
+            NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
+                         revealed: true)
             NWTurnError("Model overloaded — the turn stopped after 6 tool calls.", retry: {})
             NWWorkingRow("Working…")
         }

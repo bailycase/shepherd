@@ -214,7 +214,8 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
 - **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
   thread.
 - **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
-  footer with copy and retry), and the working row.
+  footer with copy and retry), and the working row. A turn tracks the pointer over it
+  (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw
   arguments.
 - **`ThreadMarkdown`:** prose (inline Markdown styled once per text) and code blocks, colored by
