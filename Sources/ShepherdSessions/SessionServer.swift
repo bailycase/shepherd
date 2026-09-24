@@ -572,8 +572,14 @@ public final class SessionServer: @unchecked Sendable {
     public func nativeThread(agentID: AgentID, request: NativeThreadRequest) async throws -> NativeThreadResult {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                // Include the same envelope budget as TCP, excluding NDJSON's newline.
-                let bytes = (try? NDJSON.encode(RemoteRequest.nativeThread(id: 0, agentID: agentID, request: request)).count - 1) ?? Int.max
+                // Include the same envelope budget as TCP, excluding NDJSON's newline. A snapshot
+                // request carries no user payload, and streaming clients poll it often.
+                let bytes: Int
+                if case .snapshot = request {
+                    bytes = 0
+                } else {
+                    bytes = (try? NDJSON.encode(RemoteRequest.nativeThread(id: 0, agentID: agentID, request: request)).count - 1) ?? Int.max
+                }
                 self.dispatchNativeThread(agentID: agentID, request: request, requestBytes: bytes) { outcome in
                     self.hopToMain {
                         switch outcome {
