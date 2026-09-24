@@ -402,13 +402,6 @@ public final class NativeThreadStore {
         derive()
     }
 
-    /// The host says pi now serves this thread: pull at once instead of at the next poll. Only
-    /// a thread whose run loop is live (on screen) and that is not ready yet pulls.
-    public func wake() {
-        guard !ready, request != nil else { return }
-        Task { await refresh() }
-    }
-
     /// The host has a newer revision to pull (the local server pushes each one a local agent's
     /// pi reaches): the poll loop pulls now instead of when its pause ends, or once more right
     /// after the pull in flight however many arrive meanwhile, and at most every

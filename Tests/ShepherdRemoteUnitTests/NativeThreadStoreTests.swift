@@ -300,12 +300,13 @@ struct NativeThreadStoreTests {
         #expect(previewed.awaitingPi, "shown from disk")
     }
 
-    /// The host's signal that pi serves pulls the thread at once; its poll never ran here.
+    /// The host's signal that pi serves (pushed as a revision) pulls the thread at once; its poll
+    /// never ran here.
     @Test func wakingAStartingThreadPullsItsFirstSnapshotAtOnce() async {
-        let (store, host, task) = await startedWhileStarting()
+        let (store, host, task) = await startedWhileStarting(pushedStore(Pauses()))
         defer { task.cancel() }
         host.starting = false
-        store.wake()
+        store.revisionAvailable()
         await until { store.ready }
         #expect(host.requests == [.snapshot(), .snapshot()])
         #expect(!store.starting && store.messages == [hi])
