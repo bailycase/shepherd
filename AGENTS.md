@@ -579,10 +579,11 @@ Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a vie
 therefore mutually exclusive without locks.
 
 - Never `.sync` between these queues; it deadlocks.
-- Never `.sync` onto the server queue from the main thread either: a busy queue (a history
-  decoding at launch) stalls every frame. `SessionServer.state` reads the copy `StateStore`
-  publishes under a lock each time it commits, so it never waits; a mutation the caller awaited
-  is always in it. Code on the queue reads `store.state`.
+- The main thread never waits on the server queue to read state: a busy queue (a history
+  decoding at launch) would stall every frame. `SessionServer.state` reads the copy
+  `StateStore` publishes under a lock each time it commits; a mutation the caller awaited is
+  always in it. Code on the queue reads `store.state`. (Only `start()`, `stop()`, the remote
+  listener's start and stop, and `pushMessage` still run synchronously on the queue.)
 - Nothing slow runs on the queue. An RPC record of 256 KiB or more (a long history's
   `get_messages`) decodes on a concurrent queue while its session holds every later record, in
   order, until the decoded one is handled back on the queue; exit and unanswered-request
