@@ -374,6 +374,38 @@ runs. Put it on what must not move, as close to it as possible.
   or disclosing animate a list. Each agent's toolbar has its own identity, so switching never
   animates one agent's status or counters into another's.
 
+## Performance
+
+A list is as fast with three hundred rows as with thirty: it builds the rows on screen, and a
+change redraws the rows it changed. `ListPerformanceTests` pins each rule below with a count of
+row bodies (`NWRenderProbe`), which a slower machine doesn't change, and
+`SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
+against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000-line diff and a
+300-file review, a 500-turn thread, 200 subagent runs, 2,000 folders).
+
+- **Anything that can outgrow a screen is lazy.** The sidebar tree, the palette's results, the
+  thread and the inspector's transcript, the review's diff and file strip, the run ledger, and
+  the directory and model lists are `LazyVStack`s or `LazyHStack`s with stable ids. Eager stacks
+  are for lists bounded by design (Settings rows, a dialog's checklist, a composer menu). A lazy
+  stack in a height-capped, fixed-size scroll view still hugs a short list (the palette does).
+- **One view per row.** In a lazy `ForEach`, each element makes exactly one view: wrap an `if` or
+  a `switch` in a container. A row that could be nothing (`if … else if …` with no `else`) makes
+  SwiftUI build every row to count them, on every update: a 500-turn thread built 1,000 rows per
+  streamed chunk until its rows were wrapped.
+- **Rows are plain `Equatable` values.** Closures stay out of `==`. The highlight or the
+  selection reaches a row as a `Bool`, so moving it redraws the row it leaves and the row it
+  lands on; hover lives in the row itself. A store or the view model derives the rows once per
+  change (`SidebarTree`, `PaletteResults`, `DirectoryFilter`, the review's row cache): no
+  filtering, sorting, or formatting in `body`.
+- **Rows are cheap to build**, since scrolling builds them. Platform-backed modifiers cost most:
+  one drop target covers the sidebar (`SidebarDropZone`, fed the frames the rows on screen
+  register) instead of one per row, and a control that shows only on hover (a diff line's `+`)
+  is built only while hovered, in a slot that is always laid out.
+- **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
+  rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
+  there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
+  `nwRunArrival`).
+
 ## Density and row settings
 
 Settings ▸ Appearance has two independent row controls:

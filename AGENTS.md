@@ -79,9 +79,10 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`.
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`.
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
-- **`SHEPHERD_PREVIEW_DIR`** and **`SHEPHERD_LIVE_MODEL`** switch on the preview renders and the
-  live-model run (see Testing). **`SHEPHERD_BENCHMARK`** switches on `ComposerMenuBenchmarkTests`,
-  which prints what the composer's menus cost over a full model catalog.
+- **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
+  the preview renders, the live-model run, and the long-list timing report (see Testing).
+  **`SHEPHERD_BENCHMARK`** switches on `ComposerMenuBenchmarkTests`, which prints what the
+  composer's menus cost over a full model catalog.
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
   `~/.pi/agent`. Shepherd follows it (`PiConfig.agentDirectory`) when it seeds session headers
   and reads pi's models and settings.
@@ -178,6 +179,17 @@ see its work.
 
 **Live model:** the opt-in use-case run against a real model is gated on `SHEPHERD_LIVE_MODEL`
 (e.g. `cpa/~anthropic/claude-haiku-latest`). It never runs by default.
+
+**Long lists** (DESIGN.md › Performance) are measured, not guessed:
+
+- `NWRenderProbe` (ShepherdUI, debug builds only) counts row bodies while a test records:
+  `let _ = NWRenderProbe.tick("sidebar.row")` at the top of a row's `body`.
+- `ListPerformanceTests` pins each long list's budget as a count of rows built or redrawn
+  (opening, scrolling, a highlight or a selection moving, one row changing, a reply streaming).
+  Counts hold on a slow or busy runner; timing budgets do not, so don't add those.
+- `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
+  against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
+  layout, and display, and scrolls a list a step at a time by moving its clip view.
 
 **Extension tests** (`Tests/Extensions/*.test.mjs`, Node's test runner) need `PI_PACKAGE_DIR`
 pointing at the installed pi package. They isolate `HOME` and use a local fake provider.
@@ -297,6 +309,7 @@ Packages/
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
                                      Agents, Review, Dialogs
                        Previews/     a #Preview per component, light and dark
+                       Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
   shepherd-status.ts      status + active pi session       shepherd-namer.ts   agent titles
@@ -484,6 +497,11 @@ are `@MainActor @Observable` classes, owned with `@State` and bound with `@Binda
 - Views take plain `Equatable` values (sidebar rows, pane leaves, thread rows) and do no parsing,
   filtering, or highlighting in `body`; stores derive rows once per change. Menus read narrow
   cached values from `MenuState`.
+- A list that can outgrow a screen is a lazy stack whose `ForEach` makes exactly one view per
+  element (wrap an `if` or a `switch` in a container), with rows that compare equal unless they
+  changed: highlight and selection arrive as a `Bool`, hover stays in the row, closures stay out
+  of `==`. No per-row drop targets or hidden controls; see DESIGN.md › Performance. Add a
+  `ListPerformanceTests` budget with any new long list.
 - `PreferenceObservationTests` checks that a changed preference reaches the views that read it.
 
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
