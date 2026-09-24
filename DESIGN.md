@@ -89,6 +89,7 @@ And the rules that follow from them:
 | Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn or asks a question while you aren't watching it (`AgentNotifications`) | Reaches you outside the app |
 | Missions, the mission graph, the attention inbox, evidence review (Lab boards) | Not built | Out of scope for this pass |
 | ⌘M opens the model picker (earlier handoff) | **⇧⌘M** | ⌘M is the system Minimize chord |
+| A compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither: the tree starts under the window controls | The sidebar is navigation only; ⌘K opens the palette and ⌘N (or a space's hover `+`) starts an agent |
 
 Additions the boards don't have:
 
@@ -385,15 +386,15 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 
 ```text
 ┌──────────────────┬──────────────────────────────────────────────┬──────────────────────┐
-│ ● ● ●          ✎ │ Title  ● Running · 1m 03s   42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
-│ ⌕ Jump to…   ⌘K  ├──────────────────────────────────────────────┼──────────────────────┤
-│ THIS MAC     19  │         820pt thread column                  │ right pane:          │
-│ ⌄ Shepherd    8  │                       ┌──────────────┐       │ review or subagent   │
-│   ● agent   ASK  │                       │ user bubble  │       │ inspector, 600pt     │
-│   ● agent    4m  │                       └──────────────┘       │ (min 480, ≤ half)    │
-│   ○ agent        │   agent prose, 640pt measure                 │                      │
-│ HORIZON          │   ✎ Edited 4 files  +149 −63  ›              │                      │
-│   ● Unreachable  │   ┌ composer ──────────────────────────┐     │                      │
+│ ● ● ●            │ Title  ● Running · 1m 03s   42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
+│ THIS MAC     19  ├──────────────────────────────────────────────┼──────────────────────┤
+│ ⌄ Shepherd    8  │         820pt thread column                  │ right pane:          │
+│   ● agent   ASK  │                       ┌──────────────┐       │ review or subagent   │
+│   ● agent    4m  │                       │ user bubble  │       │ inspector, 600pt     │
+│   ○ agent        │                       └──────────────┘       │ (min 480, ≤ half)    │
+│ HORIZON          │   agent prose, 640pt measure                 │                      │
+│   ● Unreachable  │   ✎ Edited 4 files  +149 −63  ›              │                      │
+│                  │   ┌ composer ──────────────────────────┐     │                      │
 ├──────────────────┤   └────────────────────────────────────┘     │                      │
 │ Automations    1 │                                              │                      │
 └──────────────────┴──────────────────────────────────────────────┴──────────────────────┘
@@ -442,10 +443,11 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 `SidebarView` (`SidebarView.swift`, remote sections in `RemoteSidebarSection.swift`) on
 `NWSidebar`.
 
-- **Top bar (44pt):** empty space that drags the window, and the compose button
-  (`square.and.pencil`, "New agent", ⌘N) at the trailing edge. Below it, **Jump to…**
-  (`NWSidebarJumpButton`): a quiet search-shaped button with the palette's keycaps that opens
-  the command palette.
+- **Top bar (44pt):** room for the window controls, as tall as the toolbar beside it, and
+  nothing else: it drags the window, and the tree starts beneath it with the first section's
+  12pt top padding. There is no compose button and no search field above the tree. ⌘K (and the
+  menus) open the command palette; ⌘N, a space's hover `+`, the palette, and the menus start an
+  agent.
 - **Sections** (`NWSidebarSection`): a micro caps label with a trailing count; clicking it folds
   the section. With remote hosts configured, hovering a header shows its machine chord (⌃⇧n).
   1. **This Mac**, with its agent count and a hover `+` for New Space….
@@ -1009,7 +1011,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Controls | `.buttonStyle(.nw(_:size:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` (a circle, 28pt; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `NWSearchField`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app |
 | Status | `NWStatusPill` (20pt, radius 4), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline`, `.nwToast(item:)`, and `.nwShimmer()` have no app use yet |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline` | `SettingsComponents.swift`; hairlines everywhere |
-| Navigation | `NWSidebar`, `NWSidebarJumpButton`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
+| Navigation | `NWSidebar`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
 | Thread | `NWUserBubble`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter`, `NWTurnError`, `NWWorkingRow` | `Thread/ThreadView.swift`, `ThreadTurns.swift`, `ThreadTools.swift`, `ThreadMarkdown.swift` |
 | Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton`, `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu` | `Thread/Composer.swift` |
 | Agents | `NWSubagentCard`, `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup` | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift` |
@@ -1023,8 +1025,8 @@ Rules for the controls:
 - **Toggles, text fields, and pickers** are styles on native controls. `NWSegmentedPicker`,
   `NWValueSlider`, and `NWStepper` draw their own control and represent themselves to
   accessibility as a native segmented `Picker`, `Slider`, and `Stepper`.
-- **Keycaps** show only a real, wired shortcut, and only in menus, the palette, Settings, the
-  sidebar's Jump to…, and empty states; never under the composer.
+- **Keycaps** show only a real, wired shortcut, and only in menus, the palette, Settings, and
+  empty states; never under the composer.
 - **Banners** sit inside the pane they concern. Never a modal alert for an agent event.
 
 ## Keyboard

@@ -28,8 +28,8 @@ struct SidebarMotionTests {
         let size = CGSize(width: 1280, height: 600)
         let window = OffscreenWindow(size: size, dark: false, RootView(vm: vm))
         defer { window.close() }
-        // Through "Jump to…", under the window controls.
-        let row = CGRect(x: 0, y: 57, width: size.width, height: 1)
+        // Through the first section's header, under the window controls.
+        let row = CGRect(x: 0, y: 62, width: size.width, height: 1)
         _ = await MotionProbe.record(window, region: row, timeout: 0.5) {}
 
         let recording = await MotionProbe.record(window, region: row) { vm.toggleSidebar() }
@@ -56,7 +56,7 @@ struct SidebarMotionTests {
                                      RootView(vm: vm).environment(\._accessibilityReduceMotion, reduceMotion))
         defer { window.close() }
         try await eventuallyOnMain("the narrow window to hide the sidebar") { vm.sidebarAutoHidden }
-        let row = CGRect(x: 0, y: 57, width: size.width, height: 1)
+        let row = CGRect(x: 0, y: 62, width: size.width, height: 1)
         _ = await MotionProbe.record(window, region: row, timeout: 0.5) {}
 
         let recording = await MotionProbe.record(window, region: row) { vm.toggleSidebar() }

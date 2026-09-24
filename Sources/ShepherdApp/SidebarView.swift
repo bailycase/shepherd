@@ -5,21 +5,18 @@ import ShepherdCore
 import ShepherdProtocol
 import UniformTypeIdentifiers
 
-/// The sidebar (Navigation board, `NWSidebar`): window controls and compose, "Jump to…", then
-/// THIS MAC and each remote host as sections, spaces as disclosure rows with their agents
-/// nested beneath, and Automations as the footer. Subagents have no rows; they live in their
-/// agent's thread. Rows take plain values so an unchanged row never re-renders.
+/// The sidebar (Navigation board, `NWSidebar`): room for the window controls, then THIS MAC and
+/// each remote host as sections, spaces as disclosure rows with their agents nested beneath,
+/// and Automations as the footer. Subagents have no rows; they live in their agent's thread.
+/// Rows take plain values so an unchanged row never re-renders.
 ///
 /// Rows arriving, leaving, reordering, and disclosing animate (`.list`) whatever changed them: a
 /// broadcast, a drop, a click, a reveal. Selecting a row changes no row, so it lands at once.
 struct SidebarView: View {
     var vm: ShepherdViewModel
 
-    private var keys: KeybindingsStore { vm.keybindings }
-
     var body: some View {
-        NWSidebar(compose: { vm.quickCreateAgent() }, composeLabel: "New agent", composeShortcut: keys.display(.newAgent),
-                  jump: { vm.showCommandPalette = true }, jumpShortcut: keys.display(.commandPalette)) {
+        NWSidebar {
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {

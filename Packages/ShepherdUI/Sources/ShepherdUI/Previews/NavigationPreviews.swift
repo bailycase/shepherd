@@ -6,7 +6,7 @@ private let started = Date().addingTimeInterval(-41 * 60)
     NWPreviewBoth {
         HStack(alignment: .top, spacing: NW.Space.xl) {
             ForEach(NWDensity.allCases) { density in
-                NWSidebar(compose: {}, jump: {}, jumpShortcut: "⌘K") {
+                NWSidebar {
                     VStack(alignment: .leading, spacing: 1) {
                         NWSidebarSection("This Mac", detail: .count(19), toggle: {})
                         NWSidebarDisclosureRow("Shepherd", expanded: true) { _ in
