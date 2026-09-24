@@ -99,6 +99,13 @@ enum ShellLayout {
         min(max(width, AppLayout.sidebarMinWidth), AppLayout.sidebarMaxWidth) + AppLayout.dividerWidth + AppLayout.mainColumnMinWidth
     }
 
+    /// A window width as the shell's layout tells it apart: at and past the narrowest window that
+    /// docks the widest sidebar, `sidebar` answers the same for every width, so the shell
+    /// watches this rather than the width itself.
+    static func layoutWidth(_ windowWidth: CGFloat) -> CGFloat {
+        min(windowWidth, sidebarFitWidth(AppLayout.sidebarMaxWidth))
+    }
+
     enum PaneMode: Equatable {
         case docked, overlay
     }

@@ -64,6 +64,51 @@ struct TerminalMotionTests {
         return (grids.filter { $0 != initial }, !recording.inBetween.isEmpty)
     }
 
+    /// Dragging the window's edge resizes a hidden layout's shell once, when the drag ends: every
+    /// grid it reports is a SIGWINCH to a process no one is looking at.
+    @Test func hiddenShellsGetOneGridReportPerLiveResize() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let shown = try await app.liveAgent("shown", in: space, order: 0, auxiliary: 1)
+        let hidden = try await app.liveAgent("hidden", in: space, order: 1, auxiliary: 1)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [shown, hidden]))
+        vm.selectAgent(shown.agent.id)
+        let window = OffscreenWindow(size: CGSize(width: 1200, height: 600), dark: false, WorkspaceView(vm: vm))
+        defer { window.close() }
+        try await eventuallyOnMain("both layouts to mount") { vm.mountedTabs.count == 2 }
+        ListPerf.settle(window)
+        let shell = vm.sessions.session(for: hidden.auxiliary[0], in: hidden.tab)
+        try await eventuallyOnMain("the hidden shell to start", timeout: .seconds(30)) { shell.phase == .live }
+        var grids: [String] = []
+        let report = shell.terminal.onResize
+        shell.terminal.onResize = { cols, rows in
+            grids.append("\(cols)x\(rows)")
+            report?(cols, rows)
+        }
+        // Its first grid can trail the mount under load: wait until reports have been quiet.
+        var seen = 0, quietSince = ContinuousClock.now
+        try await eventuallyOnMain("the hidden shell to settle on its grid", timeout: .seconds(30)) {
+            if grids.count != seen { seen = grids.count; quietSince = .now }
+            return ContinuousClock.now - quietSince > .milliseconds(500)
+        }
+        grids.removeAll()
+
+        NotificationCenter.default.post(name: NSWindow.willStartLiveResizeNotification, object: window.window)
+        ListPerf.settle(window)
+        for step in 1...25 {
+            window.window.setContentSize(NSSize(width: 1200 - CGFloat(step) * 8, height: 600))
+            ListPerf.settle(window)
+        }
+        #expect(grids.isEmpty, "no grid while the drag lasts: \(grids)")
+        NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification, object: window.window)
+        ListPerf.settle(window)
+        try await eventuallyOnMain("the hidden shell to take its new grid", timeout: .seconds(30)) { !grids.isEmpty }
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(grids.count == 1, "one SIGWINCH for the whole drag: \(grids)")
+    }
+
     @Test func aTerminalTakesItsFinalGridOnceWhileAPaneSlidesInBesideIt() async throws {
         let model = Model()
         let terminal = AppTerminalModel(terminal: ShepherdTheme.nightWatchLight.terminal)

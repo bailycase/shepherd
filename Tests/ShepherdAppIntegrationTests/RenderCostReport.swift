@@ -199,6 +199,38 @@ struct RenderCostReport {
         report.add("review pane sliding in (\(count) layouts mounted)", "longest frame gap (median of 3)", ms: MainThreadCPU.median(gaps))
     }
 
+    /// Dragging the window's edge 8 pt a frame with 1, 5, and 12 layouts mounted in the full
+    /// shell: main-thread CPU per frame (median of three drags of 12 frames).
+    @Test(arguments: [1, 5, 12]) func liveResizeFrameWithLayoutsMounted(count: Int) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(count, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1400, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let visible = vm.threadStores.store(for: agents[0].agent.id)
+        try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        try await Task.sleep(for: Self.atRest)
+        ListPerf.settle(window)
+        var drags: [Double] = []
+        for drag in 0..<3 {
+            NotificationCenter.default.post(name: NSWindow.willStartLiveResizeNotification, object: window.window)
+            ListPerf.settle(window)
+            var frames: [Double] = []
+            for step in 1...12 {
+                let width = drag.isMultiple(of: 2) ? 1400 - CGFloat(step) * 8 : 1304 + CGFloat(step) * 8
+                frames.append(await MainThreadCPU.milliseconds {
+                    window.window.setContentSize(NSSize(width: width, height: 800))
+                    ListPerf.settle(window)
+                })
+            }
+            NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification, object: window.window)
+            ListPerf.settle(window)
+            drags.append(MainThreadCPU.median(frames))
+        }
+        report.add("live resize (\(count) layouts mounted)", "main-thread CPU per 8 pt frame (median of 3)", ms: MainThreadCPU.median(drags))
+    }
+
     /// Returning to a thread-only agent hidden past the park delay, after five other visits:
     /// main-thread CPU for the switch and the bodies it builds.
     @Test func returnToAThreadOnlyAgentHiddenLong() async throws {

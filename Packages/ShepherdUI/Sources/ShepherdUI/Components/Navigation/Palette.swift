@@ -61,6 +61,7 @@ private struct NWPaletteOverlay<Content: View>: View {
 
     /// Always mounted, so the scrim and the card come and go with their transitions.
     var body: some View {
+        let _ = NWRenderProbe.tick("paletteOverlay")
         GeometryReader { geo in
             let placement = NWPaletteMetrics.placement(in: geo.size, rowHeight: density.rowHeight)
             ZStack(alignment: .top) {
