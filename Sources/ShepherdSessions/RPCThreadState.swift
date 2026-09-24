@@ -55,6 +55,8 @@ final class RPCThreadState {
     var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString
     private(set) var revision: UInt64 = 0
+    /// Called on the session queue each time `revision` moves.
+    var onRevision: (() -> Void)?
     private var signature = 0
     private(set) var running = false
     private(set) var model: String?
@@ -243,7 +245,7 @@ final class RPCThreadState {
                 self.operations[index].operation.result = result
                 let waiters = self.operations[index].operation.waiters
                 self.operations[index].operation.waiters = []
-                self.revision += 1
+                self.bumpRevision()
                 completion(result)
                 waiters.forEach { $0(result) }
             }
@@ -479,7 +481,7 @@ final class RPCThreadState {
         currentAssistant = nil
         projectionClipped = false
         signature = 0
-        revision += 1
+        bumpRevision()
     }
 
     // MARK: - Provisional items
@@ -679,8 +681,13 @@ final class RPCThreadState {
         let next = hasher.finalize()
         if next != signature {
             signature = next
-            revision += 1
+            bumpRevision()
         }
+    }
+
+    private func bumpRevision() {
+        revision += 1
+        onRevision?()
     }
 
     private func snapshot(beforeEntryID: String?) -> NativeThreadResult {

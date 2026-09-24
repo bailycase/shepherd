@@ -19,6 +19,8 @@ enum StateStoreError: Error, CustomStringConvertible, Sendable {
 final class StateStore: @unchecked Sendable {
     let url: URL
     private(set) var state: ShepherdState
+    /// Moves with every committed state, so derived lookups know when to rebuild.
+    private(set) var version: UInt64 = 0
     private var recoveryError: StateStoreError?
 
     init(url: URL) {
@@ -38,6 +40,7 @@ final class StateStore: @unchecked Sendable {
         try candidate.validate()
         try persist(candidate)
         state = candidate
+        version &+= 1
     }
 
     private func load() {
@@ -50,6 +53,7 @@ final class StateStore: @unchecked Sendable {
                 let loaded = try JSONDecoder().decode(ShepherdState.self, from: data)
                 try loaded.validate()
                 state = loaded
+                version &+= 1
             } catch {
                 quarantine(cause: error)
             }

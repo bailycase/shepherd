@@ -198,6 +198,10 @@ public final class SessionServer: @unchecked Sendable {
     /// to it (whichever comes last), after the state broadcast of that binding. Delivered on
     /// the main actor, so a local thread need not wait for its next poll.
     public var onNativeThreadServable: ((AgentID) -> Void)?
+    /// An agent's native thread moved to a new revision, or its pane was bound to a pi. Delivered
+    /// on the main actor in FIFO order with the other callbacks; every agent revised while one
+    /// delivery waits for the main queue rides that delivery, so a burst costs one main hop.
+    public var onThreadRevision: ((AgentID) -> Void)?
     /// A Shepherd agent asked to see, message, or spawn peer threads.
     /// Forwarded to the GUI like pane requests. Delivered on the main actor;
     /// the completion may be called from any thread.
@@ -328,6 +332,36 @@ public final class SessionServer: @unchecked Sendable {
             }
         }
     }
+
+    /// Agents whose thread revised since the last main-queue delivery: filled on the server
+    /// queue, drained on the main queue.
+    private final class RevisedThreads: @unchecked Sendable {
+        private let lock = NSLock()
+        private var order: [AgentID] = []
+        private var members: Set<AgentID> = []
+
+        /// True for the first agent since the last drain, whose caller schedules the delivery.
+        func insert(_ agentID: AgentID) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            guard members.insert(agentID).inserted else { return false }
+            order.append(agentID)
+            return order.count == 1
+        }
+
+        func drain() -> [AgentID] {
+            lock.lock()
+            defer { lock.unlock() }
+            let drained = order
+            order.removeAll()
+            members.removeAll()
+            return drained
+        }
+    }
+
+    private let revisedThreads = RevisedThreads()
+    /// Which agent's own pane runs each session, for the store version it was built from.
+    private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
 
     private var sessions: [SessionID: ServerSession] = [:]
     private var attachedSessions: Set<SessionID> = []
@@ -1862,6 +1896,10 @@ public final class SessionServer: @unchecked Sendable {
                     $0.sessionID = sessionID
                 }
             }
+            // Revisions pi reached before its pane was bound had no agent to reach.
+            if let sessionID, self.sessions[sessionID]?.thread != nil {
+                self.threadRevised(sessionID: sessionID)
+            }
         }
     }
 
@@ -2161,6 +2199,7 @@ public final class SessionServer: @unchecked Sendable {
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
                 server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
             }
+            thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
             session.onEvent = { [weak thread] event in thread?.handle(event) }
             thread.onServable = { [weak serverWeak] in
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }
@@ -2532,12 +2571,32 @@ public final class SessionServer: @unchecked Sendable {
         DispatchQueue.main.async(execute: body)
     }
 
-    /// Server queue: the agent whose own pane runs this session.
+    /// Server queue: the agent whose own pane runs this session. Streaming asks on every
+    /// revision, so the lookup is rebuilt once per committed state rather than scanned.
     private func agentID(forSession sessionID: SessionID) -> AgentID? {
-        store.state.agents.first { agent in
-            guard let paneID = agent.paneID else { return false }
-            return store.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: paneID)?.sessionID == sessionID
-        }?.id
+        if sessionAgents?.version != store.version {
+            let tabs = Dictionary(store.state.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            var agents: [SessionID: AgentID] = [:]
+            for agent in store.state.agents {
+                guard let paneID = agent.paneID,
+                      let bound = tabs[agent.tabID]?.layout.leaf(withID: paneID)?.sessionID,
+                      agents[bound] == nil else { continue }
+                agents[bound] = agent.id
+            }
+            sessionAgents = (store.version, agents)
+        }
+        return sessionAgents?.agents[sessionID]
+    }
+
+    /// Server queue: tell the app an agent's thread revised, coalescing a burst into one hop.
+    private func threadRevised(sessionID: SessionID) {
+        guard let agentID = agentID(forSession: sessionID), revisedThreads.insert(agentID) else { return }
+        hopToMain { [weak self] in
+            guard let self else { return }
+            for agentID in self.revisedThreads.drain() {
+                self.onThreadRevision?(agentID)
+            }
+        }
     }
 
     /// Server queue: the RPC thread state behind an agent's pane, if it is an RPC agent.
