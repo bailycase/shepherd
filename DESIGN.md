@@ -429,7 +429,7 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 
 ```text
 ┌──────────────────┬──────────────────────────────────────────────┬──────────────────────┐
-│ ● ● ●            │ Title  ● Running · 1m 03s   42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
+│ ● ● ●            │ Title                       42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
 │ THIS MAC     19  ├──────────────────────────────────────────────┼──────────────────────┤
 │ ⌄ Shepherd    8  │         820pt thread column                  │ right pane:          │
 │   ● agent   ASK  │                       ┌──────────────┐       │ review or subagent   │
@@ -555,9 +555,6 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   - the sidebar button (`sidebar.left`) while the sidebar is not docked
   - the agent's title in Geist 13 semibold, truncating, with "space / title" in its tooltip (a
     remote agent's space reads "⌁ host")
-  - the status pill (`ThreadStatusPill`), in priority order: Error (a lost connection, drawn as
-    `failed`), Needs you (or "n subagents need you"), Running · elapsed (counting from the prompt
-    that opened the turn), Idle
   - a spacer
   - counters in micro tertiary: "18 turns · 46k ctx · 3 subagents · 1.6m tok". The turn count
     appears once the whole history is loaded, and the tooltip has the context window, session
@@ -1105,15 +1102,15 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 
 ## Status language
 
-| Lifecycle | `AgentState` | Sidebar | Toolbar pill | Composer |
-| --- | --- | --- | --- | --- |
-| Agent working | `running` | blue dot; elapsed trailing | Running · elapsed | Stop; the field queues a follow-up |
-| Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | Needs you | the question panel in place of the field |
-| A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | "n subagents need you" | the card's answers and Reply… |
-| Agent done | `done` | green dot | Idle (outlined) | Send |
-| Agent idle | `idle` | hollow ring | Idle (outlined) | Send |
-| pi starting | `idle` | hollow ring | Idle (outlined) | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting pi…" beside it |
-| Connection lost | `failed` | — | Error | Send, plus a `failed` banner with Reconnect |
+| Lifecycle | `AgentState` | Sidebar | Composer |
+| --- | --- | --- | --- |
+| Agent working | `running` | blue dot; elapsed trailing | Stop; the field queues a follow-up |
+| Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | the question panel in place of the field |
+| A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | the card's answers and Reply… |
+| Agent done | `done` | green dot | Send |
+| Agent idle | `idle` | hollow ring | Send |
+| pi starting | `idle` | hollow ring | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting pi…" beside it |
+| Connection lost | `failed` | — | Send, plus a `failed` banner with Reconnect |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
 done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.

@@ -4,8 +4,8 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The thread toolbar (Navigation board, `NWThreadToolbar`) for the agent on screen: title ·
-/// status pill · spacer · "n turns · 42k ctx" · the subagents and review toggles (lantern while
-/// their pane is open) · options. Observes the thread store; everything else comes in as values.
+/// spacer · "n turns · 42k ctx" · the subagents and review toggles (lantern while their pane is
+/// open) · options. Observes the thread store; everything else comes in as values.
 struct ThreadHeader: View {
     var store: NativeThreadStore
     let project: String
@@ -24,8 +24,6 @@ struct ThreadHeader: View {
         NWThreadToolbar(title, titleHelp: "\(project) / \(title)", counters: ThreadCounters.text(store),
                         countersHelp: nativeContextTooltip(store.snapshot?.stats), leadingInset: leadingInset,
                         sidebar: showSidebar, toggles: toggles) {
-            ThreadStatusPill(store: store)
-        } options: {
             NWOptionsMenu("Thread options") {
                 Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
                 if store.olderCursor != nil {
@@ -53,46 +51,6 @@ struct ThreadHeader: View {
     }
 }
 
-/// Idle / Running · elapsed / Needs you / Error (a lost connection, drawn as `failed`), from the
-/// thread snapshot. A subagent waiting on the user outranks the parent's own state. A state
-/// change cross-fades the word and eases the tint (`.content`); the running clock ticks without
-/// motion.
-struct ThreadStatusPill: View {
-    var store: NativeThreadStore
-
-    var body: some View {
-        let state = threadPillState(store)
-        // One pill in every state, so a change animates in place instead of swapping views.
-        TimelineView(ThreadPillSchedule(ticking: state == .running)) { context in
-            NWStatusPill(state, label: label(state, now: context.date))
-        }
-        .nwContentTransition(.crossFade)
-        .nwAnimation(.content, value: state)
-    }
-
-    private func label(_ state: AgentState, now: Date) -> String? {
-        switch state {
-        case .running: "Running · \(threadRunElapsed(store, now: now))"
-        case .attention: nativeSubagentNeedsYouLabel(store.subagents) ?? AgentState.attention.label
-        case .failed: "Error"
-        default: nil
-        }
-    }
-}
-
-/// Once a second while the thread runs (for its elapsed time), otherwise a single entry.
-struct ThreadPillSchedule: TimelineSchedule {
-    let ticking: Bool
-
-    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
-        var next: Date? = startDate
-        return AnyIterator {
-            defer { next = ticking ? next?.addingTimeInterval(1) : nil }
-            return next
-        }
-    }
-}
-
 /// "18 turns · 46k ctx" plus the subagent rollup; the turn count shows once the whole history
 /// is loaded.
 enum ThreadCounters {
@@ -109,21 +67,6 @@ enum ThreadCounters {
         let turns = store.turns.count(where: \.isUser)
         return "\(turns) turn\(turns == 1 ? "" : "s")"
     }
-}
-
-@MainActor
-func threadPillState(_ store: NativeThreadStore) -> AgentState {
-    if store.loadError != nil { return .failed }
-    if store.snapshot?.dialogs.isEmpty == false || nativeSubagentNeedsYouLabel(store.subagents) != nil { return .attention }
-    if store.settledRunning { return .running }
-    return .idle
-}
-
-/// Time since the turn began: the last user message's timestamp while running.
-@MainActor
-func threadRunElapsed(_ store: NativeThreadStore, now: Date) -> String {
-    let start = store.lastPromptAt.map { Date(timeIntervalSince1970: $0 / 1000) } ?? now
-    return nativeDurationText(max(0, now.timeIntervalSince(start)), live: true)
 }
 
 /// The toolbar when no thread is on screen (the space, or Shepherd) or over a remote utility
