@@ -388,6 +388,9 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
   the directory and model lists are `LazyVStack`s or `LazyHStack`s with stable ids. Eager stacks
   are for lists bounded by design (Settings rows, a dialog's checklist, a composer menu). A lazy
   stack in a height-capped, fixed-size scroll view still hugs a short list (the palette does).
+  A list inside one of the thread's own rows is measured before it is nested: the run ledger
+  builds lazily (about 6 ms a scroll step, against one 150 ms build for 200 runs), while a
+  300-file changes card cost 20 ms a step nested and stays eager (one 250 ms build).
 - **One view per row.** In a lazy `ForEach`, each element makes exactly one view: wrap an `if` or
   a `switch` in a container. A row that could be nothing (`if … else if …` with no `else`) makes
   SwiftUI build every row to count them, on every update: a 500-turn thread built 1,000 rows per
@@ -397,6 +400,10 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
   lands on; hover lives in the row itself. A store or the view model derives the rows once per
   change (`SidebarTree`, `PaletteResults`, `DirectoryFilter`, the review's row cache): no
   filtering, sorting, or formatting in `body`.
+- **A derivation is one pass over its inputs.** Group a collection once
+  (`sidebarAgentsBySpace`) rather than filtering all of it for each group, and read what is
+  memoized (the space forest) rather than building it again for a selection. At 1,500 agents in
+  200 spaces a status report took 59 ms and a selection 57 ms until both were.
 - **Rows are cheap to build**, since scrolling builds them. Platform-backed modifiers cost most:
   one drop target covers the sidebar (`SidebarDropZone`, fed the frames the rows on screen
   register) instead of one per row, and a control that shows only on hover (a diff line's `+`)
