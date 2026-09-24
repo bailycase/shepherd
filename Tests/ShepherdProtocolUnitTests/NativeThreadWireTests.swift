@@ -75,6 +75,7 @@ struct NativeThreadWireTests {
         .accepted(operationID: op),
         .unchanged(piSessionID: "s", generation: "g", revision: 3),
         .failure(code: "stale_session", message: "refresh"),
+        .failure(code: NativeThreadCode.starting, message: "pi is starting."),
         .snapshot(value: NativeThreadSnapshot(
             piSessionID: "s", generation: "g", revision: 4, running: true, model: "p/m", thinking: "low",
             supportedActions: ["send", "abort"], dialogsSupported: true,
@@ -98,6 +99,17 @@ struct NativeThreadWireTests {
     @Test(arguments: results)
     func resultsRoundTrip(_ result: NativeThreadResult) throws {
         #expect(try Wire.roundTrip(result) == result)
+    }
+
+    /// Hosts and clients of different versions compare these; they must never be renamed.
+    @Test func availabilityCodesAreStable() {
+        #expect(NativeThreadCode.starting == "native_starting")
+        #expect(NativeThreadCode.unavailable == "native_unavailable")
+    }
+
+    @Test func aStartingRefusalTravelsAsARemoteError() throws {
+        let reply = RemoteReply.error(id: 4, code: NativeThreadCode.starting, message: "pi is starting.")
+        #expect(try Wire.roundTrip(reply) == reply)
     }
 
     @Test func aV1SnapshotDecodesWithEveryV2FieldAbsent() throws {

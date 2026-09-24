@@ -98,6 +98,17 @@ public enum NativeThreadResult: Codable, Hashable, Sendable {
     case transcript(value: NativeSubagentTranscript)
 }
 
+/// Failure codes a thread's availability is reported with, as `NativeThreadResult.failure` or
+/// a rejected request. Both travel between hosts and clients, so they never change.
+public enum NativeThreadCode {
+    /// The agent exists but its pi is not serving yet: the app has not bound the process to
+    /// the agent's pane, or pi has not answered its first `get_state`. Clients wait and poll;
+    /// it is never an error. Hosts advertise it with `RemoteProtocol.nativeThreadStartingCapability`.
+    public static let starting = "native_starting"
+    /// The agent's pi is gone: it exited, the agent was removed, or its pane runs no pi.
+    public static let unavailable = "native_unavailable"
+}
+
 public struct NativeSubagentTranscript: Codable, Hashable, Sendable {
     public var runID: String
     public var messages: [NativeThreadMessage]

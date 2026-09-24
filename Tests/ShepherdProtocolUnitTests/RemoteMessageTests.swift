@@ -286,7 +286,7 @@ struct RemoteProtocolConstantTests {
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
         let named = [
             RemoteProtocol.nativeThreadCapability, RemoteProtocol.nativeThreadV2Capability,
-            RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
+            RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
             RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeSetupCapability,
             RemoteProtocol.uploadCapability, RemoteProtocol.creationOptionsCapability,
@@ -299,6 +299,7 @@ struct RemoteProtocolConstantTests {
     @Test func capabilityStringsAreStable() {
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
+        #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
         #expect(RemoteProtocol.pasteCapability == "session.paste.v1")
         #expect(RemoteProtocol.paneControlCapability == "pane.control.v1")
         #expect(RemoteProtocol.uploadCapability == "session.upload.v1")
