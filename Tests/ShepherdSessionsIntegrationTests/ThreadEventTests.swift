@@ -89,7 +89,7 @@ struct ThreadEventTests {
         #expect(!s.running)
         #expect(s.runtime == "rpc" && s.dialogsSupported)
         #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents"])
-        #expect(s.messages.map(\.entryID) == ["m:0", "m:1"])
+        #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
         #expect(s.messages.first?.blocks == [NativeThreadBlock(kind: .text, text: "Hello!")])
         #expect(s.stats == NativeThreadStats(contextTokens: 60000, contextWindow: 200000, contextPercent: 30, totalTokens: 105000, cost: 0.45))
         #expect(s.commands?.map(\.name) == ["session-name", "fix-tests"])
@@ -130,6 +130,101 @@ struct ThreadEventTests {
         #expect(running.running)
         #expect(running.revision > s.revision)
     }
+
+    /// One event after its setup, and how many revisions it is worth.
+    struct RevisionCase: Sendable, CustomTestStringConvertible {
+        let name: String
+        let setup: [String]
+        let event: String
+        let revisions: UInt64
+        var testDescription: String { name }
+    }
+
+    private static let start = #"{"type":"agent_start"}"#
+    private static let messageStart = #"{"type":"message_start","message":{"role":"assistant","content":[]}}"#
+    private static let textStart = #"{"type":"message_update","assistantMessageEvent":{"type":"text_start","contentIndex":0}}"#
+    private static func textDelta(_ text: String) -> String {
+        #"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"\#(text)"}}"#
+    }
+    private static let toolStart = #"{"type":"tool_execution_start","toolCallId":"c1","toolName":"bash","args":{"command":"ls"}}"#
+    private static let toolUpdate = #"{"type":"tool_execution_update","toolCallId":"c1","toolName":"bash","partialResult":{"content":[{"type":"text","text":"out"}]}}"#
+    private static let queueUpdate = #"{"type":"queue_update","steering":[],"followUp":["later"]}"#
+
+    static let revisionCases: [RevisionCase] = [
+        .init(name: "an agent starting", setup: [], event: start, revisions: 1),
+        .init(name: "a message starting", setup: [start], event: messageStart, revisions: 1),
+        .init(name: "a text delta", setup: [start, messageStart, textStart], event: textDelta("Hi"), revisions: 1),
+        .init(name: "a tool starting", setup: [start], event: toolStart, revisions: 1),
+        .init(name: "a tool's output", setup: [start, toolStart], event: toolUpdate, revisions: 1),
+        .init(name: "a tool ending", setup: [start, toolStart],
+              event: #"{"type":"tool_execution_end","toolCallId":"c1","toolName":"bash","result":{"content":[]},"isError":false}"#, revisions: 1),
+        .init(name: "a dialog", setup: [], event: #"{"type":"extension_ui_request","id":"d1","method":"select","title":"Pick","options":["a"]}"#, revisions: 1),
+        .init(name: "a widget", setup: [], event: #"{"type":"extension_ui_request","id":"w1","method":"setWidget","widgetKey":"k","widgetLines":["hi"]}"#, revisions: 1),
+        .init(name: "a repeated queue update", setup: [queueUpdate], event: queueUpdate, revisions: 0),
+        .init(name: "an unknown event", setup: [], event: #"{"type":"compaction_start","reason":"threshold"}"#, revisions: 0),
+        .init(name: "an idle agent settling", setup: [], event: #"{"type":"agent_settled"}"#, revisions: 0),
+        .init(name: "a repeated tool output", setup: [start, toolStart, toolUpdate], event: toolUpdate, revisions: 0),
+        .init(name: "an empty text delta", setup: [start, messageStart, textStart, textDelta("Hi")], event: textDelta(""), revisions: 0),
+    ]
+
+    /// A change a snapshot would show moves the revision exactly once; an event that changes
+    /// nothing leaves it, and a client polling after it hears `unchanged`.
+    @Test(arguments: revisionCases)
+    func eachVisibleChangeMovesTheRevisionOnceAndNothingElseDoes(_ c: RevisionCase) async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        for record in c.setup { try await t.feed(record) }
+        let before = try await t.snapshot()
+
+        try await t.feed(c.event)
+        let after = try await t.snapshot()
+        #expect(after.revision - before.revision == c.revisions)
+        if c.revisions == 0 {
+            #expect(await t.request(.snapshot(afterRevision: before.revision))
+                == .unchanged(piSessionID: before.piSessionID, generation: before.generation, revision: before.revision))
+        }
+    }
+
+    #if DEBUG
+    /// A streamed delta rehashes the message it grew, never the turn's tool output beside it.
+    @Test func aDeltaRehashesOnlyTheMessageItGrew() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        let output = try String(decoding: JSONEncoder().encode(String(repeating: "line of build output 00\n", count: 16_384 / 24)), as: UTF8.self)
+        try await t.feed(Self.start)
+        for i in 0..<50 {
+            try await t.feed(
+                #"{"type":"tool_execution_start","toolCallId":"t\#(i)","toolName":"bash","args":{"command":"make"}}"#,
+                #"{"type":"tool_execution_end","toolCallId":"t\#(i)","toolName":"bash","result":{"content":[{"type":"text","text":\#(output)}]},"isError":false}"#)
+        }
+        try await t.feed(Self.messageStart, Self.textStart, Self.textDelta("Hello"), Self.textDelta(" world"))
+        let bytes = await withCheckedContinuation { continuation in
+            t.queue.async { continuation.resume(returning: t.state.bytesHashedByLastCommit) }
+        }
+        #expect(bytes > 0 && bytes <= "Hello world".utf8.count)
+    }
+
+    /// Snapshots size their rows once: after a delta, the next snapshot encodes only its fixed
+    /// part and the message that grew, and its arithmetic is its encoded size.
+    @Test func aSnapshotAfterADeltaEncodesOnlyItsFixedPartAndTheGrownMessage() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(Self.start, Self.toolStart, Self.toolUpdate, Self.messageStart, Self.textStart, Self.textDelta("Hello"))
+        _ = try await t.snapshot()
+
+        try await t.feed(Self.textDelta(" world"))
+        let snapshot = try await t.snapshot()
+        let (encodes, bytes) = await withCheckedContinuation { continuation in
+            t.queue.async { continuation.resume(returning: (t.state.encodesByLastSnapshot, t.state.bytesOfLastSnapshot)) }
+        }
+        #expect(encodes == 2)
+        #expect(bytes == (try JSONEncoder().encode(snapshot).count))
+        #expect(snapshot.messages.count == 2 && snapshot.provisional.count == 2)
+    }
+    #endif
 
     // MARK: - Streaming
 

@@ -1,0 +1,355 @@
+import AppKit
+import Darwin
+import Foundation
+import ShepherdProtocol
+import ShepherdRemote
+import ShepherdTestSupport
+import SwiftUI
+@testable import ShepherdApp
+
+/// A `ThreadView` in an off-screen window whose pi is an in-process closure: it answers each
+/// snapshot request with `snapshot` (or `starting`), and accepts every action. Tests change
+/// what it serves and have the store pull, as a poll would. With `history` set, snapshots carry
+/// its newest page and older pages are served by cursor, as a host pages pi's session.
+@MainActor
+final class FakeThread {
+    /// Whether the thread is on screen, and whether its layout is the visible one.
+    @MainActor @Observable final class Visibility {
+        var active = true
+        var motionPaused = false
+        var focused = false
+    }
+
+    private struct Hosted: View {
+        let visibility: Visibility
+        let store: NativeThreadStore
+        let request: NativeThreadStore.Request
+        let header: Bool
+        let commands: ThreadCommandCenter
+        let reduceMotion: Bool?
+
+        var body: some View {
+            VStack(spacing: 0) {
+                if header {
+                    ThreadHeader(store: store, project: "project", title: "Thread", toggleReview: {}, toggleSubagents: {}, rename: {})
+                }
+                ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake")
+            }
+            // As the workspace hides a layout it keeps mounted.
+            .opacity(visibility.active ? 1 : 0)
+            .environment(\.nwMotionPaused, visibility.motionPaused)
+            .environment(\.threadCommands, commands)
+            .transformEnvironment(\._accessibilityReduceMotion) { if let reduceMotion { $0 = reduceMotion } }
+        }
+    }
+
+    let store: NativeThreadStore
+    let visibility = Visibility()
+    /// Keyboard commands for the thread (⌥⌘↑/↓ turn jumps), as the app sends them.
+    let commands = ThreadCommandCenter()
+    var snapshot: NativeThreadSnapshot
+    /// The whole session, oldest first, when the thread pages it.
+    var history: [NativeThreadMessage]?
+    static let pageSize = 50
+    /// While true, snapshot requests answer that pi is still starting.
+    var starting = false
+    private(set) var snapshotRequests = 0
+    let window: OffscreenWindow
+
+    /// `header` puts the thread's toolbar (`ThreadHeader`) above it, as the workspace does.
+    /// `reduceMotion` pins Reduce Motion for a test that needs motion whatever the machine's
+    /// setting (CI's VM has it on).
+    init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
+         store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
+         header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil) {
+        self.snapshot = snapshot
+        self.history = history
+        self.starting = starting
+        self.store = store
+        visibility.focused = focused
+        window = OffscreenWindow(size: size, dark: dark)
+        let request: NativeThreadStore.Request = { [weak self] value in
+            guard let self else { return .failure(code: "gone", message: "harness released") }
+            switch value {
+            case .snapshot(_, let before, _):
+                self.snapshotRequests += 1
+                if self.starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
+                guard let history = self.history else { return .snapshot(value: self.snapshot) }
+                let end = before.flatMap { cursor in history.firstIndex { $0.entryID == cursor } } ?? history.count
+                let start = max(0, end - Self.pageSize)
+                var page = self.snapshot
+                page.messages = Array(history[start..<end])
+                page.olderCursor = start > 0 ? history[start].entryID : nil
+                return .snapshot(value: page)
+            case .send(_, _, let operation, _, _, _), .abort(_, _, let operation), .answer(_, _, let operation, _, _),
+                 .setModel(_, _, let operation, _), .setThinking(_, _, let operation, _),
+                 .subagentCommand(_, _, let operation, _, _, _, _):
+                return .accepted(operationID: operation)
+            default:
+                return .failure(code: "x", message: "unscripted")
+            }
+        }
+        window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands,
+                           reduceMotion: reduceMotion))
+    }
+
+    /// Serves `next` and has the store pull it now, outside any animation.
+    func serve(_ next: NativeThreadSnapshot) async {
+        snapshot = next
+        await store.refresh()
+    }
+
+    func waitUntilReady() async throws {
+        let store = store
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        ListPerf.settle(window)
+    }
+
+    /// Flips the thread off screen (`shown` false) or back, as switching agents does: the
+    /// layout stays mounted, its thread stops being active, and its motion pauses. Returns
+    /// once the thread has settled: shown again, its first pull since has landed.
+    func show(_ shown: Bool) async throws {
+        let requests = snapshotRequests
+        visibility.active = shown
+        visibility.motionPaused = !shown
+        ListPerf.settle(window)
+        if shown {
+            try await eventuallyOnMain("the thread's first pull since it was shown") { self.snapshotRequests > requests }
+        }
+        // Let the pull land and whatever it sets off run.
+        for _ in 0..<5 {
+            try await Task.sleep(for: .milliseconds(20))
+            ListPerf.settle(window)
+        }
+    }
+
+    /// The thread's scroll view.
+    var scrollView: NSScrollView? { ListPerf.scrollView(in: window) }
+
+    func close() {
+        store.stop()
+        window.close()
+    }
+}
+
+/// A restored workspace of agents, each on a running stub pi, in an off-screen window with the
+/// first one on screen and its thread loaded: every layout mounted. A review loads a fixed
+/// one-file diff.
+@MainActor
+enum MountedWorkspace {
+    /// The workspace restored, the first agent selected, and no window yet.
+    static func start(_ count: Int, in app: AppHarness) async throws -> (ShepherdViewModel, [AgentFixture]) {
+        let space = Fixture.space(path: app.dir.path)
+        var agents: [AgentFixture] = []
+        for index in 0..<count { agents.append(try await app.liveAgent("agent \(index)", in: space, order: index)) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        let files = [ListFixtures.diffFile("Sources/A.swift", lines: 12)]
+        vm.reviewDiffLoader = { _, _ in (files, nil) }
+        vm.selectAgent(agents[0].agent.id)
+        return (vm, agents)
+    }
+
+    static func open(_ count: Int, in app: AppHarness, size: CGSize = CGSize(width: 1200, height: 800))
+        async throws -> (ShepherdViewModel, OffscreenWindow, [AgentFixture]) {
+        let (vm, agents) = try await start(count, in: app)
+        let window = OffscreenWindow(size: size, dark: true, WorkspaceView(vm: vm))
+        let visible = vm.threadStores.store(for: agents[0].agent.id)
+        try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        try await Task.sleep(for: .milliseconds(300))
+        ListPerf.settle(window)
+        return (vm, window, agents)
+    }
+}
+
+/// How long the main thread goes without waiting (one run-loop turn's work), watched by a
+/// run-loop observer while `work` runs: a mount or an update that stalls the app shows up here
+/// whichever run-loop turn it lands in.
+@MainActor
+final class MainTurnMonitor {
+    private var observer: CFRunLoopObserver?
+    private var turnStart: CFAbsoluteTime?
+    private(set) var durations: [Double] = []
+    var longest: Double { durations.max() ?? 0 }
+    var turns: Int { durations.count }
+
+    func start() {
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue | CFRunLoopActivity.beforeWaiting.rawValue,
+                                                          true, 0) { [weak self] _, activity in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = CFAbsoluteTimeGetCurrent()
+                if activity == .afterWaiting {
+                    self.turnStart = now
+                } else if let start = self.turnStart {
+                    self.durations.append(now - start)
+                    self.turnStart = nil
+                }
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        self.observer = observer
+    }
+
+    func stop() {
+        if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        observer = nil
+    }
+}
+
+/// An off-screen window (as `OffscreenWindow`: borderless, far off every screen, ordered back)
+/// whose hosting view counts its layout passes: a view that animates through SwiftUI lays the
+/// host out on every frame, one the render server animates never does.
+@MainActor
+final class LayoutCountingWindow {
+    final class Host: NSHostingView<AnyView> {
+        var layouts = 0
+
+        override func layout() {
+            layouts += 1
+            super.layout()
+        }
+    }
+
+    let window: NSWindow
+    let host: Host
+
+    init(size: CGSize, dark: Bool = true, _ view: some View) {
+        _ = NSApplication.shared
+        window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -30_000, y: -30_000), size: size),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        host = Host(rootView: AnyView(view))
+        host.appearance = window.appearance
+        window.contentView = host
+        window.orderBack(nil)
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+    }
+
+    func close() {
+        window.orderOut(nil)
+        window.contentView = nil
+    }
+}
+
+/// The main thread's own CPU time: what a change or an idle stretch costs the thread that
+/// draws, whatever else the machine runs. Read it on the main thread.
+@MainActor
+enum MainThreadCPU {
+    static func now() -> Duration {
+        .nanoseconds(Int64(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)))
+    }
+
+    /// Main-thread milliseconds spent while `work` runs (and awaits).
+    static func milliseconds(_ work: () async throws -> Void) async rethrows -> Double {
+        let start = now()
+        try await work()
+        return ListPerf.milliseconds(now() - start)
+    }
+
+    /// The median of `values`.
+    static func median(_ values: [Double]) -> Double {
+        let sorted = values.sorted()
+        guard !sorted.isEmpty else { return 0 }
+        return sorted.count.isMultiple(of: 2) ? (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2 : sorted[sorted.count / 2]
+    }
+}
+
+/// When a store adopted each snapshot it pulled: the changes a reader sees land on screen.
+@MainActor
+final class Adoptions {
+    private(set) var times: [ContinuousClock.Instant] = []
+    private let store: NativeThreadStore
+    private var watching = true
+
+    init(_ store: NativeThreadStore) {
+        self.store = store
+        watch()
+    }
+
+    var count: Int { times.count }
+
+    /// The median time between two adoptions, in milliseconds.
+    var medianGap: Double {
+        MainThreadCPU.median(zip(times.dropFirst(), times).map { ListPerf.milliseconds($0 - $1) })
+    }
+
+    func stop() { watching = false }
+
+    private func watch() {
+        guard watching else { return }
+        // The store adopts on the main actor, so the change handler runs there, as it lands.
+        withObservationTracking { _ = store.snapshot } onChange: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.watching else { return }
+                self.times.append(.now)
+                Task { @MainActor in self.watch() }
+            }
+        }
+    }
+}
+
+extension FakeThread {
+    /// Moves the host's revision every 20 ms for `duration`, a few words more of the streaming
+    /// reply each time, as a local pi streams, and pushes each one to the store when `push`.
+    func stream(for duration: Duration, push: Bool) async throws {
+        let end = ContinuousClock.now + duration
+        var words = 0
+        while ContinuousClock.now < end {
+            words += 3
+            var next = snapshot
+            next.revision += 1
+            next.provisional = [ThreadFixture.streaming("Streaming" + String(repeating: " word", count: words))]
+            snapshot = next
+            if push { store.revisionAvailable() }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+}
+
+/// The whole process's CPU time, every thread (`getrusage`): what work moved off the main thread
+/// still costs.
+enum ProcessCPU {
+    static func now() -> Duration {
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        func duration(_ time: timeval) -> Duration { .seconds(time.tv_sec) + .microseconds(Int64(time.tv_usec)) }
+        return duration(usage.ru_utime) + duration(usage.ru_stime)
+    }
+}
+
+/// Snapshots for the thread fixtures in this target's cost tests.
+enum ThreadFixture {
+    static let answer = Array(repeating: "Answer paragraph with enough words to wrap a line or two in the column, like a real reply.",
+                              count: 3).joined(separator: "\n\n")
+
+    static func user(_ id: String, _ text: String) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: "user", blocks: [NativeThreadBlock(kind: .text, text: text)], truncated: false)
+    }
+
+    static func assistant(_ id: String, _ text: String) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)], truncated: false)
+    }
+
+    static func streaming(_ text: String) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: "provisional:assistant:1", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)],
+                            status: "streaming", truncated: false)
+    }
+
+    /// `count` messages, alternating a question and its answer.
+    static func history(_ count: Int, prefix: String = "m") -> [NativeThreadMessage] {
+        (0..<count).map { i in i % 2 == 0 ? user("\(prefix)\(i)", "Question \(i / 2)") : assistant("\(prefix)\(i)", "Answer \(i / 2). " + answer) }
+    }
+
+    static func snapshot(_ messages: [NativeThreadMessage], provisional: [NativeThreadMessage] = [], running: Bool = false,
+                         revision: UInt64 = 1, olderCursor: String? = nil, stats: NativeThreadStats? = nil,
+                         dialogs: [NativeThreadDialog] = [], model: String = "anthropic/claude-opus-4-5") -> NativeThreadSnapshot {
+        NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: revision, running: running, model: model,
+                             thinking: "medium", supportedActions: ["send", "abort", "answer", "setModel", "setThinking", "subagents"],
+                             dialogsSupported: true, dialogs: dialogs, messages: messages, olderCursor: olderCursor,
+                             provisional: provisional, clipped: false, runtime: "rpc", stats: stats,
+                             commands: [NativeCommand(name: "review", description: "Review the working tree", source: "prompt")])
+    }
+}

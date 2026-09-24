@@ -4,6 +4,58 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
+/// A stretch of tool work (NWThread board): two or more finished lines fold into one summary
+/// line that expands to them on a rail; one stays itself. Running calls stand below, live.
+struct WorkGroupView: View, Equatable {
+    let group: NativeWorkGroup
+    var review: ((String) -> Void)?
+    /// Lines that stream in once the turn is on screen make their entrance.
+    var entering = false
+    @State private var expanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// `expanded` opens the summary from the start, for previews.
+    init(group: NativeWorkGroup, review: ((String) -> Void)? = nil, entering: Bool = false, expanded: Bool = false) {
+        self.group = group
+        self.review = review
+        self.entering = entering
+        _expanded = State(initialValue: expanded)
+    }
+
+    static func == (lhs: WorkGroupView, rhs: WorkGroupView) -> Bool {
+        lhs.group == rhs.group && lhs.entering == rhs.entering && (lhs.review == nil) == (rhs.review == nil)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
+            if let summary = group.summary {
+                NWActivityLine(kind: .work, label: summary.label, meta: summary.meta, status: summary.failed ? .failed : .done,
+                               isExpanded: expanded, accessibilityLabel: summary.accessibilityLabel, action: toggle)
+                    .nwArrival(entering)
+                if expanded {
+                    NWActivityRail {
+                        VStack(alignment: .leading, spacing: AppLayout.activitySpacing) { lines(group.finished) }
+                    }
+                    .nwTransition(.disclosure)
+                }
+            } else {
+                lines(group.finished)
+            }
+            lines(group.running)
+        }
+    }
+
+    private func lines(_ bursts: [NativeActivityBurst]) -> some View {
+        ForEach(bursts) { burst in
+            ActivityLineView(burst: burst, review: review).equatable().nwArrival(entering)
+        }
+    }
+
+    private func toggle() {
+        withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
+    }
+}
+
 /// One burst of tool work as an activity line (NWThread board). Expanding it shows its calls on
 /// a rail; an edit or write opens the review pane at its file, any other call expands to its
 /// output. ⌥-click or the context menu shows the raw call.

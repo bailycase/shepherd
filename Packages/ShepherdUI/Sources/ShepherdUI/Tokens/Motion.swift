@@ -346,9 +346,19 @@ enum NWPop {
     static let peak: Double = 1.12
 }
 
-/// Time-driven phase for the continuous motions. Deriving the phase from the clock (instead of
-/// a repeating animation started in `onAppear`) keeps a spinner or glow correct when Reduce
-/// Motion toggles while it is on screen: the timeline simply pauses or resumes.
+extension EnvironmentValues {
+    /// True under a subtree that stays mounted but is not on screen (an agent layout the
+    /// workspace keeps while another one shows): the continuous motions (the spinner, the glow,
+    /// the shimmer) stop drawing frames there. It changes only when visibility flips.
+    @Entry public var nwMotionPaused: Bool = false
+}
+
+/// Time-driven phase for the continuous motions. The spinner and the glow are Core Animation
+/// animations started at the clock's phase (`NWLayerMotion`), so every one on screen moves in
+/// step and costs the app nothing per frame; the shimmer is a timeline that reads the phase each
+/// frame. Either way Reduce Motion can toggle while one is on screen: the animation is removed
+/// or the timeline pauses. Both also stop under `nwMotionPaused`, and the timeline while its view
+/// is off screen (`onDisappear`), so motion no one sees costs nothing.
 enum NWPhase {
     /// 0..<1 through one period of `motion`.
     static func fraction(_ date: Date, _ motion: NW.Motion) -> Double {

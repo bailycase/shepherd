@@ -291,6 +291,8 @@ final class ShepherdViewModel {
     let threadCommands = ThreadCommandCenter()
     /// The menu bar's narrow view of this model (`MenuStateSync` keeps it current).
     let menuState = MenuState()
+    /// The sidebar's one drop target (`SidebarView`), kept here so no update allocates another.
+    let sidebarDropZone = SidebarDropZone()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = RightPaneState()
     /// System notifications when an unwatched agent finishes or blocks.
@@ -321,9 +323,21 @@ final class ShepherdViewModel {
     /// Layouts currently unmounted by cold parking. Observed: parking and
     /// unparking must re-evaluate `mountedTabs`.
     var parkedTabIDs: Set<TabID> = []
+    /// Layouts not mounted yet at launch (`WorkspaceSelection.pendingMountTabIDs`): the
+    /// workspace's first frame builds the visible layout alone, then `drainPendingMounts`
+    /// mounts the rest. Observed, like `parkedTabIDs`.
+    var pendingMountTabIDs: Set<TabID> = []
+    /// The first adopt with agents plans the launch's mounting, once.
+    @ObservationIgnored var mountingPlanned = false
     @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
+    /// The first adoption starts every restored agent's pi (`TerminalSessionStore.startRestoredAgents`).
+    /// Off in harnesses that seed agents only to draw them: their pi then starts when a layout
+    /// mounts or a test asks, as before.
+    @ObservationIgnored let restoresAgentsAtLaunch: Bool
+    /// One-shot launch guard for starting the restored agents' pi.
+    @ObservationIgnored var didStartRestoredAgents = false
     /// Recently selected agents, most recent last, no duplicates. When the
     /// selected agent goes away (⌘⇧W, process exit) selection returns to the
     /// agent you were on before it — not the space's blank shell.
@@ -344,10 +358,12 @@ final class ShepherdViewModel {
         sidebarDefaults: UserDefaults = .standard,
         themeInstaller: @escaping (ShepherdTheme) throws -> Void = { theme in
             _ = try ShepherdPiTheme.installedPath(for: theme)
-        }
+        },
+        restoresAgentsAtLaunch: Bool = true
     ) {
         self.state = ShepherdState()
         self.server = server
+        self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
         LegacyTerminalAgents.forgetPresentationPreferences(in: sidebarDefaults)
@@ -384,6 +400,19 @@ final class ShepherdViewModel {
         }
         sessions.onAgentStatus = { [weak self] agentID, status in
             self?.applyAgentStatus(agentID, status)
+        }
+        // A thread on screen shows pi's history the moment pi serves it, not at its next poll.
+        sessions.onThreadServable = { [weak self] agentID in
+            self?.threadStores.existing(for: agentID)?.revisionAvailable()
+        }
+        // And each revision pi reaches after, within a frame: the server pushes the threads on
+        // screen (those whose poll loop runs), and the store pulls at most every
+        // `NativeThreadStore.pushedPullSpacing`. The polls stay as the fallback.
+        threadStores.onLiveChange = { [weak self] live in
+            self?.sessions.watchThreadRevisions(of: live)
+        }
+        sessions.onThreadRevision = { [weak self] agentID in
+            self?.threadStores.existing(for: agentID)?.revisionAvailable()
         }
         notifications.onSelectAgent = { [weak self] agentID in
             guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return }
@@ -670,6 +699,13 @@ final class ShepherdViewModel {
         if selectedAgent == nil {
             selectedAgentID = state.agents.first { $0.spaceID == selectedSpaceID }?.id
         }
+        // First adoption of the restored workspace: every agent's pi starts now, not when its
+        // layout mounts, the one on screen first and the rest a few at a time.
+        if restoresAgentsAtLaunch, !didStartRestoredAgents {
+            didStartRestoredAgents = true
+            sessions.startRestoredAgents(orderedAgents.map(\.id) + state.agents.map(\.id),
+                                         first: selectedAgentID.map { [$0] } ?? [], in: state)
+        }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
 
         if let focused = focusedPaneID, activeTab?.layout.contains(focused) == true {
@@ -677,6 +713,7 @@ final class ShepherdViewModel {
         } else {
             syncFocus()
         }
+        planMounting()
     }
 
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus) {

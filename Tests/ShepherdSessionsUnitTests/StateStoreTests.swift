@@ -110,6 +110,31 @@ struct StateStoreTests {
         #expect(StateStore(url: url).state.spaces == expected.spaces + [later])
     }
 
+    /// `committed`, which any thread reads, is the store's state after a load and an update, and a
+    /// rejected update leaves it as it was.
+    @Test func theCommittedCopyFollowsLoadsAndUpdatesButNotRejections() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("state.json")
+        #expect(StateStore(url: url).committed == ShepherdState())
+        let expected = Self.validState()
+        try StateStore(url: url).update { $0 = expected }
+
+        let store = StateStore(url: url)
+        #expect(store.committed == expected)
+        let later = Space(name: "later", path: "/tmp/later")
+        try store.update { $0.spaces.append(later) }
+        #expect(store.committed == store.state)
+        #expect(store.committed.spaces == expected.spaces + [later])
+
+        let before = store.committed
+        #expect(throws: ShepherdStateValidationError.self) {
+            try store.update { $0.tabs[0].spaceID = SpaceID() }
+        }
+        #expect(store.committed == before)
+        #expect(store.committed == store.state)
+    }
+
     /// Terminal-era files carry a per-agent `runtime` key; they load unchanged and relaunch over RPC.
     @Test func aTerminalEraFileLoadsWithoutQuarantine() throws {
         let dir = try makeTempDirectory()

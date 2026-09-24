@@ -335,6 +335,14 @@ extension ShepherdViewModel {
         let canonical = server.state
         sessions.stateDidChange(canonical)
         state = canonical
+        // A new agent's thread is known to be empty: it draws at once, ready to type into, while
+        // pi boots behind it. A resumed session (a forked transcript) is read from its file.
+        if config.piSessionID == nil {
+            threadStores.store(for: agentID).preview(PiSessionPreview.empty(
+                sessionID: agent.effectivePiSessionID,
+                model: config.model ?? PiConfig.defaultModelReference(),
+                thinking: config.thinking.rawValue))
+        }
 
         // Optimistic switch: the agent's thread appears immediately in its connecting
         // state while pi boots behind it.

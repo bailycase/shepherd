@@ -255,19 +255,13 @@ public struct NWCodeBlock: View {
             .padding(.trailing, NW.Space.s)
             .frame(height: NWThreadMetrics.codeHeaderHeight)
             .overlay(alignment: .bottom) { NWHairline() }
-            ScrollView(.horizontal) {
-                Group {
-                    if let highlighted { Text(highlighted) } else { Text(code) }
-                }
-                .font(.nw(.code))
-                .lineSpacing(NWTextStyle.code.lineSpacing + 0.6)
-                .foregroundStyle(nw.textPrimary)
-                .textSelection(.enabled)
-                .fixedSize()
-                .padding(.horizontal, NW.Space.l)
-                .padding(.vertical, 10)
+            // The code draws directly when its longest line fits the column, and scrolls
+            // sideways only when it does not: the scroll view was a fifth of the block's cost.
+            ViewThatFits(in: .horizontal) {
+                codeText
+                ScrollView(.horizontal) { codeText }
+                    .scrollIndicators(.hidden)
             }
-            .scrollIndicators(.hidden)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
@@ -276,6 +270,20 @@ public struct NWCodeBlock: View {
         .onHover { hovering = $0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(language.map { "\($0) code" } ?? "Code")
+    }
+
+    /// The code at its natural width, unwrapped.
+    private var codeText: some View {
+        Group {
+            if let highlighted { Text(highlighted) } else { Text(code) }
+        }
+        .font(.nw(.code))
+        .lineSpacing(NWTextStyle.code.lineSpacing + 0.6)
+        .foregroundStyle(Color.nw.textPrimary)
+        .textSelection(.enabled)
+        .fixedSize()
+        .padding(.horizontal, NW.Space.l)
+        .padding(.vertical, 10)
     }
 }
 

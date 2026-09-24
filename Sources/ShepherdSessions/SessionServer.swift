@@ -193,6 +193,19 @@ public final class SessionServer: @unchecked Sendable {
     /// The notify extension's tool asked for a system notification.
     /// Fire-and-forget, delivered on the main actor.
     public var onNotify: ((AgentID, String, String) -> Void)?
+    /// An agent's pi began serving its native thread: a snapshot request now gets its history
+    /// instead of `native_starting`. Once per pi, when it serves and its agent's pane is bound
+    /// to it (whichever comes last), after the state broadcast of that binding. Delivered on
+    /// the main actor, so a local thread need not wait for its next poll.
+    public var onNativeThreadServable: ((AgentID) -> Void)?
+    /// A watched agent's native thread (`watchThreadRevisions`) moved to a new revision, or its
+    /// pane was bound to a pi. Delivered on the main actor, at most once per display frame
+    /// (`revisionPushSpacing`): every agent revised while one delivery waits rides it, so a
+    /// streaming turn costs a main hop per frame, and an agent no one watches costs none. A hint
+    /// to pull, not state: it may land after callbacks the server queued later.
+    public var onThreadRevision: ((AgentID) -> Void)?
+    /// The shortest time between two `onThreadRevision` deliveries: one display frame.
+    public static let revisionPushSpacing: DispatchTimeInterval = .microseconds(16_667)
     /// A Shepherd agent asked to see, message, or spawn peer threads.
     /// Forwarded to the GUI like pane requests. Delivered on the main actor;
     /// the completion may be called from any thread.
@@ -259,6 +272,9 @@ public final class SessionServer: @unchecked Sendable {
     /// to one ran a pi that is gone, unlike a binding left from the previous run, which the app
     /// is respawning.
     private var retiredRPCSessions: [SessionID: Int32?] = [:]
+    /// RPC sessions whose thread serves but that no agent's pane is bound to yet
+    /// (`onNativeThreadServable` waits for the binding).
+    private var unannouncedServable: Set<SessionID> = []
     private enum NativeOutcome {
         case result(NativeThreadResult)
         case failure(code: String, message: String)
@@ -321,6 +337,53 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
+    /// Watched agents whose thread revised since the last main-queue delivery: filled on the
+    /// server queue, drained on the main queue, which also sets what is watched.
+    private final class RevisedThreads: @unchecked Sendable {
+        private let lock = NSLock()
+        private var order: [AgentID] = []
+        private var members: Set<AgentID> = []
+        private var watched: Set<AgentID> = []
+        private var lastDelivery: DispatchTime?
+
+        func watch(_ agentIDs: Set<AgentID>) {
+            lock.lock()
+            defer { lock.unlock() }
+            watched = agentIDs
+        }
+
+        /// When to deliver, for the first watched agent since the last drain: a frame after the
+        /// last delivery, or now. Nil when the agent is not watched or a delivery is scheduled.
+        func insert(_ agentID: AgentID) -> DispatchTime? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard watched.contains(agentID), members.insert(agentID).inserted else { return nil }
+            order.append(agentID)
+            guard order.count == 1 else { return nil }
+            let now = DispatchTime.now()
+            guard let lastDelivery else { return now }
+            return max(now, lastDelivery + SessionServer.revisionPushSpacing)
+        }
+
+        /// The agents to tell the app about now, those still watched.
+        func drain() -> [AgentID] {
+            lock.lock()
+            defer { lock.unlock() }
+            lastDelivery = .now()
+            let drained = order.filter(watched.contains)
+            order.removeAll()
+            members.removeAll()
+            return drained
+        }
+    }
+
+    private let revisedThreads = RevisedThreads()
+    /// Tests only: handed to every RPC session this server creates afterwards, to run on the
+    /// decode queue before each record it decodes off the server queue.
+    var beforeOffQueueDecode: (() -> Void)?
+    /// Which agent's own pane runs each session, for the store version it was built from.
+    private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
+
     private var sessions: [SessionID: ServerSession] = [:]
     private var attachedSessions: Set<SessionID> = []
     /// Output waiting for the GUI, plus the one delivery currently executing
@@ -344,9 +407,10 @@ public final class SessionServer: @unchecked Sendable {
         self.modelCatalog = modelCatalog
     }
 
-    /// Current persisted state (safe to read from any thread).
+    /// The last committed state, from any thread and without waiting for the server queue: a
+    /// mutation still running (or queued) is not in it, and one that has returned always is.
     public var state: ShepherdState {
-        queue.sync { store.state }
+        store.committed
     }
 
     /// Bind the extension socket and clear stale persisted state from the
@@ -469,7 +533,9 @@ public final class SessionServer: @unchecked Sendable {
             unlink(socketPath)
             throw SessionServerError.system(call: "chmod", errno: err)
         }
-        guard listen(fd, 16) == 0 else {
+        // At launch every pi's extensions dial in while the queue may be busy decoding
+        // histories; a short backlog refused them. The kernel caps SOMAXCONN.
+        guard listen(fd, SOMAXCONN) == 0 else {
             let err = errno
             close(fd)
             unlink(socketPath)
@@ -497,6 +563,7 @@ public final class SessionServer: @unchecked Sendable {
             output.delivery?.cancel()
         }
         sessions.removeAll()
+        unannouncedServable.removeAll()
         attachedSessions.removeAll()
         outputStates.removeAll()
         for client in Array(clients.values) {
@@ -523,8 +590,14 @@ public final class SessionServer: @unchecked Sendable {
     public func nativeThread(agentID: AgentID, request: NativeThreadRequest) async throws -> NativeThreadResult {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
-                // Include the same envelope budget as TCP, excluding NDJSON's newline.
-                let bytes = (try? NDJSON.encode(RemoteRequest.nativeThread(id: 0, agentID: agentID, request: request)).count - 1) ?? Int.max
+                // Include the same envelope budget as TCP, excluding NDJSON's newline. A snapshot
+                // request carries no user payload, and streaming clients poll it often.
+                let bytes: Int
+                if case .snapshot = request {
+                    bytes = 0
+                } else {
+                    bytes = (try? NDJSON.encode(RemoteRequest.nativeThread(id: 0, agentID: agentID, request: request)).count - 1) ?? Int.max
+                }
                 self.dispatchNativeThread(agentID: agentID, request: request, requestBytes: bytes) { outcome in
                     self.hopToMain {
                         switch outcome {
@@ -661,7 +734,7 @@ public final class SessionServer: @unchecked Sendable {
             close(fd)
             throw SessionServerError.system(call: "bind", errno: err)
         }
-        guard listen(fd, 16) == 0 else {
+        guard listen(fd, SOMAXCONN) == 0 else {
             let err = errno
             close(fd)
             throw SessionServerError.system(call: "listen", errno: err)
@@ -1718,13 +1791,8 @@ public final class SessionServer: @unchecked Sendable {
             if !current.canTransition(to: status) {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }
-            do {
-                try store.update { $0.agents[index].status = status }
-            } catch {
-                let persistenceError = SessionServerError.persistFailed(String(describing: error))
-                ShepherdLog.error("failed to persist status for agent \(agentID): \(persistenceError)")
-                return
-            }
+            // Two reports a turn: kept in memory, never validated or written on their own.
+            store.updateLive { $0.agents[index].status = status }
         } else {
             ShepherdLog.warning("setAgentStatus for unknown agent \(agentID); dropped")
             return
@@ -1798,6 +1866,17 @@ public final class SessionServer: @unchecked Sendable {
         let state = store.state
         broadcastRemoteState(state)
         hopToMain { [weak self] in self?.onStateChanged?(state) }
+        announceServableThreads()
+    }
+
+    /// Server queue: tell the app about every serving thread whose agent is now bound to it.
+    private func announceServableThreads() {
+        guard !unannouncedServable.isEmpty else { return }
+        for sessionID in unannouncedServable {
+            guard let agentID = agentID(forSession: sessionID) else { continue }
+            unannouncedServable.remove(sessionID)
+            hopToMain { [weak self] in self?.onNativeThreadServable?(agentID) }
+        }
     }
 
     public func putState(_ newState: ShepherdState) async throws {
@@ -1839,6 +1918,10 @@ public final class SessionServer: @unchecked Sendable {
                 $0.tabs[index].layout = $0.tabs[index].layout.updatingLeaf(paneID) {
                     $0.sessionID = sessionID
                 }
+            }
+            // Revisions pi reached before its pane was bound had no agent to reach.
+            if let sessionID, self.sessions[sessionID]?.thread != nil {
+                self.threadRevised(sessionID: sessionID)
             }
         }
     }
@@ -2110,6 +2193,11 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.sessions[sessionID]?.info }
     }
 
+    /// Whether an RPC session's thread serves yet, bound to an agent or not (for tests).
+    func threadServes(sessionID: SessionID) async -> Bool {
+        await enqueueValue { self.sessions[sessionID]?.thread?.isServable == true }
+    }
+
     public func createSession(params: CreateSessionParams) async throws -> SessionInfo {
         try await enqueue {
             try self.makeSessionOnQueue(params: params)
@@ -2128,13 +2216,20 @@ public final class SessionServer: @unchecked Sendable {
                 throw PTYSession.SpawnError(message: String(describing: error))
             }
             let sid = session.id
+            session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue)
             // Card actions go to the children extension's control channel, never the parent model.
             thread.dispatchSubagentCommand = { [weak serverWeak] runID, action, text, mode, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }
                 server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
             }
+            thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
             session.onEvent = { [weak thread] event in thread?.handle(event) }
+            thread.onServable = { [weak serverWeak] in
+                guard let server = serverWeak, server.sessions[sid] != nil else { return }
+                server.unannouncedServable.insert(sid)
+                server.announceServableThreads()
+            }
             session.onStderr = { line in ShepherdLog.info("rpc session \(sid) stderr: \(line)") }
             session.onExit = { [weak serverWeak] code in
                 serverWeak?.sessionDidExit(sid, code: code)
@@ -2317,6 +2412,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             if session.thread != nil { self.retiredRPCSessions.updateValue(session.exitCode, forKey: sessionID) }
+            self.unannouncedServable.remove(sessionID)
             self.sessions.removeValue(forKey: sessionID)
             self.attachedSessions.remove(sessionID)
             self.outputStates[sessionID]?.delivery?.cancel()
@@ -2445,6 +2541,17 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Queue plumbing
 
+    /// Tests only: parks a block on the server queue until `release` is signalled, and returns
+    /// once the queue is held. Never call it from the server queue.
+    func holdQueue(until release: DispatchSemaphore) async {
+        await withCheckedContinuation { (held: CheckedContinuation<Void, Never>) in
+            queue.async {
+                held.resume()
+                release.wait()
+            }
+        }
+    }
+
     /// Merge only the bindings belonging to PaneIDs that survive a structural
     /// replacement. Layout callers do not own session IDs, so the current
     /// server snapshot wins even when the incoming leaf carries a stale value.
@@ -2488,12 +2595,40 @@ public final class SessionServer: @unchecked Sendable {
         DispatchQueue.main.async(execute: body)
     }
 
-    /// Server queue: the agent whose own pane runs this session.
+    /// Server queue: the agent whose own pane runs this session. Streaming asks on every
+    /// revision, so the lookup is rebuilt once per committed state rather than scanned.
     private func agentID(forSession sessionID: SessionID) -> AgentID? {
-        store.state.agents.first { agent in
-            guard let paneID = agent.paneID else { return false }
-            return store.state.tabs.first { $0.id == agent.tabID }?.layout.leaf(withID: paneID)?.sessionID == sessionID
-        }?.id
+        if sessionAgents?.version != store.version {
+            let tabs = Dictionary(store.state.tabs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            var agents: [SessionID: AgentID] = [:]
+            for agent in store.state.agents {
+                guard let paneID = agent.paneID,
+                      let bound = tabs[agent.tabID]?.layout.leaf(withID: paneID)?.sessionID,
+                      agents[bound] == nil else { continue }
+                agents[bound] = agent.id
+            }
+            sessionAgents = (store.version, agents)
+        }
+        return sessionAgents?.agents[sessionID]
+    }
+
+    /// Server queue: tell the app a watched agent's thread revised, coalescing everything up to a
+    /// frame after the last delivery into one hop. The delivery is a hint to pull, so unlike
+    /// `hopToMain` it need not keep its place among the other callbacks.
+    private func threadRevised(sessionID: SessionID) {
+        guard let agentID = agentID(forSession: sessionID), let deadline = revisedThreads.insert(agentID) else { return }
+        DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
+            guard let self else { return }
+            for agentID in self.revisedThreads.drain() {
+                self.onThreadRevision?(agentID)
+            }
+        }
+    }
+
+    /// The agents whose revisions `onThreadRevision` reports: the app's threads on screen (their
+    /// stores' poll loops run). Replaces the last set; none are watched until the app says.
+    public func watchThreadRevisions(of agentIDs: Set<AgentID>) {
+        revisedThreads.watch(agentIDs)
     }
 
     /// Server queue: the RPC thread state behind an agent's pane, if it is an RPC agent.

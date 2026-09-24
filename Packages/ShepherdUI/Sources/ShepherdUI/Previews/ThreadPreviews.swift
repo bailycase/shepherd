@@ -41,7 +41,11 @@ import SwiftUI
 #Preview("Activity lines") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.s) {
-            NWActivityLine(kind: .explore, label: "Explored 7 files", meta: "read 5 · search 2 · 0.9s") {}
+            NWActivityLine(kind: .work, label: "Worked for 6m 40s", meta: "explored 13 files · edited 15 files · ran 22 commands · 5 failed") {}
+            NWActivityLine(kind: .work, label: "Worked for 1m 42s", meta: "explored 7 files · edited 3 files", isExpanded: true) {}
+            NWActivityRail {
+                NWActivityLine(kind: .explore, label: "Explored 7 files", meta: "read 5 · search 2 · 0.9s") {}
+            }
             NWActivityLine(kind: .edit, label: "Edited 3 files", meta: "+67 −46", isExpanded: true) {}
             NWActivityCalls([
                 NWActivityCallRow(id: "1", label: "edit", detail: "Sources/ShepherdApp/DesktopNativeThreadView.swift", isPath: true, stat: "+58 −41"),

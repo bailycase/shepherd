@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdSessions
@@ -108,15 +109,17 @@ struct WorkspaceNavigationTests {
         #expect(vm.settingsSection == .pi)
     }
 
-    /// Cold parking at the view-model seam: a layout hidden past the delay and outside the
-    /// four most recently shown unmounts; selecting it again remounts it at once. An agent's
-    /// pane is its RPC thread, so its pane session survives parking.
+    /// Cold parking at the view-model seam: a layout holding a terminal pane, hidden past the
+    /// delay and outside the four most recently shown, unmounts; selecting it again remounts it
+    /// at once. An agent's pane is its RPC thread, so its pane session survives parking.
     @Test func hiddenLayoutsParkPastTheDelayAndUnparkWhenSelected() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
-        // The first agent's pi is running, so mounting its pane binds to it rather than spawning.
-        let agents = [try await app.liveAgent("a0", in: space)] + (1..<6).map { Fixture.agent("a\($0)", in: space, order: $0) }
+        // The first agent's pi is running, so mounting its pane binds to it rather than spawning;
+        // a terminal pane beside its thread is what makes its layout worth parking.
+        let agents = [try await app.liveAgent("a0", in: space, auxiliary: 1)]
+            + (1..<6).map { Fixture.agent("a\($0)", in: space, order: $0, auxiliary: 1) }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         for agent in agents {
             vm.selectAgent(agent.agent.id)
@@ -138,6 +141,135 @@ struct WorkspaceNavigationTests {
         vm.noteActiveTabVisited()
         #expect(vm.parkedTabIDs.isEmpty)
         #expect(vm.mountedTabs.contains { $0.id == agents[0].tab.id })
+    }
+
+    /// A layout that is only a thread never parks: it has no surface to release and polls
+    /// nothing while hidden, so returning to it after any time away is a flip.
+    @Test func threadOnlyLayoutsNeverPark() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<6).map { Fixture.agent("a\($0)", in: space, order: $0) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        for agent in agents {
+            vm.selectAgent(agent.agent.id)
+            vm.noteActiveTabVisited()
+        }
+
+        vm.sweepColdPanes(now: Date().addingTimeInterval(3_600))
+
+        #expect(vm.parkedTabIDs.isEmpty)
+        #expect(vm.mountedTabs.count == agents.count)
+    }
+
+    /// At launch the visible layout mounts first and the rest follow; an agent switched to
+    /// before its turn mounts then, once, and switching to it later is a flip.
+    @Test func switchingToAnAgentNotYetMountedMountsItOnce() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(6, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        func scrollViews() -> Set<ObjectIdentifier> {
+            func all(_ view: NSView) -> [NSScrollView] { ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(all) }
+            return Set(all(window.host).map(ObjectIdentifier.init))
+        }
+        let late = agents[5]
+        #expect(!vm.mountedTabs.contains { $0.id == late.tab.id }, "its turn to mount has not come")
+        let before = scrollViews()
+
+        vm.selectAgent(late.agent.id)
+        ListPerf.settle(window)
+        let mounted = scrollViews().subtracting(before)
+        #expect(mounted.count == 1, "its thread mounted")
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        for agent in [agents[0], late, agents[2], late] {
+            vm.selectAgent(agent.agent.id)
+            ListPerf.settle(window)
+        }
+
+        #expect(scrollViews().isSuperset(of: mounted), "it was never mounted again")
+    }
+
+    /// The workspace can draw before the restored agents reach it (its first adoption was still
+    /// empty): the layouts that wait to mount still mount after it, so every agent's pane binds
+    /// its pi without being shown.
+    @Test func layoutsThatArriveAfterTheFirstFrameStillMount() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        // Past the first frame's mounting pass, which found nothing to mount.
+        try await Task.sleep(for: .milliseconds(50))
+        let space = Fixture.space(path: app.dir.path)
+        var agents: [AgentFixture] = []
+        for index in 0..<3 { agents.append(try await app.liveAgent("a\(index)", in: space, order: index)) }
+
+        try await app.server.putState(Fixture.state(spaces: [space], agents: agents))
+        try await eventuallyOnMain("the workspace to adopt its agents") { vm.state.agents.count == agents.count }
+        ListPerf.settle(window)
+
+        try await eventuallyOnMain("every layout to mount", timeout: .seconds(5)) { vm.mountedTabs.count == agents.count }
+    }
+
+    /// Switching away from an agent and back is a flip: the older pages read in its thread and
+    /// where it was scrolled to are still there (the hidden thread keeps its store and its view;
+    /// the first pull after it comes back merges onto the history).
+    @Test func switchingAwayAndBackKeepsLoadedHistoryAndScrollPosition() async throws {
+        let history = ThreadFixture.history(300)
+        let thread = FakeThread(ThreadFixture.snapshot([]), history: history)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        for _ in 0..<4 {
+            await thread.store.loadOlder()
+            ListPerf.settle(thread.window)
+        }
+        #expect(thread.store.messages.count == 250)
+        // Up into the older pages, reading: ⌥⌘↑ from there detaches the thread from its tail.
+        let scroll = try #require(thread.scrollView)
+        _ = ListPerf.scroll(thread.window, scroll, step: -600, steps: 20)
+        thread.commands.send(.previousTurn, to: "fake")
+        let clip = scroll.contentView
+        var last = clip.bounds.origin.y, still = 0
+        try await eventuallyOnMain("the turn jump to come to rest", poll: .milliseconds(30)) {
+            ListPerf.settle(thread.window)
+            still = clip.bounds.origin.y == last ? still + 1 : 0
+            last = clip.bounds.origin.y
+            return still >= 5
+        }
+        let offset = clip.bounds.origin.y
+
+        try await thread.show(false)
+        try await thread.show(true)
+
+        #expect(thread.store.messages.count == 250)
+        #expect(abs(clip.bounds.origin.y - offset) < 1, "scrolled to \(offset), now \(clip.bounds.origin.y)")
+    }
+
+    /// Switching agents keeps every mounted layout's views (their scroll views are the same
+    /// objects) and their order: visibility is opacity, never a remount.
+    @Test func switchingKeepsEveryLayoutMountedInItsOrder() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(4, in: app)
+        defer { window.close() }
+        func scrollViews() -> Set<ObjectIdentifier> {
+            func all(_ view: NSView) -> [NSScrollView] { ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(all) }
+            return Set(all(window.host).map(ObjectIdentifier.init))
+        }
+        let order = vm.mountedTabs.map(\.id)
+        let views = scrollViews()
+
+        for agent in [agents[2], agents[3], agents[1], agents[0]] {
+            vm.selectAgent(agent.agent.id)
+            ListPerf.settle(window)
+            #expect(vm.mountedTabs.map(\.id) == order)
+        }
+
+        #expect(scrollViews() == views, "no layout was rebuilt")
     }
 
     @Test func draggingAnAgentOntoASiblingReordersItsSpaceAndPersists() async throws {

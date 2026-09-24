@@ -221,14 +221,19 @@ extension View {
 
 private struct NWShimmer: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nwMotionPaused) private var motionPaused
+    @State private var onScreen = false
 
     func body(content: Content) -> some View {
         if reduceMotion {
             content
         } else {
-            TimelineView(.animation) { context in
+            TimelineView(.animation(minimumInterval: nil, paused: motionPaused || !onScreen)) { context in
+                let _ = NWRenderProbe.tick("ui.shimmerFrame")
                 content.opacity(NWPhase.shimmerOpacity(context.date))
             }
+            .onAppear { onScreen = true }
+            .onDisappear { onScreen = false }
         }
     }
 }

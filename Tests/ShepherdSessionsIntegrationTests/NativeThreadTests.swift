@@ -58,7 +58,7 @@ struct NativeThreadTests {
         pi.release(2)
         let done = try await pi.snapshot("the settled history") { !$0.running && $0.provisional.isEmpty && $0.messages.count == 5 }
         #expect(done.messages.map(\.role) == ["user", "assistant", "user", "assistant", "toolResult"])
-        #expect(done.messages.map(\.entryID) == (0..<5).map { "m:\($0)" })
+        #expect(done.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891", "m:2", "m:3", "t:call_abc123"])
         #expect(done.messages[4].blocks.first?.text == "total 48\n")
         #expect(done.messages[4].startedAt == toolStarted, "history keeps the start time the host observed")
     }
@@ -276,7 +276,7 @@ struct NativeThreadTests {
         let older = try #require(try await pi.request(.snapshot(beforeEntryID: "m:72")).snapshotValue)
         #expect(older.messages.map(\.entryID) == (22...71).map { "m:\($0)" })
         let oldest = try #require(try await pi.request(.snapshot(beforeEntryID: "m:22")).snapshotValue)
-        #expect(oldest.messages.map(\.entryID) == (0...21).map { "m:\($0)" })
+        #expect(oldest.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"] + (2...21).map { "m:\($0)" })
         #expect(oldest.olderCursor == nil)
 
         let staleCursor = NativeThreadResult.failure(code: "stale_cursor", message: "History changed. Refresh the recent page.")
@@ -284,17 +284,18 @@ struct NativeThreadTests {
         #expect(try await pi.request(.snapshot(beforeEntryID: "provisional:assistant:1")) == staleCursor)
     }
 
-    /// Model-only customs and Shepherd's own child reports stay out; entry ids stay positional.
+    /// Model-only customs and Shepherd's own child reports stay out; ids of messages without a
+    /// timestamp keep their position in pi's list.
     @Test func subagentNoiseStaysOutOfTheTranscript() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         _ = try await pi.send("subagent-noise", from: try await pi.ready())
         let s = try await pi.snapshot("the noisy history") { $0.messages.last?.entryID == "m:8" }
-        #expect(s.messages.map(\.entryID) == ["m:0", "m:1", "m:2", "m:3", "m:4", "m:6", "m:8"])
+        #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891", "m:2", "m:3", "t:call_1", "m:6", "m:8"])
         #expect(s.messages.first { $0.entryID == "m:6" }?.blocks.first?.text == "A note the user should see")
         #expect(s.messages.first { $0.entryID == "m:3" }?.blocks.map(\.text) == ["Spawning."])
-        #expect(s.messages.first { $0.entryID == "m:4" }?.argumentsText == #"{"action":"list"}"#)
+        #expect(s.messages.first { $0.entryID == "t:call_1" }?.argumentsText == #"{"action":"list"}"#)
         #expect(try await pi.request(.snapshot(beforeEntryID: "m:8")).snapshotValue?.messages.last?.entryID == "m:6")
     }
 
@@ -352,6 +353,103 @@ struct NativeThreadTests {
         h.server.killSession(pi.sessionID)
         try await eventually("the kill to land") { callbacks.exited(pi.sessionID) }
         #expect(pi.stdin("abort").isEmpty)
+    }
+
+    // MARK: - Revision pushes
+
+    /// A watched thread's new revisions reach the app on the main queue for that agent alone,
+    /// never in more hops than revisions, and nothing is pushed while nothing changes.
+    @Test func revisionsArePushedForTheirAgentOnlyAndNeverWhileIdle() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pushes = Locked<[AgentID]>([])
+        let childReports = Locked(0)
+        h.server.onThreadRevision = { agentID in
+            dispatchPrecondition(condition: .onQueue(.main))
+            pushes.withValue { $0.append(agentID) }
+        }
+        h.server.onAgentChildren = { _, _ in childReports.withValue { $0 += 1 } }
+        let pi = try await PiAgent.launch(on: h)
+        let bystander = try await PiAgent.launch(on: h)
+        func settled(_ agent: PiAgent) async throws -> NativeThreadSnapshot {
+            try await agent.snapshot("the bootstrap to land") { !$0.messages.isEmpty && $0.stats != nil && $0.commands != nil }
+        }
+        _ = try await settled(bystander)
+        let idle = try await settled(pi)
+        // Watched from here, so no push from the bootstrap is still on its way.
+        h.server.watchThreadRevisions(of: [pi.agent.id, bystander.agent.id])
+        let quiet = pushes.current.count
+
+        for _ in 0..<10 { _ = try await pi.request(.snapshot(expectedSessionID: idle.piSessionID, afterRevision: idle.revision)) }
+        let reports = try ExtensionClient(path: h.socketPath)
+        try reports.send(.setAgentChildren(agentID: pi.agent.id, children: []))
+        try await eventually("the unchanged children report") { childReports.current == 1 }
+        #expect(pushes.current.count == quiet, "polls and a report that changes nothing push nothing")
+
+        _ = try await pi.send("slow", from: idle)
+        _ = try await pi.snapshot("the paused turn to stream") { $0.running && !$0.provisional.isEmpty }
+        pi.release(1)
+        pi.release(2)
+        let done = try await pi.snapshot("the settled history") { !$0.running && $0.provisional.isEmpty && $0.messages.count == 5 }
+        let streamed = Array(pushes.current.dropFirst(quiet))
+        #expect(!streamed.isEmpty)
+        #expect(streamed.allSatisfy { $0 == pi.agent.id })
+        #expect(UInt64(streamed.count) <= done.revision - idle.revision, "one hop carries every revision it waited behind")
+    }
+
+    /// Revisions pi reached before its pane was bound had no agent to reach: binding pushes one.
+    /// The thread has settled first, so no later revision can stand in for the binding's push.
+    @Test func bindingAPaneToAPiPushesItsAgent() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pushes = Locked<[AgentID]>([])
+        h.server.onThreadRevision = { agentID in pushes.withValue { $0.append(agentID) } }
+        let pi = try await PiAgent.launch(on: h)
+        let settled = try await pi.snapshot("the bootstrap to land") { !$0.messages.isEmpty && $0.stats != nil && $0.commands != nil }
+        let paneID = try #require(pi.agent.paneID)
+        try await h.server.updatePaneSession(tabID: pi.agent.tabID, paneID: paneID, sessionID: nil)
+        await drainMainQueue()
+        pushes.withValue { $0.removeAll() }
+        h.server.watchThreadRevisions(of: [pi.agent.id])
+
+        try await h.server.updatePaneSession(tabID: pi.agent.tabID, paneID: paneID, sessionID: pi.sessionID)
+        try await eventually("the binding's push") { !pushes.current.isEmpty }
+        #expect(pushes.current == [pi.agent.id])
+        guard case .unchanged = try await pi.request(.snapshot(expectedSessionID: settled.piSessionID, afterRevision: settled.revision)) else {
+            Issue.record("the thread revised after it settled, so the push proves nothing")
+            return
+        }
+    }
+
+    /// Only the agents the app watches (its threads on screen) are pushed, and a reply streaming
+    /// faster than the display costs at most one main-queue hop per frame.
+    @Test func revisionsArePushedOnlyForWatchedAgentsAtMostOncePerFrame() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pushes = Locked<[(agentID: AgentID, at: UInt64)]>([])
+        h.server.onThreadRevision = { agentID in
+            pushes.withValue { $0.append((agentID, DispatchTime.now().uptimeNanoseconds)) }
+        }
+        let pi = try await PiAgent.launch(on: h)
+        let idle = try await pi.snapshot("the bootstrap to land") { !$0.messages.isEmpty && $0.stats != nil && $0.commands != nil }
+
+        _ = try await pi.send("stream", from: idle)
+        let unwatched = try await pi.snapshot("the unwatched reply to settle") { !$0.running && $0.messages.count == idle.messages.count + 2 }
+        #expect(pushes.current.isEmpty, "no one watches this thread")
+
+        h.server.watchThreadRevisions(of: [pi.agent.id])
+        _ = try await pi.send("stream", from: unwatched)
+        let watched = try await pi.snapshot("the watched reply to settle") { !$0.running && $0.messages.count == unwatched.messages.count + 2 }
+        try await eventually("the reply's pushes") { !pushes.current.isEmpty }
+        let times = pushes.current.map(\.at)
+        #expect(pushes.current.allSatisfy { $0.agentID == pi.agent.id })
+        #expect(UInt64(times.count) < watched.revision - unwatched.revision, "a frame's revisions ride one push")
+        // Forty deltas 2 ms apart span several frames: more than one push, a frame apart. Each is
+        // stamped when its callback runs, which a busy machine can delay past the delivery, so
+        // the count is held to the span with a frame to spare rather than each gap measured.
+        if TimingTests.enabled { #expect(times.count >= 2, "\(times.count) pushes") }
+        let span = Double((times.last ?? 0) - (times.first ?? 0)) / 1_000_000
+        #expect(Double(times.count) <= span / 16.667 + 2, "\(times.count) pushes in \(span) ms")
     }
 
     // MARK: - Subagents

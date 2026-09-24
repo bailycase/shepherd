@@ -44,11 +44,11 @@ In priority order:
 1. **Readable measure.** The thread column is at most 820pt, and agent prose is capped at 640pt.
 2. **Shape, not labels.** There are no speaker labels or avatars. A user turn is a trailing
    bubble; agent output is unboxed prose.
-3. **One quiet line per burst of work.** Consecutive tool calls of one kind merge into one
-   activity line ("Explored 7 files · read 5 · search 2 · 0.9s"). Detail is one click away; raw
-   arguments are behind ⌥-click.
+3. **One quiet line per stretch of work.** The tool work between two pieces of prose reads as
+   one line ("Worked for 6m 40s · explored 13 files · edited 15 files · ran 22 commands"). Its
+   lines, one per burst of same-kind calls, are one click away; raw arguments are behind ⌥-click.
 4. **Nothing in the default view that isn't useful.** No key-hint rows, no status text that
-   repeats the toolbar pill, no working directory under the composer, no footers in menus.
+   repeats what the thread and the sidebar row already say, no working directory under the composer, no footers in menus.
 
 And the rules that follow from them:
 
@@ -328,9 +328,15 @@ overshoot as they grow from their anchor) and the confirmation pop (`.bouncy`, 4
 | `shimmer` | 1.4s | ease-in-out, repeating | loading placeholders | — | static |
 
 The glow, the spinner, and the shimmer are clock-driven (`NWPhase`), so Reduce Motion can change
-while they are on screen. A Reduce Motion cross-fade still eases the layout a change moves (the
-rows under an opening disclosure, a column a pane narrows) over its 120ms; only what arrives or
-leaves stops travelling.
+while they are on screen. The spinner and the glow are render-server animations: Core Animation
+turns the arc and pulses the dot on their own layers (`NWLayerSpinner`, `NWLayerGlowDot`),
+started at the clock's phase so every one moves in step, and one on screen costs the app no
+frames (drawn by a SwiftUI timeline, a single spinner redrew its window on every display frame;
+in an off-screen test window, whose host also relaid out tens of thousands of times a second,
+that was most of a core in a debug build). The shimmer stays a timeline. None of them
+moves under `nwMotionPaused` (see Performance). A Reduce Motion cross-fade still eases the
+layout a change moves (the rows under an opening disclosure, a column a pane narrows) over its
+120ms; only what arrives or leaves stops travelling.
 
 **Applying motion.** Never write a duration or a curve in a view: an ad-hoc
 `withAnimation(.easeOut(duration: 0.15))` is a bug, like a hardcoded color.
@@ -409,6 +415,18 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
   `nwRunArrival`).
+- **Motion no one sees costs nothing.** A layout the workspace keeps mounted behind the visible
+  one sets `nwMotionPaused`, and a continuous motion pauses while its view is off screen
+  (between `onDisappear` and `onAppear`: a lazy stack keeps a row it let go of for a while). A
+  restored workspace of twelve agents drew about 6,000 spinner frames every 4 s idle until they
+  did (about 4 s of main-thread CPU in an off-screen test window); `IdleCostTests` counts the
+  frames.
+- **Motion on screen runs on the render server.** A spinner or a glow is a Core Animation
+  animation on a layer (see Motion), never a view redrawn per frame: one spinner drawn by a
+  timeline cost 2.8 s of main-thread CPU every 3 s in an off-screen test window, and now costs
+  what an empty window does.
+  `IdleCostTests` checks that one turning and one glowing draw no frames and never lay the
+  window out.
 
 ## Density and row settings
 
@@ -429,7 +447,7 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 
 ```text
 ┌──────────────────┬──────────────────────────────────────────────┬──────────────────────┐
-│ ● ● ●            │ Title  ● Running · 1m 03s   42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
+│ ● ● ●            │ Title                       42k ctx  ⎇ ± ⋯   │ Review      ⋯  ×     │
 │ THIS MAC     19  ├──────────────────────────────────────────────┼──────────────────────┤
 │ ⌄ Shepherd    8  │         820pt thread column                  │ right pane:          │
 │   ● agent   ASK  │                       ┌──────────────┐       │ review or subagent   │
@@ -555,9 +573,6 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   - the sidebar button (`sidebar.left`) while the sidebar is not docked
   - the agent's title in Geist 13 semibold, truncating, with "space / title" in its tooltip (a
     remote agent's space reads "⌁ host")
-  - the status pill (`ThreadStatusPill`), in priority order: Error (a lost connection, drawn as
-    `failed`), Needs you (or "n subagents need you"), Running · elapsed (counting from the prompt
-    that opened the turn), Idle
   - a spacer
   - counters in micro tertiary: "18 turns · 46k ctx · 3 subagents · 1.6m tok". The turn count
     appears once the whole history is loaded, and the tooltip has the context window, session
@@ -598,7 +613,9 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
   growth, the composer resizing, and history swaps never do. "↓ Jump to latest" (a
   `bgRaised` capsule above the composer) appears while detached if the agent runs or unseen
-  output arrived. Sending re-attaches. The composer floats over the scroll view, which is inset
+  output arrived. The composer draws it over the fade it lays on the thread and under its card
+  and menus, so the fade never washes it out and it never covers an open menu. Sending
+  re-attaches. The composer floats over the scroll view, which is inset
   by the composer's measured height, so the thread always ends at its last turn.
 - **Turn jumps:** ⌥⌘↑ and ⌥⌘↓ move between user turns (the target lands at the top); stepping
   past the last returns to the tail.
@@ -607,13 +624,27 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   refreshing before enabling actions", "This host's pi cannot answer questions here · update
   Shepherd on the host", "Some earlier output is clipped".
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
-  quiet, never an error: "Starting pi…" with a spinner, in the empty thread or, under a thread
-  kept from before, as its working row. A pi that has not started after a minute gets the
-  error banner.
-- **Empty thread:** "Starting pi…" with a spinner while connecting. Then a framed
-  `NWEmptyState` (a dashed `lineStrong` border, no crook): "New agent in `~/path`" (the path in
-  Geist Mono 15 medium within the 17pt title), with "Describe the task. Drop or paste images to
-  attach them, or type / for commands."
+  ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
+  state, a resuming agent's history), and a message sent meanwhile waits for pi. Nothing says
+  pi is starting unless pi is slow: past two seconds (`AppLayout.startingIndicatorDelay`), well
+  beyond a normal start (pi answers about 0.8 s after ⌘N, about 1 s after a relaunch), or past
+  half a second (`AppLayout.blankStartingIndicatorDelay`) while the thread has nothing to show
+  (a remote agent's, or one whose session file cannot be read). Then the composer's control row
+  says so (see Composer › States). There is no spinner in the thread and no starting row at its
+  tail. A pi that has not started after a minute gets the error banner.
+- **Resuming:** an agent resuming after a relaunch shows its history at once, read from pi's
+  session file (`PiSessionPreview`): the newest page, the model, and the thinking level, drawn
+  exactly as pi's history is. Nothing in it acts yet (retry, load older, subagent actions)
+  until pi answers, and pi's first snapshot then lands on the same rows, so nothing moves or
+  flashes. Only what pi alone knows arrives with that snapshot: the "/ commands" chip (and the
+  placeholder's "or / for commands"), and the toolbar's context counters. An agent whose file
+  cannot be read stays blank until pi sends its history.
+- **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New
+  agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
+  the task. Drop or paste images to attach them, or type / for commands." A new agent is known
+  to be empty, so it shows from the first frame, with the composer ready, while pi boots behind
+  it. While a thread's history is not known yet (a resuming agent without a readable session
+  file) the thread stays blank until pi sends it; an empty history then fades the state in.
 
 **User turn** (`UserTurn` in `Thread/ThreadTurns.swift`, on `NWUserBubble`):
 
@@ -681,10 +712,27 @@ row) shows them.
 - The subagent inspector's transcript follows the same rule; there "from parent" always shows
   under a message from the parent, and its time fades in beside it.
 
+**Work groups** (`WorkGroupView` in `Thread/ThreadTools.swift`, `nativeWorkGroup`). A stretch's
+activity lines (between prose, notes, errors and subagent cards) form one group, so a long turn
+never reads as a wall of lines.
+
+- **Folded:** two or more finished lines fold into one summary line, `NWActivityLine` with the
+  `work` glyph (`rectangle.stack`): "Worked for 6m 40s" (wall time over its calls; "Worked"
+  untimed) · "explored 13 files · edited 15 files · ran 22 commands · 17 tests passed · 5
+  failed". Kinds always read in that order (explored, edited, ran, started, used); the lines
+  keep the order the work took.
+- **Expanded:** the lines, as below, on the same `lineStrong` rail as a line's calls
+  (`NWActivityRail`).
+- **One line** stays itself: it already is one line.
+- **Running calls** stand below the summary as live lines, and join it when they finish.
+- **Failures are counted, not shouted.** A failed call adds "n failed" to the meta and is red
+  only inside the expanded lines. The summary turns `failed` only when the group's last call
+  failed and nothing runs after it: the work ended on a failure.
+
 **Activity lines** (`ActivityLineView` in `Thread/ThreadTools.swift`, on `NWActivityLine` and
-`NWActivityCalls`). A turn's tool calls merge into one quiet line per burst of same-kind work
-(`nativeActivityBursts`). A failed call and the running call each stand alone; other tools merge
-only with the same tool.
+`NWActivityCalls`). Within a group, a turn's tool calls merge into one quiet line per burst of
+same-kind work (`nativeActivityBursts`). A failed call and the running call each stand alone;
+other tools merge only with the same tool.
 
 - **The line:** 26pt, a 13pt glyph, the label in 12.5 `textSecondary`, the meta in mono 11
   tertiary, and a chevron when it expands. It is a real button with a hover fill.
@@ -747,8 +795,9 @@ only with the same tool.
   control)
 - the delivery chip (Follow-up · after the turn ends / Steer · after the current tools), only
   while a turn runs with a draft
-- a spacer, then the single action: a 28pt circle, **Send** (an arrow on `lantern`, at 35% until
-  there is something to send) or **Stop** (a square on `failed`)
+- a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
+  then the single action: a 28pt circle, **Send** (an arrow on `lantern`, at 35% until there is
+  something to send) or **Stop** (a square on `failed`)
 
 Chips are 26pt ghost buttons in 12pt `textSecondary`, filled with `bgHover` on hover or while
 their menu is open.
@@ -760,9 +809,16 @@ their menu is open.
 - **Running:** Stop while the field is empty. The field stays editable with "Queue a follow-up —
   sent when the turn ends".
 - **Accepting:** a spinner ("Waiting for pi") takes the button's place.
-- **Starting:** Send is offered. A message sent while pi boots waits behind the spinner, still
-  in the field, and goes once pi answers, as the field has it then (edited, or not at all once
-  cleared).
+- **Starting:** Send is offered from the first frame, before pi has answered anything. A
+  message sent while pi boots waits behind the spinner, still in the field, and goes once pi
+  answers, as the field has it then (edited, or not at all once cleared). Once pi has kept the
+  thread waiting for two seconds (`AppLayout.startingIndicatorDelay`; half a second over a thread
+  with nothing to show, `AppLayout.blankStartingIndicatorDelay`), "Starting pi…" in
+  caption `textTertiary` with a 10pt `textTertiary` spinner sits in the control row just before
+  the action (its spinner gives way to the action's own while a message waits). It lives in a
+  row that is always there, so it never changes the composer's height or moves the thread; it
+  drops its words before the chips drop theirs, and fades out the moment pi answers. A normal
+  start is over before it would show.
 - **Error:** Send, plus a `failed` banner above the card, "Lost connection to the agent
   process.", with the error and Reconnect: only for a pi that was serving and went away, one
   that failed, or one that never started.
@@ -1081,15 +1137,15 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 
 ## Status language
 
-| Lifecycle | `AgentState` | Sidebar | Toolbar pill | Composer |
-| --- | --- | --- | --- | --- |
-| Agent working | `running` | blue dot; elapsed trailing | Running · elapsed | Stop; the field queues a follow-up |
-| Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | Needs you | the question panel in place of the field |
-| A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | "n subagents need you" | the card's answers and Reply… |
-| Agent done | `done` | green dot | Idle (outlined) | Send |
-| Agent idle | `idle` | hollow ring | Idle (outlined) | Send |
-| pi starting | `idle` | hollow ring | Idle (outlined) | Send, which waits for pi; "Starting pi…" in the thread |
-| Connection lost | `failed` | — | Error | Send, plus a `failed` banner with Reconnect |
+| Lifecycle | `AgentState` | Sidebar | Composer |
+| --- | --- | --- | --- |
+| Agent working | `running` | blue dot; elapsed trailing | Stop; the field queues a follow-up |
+| Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | the question panel in place of the field |
+| A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | the card's answers and Reply… |
+| Agent done | `done` | green dot | Send |
+| Agent idle | `idle` | hollow ring | Send |
+| pi starting | `idle` | hollow ring | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting pi…" beside it |
+| Connection lost | `failed` | — | Send, plus a `failed` banner with Reconnect |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
 done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.
@@ -1173,7 +1229,8 @@ Review-pane and menu keys are listed with their surfaces.
   - agent rows: "title, [worktree,] running / needs you / idle / done" (needs you also while one
     of its subagents asks); automation rows: "name, automation, state"
   - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
-    and the hint "Shows the calls"; call rows: "edit, Sources/A.swift, +58 −41"
+    and the hint "Shows the calls"; a folded stretch: "Worked for 6m 40s, explored 13 files, …,
+    5 failed, done" and the hint "Shows the steps"; call rows: "edit, Sources/A.swift, +58 −41"
   - subagent cards: "name, role, state, detail", with the context bar as the value; ledger rows:
     "name, state, summary"; runs strip steps: "name, state — open"
   - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
@@ -1213,8 +1270,9 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
 ## Verifying visuals
 
 - **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
-  - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting,
-    a hovered turn) and the activity-line states
+  - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting
+    before and after the delay, restoring from disk, a hovered turn, "Jump to latest" over the
+    fade, a long stretch folded into one line) and the activity-line states
   - the composer and its menus
   - subagent cards, the ledger, and the inspector
   - the review pane

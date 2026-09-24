@@ -12,9 +12,15 @@ import ShepherdRemote
 struct SubagentActions {
     var inspect: (ChildRun) -> Void
     var command: (ChildRun, NativeSubagentAction, String?, NativeThreadDelivery?) -> Void
-    var enabled: Bool
     /// The run open in the inspector: its card wears the running ring, its ledger row the tint.
     var inspectedRunID: String? = nil
+}
+
+extension EnvironmentValues {
+    /// Whether the thread takes commands from its subagent cards (Pause, Stop, Re-run, an
+    /// answer): its agent is on screen and its host supports them. An environment value the
+    /// cards read, so switching agents redraws the cards and not the turns around them.
+    @Entry var threadActionsEnabled = true
 }
 
 /// The subagents for one turn: cards where few, the strip (plus the cards that need you) when
@@ -26,7 +32,7 @@ struct SubagentStack: View {
     let actions: SubagentActions
 
     var body: some View {
-        SubagentGroup(runs: runs, turnLive: turnLive, enabled: actions.enabled, inspectedRunID: actions.inspectedRunID,
+        SubagentGroup(runs: runs, turnLive: turnLive, inspectedRunID: actions.inspectedRunID,
                       inspect: actions.inspect, command: actions.command)
             .equatable()
     }
@@ -37,7 +43,6 @@ struct SubagentStack: View {
 private struct SubagentGroup: View, Equatable {
     let runs: [ChildRun]
     let turnLive: Bool
-    let enabled: Bool
     let inspectedRunID: String?
     let inspect: (ChildRun) -> Void
     let command: (ChildRun, NativeSubagentAction, String?, NativeThreadDelivery?) -> Void
@@ -45,7 +50,7 @@ private struct SubagentGroup: View, Equatable {
     @State private var shown = NWShownFlag()
 
     nonisolated static func == (a: SubagentGroup, b: SubagentGroup) -> Bool {
-        a.runs == b.runs && a.turnLive == b.turnLive && a.enabled == b.enabled && a.inspectedRunID == b.inspectedRunID
+        a.runs == b.runs && a.turnLive == b.turnLive && a.inspectedRunID == b.inspectedRunID
     }
 
     var body: some View {
@@ -80,7 +85,7 @@ private struct SubagentGroup: View, Equatable {
     }
 
     private func card(_ run: ChildRun) -> some View {
-        SubagentCard(run: run, selected: run.runID == inspectedRunID, enabled: enabled, inspect: inspect, command: command)
+        SubagentCard(run: run, selected: run.runID == inspectedRunID, inspect: inspect, command: command)
             .equatable()
             .nwRunArrival(shown.appeared, .list)
     }
@@ -99,12 +104,12 @@ private struct SubagentGroup: View, Equatable {
 struct SubagentCard: View, Equatable {
     let run: ChildRun
     let selected: Bool
-    let enabled: Bool
     let inspect: (ChildRun) -> Void
     let command: (ChildRun, NativeSubagentAction, String?, NativeThreadDelivery?) -> Void
+    @Environment(\.threadActionsEnabled) private var enabled
 
     nonisolated static func == (a: SubagentCard, b: SubagentCard) -> Bool {
-        a.run == b.run && a.selected == b.selected && a.enabled == b.enabled
+        a.run == b.run && a.selected == b.selected
     }
 
     var body: some View {

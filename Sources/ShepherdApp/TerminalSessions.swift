@@ -239,9 +239,29 @@ final class TerminalSessionStore {
     var onAgentChildren: ((AgentID, [ChildRun]) -> Void)?
     /// Fired when an agent's notify tool asks for a system notification.
     var onNotify: ((AgentID, String, String) -> Void)?
+    /// Fired when a watched agent's native thread has a new revision to fetch, at most once per
+    /// display frame (`SessionServer.onThreadRevision`).
+    var onThreadRevision: ((AgentID) -> Void)?
     /// Fired when a pane's process exits, after the local session is marked
     /// exited and before it is dropped from the store.
     var onPaneSessionExited: ((PaneID) -> Void)?
+    /// Fired the moment an agent's pi begins serving its thread
+    /// (`SessionServer.onNativeThreadServable`).
+    var onThreadServable: ((AgentID) -> Void)?
+
+    /// Waits for an agent's pi to serve, resumed once by `threadServable` or by a timeout.
+    private final class ServableWaiter {
+        private var continuation: CheckedContinuation<Void, Never>?
+        init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
+        func resume() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+    private var servableWaiters: [AgentID: [ServableWaiter]] = [:]
+    /// The order restored agents' pi start in, and the work that starts each one queued.
+    private(set) var startQueue = AgentStartQueue()
+    private var queuedStarts: [AgentID: () async -> Bool] = [:]
 
     init(server: SessionServer) {
         self.server = server
@@ -280,6 +300,37 @@ final class TerminalSessionStore {
         server.onNotify = { [weak self] agentID, title, body in
             self?.onNotify?(agentID, title, body)
         }
+        server.onNativeThreadServable = { [weak self] agentID in
+            self?.threadServable(agentID)
+        }
+        server.onThreadRevision = { [weak self] agentID in
+            self?.onThreadRevision?(agentID)
+        }
+    }
+
+    private func threadServable(_ agentID: AgentID) {
+        for waiter in servableWaiters.removeValue(forKey: agentID) ?? [] { waiter.resume() }
+        onThreadServable?(agentID)
+        startFinished(agentID)
+    }
+
+    /// Returns once `agentID`'s pi serves its thread, or after `limit`, whichever is first.
+    private func waitUntilServable(_ agentID: AgentID, upTo limit: Duration) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let waiter = ServableWaiter(continuation)
+            servableWaiters[agentID, default: []].append(waiter)
+            Task { [weak self] in
+                try? await Task.sleep(for: limit)
+                waiter.resume()
+                self?.servableWaiters[agentID]?.removeAll { $0 === waiter }
+                if self?.servableWaiters[agentID]?.isEmpty == true { self?.servableWaiters.removeValue(forKey: agentID) }
+            }
+        }
+    }
+
+    /// The agents whose thread is on screen: only their revisions are pushed (`onThreadRevision`).
+    func watchThreadRevisions(of agentIDs: Set<AgentID>) {
+        server.watchThreadRevisions(of: agentIDs)
     }
 
     /// Kick off bootstrap without waiting for a pane to appear.
@@ -403,11 +454,15 @@ final class TerminalSessionStore {
             return
         }
         handledExits.insert(sessionID)
+        // Read before the view model retires the agent: a pi that exits while it boots frees its
+        // place in the launch queue now, not when its hold runs out.
+        let agentID = serverState?.agents.first { $0.paneID == paneID }?.id
         sessions[paneID]?.phase = .exited(exitCode)
         onPaneSessionExited?(paneID)
         sessions.removeValue(forKey: paneID)
         paneBySession.removeValue(forKey: sessionID)
         detachedSessionIDs.remove(sessionID)
+        if let agentID { startFinished(agentID) }
         Task { [weak self] in
             await self?.server.retireSession(sessionID: sessionID)
         }
@@ -462,8 +517,67 @@ final class TerminalSessionStore {
         }
         let session = makeSession(paneID: pane.id, isRPC: rpc)
         sessions[pane.id] = session
-        Task { await start(session, pane: pane, tab: tab) }
+        // The agent-creation flow spawns a new agent's pi and adopts this session.
+        if reservedPanes.contains(pane.id) { return session }
+        // Only an agent's first start waits its turn; a pane session made again later starts now.
+        guard rpc, let agentID = pane.agentID, !startQueue.started.contains(agentID) else {
+            Task { await start(session, pane: pane, tab: tab) }
+            return session
+        }
+        // An agent's pi starts in the queue's order: the ones on screen first.
+        queuedStarts[agentID] = { [weak self, weak session] in
+            guard let self, let session else { return false }
+            return await self.start(session, pane: pane, tab: tab)
+        }
+        if startQueue.enqueue(agentID) { beginStart(agentID, ahead: true) }
+        pumpStarts()
         return session
+    }
+
+    /// At launch: starts every restored agent's pi (in `order`, the sidebar's), whether or not its
+    /// layout has mounted, with `first` (the agents on screen) ahead of the rest
+    /// (`AgentStartQueue`).
+    func startRestoredAgents(_ order: [AgentID], first: [AgentID], in state: ShepherdState) {
+        for agentID in first { startAhead(agentID) }
+        for agentID in first + order {
+            guard let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
+                  let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+                  let pane = tab.layout.leaf(withID: paneID) else { continue }
+            _ = session(for: pane, in: tab)
+        }
+    }
+
+    /// `agentID` is on screen: if its pi is still waiting to start, it starts now, ahead of the
+    /// others; if it has not been queued yet, it will be as soon as it is.
+    func startAhead(_ agentID: AgentID) {
+        // A new agent's pi is its creation's to spawn, never queued.
+        if let paneID = serverState?.agents.first(where: { $0.id == agentID })?.paneID, reservedPanes.contains(paneID) { return }
+        if startQueue.startAhead(agentID) { beginStart(agentID, ahead: true) }
+    }
+
+    private func beginStart(_ agentID: AgentID, ahead: Bool) {
+        guard let body = queuedStarts.removeValue(forKey: agentID) else {
+            startFinished(agentID)
+            return
+        }
+        Task { [weak self] in
+            let spawned = await body()
+            guard let self else { return }
+            // A pi it spawned holds its place until it serves (`threadServable`), or so long.
+            if spawned {
+                try? await Task.sleep(for: ahead ? AgentStartQueue.aheadHold : AgentStartQueue.slotTimeout)
+            }
+            self.startFinished(agentID)
+        }
+    }
+
+    private func startFinished(_ agentID: AgentID) {
+        startQueue.finished(agentID)
+        pumpStarts()
+    }
+
+    private func pumpStarts() {
+        for agentID in startQueue.next() { beginStart(agentID, ahead: false) }
     }
 
     /// Spawn the pi session for a freshly created agent, bind it to its pane,
@@ -487,10 +601,10 @@ final class TerminalSessionStore {
             }
             let cwd = Self.resolvedCwd(pane.cwd)
             guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
-            // RPC mode ignores a positional prompt; it goes in as the first `prompt` command below.
-            let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, isAutomation: isAutomation)
             // Give pi a session to find, so --session-id does not warn.
-            PiSessionFile.seedIfMissing(sessionID: agent.effectivePiSessionID, cwd: cwd)
+            let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd)
+            // RPC mode ignores a positional prompt; it goes in as the first `prompt` command below.
+            let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh, isAutomation: isAutomation)
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
                   session.sessionID == nil,
                   liveBinding(forPane: pane.id) == nil else {
@@ -549,7 +663,8 @@ final class TerminalSessionStore {
 
     /// An agent's opening prompt: wait for pi to answer its first snapshot, then send
     /// it as a normal native `send`. Detached so creation does not block on pi's startup;
-    /// a failure is logged, never fatal (the user can type the prompt again).
+    /// a failure is logged, never fatal (the user can type the prompt again). The server's
+    /// servable signal ends each wait at once; the checks between them are the fallback.
     private func sendOpeningPrompt(_ text: String, to agentID: AgentID, sessionID: SessionID) {
         Task { [weak self] in
             guard let self else { return }
@@ -565,7 +680,7 @@ final class TerminalSessionStore {
                     }
                     return
                 }
-                try? await Task.sleep(for: .milliseconds(250))
+                await self.waitUntilServable(agentID, upTo: .milliseconds(250))
             }
             NSLog("Shepherd: agent \(agentID) never became ready for its opening prompt")
         }
@@ -717,7 +832,10 @@ final class TerminalSessionStore {
         handledExits.insert(sessionID)
     }
 
-    private func start(_ session: PaneSession, pane: LeafPane, tab: Tab) async {
+    /// Spawns the pane's process, or adopts the live one already bound to it. True only when it
+    /// spawned one.
+    @discardableResult
+    private func start(_ session: PaneSession, pane: LeafPane, tab: Tab) async -> Bool {
         var createdSessionID: SessionID?
         do {
             try await ensureBootstrapped()
@@ -733,13 +851,13 @@ final class TerminalSessionStore {
 
             if let bound = binding(forPane: session.paneID), aliveSessions.contains(bound) {
                 try await adopt(session, sessionID: bound)
-                return
+                return false
             }
 
             // The agent-creation flow owns this pane's spawn; it will adopt
             // this same PaneSession. Spawning here too put two pi processes
             // in one pane.
-            if reservedPanes.contains(session.paneID) { return }
+            if reservedPanes.contains(session.paneID) { return false }
 
             // No live binding: an agent's primary pane comes back as `pi --mode rpc` (rebuilt
             // from the agent record, resuming its pi session), everything else as a login
@@ -751,10 +869,10 @@ final class TerminalSessionStore {
                 guard session.isRPC, isRPCPane(pane, agent: agent) else {
                     throw TerminalSessionStoreError.paneUnavailable(session.paneID)
                 }
-                command = try Self.rpcAgentCommand(for: agent, cwd: cwd)
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
-                PiSessionFile.seedIfMissing(sessionID: agent.effectivePiSessionID, cwd: cwd)
+                let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd)
+                command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh)
             } else {
                 let settings = AppSettings.shared
                 command = try ShellIntegration.command(
@@ -803,6 +921,7 @@ final class TerminalSessionStore {
             }
             try await adopt(session, sessionID: info.id)
             createdSessionID = nil
+            return true
         } catch {
             if let createdSessionID {
                 await discardCreatedSession(
@@ -814,6 +933,7 @@ final class TerminalSessionStore {
             if sessions[session.paneID] === session {
                 session.phase = .failed(String(describing: error))
             }
+            return false
         }
     }
 
@@ -892,11 +1012,20 @@ final class TerminalSessionStore {
         }
     }
 
+    /// Whether the agent's pi session is still fresh, after seeding its header
+    /// (`PiSessionFile.prepareForLaunch`). Off the main actor: at launch every restored agent
+    /// does this at once, and a project directory holds hundreds of session files.
+    private static func prepareSessionFile(for agent: Agent, cwd: String) async -> Bool {
+        let sessionID = agent.effectivePiSessionID
+        return await Task.detached(priority: .userInitiated) {
+            PiSessionFile.prepareForLaunch(sessionID: sessionID, cwd: cwd)
+        }.value
+    }
+
     /// `pi --mode rpc` for an agent, with Shepherd's socket, status, panes, review, subagents,
-    /// and namer extensions.
-    private static func rpcAgentCommand(for agent: Agent, cwd: String, isAutomation: Bool = false) throws -> SessionCommand {
+    /// and namer extensions. Model and thinking flags go only to a fresh session.
+    private static func rpcAgentCommand(for agent: Agent, cwd: String, sessionIsFresh: Bool, isAutomation: Bool = false) throws -> SessionCommand {
         let settings = AppSettings.shared
-        let sessionIsFresh = !PiSessionFile.hasRuntimeState(sessionID: agent.effectivePiSessionID, cwd: cwd)
         return StatusExtension.command(
             agentID: agent.id,
             piSessionID: agent.effectivePiSessionID,
@@ -921,7 +1050,7 @@ final class TerminalSessionStore {
         !agent.nameIsFinal && autoName
     }
 
-    static func resolvedCwd(_ raw: String) -> String {
+    nonisolated static func resolvedCwd(_ raw: String) -> String {
         let expanded = (raw as NSString).expandingTildeInPath
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue {

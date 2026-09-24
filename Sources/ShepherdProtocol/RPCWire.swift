@@ -2,9 +2,10 @@ import Foundation
 
 // Wire types for `pi --mode rpc` (pi's docs/rpc.md). Decoding is lenient by
 // design: unknown fields are ignored, unknown event types become
-// `.unknown(type:)`, and free-form payloads (`data`, `args`, `usage`) are kept
-// as `JSONValue` so callers decode what they need. pi's formats are not a
-// contract we control.
+// `.unknown(type:)`, and free-form payloads (`data`, `args`) are kept as
+// `JSONValue` so callers decode what they need; `get_messages` alone decodes
+// its history typed, falling back to JSON when it does not fit. pi's formats
+// are not a contract we control.
 
 /// An arbitrary JSON document.
 public enum JSONValue: Codable, Hashable, Sendable {
@@ -17,18 +18,20 @@ public enum JSONValue: Codable, Hashable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.singleValueContainer()
+        // Most values are strings and objects: try those first, since every failed attempt
+        // builds a DecodingError. Bool stays ahead of Double so true and false are never numbers.
         if c.decodeNil() {
             self = .null
+        } else if let s = try? c.decode(String.self) {
+            self = .string(s)
+        } else if let o = try? c.decode([String: JSONValue].self) {
+            self = .object(o)
         } else if let b = try? c.decode(Bool.self) {
             self = .bool(b)
         } else if let n = try? c.decode(Double.self) {
             self = .number(n)
-        } else if let s = try? c.decode(String.self) {
-            self = .string(s)
         } else if let a = try? c.decode([JSONValue].self) {
             self = .array(a)
-        } else if let o = try? c.decode([String: JSONValue].self) {
-            self = .object(o)
         } else {
             throw DecodingError.dataCorruptedError(in: c, debugDescription: "unsupported JSON value")
         }
@@ -184,28 +187,61 @@ public struct RPCCommandFrame: Encodable, Sendable {
 // MARK: - Responses (stdout)
 
 public struct RPCResponse: Decodable, Hashable, Sendable {
+    /// `data`, kept as JSON except where a large payload has a type of its own.
+    public enum Payload: Hashable, Sendable {
+        case json(JSONValue)
+        /// `get_messages`' `data.messages`, decoded in the record's own decode: a long session's
+        /// history is one multi-megabyte record, and a JSONValue tree re-encoded to decode it
+        /// again cost several times the typed decode.
+        case messages([RPCMessage])
+    }
+
     public var id: String?
     public var command: String
     public var success: Bool
-    public var data: JSONValue?
+    public var payload: Payload?
     public var error: String?
 
     public init(id: String? = nil, command: String, success: Bool, data: JSONValue? = nil, error: String? = nil) {
         self.id = id
         self.command = command
         self.success = success
-        self.data = data
+        self.payload = data.map(Payload.json)
         self.error = error
     }
 
+    /// `data` as JSON; nil when it decoded as a typed payload.
+    public var data: JSONValue? {
+        if case .json(let value) = payload { return value }
+        return nil
+    }
+
+    /// `get_messages`' messages, from the typed payload or else leniently from the JSON.
+    public var messages: [RPCMessage]? {
+        switch payload {
+        case .messages(let messages): messages
+        case .json(let value): try? value["messages"]?.decode([RPCMessage].self)
+        case nil: nil
+        }
+    }
+
     enum CodingKeys: String, CodingKey { case id, command, success, data, error }
+
+    private struct MessagesData: Decodable {
+        let messages: [RPCMessage]
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(String.self, forKey: .id)
         command = try c.decodeIfPresent(String.self, forKey: .command) ?? ""
         success = try c.decodeIfPresent(Bool.self, forKey: .success) ?? false
-        data = try c.decodeIfPresent(JSONValue.self, forKey: .data)
+        if command == "get_messages", let typed = try? c.decode(MessagesData.self, forKey: .data) {
+            payload = .messages(typed.messages)
+        } else {
+            // Anything the typed payload does not fit keeps the lenient path.
+            payload = try c.decodeIfPresent(JSONValue.self, forKey: .data).map(Payload.json)
+        }
         error = try c.decodeIfPresent(String.self, forKey: .error)
     }
 }
@@ -426,7 +462,9 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     case turnStart
     case turnEnd(message: RPCMessage?, toolResults: [RPCMessage])
     case messageStart(message: RPCMessage)
-    case messageUpdate(delta: RPCAssistantDelta, usage: JSONValue?)
+    /// pi's `usage` rides every delta; nothing reads it, and decoding it cost most of a delta's
+    /// decode, so it is left in the record.
+    case messageUpdate(delta: RPCAssistantDelta)
     case messageEnd(message: RPCMessage)
     case toolExecutionStart(toolCallId: String, toolName: String, args: JSONValue?)
     case toolExecutionUpdate(toolCallId: String, toolName: String, args: JSONValue?, partialResult: RPCToolResult?)
@@ -437,7 +475,7 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
     case unknown(type: String)
 
     enum CodingKeys: String, CodingKey {
-        case type, messages, willRetry, message, toolResults, assistantMessageEvent, usage
+        case type, messages, willRetry, message, toolResults, assistantMessageEvent
         case toolCallId, toolName, args, partialResult, result, isError, steering, followUp
         case extensionPath, event, error
     }
@@ -465,10 +503,7 @@ public enum RPCEvent: Decodable, Hashable, Sendable {
         case "message_start":
             self = .messageStart(message: try c.decode(RPCMessage.self, forKey: .message))
         case "message_update":
-            self = .messageUpdate(
-                delta: try c.decode(RPCAssistantDelta.self, forKey: .assistantMessageEvent),
-                usage: try c.decodeIfPresent(JSONValue.self, forKey: .usage)
-            )
+            self = .messageUpdate(delta: try c.decode(RPCAssistantDelta.self, forKey: .assistantMessageEvent))
         case "message_end":
             self = .messageEnd(message: try c.decode(RPCMessage.self, forKey: .message))
         case "tool_execution_start":

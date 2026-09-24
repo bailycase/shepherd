@@ -54,7 +54,7 @@ extension ShepherdViewModel {
                                      icon: "pencil"))
             if visibleThread != nil {
                 items.append(PaletteItem(id: "action.model", kind: .action("model"), section: .thisThread,
-                                         title: "Choose model…", subtitle: visibleThread?.store.snapshot?.model.map(nativeModelShortName),
+                                         title: "Choose model…", subtitle: visibleThread?.store.model.map(nativeModelShortName),
                                          shortcut: keys.display(.modelPicker), icon: "cpu"))
             }
             items.append(PaletteItem(id: "action.reviewDiff", kind: .action("reviewDiff"), section: .thisThread,

@@ -1,4 +1,6 @@
 import Foundation
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 /// Pi's on-disk session files, from Shepherd's side.
@@ -55,12 +57,25 @@ enum PiSessionFile {
         cwd: String,
         sessionsRoot: URL = defaultSessionsRoot
     ) -> Bool {
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
-            return false
-        }
-        return names.contains { $0.hasSuffix("_\(sessionID).jsonl") }
+        file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) != nil
     }
+
+    /// The session file pi resolves for `sessionID` in `cwd`, if there is one.
+    static func file(
+        sessionID: String,
+        cwd: String,
+        sessionsRoot: URL = defaultSessionsRoot
+    ) -> URL? {
+        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
+              let name = names.first(where: { $0.hasSuffix("_\(sessionID).jsonl") }) else { return nil }
+        return directory.appendingPathComponent(name)
+    }
+
+    /// How much of a session file `hasRuntimeState` reads at a time: the header line and the
+    /// start of whatever follows it, unless the header is longer. Long sessions run to tens of
+    /// megabytes, and reading one whole on every launch held the app's launch up for seconds.
+    static let runtimeStateProbeBytes = 64 * 1024
 
     /// True when pi has actually written events into the session (model and
     /// thinking changes land as the first entries). A file we merely seeded
@@ -72,17 +87,56 @@ enum PiSessionFile {
         cwd: String,
         sessionsRoot: URL = defaultSessionsRoot
     ) -> Bool {
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
-              let name = names.first(where: { $0.hasSuffix("_\(sessionID).jsonl") }),
-              let data = try? Data(contentsOf: directory.appendingPathComponent(name))
-        else { return false }
-        // More than one newline-terminated line means pi appended events.
-        let newlines = data.filter { $0 == UInt8(ascii: "\n") }.count
-        if newlines > 1 { return true }
-        // A trailing partial second line counts too.
-        if let last = data.lastIndex(of: UInt8(ascii: "\n")), last < data.count - 1 { return true }
+        guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot),
+              let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        // Any byte after the header's newline is pi's (a trailing partial line included). A
+        // restored agent's session can run to many megabytes; only its first line matters, and
+        // reading goes on past the first chunk only while no newline has been seen.
+        var headerEnded = false
+        while let chunk = try? handle.read(upToCount: runtimeStateProbeBytes), !chunk.isEmpty {
+            if headerEnded { return true }
+            if let newline = chunk.firstIndex(of: UInt8(ascii: "\n")) {
+                if chunk.index(after: newline) < chunk.endIndex { return true }
+                headerEnded = true
+            }
+        }
         return false
+    }
+
+    /// The agent's thread as its session file holds it, to show while pi starts
+    /// (`PiSessionPreview`); nil when pi has no file for the session yet. File work: call it off
+    /// the main actor.
+    static func preview(
+        sessionID: String,
+        cwd: String,
+        sessionsRoot: URL = defaultSessionsRoot
+    ) -> NativeThreadSnapshot? {
+        guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return nil }
+        return PiSessionPreview.snapshot(file: url, sessionID: sessionID)
+    }
+
+    /// `preview(sessionID:cwd:)` for a thread's store, read off the main actor, from the cwd pi
+    /// is launched in.
+    static func previewLoader(sessionID: String, cwd: String) -> NativeThreadStore.Preview {
+        {
+            await Task.detached(priority: .userInitiated) {
+                preview(sessionID: sessionID, cwd: TerminalSessionStore.resolvedCwd(cwd))
+            }.value
+        }
+    }
+
+    /// Before an agent's pi launches: whether its session is still fresh (so launch flags
+    /// apply), after seeding the header pi needs to find it. File work, kept off the main actor
+    /// by its callers.
+    static func prepareForLaunch(
+        sessionID: String,
+        cwd: String,
+        sessionsRoot: URL = defaultSessionsRoot
+    ) -> Bool {
+        let fresh = !hasRuntimeState(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
+        seedIfMissing(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
+        return fresh
     }
 
     /// Write the one-line session header pi needs to adopt `sessionID` without

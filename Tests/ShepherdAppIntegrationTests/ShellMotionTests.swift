@@ -18,53 +18,6 @@ struct ShellMotionTests {
     // MARK: Toolbar
 
     @MainActor @Observable
-    final class Served {
-        var snapshot = ShellMotionTests.snapshot(running: false)
-    }
-
-    static func snapshot(running: Bool) -> NativeThreadSnapshot {
-        NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: running ? 2 : 1, running: running,
-                             supportedActions: ["send", "abort"], dialogsSupported: true, dialogs: [],
-                             messages: [NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Go")],
-                                                            truncated: false, timestamp: Date().timeIntervalSince1970 * 1000)],
-                             provisional: [], clipped: false)
-    }
-
-    /// Idle → Running cross-fades the word and eases the tint; the running clock then ticks
-    /// without motion.
-    @Test(.timingSensitive) func theStatusPillEasesBetweenStatesAndItsClockTicksWithoutMotion() async throws {
-        let served = Served()
-        let store = NativeThreadStore()
-        let request: NativeThreadStore.Request = { value in
-            if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
-            return .snapshot(value: served.snapshot)
-        }
-        let size = CGSize(width: 240, height: 40)
-        let window = OffscreenWindow(size: size, dark: false,
-                                     ThreadStatusPill(store: store)
-                                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                                         .padding(.leading, 10)
-                                         .background(Color.white)
-                                         .task { await store.run(request: request) })
-        defer { window.close() }
-        try await eventuallyOnMain("the thread to load") { store.ready }
-        let row = CGRect(x: 0, y: size.height / 2, width: size.width, height: 1)
-        _ = await MotionProbe.record(window, region: row, timeout: 0.5) {}
-
-        let starting = await MotionProbe.record(window, region: row) {
-            served.snapshot = Self.snapshot(running: true)
-            Task { await store.refresh() }
-        }
-        #expect(threadPillState(store) == .running)
-        #expect(!starting.inBetween.isEmpty, "the pill eases from Idle to Running")
-
-        // Wait out the second the running clock shows, and catch it ticking over.
-        let ticking = await MotionProbe.record(window, region: row, stillFrames: 12, timeout: 2.5) {}
-        #expect(!ticking.settled.matches(ticking.before), "the clock ticked")
-        #expect(ticking.inBetween.isEmpty, "a tick is not animated")
-    }
-
-    @MainActor @Observable
     final class Counters {
         var text: String? = "3 turns · 12k ctx"
     }
@@ -86,7 +39,7 @@ struct ShellMotionTests {
         let counters: Counters
 
         var body: some View {
-            NWThreadToolbar("Title", counters: counters.text, status: { EmptyView() }, options: { EmptyView() })
+            NWThreadToolbar("Title", counters: counters.text, options: { EmptyView() })
         }
     }
 
