@@ -208,7 +208,7 @@ Drafts, history pages, and scroll state therefore survive switching and cold par
 
 The store is `@MainActor @Observable`, and it derives what the thread draws once per change:
 `turns`, `rows` (`NativeThreadRow`: a turn, and for a reply its `NativeTurnPresentation`), each
-reply's subagent `placements`, and `lastPromptAt` (the running pill's start). Views read those
+reply's subagent `placements`, and `lastPromptAt` (the current turn's start). Views read those
 stored values, so a keystroke in the composer re-renders only the composer. What the chrome
 draws is cached the same way, one property each (`session`, `dialogs`, `widgets`, `commands`,
 `model`, `thinking`, `stats`, `supportedActions`, `clipped`, `running`, `workingLabel`,
@@ -234,8 +234,12 @@ output grows.
   at once instead of waiting out its pause, pulls once more after a pull in flight however many
   pushes arrive during it, and pulls at most every `pushedPullSpacing` (33 ms), so a streaming
   reply lands at about 30 Hz instead of in half-second jumps. A hidden thread has no loop, is
-  not watched, and ignores a push that crosses its suspend. The poll interval stays as the
-  fallback, and remote threads keep polling: the remote protocol has no push.
+  not watched, and ignores a push that crosses its suspend. "On screen" means the selected
+  thread, as for polling: a minimized or covered window keeps its thread watched, as it keeps it
+  polling. The server paces at a frame, not at `pushedPullSpacing`, so a push that lands during
+  a pull's spacing only marks the store to pull once more when the spacing ends. The poll
+  interval stays as the fallback, and remote threads keep polling: the remote protocol has no
+  push.
 - **Switching:** a hidden thread stops polling (`suspend`) and keeps everything it shows: it
   stays ready and running, with the same rows and pages of history, so showing it again is a
   flip that rebuilds the thread and its composer once. The first pull after (`run`) merges the
@@ -267,10 +271,11 @@ output grows.
   file (1 MiB, growing fourfold while the page reaches further back), follows `parentId` from
   the newest entry as pi does from its leaf, stops at a page or at the start of what pi keeps
   (the first entry, or a compaction and the entries it kept), applies context edits, skips
-  lines it cannot parse, and pages with the same budget as a snapshot (`fillPage`). The model
-  is the newest on the path, else the newest in the file's head. The thinking level is the
-  newest on the path, else the newest `thinking_level_change` before the page, found by
-  searching the file backwards for that type and decoding only the lines that hold it (a level
+  lines it cannot parse, and pages by a snapshot's rules (`RPCThreadState.fillPage`: at most
+  `pageSize` entries within `snapshotLimit`). The model is the newest on the path, else the
+  newest in the file's head. The thinking level is the newest on the path, else the newest
+  `thinking_level_change` before the page, found by searching the file backwards for that type
+  and decoding only the lines that hold it (a level
   set long before the page is still the one pi resumes with). A missing file, one that is not
   pi's, or one in an older format (which pi rewrites when it loads it) is no preview: the thread
   waits for pi. Remote clients get no preview; the remote
@@ -279,13 +284,12 @@ output grows.
   history, then optimistic echoes of accepted sends, then pi's provisional entries. This order
   never flips when pi persists a message, so the tail never re-lays out.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
-  boundaries don't flicker the pill, the working row, or the Stop button.
+  boundaries don't flicker the working row or the Stop button.
 - **Drafts and gating:** `draft` and `delivery` (follow-up or steer) belong to the store.
   `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
   busy.
-- **Errors:** transport failures and a pi that is gone surface as `loadError` (the toolbar's
-  Error pill and the composer's Reconnect banner), and action failures as `notice`. Actions are never retried
-  automatically; an unknown outcome is reported, not resent. A stale session triggers a fresh
+- **Errors:** transport failures and a pi that is gone surface as `loadError` (the composer's
+  Reconnect banner), and action failures as `notice`. Actions are never retried automatically; an unknown outcome is reported, not resent. A stale session triggers a fresh
   snapshot.
 
 ## Presentation and views
@@ -303,8 +307,8 @@ The pure derivations live in ShepherdRemote:
   `nativeCommandClasses` classifies shell commands (tests, build, commit, push) and the output
   parsers count passed and failed tests; `NativeTurnChanges` is the changes card.
 - **`NativeThreadPresentation`:** turns, the Markdown block parser, `DiffStat` from edit
-  payloads, the status pill state, subagent state, placement, and rollups, clock and duration
-  text, and `NativeScrollFollower` (only a live scroll gesture detaches following; momentum,
+  payloads, the iOS header pill's state (the Mac toolbar has none), subagent state, placement,
+  and rollups, clock and duration text, and `NativeScrollFollower` (only a live scroll gesture detaches following; momentum,
   content replacement, composer resizes, and growth are treated as layout, never as intent).
   The iOS client still draws the older turn items and tool rows from here (`nativeTurnItems`,
   `NativeToolRow`).

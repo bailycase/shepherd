@@ -48,7 +48,7 @@ In priority order:
    one line ("Worked for 6m 40s · explored 13 files · edited 15 files · ran 22 commands"). Its
    lines, one per burst of same-kind calls, are one click away; raw arguments are behind ⌥-click.
 4. **Nothing in the default view that isn't useful.** No key-hint rows, no status text that
-   repeats the toolbar pill, no working directory under the composer, no footers in menus.
+   repeats what the thread and the sidebar row already say, no working directory under the composer, no footers in menus.
 
 And the rules that follow from them:
 
