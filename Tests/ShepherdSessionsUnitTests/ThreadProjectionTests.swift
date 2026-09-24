@@ -125,6 +125,42 @@ struct ThreadProjectionTests {
         #expect(tail.prefix(3).map(\.entryID) == ["t:c1", "user:3000", "user:3000#1"])
     }
 
+    /// The history decoded straight into messages projects row for row as the history decoded
+    /// through a JSONValue tree did.
+    @Test func aTypedHistoryProjectsExactlyAsTheLenientOneDid() throws {
+        let line = Data(#"""
+        {"type":"response","id":"r","command":"get_messages","success":true,"data":{"messages":[
+         {"role":"user","content":"Fix the build","timestamp":1733234567890},
+         {"role":"assistant","content":[{"type":"thinking","thinking":"check"},{"type":"text","text":"Running it."},
+          {"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"make","timeout":120,"env":{"CI":true},"args":["-j",8,null]}}],
+          "stopReason":"toolUse","timestamp":1733234567891.25},
+         {"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[{"type":"text","text":"ok \u2028 done"}],"isError":false},
+         {"role":"user","content":[{"type":"image","data":"iVBORw0KGgo=","mimeType":"image/png"}]},
+         {"role":"custom","customType":"note","display":true,"content":"shown"},
+         {"role":"assistant","content":[],"stopReason":"error","errorMessage":"529 overloaded"}
+        ]}}
+        """#.utf8)
+        guard case .response(let response) = try NDJSON.decode(RPCIncoming.self, from: line),
+              case .messages(let typed) = response.payload else {
+            Issue.record("expected a typed history"); return
+        }
+        struct Lenient: Decodable { let data: JSONValue }
+        let lenient = try JSONDecoder().decode(Lenient.self, from: line).data["messages"]?.decode([RPCMessage].self)
+
+        func rows(_ messages: [RPCMessage]) -> [NativeThreadMessage] {
+            var arguments: [String: JSONValue] = [:]
+            for message in messages {
+                for case .toolCall(let id, _, let args?) in message.content { arguments[id] = args }
+            }
+            return messages.enumerated().map { index, message in
+                RPCThreadState.project(entryID: "m:\(index)", message: message,
+                                       args: message.toolCallId.flatMap { arguments[$0] })
+            }
+        }
+        #expect(rows(typed) == rows(try #require(lenient)))
+        #expect(rows(typed)[2].argumentsText == #"{"args":["-j",8,null],"command":"make","env":{"CI":true},"timeout":120}"#)
+    }
+
     // MARK: - apply(_:to:) — rebuilding a streamed assistant message
 
     private func stream(_ deltas: [String], into message: RPCMessage = RPCMessage(role: "assistant", content: [])) throws -> RPCMessage {

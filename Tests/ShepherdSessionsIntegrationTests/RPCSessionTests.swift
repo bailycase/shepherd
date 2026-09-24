@@ -93,9 +93,8 @@ struct RPCSessionTests {
             "unknown:compaction_start", "agent_end", "agent_settled",
         ])
         var text = ""
-        for case .messageUpdate(let delta, let usage) in h.events.current {
-            #expect(usage?["totalTokens"]?.doubleValue == 101)
-            if delta.type == "text_delta" { text += delta.delta ?? "" }
+        for case .messageUpdate(let delta) in h.events.current where delta.type == "text_delta" {
+            text += delta.delta ?? ""
         }
         #expect(text == "Hello line\u{2028}sep world")
     }
@@ -107,7 +106,7 @@ struct RPCSessionTests {
         async let commands = h.request(.getCommands)
         async let stats = h.request(.getSessionStats)
         let (m, c, s) = try await (messages.get(), commands.get(), stats.get())
-        #expect(m.command == "get_messages" && m.data?["messages"]?.arrayValue?.count == 2)
+        #expect(m.command == "get_messages" && m.messages?.count == 2)
         #expect(c.command == "get_commands" && c.data?["commands"]?.arrayValue?.first?["name"]?.stringValue == "session-name")
         #expect(s.command == "get_session_stats" && s.data?["contextUsage"]?["percent"]?.doubleValue == 30)
         #expect(Set([m.id, c.id, s.id].compactMap { $0 }).count == 3)
