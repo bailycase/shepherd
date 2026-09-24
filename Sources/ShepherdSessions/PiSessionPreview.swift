@@ -34,6 +34,11 @@ public enum PiSessionPreview {
     /// The newest page of the thread in pi's session `file`; nil when the file is missing, is
     /// not a pi session, or is in an older format.
     public static func snapshot(file: URL, sessionID: String) -> NativeThreadSnapshot? {
+        snapshot(file: file, sessionID: sessionID, initialWindow: initialWindow, maxWindow: maxWindow)
+    }
+
+    /// `snapshot(file:sessionID:)` reading windows of these sizes (tests make them small).
+    static func snapshot(file: URL, sessionID: String, initialWindow: Int, maxWindow: Int) -> NativeThreadSnapshot? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd(), size > 0 else { return nil }
@@ -59,6 +64,9 @@ public enum PiSessionPreview {
                 window = min(Int(size), window * 4, maxWindow)
                 continue
             }
+            // The newest entry lies further back than the reader reads (one line longer than the
+            // largest window): what the thread holds is unknown, not empty.
+            if walk.path.isEmpty, start > 0 { return nil }
             var settings = settings(walk.path, head: headLines)
             // A level set before the page (the walk stops once it has one) is still the level pi
             // resumes with: the newest change before the walk's oldest entry.
