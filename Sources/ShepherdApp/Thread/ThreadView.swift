@@ -37,6 +37,8 @@ struct ThreadView: View {
     var review: ((String) -> Void)? = nil
     /// The models the host offers, for the composer's model picker.
     var listModels: (() async -> [PiModelCatalog.Entry])? = nil
+    /// The composer's "Up next" state, when a test or preview drives it.
+    var queueState: QueueStackState? = nil
     @State private var follower = NativeScrollFollower()
     /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
     @State private var gutter = AppLayout.gutter
@@ -161,7 +163,7 @@ struct ThreadView: View {
                          jumpToLatest: follower.showsJump(running: running) ? {
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                         } : nil)
+                         } : nil, queueState: queueState)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
             }
         }

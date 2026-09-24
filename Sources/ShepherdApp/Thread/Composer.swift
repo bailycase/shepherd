@@ -17,6 +17,8 @@ struct ComposerMenuRequest: Equatable {
 /// above it, the `NWComposer` card with the field (or a pending question) and one row of
 /// controls: attach · / commands · model · thinking · Send or Stop. Menus float over the thread
 /// above the card, so opening one never moves the thread or changes the composer's height.
+/// Messages sent while pi works wait in "Up next" above the card (`QueueStackView`); ↩ queues
+/// or steers per Settings, ⌘↩ does the other, and the Send menu offers both.
 struct Composer: View {
     /// The thread's coordinate space: the menus measure the room above the card in it.
     static let threadSpace = "composer.thread"
@@ -33,6 +35,8 @@ struct Composer: View {
     var menuRequest: ComposerMenuRequest?
     /// Set while the thread is detached from its tail: what "Jump to latest" does.
     var jumpToLatest: (() -> Void)? = nil
+    /// The "Up next" stack's state, from a test or preview that drives it; else the composer's own.
+    var queueState: QueueStackState? = nil
     @State private var attachments: [ImageAttachment] = []
     @State private var attachmentError: String?
     @State private var dropTargeted = false
@@ -51,6 +55,15 @@ struct Composer: View {
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
     @FocusState private var composing: Bool
+    /// "Up next": what the stack shows of the store's queue, and its own view state.
+    @State private var ownQueueStack = QueueStackState()
+    private var queueStack: QueueStackState { queueState ?? ownQueueStack }
+    /// The queued message with keyboard focus, if one has it.
+    @FocusState private var focusedRow: String?
+    /// ⌘↩ reaches the composer before any key equivalent in its window.
+    @State private var keyMonitor = ComposerKeyMonitor()
+    /// Holding Send opened its menu: the press that did is not a send.
+    @State private var sendHeld = false
     /// Motion starts once the thread has caught up since it came on screen: what arrives with
     /// that pull (a widget, a waiting question, the model) is simply there, whether the thread
     /// just opened or an agent switched back to is catching up.
@@ -73,10 +86,11 @@ struct Composer: View {
         blank ? min(delay, AppLayout.blankStartingIndicatorDelay) : delay
     }
 
-    private enum Menu: Equatable { case models, thinking }
+    private enum Menu: Equatable { case models, thinking, send }
 
-    /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc).
-    private enum OpenMenu: Equatable { case none, slash, models, thinking }
+    /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc, holding
+    /// Send).
+    private enum OpenMenu: Equatable { case none, slash, models, thinking, send }
 
     // One effective state: a lost connection wins over a cached running snapshot (error maps
     // to Send + an inline error, never Stop).
@@ -112,14 +126,15 @@ struct Composer: View {
         return switch menu {
         case .models: .models
         case .thinking: .thinking
+        case .send: .send
         case nil: .none
         }
     }
 
-    /// What sits above the card: a banner, the notice, extension widgets.
+    /// What sits above the card: a banner, the notice, extension widgets, the queue.
     private var accessories: [String] {
         let banner = store.loadError != nil ? "lost" : attachmentError != nil ? "attachment" : store.notice != nil ? "notice" : nil
-        return [banner].compactMap { $0 } + store.widgets.map(\.id)
+        return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
     }
 
     /// The question in place of the field, by the identity its panel takes.
@@ -160,10 +175,18 @@ struct Composer: View {
                     .padding(.horizontal, NW.Space.xs)
                     .nwTransition(.list, edge: .bottom)
             }
+            // "Up next" grows upward from the card, which never moves.
+            if queueStack.isVisible {
+                QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, focusedRow: $focusedRow,
+                               focusComposer: { composing = true })
+                    .nwTransition(.list, edge: .bottom)
+            }
             card
                 .background { ComposerMenuRegion(dismissal: dismissal) }
+                .background { ComposerWindowReader(monitor: keyMonitor) }
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.threadSpace)).minY } action: { cardTop = $0 }
                 .overlay(alignment: .topLeading) { menus(query: query) }
+                .overlay(alignment: .topTrailing) { sendMenu }
         }
         .nwAnimation(.list, value: accessories)
         .nwAnimation(.list, value: attachments.map(\.id))
@@ -177,7 +200,16 @@ struct Composer: View {
             dismissal.dismiss = closeMenu(open)
             dismissal.watch(open != .none)
         }
-        .onDisappear { dismissal.watch(false) }
+        .onChange(of: store.queue, initial: true) { _, queue in queueStack.update(queue, images: store.queuedImages) }
+        // ⌘↩ is watched only while this composer (or one of its queued messages) has focus.
+        .onChange(of: composing || focusedRow != nil, initial: true) { _, focused in keyMonitor.watch(focused) }
+        .onChange(of: keyMonitor.presses) { _, _ in sendTheOtherWay() }
+        // A hold that opened the Send menu and let go elsewhere leaves the next click a send.
+        .onChange(of: menu) { _, menu in if menu != .send { sendHeld = false } }
+        .onDisappear {
+            dismissal.watch(false)
+            keyMonitor.watch(false)
+        }
         // Let any deferred AppKit focus release finish before claiming the field.
         .task(id: active && isFocused) {
             composing = false
@@ -345,7 +377,6 @@ struct Composer: View {
     }
 
     private var placeholder: String {
-        if running { return "Queue a follow-up — sent when the turn ends" }
         if !hasTurns { return "Describe the task, or / for commands…" }
         return commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…"
     }
@@ -369,7 +400,9 @@ struct Composer: View {
                     return .handled
                 }
                 guard canSend, !store.busy else { return .handled }
-                sendDraft()
+                // ⌘↩ when a key press brings it here; the key monitor usually takes it first.
+                let alternate = KeybindingsStore.shared.chord(for: .alternateSend).matches(press)
+                sendDraft(alternate ? .alternate : .primary)
                 return .handled
             }
             .onKeyPress(.tab) {
@@ -379,8 +412,12 @@ struct Composer: View {
                 return .handled
             }
             .onKeyPress(.upArrow) {
-                guard commandQuery != nil else { return .ignored }
-                commandIndex = max(0, commandIndex - 1)
+                guard commandQuery == nil else {
+                    commandIndex = max(0, commandIndex - 1)
+                    return .handled
+                }
+                // ↑ in an empty composer edits the last queued message.
+                guard store.draft.isEmpty, menu == nil, queueStack.editLast(store: store) else { return .ignored }
                 return .handled
             }
             .onKeyPress(.downArrow) {
@@ -389,9 +426,13 @@ struct Composer: View {
                 return .handled
             }
             .onKeyPress(.escape) {
-                if menu != nil { menu = nil; return .handled }
-                guard commandQuery != nil else { return .ignored }
-                dismissedQuery = store.draft
+                switch ComposerEscape(menuOpen: menu != nil, commandsOpen: commandQuery != nil,
+                                      canStop: running && dialogs.isEmpty && active && store.supports("abort")) {
+                case .closeMenu: menu = nil
+                case .dismissCommands: dismissedQuery = store.draft
+                case .stop: stop()
+                case .pass: return .ignored
+                }
                 return .handled
             }
             .onPasteCommand(of: [.image, .fileURL]) { providers in
@@ -410,13 +451,9 @@ struct Composer: View {
             actionChips(compact: false, startingLabel: false)
             actionChips(compact: true, startingLabel: false)
         }
-        // A new model or level cross-fades, and the delivery chip fades in as a draft starts
-        // while the agent runs. Only these: typing and width changes stay instant.
+        // A new model or level cross-fades. Only these: typing and width changes stay instant.
         .nwAnimation(.content, value: [store.model, store.thinking])
-        .nwAnimation(.list, value: showsDelivery)
     }
-
-    private var showsDelivery: Bool { running && !store.draft.isEmpty }
 
     private func actionChips(compact: Bool, startingLabel: Bool) -> some View {
         let _ = NWRenderProbe.tick("composer.chips")
@@ -446,7 +483,6 @@ struct Composer: View {
             }
             modelChip
             thinkingChip(compact: compact)
-            if showsDelivery { deliveryChip.nwTransition(.list, edge: .leading) }
             Spacer(minLength: NW.Space.m)
             if startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
             primary
@@ -470,26 +506,60 @@ struct Composer: View {
     }
 
     /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
-    /// accepts a message.
+    /// accepts a message. While pi works with a draft, Stop steps aside outlined and Send takes
+    /// the corner; right-clicking or holding Send then opens the Send menu.
     private var primary: some View {
-        let stops = running && dialogs.isEmpty && store.draft.isEmpty
-        return ZStack {
-            if store.busy {
-                ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
-                    .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-                    .accessibilityLabel("Waiting for pi")
+        let working = running && dialogs.isEmpty
+        let stops = working && store.draft.isEmpty
+        let beside = working && !store.draft.isEmpty && !store.busy
+        return HStack(spacing: NW.Space.s) {
+            if beside {
+                NWComposerActionButton(.stop, outlined: true, enabled: active && store.supports("abort")) { stop() }
+                    .help(stopHelp)
                     .nwTransition(.content)
-            } else {
-                NWComposerActionButton(stops ? .stop : .send,
-                                       enabled: stops ? active && store.supports("abort") : canSend && dialogs.isEmpty) {
-                    if stops { stop() } else { sendDraft() }
+            }
+            ZStack {
+                if store.busy {
+                    ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
+                        .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
+                        .accessibilityLabel("Waiting for pi")
+                        .nwTransition(.content)
+                } else {
+                    NWComposerActionButton(stops ? .stop : .send, ringed: menu == .send,
+                                           enabled: stops ? active && store.supports("abort") : canSend && dialogs.isEmpty) {
+                        if stops { stop() } else if sendHeld { sendHeld = false } else { sendDraft(.primary) }
+                    }
+                    .help(stops ? stopHelp : !dialogs.isEmpty ? "Answer the question first" : sendHelp(working: working))
+                    .overlay { if beside { SecondaryClick { openSendMenu() } } }
+                    .simultaneousGesture(LongPressGesture(minimumDuration: AppLayout.sendHoldDelay / .seconds(1)).onEnded { _ in
+                        guard beside else { return }
+                        sendHeld = true
+                        openSendMenu()
+                    }, isEnabled: beside)
+                    .nwTransition(.content)
                 }
-                .help(stops ? (store.hasLiveSubagents ? "Stop the agent and its subagents" : "Stop the agent's turn")
-                      : dialogs.isEmpty ? "Send (⏎)" : "Answer the question first")
-                .nwTransition(.content)
             }
         }
         .nwAnimation(.content, value: store.busy)
+        .nwAnimation(.content, value: beside)
+    }
+
+    private var stopHelp: String {
+        store.hasLiveSubagents ? "Stop the agent and its subagents" : "Stop the agent's turn"
+    }
+
+    /// "Send (↩)", or while pi works "Queue (↩) · Steer now (⌘↩)" in the order the Return
+    /// setting gives them.
+    private func sendHelp(working: Bool) -> String {
+        let keys = KeybindingsStore.shared
+        guard working else { return "Send (\(keys.sendDisplay))" }
+        let (primary, alternate) = Self.sendTitles(AppSettings.shared.returnWhileWorking)
+        return "\(primary) (\(keys.sendDisplay)) · \(alternate) (\(keys.display(.alternateSend)))"
+    }
+
+    /// The Return setting's way first.
+    static func sendTitles(_ setting: ReturnWhileWorking) -> (primary: String, alternate: String) {
+        setting == .steer ? ("Steer now", "Queue") : ("Queue", "Steer now")
     }
 
     private func stop() {
@@ -546,26 +616,6 @@ struct Composer: View {
         return entry.reasoning
     }
 
-    private var deliveryChip: some View {
-        SwiftUI.Menu {
-            Picker("Delivery", selection: $store.delivery) {
-                Text("Follow-up · after the turn ends").tag(NativeThreadDelivery.followUp)
-                Text("Steer · after the current tools").tag(NativeThreadDelivery.steer)
-            }
-            .pickerStyle(.inline)
-            .labelsHidden()
-        } label: {
-            HStack(spacing: NW.Space.s) {
-                Text(store.delivery == .steer ? "Steer" : "Follow-up")
-                NWChipChevron()
-            }
-            .font(Font.nwSans(12)).foregroundStyle(Color.nw.textSecondary)
-            .padding(.horizontal, NW.Space.m).frame(height: NWComposerMetrics.chipHeight).contentShape(Rectangle())
-        }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-        .accessibilityLabel("Delivery")
-    }
-
     // MARK: Actions
 
     /// The picker's list is made here, as it opens, so its first frame has everything.
@@ -602,7 +652,7 @@ struct Composer: View {
         dismissedQuery = nil
         composing = true
         guard canSend else { return }
-        sendDraft()
+        sendDraft(.primary)
     }
 
     private func complete(_ command: NativeCommand) {
@@ -610,13 +660,80 @@ struct Composer: View {
         dismissedQuery = nil
     }
 
-    private func sendDraft() {
+    /// Sends the draft: ↩ (`primary`) the way Settings ▸ Agents says while pi works, ⌘↩
+    /// (`alternate`) the other way. While pi is idle either one sends it now.
+    private func sendDraft(_ key: ComposerSendKey) {
+        sendDraft(delivery: key.delivery(AppSettings.shared.returnWhileWorking))
+    }
+
+    private func sendDraft(delivery: NativeThreadDelivery) {
         let images = attachments.map(\.image)
         Task {
             let before = store.sentCount
-            await store.send(images: images)
+            await store.send(images: images, delivery: delivery)
             if store.sentCount > before { attachments.removeAll() }
         }
+    }
+
+    /// ⌘↩ (or the rebound chord): steers the focused queued message, or sends the draft the
+    /// other way.
+    private func sendTheOtherWay() {
+        if let row = focusedRow {
+            switch queueStack.handle(.steer, on: row, running: running, store: store) {
+            case .row(let id): focusedRow = id
+            case .composer:
+                focusedRow = nil
+                composing = true
+            case .editor: focusedRow = nil
+            }
+            return
+        }
+        guard canSend, !store.busy, dialogs.isEmpty else { return }
+        sendDraft(.alternate)
+    }
+
+    // MARK: Send menu
+
+    private func openSendMenu() {
+        guard running, dialogs.isEmpty, canSend, !store.busy else { return }
+        dismissCommands()
+        menu = .send
+    }
+
+    /// Queue and Steer now, above the card at its trailing corner; the Return setting's row
+    /// leads the highlight and wears ↩.
+    @ViewBuilder private var sendMenu: some View {
+        ZStack(alignment: .bottomTrailing) {
+            if menu == .send {
+                let setting = AppSettings.shared.returnWhileWorking
+                let keys = KeybindingsStore.shared
+                let options = Self.sendOptions(setting, send: keys.sendDisplay, alternate: keys.display(.alternateSend))
+                NWSendMenu(options: options, highlighted: setting == .steer ? 1 : 0) { option in
+                    menu = nil
+                    composing = true
+                    sendDraft(delivery: option.id == "steer" ? .steer : .followUp)
+                } onClose: {
+                    menu = nil
+                    composing = true
+                }
+                .nwTransition(.overlay, anchor: .bottomTrailing)
+            }
+        }
+        .fixedSize()
+        .background { ComposerMenuRegion(dismissal: dismissal) }
+        .alignmentGuide(.top) { $0[.bottom] + AppLayout.menuGap }
+        .nwAnimation(.overlay, value: menu == .send)
+    }
+
+    /// Queue, then Steer now; ↩ on the Return setting's, the alternate chord on the other.
+    static func sendOptions(_ setting: ReturnWhileWorking, send: String, alternate: String) -> [NWSendOption] {
+        let steers = setting == .steer
+        return [
+            NWSendOption(id: "queue", title: "Queue", detail: "Goes when pi finishes this turn.", glyph: .queue,
+                         shortcut: steers ? alternate : send),
+            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once pi’s current tool calls finish, before its next step.",
+                         glyph: .symbol("arrow.turn.down.right"), shortcut: steers ? send : alternate),
+        ]
     }
 
     /// Dropped or pasted images become attachments through the same resize rules as terminal
@@ -778,6 +895,116 @@ struct QuestionPanel: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Question: \(dialog.title)")
     }
+}
+
+// MARK: Sending while pi works
+
+/// What Esc does in the composer, the first that applies: close the open menu, close the
+/// command list, then stop pi (as Stop does, asking first with live subagents).
+enum ComposerEscape: Equatable {
+    case closeMenu, dismissCommands, stop, pass
+
+    init(menuOpen: Bool, commandsOpen: Bool, canStop: Bool) {
+        self = menuOpen ? .closeMenu : commandsOpen ? .dismissCommands : canStop ? .stop : .pass
+    }
+}
+
+/// Which key sent a draft: ↩ (`primary`) or ⌘↩, the rebindable `alternateSend`.
+enum ComposerSendKey {
+    case primary, alternate
+
+    /// How the message goes while pi works: ↩ follows the Return setting, ⌘↩ does the other.
+    /// (While pi is idle either one sends it now.)
+    func delivery(_ setting: ReturnWhileWorking) -> NativeThreadDelivery {
+        (self == .primary) == (setting == .steer) ? .steer : .followUp
+    }
+}
+
+/// Takes the alternate send (⌘↩ unless rebound) for the composer while its field, or one of its
+/// queued messages, has focus: ahead of any key equivalent in the window (the review pane's ⌘⏎),
+/// and only in the composer's own window. The composer counts the presses it took.
+@MainActor
+@Observable
+final class ComposerKeyMonitor {
+    private(set) var presses = 0
+    @ObservationIgnored weak var window: NSWindow?
+    @ObservationIgnored var chord: () -> KeyChord = { KeybindingsStore.shared.chord(for: .alternateSend) }
+    @ObservationIgnored private var monitor: Any?
+
+    /// Watches the window's key presses while the composer has focus, and only then.
+    func watch(_ focused: Bool) {
+        if focused, monitor == nil {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                MainActor.assumeIsolated { self?.handle(event) == true ? nil : event }
+            }
+        } else if !focused, let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+
+    /// Takes `event` when it is the chord, in the composer's window.
+    @discardableResult
+    func handle(_ event: NSEvent) -> Bool {
+        guard let window, event.window === window, chord().matches(event) else { return false }
+        presses += 1
+        return true
+    }
+}
+
+/// Tells the key monitor which window the composer is in.
+struct ComposerWindowReader: NSViewRepresentable {
+    let monitor: ComposerKeyMonitor
+
+    final class Reader: NSView {
+        weak var monitor: ComposerKeyMonitor?
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            monitor?.window = window
+        }
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> Reader {
+        let reader = Reader()
+        reader.monitor = monitor
+        return reader
+    }
+
+    func updateNSView(_ reader: Reader, context: Context) {
+        reader.monitor = monitor
+        if monitor.window !== reader.window { monitor.window = reader.window }
+    }
+}
+
+/// A right-click (or ⌃-click) on the view it covers; every other click, and the pointer's
+/// hover, pass through to the view beneath. Send's menu opens this way.
+struct SecondaryClick: NSViewRepresentable {
+    let action: () -> Void
+
+    final class Catcher: NSView {
+        var action: () -> Void = {}
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            guard let event = NSApp.currentEvent, Self.isSecondary(event) else { return nil }
+            return super.hitTest(point)
+        }
+
+        override func rightMouseDown(with event: NSEvent) { action() }
+        override func mouseDown(with event: NSEvent) { if Self.isSecondary(event) { action() } }
+
+        static func isSecondary(_ event: NSEvent) -> Bool {
+            event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))
+        }
+    }
+
+    func makeNSView(context: Context) -> Catcher {
+        let catcher = Catcher()
+        catcher.action = action
+        return catcher
+    }
+
+    func updateNSView(_ catcher: Catcher, context: Context) { catcher.action = action }
 }
 
 // MARK: Menu dismissal
