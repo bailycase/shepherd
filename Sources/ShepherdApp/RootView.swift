@@ -230,7 +230,7 @@ struct WorkspaceHeaderView: View {
         .gesture(WindowDragGesture())
         // Switching agents is a visibility flip: the next agent's toolbar lands at once, even when
         // the switch rides an animation (the palette closing), and its controls (a pane toggle,
-        // the status pill) don't fade their own state into it.
+        // the counters) don't fade their own state into it.
         .transaction(value: vm.selectedAgentID, Self.switchAtOnce)
         .transaction(value: vm.selectedRemoteAgent, Self.switchAtOnce)
     }
