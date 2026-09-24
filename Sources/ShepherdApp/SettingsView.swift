@@ -132,10 +132,10 @@ struct SettingsView: View {
         withTransaction(instant) { vm.settingsSection = first }
     }
 
-    /// "Shepherd 0.1.0 · pi 0.87.1"
+    /// "Shepherd 0.1.0 · pi 0.87.1", or "Shepherd Nightly 0.0.0-nightly.… · pi 0.87.1"
     private var versions: String {
         let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        return "Shepherd \(app)" + (piUpdates.currentVersion.map { " · pi \($0)" } ?? "")
+        return "\(ShepherdEdition.current.displayName) \(app)" + (piUpdates.currentVersion.map { " · pi \($0)" } ?? "")
     }
 
     private var detail: some View {

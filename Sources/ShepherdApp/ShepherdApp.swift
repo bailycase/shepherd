@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import AppKit
+import ShepherdProtocol
 import ShepherdSessions
 
 /// The one main window's scene id.
@@ -54,7 +55,7 @@ public struct ShepherdMacApp: App {
     public var body: some Scene {
         // One window, never tabbed. Sessions belong to the app, not the window: closing it
         // leaves every agent running, and the Dock or Window menu brings it back.
-        Window("Shepherd", id: MainWindow.id) {
+        Window(ShepherdEdition.current.displayName, id: MainWindow.id) {
             RootView(vm: vm)
                 // Host role: bind the remote listener if this Mac serves its
                 // sessions (the toggle persists; a host stays a host). The

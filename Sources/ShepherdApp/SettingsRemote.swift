@@ -122,7 +122,8 @@ struct RemoteSettings: View {
 }
 
 enum RemoteSettingsDefaults {
-    static let port: UInt16 = 7433
+    /// 7433, or 7434 in Shepherd Nightly, so both apps can serve this Mac at once.
+    static let port = ShepherdEdition.current.defaultRemoteListenerPort
 }
 
 /// "horizon" over "horizon.internal:7433 · connected · 5 agents", with Edit, Reconnect, Remove.

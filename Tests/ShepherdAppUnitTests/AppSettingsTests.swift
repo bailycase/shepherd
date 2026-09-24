@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import Testing
 @testable import ShepherdApp
 
@@ -27,6 +28,17 @@ struct AppSettingsTests {
         #expect(settings.worktreeMergeMethod == .squash)
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh" && settings.childScope == "both")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
+    }
+
+    /// Shepherd Nightly listens one port up, so both apps can serve this Mac at once; a port the
+    /// user chose still wins.
+    @Test(arguments: [(ShepherdEdition.main, 7433), (.nightly, 7434)])
+    func theListenerPortDefaultsPerEdition(edition: ShepherdEdition, port: Int) {
+        #expect(AppSettings(store: Fixture.defaults(), edition: edition).remoteListenerPort == port)
+
+        let store = Fixture.defaults()
+        store.set(9000, forKey: AppSettings.Key.remoteListenerPort)
+        #expect(AppSettings(store: store, edition: edition).remoteListenerPort == 9000)
     }
 
     @Test func everySettingPersistsAcrossInstances() {
