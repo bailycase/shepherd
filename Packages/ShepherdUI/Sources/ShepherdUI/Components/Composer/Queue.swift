@@ -15,7 +15,8 @@ public enum NWQueueMetrics {
     public static let rowHeight: CGFloat = 40
     /// "Show N more".
     public static let moreRowHeight: CGFloat = 32
-    /// A queued row's number, and the slot the steering spinner sits in.
+    /// A queued row's number; a steering row has its bare spinner in its place, so its text
+    /// starts a little further left.
     public static let numberSize: CGFloat = 18
     public static let spinnerSize: CGFloat = 14
     /// The grip's slot, and its six dots.
@@ -41,6 +42,8 @@ public enum NWQueueMetrics {
     public static let sendMenuWidth: CGFloat = 268
     public static let sendMenuRowPadding = EdgeInsets(top: NW.Space.m, leading: 10, bottom: NW.Space.m, trailing: 10)
     public static let sendMenuGlyph: CGFloat = 14
+    /// The glyph and the keys sit this much lower, level with the title.
+    public static let sendMenuTitleInset: CGFloat = 1
     /// Up to this many rows the stack shows them all; past it, the first `longStackShown` and
     /// "Show N more", so the thread keeps its room.
     public static let shortStackLimit = 3
@@ -380,7 +383,7 @@ public struct NWQueueRow: View {
                         .nwTransition(.content)
                 }
             }
-            .frame(width: NWQueueMetrics.numberSize, height: NWQueueMetrics.numberSize)
+            .frame(width: steering ? NWQueueMetrics.spinnerSize : NWQueueMetrics.numberSize, height: NWQueueMetrics.numberSize)
             label
             if !attachments.isEmpty {
                 HStack(spacing: NW.Space.xs) {
@@ -504,7 +507,6 @@ public struct NWQueueEditor: View {
         let field = RoundedRectangle(cornerRadius: NW.Radius.s)
         HStack(alignment: .top, spacing: NW.Space.m) {
             NWQueueNumber(number)
-                .padding(.top, NW.Space.xxs)
             VStack(alignment: .trailing, spacing: NW.Space.m) {
                 TextField(text: $text, selection: $selection, axis: .vertical) { Text("Queued message") }
                     .lineLimit(1...NWQueueMetrics.editorMaxLines)
@@ -683,14 +685,14 @@ public struct NWSendMenu: View {
                     }
                     .foregroundStyle(nw.textSecondary)
                     .frame(width: NWQueueMetrics.sendMenuGlyph, height: NWQueueMetrics.sendMenuGlyph)
-                    .padding(.top, 1)
+                    .padding(.top, NWQueueMetrics.sendMenuTitleInset)
                     VStack(alignment: .leading, spacing: NW.Space.xxs) {
                         Text(option.title).font(.nwSans(13, .medium)).foregroundStyle(nw.textPrimary)
                         Text(option.detail).nwText(.caption).foregroundStyle(nw.textTertiary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    NWKeycap(option.shortcut).padding(.top, 1)
+                    NWKeycap(option.shortcut).padding(.top, NWQueueMetrics.sendMenuTitleInset)
                 }
                 .accessibilityLabel("\(option.title), \(option.detail)")
             }
