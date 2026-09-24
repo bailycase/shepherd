@@ -120,6 +120,66 @@ struct RemoteListenerTests {
         try await eventually("the extension report") { r.server.state.agents.first?.status == .working }
     }
 
+    /// Clients connecting while the queue is busy wait in the backlog: the kernel completes each
+    /// handshake there, and the queue accepts them all once it is free. Past a backlog the SYN is
+    /// dropped and the connect stays in progress.
+    @Test func remoteClientsConnectingWhileTheQueueIsBusyAreAllAccepted() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let connections = 64
+        let release = DispatchSemaphore(value: 0)
+        await r.server.holdQueue(until: release)
+        let sockets = try (0..<connections).map { _ in try Self.connectInBackground(port: r.port) }
+        let established = try await blocking { Self.established(sockets, within: .seconds(5)) }
+        release.signal()
+        #expect(established == connections)
+
+        var authenticated = 0
+        for fd in sockets {
+            if (try? await RawRemote(connected: fd).hello(token: r.token)) != nil { authenticated += 1 }
+        }
+        #expect(authenticated == connections)
+    }
+
+    /// A non-blocking connect to the listener on the loopback address.
+    private static func connectInBackground(port: UInt16) throws -> Int32 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw WireError("socket: errno \(errno)") }
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = in_port_t(port).bigEndian
+        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        let r = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard r == 0 || errno == EINPROGRESS else {
+            let err = errno
+            close(fd)
+            throw WireError("connect: errno \(err)")
+        }
+        return fd
+    }
+
+    /// How many of `sockets` finish connecting before `timeout`.
+    private static func established(_ sockets: [Int32], within timeout: Duration) -> Int {
+        let deadline = ContinuousClock.now + timeout
+        var pending = Set(sockets)
+        var done = 0
+        while !pending.isEmpty, ContinuousClock.now < deadline {
+            var fds = pending.map { pollfd(fd: $0, events: Int16(POLLOUT), revents: 0) }
+            guard poll(&fds, nfds_t(fds.count), 50) > 0 else { continue }
+            for entry in fds where entry.revents != 0 {
+                pending.remove(entry.fd)
+                var error: Int32 = 0
+                var length = socklen_t(MemoryLayout<Int32>.size)
+                if getsockopt(entry.fd, SOL_SOCKET, SO_ERROR, &error, &length) == 0, error == 0 { done += 1 }
+            }
+        }
+        return done
+    }
+
     @Test func theListenerCanOnlyStartOnce() throws {
         let r = try RemoteHost()
         defer { r.stop() }

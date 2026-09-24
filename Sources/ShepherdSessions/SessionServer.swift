@@ -477,7 +477,9 @@ public final class SessionServer: @unchecked Sendable {
             unlink(socketPath)
             throw SessionServerError.system(call: "chmod", errno: err)
         }
-        guard listen(fd, 16) == 0 else {
+        // At launch every pi's extensions dial in while the queue may be busy decoding
+        // histories; a short backlog refused them. The kernel caps SOMAXCONN.
+        guard listen(fd, SOMAXCONN) == 0 else {
             let err = errno
             close(fd)
             unlink(socketPath)
@@ -670,7 +672,7 @@ public final class SessionServer: @unchecked Sendable {
             close(fd)
             throw SessionServerError.system(call: "bind", errno: err)
         }
-        guard listen(fd, 16) == 0 else {
+        guard listen(fd, SOMAXCONN) == 0 else {
             let err = errno
             close(fd)
             throw SessionServerError.system(call: "listen", errno: err)
@@ -2475,6 +2477,17 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     // MARK: - Queue plumbing
+
+    /// Tests only: parks a block on the server queue until `release` is signalled, and returns
+    /// once the queue is held. Never call it from the server queue.
+    func holdQueue(until release: DispatchSemaphore) async {
+        await withCheckedContinuation { (held: CheckedContinuation<Void, Never>) in
+            queue.async {
+                held.resume()
+                release.wait()
+            }
+        }
+    }
 
     /// Merge only the bindings belonging to PaneIDs that survive a structural
     /// replacement. Layout callers do not own session IDs, so the current
