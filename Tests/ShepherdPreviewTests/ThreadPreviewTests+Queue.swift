@@ -84,7 +84,8 @@ extension ThreadPreviewTests {
         let long = QueueStackFixture(["Don’t touch the migrations in this PR.", "Also cover partial refunds in the tests.",
                                       "Then open a draft PR.", "Use table-driven tests.", "Keep the title short.", "Tag the release."], steering: 1)
         let collapsed = QueueStackFixture(["Also cover partial refunds in the tests.", "Then open a draft PR."])
-        let all = [queued, hovered, steering, editing, deleted, attachments, reordering, long, collapsed]
+        let expanded = QueueStackFixture((1...8).map { "Queued message \($0)" })
+        let all = [queued, hovered, steering, editing, deleted, attachments, reordering, long, collapsed, expanded]
         defer { all.forEach { $0.store.stop() } }
         final class Once { var seeded = false }
         let once = Once()
@@ -99,11 +100,12 @@ extension ThreadPreviewTests {
                 deleted.state.delete(deleted.id(0), store: deleted.store)
                 reordering.state.drag(reordering.id(2).uuidString, by: -46)
                 collapsed.state.collapsed = true
+                expanded.state.toggleExpanded()
             }
             return deleted.state.undo.count == 1 && editing.state.editing != nil && reordering.state.drop != nil
         }) {
             QueueStatesBoard(queued: queued, hovered: hovered, steering: steering, editing: editing, deleted: deleted,
-                             attachments: attachments, reordering: reordering, long: long, collapsed: collapsed)
+                             attachments: attachments, reordering: reordering, long: long, collapsed: collapsed, expanded: expanded)
                 .frame(width: size.width, height: size.height, alignment: .topLeading)
                 .background(Color.nw.bgWindow)
         }
@@ -162,7 +164,7 @@ final class QueueStackFixture {
 }
 
 private struct QueueStatesBoard: View {
-    let queued, hovered, steering, editing, deleted, attachments, reordering, long, collapsed: QueueStackFixture
+    let queued, hovered, steering, editing, deleted, attachments, reordering, long, collapsed, expanded: QueueStackFixture
 
     var body: some View {
         VStack(alignment: .leading, spacing: 36) {
@@ -194,13 +196,14 @@ private struct QueueStatesBoard: View {
                     label("SendMenu (right-click or hold Send)")
                     NWSendMenu(options: Composer.sendOptions(.queue, send: "↩", alternate: "⌘↩"), onChoose: { _ in }, onClose: {})
                 }
+                cell("QueueStack · expanded (scrolls past six)", expanded)
                 VStack(alignment: .trailing, spacing: 10) {
                     label("Queue delivered at turn end · Steer landed mid-turn")
                     NWQueueDivider(count: 2)
                     NWUserBubble("Also cover partial refunds in the tests.", timestamp: "3:04 PM", revealed: true)
                     NWUserBubble("Use table-driven tests, like ledger_test.go.", timestamp: "3:07 PM", revealed: true, origin: .steered)
                 }
-                .frame(width: 620)
+                .frame(width: 520)
             }
         }
         .padding(32)

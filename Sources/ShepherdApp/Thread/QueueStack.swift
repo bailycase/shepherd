@@ -500,7 +500,8 @@ struct QueueStackView: View {
         let actions = QueueRowActions(state: state, store: store, running: running)
         NWQueueStack(count: state.count, paused: store.queuePaused ? (store.queueNotice ?? Self.pausedHelp) : nil,
                      collapsed: state.collapsed,
-                     scrolls: state.expanded && rows.count > NWQueueMetrics.expandedMaxRows, drop: state.dropSlot,
+                     scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > NWQueueMetrics.expandedMaxRows,
+                     drop: state.dropSlot,
                      onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
             ForEach(rows) { row in
                 QueueRowView(row: row, hover: state.hover(row.id), focused: focusedRow.wrappedValue == row.id, running: running,
