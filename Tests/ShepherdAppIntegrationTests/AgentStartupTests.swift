@@ -222,7 +222,9 @@ struct AgentStartupTests {
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent("worker", in: space, piSession: SessionID())
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        let store = NativeThreadStore { _ in
+        let store = NativeThreadStore { duration in
+            // Only the spacing between pushed pulls ever ends: the poll interval never does.
+            guard duration > NativeThreadStore.pushedPullSpacing else { return }
             let (cancelled, continuation) = AsyncStream<Void>.makeStream()
             for await _ in cancelled {}
             continuation.finish()

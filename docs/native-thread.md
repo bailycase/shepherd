@@ -190,9 +190,10 @@ transport differs.
     agent appears, so this is never an error.
   - **Servable signal:** the moment an agent's pi serves (and its pane is bound to that pi,
     whichever comes last), `SessionServer.onNativeThreadServable` tells the local app, once per
-    pi, after the state broadcast of the binding. The app wakes that agent's thread store, which
-    pulls at once instead of at its next poll. Remote clients keep polling; the remote protocol
-    has no push for this.
+    pi, after the state broadcast of the binding. The app hands that agent's thread store a
+    pushed revision (`revisionAvailable()`, below), so a thread on screen pulls at once instead
+    of at its next poll. The opening prompt's wait and the launch queue end on the same signal.
+    Remote clients keep polling; the remote protocol has no push for this.
   - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
     its pi exited (with the exit code, also after the app retired the session).
   - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
@@ -221,8 +222,6 @@ output grows.
 - **Polling:** the visible thread's task polls every 200 ms while pi starts, every 500 ms while
   the agent runs, a question is pending, or a subagent is live, and every 2 s otherwise. Each
   poll passes the last revision; older snapshots are ignored.
-  `wake()` (the servable signal) pulls a visible thread that is not ready yet at once; the polls
-  are the fallback.
 - **Pushed revisions:** `revisionAvailable()` says the host has a newer revision. The running
   poll loop then pulls at once instead of waiting out its pause, pulls once more after a pull
   in flight however many pushes arrive during it, and pulls at most every
