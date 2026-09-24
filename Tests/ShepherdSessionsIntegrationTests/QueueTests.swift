@@ -536,6 +536,48 @@ struct QueueTests {
         #expect(queued.queue?.items.map(\.text) == ["tools:0 first, edited", "tools:0 third"])
         #expect(queued.queue?.mode == .all)
     }
+
+    /// A long history decodes off the server queue, and everything pi wrote after it waits in
+    /// line: the queue goes when pi settles, but the user message pi starts with it is handled
+    /// only after the history, and still finds the delivery it belongs to.
+    @Test func aDeliveryPiStartsBehindALongHistoryWaitsForItAndKeepsItsOrigin() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let armed = Locked(false)
+        let holding = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        h.server.beforeOffQueueDecode = {
+            guard armed.withValue({ armed in defer { armed = false }; return armed }) else { return }
+            holding.signal()
+            release.wait()
+        }
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_HISTORY_BYTES": String(1024 * 1024)])
+        let running = try await startRun(pi)
+        let op = UUID()
+        _ = try await pi.send("tools:0 next", operationID: op, from: running)
+        _ = try await pi.snapshot { $0.queue?.items.count == 1 }
+
+        armed.withValue { $0 = true }
+        pi.finishTool(1)
+        #expect(try await blocking { holding.wait(timeout: .now() + 30) == .success }, "the run's history reached the decoder")
+        _ = try await pi.waitForStdin("prompt", count: 2)
+        let waiting = try await pi.snapshot()
+        #expect(waiting.queue?.items.isEmpty == true, "the queue went when pi settled")
+        #expect(waiting.provisional.contains { $0.entryID == "pending:\(op.uuidString)" })
+        #expect(!waiting.provisional.contains { $0.role == "user" && $0.operationID == op && !$0.entryID.hasPrefix("pending:") },
+                "pi's user message waits behind the history")
+
+        release.signal()
+        let done = try await pi.snapshot("the delivery to settle", timeout: .seconds(30)) { s in
+            !s.running && s.messages.last?.role == "assistant" && s.messages.contains { $0.operationID == op }
+        }
+        let delivered = try #require(done.messages.firstIndex { $0.operationID == op })
+        #expect(done.messages[delivered].origin?.parts?.map(\.id) == [op])
+        let firstReply = try #require(done.messages.firstIndex { $0.blocks.first?.text == "Reply to tools:1 build" })
+        #expect(firstReply < delivered, "the delivery follows the run it waited for")
+        #expect(done.provisional.isEmpty)
+    }
 }
 
 /// The reported bug, end to end: a message whose run adds more than a page of history must
