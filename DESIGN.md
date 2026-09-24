@@ -83,7 +83,8 @@ And the rules that follow from them:
 | `NavigationSplitView` with `.inspector` for the right pane | Shepherd lays the window out itself (`RootView`, `RightPaneSplit`) | Its own adaptive rules (`ShellLayout`) decide what docks and what overlays |
 | Running sidebar rows draw a sparkline | Running rows show elapsed time; `NWSparkline` exists but nothing uses it | Nothing records an agent's tool calls per minute |
 | Queue & steer: Steer "lands after the tool call pi is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | "Lands once pi's current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
-| Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5 | 8 (the composer's), 6, 4 | The radius scale |
+| Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5, the Send menu at 10 | 8 (the composer's), 6, 4, and the popover's 12 | The radius scale |
+| Queue & steer: 5px gaps (the Steering pill, "Steered", "From the queue", a compact chip); 1px lines outside each 40px row, the 32px header and the card | 6 in the pill, 4 elsewhere; lines drawn inside, so three rows make a 152pt stack (the board's 157) | The space scale's 4pt steps; every card and list in the app draws its lines inside (`nwBorder`, `NWHairline` overlays) |
 | Queue & steer: a custom 280pt QueueOptions popover; tooltips with keycaps | The native ••• menu (`NWOptionsMenu`); system tooltips (`.nwHelp`) | As every other ••• and tooltip in the app |
 | Queue & steer: the Send menu beside the card, highlighted in `bgSelected` | Beside the card where the thread has room for it; in a narrower thread above Send, trailing edges aligned, over the trailing end of Up next while it is open; the composer menus' `runningTint` highlight | The app's column is 820pt (the boards' 620), so the room beside it runs out; the menus' one anatomy |
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
@@ -950,8 +951,8 @@ reached pi, except a Steering row.
   hovered or focused: Steer now (Send now while pi is idle), Edit, Delete, 26pt icon buttons
   2pt apart with system tooltips naming their keys. Hovered it is `bgHover`; with keyboard focus
   `bgSelected` with the running focus ring drawn inside it.
-- **A Steering row:** always first, on `runningTint`: a 14pt running spinner in the number's
-  slot, the text, `NWStatusPill(.running, label: "Steering", symbol: "arrow.turn.down.right")`,
+- **A Steering row:** always first, on `runningTint`: a bare 14pt running spinner where a
+  queued row has its number (so its text starts 4pt further left), the text, `NWStatusPill(.running, label: "Steering", symbol: "arrow.turn.down.right")`,
   and Back to the queue (`arrow.uturn.backward`), which returns it to the queue as #1 until pi
   reads it. It has no grip, Edit, or Delete.
 - **Editing** (`NWQueueEditor`): the text or the pencil (or ↑ in an empty composer, for the last
