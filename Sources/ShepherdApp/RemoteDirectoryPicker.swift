@@ -18,6 +18,41 @@ enum DirectoryCompletion {
     }
 }
 
+/// What the directory picker lists for a typed filter.
+enum DirectoryFilter {
+    /// Hidden dirs shown only on request (or when the typed filter asks for them), narrowed
+    /// with shell-like fuzzy matching. Prefix matches sort first, followed by subsequence
+    /// matches in directory-name order.
+    static func visible(_ dirs: [String], filter: String, showHidden: Bool) -> [String] {
+        let shown = dirs.filter { !$0.hasPrefix(".") }
+        let all = (showHidden || filter.hasPrefix("."))
+            ? shown + dirs.filter { $0.hasPrefix(".") }
+            : shown
+        guard !filter.isEmpty else { return all }
+        let query = filter.lowercased()
+        // Each name lowercased once, not once per comparison.
+        return all
+            .map { (name: $0, lowered: $0.lowercased()) }
+            .filter { fuzzyMatches(query, in: $0.lowered) }
+            .map { (name: $0.name, prefix: $0.lowered.hasPrefix(query)) }
+            .sorted { lhs, rhs in
+                if lhs.prefix != rhs.prefix { return lhs.prefix }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+            .map(\.name)
+    }
+
+    /// `query`'s characters appear in `candidate` in order (both already lowercased).
+    static func fuzzyMatches(_ query: String, in candidate: String) -> Bool {
+        var remaining = candidate[...]
+        for character in query {
+            guard let match = remaining.firstIndex(of: character) else { return false }
+            remaining = remaining[remaining.index(after: match)...]
+        }
+        return true
+    }
+}
+
 /// The same directory listing the host serves remotely, for this Mac — so
 /// local and remote space pickers are one UI with two listing sources.
 enum LocalDirectoryLister {
@@ -82,24 +117,9 @@ struct RemoteDirectoryPicker: View {
         let showHidden: Bool
     }
 
-    /// Hidden dirs shown only on request (or when the typed filter asks for
-    /// them), narrowed with shell-like fuzzy matching. Prefix matches sort
-    /// first, followed by subsequence matches in directory-name order.
-    private var visibleDirs: [String] {
-        let visible = dirs.filter { !$0.hasPrefix(".") }
-        let all = (showHidden || filter.hasPrefix("."))
-            ? visible + dirs.filter { $0.hasPrefix(".") }
-            : visible
-        guard !filter.isEmpty else { return all }
-        return all
-            .filter { fuzzyMatches(filter, in: $0) }
-            .sorted { lhs, rhs in
-                let leftPrefix = lhs.lowercased().hasPrefix(filter.lowercased())
-                let rightPrefix = rhs.lowercased().hasPrefix(filter.lowercased())
-                if leftPrefix != rightPrefix { return leftPrefix }
-                return lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
-            }
-    }
+    /// The listing as shown, derived when the directories, the typed filter, or the hidden
+    /// toggle change, never per render: a big folder is thousands of names to filter and sort.
+    @State private var visibleDirs: [String] = []
 
     var body: some View {
         let visible = visibleDirs
@@ -166,6 +186,13 @@ struct RemoteDirectoryPicker: View {
             pathFocused = true
             load(startPath)
         }
+        .onChange(of: dirs) { refreshVisible() }
+        .onChange(of: filter) { refreshVisible() }
+        .onChange(of: showHidden) { refreshVisible() }
+    }
+
+    private func refreshVisible() {
+        visibleDirs = DirectoryFilter.visible(dirs, filter: filter, showHidden: showHidden)
     }
 
     /// Live-sync the listing with the field: everything before the last "/"
@@ -185,22 +212,12 @@ struct RemoteDirectoryPicker: View {
     /// Tab completes a unique match fully. Ambiguous matches advance only to
     /// their shared prefix, keeping every remaining option visible.
     private func completePath() {
-        guard !loading, !filter.isEmpty, !visibleDirs.isEmpty else { return }
-        let component = DirectoryCompletion.component(for: filter, matches: visibleDirs)
+        // From the current inputs: the derived listing may not have caught up with the last key.
+        let matches = DirectoryFilter.visible(dirs, filter: filter, showHidden: showHidden)
+        guard !loading, !filter.isEmpty, !matches.isEmpty else { return }
+        let component = DirectoryCompletion.component(for: filter, matches: matches)
         guard component != filter else { return }
         pathDraft = (path as NSString).appendingPathComponent(component)
-    }
-
-    private func fuzzyMatches(_ query: String, in candidate: String) -> Bool {
-        let candidateCharacters = Array(candidate.lowercased())
-        var candidateIndex = 0
-        for character in query.lowercased() {
-            guard let match = candidateCharacters[candidateIndex...].firstIndex(of: character) else {
-                return false
-            }
-            candidateIndex = match + 1
-        }
-        return true
     }
 
     /// One ⏎ chooses: an exact or unique match under the current listing, or
@@ -208,7 +225,7 @@ struct RemoteDirectoryPicker: View {
     private func submit() {
         guard !path.isEmpty else { return }
         if filter.isEmpty { choose(path); return }
-        let matches = visibleDirs
+        let matches = DirectoryFilter.visible(dirs, filter: filter, showHidden: showHidden)
         if let exact = matches.first(where: { $0.lowercased() == filter.lowercased() }) ?? (matches.count == 1 ? matches[0] : nil) {
             choose((path as NSString).appendingPathComponent(exact))
         } else {

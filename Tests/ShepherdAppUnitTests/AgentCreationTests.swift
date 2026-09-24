@@ -146,6 +146,22 @@ struct AgentCreationTests {
         #expect(DirectoryCompletion.component(for: query, matches: matches) == completion)
     }
 
+    /// Hidden folders only on request or when the filter starts with a dot; prefix matches
+    /// first, then scattered ones, each in name order.
+    @Test(arguments: [
+        ("", false, ["apps", "Developer", "docs"]),
+        ("", true, ["apps", "Developer", "docs", ".cache", ".config"]),
+        (".c", false, [".cache", ".config"]),
+        ("d", false, ["Developer", "docs"]),
+        ("do", false, ["docs", "Developer"]),
+        ("DEV", false, ["Developer"]),
+        ("zz", false, []),
+    ] as [(String, Bool, [String])])
+    func theDirectoryListingNarrowsToTheFilter(filter: String, showHidden: Bool, listed: [String]) {
+        let dirs = ["apps", "Developer", "docs", ".cache", ".config"]
+        #expect(DirectoryFilter.visible(dirs, filter: filter, showHidden: showHidden) == listed)
+    }
+
     // MARK: Worktree paths
 
     /// A worktree is a sibling of the checkout; branch slashes never become directories.
