@@ -286,18 +286,16 @@ struct ListPerformanceReport {
         report.add(name + " ↑", scroll: up)
         report.add(name, "scroll: rows", counts: scrolling)
 
-        // Live reloads that append a turn each: the view's update after each.
-        var reloads: [Double] = []
+        // Live reloads that append a turn each, while the reader is up the transcript.
         let appending = try await countingAsync {
             for index in 0..<5 {
                 let before = pages
                 messages += [ListFixtures.message("x\(index)u", "user", "One more thing"),
                              ListFixtures.message("x\(index)a", "assistant", ListFixtures.answer)]
-                try await eventuallyOnMain("the next page") { pages > before }
-                reloads.append(ListPerf.time(window))
+                try await eventuallyOnMain("the next page") { pages > before + 1 }
+                ListPerf.settle(window)
             }
         }
-        report.add(name, "a reload appends a turn ×5: view update mean", ms: reloads.reduce(0, +) / Double(reloads.count))
         report.add(name, "a reload appends a turn ×5: rows", counts: appending)
     }
 
