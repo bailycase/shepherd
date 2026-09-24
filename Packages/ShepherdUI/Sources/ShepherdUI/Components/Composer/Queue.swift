@@ -160,7 +160,8 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
     @ViewBuilder let options: () -> Options
 
     /// `count` is every message in the queue, steering ones included. `paused` says why the
-    /// queue waits (its tooltip), when it does. `scrolls` caps the rows at `expandedMaxRows`.
+    /// queue waits (its tooltip), when it does. `scrolls` caps the rows at `expandedMaxRows` and
+    /// scrolls them, keeping the last row ("Show fewer") below.
     /// `drop` draws a drag's lantern drop line at the top of that row's slot, over every row,
     /// the lifted one too.
     public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil,
@@ -181,12 +182,17 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
         VStack(spacing: 0) {
             NWQueueHeader(count: count, paused: paused, collapsed: collapsed, onToggle: onToggle, options: options)
             if !collapsed {
-                Group {
-                    if scrolls {
-                        ScrollView { list }
-                            .frame(height: CGFloat(NWQueueMetrics.expandedMaxRows) * NWQueueMetrics.rowHeight)
-                    } else {
-                        list
+                Group(subviews: rows()) { subviews in
+                    // Scrolling, the last row ("Show fewer") stays under the rows that scroll.
+                    let pinned = scrolls ? subviews.last : nil
+                    VStack(spacing: 0) {
+                        if scrolls {
+                            ScrollView { list(subviews.dropLast(), first: subviews.first?.id) }
+                                .frame(height: CGFloat(NWQueueMetrics.expandedMaxRows) * NWQueueMetrics.rowHeight)
+                        } else {
+                            list(subviews[...], first: subviews.first?.id)
+                        }
+                        if let pinned { pinned.overlay(alignment: .top) { NWHairline() } }
                     }
                 }
                 .overlay(alignment: .top) { NWHairline() }
@@ -199,14 +205,12 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The rows, a hairline above each but the first, and the drop line over them.
-    private var list: some View {
+    /// Rows, a hairline above each but the first, and the drop line over them.
+    private func list(_ rows: SubviewsCollection.SubSequence, first: Subview.ID?) -> some View {
         VStack(spacing: 0) {
-            Group(subviews: rows()) { subviews in
-                ForEach(subviews) { subview in
-                    subview.overlay(alignment: .top) {
-                        if subview.id != subviews.first?.id { NWHairline() }
-                    }
+            ForEach(rows) { subview in
+                subview.overlay(alignment: .top) {
+                    if subview.id != first { NWHairline() }
                 }
             }
         }
