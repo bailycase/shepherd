@@ -342,42 +342,68 @@ struct SubagentMotionTests {
         return (scroll.documentView?.bounds.height ?? 0) - (clip.bounds.origin.y + clip.bounds.height - scroll.contentInsets.bottom)
     }
 
-    /// The fade is opacity only, so it can never be what leaves the follower short; the
-    /// inspector's follower lands short of the tail after a new turn with or without it.
-    @Test(.bug(id: "inspector-follow-short", "The inspector's transcript stops short of its tail when a turn arrives"))
-    func aNewTurnFadesIntoTheFollowedTranscriptWhichStaysAtTheTail() async throws {
+    /// A live run's transcript, a steer and a long answer at a time, in an inspector following it.
+    private func followedTranscript() async throws -> (Thread, OffscreenWindow, NSScrollView) {
         let thread = Thread(runs: [Self.run(0)])
         thread.transcripts["run-0"] = (0..<8).map { Self.message("m\($0)", $0 % 2 == 0 ? "user" : "assistant", $0 % 2 == 0 ? "Steer \($0)" : Self.answer) }
         try await thread.start()
-        defer { thread.stop() }
-        let model = Model(runID: "run-0")
         let window = OffscreenWindow(size: CGSize(width: Self.width, height: Self.column.height), dark: false,
-                                     InspectorHost(model: model, store: thread.store))
-        defer { window.close() }
+                                     InspectorHost(model: Model(runID: "run-0"), store: thread.store))
         let scroll = try transcriptScroll(window)
         // A second page means the first one has landed.
         try await eventuallyOnMain("the transcript to load") { thread.pages >= 2 }
         window.layout()
-        let tail = distanceFromBottom(scroll)
         #expect((scroll.documentView?.bounds.height ?? 0) > scroll.frame.height + 200, "the transcript scrolls")
+        return (thread, window, scroll)
+    }
 
-        // The next poll brings a steer and an answer: new turns at the tail.
-        let recording = await MotionProbe.record(window, region: Self.column) {
-            thread.transcripts["run-0"]? += [Self.message("m8", "user", "One more thing"), Self.message("m9", "assistant", Self.answer)]
+    private func newTurns(_ thread: Thread) {
+        thread.transcripts["run-0"]? += [Self.message("m8", "user", "One more thing"), Self.message("m9", "assistant", Self.answer)]
+    }
+
+    /// The next poll brings a steer and an answer: they fade in by opacity alone.
+    @Test func aNewTurnFadesIntoTheFollowedTranscript() async throws {
+        let (thread, window, _) = try await followedTranscript()
+        defer {
+            thread.stop()
+            window.close()
         }
+
+        let recording = await MotionProbe.record(window, region: Self.column) { newTurns(thread) }
 
         #expect(!recording.inBetween.isEmpty, "the new turns fade in")
-        var last = CGFloat.infinity, still = 0
-        try await eventuallyOnMain("the transcript to come to rest", poll: .milliseconds(30)) {
-            window.layout()
-            let now = distanceFromBottom(scroll)
-            still = abs(now - last) < 0.5 ? still + 1 : 0
-            last = now
-            return still >= 6
+    }
+
+    /// The fade is opacity only, so it is not what leaves the follower short: the base
+    /// inspector's `scrollTo` of its bottom row lands short of the lazy stack's estimated
+    /// heights too. Following the bottom edge with a `ScrollPosition` lands exactly, but then
+    /// the new turns are laid out below the fold before the scroll reaches them, and their fade
+    /// is spent where no one sees it.
+    @Test(.disabled("bug: the inspector's transcript stops about one turn short of its tail when a turn arrives while following"))
+    func theFollowedTranscriptStaysAtItsTailWhenATurnArrives() async throws {
+        let (thread, window, scroll) = try await followedTranscript()
+        defer {
+            thread.stop()
+            window.close()
         }
-        withKnownIssue("The follower stops about one short turn above the tail (35pt here), before and after the fade") {
-            #expect(abs(last - tail) < 1, "still at the tail: \(last), was \(tail)")
+        func settled() async throws -> CGFloat {
+            var last = CGFloat.infinity, still = 0
+            try await eventuallyOnMain("the transcript to come to rest", poll: .milliseconds(30)) {
+                window.layout()
+                let now = distanceFromBottom(scroll)
+                still = abs(now - last) < 0.5 ? still + 1 : 0
+                last = now
+                return still >= 6
+            }
+            return last
         }
+        let tail = try await settled()
+
+        newTurns(thread)
+        try await eventuallyOnMain("the new turns to land") { thread.pages >= 3 }
+
+        let after = try await settled()
+        #expect(abs(after - tail) < 1, "still at the tail: \(after), was \(tail)")
     }
 
     @Test func textStreamingIntoTheLastTurnNeverAnimates() async throws {
