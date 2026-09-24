@@ -367,6 +367,9 @@ jobs:
     # xcode-27 label is in preview, so this job may queue.
     runs-on: xcode-27
     timeout-minutes: 60
+    # Read-only: the archive runs package plugins and macros, and nothing here writes the repo.
+    permissions:
+      contents: read
     env:
       # Never a beta Xcode: App Store Connect refuses its builds (ITMS-90534).
       DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
@@ -380,6 +383,8 @@ jobs:
       BUILD: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Xcode
         run: |
