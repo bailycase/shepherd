@@ -54,10 +54,6 @@ terminal `attach`, `input`, or `resize` requests, and that it polled or fetched 
 | `FIXTURE_SCHEME` | `light`, or dark (default) |
 | `FIXTURE_SHOT` | screenshot path (default `/tmp/shepherd-ios-thread-fixture.png`) |
 
-`screenshots/` holds renders from the September 2026 MVP work: `agents-{dark,light}.png`,
-`polished-thread-{dark,light}.png`, `fleet.png`, `native-thread.png`, and `confirm.png`. They
-predate the RPC-only host and the macOS redesign. Treat them as history, not as a reference.
-
 ## Not yet validated
 
 - A real pi session driven from a phone against the current RPC host.
