@@ -72,9 +72,9 @@ enum PiSessionFile {
         return directory.appendingPathComponent(name)
     }
 
-    /// How much of a session file `hasRuntimeState` reads: the header line and the start of
-    /// whatever follows it. Long sessions run to tens of megabytes, and reading one whole on
-    /// every launch held the app's launch up for seconds.
+    /// How much of a session file `hasRuntimeState` reads at a time: the header line and the
+    /// start of whatever follows it, unless the header is longer. Long sessions run to tens of
+    /// megabytes, and reading one whole on every launch held the app's launch up for seconds.
     static let runtimeStateProbeBytes = 64 * 1024
 
     /// True when pi has actually written events into the session (model and
@@ -90,10 +90,18 @@ enum PiSessionFile {
         guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot),
               let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
-        let head = (try? handle.read(upToCount: runtimeStateProbeBytes)) ?? Data()
-        // Anything after the header line (a trailing partial line included) is pi's.
-        guard let newline = head.firstIndex(of: UInt8(ascii: "\n")) else { return false }
-        return head.index(after: newline) < head.endIndex
+        // Any byte after the header's newline is pi's (a trailing partial line included). A
+        // restored agent's session can run to many megabytes; only its first line matters, and
+        // reading goes on past the first chunk only while no newline has been seen.
+        var headerEnded = false
+        while let chunk = try? handle.read(upToCount: runtimeStateProbeBytes), !chunk.isEmpty {
+            if headerEnded { return true }
+            if let newline = chunk.firstIndex(of: UInt8(ascii: "\n")) {
+                if chunk.index(after: newline) < chunk.endIndex { return true }
+                headerEnded = true
+            }
+        }
+        return false
     }
 
     /// The agent's thread as its session file holds it, to show while pi starts
