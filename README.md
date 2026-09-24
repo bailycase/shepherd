@@ -72,19 +72,28 @@ Shepherd to Applications. Updates arrive through Sparkle on the channel you choo
 Settings ▸ Advanced:
 
 - **Stable:** tagged releases.
-- **Release Candidate** or **Beta:** pre-releases. Both also receive newer stable builds, so you
-  are never stranded behind a hotfix.
-- **Nightly:** every push to the integration branch, least tested.
+- **Beta:** pre-releases. Beta also receives newer stable builds, so you are never stranded
+  behind a hotfix.
+
+**Shepherd Nightly** is a separate app built from every push to the integration branch, and the
+least tested. Download `Shepherd-Nightly.dmg` from the newest
+[nightly release](../../releases?q=nightly&expanded=true). It installs beside Shepherd and keeps
+its own agents, settings and support folder (`~/Library/Application Support/Shepherd Nightly`),
+so the two run at once. It updates only to newer Shepherd Nightly builds.
+
+A copy of Shepherd that rode the old Nightly or Release Candidate channels moves to Beta on its
+next update, and a former nightly rider is told once where nightly builds went.
 
 ## Build from source
 
-Open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. There are two Mac schemes, so
-that a development build never shares state with your everyday copy:
+Open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. There are three Mac schemes,
+so that a development build never shares state with your everyday copy:
 
-| Scheme | Config | State directory |
-| --- | --- | --- |
-| `Shepherd (Dev)` | Debug | `~/Library/Application Support/Shepherd-dev` |
-| `Shepherd (Prod)` | Release | `~/Library/Application Support/Shepherd` |
+| Scheme | Config | Builds | State directory |
+| --- | --- | --- | --- |
+| `Shepherd (Dev)` | Debug | Shepherd | `~/Library/Application Support/Shepherd-dev` |
+| `Shepherd (Prod)` | Release | Shepherd | `~/Library/Application Support/Shepherd` |
+| `Shepherd (Nightly)` | Nightly | Shepherd Nightly | `~/Library/Application Support/Shepherd Nightly` |
 
 To build from the command line, and to build and test the libraries with SwiftPM:
 
@@ -105,8 +114,8 @@ herdr workspaces and pi sessions.
 ## Remote access
 
 1. **On the Mac that runs the agents (the host):** turn on Settings ▸ Remote ▸ Serve this Mac.
-   It listens on TCP port 7433 on all interfaces. The Token row reveals the `remote-token` file;
-   copy its contents.
+   It listens on TCP port 7433 on all interfaces (Shepherd Nightly: 7434). The Token row reveals
+   the `remote-token` file; copy its contents.
 2. **On the other Mac:** in Settings ▸ Remote ▸ Add host, enter a name, the host's VPN-reachable
    address, the port, and the token. The host's agents appear as their own section in the
    sidebar, with the same rows and threads.
