@@ -21,7 +21,7 @@ struct DataPathBenchmarks {
     @Test(arguments: [1, 4, 12])
     func historyDecodeAndProjection(megabytes: Int) throws {
         let line = try Bench.responseLine(Bench.history(targetBytes: megabytes << 20))
-        var decode: [Double] = [], project: [Double] = []
+        var decode: [Double] = [], project: [Double] = [], release: [Double] = []
         var count = 0
         for _ in 0..<5 {
             var messages: [RPCMessage] = []
@@ -33,10 +33,12 @@ struct DataPathBenchmarks {
             project.append(Bench.time {
                 _ = messages.enumerated().map { RPCThreadState.project(entryID: "m:\($0.offset)", message: $0.element) }
             })
+            release.append(Bench.time { messages = [] })
         }
         let mib = String(format: "%.1fMiB", Double(line.count) / 1_048_576)
         Bench.report("history.\(mib).decode", Bench.median(decode), "ms", "messages=\(count)")
         Bench.report("history.\(mib).project", Bench.median(project), "ms")
+        Bench.report("history.\(mib).release", Bench.median(release), "ms")
         Bench.report("history.\(mib).total", Bench.median(decode) + Bench.median(project), "ms")
     }
 
