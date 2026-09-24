@@ -369,4 +369,16 @@ struct ThreadScrollingTests {
         try await eventuallyOnMain("sending to bring the view back to the tail") { thread.distanceFromBottom < 2 }
         #expect(thread.trailingSpace <= AppLayout.turnSpacing * 2 + 13)
     }
+
+    /// A code block scrolls sideways only when its longest line is wider than the column; one
+    /// that fits draws its code with no scroll view, at the same place.
+    @Test(arguments: [false, true]) func aCodeBlockScrollsSidewaysOnlyWhenItsLinesDoNotFit(wide: Bool) {
+        let line = wide ? String(repeating: "let value = compute(value) ", count: 20) : "let value = compute(value)"
+        let window = OffscreenWindow(size: CGSize(width: 500, height: 200), dark: false,
+                                     NWCodeBlock(line, language: "swift").frame(width: 460).padding(20))
+        defer { window.close() }
+        ListPerf.settle(window)
+        func scrollViews(_ view: NSView) -> Int { (view is NSScrollView ? 1 : 0) + view.subviews.map(scrollViews).reduce(0, +) }
+        #expect(scrollViews(window.host) == (wide ? 1 : 0))
+    }
 }
