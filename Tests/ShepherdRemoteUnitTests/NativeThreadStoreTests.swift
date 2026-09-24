@@ -764,6 +764,26 @@ struct NativeThreadStoreTests {
         #expect(store.snapshot?.revision == 2)
     }
 
+    /// The store says when its poll loop starts and ends, so the host pushes revisions only for
+    /// threads on screen.
+    @Test func aStoreSaysWhileItsThreadIsOnScreen() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(Pauses())
+        var changes: [Bool] = []
+        store.onLiveChange = { changes.append($0) }
+        let task = await start(store, host)
+        #expect(store.isLive && changes == [true])
+
+        store.suspend()
+        #expect(!store.isLive && changes == [true, false])
+        task.cancel()
+        await task.value
+        let shownAgain = await start(store, host)
+        store.stop()
+        #expect(changes == [true, false, true, false])
+        shownAgain.cancel()
+    }
+
     /// A thread off screen has no poll loop: a push neither pulls nor leaves a pull owed for
     /// when it is shown again.
     @Test func aSuspendedStoreIgnoresPushes() async {

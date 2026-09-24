@@ -199,6 +199,7 @@ struct TerminalSessionStoreTests {
         #expect(session.phase == .exited(3))
     }
 
+    /// A watched agent's revisions reach the store's callback.
     @Test func anAgentsThreadRevisionsAreForwardedByTheStore() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -210,6 +211,7 @@ struct TerminalSessionStoreTests {
         store.onThreadRevision = { revised.append($0) }
         let snapshot = try await app.readyThread(agent.agent.id)
         revised.removeAll()
+        store.watchThreadRevisions(of: [agent.agent.id])
 
         _ = try await app.server.nativeThread(agentID: agent.agent.id, request: .send(
             expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(), text: "hello", delivery: .followUp))

@@ -239,7 +239,8 @@ final class TerminalSessionStore {
     var onAgentChildren: ((AgentID, [ChildRun]) -> Void)?
     /// Fired when an agent's notify tool asks for a system notification.
     var onNotify: ((AgentID, String, String) -> Void)?
-    /// Fired when an agent's native thread has a new revision to fetch.
+    /// Fired when a watched agent's native thread has a new revision to fetch, at most once per
+    /// display frame (`SessionServer.onThreadRevision`).
     var onThreadRevision: ((AgentID) -> Void)?
     /// Fired when a pane's process exits, after the local session is marked
     /// exited and before it is dropped from the store.
@@ -325,6 +326,11 @@ final class TerminalSessionStore {
                 if self?.servableWaiters[agentID]?.isEmpty == true { self?.servableWaiters.removeValue(forKey: agentID) }
             }
         }
+    }
+
+    /// The agents whose thread is on screen: only their revisions are pushed (`onThreadRevision`).
+    func watchThreadRevisions(of agentIDs: Set<AgentID>) {
+        server.watchThreadRevisions(of: agentIDs)
     }
 
     /// Kick off bootstrap without waiting for a pane to appear.

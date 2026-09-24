@@ -63,7 +63,9 @@ The iOS target compiles `App/iOS` against Core, Protocol, and Remote only.
 (spaces, per-agent layout tabs, agents, automations) and every live session. One serial queue
 owns all server state. Each session's internal queue targets that queue, so session callbacks,
 extension handlers, and remote connections are mutually exclusive without locks. Callbacks
-(`onStateChanged`, `onOutput`, `onThreadRevision`, …) hop to the main queue in FIFO order.
+(`onStateChanged`, `onOutput`, …) hop to the main queue in FIFO order. `onThreadRevision` is the
+exception: a hint to pull, delivered at most once per display frame and only for the agents the
+app watches (its threads on screen).
 Nothing waits on the queue from outside: `SessionServer.state` returns the copy `StateStore`
 publishes under a lock as it commits, and an RPC record of 256 KiB or more (a long history)
 decodes on a concurrent queue while its session holds its later records in order.
@@ -122,9 +124,11 @@ beside the thread never narrows what the dock rule measures.
 pi --mode rpc  (/bin/zsh -l -c, --session-id, -e extensions)
   → RPCSession        stdin/stdout JSONL; stdout records up to 256 MiB, long ones decoded off the queue
   → RPCThreadState    events → bounded, revisioned NativeThreadSnapshot (rows hashed and sized once);
-                      requests → RPC commands; each new revision pushed as onThreadRevision
+                      requests → RPC commands; each new revision of a thread on screen pushed
+                      as onThreadRevision, at most once per frame
   → SessionServer.nativeThread (local, direct)  |  RemoteRequest.nativeThread (TCP)
-  → NativeThreadStore (poll, page, echo, settle; derive rows, activity lines, placements)
+  → NativeThreadStore (poll, or pull on a push; page, echo, settle; derive rows, activity lines,
+                      placements)
   → ThreadView · Composer · Subagents · SubagentInspector
 ```
 

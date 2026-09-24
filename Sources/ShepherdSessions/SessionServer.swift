@@ -198,10 +198,14 @@ public final class SessionServer: @unchecked Sendable {
     /// to it (whichever comes last), after the state broadcast of that binding. Delivered on
     /// the main actor, so a local thread need not wait for its next poll.
     public var onNativeThreadServable: ((AgentID) -> Void)?
-    /// An agent's native thread moved to a new revision, or its pane was bound to a pi. Delivered
-    /// on the main actor in FIFO order with the other callbacks; every agent revised while one
-    /// delivery waits for the main queue rides that delivery, so a burst costs one main hop.
+    /// A watched agent's native thread (`watchThreadRevisions`) moved to a new revision, or its
+    /// pane was bound to a pi. Delivered on the main actor, at most once per display frame
+    /// (`revisionPushSpacing`): every agent revised while one delivery waits rides it, so a
+    /// streaming turn costs a main hop per frame, and an agent no one watches costs none. A hint
+    /// to pull, not state: it may land after callbacks the server queued later.
     public var onThreadRevision: ((AgentID) -> Void)?
+    /// The shortest time between two `onThreadRevision` deliveries: one display frame.
+    public static let revisionPushSpacing: DispatchTimeInterval = .microseconds(16_667)
     /// A Shepherd agent asked to see, message, or spawn peer threads.
     /// Forwarded to the GUI like pane requests. Delivered on the main actor;
     /// the completion may be called from any thread.
@@ -333,26 +337,40 @@ public final class SessionServer: @unchecked Sendable {
         }
     }
 
-    /// Agents whose thread revised since the last main-queue delivery: filled on the server
-    /// queue, drained on the main queue.
+    /// Watched agents whose thread revised since the last main-queue delivery: filled on the
+    /// server queue, drained on the main queue, which also sets what is watched.
     private final class RevisedThreads: @unchecked Sendable {
         private let lock = NSLock()
         private var order: [AgentID] = []
         private var members: Set<AgentID> = []
+        private var watched: Set<AgentID> = []
+        private var lastDelivery: DispatchTime?
 
-        /// True for the first agent since the last drain, whose caller schedules the delivery.
-        func insert(_ agentID: AgentID) -> Bool {
+        func watch(_ agentIDs: Set<AgentID>) {
             lock.lock()
             defer { lock.unlock() }
-            guard members.insert(agentID).inserted else { return false }
-            order.append(agentID)
-            return order.count == 1
+            watched = agentIDs
         }
 
+        /// When to deliver, for the first watched agent since the last drain: a frame after the
+        /// last delivery, or now. Nil when the agent is not watched or a delivery is scheduled.
+        func insert(_ agentID: AgentID) -> DispatchTime? {
+            lock.lock()
+            defer { lock.unlock() }
+            guard watched.contains(agentID), members.insert(agentID).inserted else { return nil }
+            order.append(agentID)
+            guard order.count == 1 else { return nil }
+            let now = DispatchTime.now()
+            guard let lastDelivery else { return now }
+            return max(now, lastDelivery + SessionServer.revisionPushSpacing)
+        }
+
+        /// The agents to tell the app about now, those still watched.
         func drain() -> [AgentID] {
             lock.lock()
             defer { lock.unlock() }
-            let drained = order
+            lastDelivery = .now()
+            let drained = order.filter(watched.contains)
             order.removeAll()
             members.removeAll()
             return drained
@@ -2594,15 +2612,23 @@ public final class SessionServer: @unchecked Sendable {
         return sessionAgents?.agents[sessionID]
     }
 
-    /// Server queue: tell the app an agent's thread revised, coalescing a burst into one hop.
+    /// Server queue: tell the app a watched agent's thread revised, coalescing everything up to a
+    /// frame after the last delivery into one hop. The delivery is a hint to pull, so unlike
+    /// `hopToMain` it need not keep its place among the other callbacks.
     private func threadRevised(sessionID: SessionID) {
-        guard let agentID = agentID(forSession: sessionID), revisedThreads.insert(agentID) else { return }
-        hopToMain { [weak self] in
+        guard let agentID = agentID(forSession: sessionID), let deadline = revisedThreads.insert(agentID) else { return }
+        DispatchQueue.main.asyncAfter(deadline: deadline) { [weak self] in
             guard let self else { return }
             for agentID in self.revisedThreads.drain() {
                 self.onThreadRevision?(agentID)
             }
         }
+    }
+
+    /// The agents whose revisions `onThreadRevision` reports: the app's threads on screen (their
+    /// stores' poll loops run). Replaces the last set; none are watched until the app says.
+    public func watchThreadRevisions(of agentIDs: Set<AgentID>) {
+        revisedThreads.watch(agentIDs)
     }
 
     /// Server queue: the RPC thread state behind an agent's pane, if it is an RPC agent.

@@ -357,8 +357,8 @@ struct NativeThreadTests {
 
     // MARK: - Revision pushes
 
-    /// A thread's new revisions reach the app on the main queue for that agent alone, never in
-    /// more hops than revisions, and nothing is pushed while nothing changes.
+    /// A watched thread's new revisions reach the app on the main queue for that agent alone,
+    /// never in more hops than revisions, and nothing is pushed while nothing changes.
     @Test func revisionsArePushedForTheirAgentOnlyAndNeverWhileIdle() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
@@ -376,7 +376,8 @@ struct NativeThreadTests {
         }
         _ = try await settled(bystander)
         let idle = try await settled(pi)
-        // A reply hops to the main queue after every push its queue turn follows.
+        // Watched from here, so no push from the bootstrap is still on its way.
+        h.server.watchThreadRevisions(of: [pi.agent.id, bystander.agent.id])
         let quiet = pushes.current.count
 
         for _ in 0..<10 { _ = try await pi.request(.snapshot(expectedSessionID: idle.piSessionID, afterRevision: idle.revision)) }
@@ -409,6 +410,7 @@ struct NativeThreadTests {
         try await h.server.updatePaneSession(tabID: pi.agent.tabID, paneID: paneID, sessionID: nil)
         await drainMainQueue()
         pushes.withValue { $0.removeAll() }
+        h.server.watchThreadRevisions(of: [pi.agent.id])
 
         try await h.server.updatePaneSession(tabID: pi.agent.tabID, paneID: paneID, sessionID: pi.sessionID)
         try await eventually("the binding's push") { !pushes.current.isEmpty }
@@ -417,6 +419,37 @@ struct NativeThreadTests {
             Issue.record("the thread revised after it settled, so the push proves nothing")
             return
         }
+    }
+
+    /// Only the agents the app watches (its threads on screen) are pushed, and a reply streaming
+    /// faster than the display costs at most one main-queue hop per frame.
+    @Test func revisionsArePushedOnlyForWatchedAgentsAtMostOncePerFrame() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pushes = Locked<[(agentID: AgentID, at: UInt64)]>([])
+        h.server.onThreadRevision = { agentID in
+            pushes.withValue { $0.append((agentID, DispatchTime.now().uptimeNanoseconds)) }
+        }
+        let pi = try await PiAgent.launch(on: h)
+        let idle = try await pi.snapshot("the bootstrap to land") { !$0.messages.isEmpty && $0.stats != nil && $0.commands != nil }
+
+        _ = try await pi.send("stream", from: idle)
+        let unwatched = try await pi.snapshot("the unwatched reply to settle") { !$0.running && $0.messages.count == idle.messages.count + 2 }
+        #expect(pushes.current.isEmpty, "no one watches this thread")
+
+        h.server.watchThreadRevisions(of: [pi.agent.id])
+        _ = try await pi.send("stream", from: unwatched)
+        let watched = try await pi.snapshot("the watched reply to settle") { !$0.running && $0.messages.count == unwatched.messages.count + 2 }
+        try await eventually("the reply's pushes") { !pushes.current.isEmpty }
+        let times = pushes.current.map(\.at)
+        #expect(pushes.current.allSatisfy { $0.agentID == pi.agent.id })
+        #expect(UInt64(times.count) < watched.revision - unwatched.revision, "a frame's revisions ride one push")
+        // Forty deltas 2 ms apart span several frames: more than one push, a frame apart. Each is
+        // stamped when its callback runs, which a busy machine can delay past the delivery, so
+        // the count is held to the span with a frame to spare rather than each gap measured.
+        if TimingTests.enabled { #expect(times.count >= 2, "\(times.count) pushes") }
+        let span = Double((times.last ?? 0) - (times.first ?? 0)) / 1_000_000
+        #expect(Double(times.count) <= span / 16.667 + 2, "\(times.count) pushes in \(span) ms")
     }
 
     // MARK: - Subagents

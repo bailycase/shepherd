@@ -169,7 +169,14 @@ public final class NativeThreadStore {
         self.pause = pause
     }
 
-    @ObservationIgnored private var request: Request?
+    @ObservationIgnored private var request: Request? {
+        didSet { if (request != nil) != (oldValue != nil) { onLiveChange?(request != nil) } }
+    }
+    /// Told when the poll loop starts (true: the thread is on screen) and when it ends, so the
+    /// host pushes revisions only for threads on screen (`revisionAvailable`).
+    @ObservationIgnored public var onLiveChange: ((Bool) -> Void)?
+    /// The poll loop runs: the thread is on screen, and a pushed revision pulls it.
+    public var isLive: Bool { request != nil }
     /// When the current stretch of `native_starting` answers began.
     @ObservationIgnored private var startingSince: ContinuousClock.Instant?
     /// Sends waiting for pi to start: resumed with true once the thread is ready, false when it

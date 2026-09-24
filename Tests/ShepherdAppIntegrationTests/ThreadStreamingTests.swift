@@ -62,6 +62,42 @@ struct ThreadStreamingTests {
         #expect(MainThreadCPU.median(gaps) <= 50, "median gap: \(gaps) ms")
     }
 
+    /// A local agent's thread on screen takes each revision its pi reaches from the server's push
+    /// (the server, the session store, the view model, the thread store): this store's poll
+    /// interval never ends, so only a push can bring the reply in. Off screen, the server is told
+    /// to push nothing.
+    @Test func aLocalThreadOnScreenTakesItsPisRevisionsFromThePush() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = try await app.liveAgent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let id = agent.agent.id, server = app.server
+        let store = NativeThreadStore { duration in
+            // Only the spacing between pushed pulls ever ends: the poll interval never does.
+            guard duration > NativeThreadStore.pushedPullSpacing else { return }
+            let (cancelled, continuation) = AsyncStream<Void>.makeStream()
+            for await _ in cancelled {}
+            continuation.finish()
+            throw CancellationError()
+        }
+        vm.threadStores.install(store, for: id)
+        #expect(vm.threadStores.live.isEmpty)
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to load", timeout: .seconds(30)) { store.ready && !store.messages.isEmpty }
+        #expect(vm.threadStores.live == [id], "on screen: its revisions are pushed")
+        let before = store.messages.count
+
+        await store.send(text: "stream")
+
+        try await eventuallyOnMain("the streamed reply to arrive by push", timeout: .seconds(30)) {
+            store.messages.count == before + 2 && !store.running
+        }
+        store.suspend()
+        #expect(vm.threadStores.live.isEmpty, "off screen: nothing is pushed")
+    }
+
     private static func streamed(_ store: NativeThreadStore) -> [NativeThreadMessage] {
         guard let snapshot = store.snapshot else { return [] }
         return snapshot.messages + snapshot.provisional
