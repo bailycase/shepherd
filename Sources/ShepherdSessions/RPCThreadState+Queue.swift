@@ -37,6 +37,9 @@ extension RPCThreadState {
         /// message will carry: pi expands templates and skills before queueing.
         var piText: String?
         var holdUntil: Date?
+        /// Sent by an older remote client, which finds its message in the thread by the text it
+        /// sent: it goes to pi on its own, never joined with others.
+        var goesAlone = false
     }
 
     /// A prompt handed to pi that it has not started as a user message yet.
@@ -79,8 +82,10 @@ extension RPCThreadState {
 
     // MARK: - Sending
 
-    /// A new message: to pi now when it is idle, else into the queue (or steered in).
-    func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], completion: @escaping (NativeThreadResult) -> Void) {
+    /// A new message: to pi now when it is idle, else into the queue (or steered in). `alone`
+    /// keeps a queued message from being joined with others (`QueueItem.goesAlone`).
+    func send(id: UUID, text: String, delivery: NativeThreadDelivery, images: [NativeImage], alone: Bool = false,
+              completion: @escaping (NativeThreadResult) -> Void) {
         guard piBusy else {
             // A new message resumes a paused queue: it drains after this turn.
             paused = false
@@ -96,7 +101,7 @@ extension RPCThreadState {
         let item = QueueItem(
             entry: NativeQueuedMessage(id: id, text: text, images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
                                        sentAt: Date().timeIntervalSince1970 * 1000),
-            images: images)
+            images: images, goesAlone: alone)
         items.append(item)
         // Only a running pi can take a steer: one of our prompts still on its way has not
         // started a run, so the message goes first after it instead.

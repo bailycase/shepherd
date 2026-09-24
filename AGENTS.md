@@ -464,8 +464,9 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
-  `RemoteProtocol.version`. **There is no TLS.** A VPN or trusted network is the transport
-  boundary. Never describe the listener as internet-safe.
+  `RemoteProtocol.version`, listing what the client understands
+  (`RemoteProtocol.clientCapabilities`; older clients list nothing). **There is no TLS.** A VPN
+  or trusted network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
   - native thread requests

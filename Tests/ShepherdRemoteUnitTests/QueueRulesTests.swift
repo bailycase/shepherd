@@ -32,6 +32,22 @@ struct QueueRulesTests {
         #expect(NativeQueueRules.batchCount(items, mode: mode) == count)
     }
 
+    /// The host's copy of an older client's message goes alone: that client finds its message
+    /// in the thread by the text it sent.
+    @Test(arguments: [
+        ([false, true, false], 1),
+        ([true, false, false], 1),
+        ([false, false, false], 3),
+    ])
+    func anItemThatGoesAloneEndsTheRunBeforeIt(alone: [Bool], count: Int) {
+        struct Entry: NativeQueueEntry {
+            var entry: NativeQueuedMessage
+            var goesAlone: Bool
+        }
+        let items = alone.enumerated().map { Entry(entry: Self.item("m\($0)", $0), goesAlone: $1) }
+        #expect(NativeQueueRules.batchCount(items, mode: .all) == count)
+    }
+
     @Test func aDeliveryCarriesAtMostFourImages() {
         let items = [Self.item("a", 1, images: 2), Self.item("b", 2, images: 2), Self.item("c", 3, images: 1)]
         #expect(NativeQueueRules.batchCount(items, mode: .all) == 2)

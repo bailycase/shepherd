@@ -221,7 +221,9 @@ the matching `*Extension.swift` writes to the support directory from an embedded
 
 `SessionServer.startRemoteListener(port:tokenURL:)` binds TCP on all interfaces (default port
 7433, or 7434 in Shepherd Nightly). The first frame must be a `hello` with the shared token from `remote-token`, and the
-protocol version must match `RemoteProtocol.version`. There is no TLS, so a VPN or trusted network
+protocol version must match `RemoteProtocol.version`. The `hello` also lists what the client
+understands (`RemoteProtocol.clientCapabilities`), so the host can serve an older client in a
+way it can still read. There is no TLS, so a VPN or trusted network
 is the transport boundary.
 
 The protocol is NDJSON (`RemoteMessage.swift`):

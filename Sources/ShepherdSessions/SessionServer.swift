@@ -104,6 +104,8 @@ public final class SessionServer: @unchecked Sendable {
         var agentID: AgentID?
         /// Set by helloChildren: the children extension's control channel for that agent.
         var childrenAgentID: AgentID?
+        /// What a remote client said it understands in its `hello`.
+        var clientCapabilities: Set<String> = []
         var lineBuffer = LineBuffer()
         var readSource: DispatchSourceRead?
         var writeSource: DispatchSourceWrite?
@@ -632,10 +634,13 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent whose pane has no pi yet is starting, not gone: the app binds a freshly spawned
     /// pi only after the agent is in state (and respawns a restored agent's pi when its pane
     /// mounts), and clients poll from the moment the agent appears.
+    ///
+    /// `olderClient`: a remote client whose `hello` did not say it reads the host's queue.
     private func dispatchNativeThread(
         agentID: AgentID,
         request: NativeThreadRequest,
         requestBytes: Int,
+        olderClient: Bool = false,
         completion: @escaping (NativeOutcome) -> Void
     ) {
         let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
@@ -670,7 +675,7 @@ public final class SessionServer: @unchecked Sendable {
             completion(.failure(code: "native_limit", message: "Native request limit exceeded."))
             return
         }
-        thread.handle(request) { completion(.result($0)) }
+        thread.handle(request, olderClient: olderClient) { completion(.result($0)) }
     }
 
     private static func exitMessage(_ code: Int32?) -> String {
@@ -848,7 +853,7 @@ public final class SessionServer: @unchecked Sendable {
         }
 
         guard client.authenticated else {
-            guard case .hello(let id, let token, let clientName, let protocolVersion) = request else {
+            guard case .hello(let id, let token, let clientName, let protocolVersion, let capabilities) = request else {
                 ShepherdLog.warning("remote request before hello on fd \(client.fd)")
                 sendFinal(.error(id: 0, code: "unauthenticated", message: "hello required"), to: client)
                 return
@@ -867,6 +872,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             client.authenticated = true
+            client.clientCapabilities = Set(capabilities ?? [])
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
@@ -879,14 +885,15 @@ public final class SessionServer: @unchecked Sendable {
         switch request {
         case .nativeThread(let id, let agentID, let request):
             guard !line.contains(13) else { disconnect(client); return }
-            dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count) { [weak self, weak client] outcome in
+            let olderClient = !client.clientCapabilities.contains(RemoteProtocol.nativeQueueCapability)
+            dispatchNativeThread(agentID: agentID, request: request, requestBytes: line.count, olderClient: olderClient) { [weak self, weak client] outcome in
                 guard let self, let client else { return }
                 switch outcome {
                 case .result(let result): self.send(.nativeThread(id: id, result: result), to: client)
                 case .failure(let code, let message): self.send(.error(id: id, code: code, message: message), to: client)
                 }
             }
-        case .hello(let id, _, _, _):
+        case .hello(let id, _, _, _, _):
             send(.error(id: id, code: "protocol", message: "already authenticated"), to: client)
         case .upload(let id, let action):
             do {

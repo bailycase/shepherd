@@ -95,6 +95,7 @@ struct RemoteRequestTests {
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
         .hello(id: 2, token: "", clientName: "Baily's MacBook \"Pro\"", protocolVersion: 99),
+        .hello(id: 9, token: "t", clientName: "Mac", protocolVersion: 1, capabilities: RemoteProtocol.clientCapabilities),
         .stateFetch(id: 3),
         .attach(id: 4, sessionID: S.session, cols: 120, rows: 40, viewportGeneration: 2),
         .detach(sessionID: S.session),
@@ -166,6 +167,9 @@ struct RemoteRequestTests {
          .resize(sessionID: RemoteSamples.session, cols: 90, rows: 30, viewportGeneration: 0)),
         (#"{"type":"paste","id":2,"sessionID":"session","text":"hi"}"#,
          .paste(id: 2, sessionID: RemoteSamples.session, text: "hi", submit: true)),
+        // Older clients list no capabilities: the host reads them as not knowing its queue.
+        (#"{"type":"hello","id":1,"token":"t","clientName":"old","protocolVersion":1}"#,
+         .hello(id: 1, token: "t", clientName: "old", protocolVersion: 1, capabilities: nil)),
     ])
     func olderClientShapesDecodeWithDefaults(json: String, expected: RemoteRequest) throws {
         #expect(try Wire.decode(RemoteRequest.self, json) == expected)

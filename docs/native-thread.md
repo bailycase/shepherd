@@ -208,7 +208,10 @@ one prompt at a time.
   - **All at once** (`all`, the default): every item from the head that can go together,
     joined with a blank line (`NativeQueueRules.batchCount`): an item that begins with "/"
     goes alone (pi runs a command or expands a template only at the start of a message), and
-    a delivery carries at most 4 images and 64 KiB. pi runs one turn for it: it is one user
+    a delivery carries at most 4 images and 64 KiB. So does a message from an older remote
+    client (its `hello` lists no `native.queue.v1`): such a client knows nothing of the queue
+    and removes its own copy of a send only when a user message with the same text appears,
+    so its messages always reach pi alone and as they were sent. pi runs one turn for it: it is one user
     message, and every model call of that turn reads it (checked against real pi 0.87.1).
     pi's own follow-up queue could not do this without writing the user's settings: in its
     default one-at-a-time mode each queued follow-up opens its own model call.
