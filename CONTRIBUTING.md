@@ -11,8 +11,7 @@ feature or behavior change, open an issue before writing the implementation.
   mutations).
 - [ARCHITECTURE.md](ARCHITECTURE.md): module boundaries, ownership, and data flow.
 - [DESIGN.md](DESIGN.md): the authority on UI and interaction, and the reference for Night
-  Watch, the design system in `Packages/ShepherdUI`. The older handoff in
-  [docs/design-spec/](docs/design-spec/) is superseded and kept only as history.
+  Watch, the design system in `Packages/ShepherdUI`.
 
 ## Branches
 
