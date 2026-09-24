@@ -8,7 +8,7 @@ import UIKit
 
 // The spinner and the attention glow run on the render server: a Core Animation animation on
 // a layer, installed once, so one on screen costs the app no frames (a SwiftUI timeline redrew
-// and relaid out its window on every display frame, most of a core in a debug build). Both keep
+// its window on every display frame, most of a core in a debug build off screen). Both keep
 // their clock phase (`NWPhase`), so every spinner turns in step and every dot pulses together.
 // Under Reduce Motion, or while `nwMotionPaused`, the animation is removed and the arc or the
 // dot rests as it draws statically.
