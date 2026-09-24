@@ -4,97 +4,74 @@ import AppKit
 import ShepherdCore
 import ShepherdProtocol
 
-/// A remote host's section in the sidebar: a section header, then its spaces and agents with
-/// the same rows the local tree uses. While the host is not connected, one status row stands in
-/// for them ("Unreachable", Retry).
-struct RemoteHostBlock: View {
-    var vm: ShepherdViewModel
-    var connection: RemoteHostStore.Connection
+// A remote host's rows in the sidebar: its section header, then its spaces and agents with the
+// same rows the local tree uses. While the host is not connected, one status row stands in for
+// them ("Unreachable", Retry).
 
-    private var detail: NWSidebarSectionDetail {
+extension ShepherdViewModel {
+    /// Appends a host's rows to the sidebar tree.
+    func appendHost(_ connection: RemoteHostStore.Connection, to tree: inout SidebarTree) {
+        let hostID = connection.id
+        let connected = connection.phase == .connected
+        let collapsed = collapsedHosts.contains(hostID)
+        tree.append(.machine(SidebarMachine(
+            hostID: hostID, title: connection.config.name, detail: Self.hostDetail(connection), collapsed: collapsed,
+            hoverHint: machineKeycap(forHost: hostID), canAddSpace: connected,
+            pendingOperations: remoteWorktreeOperationIDs.keys.filter { $0.hostID == hostID }
+                .sorted { $0.agentID.rawValue < $1.agentID.rawValue })))
+        guard !collapsed else { return }
+        guard connected else {
+            tree.append(.notice(hostID: hostID, phase: connection.phase.kind))
+            return
+        }
+        let badges = remoteShortcutBadges(hostID: hostID)
+        for space in connection.state.spaces where !space.hidden {
+            let agents = Self.sidebarAgents(of: space.id, in: connection.state.agents)
+            let spaceCollapsed = isRemoteSpaceCollapsed(hostID: hostID, spaceID: space.id)
+            tree.append(.space(SidebarSpace(hostID: hostID, id: space.id, name: space.name, collapsed: spaceCollapsed,
+                                            count: agents.count, blocked: SidebarAttention.count(agents, children: connection.children))))
+            guard !spaceCollapsed else { continue }
+            for agent in agents {
+                tree.append(.remoteAgent(hostID: hostID, model: remoteSidebarRowModel(for: agent, on: connection, badges: badges)))
+            }
+        }
+    }
+
+    /// A connected host's agent count, or how many questions wait on you there.
+    private static func hostDetail(_ connection: RemoteHostStore.Connection) -> NWSidebarSectionDetail {
         guard connection.phase == .connected else { return .none }
         let blocked = SidebarAttention.count(connection.state.agents, children: connection.children)
         return blocked > 0 ? .text("\(blocked) need you", tone: .attention) : .count(connection.state.agents.count)
     }
+}
+
+/// A space on a host: its disclosure row, and a new agent there from its `+`.
+struct RemoteSpaceRow: View {
+    var vm: ShepherdViewModel
+    let hostID: UUID
+    let space: SidebarSpace
 
     var body: some View {
-        let connected = connection.phase == .connected
-        NWSidebarSection(
-            connection.config.name,
-            detail: detail,
-            collapsed: vm.collapsedHosts.contains(connection.id),
-            hoverHint: vm.machineKeycap(forHost: connection.id),
-            toggle: { vm.toggleHostCollapsed(connection.id) }
-        ) {
-            if connected {
-                SidebarPlus(help: "New Space on \(connection.config.name)") { vm.remoteSpacePickerHostID = connection.id }
-            }
-        }
-        .contextMenu {
-            ForEach(Array(vm.remoteWorktreeOperationIDs.keys.filter { $0.hostID == connection.id }), id: \.self) { target in
-                Button("Check Worktree Operation…") { vm.remoteWorktreeSheet = target }
-            }
-            Button("New Space…") { vm.remoteSpacePickerHostID = connection.id }
-            Button("Reconnect") { vm.remoteHosts.reconnect(id: connection.id) }
-        }
-
-        if !vm.collapsedHosts.contains(connection.id) {
-            if connected {
-                ForEach(connection.state.spaces.filter { !$0.hidden }) { space in
-                    let agents = ShepherdViewModel.sidebarAgents(of: space.id, in: connection.state.agents)
-                    let spaceCollapsed = vm.isRemoteSpaceCollapsed(hostID: connection.id, spaceID: space.id)
-                    SpaceRow(
-                        name: space.name,
-                        collapsed: spaceCollapsed,
-                        count: agents.count,
-                        blocked: SidebarAttention.count(agents, children: connection.children),
-                        onToggle: { vm.toggleRemoteSpaceCollapsed(hostID: connection.id, spaceID: space.id) },
-                        onNewAgent: { vm.showNewAgentSheetForRemote(hostID: connection.id, spaceID: space.id) }
-                    )
-                    .nwTransition(.list)
-                    if !spaceCollapsed {
-                        ForEach(agents) { agent in
-                            remoteAgentRow(agent)
-                                .nwTransition(.disclosure)
-                        }
-                    }
-                }
-            } else {
-                // Connecting… ⇄ Unreachable ⇄ Off cross-fade in one slot as the connection retries.
-                ZStack(alignment: .leading) { statusRow }
-                    .nwAnimation(.content, value: connection.phase.kind)
-                    .nwTransition(.list)
-            }
-        }
+        let id = space.id
+        SpaceRow(name: space.name, collapsed: space.collapsed, count: space.count, blocked: space.blocked,
+                 onToggle: { vm.toggleRemoteSpaceCollapsed(hostID: hostID, spaceID: id) },
+                 onNewAgent: { vm.showNewAgentSheetForRemote(hostID: hostID, spaceID: id) })
     }
+}
 
-    @ViewBuilder
-    private var statusRow: some View {
-        switch connection.phase {
-        case .connected:
-            EmptyView()
-        case .connecting:
-            NWSidebarNoticeRow(.running, text: "Connecting…")
-                .nwTransition(.content)
-        case .failed:
-            NWSidebarNoticeRow(.failed, text: "Unreachable", actionTitle: "Retry") { vm.remoteHosts.reconnect(id: connection.id) }
-                .nwTransition(.content)
-        case .disconnected:
-            NWSidebarNoticeRow(.idle, text: "Off", actionTitle: "Connect") { vm.remoteHosts.reconnect(id: connection.id) }
-                .nwTransition(.content)
-        }
-    }
+/// An agent on a host, with its drag, drop, and context menu.
+struct RemoteAgentRow: View {
+    var vm: ShepherdViewModel
+    let zone: SidebarDropZone
+    let hostID: UUID
+    let model: SidebarAgentRowModel
 
-    @ViewBuilder
-    private func remoteAgentRow(_ agent: Agent) -> some View {
-        let ref = RemoteAgentRef(hostID: connection.id, agentID: agent.id)
-        AgentRow(model: vm.remoteSidebarRowModel(for: agent, on: connection)) {
-            vm.selectRemoteAgent(hostID: connection.id, agentID: agent.id)
-        }
+    var body: some View {
+        let agent = model.agent
+        let ref = RemoteAgentRef(hostID: hostID, agentID: agent.id)
+        AgentRow(model: model) { vm.selectRemoteAgent(hostID: hostID, agentID: agent.id) }
             .onDrag { vm.beginSidebarDrag(ShepherdViewModel.dragPayload(remote: ref)) }
-            .sidebarDropTarget(vm: vm, allowsBelow: true) { payload, edge, validateOnly in
-                vm.dropRemoteAgent(payload: payload, on: ref, edge: edge, validateOnly: validateOnly)
-            }
+            .sidebarDropRow(zone, id: ref, target: .remoteAgent(ref))
             .contextMenu {
                 Button("Rename…") { vm.remoteRenameTarget = ref }
                 Divider()
@@ -110,9 +87,36 @@ struct RemoteHostBlock: View {
                     vm.requestRemoteDelete(ref)
                 }
             }
-            // Scroll target for machine jumps and palette picks; the ref type keeps remote rows
-            // distinct from local agent ids.
-            .id(ref)
+    }
+}
+
+/// The row in place of a disconnected host's spaces: Connecting… ⇄ Unreachable ⇄ Off
+/// cross-fade in one slot as the connection retries.
+struct HostNoticeRow: View {
+    var vm: ShepherdViewModel
+    let hostID: UUID
+    let phase: RemoteHostStore.Phase.Kind
+
+    var body: some View {
+        ZStack(alignment: .leading) { status }
+            .nwAnimation(.content, value: phase)
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        switch phase {
+        case .connected:
+            EmptyView()
+        case .connecting:
+            NWSidebarNoticeRow(.running, text: "Connecting…")
+                .nwTransition(.content)
+        case .failed:
+            NWSidebarNoticeRow(.failed, text: "Unreachable", actionTitle: "Retry") { vm.remoteHosts.reconnect(id: hostID) }
+                .nwTransition(.content)
+        case .disconnected:
+            NWSidebarNoticeRow(.idle, text: "Off", actionTitle: "Connect") { vm.remoteHosts.reconnect(id: hostID) }
+                .nwTransition(.content)
+        }
     }
 }
 

@@ -501,8 +501,14 @@ extension ShepherdViewModel {
     }
 
     func shortcutBadge(for id: AgentID) -> Int? {
-        guard showAgentShortcutBadges, selectedRemoteAgent == nil else { return nil }
-        return refreshedSidebarDerivations().badges[id]
+        sidebarShortcutBadges[id]
+    }
+
+    /// Every local agent's ⌘-digit badge while ⌘ is held; empty otherwise. One lookup for the
+    /// whole tree, where `shortcutBadge(for:)` per row would check the memo once per row.
+    var sidebarShortcutBadges: [AgentID: Int] {
+        guard showAgentShortcutBadges, selectedRemoteAgent == nil else { return [:] }
+        return refreshedSidebarDerivations().badges
     }
 
     /// ⌘↑/↓: move through agents in visible sidebar order, wrapping at the ends.
