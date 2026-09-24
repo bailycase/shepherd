@@ -11,9 +11,9 @@ name: Release
 # Shepherd Nightly is its own app (com.bailycase.shepherd.nightly, Shepherd
 # Nightly.app, Shepherd-Nightly.dmg), so it installs beside Shepherd and only
 # ever reads its own feed. Builds already in the field still read
-# appcast-rc.xml and appcast-nightly.xml: both are the beta feed re-tagged for
-# them, so they update to a Shepherd build that moves them to Beta, and never
-# to Shepherd Nightly.
+# appcast-rc.xml and appcast-nightly.xml: both are the beta feed with its items
+# untagged, which every such build sees, so they update to a Shepherd build
+# that moves them to Beta, and never to Shepherd Nightly.
 #
 # Each build is signed, notarized and packaged into a DMG, published as a
 # GitHub Release, and every appcast on gh-pages is regenerated. Signing is

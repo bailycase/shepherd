@@ -648,8 +648,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 - **One EdDSA key** (`SPARKLE_PRIVATE_KEY`, `SUPublicEDKey`) signs both apps.
 - **Legacy feeds for installed builds.** Shepherd builds from before the split read
   `appcast-rc.xml` (allowing Sparkle channel `rc`) or `appcast-nightly.xml` (allowing
-  `nightly`). Every run still writes both, as the beta feed with its items re-tagged `rc` or
-  `nightly`, so those installs update to a Shepherd beta or stable (never Shepherd Nightly), and
+  `nightly`, or no channel at all in the first nightly builds). Every run still writes both, as
+  the beta feed with its items untagged: Sparkle shows default-channel items whatever a build
+  allows. So those installs update to a Shepherd beta or stable (never Shepherd Nightly), and
   that build's launch migration moves them to Beta. Keep writing them while such installs may
   exist. A Shepherd install that rode nightly sits at a build number above every existing beta
   and stable, so it waits until the first Shepherd beta or stable built after the split: cut one

@@ -77,13 +77,14 @@ FEEDS = [
     Feed("shepherd-nightly", "appcast-shepherd-nightly.xml", "", "nightly"),
 ]
 
-# Feeds that Shepherd builds already installed still read, with the channel tag they allow.
-# Each is the beta feed re-tagged, so those builds update to a Shepherd beta or stable whose
-# launch migration moves them to Beta. Neither ever carries Shepherd Nightly: a main-app build
-# must never be offered another bundle.
+# Feeds that Shepherd builds already installed still read. Each is the beta feed with its
+# channel tags removed: Sparkle shows untagged items whatever channels a build allows, and the
+# first nightly builds read appcast-nightly.xml while allowing none. So every such build updates
+# to a Shepherd beta or stable whose launch migration moves it to Beta. Neither ever carries
+# Shepherd Nightly: a main-app build must never be offered another bundle.
 LEGACY_ALIASES = [
-    ("appcast-rc.xml", "beta", "rc"),
-    ("appcast-nightly.xml", "beta", "nightly"),
+    ("appcast-rc.xml", "beta"),
+    ("appcast-nightly.xml", "beta"),
 ]
 
 STABLE = re.compile(r"^v\d+\.\d+\.\d+$")
@@ -194,8 +195,9 @@ def point_deltas(xml: str, tag: str, names: list[str]) -> str:
     return xml
 
 
-def retag(xml: str, old: str, new: str) -> str:
-    return xml.replace(f"<sparkle:channel>{old}</sparkle:channel>", f"<sparkle:channel>{new}</sparkle:channel>")
+def untag(xml: str) -> str:
+    """Moves every item to Sparkle's default channel, which no allowed-channels set hides."""
+    return re.sub(r"\s*<sparkle:channel>[^<]*</sparkle:channel>", "", xml)
 
 
 def publish(casts: str, pages: str) -> list[str]:
@@ -207,9 +209,8 @@ def publish(casts: str, pages: str) -> list[str]:
             generated[feed.dir] = f.read()
         _write(os.path.join(pages, feed.file), generated[feed.dir])
         written.append(feed.file)
-    for file, source, channel in LEGACY_ALIASES:
-        source_feed = next(f for f in FEEDS if f.dir == source)
-        _write(os.path.join(pages, file), retag(generated[source], source_feed.channel, channel))
+    for file, source in LEGACY_ALIASES:
+        _write(os.path.join(pages, file), untag(generated[source]))
         written.append(file)
     return written
 
