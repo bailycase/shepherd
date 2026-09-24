@@ -22,7 +22,7 @@ struct SettingsPreviewTests {
         // Tall enough for the whole page.
         let height: CGFloat = switch section {
         case .pi: 1480
-        case .keyboard: 1720
+        case .keyboard: 2000
         case .remote, .worktrees: 1000
         default: 900
         }

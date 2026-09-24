@@ -17,7 +17,7 @@ struct KeyboardSettings: View {
 
     private static let groups: [(title: String, actions: [ShortcutAction])] = [
         ("Agents", [.newAgent, .newAgentOptions, .newSpace, .renameAgent, .nextAgent, .previousAgent, .deleteAgent, .commandPalette]),
-        ("Thread", [.stopAgent, .modelPicker, .previousTurn, .nextTurn, .inspectSubagent]),
+        ("Thread", [.stopAgent, .modelPicker, .previousTurn, .nextTurn, .inspectSubagent, .alternateSend]),
         ("Window", [.toggleSidebar, .toggleRightPane]),
         ("Panes", [.splitVertical, .splitHorizontal, .closePane, .focusNextPane, .focusPreviousPane]),
     ]
@@ -68,6 +68,9 @@ struct KeyboardSettings: View {
                 SettingsRow(title: "Select agent 1–9", subtitle: "Sidebar order; hold ⌘ to see the numbers.") { NWKeycap(keys: ["⌘", "1–9"]) }
                 SettingsRow(title: "Settings") { NWKeycap("⌘,") }
                 SettingsRow(title: "Confirm or cancel in sheets") { NWKeycap(keys: ["⏎", "⎋"]) }
+                ForEach(keys.fixedChords) { fixed in
+                    SettingsRow(title: fixed.title) { NWKeycap(keys: fixed.keys) }
+                }
                 SettingsRow(title: "Reset all shortcuts") {
                     Button("Reset all") {
                         keys.resetAll()

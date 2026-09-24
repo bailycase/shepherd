@@ -17,6 +17,7 @@ struct KeybindingsTests {
         (.focusNextPane, "⌥⌘→"), (.focusPreviousPane, "⌥⌘←"),
         (.toggleSidebar, "⇧⌘S"), (.toggleRightPane, "⇧⌘B"), (.modelPicker, "⇧⌘M"),
         (.stopAgent, "⌘."), (.previousTurn, "⌥⌘↑"), (.nextTurn, "⌥⌘↓"), (.inspectSubagent, "⌘I"),
+        (.alternateSend, "⌘↩"),
     ])
     func defaultsMatchTheDesignTable(action: ShortcutAction, display: String) {
         let keys = KeybindingsStore(store: Fixture.defaults())
@@ -36,6 +37,40 @@ struct KeybindingsTests {
 
     @Test func defaultsNeedNoCustomGhosttyUnbinds() {
         #expect(KeybindingsStore(store: Fixture.defaults()).customGhosttyUnbinds.isEmpty)
+    }
+
+    /// ↩ is a key like the arrows: shown as ↩, a return key equivalent, Ghostty's `enter`, and
+    /// what the recorder reads from the Return and Enter keys.
+    @Test func returnIsAChordKey() {
+        let chord = KeyChord(key: "return", command: true)
+        #expect(chord.display == "⌘↩")
+        #expect(chord.keyEquivalent == .return)
+        #expect(chord.ghosttyChord == "cmd+enter")
+        #expect(KeyChord.token(keyCode: 36, characters: "\r") == "return")
+        #expect(KeyChord.token(keyCode: 76, characters: "\u{3}") == "return")
+        #expect(chord.matches(key: .return, modifiers: [.command, .numericPad]))
+        #expect(!chord.matches(key: .return, modifiers: [.command, .shift]))
+    }
+
+    /// Send the other way belongs to the composer (and a focused queued message): rebound, it
+    /// still leaves a focused terminal its keys.
+    @Test func theAlternateSendNeverTakesATerminalsKeys() {
+        let keys = KeybindingsStore(store: Fixture.defaults())
+        #expect(ShortcutAction.alternateSend.sentenceTitle == "Send the other way (steer or queue)")
+        #expect(keys.assign(KeyChord(key: "j", command: true, option: true), to: .alternateSend) == nil)
+        #expect(keys.display(.alternateSend) == "⌥⌘J")
+        #expect(keys.customGhosttyUnbinds.isEmpty)
+    }
+
+    /// The queue's fixed keys, as the Keyboard board lists them and Settings shows them.
+    @Test func theQueuesFixedKeysMatchTheBoard() {
+        let keys = KeybindingsStore(store: Fixture.defaults())
+        #expect(keys.fixedChords.map(\.title) == ["Edit the last queued message", "Move the focused message",
+                                                  "Delete the focused message", "Stop pi (from the composer)"])
+        #expect(keys.fixedChords.map(\.keys) == [["↑"], ["⌥", "↑ ↓"], ["⌫"], ["Esc"]])
+        #expect(keys.display(.deleteQueued) == "⌫")
+        #expect(keys.display(.moveQueued) == "⌥↑ ⌥↓")
+        #expect(keys.sendDisplay == "↩")
     }
 
     @Test func settingsRowsUseSentenceCase() {

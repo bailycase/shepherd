@@ -12,6 +12,9 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case splitVertical, splitHorizontal, closePane, deleteAgent
     case focusNextPane, focusPreviousPane
     case toggleSidebar, toggleRightPane, modelPicker, stopAgent, previousTurn, nextTurn, inspectSubagent
+    /// Scoped to the composer (like its ↩) and a focused queued message, so it has no menu item:
+    /// it sends the other way while pi works (steer ⇄ queue) and steers the focused message.
+    case alternateSend
 
     var id: String { rawValue }
 
@@ -37,11 +40,16 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .previousTurn: return "Previous Turn"
         case .nextTurn: return "Next Turn"
         case .inspectSubagent: return "Inspect Subagent"
+        case .alternateSend: return "Send the Other Way (Steer or Queue)"
         }
     }
 
     /// The title in sentence case, for Settings rows ("Show or hide sidebar").
     var sentenceTitle: String { title.prefix(1) + title.dropFirst().lowercased() }
+
+    /// Only the composer (and a focused queued message) answers it, never a terminal: a custom
+    /// chord for it is left to a focused terminal.
+    var isComposerScoped: Bool { self == .alternateSend }
 
     var defaultChord: KeyChord {
         switch self {
@@ -66,6 +74,50 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .previousTurn: return KeyChord(key: "up", command: true, option: true)
         case .nextTurn: return KeyChord(key: "down", command: true, option: true)
         case .inspectSubagent: return KeyChord(key: "i", command: true)
+        case .alternateSend: return KeyChord(key: "return", command: true)
+        }
+    }
+}
+
+/// Keys the queue answers that cannot be rebound (Queue & steer boards, "Keyboard"). Settings ▸
+/// Keyboard lists them under Fixed, and tooltips read them here rather than spelling a key.
+enum FixedChord: String, CaseIterable, Identifiable {
+    /// ↑ in an empty composer.
+    case editLastQueued
+    /// ⌥↑ and ⌥↓ on a focused queued message.
+    case moveQueued
+    /// ⌫ on a focused queued message.
+    case deleteQueued
+    /// Esc in the composer (or on a focused queued message) while pi works, when nothing else
+    /// takes it.
+    case stopFromComposer
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .editLastQueued: "Edit the last queued message"
+        case .moveQueued: "Move the focused message"
+        case .deleteQueued: "Delete the focused message"
+        case .stopFromComposer: "Stop pi (from the composer)"
+        }
+    }
+
+    /// One keycap each.
+    var keys: [String] {
+        switch self {
+        case .editLastQueued: ["↑"]
+        case .moveQueued: ["⌥", "↑ ↓"]
+        case .deleteQueued: ["⌫"]
+        case .stopFromComposer: ["Esc"]
+        }
+    }
+
+    /// As a tooltip spells it ("⌫", "⌥↑ ⌥↓").
+    var display: String {
+        switch self {
+        case .moveQueued: "⌥↑ ⌥↓"
+        default: keys.joined()
         }
     }
 }
@@ -74,7 +126,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
 /// `KeyboardShortcut` (menus), display string (hints and keycaps), and
 /// ghostty keybind syntax (per-surface unbinds so the terminal lets the
 /// chord through). `key` is a canonical token: a single lowercase character,
-/// or `left`/`right`/`up`/`down`.
+/// `left`/`right`/`up`/`down`, or `return`.
 struct KeyChord: Codable, Hashable {
     var key: String
     var command = false
@@ -107,6 +159,7 @@ struct KeyChord: Codable, Hashable {
         case "right": return "→"
         case "up": return "↑"
         case "down": return "↓"
+        case "return": return "↩"
         default: return key.uppercased()
         }
     }
@@ -119,6 +172,7 @@ struct KeyChord: Codable, Hashable {
         case "right": return .rightArrow
         case "up": return .upArrow
         case "down": return .downArrow
+        case "return": return .return
         default: return KeyEquivalent(key.first ?? " ")
         }
     }
@@ -134,6 +188,18 @@ struct KeyChord: Codable, Hashable {
 
     var shortcut: KeyboardShortcut {
         KeyboardShortcut(keyEquivalent, modifiers: eventModifiers)
+    }
+
+    /// Whether a key press in a view is this chord: its key with exactly its four modifiers.
+    func matches(_ press: KeyPress) -> Bool { matches(key: press.key, modifiers: press.modifiers) }
+
+    func matches(key: KeyEquivalent, modifiers: EventModifiers) -> Bool {
+        key == keyEquivalent && modifiers.intersection([.command, .shift, .option, .control]) == eventModifiers
+    }
+
+    /// Whether a key event is this chord (the composer's key monitor).
+    func matches(_ event: NSEvent) -> Bool {
+        event.type == .keyDown && KeyChord(event: event) == self
     }
 
     // MARK: Ghostty
@@ -161,6 +227,7 @@ struct KeyChord: Codable, Hashable {
         case "-": return "minus"
         case "=": return "equal"
         case "`": return "grave_accent"
+        case "return": return "enter"
         default: return key // letters and left/right/up/down pass through
         }
     }
@@ -221,6 +288,7 @@ struct KeyChord: Codable, Hashable {
         case 124: return "right"
         case 125: return "down"
         case 126: return "up"
+        case 36, 76: return "return"
         default: break
         }
         guard let ch = characters?.lowercased().first,
@@ -271,6 +339,14 @@ final class KeybindingsStore {
 
     func shortcut(_ action: ShortcutAction) -> KeyboardShortcut { chord(for: action).shortcut }
     func isDefault(_ action: ShortcutAction) -> Bool { overrides[action] == nil }
+
+    /// The fixed keys (read-only), in the order Settings lists them.
+    let fixedChords = FixedChord.allCases
+
+    func display(_ fixed: FixedChord) -> String { fixed.display }
+
+    /// The composer's ↩ (fixed): it sends, or queues or steers per Settings while pi works.
+    var sendDisplay: String { KeyChord(key: "return").display }
 
     // MARK: Assignment
 
@@ -347,6 +423,6 @@ final class KeybindingsStore {
     /// a focused terminal lets the rebound shortcut reach the app. Default
     /// chords are already in TerminalSurfaceKit's own unbind list.
     var customGhosttyUnbinds: [String] {
-        overrides.values.map(\.ghosttyChord).sorted()
+        overrides.filter { !$0.key.isComposerScoped }.values.map(\.ghosttyChord).sorted()
     }
 }
