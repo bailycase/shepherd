@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import ShepherdUI
 import ShepherdCore
+import ShepherdProtocol
 
 /// What a new worktree branches from (Settings ▸ Worktrees).
 enum WorktreeBaseMode: String, CaseIterable {
@@ -283,7 +284,9 @@ final class AppSettings {
 
     private let store: UserDefaults
 
-    init(store: UserDefaults = .standard) {
+    /// `edition` picks defaults that differ between Shepherd and Shepherd Nightly (the
+    /// listener port); each app already has its own preferences domain.
+    init(store: UserDefaults = .standard, edition: ShepherdEdition = .current) {
         self.store = store
         terminalFontFamily = store.string(forKey: Key.terminalFontFamily) ?? Defaults.terminalFontFamily
         let size = store.double(forKey: Key.terminalFontSize)
@@ -320,7 +323,7 @@ final class AppSettings {
         sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(NWDensity.init(rawValue:)) ?? .standard
         remoteListenerEnabled = store.bool(forKey: Key.remoteListenerEnabled)
         let port = store.integer(forKey: Key.remoteListenerPort)
-        remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(RemoteSettingsDefaults.port)
+        remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(edition.defaultRemoteListenerPort)
         worktreeBaseMode = store.string(forKey: Key.worktreeBaseMode)
             .flatMap(WorktreeBaseMode.init(rawValue:)) ?? .fresh
         worktreeFetchBeforeCreate = store.object(forKey: Key.worktreeFetchBeforeCreate) as? Bool ?? true
