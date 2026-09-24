@@ -701,7 +701,7 @@ struct NativeThreadStoreTests {
         defer { task.cancel() }
         host.snapshot = F.snapshot(revision: 2, running: true, messages: [F.user(id: "u")], provisional: [running("step 2")])
         await store.refresh()
-        guard case .activity(let burst)? = store.rows.last?.presentation?.items.last else {
+        guard case .work(let group)? = store.rows.last?.presentation?.items.last, let burst = group.running.first else {
             Issue.record("no live line")
             return
         }

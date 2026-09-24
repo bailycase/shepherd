@@ -65,6 +65,12 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// A long stretch of work (asking, exploring, editing, commands that failed along the way)
+    /// folded into one "Worked for …" line between the prose around it.
+    @Test func threadActivityLong() async throws {
+        try await render("thread-activity-long", ActivityThreads.long)
+    }
+
     /// Running board: a finished commit line, the live push with its last output lines, and
     /// the working row.
     @Test func threadActivityRunning() async throws {
@@ -217,20 +223,25 @@ struct ThreadPreviewTests {
         try await render("thread-prose", snapshot, ready: { fences.allSatisfy { CodeHighlightCache.cached($0) != nil } })
     }
 
-    /// The "Activity line states" board: done, expanded into calls, failed with its output
-    /// expanded, and live.
+    /// The "Activity line states" board: a stretch folded and expanded, done lines (one
+    /// expanded into calls), failed with its output expanded, and live.
     @Test func activityLineStates() async throws {
         let turn = nativeTurnPresentation(ActivityThreads.stateMessages, live: false)
-        let bursts = turn.items.compactMap { item -> NativeActivityBurst? in
-            if case .activity(let burst) = item { return burst }
-            return nil
+        let bursts = turn.items.flatMap { item -> [NativeActivityBurst] in
+            if case .work(let group) = item { return group.finished + group.running }
+            return []
         }
+        let stretch = try #require(nativeWorkGroup(ActivityThreads.longMessages.compactMap { $0.toolName == nil ? nil : NativeActivityCall($0) }))
+        let short = try #require(nativeWorkGroup(ActivityThreads.stateMessages.prefix(10).map(NativeActivityCall.init)))
         let live = nativeActivityBurst([NativeActivityCall(ActivityThreads.liveBuild)])
         let failed = try #require(bursts.first { $0.state == .failed })
-        let size = CGSize(width: 760, height: 560)
+        let size = CGSize(width: 760, height: 780)
         try await Preview.render("activity-line-states", size: size) {
             VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
-                Text("DONE").nwSectionLabel()
+                Text("STRETCH").nwSectionLabel()
+                WorkGroupView(group: stretch, review: { _ in })
+                WorkGroupView(group: short, review: { _ in }, expanded: true)
+                Text("DONE").nwSectionLabel().padding(.top, NW.Space.s)
                 ForEach(bursts.filter { $0.state == .done }) { burst in
                     ActivityLineView(burst: burst, review: { _ in }, expanded: burst.kind == .edit)
                 }
@@ -586,6 +597,46 @@ enum ActivityThreads {
                              start: t + 10_000, end: t + 18_400))
         return messages
     }
+
+    /// A long deploy: asking, exploring, editing, and commands that failed along the way (the
+    /// stretch that used to read as a wall of lines).
+    static var longMessages: [NativeThreadMessage] {
+        let t0 = now - 12 * 60_000
+        var t = t0 + 6_000
+        var messages = [
+            user("u1", "Get the media stack deployed to horizon and make sure the DNS for it resolves.", at: t0),
+            assistant("a1", "I'll confirm the plan with you, then check the stack config and the DNS entry.", at: t0 + 3_000),
+        ]
+        var index = 0
+        func add(_ name: String, _ args: [String: Any], output: String = "", error: Bool = false, seconds: Double = 2) {
+            index += 1
+            messages.append(tool("l\(index)", name, args, output: output, error: error, start: t, end: t + seconds * 1000))
+            t += seconds * 1000 + 400
+        }
+        let infra = "/Users/you/homelab-infra"
+        add("ask_user", ["question": "Apply to horizon now?"], output: "User response: yes", seconds: 5.5)
+        for file in ["stacks/media/main.tf", "stacks/media/variables.tf", "stacks/ubiquiti/dns.tf", "flake.nix", "hosts/horizon.nix", "README.md"] {
+            add("read", ["path": "\(infra)/\(file)"], output: "line\nline", seconds: 1.8)
+        }
+        add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/media init"], output: "Terraform has been successfully initialized!", seconds: 14)
+        add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/media validate"], output: "Success! The configuration is valid.", seconds: 6)
+        add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/media plan"], output: "Plan: 3 to add, 1 to change, 0 to destroy.", seconds: 21)
+        add("edit", ["path": "\(infra)/stacks/media/main.tf", "edits": [["oldText": "a", "newText": "a\nb\nc"]]], output: "ok")
+        add("edit", ["path": "\(infra)/stacks/media/variables.tf", "edits": [["oldText": "a", "newText": "a\nb"]]], output: "ok")
+        add("bash", ["command": "ssh you@horizon.local 'docker ps'"], output: "Command exited with code 255", error: true, seconds: 7.4)
+        add("bash", ["command": "dscacheutil -flushcache"], output: "", seconds: 1)
+        add("bash", ["command": "dig +short horizon.local"], output: "192.168.1.40", seconds: 0.8)
+        add("edit", ["path": "\(infra)/stacks/ubiquiti/dns.tf", "edits": [["oldText": "a", "newText": "b"]]], output: "ok")
+        add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/ubiquiti apply -auto-approve"], output: "Apply complete! Resources: 0 added, 1 changed, 0 destroyed.", seconds: 54)
+        add("bash", ["command": "for server in sonarr radarr; do curl -sf http://horizon.local/$server/ping; done"],
+            output: "Command exited with code 2", error: true, seconds: 3)
+        add("bash", ["command": "cd \(infra) && tofu -chdir=stacks/media apply -auto-approve"], output: "Apply complete! Resources: 3 added, 1 changed, 0 destroyed.", seconds: 68)
+        add("bash", ["command": "for server in sonarr radarr jellyfin; do curl -sf http://horizon.local/$server/ping; done"], output: "ok\nok\nok", seconds: 6.3)
+        messages.append(assistant("a2", "The stale record was on horizon; I flushed it, fixed the DNS entry, and all three services answer now.", at: t + 2_000))
+        return messages
+    }
+
+    static var long: NativeThreadSnapshot { snapshot(longMessages) }
 
     static var liveBuild: NativeThreadMessage {
         tool("lb", "bash", ["command": "xcodebuild -scheme 'Shepherd (Dev)' build"],

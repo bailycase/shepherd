@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Tool activity (NWThread board, "Activity line states"): one quiet line per burst of work,
-// its calls on a hairline rail, and the changes card that ends a turn with edits.
+// Tool activity (NWThread board, "Activity line states"): one quiet line per stretch of work,
+// its lines and their calls on hairline rails, and the changes card that ends a turn with edits.
 
 /// One burst of tool work: "Explored 7 files · read 5 · search 2 · 0.9s". 26pt, the label in
 /// 12.5 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt chevron; a real button
@@ -9,8 +9,8 @@ import SwiftUI
 /// stays visible. A live one shows a running spinner, the verb in `textPrimary`, the command,
 /// its elapsed time in running blue, and its last output lines.
 public struct NWActivityLine: View {
-    /// Which glyph leads the line.
-    public enum Kind: Sendable { case explore, edit, run, subagents, other }
+    /// Which glyph leads the line. `work` is a stretch's summary, folding the lines beneath it.
+    public enum Kind: Sendable { case work, explore, edit, run, subagents, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -61,6 +61,7 @@ public struct NWActivityLine: View {
     private var symbol: String {
         if status == .failed { return "exclamationmark.triangle" }
         return switch kind {
+        case .work: "rectangle.stack"
         case .explore: "magnifyingglass"
         case .edit: "pencil"
         case .run: "apple.terminal"
@@ -112,7 +113,7 @@ public struct NWActivityLine: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel(accessibilityText)
         .accessibilityValue(action == nil ? "" : isExpanded ? "Expanded" : "Collapsed")
-        .accessibilityHint(action == nil ? "" : "Shows the calls")
+        .accessibilityHint(action == nil ? "" : kind == .work ? "Shows the steps" : "Shows the calls")
     }
 
     private func liveHeader(since: Date?) -> some View {
@@ -235,17 +236,33 @@ public struct NWActivityCalls<Menu: View>: View {
         // Geist Mono advances 0.6em: the column fits the longest kind, never less than 32pt.
         let longest = rows.map(\.label.count).max() ?? 0
         let labelWidth = max(NWThreadMetrics.callLabelWidth, (CGFloat(longest) * 11 * 0.6 * ThemeStore.shared.textScale).rounded(.up))
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(rows) { row in
-                NWActivityCallRowView(row: row, labelWidth: labelWidth, onSelect: onSelect, onShowAll: onShowAll, menu: menu)
+        NWActivityRail {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(rows) { row in
+                    NWActivityCallRowView(row: row, labelWidth: labelWidth, onSelect: onSelect, onShowAll: onShowAll, menu: menu)
+                }
             }
+            .padding(.vertical, NW.Space.xxs)
         }
-        .padding(.vertical, NW.Space.xxs)
-        .padding(.leading, NWThreadMetrics.railPadding)
-        .overlay(alignment: .leading) { NWHairline(.vertical, color: .nw.lineStrong) }
-        .padding(.leading, NWThreadMetrics.railInset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
+    }
+}
+
+/// What an expanded line holds (a summary's lines, a line's calls), indented on a `lineStrong`
+/// hairline rail that runs under the line's glyph.
+public struct NWActivityRail<Content: View>: View {
+    let content: Content
+
+    public init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    public var body: some View {
+        content
+            .padding(.leading, NWThreadMetrics.railPadding)
+            .overlay(alignment: .leading) { NWHairline(.vertical, color: .nw.lineStrong) }
+            .padding(.leading, NWThreadMetrics.railInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
     }
 }
 

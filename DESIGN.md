@@ -44,9 +44,9 @@ In priority order:
 1. **Readable measure.** The thread column is at most 820pt, and agent prose is capped at 640pt.
 2. **Shape, not labels.** There are no speaker labels or avatars. A user turn is a trailing
    bubble; agent output is unboxed prose.
-3. **One quiet line per burst of work.** Consecutive tool calls of one kind merge into one
-   activity line ("Explored 7 files · read 5 · search 2 · 0.9s"). Detail is one click away; raw
-   arguments are behind ⌥-click.
+3. **One quiet line per stretch of work.** The tool work between two pieces of prose reads as
+   one line ("Worked for 6m 40s · explored 13 files · edited 15 files · ran 22 commands"). Its
+   lines, one per burst of same-kind calls, are one click away; raw arguments are behind ⌥-click.
 4. **Nothing in the default view that isn't useful.** No key-hint rows, no status text that
    repeats the toolbar pill, no working directory under the composer, no footers in menus.
 
@@ -694,10 +694,27 @@ row) shows them.
 - The subagent inspector's transcript follows the same rule; there "from parent" always shows
   under a message from the parent, and its time fades in beside it.
 
+**Work groups** (`WorkGroupView` in `Thread/ThreadTools.swift`, `nativeWorkGroup`). A stretch's
+activity lines (between prose, notes, errors and subagent cards) form one group, so a long turn
+never reads as a wall of lines.
+
+- **Folded:** two or more finished lines fold into one summary line, `NWActivityLine` with the
+  `work` glyph (`rectangle.stack`): "Worked for 6m 40s" (wall time over its calls; "Worked"
+  untimed) · "explored 13 files · edited 15 files · ran 22 commands · 17 tests passed · 5
+  failed". Kinds always read in that order (explored, edited, ran, started, used); the lines
+  keep the order the work took.
+- **Expanded:** the lines, as below, on the same `lineStrong` rail as a line's calls
+  (`NWActivityRail`).
+- **One line** stays itself: it already is one line.
+- **Running calls** stand below the summary as live lines, and join it when they finish.
+- **Failures are counted, not shouted.** A failed call adds "n failed" to the meta and is red
+  only inside the expanded lines. The summary turns `failed` only when the group's last call
+  failed and nothing runs after it: the work ended on a failure.
+
 **Activity lines** (`ActivityLineView` in `Thread/ThreadTools.swift`, on `NWActivityLine` and
-`NWActivityCalls`). A turn's tool calls merge into one quiet line per burst of same-kind work
-(`nativeActivityBursts`). A failed call and the running call each stand alone; other tools merge
-only with the same tool.
+`NWActivityCalls`). Within a group, a turn's tool calls merge into one quiet line per burst of
+same-kind work (`nativeActivityBursts`). A failed call and the running call each stand alone;
+other tools merge only with the same tool.
 
 - **The line:** 26pt, a 13pt glyph, the label in 12.5 `textSecondary`, the meta in mono 11
   tertiary, and a chevron when it expands. It is a real button with a hover fill.
@@ -1194,7 +1211,8 @@ Review-pane and menu keys are listed with their surfaces.
   - agent rows: "title, [worktree,] running / needs you / idle / done" (needs you also while one
     of its subagents asks); automation rows: "name, automation, state"
   - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
-    and the hint "Shows the calls"; call rows: "edit, Sources/A.swift, +58 −41"
+    and the hint "Shows the calls"; a folded stretch: "Worked for 6m 40s, explored 13 files, …,
+    5 failed, done" and the hint "Shows the steps"; call rows: "edit, Sources/A.swift, +58 −41"
   - subagent cards: "name, role, state, detail", with the context bar as the value; ledger rows:
     "name, state, summary"; runs strip steps: "name, state — open"
   - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
@@ -1236,7 +1254,7 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
 - **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
   - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting
     before and after the delay, restoring from disk, a hovered turn, "Jump to latest" over the
-    fade) and the activity-line states
+    fade, a long stretch folded into one line) and the activity-line states
   - the composer and its menus
   - subagent cards, the ledger, and the inspector
   - the review pane
