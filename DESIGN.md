@@ -767,7 +767,9 @@ click still lands where it was aimed).
   "Commands · n of m"; rows show the command in mono 12 with the typed prefix in semibold
   `textPrimary` (a 150pt column), its description, and its source as a tag for prompt templates
   and skills (none for extension commands). At most 8 rows show. ⇥ completes with a space. The
-  list is pi's command registry, never hard-coded.
+  list is pi's command registry, never hard-coded. Its rows are lazy, a highlight moving redraws
+  only the two rows it moves between, and only ↑↓ scroll the highlight into view (the pointer's
+  is already under the pointer).
 - **Model picker** (`ModelPicker` on `NWModelPicker`, 260pt, at most 360pt tall): from the
   model chip or ⇧⌘M. A search field, then Recent (up to four, from any thread), then one section
   per provider. Rows show the model in mono 12 and a running check on the current one, or its

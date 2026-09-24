@@ -104,6 +104,10 @@ public struct NWSlashCommand: Identifiable, Equatable, Sendable {
 /// 12 with the typed prefix in semibold `textPrimary` and the rest `textSecondary` (a 150pt
 /// column), its description, and a tag for prompt templates. At most 8 rows show, fewer when
 /// `maxHeight` leaves less room. The field keeps focus and drives the selection.
+///
+/// Rows are lazy and redraw only when their command, its typed prefix, or their highlight
+/// changes. ↑↓ scroll the highlight into view; the pointer's highlight is already under the
+/// pointer, so a hover (or the list scrolling under a still pointer) never scrolls it.
 public struct NWSlashMenu: View {
     let commands: [NWSlashCommand]
     let total: Int
@@ -111,6 +115,8 @@ public struct NWSlashMenu: View {
     @Binding var selection: Int
     let maxHeight: CGFloat?
     let onChoose: (NWSlashCommand) -> Void
+    /// The row the pointer highlighted last.
+    @State private var pointed: Int?
 
     public init(commands: [NWSlashCommand], total: Int, query: String, selection: Binding<Int>, maxHeight: CGFloat? = nil,
                 onChoose: @escaping (NWSlashCommand) -> Void) {
@@ -130,16 +136,9 @@ public struct NWSlashMenu: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(commands.enumerated()), id: \.element.name) { index, command in
-                            NWMenuRow(highlighted: index == selection, spacing: NW.Space.l, action: { onChoose(command) }, onHover: { selection = index }) {
-                                name(command)
-                                    .frame(width: NWComposerMetrics.slashNameWidth, alignment: .leading)
-                                Text(command.description ?? "").font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
-                                    .lineLimit(1).truncationMode(.tail)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                if let tag = command.tag { NWTag(tag) }
-                            }
-                            .id(command.name)
-                            .accessibilityLabel("/\(command.name)" + (command.description.map { ", \($0)" } ?? ""))
+                            NWSlashRow(command: command, typed: typed(command), index: index, highlighted: index == selection, choose: onChoose,
+                                       hover: { pointed = $0; selection = $0 })
+                                .equatable()
                         }
                         if commands.isEmpty {
                             Text("No command matches “/\(query)”").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
@@ -150,7 +149,8 @@ public struct NWSlashMenu: View {
                 }
                 .frame(height: rows * NWComposerMetrics.menuRowHeight)
                 .onChange(of: selection) { _, index in
-                    if commands.indices.contains(index) { proxy.scrollTo(commands[index].name) }
+                    guard index != pointed, commands.indices.contains(index) else { return }
+                    proxy.scrollTo(commands[index].name)
                 }
             }
         }
@@ -166,9 +166,41 @@ public struct NWSlashMenu: View {
         return max(1, min(NWComposerMetrics.menuMaxRows, Int((room / NWComposerMetrics.menuRowHeight).rounded(.down))))
     }
 
-    private func name(_ command: NWSlashCommand) -> Text {
+    /// How much of the command's name the query types: its whole length when it is a prefix.
+    private func typed(_ command: NWSlashCommand) -> Int {
+        command.name.lowercased().hasPrefix(query.lowercased()) ? query.count : 0
+    }
+}
+
+/// One command in the slash menu. Equatable on what it draws (closures aside), so a highlight
+/// moving redraws the two rows it moves between.
+struct NWSlashRow: View, Equatable {
+    let command: NWSlashCommand
+    /// The length of the typed prefix, in semibold.
+    let typed: Int
+    let index: Int
+    let highlighted: Bool
+    let choose: (NWSlashCommand) -> Void
+    let hover: (Int) -> Void
+
+    static func == (a: Self, b: Self) -> Bool {
+        a.command == b.command && a.typed == b.typed && a.index == b.index && a.highlighted == b.highlighted
+    }
+
+    var body: some View {
+        NWMenuRow(highlighted: highlighted, spacing: NW.Space.l, action: { choose(command) }, onHover: { hover(index) }) {
+            name
+                .frame(width: NWComposerMetrics.slashNameWidth, alignment: .leading)
+            Text(command.description ?? "").font(.nw(.ui, weight: .regular)).foregroundStyle(Color.nw.textSecondary)
+                .lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let tag = command.tag { NWTag(tag) }
+        }
+        .accessibilityLabel("/\(command.name)" + (command.description.map { ", \($0)" } ?? ""))
+    }
+
+    private var name: Text {
         let nw = Color.nw
-        let typed = command.name.lowercased().hasPrefix(query.lowercased()) ? query.count : 0
         let head = Text("/" + command.name.prefix(typed)).fontWeight(.semibold).foregroundStyle(nw.textPrimary)
         let tail = Text(String(command.name.dropFirst(typed))).foregroundStyle(nw.textSecondary)
         let arguments = Text(command.arguments.map { " " + $0 } ?? "").foregroundStyle(nw.textTertiary)
