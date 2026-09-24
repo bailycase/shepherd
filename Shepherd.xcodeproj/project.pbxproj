@@ -17,6 +17,7 @@
 		15000000000000000000B009 /* ThreadMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A009 /* ThreadMessageView.swift */; };
 		15000000000000000000B00A /* ThreadDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A00A /* ThreadDialogView.swift */; };
 		15000000000000000000B101 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
+		15000000000000000000B102 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A00B /* PrivacyInfo.xcprivacy */; };
 		15000000000000000000B201 /* ShepherdCore in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C001 /* ShepherdCore */; };
 		15000000000000000000B202 /* ShepherdProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C002 /* ShepherdProtocol */; };
 		15000000000000000000B203 /* ShepherdRemote in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C003 /* ShepherdRemote */; };
@@ -55,6 +56,7 @@
 		15000000000000000000A007 /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
 		15000000000000000000A009 /* ThreadMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadMessageView.swift; sourceTree = "<group>"; };
 		15000000000000000000A00A /* ThreadDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadDialogView.swift; sourceTree = "<group>"; };
+		15000000000000000000A00B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		15000000000000000000A201 /* Shepherd iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shepherd iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5E000000000000000000A001 /* ShepherdLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShepherdLauncher.swift; sourceTree = "<group>"; };
 		5E000000000000000000A002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -102,6 +104,7 @@
 				15000000000000000000A007 /* ThreadView.swift */,
 				15000000000000000000A00A /* ThreadDialogView.swift */,
 				15000000000000000000A009 /* ThreadMessageView.swift */,
+				15000000000000000000A00B /* PrivacyInfo.xcprivacy */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -229,6 +232,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				15000000000000000000B101 /* AppIcon.icon in Resources */,
+				15000000000000000000B102 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
