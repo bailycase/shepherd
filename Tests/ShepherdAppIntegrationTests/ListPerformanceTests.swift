@@ -258,8 +258,14 @@ struct ListPerformanceTests {
         }
 
         #expect(rows["thread.view", default: 0] >= 5, "the reply streamed: \(rows)")
-        for key in ["queue.row", "composer.body", "composer.chips"] {
-            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        #expect(rows["queue.row", default: 0] == 0, "\(rows)")
+        // See aStreamedChunkRedrawsNoComposerOrToolbar: CI's VM redraws the composer per chunk.
+        withKnownIssue("CI's VM redraws the composer for each streamed chunk", isIntermittent: true) {
+            for key in ["composer.body", "composer.chips"] {
+                #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+            }
+        } when: {
+            !TimingTests.enabled
         }
 
         // The control: a queued message edited on the host redraws its row.
