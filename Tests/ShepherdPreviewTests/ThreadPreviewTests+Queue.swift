@@ -41,14 +41,15 @@ extension ThreadPreviewTests {
     }
 
     /// QueueEdit: the first message open in the editor, the third deleted with Undo, and the Send
-    /// menu open on a draft (opened as a right-click on Send opens it).
+    /// menu open on a draft (opened as a right-click on Send opens it), beside the card as the
+    /// board draws it: the thread is wide enough for it there.
     @Test func queueEdit() async throws {
         let fixture = QueueThreadFixture(QueueThreads.running, queue: QueueFixture.messages(QueueThreads.queued),
                                          draft: "Open it as a draft once tests pass")
         defer { fixture.store.stop() }
         final class Once { var seeded = false; var opened = false }
         let once = Once()
-        try await Preview.render("queue-edit", size: CGSize(width: 1180, height: 900), ready: {
+        try await Preview.render("queue-edit", size: CGSize(width: 1440, height: 900), ready: {
             guard fixture.store.ready else { return false }
             if !once.seeded {
                 guard fixture.store.queue.count == 3 else { return false }

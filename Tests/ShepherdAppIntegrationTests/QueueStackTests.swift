@@ -100,6 +100,34 @@ struct QueueStackIntegrationTests {
         #expect(abs(menu.width - NWQueueMetrics.sendMenuWidth) <= 2, "the menu's own width: \(menu)")
     }
 
+    /// Where the thread has room beside the card, the Send menu stands there (as the boards
+    /// draw it), bottom-aligned with the card, and covers none of Up next above it.
+    @Test func theSendMenuStandsBesideTheCardWhereThereIsRoom() async throws {
+        let thread = QueueThread(queue: QueueFixture.messages(Array(Self.texts.prefix(2))), draft: "Keep the PR title under 60 characters",
+                                 size: CGSize(width: 1500, height: 700))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let inset = thread.composerInset, offset = thread.threadOffset
+        let stack = CGRect(x: thread.columnLeading, y: thread.size.height - inset, width: thread.columnTrailing - thread.columnLeading,
+                           height: Self.stackHeight(rows: 2) - AppLayout.menuGap)
+        let beside = CGRect(x: thread.columnTrailing + 1, y: 0, width: thread.size.width - thread.columnTrailing - 1, height: thread.size.height)
+        let (stackBefore, besideBefore) = (FrameTimer.capture(thread.window, stack), FrameTimer.capture(thread.window, beside))
+        let send = try #require(thread.sendButton)
+
+        send.rightMouseDown(with: QueueThread.rightClick)
+        try await thread.settle()
+
+        #expect(thread.composerInset == inset && thread.threadOffset == offset)
+        let found = Pixels.bounds(differing: besideBefore, FrameTimer.capture(thread.window, beside), rows: 0..<Int(beside.height), by: 0.11)
+        let menu = try #require(found, "the menu opened beside the card").offsetBy(dx: beside.minX, dy: 0)
+        #expect(abs(menu.minX - (thread.columnTrailing + AppLayout.menuGap)) <= 2, "8pt after the card's trailing edge: \(menu)")
+        #expect(abs(menu.maxY - (thread.size.height - AppLayout.composerBottom)) <= 2, "bottom-aligned with the card: \(menu)")
+        #expect(abs(menu.width - NWQueueMetrics.sendMenuWidth) <= 2, "the menu's own width: \(menu)")
+        // Only the menu's shadow may reach it.
+        let covered = Pixels.bounds(differing: stackBefore, FrameTimer.capture(thread.window, stack), rows: 0..<Int(stack.height), by: 0.11)
+        #expect(covered == nil, "Up next stays uncovered: \(String(describing: covered)) in \(stack)")
+    }
+
     // MARK: Keys
 
     /// ⌘↩ in the composer steers the draft in, ahead of any key equivalent in the window (the
