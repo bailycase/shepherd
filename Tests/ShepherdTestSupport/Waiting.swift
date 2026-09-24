@@ -1,4 +1,5 @@
 import Foundation
+import Testing
 
 /// Why a wait gave up: what was awaited, so a failing integration test says what never happened.
 public struct WaitTimeout: Error, CustomStringConvertible {
@@ -38,4 +39,17 @@ public func eventuallyOnMain(
     }
     if try condition() { return }
     throw WaitTimeout(what: what)
+}
+
+/// Runs the body of an exit test (`#expect(processExitsWith:)`), recording what it throws as an
+/// issue. An error that escapes the body kills the child process with SIGTRAP ("Error raised at
+/// top level"), and the parent reports only the signal; recorded, a wait that timed out fails
+/// the test by what it waited for. A failed `#require` has already recorded its own issue.
+public func recordingErrors(sourceLocation: SourceLocation = #_sourceLocation, _ body: () async throws -> Void) async {
+    do {
+        try await body()
+    } catch is ExpectationFailedError {
+    } catch {
+        Issue.record(error, sourceLocation: sourceLocation)
+    }
 }
