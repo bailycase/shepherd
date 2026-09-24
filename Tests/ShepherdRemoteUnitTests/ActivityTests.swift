@@ -329,6 +329,7 @@ struct TurnPresentationTests {
             case .subagents(_, let ids, let all): all ? "cards:all" : "cards:\(ids.joined(separator: ","))"
             case .note: "note"
             case .error(_, _, _, let final): final ? "error:final" : "error"
+            case .steer(_, let text, _, _): "steer:" + text
             }
         }
     }
@@ -343,6 +344,20 @@ struct TurnPresentationTests {
         #expect(kinds(presentation) == ["thinking", "prose", "thinking", "work:2+1", "prose"])
         guard case .thinking(_, let text, _, _, _) = presentation.items[2] else { Issue.record("no folded thinking"); return }
         #expect(text == "next\n\nthen")
+    }
+
+    /// A steer is drawn where pi read it, splitting the work before it from the work after, and
+    /// it is not the turn's prose (Copy leaves it out).
+    @Test func aSteerSitsBetweenTheWorkBeforeAndAfterIt() {
+        var steer = F.user("use tables", id: "s")
+        steer.origin = .steered
+        steer.timestamp = 7
+        steer.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: ""))
+        let presentation = nativeTurnPresentation([tool("read", "r1"), steer, F.assistant("Switching."), tool("edit", "e1")], live: false)
+        #expect(kinds(presentation) == ["work:1", "steer:use tables", "prose", "work:1"])
+        #expect(presentation.copyText == "Switching." && presentation.toolCalls == 2)
+        guard case .steer(_, _, let sentAt, let images) = presentation.items[1] else { Issue.record("no steer"); return }
+        #expect(sentAt == 7 && images == 1)
     }
 
     @Test func foldedThinkingSumsEachMessagesSecondsOnce() {
