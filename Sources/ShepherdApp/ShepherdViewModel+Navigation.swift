@@ -147,6 +147,7 @@ extension ShepherdViewModel {
     /// Flattened depth-first forest of spaces by path containment: children
     /// directly follow their parent, top-level spaces keep declaration order.
     static func spaceForest(_ spaces: [Space]) -> [(space: Space, depth: Int)] {
+        NWRenderProbe.tick("sidebar.spaceForest")
         func normalized(_ path: String) -> String {
             let expanded = (path as NSString).expandingTildeInPath
             let resolved = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
@@ -307,7 +308,11 @@ extension ShepherdViewModel {
     /// first. A collapsed ancestor hides the space's row entirely, so these
     /// are exactly the disclosures a selection has to open. Pure, for tests.
     static func ancestorSpaceIDs(of space: SpaceID, in spaces: [Space]) -> [SpaceID] {
-        let forest = spaceForest(spaces)
+        ancestorSpaceIDs(of: space, forest: spaceForest(spaces))
+    }
+
+    /// `ancestorSpaceIDs(of:in:)` over an already built forest.
+    static func ancestorSpaceIDs(of space: SpaceID, forest: [(space: Space, depth: Int)]) -> [SpaceID] {
         guard let index = forest.firstIndex(where: { $0.space.id == space }) else { return [] }
         var depth = forest[index].depth
         var ancestors: [SpaceID] = []
@@ -331,7 +336,9 @@ extension ShepherdViewModel {
         // selected row, even when the selection itself didn't change.
         sidebarRevealRequest += 1
         guard let id else { return }
-        let ancestors = Set(Self.ancestorSpaceIDs(of: id, in: visibleSpaces))
+        // The memoized forest: building it again on every selection costs a path search per
+        // pair of spaces.
+        let ancestors = Set(Self.ancestorSpaceIDs(of: id, forest: sidebarForest))
         if !ancestors.isDisjoint(with: collapsedSpaces) {
             collapsedSpaces.subtract(ancestors)
         }
@@ -350,8 +357,20 @@ extension ShepherdViewModel {
         spaces: [Space],
         collapsed: Set<SpaceID>
     ) -> AnyHashable? {
+        sidebarRevealTarget(selectedAgentID: selectedAgentID, selectedSpaceID: selectedSpaceID, remoteSelected: remoteSelected,
+                            forest: spaceForest(spaces.filter { !$0.hidden }), collapsed: collapsed)
+    }
+
+    /// `sidebarRevealTarget(…spaces:…)` over the visible spaces' already built forest.
+    static func sidebarRevealTarget(
+        selectedAgentID: AgentID?,
+        selectedSpaceID: SpaceID?,
+        remoteSelected: Bool,
+        forest: [(space: Space, depth: Int)],
+        collapsed: Set<SpaceID>
+    ) -> AnyHashable? {
         guard !remoteSelected, let spaceID = selectedSpaceID else { return nil }
-        let visible = visibleSpaceForest(spaces.filter { !$0.hidden }, collapsed: collapsed)
+        let visible = visibleSpaceForest(forest: forest, collapsed: collapsed)
         guard visible.contains(where: { $0.space.id == spaceID }) else { return nil }
         if let selectedAgentID, !collapsed.contains(spaceID) { return AnyHashable(selectedAgentID) }
         return AnyHashable(spaceID)
@@ -369,7 +388,7 @@ extension ShepherdViewModel {
             selectedAgentID: selectedAgentID,
             selectedSpaceID: selectedSpaceID,
             remoteSelected: selectedRemoteAgent != nil,
-            spaces: state.spaces,
+            forest: sidebarForest,
             collapsed: collapsedSpaces
         )
     }

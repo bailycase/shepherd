@@ -44,6 +44,29 @@ struct SpaceForestTests {
         #expect(visible.map(\.space.name) == ["root", "child", "sibling"])
     }
 
+    /// Selection reveals rows from the memoized forest: the same answers as building it again.
+    @Test func revealingFromABuiltForestMatchesBuildingItAgain() {
+        let root = Fixture.space("root", path: "/tmp/reveal-root")
+        let child = Fixture.space("child", path: "/tmp/reveal-root/child")
+        let deep = Fixture.space("deep", path: "/tmp/reveal-root/child/deep")
+        let other = Fixture.space("other", path: "/tmp/reveal-other")
+        let hidden = Fixture.space("automations", path: "/tmp/reveal-auto", hidden: true)
+        let spaces = [root, child, deep, other, hidden]
+        let forest = ShepherdViewModel.spaceForest(spaces.filter { !$0.hidden })
+        let agent = AgentID()
+        for space in spaces {
+            #expect(ShepherdViewModel.ancestorSpaceIDs(of: space.id, forest: forest)
+                == ShepherdViewModel.ancestorSpaceIDs(of: space.id, in: spaces.filter { !$0.hidden }))
+            for collapsed: Set<SpaceID> in [[], [root.id], [child.id], [space.id]] {
+                let built = ShepherdViewModel.sidebarRevealTarget(selectedAgentID: agent, selectedSpaceID: space.id, remoteSelected: false,
+                                                                  forest: forest, collapsed: collapsed)
+                let rebuilt = ShepherdViewModel.sidebarRevealTarget(selectedAgentID: agent, selectedSpaceID: space.id, remoteSelected: false,
+                                                                    spaces: spaces, collapsed: collapsed)
+                #expect(built == rebuilt, "\(space.name), collapsed \(collapsed.count)")
+            }
+        }
+    }
+
     @Test func ancestorsAreListedNearestFirst() {
         let root = Fixture.space("root", path: "/tmp/root")
         let child = Fixture.space("child", path: "/tmp/root/child")
