@@ -609,10 +609,12 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
   ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
   state, a resuming agent's history), and a message sent meanwhile waits for pi. Nothing says
-  pi is starting unless pi keeps the thread waiting past half a second
-  (`AppLayout.startingIndicatorDelay`); then the composer's control row says so (see Composer
-  › States). There is no spinner in the thread and no starting row at its tail. A pi that has
-  not started after a minute gets the error banner.
+  pi is starting unless pi is slow: past two seconds (`AppLayout.startingIndicatorDelay`), well
+  beyond a normal start (pi answers about 0.8 s after ⌘N, about 1 s after a relaunch), or past
+  half a second (`AppLayout.blankStartingIndicatorDelay`) while the thread has nothing to show
+  (a remote agent's, or one whose session file cannot be read). Then the composer's control row
+  says so (see Composer › States). There is no spinner in the thread and no starting row at its
+  tail. A pi that has not started after a minute gets the error banner.
 - **Resuming:** an agent resuming after a relaunch shows its history at once, read from pi's
   session file (`PiSessionPreview`): the newest page, the model, and the thinking level, drawn
   exactly as pi's history is. Nothing in it acts yet (retry, load older, subagent actions)
@@ -776,7 +778,8 @@ their menu is open.
 - **Starting:** Send is offered from the first frame, before pi has answered anything. A
   message sent while pi boots waits behind the spinner, still in the field, and goes once pi
   answers, as the field has it then (edited, or not at all once cleared). Once pi has kept the
-  thread waiting for half a second (`AppLayout.startingIndicatorDelay`), "Starting pi…" in
+  thread waiting for two seconds (`AppLayout.startingIndicatorDelay`; half a second over a thread
+  with nothing to show, `AppLayout.blankStartingIndicatorDelay`), "Starting pi…" in
   caption `textTertiary` with a 10pt `textTertiary` spinner sits in the control row just before
   the action (its spinner gives way to the action's own while a message waits). It lives in a
   row that is always there, so it never changes the composer's height or moves the thread; it
@@ -1107,7 +1110,7 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 | A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | "n subagents need you" | the card's answers and Reply… |
 | Agent done | `done` | green dot | Idle (outlined) | Send |
 | Agent idle | `idle` | hollow ring | Idle (outlined) | Send |
-| pi starting | `idle` | hollow ring | Idle (outlined) | Send, which waits for pi; after half a second, "Starting pi…" beside it |
+| pi starting | `idle` | hollow ring | Idle (outlined) | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting pi…" beside it |
 | Connection lost | `failed` | — | Error | Send, plus a `failed` banner with Reconnect |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,

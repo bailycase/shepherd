@@ -54,6 +54,20 @@ struct Composer: View {
     @State private var startingShown = false
     @Environment(\.threadStartingDelay) private var startingDelay
 
+    /// What the starting indicator's wait restarts on: a thread that begins waiting, or one
+    /// whose first content (history from disk) arrives while it waits.
+    private struct StartingWait: Equatable {
+        var awaiting: Bool
+        var blank: Bool
+    }
+
+    /// How long pi may keep the thread waiting before the composer says it is starting: `delay`
+    /// over a thread that draws something, no more than `AppLayout.blankStartingIndicatorDelay`
+    /// over one that is still blank.
+    static func startingDelay(blank: Bool, delay: Duration) -> Duration {
+        blank ? min(delay, AppLayout.blankStartingIndicatorDelay) : delay
+    }
+
     private enum Menu: Equatable { case models, thinking }
 
     /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc).
@@ -154,12 +168,12 @@ struct Composer: View {
             if !active { loaded = false } else if store.ready { loaded = true }
         }
         // A normal start is over before the delay: only a slow pi is ever said to be starting.
-        .task(id: active && store.awaitingPi) {
+        .task(id: StartingWait(awaiting: active && store.awaitingPi, blank: store.snapshot == nil)) {
             guard active && store.awaitingPi else {
                 startingShown = false
                 return
             }
-            try? await Task.sleep(for: startingDelay)
+            try? await Task.sleep(for: Self.startingDelay(blank: store.snapshot == nil, delay: startingDelay))
             if !Task.isCancelled { startingShown = true }
         }
         .frame(maxWidth: AppLayout.threadMaxWidth)

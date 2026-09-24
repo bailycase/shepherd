@@ -8,8 +8,9 @@ import ShepherdSessions
 extension EnvironmentValues {
     /// Keyboard commands for the thread on screen, when the app provides them.
     @Entry var threadCommands: ThreadCommandCenter? = nil
-    /// How long a thread waits for pi before its composer says pi is starting (previews show it
-    /// at once).
+    /// How long a thread that draws something waits for pi before its composer says pi is
+    /// starting; a blank one waits no longer than `AppLayout.blankStartingIndicatorDelay`
+    /// (previews show it at once).
     @Entry var threadStartingDelay: Duration = AppLayout.startingIndicatorDelay
 }
 
