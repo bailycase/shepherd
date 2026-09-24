@@ -220,6 +220,28 @@ struct ComposerMenuTests {
         #expect(FrameTimer.capture(thread.window, whole) == closed, "a click in the thread closes it")
         if menu == .slash { #expect(thread.store.draft == "/", "closing the slash menu keeps the draft") }
     }
+
+    /// A composer that goes away (its agent deleted, a remote thread remounted) takes its click
+    /// watcher with it: nothing the watcher holds keeps the composer's state alive. (The slash
+    /// menu, since a search field that had focus is held by AppKit's text system for a while.)
+    @Test func aComposerThatGoesAwayLetsGoOfItsClickWatcher() async throws {
+        let thread = ComposerThread()
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.openSlashMenu()
+        try await thread.settle()
+        thread.store.draft = ""
+        try await thread.settle()
+        weak var dismissal = thread.menuDismissal
+        try #require(dismissal != nil)
+
+        thread.window.show(EmptyView())
+
+        try await eventuallyOnMain("the watcher to be released") {
+            thread.window.layout()
+            return dismissal == nil
+        }
+    }
 }
 
 // MARK: Reading the window
