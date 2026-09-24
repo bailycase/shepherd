@@ -68,6 +68,37 @@ struct ListPerformanceTests {
         #expect(fleet < few * 2.5, "\(String(format: "300 agents %.2f ms, 30 agents %.2f ms", fleet, few))")
     }
 
+    // MARK: Review
+
+    private func review(_ files: [DiffFile]) -> OffscreenWindow {
+        OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, ReviewPaneContent(model: ListFixtures.reviewModel(files)))
+    }
+
+    @Test func openingAReviewOfThreeHundredFilesBuildsOnlyTheChipsAndLinesInView() throws {
+        let files = (0..<300).map { ListFixtures.diffFile("Sources/Module\($0)/File\($0).swift", lines: 12) }
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = review(files)
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        // A chip is at least its letter, a short name, and padding: about a dozen fit 600pt.
+        #expect(rows["review.fileChip", default: 0] <= 24, "\(rows)")
+        #expect(rows["diff.line", default: 0] <= 2 * Int(800 / NW.Height.rowCompact), "\(rows)")
+    }
+
+    /// Every line can be commented on, but a line builds its `+` only while it is hovered.
+    @Test func scrollingALongDiffBuildsNoCommentButtons() throws {
+        let window = review([ListFixtures.diffFile("Big.swift", lines: 2000)])
+        defer { window.close() }
+        let rows = ListPerf.counting {
+            ListPerf.settle(window)
+            if let scroll = ListPerf.scrollView(in: window) { _ = ListPerf.scroll(window, scroll, step: 400, steps: 40) }
+        }
+        #expect(rows["diff.line", default: 0] > 100, "the diff scrolled: \(rows)")
+        #expect(rows["diff.commentButton", default: 0] == 0, "\(rows)")
+    }
+
     // MARK: Palette
 
     private func palette(_ items: [PaletteItem], query: String, highlight: PaletteHighlight = PaletteHighlight()) -> OffscreenWindow {

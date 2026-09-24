@@ -131,18 +131,26 @@ public struct NWDiffLine: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .help(line.source)
             if let onComment {
-                Button(action: onComment) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(nw.textOnLantern)
-                        .frame(width: NWDiffLine.commentButtonSize, height: NWDiffLine.commentButtonSize)
-                        .background(nw.lantern, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                }
-                .buttonStyle(.plain)
-                .opacity(hovering ? 1 : 0)
-                .padding(.horizontal, NW.Space.s)
-                .accessibilityHidden(true)
-                .help("Comment on this line")
+                // The slot is always laid out, so hovering moves nothing; the button exists only
+                // while the line is hovered, so a long diff doesn't build a hidden one per line.
+                Color.clear
+                    .frame(width: NWDiffLine.commentButtonSize + 2 * NW.Space.s, height: NWDiffLine.commentButtonSize)
+                    .overlay {
+                        if hovering {
+                            Button(action: onComment) {
+                                let _ = NWRenderProbe.tick("diff.commentButton")
+                                Image(systemName: "plus")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(nw.textOnLantern)
+                                    .frame(width: NWDiffLine.commentButtonSize, height: NWDiffLine.commentButtonSize)
+                                    .background(nw.lantern, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityHidden(true)
+                            .help("Comment on this line")
+                            .nwTransition(.hover)
+                        }
+                    }
             }
         }
         .frame(minHeight: NW.Height.rowCompact)
