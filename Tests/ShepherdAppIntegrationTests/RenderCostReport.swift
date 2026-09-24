@@ -81,6 +81,31 @@ struct RenderCostReport {
         report.add("thread (60 turns) under its toolbar", "switch: show", counts: shown)
     }
 
+    /// A hidden agent's status report with 12 and 30 layouts mounted: main-thread CPU per report
+    /// and the layout bodies it reruns.
+    @Test(arguments: [12, 30]) func statusReportWithLayoutsMounted(count: Int) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(count, in: app)
+        defer { window.close() }
+        try await Task.sleep(for: Self.atRest)
+        var costs: [Double] = []
+        NWRenderProbe.start()
+        for round in 0..<3 {
+            for agent in agents.dropFirst().prefix(6) {
+                var next = vm.state
+                if let index = next.agents.firstIndex(where: { $0.id == agent.agent.id }) {
+                    next.agents[index].status = round.isMultiple(of: 2) ? .working : .done
+                }
+                costs.append(await cost(window) { vm.adopt(next) })
+            }
+        }
+        let counts = NWRenderProbe.stop().mapValues { $0 / costs.count }
+        report.add("workspace (\(count) layouts mounted)", "hidden agent's status report: main-thread CPU (median)",
+                   ms: MainThreadCPU.median(costs))
+        report.add("workspace (\(count) layouts mounted)", "hidden agent's status report: bodies each", counts: counts)
+    }
+
     /// A poll that moves only the context count.
     @Test func statsOnlyPoll() async throws {
         var runs: [Double] = []

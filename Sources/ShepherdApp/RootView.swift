@@ -226,10 +226,14 @@ struct WorkspaceHeaderView: View {
         transaction.disablesAnimations = true
     }
 
-    private func threadHeader(store: NativeThreadStore, project: String, title: String, rename: @escaping () -> Void) -> ThreadHeader {
+    /// Compared by value: this header reruns for every status report, and the toolbar under it
+    /// reruns only when what it shows changed.
+    private func threadHeader(store: NativeThreadStore, project: String, title: String,
+                              rename: @escaping () -> Void) -> EquatableView<ThreadHeader> {
         ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
                      reviewOpen: vm.isReviewPaneShowing, inspectorOpen: vm.isInspectorShowing,
                      reviewShortcut: keys.display(.toggleRightPane), inspectShortcut: keys.display(.inspectSubagent),
                      toggleReview: { vm.toggleReviewPane() }, toggleSubagents: { vm.toggleSubagentPane() }, rename: rename)
+            .equatable()
     }
 }

@@ -5,8 +5,18 @@ import ShepherdRemote
 
 /// The thread toolbar (Navigation board, `NWThreadToolbar`) for the agent on screen: title ·
 /// spacer · "n turns · 42k ctx" · the subagents and review toggles (lantern while their pane is
-/// open) · options. Observes the thread store; everything else comes in as values.
-struct ThreadHeader: View {
+/// open) · options. Observes the thread store; everything else comes in as values, compared by
+/// value (closures by presence), so the workspace header rerunning for a status report or a
+/// selection elsewhere leaves it alone (`.equatable()`).
+struct ThreadHeader: View, Equatable {
+    static func == (a: ThreadHeader, b: ThreadHeader) -> Bool {
+        a.store === b.store && a.project == b.project && a.title == b.title && a.leadingInset == b.leadingInset
+            && (a.showSidebar == nil) == (b.showSidebar == nil) && a.reviewOpen == b.reviewOpen && a.inspectorOpen == b.inspectorOpen
+            && a.reviewShortcut == b.reviewShortcut && a.inspectShortcut == b.inspectShortcut
+            && (a.toggleReview == nil) == (b.toggleReview == nil) && (a.toggleSubagents == nil) == (b.toggleSubagents == nil)
+            && (a.rename == nil) == (b.rename == nil)
+    }
+
     var store: NativeThreadStore
     let project: String
     let title: String

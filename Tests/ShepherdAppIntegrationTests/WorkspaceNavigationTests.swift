@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdSessions
@@ -172,6 +173,29 @@ struct WorkspaceNavigationTests {
 
         #expect(thread.store.messages.count == 250)
         #expect(abs(clip.bounds.origin.y - offset) < 1, "scrolled to \(offset), now \(clip.bounds.origin.y)")
+    }
+
+    /// Switching agents keeps every mounted layout's views (their scroll views are the same
+    /// objects) and their order: visibility is opacity, never a remount.
+    @Test func switchingKeepsEveryLayoutMountedInItsOrder() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(4, in: app)
+        defer { window.close() }
+        func scrollViews() -> Set<ObjectIdentifier> {
+            func all(_ view: NSView) -> [NSScrollView] { ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(all) }
+            return Set(all(window.host).map(ObjectIdentifier.init))
+        }
+        let order = vm.mountedTabs.map(\.id)
+        let views = scrollViews()
+
+        for agent in [agents[2], agents[3], agents[1], agents[0]] {
+            vm.selectAgent(agent.agent.id)
+            ListPerf.settle(window)
+            #expect(vm.mountedTabs.map(\.id) == order)
+        }
+
+        #expect(scrollViews() == views, "no layout was rebuilt")
     }
 
     @Test func draggingAnAgentOntoASiblingReordersItsSpaceAndPersists() async throws {

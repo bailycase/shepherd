@@ -20,9 +20,13 @@ struct WorkspaceView: View {
                 // grid (see WorkspaceSelection).
                 let mounted = vm.mountedTabs
                 let visibleTabID = vm.activeTabID
+                // Each layout's values, resolved here once: a layout reruns only when its own
+                // change, so a status report or another agent's review reruns none of them.
+                let models = AgentLayoutModel.Resolver(vm: vm, visibleTabID: visibleTabID)
                 ForEach(mounted) { tab in
                     let isVisible = tab.id == visibleTabID
-                    AgentLayoutView(vm: vm, tab: tab)
+                    AgentLayoutView(vm: vm, model: models.model(for: tab))
+                        .equatable()
                         .id(tab.id)
                         // `opacity(0)`, never a conditional `.hidden()`
                         // branch: `if hidden { … } else { … }` is
@@ -124,31 +128,92 @@ private extension String {
 
 // MARK: Agent layout
 
+/// What one mounted layout shows, as plain values the workspace resolves (`Resolver`): the view
+/// reads nothing observable, so it reruns only when one of these changes.
+struct AgentLayoutModel: Equatable {
+    /// The layout's thread: the agent whose pi runs in it, and its pane.
+    struct Thread: Equatable {
+        let agentID: AgentID
+        let paneID: PaneID
+        let agentName: String
+        /// The pi session its history is previewed from while pi starts.
+        let piSessionID: String
+    }
+
+    let tab: Tab
+    let isVisible: Bool
+    let thread: Thread?
+    /// The focused pane while the layout is on screen; a hidden layout holds no focus.
+    let focusedPaneID: PaneID?
+    /// The subagent the right pane inspects.
+    let inspectingRunID: String?
+    /// The review docked beside the layout, by identity.
+    let review: ReviewSession?
+
+    static func == (a: AgentLayoutModel, b: AgentLayoutModel) -> Bool {
+        a.tab == b.tab && a.isVisible == b.isVisible && a.thread == b.thread && a.focusedPaneID == b.focusedPaneID
+            && a.inspectingRunID == b.inspectingRunID && a.review === b.review
+    }
+
+    /// Resolves every mounted layout's model from one pass over the workspace.
+    @MainActor
+    struct Resolver {
+        private let visibleTabID: TabID?
+        private let focusedPaneID: PaneID?
+        private let agentsByTab: [TabID: Agent]
+        private let runs: [AgentID: String]
+        private let reviews: [AgentID: ReviewSession]
+
+        init(vm: ShepherdViewModel, visibleTabID: TabID?) {
+            self.visibleTabID = visibleTabID
+            focusedPaneID = vm.focusedPaneID
+            agentsByTab = Dictionary(vm.state.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
+            runs = vm.subagentInspector.runByAgent
+            reviews = Dictionary(vm.reviewSessions.values.map { ($0.agentID, $0) }, uniquingKeysWith: { first, _ in first })
+        }
+
+        func model(for tab: Tab) -> AgentLayoutModel {
+            let visible = tab.id == visibleTabID
+            let thread = agentsByTab[tab.id].flatMap { agent in
+                tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
+                    .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID) }
+            }
+            return AgentLayoutModel(tab: tab, isVisible: visible, thread: thread, focusedPaneID: visible ? focusedPaneID : nil,
+                                    inspectingRunID: thread.flatMap { runs[$0.agentID] },
+                                    review: thread.flatMap { reviews[$0.agentID] })
+        }
+    }
+}
+
 /// An agent's layout with its right pane (an inspected subagent, else its review) docked beside
 /// the whole layout, never inside the thread's pane: the dock rule measures the main column, so a
 /// terminal split beside the thread neither halves the width it measures nor leaves the pane
-/// covering the thread.
-struct AgentLayoutView: View {
+/// covering the thread. It reads only its model; `vm` is for actions.
+struct AgentLayoutView: View, Equatable {
     var vm: ShepherdViewModel
-    let tab: Tab
+    let model: AgentLayoutModel
+
+    static func == (a: AgentLayoutView, b: AgentLayoutView) -> Bool {
+        a.vm === b.vm && a.model == b.model
+    }
 
     var body: some View {
-        let thread = tab.layout.leaves.lazy.compactMap { pane in
-            primaryAgent(in: tab, pane: pane, agents: vm.state.agents).map { (agentID: $0.id, paneID: pane.id) }
-        }.first
-        let inspecting = thread.flatMap { vm.subagentInspector.runByAgent[$0.agentID] }
-        let review = thread.flatMap { thread in vm.reviewSessions.values.first { $0.agentID == thread.agentID } }
+        let _ = NWRenderProbe.tick("layout.agentLayout")
+        let tab = model.tab
+        let thread = model.thread
+        let inspecting = model.inspectingRunID
+        let review = model.review
         // The layout stays the first child whether or not a pane is open, so opening one never
         // remounts a pane's surface.
         RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
-            PaneTreeView(vm: vm, tab: tab, node: tab.layout)
+            PaneTreeView(vm: vm, model: model)
         } pane: {
             if let thread {
                 let agentID = thread.agentID
                 let store = vm.threadStores.store(for: agentID)
                 RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? review.map { .review($0.id) }) {
                     if let inspecting {
-                        SubagentInspector(store: store, runID: inspecting, active: vm.isVisibleTab(tab), close: { [vm] in
+                        SubagentInspector(store: store, runID: inspecting, active: model.isVisible, close: { [vm] in
                             vm.subagentInspector.runByAgent.removeValue(forKey: agentID)
                         }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
                             do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
@@ -264,19 +329,20 @@ func paneTreeGeometry(
 /// terminal surfaces.
 struct PaneTreeView: View {
     var vm: ShepherdViewModel
-    let tab: Tab
-    let node: PaneNode
+    /// Everything the tree draws; `vm` is for actions.
+    let model: AgentLayoutModel
     @State private var liveRatios: [PaneSplitPath: Double] = [:]
 
+    private var tab: Tab { model.tab }
     private var containerSpace: String { "split-\(tab.id)" }
 
     var body: some View {
         GeometryReader { geo in
-            let geometry = paneTreeGeometry(for: node, in: geo.size, liveRatios: liveRatios)
-            let visible = vm.isVisibleTab(tab)
+            let _ = NWRenderProbe.tick("layout.paneTreeGeo")
+            let geometry = paneTreeGeometry(for: tab.layout, in: geo.size, liveRatios: liveRatios)
             ZStack(alignment: .topLeading) {
                 ForEach(geometry.leaves, id: \.pane.id) { leaf in
-                    PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane, visible: visible))
+                    PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane))
                         .frame(width: leaf.rect.width, height: leaf.rect.height)
                         .offset(x: leaf.rect.minX, y: leaf.rect.minY)
                 }
@@ -304,23 +370,24 @@ struct PaneTreeView: View {
     }
 
     private func separatorColor(for split: PaneNode) -> Color {
-        paneSeparatorColor(split, focused: vm.focusedPaneID)
+        paneSeparatorColor(split, focused: model.focusedPaneID)
     }
 
     /// Everything a leaf draws, resolved here so the leaf itself reads nothing observable and
     /// re-renders only when one of these values changes.
-    private func leafModel(_ pane: LeafPane, visible: Bool) -> PaneLeafModel {
-        let agent = primaryAgent(in: tab, pane: pane, agents: vm.state.agents)
+    private func leafModel(_ pane: LeafPane) -> PaneLeafModel {
+        let thread = model.thread?.paneID == pane.id ? model.thread : nil
         return PaneLeafModel(
             pane: pane,
-            isVisible: visible,
+            isVisible: model.isVisible,
             // Hidden layouts stay mounted, so a pane only holds keyboard focus while its own
-            // layout is the visible one; otherwise a background terminal would swallow typing.
-            isFocused: visible && vm.focusedPaneID == pane.id,
-            agentID: agent?.id,
-            agentName: agent?.name ?? "",
-            piSessionID: agent?.effectivePiSessionID,
-            inspectingRunID: agent.flatMap { vm.subagentInspector.runByAgent[$0.id] }
+            // layout is the visible one (`focusedPaneID` is nil otherwise); a background
+            // terminal would swallow typing.
+            isFocused: model.focusedPaneID == pane.id,
+            agentID: thread?.agentID,
+            agentName: thread?.agentName ?? "",
+            piSessionID: thread?.piSessionID,
+            inspectingRunID: thread == nil ? nil : model.inspectingRunID
         )
     }
 }

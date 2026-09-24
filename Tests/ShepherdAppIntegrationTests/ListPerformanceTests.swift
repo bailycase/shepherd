@@ -244,6 +244,44 @@ struct ListPerformanceTests {
         #expect(show["thread.rowBuilder", default: 0] <= 40, "\(show)")
     }
 
+    // MARK: Workspace
+
+    /// A hidden agent reporting its status redraws no mounted layout: the workspace resolves
+    /// each layout's values, and only a layout whose values changed runs again.
+    @Test func aStatusReportRedrawsNoMountedLayout() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(8, in: app)
+        defer { window.close() }
+        #expect(vm.mountedTabs.count == agents.count)
+
+        let rows = ListPerf.counting {
+            for agent in agents.dropFirst() {
+                var next = vm.state
+                if let index = next.agents.firstIndex(where: { $0.id == agent.agent.id }) {
+                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
+                }
+                ListPerf.time(window) { vm.adopt(next) }
+            }
+        }
+
+        #expect(rows["layout.agentLayout", default: 0] == 0, "\(rows)")
+        #expect(rows["layout.paneTreeGeo", default: 0] == 0, "\(rows)")
+    }
+
+    /// Opening a review docks it beside one layout, and redraws that layout alone.
+    @Test func openingAReviewRedrawsOnlyItsLayout() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(8, in: app)
+        defer { window.close() }
+
+        let rows = ListPerf.counting { ListPerf.time(window) { vm.openReview(agentID: agents[0].agent.id, path: nil) } }
+
+        #expect(vm.reviewSessions.values.contains { $0.agentID == agents[0].agent.id })
+        #expect(rows["layout.agentLayout", default: 0] <= 1, "\(rows)")
+    }
+
     // MARK: Subagents
 
     /// A turn whose spawn calls started `runs`, as the thread shows it.
