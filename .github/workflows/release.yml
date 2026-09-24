@@ -9,6 +9,11 @@ name: Release
 #   tag vX.Y.Z-rc.N     → nothing: release candidates are retired
 #   manual run          → as above for its ref; any branch but nightly builds nothing
 #
+# A push to nightly also uploads the iOS client (Shepherd iOS) to TestFlight for
+# internal testing, in its own job on an Xcode 27 runner. The Mac job never waits
+# on it or fails with it, and it is skipped with a notice when the App Store
+# Connect key below is not configured. Beta and stable tags upload nothing yet.
+#
 # Shepherd Nightly is its own app (com.bailycase.shepherd.nightly, Shepherd
 # Nightly.app, Shepherd-Nightly.dmg), so it installs beside Shepherd and only
 # ever reads its own feed. Builds already in the field still read
@@ -25,6 +30,9 @@ name: Release
 #   DEVELOPER_ID_P12      base64 .p12 of the Developer ID Application cert
 #   DEVELOPER_ID_P12_PASSWORD
 #   NOTARY_KEY_ID / NOTARY_ISSUER_ID / NOTARY_KEY  App Store Connect API key
+#   APP_STORE_CONNECT_KEY_ID / APP_STORE_CONNECT_ISSUER_ID / APP_STORE_CONNECT_KEY_P8
+#                         Team API key with the Admin role, for the TestFlight upload;
+#                         _P8 is the AuthKey_<id>.p8 file's text pasted as-is (not base64)
 #
 # No swift test step: CI already ran `swift test` on the commit being tagged.
 on:
@@ -51,6 +59,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test the release rules
         run: python3 -m unittest discover -s Tests/Release -v
+      # Secrets cannot appear in `if:`, so only whether all three are set
+      # leaves this step; their values never reach the plan.
+      - name: App Store Connect key
+        id: asc
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          if [[ -n "$KEY_ID" && -n "$ISSUER_ID" && -n "$KEY_P8" ]]; then
+            echo "flag=--asc-key" >> "$GITHUB_OUTPUT"
+          fi
       - name: Plan
         id: plan
         run: |
@@ -62,9 +82,10 @@ jobs:
               | awk -v sha="$GITHUB_SHA" '$1 == sha { sub("refs/tags/", "", $2); print $2; exit }')
           fi
           plan=$(python3 scripts/release.py plan "$GITHUB_REF" "$(date -u +%Y%m%d%H%M)" \
-            "$GITHUB_RUN_ATTEMPT" "$published")
+            "$GITHUB_RUN_ATTEMPT" "$published" ${{ steps.asc.outputs.flag }})
           echo "$plan" >> "$GITHUB_OUTPUT"
           jq -r 'if .build then "\(.title): \(.scheme), \(.configuration), \(.dmg)" else "::notice::\(.reason)" end' <<<"${plan#plan=}"
+          jq -r 'if .ios then "TestFlight: \(.ios_scheme), \(.ios_configuration), \(.ios_testing) testing" else "::notice title=TestFlight::\(.ios_reason)" end' <<<"${plan#plan=}"
 
   release:
     name: build and publish
@@ -333,3 +354,95 @@ jobs:
           git add "${written[@]}"
           git commit -m "appcast: $TAG" || exit 0
           git push origin HEAD:gh-pages
+
+  # The iOS client, archived unsigned and signed only at export with the team's
+  # cloud-managed Apple Distribution certificate: no .p12, no keychain. Signing
+  # the archive instead would mint an Apple Development certificate on every
+  # clean runner until the account refuses. Nothing here touches the Mac job.
+  testflight:
+    name: iOS to TestFlight (internal)
+    needs: plan
+    if: github.event_name != 'pull_request' && fromJSON(needs.plan.outputs.plan).ios
+    # The target needs the iOS 27 SDK; macos-26 tops out at Xcode 26.6. The
+    # xcode-27 label is in preview, so this job may queue.
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      # Never a beta Xcode: App Store Connect refuses its builds (ITMS-90534).
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      SCHEME: ${{ fromJSON(needs.plan.outputs.plan).ios_scheme }}
+      CONFIGURATION: ${{ fromJSON(needs.plan.outputs.plan).ios_configuration }}
+      PRODUCT: ${{ fromJSON(needs.plan.outputs.plan).ios_product }}
+      EXPORT_OPTIONS: ${{ fromJSON(needs.plan.outputs.plan).ios_export_options }}
+      # Shared with Shepherd Nightly, so a TestFlight build names the Mac build
+      # from the same commit. The marketing version stays the project's: the
+      # Mac nightly's 0.0.0-nightly.<stamp> is not a valid iOS version.
+      BUILD: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode
+        run: |
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK $sdk"
+          if (( ${sdk%%.*} < 27 )); then
+            echo "::error::Shepherd iOS needs the iOS 27 SDK; $DEVELOPER_DIR has $sdk." && exit 1
+          fi
+          if [[ "$(realpath "$DEVELOPER_DIR")" == *[Bb]eta* ]]; then
+            echo "::error::$DEVELOPER_DIR is a beta Xcode, which App Store Connect refuses." && exit 1
+          fi
+
+      - name: Archive ${{ env.SCHEME }} (unsigned)
+        run: |
+          xcodebuild archive \
+            -project Shepherd.xcodeproj \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Shepherd-iOS.xcarchive" \
+            -derivedDataPath build-ios \
+            -skipPackagePluginValidation -skipMacroValidation \
+            -onlyUsePackageVersionsFromResolvedFile \
+            CODE_SIGNING_ALLOWED=NO \
+            CURRENT_PROJECT_VERSION="$BUILD"
+
+      - name: Verify the archived app
+        run: |
+          python3 scripts/release.py verify-ios \
+            "$RUNNER_TEMP/Shepherd-iOS.xcarchive/Products/Applications/$PRODUCT" "$BUILD"
+
+      - name: Write the App Store Connect key
+        env:
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$KEY_P8" > "$RUNNER_TEMP/asc/AuthKey.p8"
+          if ! grep -q 'BEGIN PRIVATE KEY' "$RUNNER_TEMP/asc/AuthKey.p8"; then
+            echo "::error::APP_STORE_CONNECT_KEY_P8 must be the .p8 file's text as-is, not base64." && exit 1
+          fi
+
+      # -allowProvisioningUpdates with the key registers the profile and uses
+      # the cloud-managed distribution certificate; destination=upload in the
+      # export options sends the signed build to App Store Connect. The build
+      # reaches testers once Apple has processed it.
+      - name: Sign and upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Shepherd-iOS.xcarchive" \
+            -exportOptionsPlist "$EXPORT_OPTIONS" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey.p8" \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+          plutil -p "$RUNNER_TEMP/export/DistributionSummary.plist" 2>/dev/null || true
+          echo "::notice title=TestFlight::Uploaded $SCHEME build $BUILD for internal testing."
+
+      - name: Remove the App Store Connect key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
