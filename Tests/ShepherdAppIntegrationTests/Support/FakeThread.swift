@@ -26,6 +26,7 @@ final class FakeThread {
         let request: NativeThreadStore.Request
         let header: Bool
         let commands: ThreadCommandCenter
+        let reduceMotion: Bool?
 
         var body: some View {
             VStack(spacing: 0) {
@@ -38,6 +39,7 @@ final class FakeThread {
             .opacity(visibility.active ? 1 : 0)
             .environment(\.nwMotionPaused, visibility.motionPaused)
             .environment(\.threadCommands, commands)
+            .transformEnvironment(\._accessibilityReduceMotion) { if let reduceMotion { $0 = reduceMotion } }
         }
     }
 
@@ -55,9 +57,11 @@ final class FakeThread {
     let window: OffscreenWindow
 
     /// `header` puts the thread's toolbar (`ThreadHeader`) above it, as the workspace does.
+    /// `reduceMotion` pins Reduce Motion for a test that needs motion whatever the machine's
+    /// setting (CI's VM has it on).
     init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
          store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
-         header: Bool = false, focused: Bool = false) {
+         header: Bool = false, focused: Bool = false, reduceMotion: Bool? = nil) {
         self.snapshot = snapshot
         self.history = history
         self.starting = starting
@@ -85,7 +89,8 @@ final class FakeThread {
                 return .failure(code: "x", message: "unscripted")
             }
         }
-        window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands))
+        window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands,
+                           reduceMotion: reduceMotion))
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.
