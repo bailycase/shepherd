@@ -79,7 +79,8 @@ extension ThreadPreviewTests {
         let steering = QueueStackFixture(["Don’t touch the migrations in this PR."], steering: 1)
         let editing = QueueStackFixture(["Also cover partial refunds in the tests."])
         let deleted = QueueStackFixture(["Then open a draft PR.", "Use table-driven tests, like ledger_test.go."])
-        let attachments = QueueStackFixture(["Make this full width on phones"], images: [0: ["checkout.png"]])
+        // Sent from this Mac with its image, so its chip shows the image's thumbnail.
+        let attachments = QueueStackFixture([])
         let reordering = QueueStackFixture(["Also cover partial refunds in the tests.", "Then open a draft PR.",
                                             "Use table-driven tests, like ledger_test.go."])
         let long = QueueStackFixture(["Don’t touch the migrations in this PR.", "Also cover partial refunds in the tests.",
@@ -88,11 +89,19 @@ extension ThreadPreviewTests {
         let expanded = QueueStackFixture((1...8).map { "Queued message \($0)" })
         let all = [queued, hovered, steering, editing, deleted, attachments, reordering, long, collapsed, expanded]
         defer { all.forEach { $0.store.stop() } }
-        final class Once { var seeded = false }
+        final class Once { var seeded = false; var sent = false }
         let once = Once()
         let size = CGSize(width: 1520, height: 1180)
         try await Preview.render("queue-states", size: size, ready: {
-            guard all.allSatisfy({ $0.store.ready && !$0.state.rows.isEmpty }) else { return false }
+            if !once.sent, attachments.store.ready {
+                once.sent = true
+                Task { @MainActor in
+                    attachments.store.draft = "Make this full width on phones"
+                    await attachments.store.send(images: [QueueThreads.screenshot(named: "checkout.png")], delivery: .followUp)
+                }
+            }
+            guard all.allSatisfy({ $0.store.ready && !$0.state.rows.isEmpty }),
+                  attachments.state.rows.first?.attachments.first?.thumbnail != nil else { return false }
             if !once.seeded {
                 once.seeded = true
                 hovered.state.hover(hovered.id(0).uuidString).hovering = true
@@ -245,6 +254,18 @@ enum SendButton {
 @MainActor
 enum QueueThreads {
     static let queued = ["Also cover partial refunds in the tests.", "Use table-driven tests, like ledger_test.go.", "Then open a draft PR."]
+
+    /// A small PNG to attach: the board's thumbnail, a running-to-lantern wash.
+    static func screenshot(named name: String) -> NativeImage {
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 64, bitsPerSample: 8, samplesPerPixel: 4,
+                                      hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
+        NSGradient(starting: NSColor(Color.nw.running), ending: NSColor(Color.nw.lantern))!
+            .draw(in: NSRect(x: 0, y: 0, width: 64, height: 64), angle: -45)
+        NSGraphicsContext.restoreGraphicsState()
+        return NativeImage(mimeType: "image/png", data: bitmap.representation(using: .png, properties: [:])!, name: name)
+    }
 
     private static var now: Double { ActivityThreads.now }
 
