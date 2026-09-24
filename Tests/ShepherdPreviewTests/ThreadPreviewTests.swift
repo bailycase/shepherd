@@ -82,39 +82,6 @@ struct ThreadPreviewTests {
         try await render("thread-activity-thinking", ActivityThreads.running(thinking: true))
     }
 
-    /// A follow-up sent while the push runs: the working row stays with the streaming reply, and
-    /// the queued bubble waits below it.
-    @Test func threadActivityQueued() async throws {
-        let fixture = ThreadFixture(ActivityThreads.running(thinking: false))
-        defer { fixture.store.stop() }
-        let store = fixture.store
-        let request: NativeThreadStore.Request = { [fixture] value in
-            if case .send(_, _, let id, _, _, _) = value { return .accepted(operationID: id) }
-            return try await fixture.request(value)
-        }
-        final class Once { var sent = false; var queuedAt: Date? }
-        let once = Once()
-        try await Preview.render("thread-activity-queued", size: CGSize(width: 1180, height: 900), ready: {
-            guard store.ready, !store.rows.isEmpty else { return false }
-            if !once.sent {
-                once.sent = true
-                store.draft = "Then open the PR against nightly."
-                Task { await store.send() }
-            }
-            guard store.pending.first?.status == "queued" else { return false }
-            // The queued bubble rises into the thread: capture it at rest.
-            let queuedAt = once.queuedAt ?? Date()
-            once.queuedAt = queuedAt
-            return Date().timeIntervalSince(queuedAt) > ThreadPreviewTests.motionAtRest
-        }) {
-            VStack(spacing: 0) {
-                ThreadHeader(store: store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities")
-                ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview",
-                           agentName: "Investigate", workingDirectory: "~/Developer/Shepherd", review: { _ in })
-            }
-        }
-    }
-
     /// A new agent from its first frame, while its pi boots: the framed empty state and a complete
     /// composer, with nothing said about pi yet (a normal start is over before it would be).
     @Test func threadStartingQuiet() async throws {
@@ -322,7 +289,7 @@ struct ThreadPreviewTests {
                 VStack(alignment: .leading, spacing: 24) {
                     NWComposer(isFocused: false) { field("Follow up, or / for commands…", placeholder: true) } controls: { controls() }
                     NWComposer(isFocused: true) { field("Make the reviewer check dark mode too", placeholder: false) } controls: { controls(enabled: true) }
-                    NWComposer(isFocused: false) { field("Queue a follow-up — sent when the turn ends", placeholder: true) } controls: { controls(stop: true) }
+                    NWComposer(isFocused: false) { field("Follow up, or / for commands…", placeholder: true) } controls: { controls(stop: true) }
                     NWComposer(isFocused: false) {
                         NWAttachmentChip("thread-spacing.png", thumbnail: Image(systemName: "photo")) {}
                     } field: { field("Match the spacing in this screenshot", placeholder: false) } controls: { controls(enabled: true) }
