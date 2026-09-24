@@ -31,16 +31,27 @@ is a shim (`App/ShepherdLauncher.swift` calls `ShepherdMacApp.main()` from the `
 library). There is no `swift run` path for the GUI.
 
 A stable Shepherd and a development build cannot share state. The socket and `state.json` live
-in the support directory, and the server refuses to bind over a live socket. So there are two
-schemes:
+in the support directory, and the server refuses to bind over a live socket. So there are three
+Mac schemes:
 
-| Scheme | Config | Support directory |
-| --- | --- | --- |
-| `Shepherd (Dev)` | Debug | `~/Library/Application Support/Shepherd-dev` (the scheme sets `SHEPHERD_SUPPORT_DIR`) |
-| `Shepherd (Prod)` | Release | `~/Library/Application Support/Shepherd` |
+| Scheme | Config | App | Support directory |
+| --- | --- | --- | --- |
+| `Shepherd (Dev)` | Debug | Shepherd | `~/Library/Application Support/Shepherd-dev` (the scheme sets `SHEPHERD_SUPPORT_DIR`) |
+| `Shepherd (Prod)` | Release | Shepherd | `~/Library/Application Support/Shepherd` |
+| `Shepherd (Nightly)` | Nightly | Shepherd Nightly | `~/Library/Application Support/Shepherd Nightly` |
 
 ⌘R on Dev never disturbs the agents in your everyday copy. `Shepherd iOS` builds the deferred iOS
 client ([docs/ios](docs/ios/README.md)).
+
+**Shepherd Nightly** is the same code built as a second app, so it installs and runs beside
+Shepherd. The `Nightly` configuration is Release plus its identity: bundle id
+`com.bailycase.shepherd.nightly` (so its own preferences domain), product name
+`Shepherd Nightly`, `App/AppIconNightly.icon`, and the `appcast-shepherd-nightly.xml` feed.
+Everything else keys off the bundle id through `ShepherdEdition` (`ShepherdProtocol`): the
+support directory, the listener's default port (7434 instead of 7433), the window's name, and the
+update channel. It starts with an empty support directory; nothing is copied from Shepherd's.
+Info.plist takes the executable, the names, and the feed file (`SHEPHERD_APPCAST`) from build
+settings, and each configuration compiles only its own icon.
 
 ```bash
 xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
@@ -51,12 +62,14 @@ swift test --filter IntegrationTests         # real server, stub pi, git, off-sc
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
 swift test                                   # everything (previews skip without SHEPHERD_PREVIEW_DIR)
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
+python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py)
 ```
 
 **Environment variables:**
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
-  extensions, `remote-token`, and subagent artifacts.
+  extensions, `remote-token`, and subagent artifacts. It wins over the edition's own folder
+  (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
 - **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
   returns to it.
@@ -170,6 +183,12 @@ pointing at the installed pi package. They isolate `HOME` and use a local fake p
 `native-children.smoke.mjs` is an opt-in real-model smoke (`PI_SMOKE_MODEL`).
 `Tests/ShepherdIOSChecks` holds the iOS client's scripts ([docs/ios/VALIDATION.md](docs/ios/VALIDATION.md)).
 
+**Release rules** (`Tests/Release/test_release.py`, Python's `unittest`, stdlib only) test
+`scripts/release.py`: what each trigger builds, which feeds each release lands in, the legacy
+aliases, and `verify-app`. They also read the Xcode project, `App/Info.plist`,
+`ShepherdEdition.swift`, and `AppUpdater.swift`, so a bundle id or feed name that drifts from
+the script fails before a release builds.
+
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
 - Windows sit off-screen (`x: -30_000, y: -30_000`), borderless, and ordered back
@@ -205,15 +224,21 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
   reveal, review rows and diff parsing, `PiSessionFile` paths, and child runs.
+- **Updates and editions:** each channel's feed and Sparkle tag, the channels each app offers,
+  the launch migration of every stored channel (`UpdateChannelStore`: rc and nightly to Beta,
+  the nightly notice armed once), the support directory and listener port per edition, and the
+  release rules (every trigger, feed routing, the legacy aliases).
 
-CI (`.github/workflows/ci.yml`) runs `swift build --build-tests` and `swift test` (in parallel) on
-pull requests and pushes to `master`.
+CI (`.github/workflows/ci.yml`) runs the release rules, `swift build --build-tests`, and
+`swift test` (in parallel) on pull requests and pushes to `master`.
 
 ## Source map
 
 ```text
 App/
   ShepherdLauncher.swift   Mac @main shim.   Shepherd.entitlements   iOS/  the deferred iOS client
+  Info.plist               names, executable, and feed from build settings
+  AppIcon.icon, AppIconNightly.icon   Shepherd's and Shepherd Nightly's icons
 Sources/
   ShepherdCore/        Models (Space, Tab, Agent, Automation, ShepherdState), typed IDs, PaneNode
                        (binary split tree; LeafPane carries sessionID/cwd/agentID), AgentStatus +
@@ -222,7 +247,8 @@ Sources/
   ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …), RemoteMessage
                        (RemoteRequest/RemoteReply, RemoteProtocol version + capabilities),
                        NativeThread (requests, results, NativeThreadSnapshot), RPCWire (pi's
-                       JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths.
+                       JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
+                       ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
                        the changes card), ShepherdLog. Shared with the iOS client.
@@ -254,7 +280,8 @@ Sources/
       Worktrees, Pi, Remote, Keyboard, Advanced}, AppSettings
     Themes (ThemeManager, ShepherdTheme), ShepherdPiTheme, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
-      AppUpdater (Sparkle channels)
+      AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
+      NightlyMovedNotice
     Status/Namer/Panes/Review/Theme/Subagents/Children/InspectExtension.swift  embedded extensions
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
@@ -285,8 +312,10 @@ Tests/
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
                           eventually, the time-limit traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
+  Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
-scripts/               sign-app.sh (release signing), sync-embedded-extension.py
+scripts/               release.py (the release workflow's rules), sign-app.sh (release
+                       signing), sync-embedded-extension.py
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```
 
@@ -350,7 +379,8 @@ The user's rc files and pi settings are never edited, and agent-only variables a
 ## Remote
 
 - **Listener:** `SessionServer.startRemoteListener(port:tokenURL:)` binds TCP on **all
-  interfaces** (default 7433; port 0 picks an ephemeral port, and the bound port is returned).
+  interfaces** (default 7433, or 7434 in Shepherd Nightly so both apps can serve; port 0 picks
+  an ephemeral port, and the bound port is returned).
   Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
@@ -583,44 +613,85 @@ Use conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore
 breaking changes), one logical change per commit, with no AI or attribution lines.
 
 `nightly` is the integration branch. Feature branches (`feat/…`, `fix/…`) come off it and merge
-back through a PR with a merge commit (`--no-ff`). Every push to `nightly` ships a nightly build.
-CI runs the tests on pull requests and on `master`.
+back through a PR with a merge commit (`--no-ff`). Every push to `nightly` ships a Shepherd
+Nightly build. CI runs the tests on pull requests and on `master`.
 
 ## Releases
 
-One workflow (`.github/workflows/release.yml`) serves four Sparkle channels, chosen by **tag
-name**. Releasing means tagging `nightly`'s tested tip and pushing the tag.
+One workflow (`.github/workflows/release.yml`) ships two apps. Its rules live in
+`scripts/release.py` (tested in `Tests/Release`); the YAML only runs them. A `plan` job decides
+from the pushed ref what to build, and the build job is skipped when the answer is nothing.
+Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 
-| Channel | Cut by | Feed (on `gh-pages`) | Contains |
-| --- | --- | --- | --- |
-| stable | tag `vX.Y.Z` | `appcast.xml` | stable |
-| rc | tag `vX.Y.Z-rc.N` | `appcast-rc.xml` | rc + stable |
-| beta | tag `vX.Y.Z-beta.N` | `appcast-beta.xml` | beta + rc + stable |
-| nightly | push to `nightly` | `appcast-nightly.xml` | nightlies only |
+| App | Channel | Cut by | Feed (on `gh-pages`) | Contains | DMG |
+| --- | --- | --- | --- | --- | --- |
+| Shepherd | stable (default) | tag `vX.Y.Z` | `appcast.xml` | stable | `Shepherd.dmg` |
+| Shepherd | beta | tag `vX.Y.Z-beta.N` | `appcast-beta.xml` | beta + stable | `Shepherd.dmg` |
+| Shepherd Nightly | nightly | push to `nightly` | `appcast-shepherd-nightly.xml` | Shepherd Nightly builds | `Shepherd-Nightly.dmg` |
 
-- **Promotion re-tags the same commit** (`v0.2.0-beta.1` → `v0.2.0-rc.1` → `v0.2.0`). Never
-  rebuild for a promotion.
-- **Pre-release feeds are supersets**, so riding beta or rc never strands a user behind a stable
-  hotfix. Sparkle picks the newest *build number* (`CURRENT_PROJECT_VERSION`, the workflow run
-  number), so a hotfix built after an rc supersedes it for rc riders.
+- **Release candidates are retired.** A `vX.Y.Z-rc.N` tag builds nothing (the plan job says
+  why), and old rc releases land in no feed.
+- **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
+  (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
+  the boundary: its installer picks the new app in an archive by the host's *file name* first
+  and only then by bundle id, and both apps share the EdDSA key. The distinct file name makes a
+  stray cross-app item fail to install rather than replace the app, but the feeds are what keep
+  it from being offered, and three guards keep them apart:
+  - `release.py route` puts a `nightly-*` release in Shepherd Nightly's feed only through
+    `Shepherd-Nightly.dmg`. Nightlies from before the split carry only `Shepherd.dmg` and drop
+    out, and an old copy of this workflow (which downloads `Shepherd.dmg`) never picks up a
+    Shepherd Nightly build.
+  - The build job runs `release.py verify-app` before signing: the bundle id, name, executable
+    and `SUFeedURL` must be the planned app's.
+  - `ChannelDelegate` computes the feed from the edition, so a Shepherd Nightly build reads its
+    own feed even if its `SUFeedURL` were wrong.
+- **One EdDSA key** (`SPARKLE_PRIVATE_KEY`, `SUPublicEDKey`) signs both apps.
+- **Legacy feeds for installed builds.** Shepherd builds from before the split read
+  `appcast-rc.xml` (allowing Sparkle channel `rc`) or `appcast-nightly.xml` (allowing
+  `nightly`). Every run still writes both, as the beta feed with its items re-tagged `rc` or
+  `nightly`, so those installs update to a Shepherd beta or stable (never Shepherd Nightly), and
+  that build's launch migration moves them to Beta. Keep writing them while such installs may
+  exist. A Shepherd install that rode nightly sits at a build number above every existing beta
+  and stable, so it waits until the first Shepherd beta or stable built after the split: cut one
+  soon after the split lands.
+- **Launch migration** (`UpdateChannelStore`, Shepherd only): a stored `rc` becomes Beta, and a
+  stored `nightly` (or the pre-picker nightly bool) becomes Beta and arms a one-time notice
+  under the toolbar (`NightlyMovedNotice`) linking to Shepherd Nightly. The birth channel reads
+  `-beta.`, `-rc.` and `-nightly.` versions as Beta. Shepherd Nightly always rides nightly and
+  stores no channel.
+- **Promotion re-tags the same commit** (`v0.2.0-beta.1` → `v0.2.0`). Never rebuild for a
+  promotion.
+- **The beta feed is a superset**, so riding beta never strands a user behind a stable hotfix.
+  Sparkle picks the newest *build number* (`CURRENT_PROJECT_VERSION`, the workflow run number,
+  shared by both apps), so a hotfix built after a beta supersedes it for beta riders.
 - **Tags are immutable.** Never delete, move, or reuse one; a botched release gets the next
-  number.
-- **Default channel:** the app (`AppUpdater.swift`, `UpdateChannel`) defaults to its birth
+  number. (Old `nightly-*` releases and their tags are pruned to the latest few; those tags are
+  the workflow's own, not release versions.)
+- **Default channel:** Shepherd (`AppUpdater.swift`, `UpdateChannel`) defaults to its birth
   channel, parsed from the marketing version. An explicit choice in Settings ▸ Advanced is never
-  overwritten.
-- **Channel plumbing** changes `release.yml`, `UpdateChannel`/`ChannelDelegate`, the Advanced
-  picker, and their tests together. Feed names are a contract between CI and the app.
+  overwritten, and the picker offers only Stable and Beta.
+- **Channel plumbing** changes `scripts/release.py` (and `release.yml` if the steps change),
+  `UpdateChannel`/`UpdateChannelStore`/`ChannelDelegate`, the Advanced row, the Xcode
+  configurations, and their tests together. Feed names and bundle ids are a contract between CI
+  and the apps; `Tests/Release` reads both sides.
 - **Signing:** with the Developer ID, notarization, and Sparkle secrets configured, builds are
   signed and notarized. Without them the workflow falls back to ad-hoc signing and skips the
   appcast.
   - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
-    the app with `App/Shepherd.entitlements`. Only nested apps and XPC services keep their own
-    entitlements.
+    the app with `App/Shepherd.entitlements` (both apps). Only nested apps and XPC services keep
+    their own entitlements.
   - Developer ID items get the hardened runtime and a secure timestamp, and both the app and the
     DMG are notarized and stapled. Ad-hoc builds skip the runtime, because library validation
     rejects ad-hoc frameworks, which have no Team ID.
   - Shipped binaries are stripped (`strip -S -x`). Their dSYMs go on each release as
-    `Shepherd-dSYMs.zip`.
+    `Shepherd-dSYMs.zip` or `Shepherd-Nightly-dSYMs.zip`.
+- **Appcasts** are rebuilt from every release on each run: one `generate_appcast` per feed
+  directory, written to a fixed name (`-o`; left alone it names the file after the app's
+  `SUFeedURL`). Deltas go to the feed's newest release, renamed without spaces
+  (`Shepherd Nightly63-61.delta` → `Shepherd-Nightly63-61.delta`), because GitHub rewrites
+  spaces in asset names.
+- **Building Shepherd Nightly locally:** the `Shepherd (Nightly)` scheme, or
+  `xcodebuild -scheme 'Shepherd (Nightly)' -configuration Nightly …` as the workflow does.
 - **Enhanced Security** is set on the Mac target only, because at project level it would push
   arm64e onto the iOS target. Pointer authentication stays off, since libghostty and Sparkle
   ship no arm64e slice. The real protection is the hardened-process entitlements. The

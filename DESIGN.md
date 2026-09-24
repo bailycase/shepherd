@@ -97,6 +97,13 @@ Additions the boards don't have:
   because pi supports both.
 - **Transcript search** in the palette ("Found in conversations").
 - A **quit confirmation** while agents are working.
+- A **one-time notice** under the toolbar after an update moved a copy of Shepherd off the
+  retired nightly channel (`NightlyMovedNotice`): an idle `NWBanner` capped at the thread's
+  820pt, with Get Shepherd Nightly and Dismiss. It blocks nothing and stays until dismissed, and
+  it leaves at once rather than easing the column's height, which would relay out every mounted
+  layout on each frame.
+- **Shepherd Nightly's icon** (`App/AppIconNightly.icon`): the crook in lantern under a
+  `textPrimary` crescent moon, on the same black, so the two apps tell apart in the Dock and ⌘Tab.
 
 ## Theme model
 
@@ -935,8 +942,8 @@ to Shepherd" or Esc returns.
   Shepherd, the search field (`NWSearchField`, ⌘F), then Appearance · Terminal · Agents ·
   Worktrees · Pi · Remote · Keyboard · Advanced (`NWSettingsNavRow`: 28pt × density, a medium
   icon, the name in `ui`, `bgSelected` and semibold when selected), with "Shepherd x.y.z · pi
-  x.y.z" pinned at the bottom in micro. Searching lists matching rows, as buttons, under their
-  page.
+  x.y.z" (the app's own name, so "Shepherd Nightly …" there) pinned at the bottom in micro.
+  Searching lists matching rows, as buttons, under their page.
 - **Content:** a 720pt column with 44pt top padding and a 32pt gutter. Each page has a title in
   `display` and a one-line explanation in `body`/`textSecondary`, then groups 28pt apart: a
   section label (`NWSectionHeader`) over an `NWGroupCard` of `NWCardRow`s. A row is at least
@@ -967,7 +974,7 @@ to Shepherd" or Esc returns.
 | **Pi** | Bundled extensions (name agents automatically, sync pi theme, panes and agent tools, diff review tool, native subagents, subagent display), native subagent defaults, pi and extension updates |
 | **Remote** | Hosts (edit, reconnect, remove), add or edit a host (name, address, port, token), Serve this Mac (listener, token file) |
 | **Keyboard** | Rebindable shortcuts by group, the fixed chords, and Reset all |
-| **Advanced** | Files (workspace state, extension socket), updates and channel, reset settings |
+| **Advanced** | Files (workspace state, extension socket), updates and channel (Shepherd: Stable or Beta in a segmented picker; Shepherd Nightly names its one channel, Nightly), reset settings |
 
 ### Dialogs and sheets
 

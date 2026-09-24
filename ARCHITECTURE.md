@@ -36,7 +36,7 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote
 | Module | Owns | Depends on |
 | --- | --- | --- |
 | `ShepherdCore` | Codable workspace models (`Space`, `Tab`, `Agent`, `Automation`, `ShepherdState`), typed IDs, the `PaneNode` split tree, `AgentStatus` and its transition table, `ThinkingLevel`, and structural validation | nothing |
-| `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), and `ShepherdPaths` | Core |
+| `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), `ShepherdPaths`, and `ShepherdEdition` (Shepherd or Shepherd Nightly) | Core |
 | `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card), and `ShepherdLog` | Core, Protocol |
 | `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs). SwiftUI only; no app state | nothing |
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
@@ -201,7 +201,7 @@ the matching `*Extension.swift` writes to the support directory from an embedded
 ## Remote
 
 `SessionServer.startRemoteListener(port:tokenURL:)` binds TCP on all interfaces (default port
-7433). The first frame must be a `hello` with the shared token from `remote-token`, and the
+7433, or 7434 in Shepherd Nightly). The first frame must be a `hello` with the shared token from `remote-token`, and the
 protocol version must match `RemoteProtocol.version`. There is no TLS, so a VPN or trusted network
 is the transport boundary.
 
@@ -235,7 +235,9 @@ control) against an older host. Output frames are chunked at 256 KiB to stay und
 ## Persistence and migration
 
 `state.json` sits beside the socket in the support directory (`ShepherdPaths`;
-`SHEPHERD_SUPPORT_DIR` overrides the directory).
+`SHEPHERD_SUPPORT_DIR` overrides the directory). Each app has its own: `ShepherdEdition` reads
+the bundle id, so Shepherd Nightly (`com.bailycase.shepherd.nightly`) uses
+`Application Support/Shepherd Nightly` and never reads the everyday app's state.
 
 - **Validation:** state is validated (`ShepherdState.validate()`) before every write. `StateStore`
   encodes the candidate and writes it atomically before replacing in-memory state or publishing

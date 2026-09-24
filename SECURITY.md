@@ -35,8 +35,8 @@ what is described here, or a way around the protection it states.
 ### The local extension socket
 
 pi extensions report to the app over a Unix socket, `shepherd.sock` in Shepherd's support
-directory (by default `~/Library/Application Support/Shepherd`, or wherever
-`SHEPHERD_SUPPORT_DIR` points).
+directory (by default `~/Library/Application Support/Shepherd`, or `Shepherd Nightly` for
+Shepherd Nightly, or wherever `SHEPHERD_SUPPORT_DIR` points).
 
 - The support directory is created mode `0700`, and the socket is `0600`.
 - The socket has **no authentication**. Any process running as the same macOS user that can
@@ -52,7 +52,8 @@ directory (by default `~/Library/Application Support/Shepherd`, or wherever
 A Mac can serve its agents to other devices. It is **off by default**. Turn it on in
 Settings ▸ Remote ▸ Serve this Mac ▸ Listener.
 
-- **Binding:** it binds TCP on **all IPv4 interfaces**, port 7433 by default.
+- **Binding:** it binds TCP on **all IPv4 interfaces**, port 7433 by default (7434 in Shepherd
+  Nightly).
 - **Authentication:** a shared bearer token. The first frame must be a `hello` carrying the
   token from `remote-token` in the support directory. The token is 32 random bytes as hex,
   created with mode `0600` on first use. Any other first frame, or a wrong token, closes the

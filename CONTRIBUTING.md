@@ -32,7 +32,8 @@ rewrite the Xcode project's `Package.resolved` with newer package versions.
 
 Run the app through the `Shepherd (Dev)` scheme in Xcode; there is no `swift run` path for the
 GUI. The Dev scheme keeps its state in `~/Library/Application Support/Shepherd-dev`, so it never
-disturbs an installed copy.
+disturbs an installed copy. The `Shepherd (Nightly)` scheme builds Shepherd Nightly, the separate
+app every push to `nightly` ships.
 
 ## Tests
 
@@ -46,6 +47,7 @@ then everything.
 | Previews | `SHEPHERD_PREVIEW_DIR=/tmp/previews swift test --filter PreviewTests` | Offscreen renders of every surface, in light and dark, written as PNGs. Skipped without the variable. |
 | Everything | `swift test` | All of the above, in parallel; CI runs the same. |
 | Extensions | `PI_PACKAGE_DIR=<installed pi package> node --test Tests/Extensions/*.test.mjs` | The bundled pi extensions, against a local fake provider. |
+| Release rules | `python3 -m unittest discover -s Tests/Release` | `scripts/release.py`: what each tag or push builds, which feeds each release lands in, and its agreement with the Xcode project and the apps. CI runs it too. |
 
 An opt-in run against a real model is gated on `SHEPHERD_LIVE_MODEL` (for example
 `cpa/~anthropic/claude-haiku-latest`). Shared helpers live in `Tests/ShepherdTestKit` (any tier) and
