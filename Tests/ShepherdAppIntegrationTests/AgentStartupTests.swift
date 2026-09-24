@@ -79,6 +79,49 @@ struct AgentStartupTests {
         #expect(send > firstSnapshot, "nothing is dispatched before pi serves the thread")
     }
 
+    /// A relaunch: every restored pane still names the previous run's pi, and every agent's pi
+    /// respawns at once as its layout mounts. Each thread starts quietly, a thread switched
+    /// away from and back to meanwhile starts again, and all come up with their history.
+    @Test func restoredAgentsStartTogetherQuietlyAfterARelaunch() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        try Self.holdPi(in: app.dir)
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<3).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        let server = app.server
+
+        let stores = agents.map { vm.threadStores.store(for: $0.agent.id) }
+        let recorders = stores.map(ThreadRecorder.init)
+        func poll(_ index: Int) -> Task<Void, Never> {
+            let id = agents[index].agent.id
+            return Task { await stores[index].run(request: recorders[index].forward { try await server.nativeThread(agentID: id, request: $0) }) }
+        }
+        var polls = agents.indices.map(poll)
+        defer { polls.forEach { $0.cancel() } }
+        try await eventuallyOnMain("every restored thread to show pi starting, before its pi respawns") { stores.allSatisfy(\.starting) }
+
+        let panes = agents.map { vm.sessions.session(for: $0.piPane, in: $0.tab) }
+        try await eventuallyOnMain("every restored pane to bind its new pi") { panes.allSatisfy { $0.phase == .live } }
+        try await eventuallyOnMain("every thread to poll its new pi") { stores.allSatisfy(\.starting) }
+
+        // Switching away stops a thread; switching back polls it again.
+        polls[0].cancel()
+        stores[0].stop()
+        #expect(!stores[0].starting && stores[0].loadError == nil)
+        polls[0] = poll(0)
+        try await eventuallyOnMain("the thread switched back to to show pi starting") { stores[0].starting }
+
+        Self.releasePi(in: app.dir)
+        try await eventuallyOnMain("every restored thread to come up", timeout: .seconds(20)) { stores.allSatisfy(\.ready) }
+        for (store, recorder) in zip(stores, recorders) {
+            #expect(!store.starting && store.loadError == nil && !store.messages.isEmpty)
+            #expect(recorder.errorsShown.isEmpty, "no poll ever found the thread showing an error")
+            #expect(!recorder.answers.contains(NativeThreadCode.unavailable))
+        }
+    }
+
     /// pi not installed, or a broken config: the launch ends in the real error (the pane's
     /// exit, then the agent retired as always), never an endless start.
     @Test func aPiThatExitsWhileStartingEndsInItsErrorNotAnEndlessStart() async throws {
