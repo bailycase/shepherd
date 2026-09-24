@@ -212,6 +212,17 @@ struct PiSessionPreviewTests {
         #expect(PiSessionPreview.snapshot(file: url, sessionID: "s") == nil)
     }
 
+    /// A newest entry longer than the largest window the reader reads: the thread is unknown,
+    /// never shown as a new, empty one.
+    @Test func aNewestEntryBeyondTheLargestWindowIsNoPreview() throws {
+        let messages = [user("go", at: 1), reply("reading", at: 2, call: "c"), result("c", String(repeating: "x", count: 8192), at: 3)]
+        let (url, remove) = try sessionFile(chain(messages))
+        defer { remove() }
+
+        #expect(PiSessionPreview.snapshot(file: url, sessionID: "s", initialWindow: 1024, maxWindow: 4096) == nil)
+        #expect(PiSessionPreview.snapshot(file: url, sessionID: "s", initialWindow: 1024, maxWindow: 16384)?.messages.count == 3)
+    }
+
     /// One tool result bigger than the first window: the reader looks further back.
     @Test func aPageThatReachesPastTheWindowIsReadFurtherBack() throws {
         let huge = String(repeating: "x", count: PiSessionPreview.initialWindow * 3 / 2)
