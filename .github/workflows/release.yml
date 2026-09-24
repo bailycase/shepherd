@@ -7,6 +7,7 @@ name: Release
 #   tag vX.Y.Z-beta.N   → Shepherd, beta     (appcast-beta.xml — beta + stable items)
 #   push to nightly     → Shepherd Nightly   (appcast-shepherd-nightly.xml)
 #   tag vX.Y.Z-rc.N     → nothing: release candidates are retired
+#   manual run          → as above for its ref; any branch but nightly builds nothing
 #
 # Shepherd Nightly is its own app (com.bailycase.shepherd.nightly, Shepherd
 # Nightly.app, Shepherd-Nightly.dmg), so it installs beside Shepherd and only

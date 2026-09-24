@@ -82,6 +82,14 @@ class PlanTests(unittest.TestCase):
             with self.subTest(tag=tag):
                 self.assertFalse(release.plan(f"refs/tags/{tag}", STAMP)["build"])
 
+    def test_only_the_nightly_branch_builds_shepherd_nightly(self):
+        # A manual run (workflow_dispatch) on another branch must not ship it to Shepherd Nightly.
+        for ref in ("refs/heads/master", "refs/heads/feat/native-redesign", "refs/heads/nightly-old"):
+            with self.subTest(ref=ref):
+                p = release.plan(ref, STAMP)
+                self.assertFalse(p["build"])
+                self.assertIn("only the nightly branch", p["reason"])
+
     def test_a_nightly_needs_a_well_formed_stamp(self):
         with self.assertRaises(ValueError):
             release.plan("refs/heads/nightly", "2026-09-23")

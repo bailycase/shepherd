@@ -631,6 +631,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 
 - **Release candidates are retired.** A `vX.Y.Z-rc.N` tag builds nothing (the plan job says
   why), and old rc releases land in no feed.
+- **Only `nightly` ships Shepherd Nightly.** A manual run (`workflow_dispatch`) plans like a
+  push of its ref, so on any other branch it builds nothing rather than shipping that branch to
+  every Shepherd Nightly.
 - **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
   (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
   the boundary: its installer picks the new app in an archive by the host's *file name* first
