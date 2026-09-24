@@ -92,6 +92,19 @@ extension PreviewTests {
         }
     }
 
+    /// The one-time note under the toolbar after an update moved Shepherd off the retired
+    /// nightly channel, in the default window's column and the minimum window's.
+    @Test(arguments: [("notice-nightly-moved", 1208.0), ("notice-nightly-moved-minimum", AppLayout.mainColumnMinWidth)])
+    func nightlyMovedNotice(surface: String, width: CGFloat) async throws {
+        try await Preview.render(surface, size: CGSize(width: width, height: 120)) {
+            // A fixed width, as the window's minimum width gives the column: proposed no width,
+            // the wrapping message would grow without bound.
+            NightlyMovedNotice(download: {}, dismiss: {})
+                .frame(width: width, height: 120, alignment: .top)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     /// The minimum window with the sidebar called up: it overlays the thread. Captured once its
     /// slide has settled to the last fraction of a point (about 1.7× the pane's anchor).
     @Test func appWindowMinimumWithSidebarOverlay() async throws {
