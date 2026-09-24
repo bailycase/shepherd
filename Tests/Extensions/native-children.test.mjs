@@ -117,7 +117,16 @@ function fixtureServer() {
   return { server, requests };
 }
 
-async function harness(dir, entries = []) {
+// The extension's control tick, observed: which intervals it holds right now.
+function intervalSpy() {
+  const active = new Set();
+  return { active, timers: {
+    setInterval(fn, ms) { const handle = setInterval(fn, ms); active.add(handle); return handle; },
+    clearInterval(handle) { active.delete(handle); clearInterval(handle); },
+  } };
+}
+
+async function harness(dir, entries = [], timers) {
   const tools = new Map(), commands = new Map(), events = new Map(), messages = [], projections = [];
   const bus = new Map();
   const activeTools = ["read", "grep", "find", "ls", "bash", "edit", "write"];
@@ -131,7 +140,7 @@ async function harness(dir, entries = []) {
     modelRegistry: { getAll: () => [{ provider: "fixture", id: "fixture" }] },
     sessionManager: { getSessionId: () => "parent-fixture", getEntries: () => entries, getBranch: () => [], getSessionFile: () => undefined } };
   ctx.isProjectTrusted = () => true;
-  mod.default(pi); await events.get("session_start")({}, ctx);
+  mod.default(pi, timers); await events.get("session_start")({}, ctx);
   return { tools, commands, events, messages, projections, entries, ctx, activeTools,
     call: async (name, p, signal) => (await tools.get(`shepherd_child_${name}`).execute("call", p, signal, undefined, ctx)).details,
     tool: async (name, p, signal) => (await tools.get(name).execute("call", p, signal, undefined, ctx)).details,
@@ -265,8 +274,10 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     return control.frames.find((f) => f.type === "childCommandResult" && f.id === id);
   };
   let h;
+  let ticks = intervalSpy();
   try {
-    h = await harness(dir);
+    h = await harness(dir, [], ticks.timers);
+    assert.equal(ticks.active.size, 0, "an idle parent with no runs never ticks");
     await until(() => control.sockets.length === 1);
     assert.equal(control.frames[0].agentID, "fixture");
     // An arbitrary provider exists only in a configured user extension. Children must load
@@ -313,6 +324,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.notEqual(pair[0].id, pair[1].id);
     const done = await h.call("wait", { ids: pair.map((r) => r.id), all: true, timeoutSeconds: 30 });
     assert.deepEqual(done.map((r) => r.state), ["complete", "complete"], JSON.stringify(done));
+    assert.equal(ticks.active.size, 0, "the tick stops once the last run settles");
     // Card projection for a finished background child: counters, summary, spawn call id.
     const doneCard = h.projections.at(-1).children.find((c) => c.runID === pair[0].id);
     assert.equal(doneCard.state, "complete"); assert.equal(doneCard.role, "scout"); assert.equal(doneCard.context, "background");
@@ -346,7 +358,10 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal(askCard.lastActivity.tool, "shepherd_parent_message"); assert.equal(askCard.toolCalls, 1);
     assert(Number.isFinite(askCard.lastActivity.at));
     await h.shutdown();
-    h = await harness(dir, h.entries);
+    assert.equal(ticks.active.size, 0);
+    ticks = intervalSpy();
+    h = await harness(dir, h.entries, ticks.timers);
+    assert.equal(ticks.active.size, 0, "restored runs are settled");
     const restoredQuestion = await h.call("result", { id: ask.id });
     assert.equal(restoredQuestion.needsReply, true); assert.equal(restoredQuestion.stopReason, "stop");
     assert.equal((await h.call("result", { id: limited.id })).stopReason, "length");
@@ -356,6 +371,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => control.sockets.length === 2);
     assert.deepEqual(await childCommand({ runID: ask.id, action: "message", text: "card answer", mode: "steer" }), { type: "childCommandResult", id: 1 });
     await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 });
+    assert.equal(ticks.active.size, 0);
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("card answer"));
     assert.equal((await h.call("result", { id: ask.id })).needsReply, false);
     assert.match((await childCommand({ runID: "native-missing", action: "cancel" })).error, /Unknown child id/);
@@ -400,6 +416,10 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => fs.existsSync(path.join(dir, "env"))); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
     const shellCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
     assert.equal(shellCard.currentTool, "bash"); assert.equal(shellCard.state, "running");
+    // A resumed (restored) run ticks again while it works: a publish a second with no events.
+    assert.equal(ticks.active.size, 1);
+    const published = h.projections.length;
+    await until(() => h.projections.length >= published + 2, 5000);
     const receipt = await fleet.runtime.send(shell.id, "queued message", "followUp"); assert.equal(receipt.mode, "followUp"); assert.match(receipt.delivery, /accepted/);
     const timeout = await h.call("wait", { ids: [shell.id], timeoutSeconds: 0.05 }); assert.equal(timeout[0].state, "running");
     const runDir = path.dirname(shell.sessionFile);
