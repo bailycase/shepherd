@@ -107,6 +107,10 @@ struct TerminalMotionTests {
         try await Task.sleep(for: .milliseconds(300))
 
         #expect(grids.count == 1, "one SIGWINCH for the whole drag: \(grids)")
+        // The grid it takes is the one the window ended at: the shell on screen, in the same
+        // layout, has it too.
+        let visibleShell = vm.sessions.session(for: shown.auxiliary[0], in: shown.tab)
+        #expect(grids.last == "\(visibleShell.lastCols)x\(visibleShell.lastRows)", "hidden \(grids), shown \(visibleShell.lastCols)x\(visibleShell.lastRows)")
     }
 
     @Test func aTerminalTakesItsFinalGridOnceWhileAPaneSlidesInBesideIt() async throws {
