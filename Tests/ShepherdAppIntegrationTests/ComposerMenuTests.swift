@@ -150,29 +150,38 @@ struct ComposerMenuTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         let above = CGRect(x: 0, y: 0, width: thread.size.width, height: thread.cardTop - NWComposerMetrics.focusRing - 1)
-        func alone(_ menu: Menu, draft: String = "/") async throws -> FrameTimer.Capture {
-            if menu == .slash { thread.store.draft = draft } else { menu.open(in: thread) }
+        // ⇧⌘M takes a few updates to reach the composer: wait for the window to change, then for
+        // it to come to rest.
+        func after(_ change: () -> Void) async throws -> FrameTimer.Capture {
+            let before = FrameTimer.capture(thread.window, above)
+            change()
+            try await eventuallyOnMain("the menus to change") {
+                thread.window.layout()
+                return FrameTimer.capture(thread.window, above) != before
+            }
             try await thread.settle()
-            let capture = FrameTimer.capture(thread.window, above)
-            if menu == .slash { thread.store.draft = "" } else { menu.open(in: thread) }
-            try await thread.settle()
-            return capture
+            return FrameTimer.capture(thread.window, above)
         }
-        let models = try await alone(.models), thinking = try await alone(.thinking), commands = try await alone(.slash, draft: "/r")
+        // AppKit draws the search field's placeholder a point higher or lower depending on when
+        // its field editor takes over, so the picker's comparison leaves that one row out.
+        let pickerTop = thread.cardTop - AppLayout.menuGap - Menu.models.height
+        let searchField = CGRect(x: thread.columnLeading, y: pickerTop, width: Menu.models.width,
+                                 height: NW.Space.s + NWComposerMetrics.modelSearchHeight)
+        let models = try await after { Menu.models.open(in: thread) }
+        _ = try await after { Menu.models.open(in: thread) }
+        let thinking = try await after { Menu.thinking.open(in: thread) }
+        _ = try await after { Menu.thinking.open(in: thread) }
+        let commands = try await after { thread.store.draft = "/r" }
+        _ = try await after { thread.store.draft = "" }
 
-        thread.openSlashMenu()
-        try await thread.settle()
-        thread.openModelPicker()
-        try await thread.settle()
-        #expect(FrameTimer.capture(thread.window, above) == models, "the picker takes over from the slash menu")
-
-        Menu.thinking.open(in: thread)
-        try await thread.settle()
-        #expect(FrameTimer.capture(thread.window, above) == thinking, "the thinking menu takes over from the picker")
-
-        thread.store.draft = "/r"
-        try await thread.settle()
-        #expect(FrameTimer.capture(thread.window, above) == commands, "typing a command takes over from the thinking menu")
+        _ = try await after { thread.openSlashMenu() }
+        let pickerOverCommands = try await after { Menu.models.open(in: thread) }
+        let pickerDiffers = Pixels.bounds(differing: pickerOverCommands, models, rows: 0..<models.height)
+        #expect(pickerDiffers.map(searchField.contains) ?? true, "the picker takes over from the slash menu: \(pickerDiffers.map { "\($0)" } ?? "")")
+        let thinkingOverPicker = try await after { Menu.thinking.open(in: thread) }
+        #expect(thinkingOverPicker == thinking, "the thinking menu takes over from the picker")
+        let commandsOverThinking = try await after { thread.store.draft = "/r" }
+        #expect(commandsOverThinking == commands, "typing a command takes over from the thinking menu")
     }
 
     /// A thread that mounts with a "/" draft already in its store (a remounted remote thread)
