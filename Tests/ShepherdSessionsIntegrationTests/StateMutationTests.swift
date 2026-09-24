@@ -64,8 +64,10 @@ struct StateMutationTests {
         let read = Locked<ShepherdState?>(nil)
         let returned = DispatchSemaphore(value: 0)
         let server = h.server
+        // Read outside the lock: a read stuck on the queue must fail the test, not deadlock it.
         Thread.detachNewThread {
-            read.withValue { $0 = server.state }
+            let state = server.state
+            read.withValue { $0 = state }
             returned.signal()
         }
         let answered = try await blocking { returned.wait(timeout: .now() + 10) == .success }
