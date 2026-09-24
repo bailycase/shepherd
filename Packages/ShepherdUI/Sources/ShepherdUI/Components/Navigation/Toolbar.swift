@@ -58,6 +58,7 @@ public struct NWThreadToolbar<Options: View>: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("toolbar.thread")
         HStack(spacing: 10) {
             if let sidebar {
                 Button(action: sidebar) { Image(systemName: "sidebar.left") }

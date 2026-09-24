@@ -2,6 +2,20 @@ import Foundation
 import Observation
 import ShepherdProtocol
 
+/// Which pi session a thread shows: a new session or a new generation of it is a different
+/// thread (history, echoes, and questions belong to one).
+public struct NativeThreadSession: Hashable, Sendable {
+    public var piSessionID: String
+    public var generation: String
+
+    public init(piSessionID: String, generation: String) {
+        self.piSessionID = piSessionID
+        self.generation = generation
+    }
+
+    public var key: String { piSessionID + ":" + generation }
+}
+
 /// One turn as the thread lists it: the turn, and for a reply its presentation and the
 /// prompt that opened it. Equatable, so a row that did not change is not redrawn.
 public struct NativeThreadRow: Equatable, Identifiable, Sendable {
@@ -71,6 +85,39 @@ public final class NativeThreadStore {
     /// When the prompt that opened the current turn was sent (ms). A queued follow-up has not
     /// opened a turn yet; nil while the newest prompt is an echo.
     public private(set) var lastPromptAt: Double?
+
+    // What the chrome draws, each its own property (derived in `deriveChrome`). A snapshot is
+    // one value, so a view that reads any part of it redraws on every streamed chunk; these
+    // change only when they do, so a chunk redraws the thread and its live row, and a poll
+    // that moves only the context count redraws only the toolbar's counters.
+
+    /// The snapshot's pi session, nil before the first one.
+    public private(set) var session: NativeThreadSession?
+    public private(set) var dialogs: [NativeThreadDialog] = []
+    public private(set) var dialogsSupported = true
+    /// Extension widgets of the kinds this client draws.
+    public private(set) var widgets: [NativeThreadWidget] = []
+    public private(set) var commands: [NativeCommand] = []
+    public private(set) var model: String?
+    public private(set) var thinking: String?
+    public private(set) var stats: NativeThreadStats?
+    public private(set) var supportedActions: Set<String> = []
+    public private(set) var clipped = false
+    /// The thread's own running state: `settledRunning` unless the connection is lost (a
+    /// cached running snapshot is not running). The working row and Stop read it.
+    public private(set) var running = false
+    /// What the host last reported, without the settling `running` adds.
+    public private(set) var hostRunning = false
+    /// The thread's tail row: pi's current activity while it runs (nil under live thinking,
+    /// which has its own spinner, and while a question waits). A pi starting again says so in
+    /// the composer (`awaitingPi`), never here.
+    public private(set) var workingLabel: String?
+    /// User turns in the thread (the toolbar counts them once the whole history is loaded).
+    public private(set) var userTurnCount = 0
+    public private(set) var hasSubagents = false
+
+    /// "piSessionID:generation", nil before the first snapshot.
+    public var sessionKey: String? { session?.key }
 
     /// How long `starting` may last before it is reported as an error. Polling continues, so
     /// a pi that answers later still clears it.
@@ -149,13 +196,13 @@ public final class NativeThreadStore {
     public var hasLiveSubagents: Bool { subagents.contains { !$0.isTerminal } }
 
     public func supports(_ action: String) -> Bool {
-        ready && !busy && snapshot?.supportedActions.contains(action) == true
+        ready && !busy && supportedActions.contains(action)
     }
 
     /// The thread is waiting for its pi: starting, shown from disk, or its first pull still on
     /// its way. Not an error, and not a thread kept from before that is refreshing.
     public var awaitingPi: Bool {
-        !ready && loadError == nil && (starting || previewing || snapshot == nil)
+        !ready && loadError == nil && (starting || previewing || session == nil)
     }
 
     /// Send is offered: the thread supports it now, or it is not ready yet (pi starting, the
@@ -217,6 +264,47 @@ public final class NativeThreadStore {
         }
         if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
         if rows != self.rows { self.rows = rows }
+        deriveChrome()
+    }
+
+    /// Recomputes what the chrome draws (see `session`), each assigned only when it changed.
+    private func deriveChrome() {
+        let value = snapshot
+        let session = value.map { NativeThreadSession(piSessionID: $0.piSessionID, generation: $0.generation) }
+        if session != self.session { self.session = session }
+        let dialogs = value?.dialogs ?? []
+        if dialogs != self.dialogs { self.dialogs = dialogs }
+        let dialogsSupported = value?.dialogsSupported ?? true
+        if dialogsSupported != self.dialogsSupported { self.dialogsSupported = dialogsSupported }
+        let widgets = (value?.widgets ?? []).filter { $0.kind != .unknown }
+        if widgets != self.widgets { self.widgets = widgets }
+        let commands = value?.commands ?? []
+        if commands != self.commands { self.commands = commands }
+        if value?.model != model { model = value?.model }
+        if value?.thinking != thinking { thinking = value?.thinking }
+        if value?.stats != stats { stats = value?.stats }
+        let actions = Set(value?.supportedActions ?? [])
+        if actions != supportedActions { supportedActions = actions }
+        let clipped = value?.clipped ?? false
+        if clipped != self.clipped { self.clipped = clipped }
+        let hostRunning = value?.running ?? false
+        if hostRunning != self.hostRunning { self.hostRunning = hostRunning }
+        let running = loadError == nil && settledRunning
+        if running != self.running { self.running = running }
+        let label = workingLabel(running: running, dialogs: dialogs)
+        if label != workingLabel { workingLabel = label }
+        let userTurns = turns.count(where: \.isUser)
+        if userTurns != userTurnCount { userTurnCount = userTurns }
+        if subagents.isEmpty == hasSubagents { hasSubagents = !subagents.isEmpty }
+    }
+
+    private func workingLabel(running: Bool, dialogs: [NativeThreadDialog]) -> String? {
+        guard running, dialogs.isEmpty else { return nil }
+        if let presentation = rows.last(where: \.live)?.presentation {
+            if presentation.endsInLiveThinking { return nil }
+            if presentation.endsInLiveActivity { return "Working…" }
+        }
+        return nativeWorkingLabel(snapshot?.provisional ?? [])
     }
 
     private func call(_ message: NativeThreadMessage) -> NativeActivityCall {
@@ -412,7 +500,10 @@ public final class NativeThreadStore {
             derive()
         }
         guard now - since < startingLimit else {
-            if starting { starting = false }
+            if starting {
+                starting = false
+                deriveChrome()
+            }
             resumeStartWaiters(false)
             let limit = startingLimit.formatted(.units(allowed: [.minutes, .seconds], width: .wide))
             let message = "The agent's pi has not started after \(limit)."
@@ -422,7 +513,10 @@ public final class NativeThreadStore {
             }
             return
         }
-        if !starting { starting = true }
+        if !starting {
+            starting = true
+            deriveChrome()
+        }
         if loadError != nil {
             loadError = nil
             derive()
@@ -430,7 +524,10 @@ public final class NativeThreadStore {
     }
 
     private func endStarting() {
-        if starting { starting = false }
+        if starting {
+            starting = false
+            deriveChrome()
+        }
         startingSince = nil
     }
 

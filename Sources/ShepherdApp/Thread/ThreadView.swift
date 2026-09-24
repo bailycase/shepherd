@@ -58,21 +58,19 @@ struct ThreadView: View {
     /// pull after switching back to the agent) whatever changes lands at once.
     @State private var caughtUp = false
 
-    private var running: Bool { store.loadError == nil && store.settledRunning }
-
     var body: some View {
+        let _ = NWRenderProbe.tick("thread.view")
         let rows = store.rows
-        let running = running
+        let running = store.running
         let liveRow = rows.last(where: \.live)
         // One persistent tail row for the whole run, the last part of the streaming reply (or on
         // its own before the reply starts). A question replaces it with the composer's question
         // panel, and live thinking carries its own spinner. A pi that is starting says so in the
-        // composer, never here.
-        let working = running && store.snapshot?.dialogs.isEmpty != false ? workingLabel(liveRow) : nil
+        // composer, never here (`NativeThreadStore.workingLabel`).
+        let working = store.workingLabel
         // Loaded before this change: the tail row appearing with the first load just shows.
         let settled = arrivals.armed
-        let arrived = arrivals.update(rows.map(\.id), session: store.snapshot.map { $0.piSessionID + ":" + $0.generation },
-                                      active: active, ready: store.ready)
+        let arrived = arrivals.update(rows.map(\.id), session: store.sessionKey, active: active, ready: store.ready)
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
                 ScrollView {
@@ -216,16 +214,6 @@ struct ThreadView: View {
 
     private static let bottomID = "thread-bottom"
 
-    /// What the tail row says: nothing under live thinking (it has its own spinner), "Working…"
-    /// under a live activity line, else pi's current activity.
-    private func workingLabel(_ live: NativeThreadRow?) -> String? {
-        if let presentation = live?.presentation {
-            if presentation.endsInLiveThinking { return nil }
-            if presentation.endsInLiveActivity { return "Working…" }
-        }
-        return nativeWorkingLabel(store.snapshot?.provisional ?? [])
-    }
-
     private var subagentActions: SubagentActions {
         SubagentActions(
             inspect: { run in inspectSubagent?(run) },
@@ -308,12 +296,12 @@ struct ThreadView: View {
     }
 
     @ViewBuilder private var notices: some View {
-        if let snapshot = store.snapshot {
+        if store.session != nil {
             if !store.ready, store.loadError == nil, !store.starting, !store.previewing {
                 quiet("Last known thread · refreshing before enabling actions")
             }
-            if !snapshot.dialogsSupported { quiet("This host's pi cannot answer questions here · update Shepherd on the host") }
-            if snapshot.clipped { quiet("Some earlier output is clipped") }
+            if !store.dialogsSupported { quiet("This host's pi cannot answer questions here · update Shepherd on the host") }
+            if store.clipped { quiet("Some earlier output is clipped") }
         }
     }
 
@@ -322,7 +310,7 @@ struct ThreadView: View {
     /// still starting with no session file to read) the thread stays blank and the composer says
     /// pi is starting; an error keeps the last transcript and shows its banner there instead.
     @ViewBuilder private var emptyState: some View {
-        if store.snapshot != nil {
+        if store.session != nil {
             NWEmptyState(
                 Text("New agent in \(Text(abbreviatedPath).font(Font.nwMono(AppLayout.emptyThreadPathSize, .medium)))"),
                 message: "Describe the task. Drop or paste images to attach them, or type / for commands.",

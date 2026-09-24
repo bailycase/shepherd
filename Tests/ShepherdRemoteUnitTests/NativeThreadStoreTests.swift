@@ -766,6 +766,68 @@ struct NativeThreadStoreTests {
         #expect(!invalidated.value)
     }
 
+    // MARK: What the chrome reads
+
+    /// The chrome's properties (see `NativeThreadStore.session`) and how to read each.
+    private static let chrome: [(String, @MainActor (NativeThreadStore) -> Void)] = [
+        ("session", { _ = $0.session }), ("dialogs", { _ = $0.dialogs }), ("dialogsSupported", { _ = $0.dialogsSupported }),
+        ("widgets", { _ = $0.widgets }), ("commands", { _ = $0.commands }), ("model", { _ = $0.model }),
+        ("thinking", { _ = $0.thinking }), ("stats", { _ = $0.stats }), ("supportedActions", { _ = $0.supportedActions }),
+        ("clipped", { _ = $0.clipped }), ("running", { _ = $0.running }), ("hostRunning", { _ = $0.hostRunning }),
+        ("workingLabel", { _ = $0.workingLabel }), ("userTurnCount", { _ = $0.userTurnCount }),
+        ("hasSubagents", { _ = $0.hasSubagents }),
+    ]
+
+    /// Which chrome properties announced a change while `change` ran.
+    private func changed(_ store: NativeThreadStore, _ change: () async -> Void) async -> Set<String> {
+        let fired = Names()
+        for (name, read) in Self.chrome {
+            withObservationTracking { read(store) } onChange: { fired.insert(name) }
+        }
+        await change()
+        return fired.value
+    }
+
+    /// A streamed chunk moves the rows and nothing the composer or the toolbar reads;
+    /// a poll that moves only the context count moves only `stats`; and each other change moves
+    /// what it shows.
+    @Test func eachChromePropertyChangesOnlyWithWhatItShows() async {
+        var snapshot = F.snapshot(running: true, messages: [F.user("go", id: "u")],
+                                  provisional: [F.assistant("Str", status: "streaming", id: "p")], model: "a/one")
+        snapshot.stats = NativeThreadStats(contextTokens: 1_000)
+        let (store, host, task) = await started(snapshot)
+        defer { task.cancel() }
+        #expect(store.running && store.workingLabel == "Working…" && store.userTurnCount == 1)
+
+        func serve(_ edit: (inout NativeThreadSnapshot) -> Void) async -> Set<String> {
+            await changed(store) {
+                edit(&snapshot)
+                snapshot.revision += 1
+                host.snapshot = snapshot
+                await store.refresh()
+            }
+        }
+
+        let steps: [(Set<String>, (inout NativeThreadSnapshot) -> Void)] = [
+            ([], { $0.provisional = [F.assistant("Streaming more", status: "streaming", id: "p")] }),
+            (["stats"], { $0.stats = NativeThreadStats(contextTokens: 2_000) }),
+            (["model"], { $0.model = "a/two" }),
+            (["thinking"], { $0.thinking = "high" }),
+            (["supportedActions"], { $0.supportedActions.append("sendImages") }),
+            (["widgets"], { $0.widgets = [NativeThreadWidget(namespace: "x", key: "k", kind: .status, text: "on")] }),
+            (["commands"], { $0.commands = [NativeCommand(name: "review")] }),
+            (["clipped"], { $0.clipped = true }),
+            (["hasSubagents"], { $0.subagents = [F.run("r")] }),
+            (["userTurnCount"], { $0.messages += [F.assistant("Done.", id: "a"), F.user("next", id: "u2")] }),
+            (["dialogs", "workingLabel"], { $0.dialogs = [NativeThreadDialog(id: "d", kind: .confirm, title: "Go?")] }),
+            (["session"], { $0.generation = "g2" }),
+        ]
+        for (index, (expected, edit)) in steps.enumerated() {
+            let fired = await serve(edit)
+            #expect(fired == expected, "step \(index)")
+        }
+    }
+
     @Test func stopDetachesTheStoreFromItsHost() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
@@ -773,6 +835,14 @@ struct NativeThreadStoreTests {
         await store.refresh()
         #expect(host.requests.count == 1 && !store.supports("send"))
     }
+}
+
+/// Names collected from observations' change handlers.
+private final class Names: @unchecked Sendable {
+    private let lock = NSLock()
+    private var names: Set<String> = []
+    var value: Set<String> { lock.withLock { names } }
+    func insert(_ name: String) { _ = lock.withLock { names.insert(name) } }
 }
 
 /// Set once from an observation's change handler.

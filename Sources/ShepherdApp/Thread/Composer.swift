@@ -75,18 +75,20 @@ struct Composer: View {
     /// The menu over the card, whichever path opened it (typing "/", a chip, ⇧⌘M, Esc).
     private enum OpenMenu: Equatable { case none, slash, models, thinking }
 
-    // One effective state, shared with the header pill: a lost connection wins over a cached
-    // running snapshot (error maps to Send + an inline error, never Stop).
+    // One effective state: a lost connection wins over a cached running snapshot (error maps
+    // to Send + an inline error, never Stop).
+    // Each reads the store's own property for it, never the snapshot, so a streamed chunk
+    // leaves the composer alone.
     private var errored: Bool { store.loadError != nil }
-    private var running: Bool { !errored && store.settledRunning }
-    private var dialogs: [NativeThreadDialog] { errored ? [] : (store.snapshot?.dialogs ?? []) }
+    private var running: Bool { store.running }
+    private var dialogs: [NativeThreadDialog] { errored ? [] : store.dialogs }
     /// While pi starts, a send waits for it behind the spinner.
     private var canSend: Bool {
         active && store.acceptsSend && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
-    private var canAttach: Bool { store.snapshot?.supportedActions.contains("sendImages") == true }
+    private var canAttach: Bool { store.supportedActions.contains("sendImages") }
     /// pi answers `/name` prompts itself; the list comes from its command registry.
-    private var commands: [NativeCommand] { store.snapshot?.commands ?? [] }
+    private var commands: [NativeCommand] { store.commands }
     private var commandQuery: String? {
         guard !commands.isEmpty, store.draft.hasPrefix("/"), !store.draft.contains(where: \.isWhitespace),
               store.draft != dismissedQuery else { return nil }
@@ -114,13 +116,13 @@ struct Composer: View {
     /// What sits above the card: a banner, the notice, extension widgets.
     private var accessories: [String] {
         let banner = store.loadError != nil ? "lost" : attachmentError != nil ? "attachment" : store.notice != nil ? "notice" : nil
-        return [banner].compactMap { $0 } + (store.snapshot?.widgets ?? []).filter { $0.kind != .unknown }.map(\.id)
+        return [banner].compactMap { $0 } + store.widgets.map(\.id)
     }
 
     /// The question in place of the field, by the identity its panel takes.
     private var questionKey: String? {
-        guard let dialog = dialogs.first, let snapshot = store.snapshot else { return nil }
-        return snapshot.generation + ":" + snapshot.piSessionID + ":" + dialog.id
+        guard let dialog = dialogs.first, let session = store.session else { return nil }
+        return session.key + ":" + dialog.id
     }
 
     /// Everything here is anchored to the bottom of the thread: what opens above the card grows
@@ -129,7 +131,8 @@ struct Composer: View {
     /// height; banners, widgets, and attachments nudge in. Each is keyed on its own state, so
     /// typing and filtering stay instant.
     var body: some View {
-        let widgets = (store.snapshot?.widgets ?? []).filter { $0.kind != .unknown }
+        let _ = NWRenderProbe.tick("composer.body")
+        let widgets = store.widgets
         let query = commandQuery
         VStack(alignment: .leading, spacing: AppLayout.menuGap) {
             if !widgets.isEmpty {
@@ -170,12 +173,12 @@ struct Composer: View {
             if !active { loaded = false } else if store.ready { loaded = true }
         }
         // A normal start is over before the delay: only a slow pi is ever said to be starting.
-        .task(id: StartingWait(awaiting: active && store.awaitingPi, blank: store.snapshot == nil)) {
+        .task(id: StartingWait(awaiting: active && store.awaitingPi, blank: store.session == nil)) {
             guard active && store.awaitingPi else {
                 startingShown = false
                 return
             }
-            try? await Task.sleep(for: Self.startingDelay(blank: store.snapshot == nil, delay: startingDelay))
+            try? await Task.sleep(for: Self.startingDelay(blank: store.session == nil, delay: startingDelay))
             if !Task.isCancelled { startingShown = true }
         }
         .frame(maxWidth: AppLayout.threadMaxWidth)
@@ -263,7 +266,7 @@ struct Composer: View {
                 } close: { menu = nil; composing.wrappedValue = true }
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
-            if menu == .thinking, let thinking = store.snapshot?.thinking {
+            if menu == .thinking, let thinking = store.thinking {
                 NWThinkingMenu(options: Self.thinkingLevels, current: thinking) { level in
                     menu = nil
                     composing.wrappedValue = true
@@ -304,12 +307,12 @@ struct Composer: View {
             // The card eases to the new height as a question takes the field's place (or gives
             // it back); what arrives fades in, and what leaves goes at once rather than
             // lingering over the controls.
-            if let dialog = dialogs.first, let snapshot = store.snapshot, let questionKey {
+            if let dialog = dialogs.first, let session = store.session, let questionKey {
                 // The card swaps its field for the question so it can never scroll out of view.
                 QuestionPanel(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
                     Task {
-                        await store.answer(dialogID: dialog.id, sessionID: snapshot.piSessionID,
-                                           generation: snapshot.generation, answer: answer)
+                        await store.answer(dialogID: dialog.id, sessionID: session.piSessionID,
+                                           generation: session.generation, answer: answer)
                     }
                 }
                 .id(questionKey)
@@ -395,14 +398,15 @@ struct Composer: View {
         }
         // A new model or level cross-fades, and the delivery chip fades in as a draft starts
         // while the agent runs. Only these: typing and width changes stay instant.
-        .nwAnimation(.content, value: loaded ? [store.snapshot?.model, store.snapshot?.thinking] : nil)
+        .nwAnimation(.content, value: loaded ? [store.model, store.thinking] : nil)
         .nwAnimation(.list, value: loaded && showsDelivery)
     }
 
     private var showsDelivery: Bool { running && !store.draft.isEmpty }
 
     private func actionChips(compact: Bool, startingLabel: Bool) -> some View {
-        HStack(spacing: NW.Space.xxs) {
+        let _ = NWRenderProbe.tick("composer.chips")
+        return HStack(spacing: NW.Space.xxs) {
             if canAttach {
                 Button { picking = true } label: { Image(systemName: "paperclip") }
                     .buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
@@ -482,8 +486,8 @@ struct Composer: View {
     // MARK: Chips
 
     @ViewBuilder private var modelChip: some View {
-        if let model = store.snapshot?.model {
-            let settable = store.snapshot?.supportedActions.contains("setModel") == true
+        if let model = store.model {
+            let settable = store.supportedActions.contains("setModel")
             Button { openModels() } label: {
                 HStack(spacing: NW.Space.s) {
                     Text(nativeModelShortName(model)).font(Font.nw(.code)).nwContentTransition(.crossFade)
@@ -500,7 +504,7 @@ struct Composer: View {
     /// Off / Low / Medium / High, independent of the model; hidden when the model takes no
     /// thinking level.
     @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
-        if thinkingAvailable, let thinking = store.snapshot?.thinking {
+        if thinkingAvailable, let thinking = store.thinking {
             Button {
                 toggleThinking()
             } label: {
@@ -519,12 +523,12 @@ struct Composer: View {
     }
 
     private var thinkingAvailable: Bool {
-        store.snapshot?.thinking != nil && store.snapshot?.supportedActions.contains("setThinking") == true && reasoningAvailable
+        store.thinking != nil && store.supportedActions.contains("setThinking") && reasoningAvailable
     }
 
     /// Unknown models (a catalog that did not load) keep the chip.
     private var reasoningAvailable: Bool {
-        guard let model = store.snapshot?.model, let entry = catalog?.model(model) else { return true }
+        guard let model = store.model, let entry = catalog?.model(model) else { return true }
         return entry.reasoning
     }
 
@@ -554,7 +558,7 @@ struct Composer: View {
     private func openModels() {
         guard store.supports("setModel") else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
-        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.snapshot?.model)
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model)
         dismissCommands()
         menu = .models
         if catalog?.isEmpty != false { Task { await loadModels() } }
