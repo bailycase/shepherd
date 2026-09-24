@@ -18,12 +18,12 @@ struct ExtensionMessageTests {
         case .setAgentStatus, .setAgentName, .setAgentSession, .setAgentChildren, .notify, .helloAgent,
              .helloChildren, .childCommandResult, .listPanes, .openPane, .closePane, .focusPane,
              .sendPaneInput, .readPane, .requestReview, .listAgents, .sendToAgent, .spawnAgent,
-             .createAutomation, .listAutomations, .updateAutomation, .deleteAutomation,
-             .startAutomation, .stopAutomation:
+             .coordinateAgent, .agentResponse, .cancelAgentRequest, .createAutomation, .listAutomations,
+             .updateAutomation, .deleteAutomation, .startAutomation, .stopAutomation:
             return Wire.caseName(message)
         }
     }
-    static let caseCount = 24
+    static let caseCount = 27
 
     static let samples: [ExtensionMessage] = [
         .setAgentStatus(agentID: agent, status: .blocked),
@@ -48,6 +48,11 @@ struct ExtensionMessageTests {
         .listAgents(id: 16, agentID: agent),
         .sendToAgent(id: 17, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "CI is green"),
         .spawnAgent(id: 18, agentID: agent, cwd: "/tmp/repo", prompt: "Fix the tests."),
+        .coordinateAgent(id: 19, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
+                         request: AgentCoordinationRequest(operation: .read, limit: 10, after: "entry-1")),
+        .agentResponse(agentID: AgentID(rawValue: "a2"), requestID: "server-token",
+                       result: AgentCoordinationResult(text: "live activity snapshot", idle: true, sessionID: "s1", connectionID: "c1")),
+        .cancelAgentRequest(id: 19, agentID: agent),
         .createAutomation(id: 9, name: "pr-watch", prompt: "watch it", cwd: "/tmp/repo", enabled: false, start: false),
         .listAutomations(id: 10),
         .updateAutomation(id: 11, automationID: automation, name: "renamed", prompt: "p", cwd: "/c", enabled: false),
@@ -96,6 +101,16 @@ struct ExtensionMessageTests {
          .requestReview(id: 4, agentID: agent, cwd: nil, reference: nil)),
         (#"{"type":"sendToAgent","id":3,"agentID":"a1","targetAgentID":"a2","text":"done"}"#,
          .sendToAgent(id: 3, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), text: "done")),
+        (#"{"type":"coordinateAgent","targetAgentID":"a2","request":{"operation":"steer","text":"change course"},"id":5,"agentID":"a1"}"#,
+         .coordinateAgent(id: 5, agentID: agent, targetAgentID: AgentID(rawValue: "a2"),
+                          request: AgentCoordinationRequest(operation: .steer, text: "change course"))),
+        // agent_delete carries no approval: a stray "confirmed" key is ignored, never obeyed.
+        (#"{"type":"coordinateAgent","targetAgentID":"a2","request":{"operation":"delete"},"confirmed":true,"id":6,"agentID":"a1"}"#,
+         .coordinateAgent(id: 6, agentID: agent, targetAgentID: AgentID(rawValue: "a2"), request: AgentCoordinationRequest(operation: .delete))),
+        (#"{"type":"agentResponse","agentID":"a1","requestID":"tok","result":{"text":"cursor is not on the current branch","code":"recipient_error"}}"#,
+         .agentResponse(agentID: agent, requestID: "tok",
+                        result: AgentCoordinationResult(text: "cursor is not on the current branch", code: "recipient_error"))),
+        (#"{"type":"cancelAgentRequest","id":7,"agentID":"a1"}"#, .cancelAgentRequest(id: 7, agentID: agent)),
         (#"{"type":"createAutomation","id":1,"name":"pr-watch #4821","prompt":"Watch the PR.","cwd":"/tmp/repo"}"#,
          .createAutomation(id: 1, name: "pr-watch #4821", prompt: "Watch the PR.", cwd: "/tmp/repo", enabled: true, start: true)),
         (#"{"type":"updateAutomation","id":3,"automationID":"au1","enabled":false}"#,
@@ -105,6 +120,14 @@ struct ExtensionMessageTests {
     @Test(arguments: handWritten)
     func decodesTheShapeExtensionsWrite(json: String, expected: ExtensionMessage) throws {
         #expect(try Wire.decode(ExtensionMessage.self, json) == expected)
+    }
+
+    @Test(arguments: [AgentCoordinationRequest.Operation.read, .steer, .interrupt, .status, .delete])
+    func everyCoordinationOperationRoundTrips(_ operation: AgentCoordinationRequest.Operation) throws {
+        let message = ExtensionMessage.coordinateAgent(id: 3, agentID: Self.agent, targetAgentID: AgentID(rawValue: "a2"),
+                                                       request: AgentCoordinationRequest(operation: operation))
+        #expect(try Wire.roundTrip(message) == message)
+        #expect(try Wire.object(message)["request"] as? [String: String] == ["operation": operation.rawValue])
     }
 
     @Test func optionalFieldsAreOmittedRatherThanNull() throws {
@@ -132,11 +155,11 @@ struct ExtensionReplyTests {
     static func caseName(_ reply: ExtensionReply) -> String {
         switch reply {
         case .childCommand, .ok, .error, .panes, .paneOpened, .paneContent, .reviewResult, .automations,
-             .agents, .message:
+             .agents, .message, .agentRequest, .agentResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 10
+    static let caseCount = 12
 
     static let samples: [ExtensionReply] = [
         .childCommand(id: 1, runID: "native-1", action: .message, text: "Replace everywhere", mode: .steer),
@@ -155,6 +178,9 @@ struct ExtensionReplyTests {
             AgentPeerInfo(id: AgentID(), name: "me", status: "idle", cwd: "/tmp", isSelf: true),
         ]),
         .message(id: 0, text: "[from: worker] done"),
+        .agentRequest(id: 0, requestID: "server-token", targetAgentID: AgentID(rawValue: "a2"),
+                      request: AgentCoordinationRequest(operation: .steer, text: "[from: worker] change course")),
+        .agentResult(id: 19, result: AgentCoordinationResult(text: "request cancelled", code: "cancelled")),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -176,6 +202,17 @@ struct ExtensionReplyTests {
         let reply = ExtensionReply.childCommand(id: 5, runID: "native-1", action: action, text: nil, mode: nil)
         #expect(try Wire.roundTrip(reply) == reply)
         #expect(try Wire.object(reply)["text"] == nil)
+    }
+
+    /// What the panes extension reads: the relayed request's token and operation, and a
+    /// result whose `code` marks a failure.
+    @Test func coordinationRepliesCarryTheShapeTheExtensionReads() throws {
+        let request = try Wire.object(ExtensionReply.agentRequest(
+            id: 0, requestID: "tok", targetAgentID: AgentID(rawValue: "a2"), request: AgentCoordinationRequest(operation: .interrupt)))
+        #expect(request["requestID"] as? String == "tok" && request["targetAgentID"] as? String == "a2")
+        #expect(request["request"] as? [String: String] == ["operation": "interrupt"])
+        let result = try Wire.object(ExtensionReply.agentResult(id: 4, result: AgentCoordinationResult(text: "done")))
+        #expect(result["result"] as? [String: String] == ["text": "done"])
     }
 
     @Test func aPushedMessageWithoutAnIDDecodesAsIDZero() throws {

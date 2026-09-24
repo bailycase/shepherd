@@ -62,6 +62,22 @@ struct AppDialogs: ViewModifier {
             .sheet(item: $vm.spaceDeleteSpace) { space in
                 SpaceDeleteDialog(vm: vm, space: space)
             }
+            .sheet(item: $vm.peerDeleteItem) { confirmation in
+                let agent = confirmation.agent
+                PeerDeleteDialog(
+                    requester: confirmation.senderName,
+                    agent: agent.name,
+                    space: vm.state.spaces.first { $0.id == agent.spaceID }?.name,
+                    branch: agent.worktreeBranch,
+                    directory: vm.state.tabs.first { $0.id == agent.tabID }?.layout.leaves.first { $0.agentID == agent.id }
+                        .map { ($0.cwd as NSString).abbreviatingWithTildeInPath },
+                    delete: {
+                        // Deleting tears down a mounted layout: the sheet finishes dismissing first.
+                        Task { await vm.confirmPeerDeletion(requestID: confirmation.requestID, dismissal: .milliseconds(300)) }
+                    },
+                    cancel: { vm.cancelPeerDeletion(requestID: confirmation.requestID) }
+                )
+            }
             .sheet(item: $vm.actionErrorItem) { item in
                 ActionErrorDialog(message: item.value) { vm.remoteActionError = nil }
             }
@@ -189,6 +205,74 @@ struct WorktreeDeleteDialog: View {
             try? await Task.sleep(for: .milliseconds(300))
             vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree)
         }
+    }
+}
+
+/// An agent's `agent_delete`: only the user can approve it, here. Cancel, or no answer before
+/// the request times out, keeps the agent; approving deletes it like Delete Agent, keeping its
+/// worktree and branch. Its branch, else its directory, tells it apart from agents sharing its
+/// name.
+struct PeerDeleteDialog: View {
+    let requester: String
+    let agent: String
+    var space: String?
+    var branch: String?
+    var directory: String?
+    let delete: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        DialogSheet(
+            title: "Delete agent",
+            subtitle: "Another agent asks you to delete this one. If you don't answer within two minutes, it is kept.",
+            actions: [
+                DialogAction("Cancel", kind: .cancel, action: cancel),
+                DialogAction("Delete agent", kind: .destructive, action: delete),
+            ]
+        ) {
+            SheetRow("Agent") {
+                Text(agent)
+                    .nwText(.ui)
+                    .foregroundStyle(Color.nw.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .help(agent)
+            }
+            if let branch {
+                SheetRow("Branch") { mono(branch) }
+            } else if let directory {
+                SheetRow("Directory") { mono(directory) }
+            }
+            if let space {
+                SheetRow("Space") {
+                    Text(space)
+                        .nwText(.ui)
+                        .foregroundStyle(Color.nw.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            SheetRow("Asked by") {
+                Text(requester)
+                    .nwText(.ui)
+                    .foregroundStyle(Color.nw.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            DialogBanner(title: "Stops the agent and everything it started",
+                         message: "Its pi session ends mid-turn and its terminal panes close."
+                             + (branch == nil ? "" : " Its worktree and branch are kept."))
+        }
+    }
+
+    private func mono(_ text: String) -> some View {
+        Text(text)
+            .font(.nw(.mono))
+            .foregroundStyle(Color.nw.textSecondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(text)
+            .textSelection(.enabled)
     }
 }
 

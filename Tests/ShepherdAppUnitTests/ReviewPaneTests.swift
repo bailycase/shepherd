@@ -114,6 +114,22 @@ struct ReviewSessionTests {
         #expect(session.comments.isEmpty && session.commentsByFile.isEmpty)
     }
 
+    /// The header names the reviewed directory only when it is not the agent's own; a remote
+    /// review (no agent directory) never does.
+    @Test(arguments: [
+        ("/src/app", "/src/app", nil),
+        ("/src/app/", "/src/app", nil),
+        ("/src/app-worktree", "/src/app", "app-worktree"),
+        ("/src/app/sub", "/src/app", "sub"),
+        ("/src/other", nil, nil),
+    ] as [(String, String?, String?)])
+    func aReviewOfAnotherDirectoryNamesIt(cwd: String, agentCwd: String?, name: String?) {
+        let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: cwd, agentCwd: agentCwd, reference: nil)
+        #expect(session.otherDirectoryName == name)
+        session.retarget(cwd: "/src/elsewhere")
+        #expect(session.otherDirectoryName == (agentCwd == nil ? nil : "elsewhere"))
+    }
+
     @Test func totalsFollowTheFiles() {
         let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp", reference: nil, files: ReviewSample.files)
         #expect(session.addedCount == 3 && session.removedCount == 2)

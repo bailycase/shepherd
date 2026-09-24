@@ -314,7 +314,8 @@ Packages/
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
 Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free):
   shepherd-status.ts      status + active pi session       shepherd-namer.ts   agent titles
-  shepherd-panes.ts       pane_*, agent_list/send/spawn, automation_*, notify
+  shepherd-panes.ts       pane_*, agent_* (list/send/spawn/read/steer/interrupt/wait/delete),
+                          automation_*, notify; see docs/agent-coordination.md
   shepherd-review.ts      review_diff (opens the review pane)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
@@ -566,6 +567,15 @@ are load-bearing:
 - It can never close or type into the pane running its own pi process.
 - The last pane in a layout cannot be closed.
 
+**Agents never delete each other on their own.** `agent_delete` opens `PeerDeleteDialog`; only
+its destructive button approves, by claiming the server's token (`claimAgentDeletion`) before
+deleting through Delete Agent (never Delete Worktree Agent, so checkouts and branches stay).
+Cancel, a lapsed token (caller cancelled or disconnected, 120 s timeout), or a second request
+while the dialog is up never deletes. The live coordination tools (`agent_read`, `agent_steer`,
+`agent_interrupt`, `agent_wait`) are answered by the target's own panes extension, never inferred
+from saved state; the server relays each under its own token and accepts the answer only from
+the target's registered connection ([docs/agent-coordination.md](docs/agent-coordination.md)).
+
 Shepherd does not nest agents. pi extensions own subagent execution (the bundled native runtime
 is on by default), and the app only *projects* the results in the parent's thread (cards, the
 runs strip, the ledger, and the inspector) and the palette. Subagents have no sidebar rows; one
@@ -610,8 +620,8 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 
 **Reviews dock; they don't split.** A review (`ReviewSession`, `ShepherdViewModel+Review.swift`)
-lives in the agent's right pane beside the thread, in the slot shared with the subagent inspector
-(the inspector wins). It never touches the persisted layout. Request changes and Commit send the
+lives in the agent's right pane beside its whole layout (thread and terminal panes), in the slot
+shared with the subagent inspector (the inspector wins). It never touches the persisted layout. Request changes and Commit send the
 agent a follow-up turn, and the review closes only once the send succeeds, so comments survive a
 failed send. A review an agent opens on a host is that host's view state: remote viewers are
 deliberately not notified and open their own with ⇧⌘B.

@@ -108,7 +108,9 @@ by pi run by hand in a terminal pane.
 **Layout.** `RootView` lays the window out itself: the sidebar, the toolbar, the workspace, and
 the right pane (`RightPaneSplit`). `ShellLayout` (`AppLayout+Navigation.swift`) is the pure
 function that decides, from the window's width, whether the sidebar docks or overlays and
-whether the right pane docks or overlays the thread.
+whether the right pane docks or overlays the agent's layout. The right pane wraps the whole
+layout (`AgentLayoutView` in `WorkspaceView.swift`), never one of its panes, so a terminal split
+beside the thread never narrows what the dock rule measures.
 
 ## The agent thread
 
@@ -172,7 +174,12 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
 - **`shepherd-namer.ts`:** proposes a title.
 - **`shepherd-panes.ts`:**
   - `pane_*` tools, answered by `PaneControl.swift` through `onPaneRequest`
-  - peer tools (`agent_list`, `agent_send`, `agent_spawn`)
+  - peer tools: `agent_list`, `agent_send`, and `agent_spawn` through `onAgentPeerRequest`
+  - live coordination (`agent_read`, `agent_steer`, `agent_interrupt`, `agent_wait`): the server
+    relays `coordinateAgent` to the target's own panes connection as `agentRequest` under a
+    token of its own, and returns the target's `agentResponse` to the caller as `agentResult`
+  - `agent_delete`, through `onAgentPeerRequest` to the Delete agent dialog; deletion happens
+    only after the dialog claims the token ([docs/agent-coordination.md](docs/agent-coordination.md))
   - `automation_*`, through `onAutomationRequest`
   - `notify`
 - **`shepherd-review.ts`:** `review_diff`, which opens the review pane.

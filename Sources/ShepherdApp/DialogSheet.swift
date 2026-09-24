@@ -187,8 +187,10 @@ struct StopAllDialog: View {
 }
 
 /// The review pane's per-file Revert: tracked files return to HEAD, new files move to the Trash.
+/// It names the repository, since an agent's review may be of one the user isn't working in.
 struct RevertFileDialog: View {
     let path: String
+    let repository: String
     let isNew: Bool
     let revert: () -> Void
     let cancel: () -> Void
@@ -200,7 +202,17 @@ struct RevertFileDialog: View {
                     actions: [
                         DialogAction("Cancel", kind: .cancel, action: cancel),
                         DialogAction("Discard changes", kind: .destructive, action: revert),
-                    ])
+                    ]) {
+            SheetRow("Repository") {
+                Text(repository)
+                    .font(.nw(.mono))
+                    .foregroundStyle(Color.nw.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(repository)
+                    .textSelection(.enabled)
+            }
+        }
     }
 }
 

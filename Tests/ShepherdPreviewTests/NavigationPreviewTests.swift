@@ -122,6 +122,32 @@ extension PreviewTests {
         }
     }
 
+    /// A terminal split beside the thread with the review open: the review docks at the window's
+    /// trailing edge beside the whole layout (the main column decides, not the thread's half),
+    /// and the thread keeps its place on the left.
+    @Test func appWindowReviewBesideASplitLayout() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let (agent, tab) = try await workspace.agent("Dock review pane", in: space, order: 0, live: true)
+        let terminal = LeafPane(cwd: space.path)
+        var split = tab
+        split.layout = .split(axis: .vertical, ratio: 0.5, first: tab.layout, second: .leaf(terminal))
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [split], agents: [agent]))
+        let files = Reviews.session().files
+        vm.reviewDiffLoader = { _, reference in (files, reference) }
+        vm.selectAgent(agent.id)
+        vm.toggleReviewPane()
+        let store = vm.threadStores.store(for: agent.id)
+        let shell = vm.sessions.session(for: terminal, in: split)
+        try await Preview.render("app-window-review-split", size: CGSize(width: 1440, height: 900), ready: {
+            store.ready && shell.phase == .live && vm.reviewSessions.values.first?.isLoading == false
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
     /// The window with the sidebar hidden: the toolbar runs under the window controls.
     @Test func sidebarHiddenHeader() async throws {
         let workspace = try PreviewWorkspace()

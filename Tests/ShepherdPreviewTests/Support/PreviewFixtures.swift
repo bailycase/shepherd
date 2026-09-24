@@ -312,5 +312,5 @@ enum Reviews {
         return session
     }
 
-    static let actions = ReviewActions(setPullRequest: { _ in }, requestChanges: {}, commit: {}, close: {}, revert: { _ in }, open: { _ in })
+    static let actions = ReviewActions(setPullRequest: { _ in }, requestChanges: {}, commit: {}, close: {}, revert: { _, _ in }, open: { _ in })
 }

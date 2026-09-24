@@ -38,7 +38,11 @@ coherent over covering every use case.
   workflows. Runs appear as live cards in the thread and open in an inspector docked beside it;
   one waiting on your answer marks its agent in the sidebar.
 - **Review.** A review pane docks beside the thread with the working-tree or PR diff and inline
-  comments. It sends "request changes" (or "commit") back to the agent as its next turn.
+  comments. It sends "request changes" (or "commit") back to the agent as its next turn. An
+  agent can open it for you, on its own checkout or on another repository or worktree.
+- **Agents working together.** An agent can list, message, and start other agents, read another
+  agent's thread, steer or interrupt it, and wait for it to settle. Deleting another agent always
+  asks you first. See [docs/agent-coordination.md](docs/agent-coordination.md).
 - **Worktrees.** Give an agent its own git worktree, branched from a fresh `origin/<default>`.
   When the work is done, finalize it: commit, push, open a PR, and clean up. See
   [docs/worktrees.md](docs/worktrees.md).
@@ -163,6 +167,8 @@ Shepherd agent when you want those.
   becomes its thread.
 - [docs/native-subagents.md](docs/native-subagents.md): the bundled subagent runtime.
 - [docs/worktrees.md](docs/worktrees.md): worktree creation, finalize, and delete.
+- [docs/agent-coordination.md](docs/agent-coordination.md): the tools agents use on each other
+  and on the review pane.
 - [docs/clean-mac-simulation.md](docs/clean-mac-simulation.md): testing the finalize setup
   checks.
 - [docs/ios](docs/ios/README.md): the deferred iOS client.
