@@ -196,7 +196,7 @@ struct ThreadView: View {
     /// A sent message rises into the thread; a reply's parts make their own entrances.
     @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?, arriving: Bool, settled: Bool) -> some View {
         if row.isUser {
-            UserTurn(messages: row.turn.messages, caption: row.turn.messages.first?.timestamp.map { nativeClockText($0) })
+            UserTurn(turn: row.turn)
                 .equatable()
                 .nwArrival(arriving, .list, edge: .bottom)
         } else if let presentation = row.presentation {

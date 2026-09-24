@@ -257,7 +257,7 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// The NWThread board's parts: bubbles (hovered, showing its time, and queued), attachment
+    /// The NWThread board's parts: bubbles (hovered, showing its time, and steered), attachment
     /// chips, thinking open and live, the changes card, a hovered turn's footer and a turn error.
     @Test func threadParts() async throws {
         let changes = NWChangesCard(title: "4 files changed", added: 149, removed: 63, files: [
@@ -271,7 +271,7 @@ struct ThreadPreviewTests {
             VStack(alignment: .leading, spacing: 20) {
                 NWUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM",
                              revealed: true)
-                NWUserBubble("Also bump the tool row height to 28.", isQueued: true)
+                NWUserBubble("Also bump the tool row height to 28.", timestamp: "2:44 PM", revealed: true, origin: .steered)
                 HStack(spacing: NW.Space.s) {
                     NWAttachmentChip("Spec.dc.html") {}
                     NWAttachmentChip("screenshot.png", thumbnail: Image(systemName: "photo"))
