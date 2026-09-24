@@ -138,7 +138,7 @@ final class RPCThreadState {
             sequence += 1
             currentAssistant = sequence
             upsertAssistant(message, ended: false)
-        case .messageUpdate(let delta, _):
+        case .messageUpdate(let delta):
             guard let key = currentAssistant, let index = provisional.firstIndex(where: { $0.key == key }) else {
                 // message_start was missed (spawned mid-turn); start accumulating now.
                 sequence += 1
@@ -421,7 +421,7 @@ final class RPCThreadState {
         session.request(.getMessages, timeout: timeout) { [weak self] result in
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success,
-                  let messages = try? response.data?["messages"]?.decode([RPCMessage].self) else { return }
+                  let messages = response.messages else { return }
             self.history = Self.projectHistory(messages) { value, message in
                 if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
                     value.startedAt = started
