@@ -216,6 +216,40 @@ struct NativeThreadStoreQueueTests {
         #expect(store.notice == "That message is no longer queued.")
     }
 
+    /// A change whose answer arrives after its thread went off screen still settles: accepted,
+    /// it gives way to the host's snapshot once the thread is back; refused, it rolls back.
+    /// Before, it stayed on top of every later snapshot until the session changed.
+    @Test(arguments: [true, false])
+    func aChangeAnsweredWhileTheThreadIsHiddenGivesWayToTheHost(accepted: Bool) async throws {
+        let host = FakeHost(snapshot(items: [Self.a, Self.b]))
+        let answer = HeldAnswer()
+        let store = manualStore()
+        let request: NativeThreadStore.Request = { request in
+            if case .queue = request { await answer.hold() }
+            return try host.handle(request)
+        }
+        let shown = Task { await store.run(request: request) }
+        await until { store.ready }
+        if accepted { host.acceptAll() } else { host.action = { _ in .failure(code: "queue_item_unavailable", message: "Gone.") } }
+
+        let move = Task { await store.moveQueued(Self.b.id, to: 0) }
+        await until { answer.waiting }
+        #expect(store.queue.map(\.text) == ["b", "a"], "shown at once")
+        store.suspend()
+        shown.cancel()
+        await shown.value
+        answer.release()
+        await move.value
+
+        // Another client moved it back meanwhile (or the host refused it): the host has a, b.
+        host.snapshot = snapshot(revision: 2, items: [Self.a, Self.b])
+        let again = Task { await store.run(request: request) }
+        defer { again.cancel() }
+        await until { store.snapshot?.revision == 2 }
+        await store.refresh()
+        #expect(store.queue.map(\.text) == ["a", "b"])
+    }
+
     /// Queue edits are not the draft's: they never make the composer busy.
     @Test func queueEditsNeverMakeTheComposerBusy() async throws {
         let (store, host, task) = await started(items: [Self.a])
@@ -253,5 +287,22 @@ struct NativeThreadStoreQueueTests {
         await store.send()
         #expect(store.pending.first?.status == "queued", "an older host's pi queues it; the echo says so")
         #expect(store.queue.isEmpty)
+    }
+}
+
+/// Holds one queue action's answer until the test releases it.
+@MainActor @Observable
+private final class HeldAnswer {
+    private(set) var waiting = false
+    @ObservationIgnored private var waiter: CheckedContinuation<Void, Never>?
+
+    func hold() async {
+        await withCheckedContinuation { waiter = $0; waiting = true }
+    }
+
+    func release() {
+        waiting = false
+        waiter?.resume()
+        waiter = nil
     }
 }

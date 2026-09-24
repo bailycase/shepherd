@@ -890,29 +890,34 @@ public final class NativeThreadStore {
         overlays.append(QueueOverlay(id: operation, accepted: nil, mode: mode, apply: apply))
         deriveQueue()
         var accepted = false
+        // The overlay settles even when the thread went off screen meanwhile: left unanswered,
+        // no later snapshot would clear it.
         do {
             let result = try await request(.queue(expectedSessionID: current.piSessionID, generation: current.generation,
                                                   operationID: operation, action: action))
-            guard epoch == run else { return false }
             switch result {
             case .accepted(let id) where id == operation:
                 accepted = true
                 if let index = overlays.firstIndex(where: { $0.id == operation }) { overlays[index].accepted = pulls }
             case .failure(_, let message):
-                notice = message
+                if epoch == run { notice = message }
             default:
-                notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+                if epoch == run {
+                    notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+                }
             }
         } catch {
-            guard epoch == run else { return false }
-            if case RemoteHostClientError.outcomeUnknown = error {
-                notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
-            } else { notice = String(describing: error) }
+            if epoch == run {
+                if case RemoteHostClientError.outcomeUnknown = error {
+                    notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+                } else { notice = String(describing: error) }
+            }
         }
         if !accepted {
             overlays.removeAll { $0.id == operation }
             deriveQueue()
         }
+        guard epoch == run else { return false }
         await refresh()
         return accepted
     }
