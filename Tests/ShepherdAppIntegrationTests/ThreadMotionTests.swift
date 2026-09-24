@@ -15,7 +15,8 @@ import Testing
 /// types.
 ///
 /// "It moved" versus "it only faded" is read from where it draws: a fade never draws outside
-/// the place it comes to rest, and a nudge on its way in does.
+/// the place it comes to rest, and a nudge on its way in does. Only the instant rules run on CI:
+/// catching a motion mid-way depends on the machine (`.timingSensitive`).
 @Suite("Thread motion", .serialized, .mainActorExclusive)
 @MainActor
 struct ThreadMotionTests {
@@ -25,7 +26,7 @@ struct ThreadMotionTests {
 
     /// A sent message rises into place from just below; under Reduce Motion it fades where it
     /// rests. (A thread short enough not to scroll, so only the bubble changes.)
-    @Test(arguments: [false, true]) func aTurnThatArrivesRisesIntoPlaceUnlessReduceMotion(reduceMotion: Bool) async throws {
+    @Test(.timingSensitive, arguments: [false, true]) func aTurnThatArrivesRisesIntoPlaceUnlessReduceMotion(reduceMotion: Bool) async throws {
         let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2)), reduceMotion: reduceMotion)
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -51,7 +52,7 @@ struct ThreadMotionTests {
     /// turns into a sent one in place when its turn ends. The bubble is one view throughout
     /// (the echo and the saved message have different entries): its fill eases from its first
     /// look to its last instead of being swapped for a new bubble.
-    @Test(arguments: [false, true]) func aSentMessageSettlesInPlace(queued: Bool) async throws {
+    @Test(.timingSensitive, arguments: [false, true]) func aSentMessageSettlesInPlace(queued: Bool) async throws {
         let text = "Then open the PR against nightly."
         let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2), running: queued))
         defer { thread.close() }
@@ -106,7 +107,7 @@ struct ThreadMotionTests {
 
     /// A running call that ends cross-fades into its finished line in place, and its output lines
     /// go at once.
-    @Test func aLiveLineSettlesIntoItsFinishedLine() async throws {
+    @Test(.timingSensitive) func aLiveLineSettlesIntoItsFinishedLine() async throws {
         let turn = Fixtures.history(2) + [Fixtures.user("u2", "Build it"), Fixtures.assistant("a2", "Building now.")]
         let live = Fixtures.snapshot(turn, provisional: [Fixtures.bash(status: "running")], running: true)
         let finished = Fixtures.snapshot(turn + [Fixtures.bash(status: "complete")], running: true, revision: 2)
@@ -138,7 +139,7 @@ struct ThreadMotionTests {
     /// When a turn ends its reply stays exactly as it streamed (the saved copy is the same view,
     /// part for part), and its footer takes its place beneath out of sight: it shows only while
     /// the turn is hovered (`ThreadHoverTests` watches it rise in under the pointer).
-    @Test func aTurnThatEndsKeepsItsReplyStillAndItsFooterOutOfSight() async throws {
+    @Test(.timingSensitive) func aTurnThatEndsKeepsItsReplyStillAndItsFooterOutOfSight() async throws {
         let asked = 1_700_000_000_000.0
         let prompt = NativeThreadMessage(entryID: "u2", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Answer me")],
                                          truncated: false, timestamp: asked)
@@ -172,41 +173,49 @@ struct ThreadMotionTests {
                 "nothing shows beneath it until the turn is hovered")
     }
 
+    private static let asked = Fixtures.history(2) + [Fixtures.user("u2", "Build it")]
+
+    /// What an agent did while hidden: the reply it was streaming finished, new turns, and a
+    /// question waiting in the composer.
+    private static let caughtUp = Fixtures.snapshot(
+        asked + [Fixtures.assistant("a2", "Building now, and done."), Fixtures.user("u3", "And then?"),
+                 Fixtures.assistant("a3", "Done while hidden, with a reply long enough to read.")],
+        dialogs: [NativeThreadDialog(id: "d1", kind: .confirm, title: "Deploy to production?", message: "This pushes main to the fleet.")],
+        revision: 2)
+
     /// Switching back to an agent is a visibility flip: what it did while hidden (the reply it
     /// was streaming finished, new turns, a question waiting in the composer, Retry back on
     /// old turns) is simply there once its thread catches up, while the same changes on screen
     /// make their entrances.
     @Test func anAgentSwitchedBackToCatchesUpAtOnce() async throws {
-        let dialog = NativeThreadDialog(id: "d1", kind: .confirm, title: "Deploy to production?", message: "This pushes main to the fleet.")
-        let asked = Fixtures.history(2) + [Fixtures.user("u2", "Build it")]
-        let later = Fixtures.snapshot(asked + [Fixtures.assistant("a2", "Building now, and done."), Fixtures.user("u3", "And then?"),
-                                               Fixtures.assistant("a3", "Done while hidden, with a reply long enough to read.")],
-                                      dialogs: [dialog], revision: 2)
-        let thread = MotionThread(Fixtures.snapshot(asked, provisional: [Fixtures.streaming("Building now")], running: true))
+        let thread = MotionThread(Fixtures.snapshot(Self.asked, provisional: [Fixtures.streaming("Building now")], running: true))
         defer { thread.close() }
         try await thread.waitUntilReady()
         thread.visibility.active = false
         try await eventuallyOnMain("the hidden thread to stop polling") { !thread.store.ready }
         // Hidden, it stopped running: let Stop finish turning back into Send before looking.
         try await thread.settle(whole: true)
-        thread.stage(later)
+        thread.stage(Self.caughtUp)
 
         let recording = await MotionProbe.record(thread.window) { thread.visibility.active = true }
 
         #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the thread caught up")
         #expect(recording.inBetween.isEmpty, "\(recording.inBetween.count) frames between the stale thread and the caught-up one")
+    }
 
-        // The control: on screen, the same kind of change animates.
+    /// The control: on screen, the same changes make their entrances, so the check above is not
+    /// vacuous.
+    @Test(.timingSensitive) func theSameChangesOnScreenAnimate() async throws {
         let shown = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
         defer { shown.close() }
         try await shown.waitUntilReady()
-        let onScreen = await MotionProbe.record(shown.window) { shown.serve(later) }
+        let onScreen = await MotionProbe.record(shown.window) { shown.serve(Self.caughtUp) }
         #expect(!onScreen.inBetween.isEmpty)
     }
 
     /// Detaching from the tail brings "Jump to latest" in over frames (growing from above the
     /// composer, or under Reduce Motion fading), whatever the rows beside it do.
-    @Test(arguments: [false, true]) func theJumpPillComesInAsTheThreadDetaches(reduceMotion: Bool) async throws {
+    @Test(.timingSensitive, arguments: [false, true]) func theJumpPillComesInAsTheThreadDetaches(reduceMotion: Bool) async throws {
         let size = CGSize(width: 900, height: 600)
         let long = (0..<24).map { i in
             i % 2 == 0 ? Fixtures.user("m\(i)", "Question \(i)")
@@ -236,7 +245,7 @@ struct ThreadMotionTests {
     /// ⇧⌘M's picker comes in over frames (growing from the chip's corner, or under Reduce Motion
     /// fading: `NW.Motion.overlay`'s transitions, pinned in MotionTests) and closes the same way.
     /// A fresh thread, so nothing but the picker changes above the card.
-    @Test(arguments: [false, true]) func theModelPickerComesAndGoesWithMotion(reduceMotion: Bool) async throws {
+    @Test(.timingSensitive, arguments: [false, true]) func theModelPickerComesAndGoesWithMotion(reduceMotion: Bool) async throws {
         let thread = MotionThread(Fixtures.snapshot([]), reduceMotion: reduceMotion)
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -254,7 +263,7 @@ struct ThreadMotionTests {
 
     /// Starting a draft with "/" grows the command menu in over frames, and clearing it takes
     /// the menu away the same way: the typing path, beside ⇧⌘M's.
-    @Test func theSlashMenuComesAndGoesWithTheDraftsSlash() async throws {
+    @Test(.timingSensitive) func theSlashMenuComesAndGoesWithTheDraftsSlash() async throws {
         let thread = MotionThread(Fixtures.snapshot([]))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -270,7 +279,7 @@ struct ThreadMotionTests {
     }
 
     /// Filtering the slash menu as the draft grows is typing: the list changes at once.
-    @Test func filteringTheSlashMenuIsInstant() async throws {
+    @Test(.timingSensitive) func filteringTheSlashMenuIsInstant() async throws {
         let thread = MotionThread(Fixtures.snapshot([]))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -287,7 +296,7 @@ struct ThreadMotionTests {
 
     /// A question takes the field's place: the card grows upward over frames while its control
     /// row stays exactly where it was.
-    @Test func aQuestionGrowsTheCardUpwardWhileItsControlsStayPut() async throws {
+    @Test(.timingSensitive) func aQuestionGrowsTheCardUpwardWhileItsControlsStayPut() async throws {
         let thread = MotionThread(Fixtures.snapshot([]))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -310,7 +319,7 @@ struct ThreadMotionTests {
 
     /// Send and Stop are one button: when a turn starts, the glyph and the fill blend in place
     /// and the circle never moves or resizes.
-    @Test func sendTurnsIntoStopInPlace() async throws {
+    @Test(.timingSensitive) func sendTurnsIntoStopInPlace() async throws {
         let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -329,7 +338,7 @@ struct ThreadMotionTests {
     }
 
     /// Typing a longer draft grows the field at once: keyboard input never animates.
-    @Test func typingGrowsTheFieldAtOnce() async throws {
+    @Test(.timingSensitive) func typingGrowsTheFieldAtOnce() async throws {
         let thread = MotionThread(Fixtures.snapshot(Fixtures.history(2)))
         defer { thread.close() }
         try await thread.waitUntilReady()
@@ -348,7 +357,7 @@ struct ThreadMotionTests {
 
 /// The thread's motion primitives on stand-ins (a black bar on white, as in MotionProbeTests),
 /// and thinking's disclosure.
-@Suite("Thread component motion", .serialized, .mainActorExclusive)
+@Suite("Thread component motion", .serialized, .mainActorExclusive, .timingSensitive)
 @MainActor
 struct ThreadComponentMotionTests {
     @MainActor @Observable

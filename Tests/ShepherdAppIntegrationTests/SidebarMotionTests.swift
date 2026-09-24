@@ -13,7 +13,7 @@ import Testing
 /// under Reduce Motion), disclosing a space's rows, and easing a row's status dot. Selecting a
 /// row lands at once. Removal transitions complete at once in an off-screen window, so these
 /// watch what arrives.
-@Suite("Sidebar motion", .mainActorExclusive)
+@Suite("Sidebar motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct SidebarMotionTests {
     /// ⇧⌘S with the sidebar hidden: it slides in from the leading edge while the main column

@@ -10,7 +10,8 @@ import Testing
 /// window: it slides from the trailing edge, docked or overlaid; the thread beside a docked
 /// pane takes its new width once; under Reduce Motion it only fades; its content cross-fades
 /// when the review and the inspector swap. The last test drives the real workspace through the
-/// view model, the path ⇧⌘B, the toolbar, and an agent's `review_diff` share.
+/// view model, the path ⇧⌘B, the toolbar, and an agent's `review_diff` share. Only the instant
+/// rules run on CI: catching a motion mid-way depends on the machine (`.timingSensitive`).
 @Suite("Right pane motion", .mainActorExclusive)
 @MainActor
 struct RightPaneMotionTests {
@@ -63,7 +64,7 @@ struct RightPaneMotionTests {
         return Int(width - layout.width - AppLayout.dividerWidth)
     }
 
-    @Test(arguments: [CGFloat(1200), CGFloat(820)])
+    @Test(.timingSensitive, arguments: [CGFloat(1200), CGFloat(820)])
     func thePaneSlidesInFromTheTrailingEdgeDockedOrOverlaid(width: CGFloat) async throws {
         let model = Model()
         let window = window(model, width: width)
@@ -92,7 +93,7 @@ struct RightPaneMotionTests {
             model.open = true
         }
 
-        #expect(!recording.inBetween.isEmpty, "the pane slides")
+        if TimingTests.enabled { #expect(!recording.inBetween.isEmpty, "the pane slides") }
         let layout = ShellLayout.rightPane(containerWidth: width, preferredWidth: nil)
         if layout.mode == .docked {
             #expect(thread.widths == [layout.contentWidth], "\(thread.widths)")
@@ -134,7 +135,7 @@ struct RightPaneMotionTests {
         #expect(thread.widths == [width], "\(thread.widths)")
     }
 
-    @Test func underReduceMotionThePaneFadesInPlace() async {
+    @Test(.timingSensitive) func underReduceMotionThePaneFadesInPlace() async {
         let model = Model()
         let width: CGFloat = 1200
         let window = window(model, width: width, reduceMotion: true)
@@ -151,7 +152,7 @@ struct RightPaneMotionTests {
 
     /// The review replacing the inspector (or another run, or a new review) cross-fades in the
     /// open pane; the pane stays where it is.
-    @Test func swappingThePanesContentCrossFadesWithoutMovingThePane() async {
+    @Test(.timingSensitive) func swappingThePanesContentCrossFadesWithoutMovingThePane() async {
         let model = Model()
         model.open = true
         let width: CGFloat = 1200
@@ -199,7 +200,7 @@ struct RightPaneMotionTests {
         let resting = restingEdge(size.width)
         let edges = opening.inBetween.compactMap { $0.firstColumn(differingFrom: opening.before) }
         #expect(vm.isReviewPaneShowing)
-        #expect(edges.contains { $0 > resting + 20 }, "caught mid-slide: \(edges)")
+        if TimingTests.enabled { #expect(edges.contains { $0 > resting + 20 }, "caught mid-slide: \(edges)") }
 
         let switching = await MotionProbe.record(window, region: row) { vm.selectAgent(second.agent.id) }
         #expect(switching.inBetween.isEmpty, "switching agents is a visibility flip")

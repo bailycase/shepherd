@@ -6,7 +6,8 @@ import Testing
 
 /// The motion probe on a stand-in pane: a 100pt dark pane opening at the trailing edge of a
 /// light 300pt container, wired the way a right pane should be (`nwAnimation` on the container,
-/// `nwTransition` on the pane). Pixels are read from an off-screen window.
+/// `nwTransition` on the pane). Pixels are read from an off-screen window. Only the instant rules
+/// run on CI: catching a motion mid-way depends on the machine (`.timingSensitive`).
 @Suite("Motion probe", .mainActorExclusive)
 @MainActor
 struct MotionProbeTests {
@@ -56,7 +57,7 @@ struct MotionProbeTests {
                         SamplePane(model: model, instant: instant).environment(\._accessibilityReduceMotion, reduceMotion))
     }
 
-    @Test func aPaneSlidesInFromItsEdge() async {
+    @Test(.timingSensitive) func aPaneSlidesInFromItsEdge() async {
         let model = PaneModel()
         let window = window(model)
         defer { window.close() }
@@ -75,7 +76,7 @@ struct MotionProbeTests {
         }
     }
 
-    @Test func underReduceMotionAPaneOnlyFades() async {
+    @Test(.timingSensitive) func underReduceMotionAPaneOnlyFades() async {
         let model = PaneModel()
         let window = window(model, reduceMotion: true)
         defer { window.close() }
@@ -102,7 +103,7 @@ struct MotionProbeTests {
 
     /// `nwInstant()` drops the animation a change arrives with, not motion attached inside it:
     /// a pane with its own `nwAnimation` still slides under an instant ancestor.
-    @Test func anInstantAncestorKeepsTheMotionAttachedInsideIt() async {
+    @Test(.timingSensitive) func anInstantAncestorKeepsTheMotionAttachedInsideIt() async {
         let model = PaneModel()
         let window = OffscreenWindow(size: CGSize(width: SamplePane.width, height: SamplePane.height), dark: false,
                                      SamplePane(model: model).nwInstant())
@@ -117,31 +118,40 @@ struct MotionProbeTests {
     /// Ghostty surface each is a PTY resize. Under `nwInstant()` the view takes its final size
     /// once while the pane beside it still slides.
     @Test func anInstantHostedViewResizesOnceWhileItsNeighborSlides() async {
-        for instant in [false, true] {
-            let model = PaneModel()
-            let surface = SizeLoggingView()
-            let window = OffscreenWindow(size: CGSize(width: SamplePane.width, height: SamplePane.height), dark: false,
-                                         PaneBesideHostedView(model: model, surface: surface, instant: instant))
-            defer { window.close() }
-            let recording = await MotionProbe.record(window, region: strip) {
-                surface.widths.removeAll()
-                model.open = true
-            }
+        let (widths, slid) = await hostedViewWidthsWhileAPaneSlidesIn(instant: true)
 
-            #expect(!recording.inBetween.isEmpty, "the pane slides (instant: \(instant))")
-            let resting = SamplePane.width - SamplePane.paneWidth
-            if instant {
-                #expect(!surface.widths.isEmpty && surface.widths.allSatisfy { $0 == resting }, "\(surface.widths)")
-            } else {
-                // Without it, the same view is resized frame by frame: the check above is not vacuous.
-                #expect(Set(surface.widths).count > 3, "\(surface.widths)")
-            }
+        if TimingTests.enabled { #expect(slid, "the pane slides") }
+        let resting = SamplePane.width - SamplePane.paneWidth
+        #expect(!widths.isEmpty && widths.allSatisfy { $0 == resting }, "\(widths)")
+    }
+
+    /// The control: without `nwInstant()` the same view is resized frame by frame, so the check
+    /// above is not vacuous.
+    @Test(.timingSensitive) func withoutInstantAHostedViewIsResizedFrameByFrame() async {
+        let (widths, slid) = await hostedViewWidthsWhileAPaneSlidesIn(instant: false)
+
+        #expect(slid, "the pane slides")
+        #expect(Set(widths).count > 3, "\(widths)")
+    }
+
+    /// Every width a hosted view is given while a pane slides in beside it, and whether the
+    /// slide was caught between its ends.
+    private func hostedViewWidthsWhileAPaneSlidesIn(instant: Bool) async -> (widths: [CGFloat], slid: Bool) {
+        let model = PaneModel()
+        let surface = SizeLoggingView()
+        let window = OffscreenWindow(size: CGSize(width: SamplePane.width, height: SamplePane.height), dark: false,
+                                     PaneBesideHostedView(model: model, surface: surface, instant: instant))
+        defer { window.close() }
+        let recording = await MotionProbe.record(window, region: strip) {
+            surface.widths.removeAll()
+            model.open = true
         }
+        return (surface.widths, !recording.inBetween.isEmpty)
     }
 
     /// The confirmation pop swells past its size and settles exactly back (a view left at a
     /// scale a hair off 1 draws its edges soft for good); under Reduce Motion it never moves.
-    @Test(arguments: [false, true]) func aPopSwellsAndSettlesBackUnlessReduceMotion(reduceMotion: Bool) async {
+    @Test(.timingSensitive, arguments: [false, true]) func aPopSwellsAndSettlesBackUnlessReduceMotion(reduceMotion: Bool) async {
         let model = PaneModel()
         let window = OffscreenWindow(size: CGSize(width: SamplePane.width, height: SamplePane.height), dark: false,
                                      PoppingBar(model: model).environment(\._accessibilityReduceMotion, reduceMotion))

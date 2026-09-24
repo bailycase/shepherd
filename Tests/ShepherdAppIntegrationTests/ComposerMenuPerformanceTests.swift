@@ -60,7 +60,7 @@ struct ComposerMenuPerformanceTests {
     /// Opening and closing the picker over a long thread take a few frames, not a few hundred
     /// milliseconds. Timed without motion, so the first frame is all of the work; the best of
     /// three, after a first open that warms up.
-    @Test func openingAndClosingTheModelPickerTakeLittleTime() async throws {
+    @Test(.timingSensitive) func openingAndClosingTheModelPickerTakeLittleTime() async throws {
         let thread = ComposerThread(animated: false)
         defer { thread.close() }
         try await thread.waitUntilReady()

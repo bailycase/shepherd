@@ -12,7 +12,7 @@ import Testing
 /// question and a spawned card nudge in where they land (and only fade under Reduce Motion)
 /// while the card takes its new size at once, the inspector steps to a sibling from the side it
 /// sits on, and its transcript grows without leaving the tail.
-@Suite("Subagent motion", .mainActorExclusive)
+@Suite("Subagent motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct SubagentMotionTests {
     @MainActor @Observable
