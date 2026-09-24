@@ -29,9 +29,15 @@ enum ListPerf {
         Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
     }
 
-    /// SwiftUI's lazy stacks build more rows on macOS 26 than on 27 in two thread budgets (see
-    /// `ListPerformanceTests`), whatever the machine's speed.
-    static var onMacOS26: Bool { ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 }
+    /// SwiftUI's lazy stacks build more rows in two thread budgets (see `ListPerformanceTests`)
+    /// on macOS 26, or built with Xcode 26's SDK (Swift 6.3) on 27, whatever the machine's speed.
+    static var olderLazyStacks: Bool {
+        #if compiler(>=6.4)
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
+        #else
+        true
+        #endif
+    }
 
     /// Row bodies counted while `work` runs, by probe key.
     static func counting(_ work: () -> Void) -> [String: Int] {
