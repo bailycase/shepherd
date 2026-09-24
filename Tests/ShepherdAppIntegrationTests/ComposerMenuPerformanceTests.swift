@@ -94,6 +94,19 @@ struct ComposerMenuPerformanceTests {
         let clip = scroll.contentView
         let end = try #require(scroll.documentView).bounds.height - clip.bounds.height
         let step = 3 * NWComposerMetrics.menuRowHeight
+        // A menu holds its list at the top while it grows in; wait until a scroll stays put.
+        var held = 0
+        try await eventuallyOnMain("the list to keep a scroll") {
+            if abs(clip.bounds.origin.y - step) > 0.5 {
+                held = 0
+                clip.scroll(to: NSPoint(x: 0, y: step))
+                scroll.reflectScrolledClipView(clip)
+            } else {
+                held += 1
+            }
+            window.layout()
+            return held >= 3
+        }
 
         var drawn: [Int] = []
         var fought: [CGFloat] = []
@@ -145,6 +158,35 @@ struct ComposerMenuPerformanceTests {
         }
     }
 
+    /// The same in the model picker: a highlight moving redraws two rows, and ↓ held down past
+    /// the visible rows keeps the highlighted model in view.
+    @Test func movingThePickersHighlightRedrawsTwoRowsAndShowsIt() async throws {
+        let model = HighlightModel()
+        let window = OffscreenWindow(size: PickerHost.size, dark: false, PickerHost(model: model, sections: Self.sections))
+        defer { window.close() }
+        try await eventuallyOnMain("the list to load") { window.layout(); return Self.menuScroll(in: window) != nil }
+        let clip = try #require(Self.menuScroll(in: window)).contentView
+
+        var drawn: [Int] = []
+        for index in 1...6 {
+            NWMenuDiagnostics.rowBodies = 0
+            model.selection = index
+            window.layout()
+            drawn.append(NWMenuDiagnostics.rowBodies)
+        }
+        #expect(drawn.allSatisfy { $0 <= 2 }, "rows drawn per move: \(drawn)")
+
+        // ↓ a model at a time, well past the first screenful and across sections.
+        var hidden: [Int] = []
+        for position in 7...60 {
+            model.selection = position
+            window.layout()
+            let top = Self.top(ofOption: position)
+            if clip.bounds.minY > top + 1 || top + NWComposerMetrics.menuRowHeight > clip.bounds.maxY + 1 { hidden.append(position) }
+        }
+        #expect(hidden.isEmpty, "highlighted models out of view: \(hidden)")
+    }
+
     // MARK: Fixtures
 
     /// The catalog as the picker lists it: one section per provider.
@@ -171,6 +213,18 @@ struct ComposerMenuPerformanceTests {
             }
         }
         return position - 1
+    }
+
+    /// How far down the list the model at `position` starts.
+    static func top(ofOption position: Int) -> CGFloat {
+        var top: CGFloat = 0, seen = 0
+        for section in sections {
+            top += NWComposerMetrics.menuHeaderHeight
+            if position < seen + section.options.count { return top + CGFloat(position - seen) * NWComposerMetrics.menuRowHeight }
+            top += CGFloat(section.options.count) * NWComposerMetrics.menuRowHeight
+            seen += section.options.count
+        }
+        return top
     }
 
     static func menuScroll(in window: OffscreenWindow) -> NSScrollView? {

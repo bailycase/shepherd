@@ -128,6 +128,20 @@ struct ComposerMenuTests {
         #expect(list.bounds.height > thread.menuScroll!.contentView.bounds.height, "the list scrolls inside the picker")
     }
 
+    /// A menu's list opens at its top: growing from its corner never leaves the first row cut.
+    @Test(arguments: [Menu.slash, .models])
+    func aMenusListOpensAtItsTop(_ menu: Menu) async throws {
+        let thread = ComposerThread()
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+
+        menu.open(in: thread)
+        try await thread.settle()
+
+        let list = try #require(thread.menuScroll)
+        #expect(abs(list.contentView.bounds.origin.y) < 0.5, "scrolled \(list.contentView.bounds.origin.y)pt down its list")
+    }
+
     /// A thread that mounts with a "/" draft already in its store (a remounted remote thread)
     /// shows its slash menu from the first frame, before the card has been measured.
     @Test func aThreadThatMountsWithASlashDraftShowsItsMenu() async throws {
