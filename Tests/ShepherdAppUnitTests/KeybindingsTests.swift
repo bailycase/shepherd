@@ -65,12 +65,25 @@ struct KeybindingsTests {
     /// The queue's fixed keys, as the Keyboard board lists them and Settings shows them.
     @Test func theQueuesFixedKeysMatchTheBoard() {
         let keys = KeybindingsStore(store: Fixture.defaults())
-        #expect(keys.fixedChords.map(\.title) == ["Edit the last queued message", "Move the focused message",
-                                                  "Delete the focused message", "Stop pi (from the composer)"])
-        #expect(keys.fixedChords.map(\.keys) == [["↑"], ["⌥", "↑ ↓"], ["⌫"], ["Esc"]])
+        #expect(FixedChord.allCases.map(\.title) == ["Edit the last queued message", "Move the focused message",
+                                                     "Delete the focused message", "Stop pi"])
+        #expect(FixedChord.allCases.map(\.keys) == [["↑"], ["⌥", "↑ ↓"], ["⌫"], ["Esc"]])
         #expect(keys.display(.deleteQueued) == "⌫")
         #expect(keys.display(.moveQueued) == "⌥↑ ⌥↓")
         #expect(keys.sendDisplay == "↩")
+    }
+
+    /// Settings ▸ Keyboard's While pi is working group is the board's Keyboard card, in its
+    /// order; ↩ and the alternate send say what they do under the Return setting.
+    @Test(arguments: [
+        (ReturnWhileWorking.queue, ["Send, queued", "Send and steer now"]),
+        (.steer, ["Send and steer now", "Send, queued"]),
+    ])
+    func whileWorkingKeysFollowTheBoardAndTheReturnSetting(setting: ReturnWhileWorking, sendTitles: [String]) {
+        #expect(WhileWorkingKey.all.map { $0.title(setting) } == sendTitles + [
+            "Edit the last queued message", "Move the focused message", "Delete the focused message",
+            "Steer the focused message", "Stop pi",
+        ])
     }
 
     @Test func settingsRowsUseSentenceCase() {

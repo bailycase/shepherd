@@ -79,8 +79,36 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     }
 }
 
+/// Settings ▸ Keyboard's "While pi is working" rows, in the order of the Queue & steer boards'
+/// Keyboard card: the send keys, then the queue's own. ↩ and the alternate send trade titles
+/// with the Return setting, so each row says what its key does now.
+enum WhileWorkingKey: Hashable, Identifiable {
+    /// ↩ (fixed).
+    case send
+    /// ⌘↩ (`ShortcutAction.alternateSend`, rebindable).
+    case alternateSend
+    case fixed(FixedChord)
+    /// The alternate send on a focused queued message.
+    case steerFocused
+
+    static let all: [WhileWorkingKey] = [.send, .alternateSend, .fixed(.editLastQueued), .fixed(.moveQueued),
+                                         .fixed(.deleteQueued), .steerFocused, .fixed(.stopFromComposer)]
+
+    var id: Self { self }
+
+    func title(_ setting: ReturnWhileWorking) -> String {
+        switch self {
+        case .send: setting == .steer ? "Send and steer now" : "Send, queued"
+        case .alternateSend: setting == .steer ? "Send, queued" : "Send and steer now"
+        case .fixed(let chord): chord.title
+        case .steerFocused: "Steer the focused message"
+        }
+    }
+}
+
 /// Keys the queue answers that cannot be rebound (Queue & steer boards, "Keyboard"). Settings ▸
-/// Keyboard lists them under Fixed, and tooltips read them here rather than spelling a key.
+/// Keyboard lists them under While pi is working (`WhileWorkingKey`), and tooltips read them
+/// here rather than spelling a key.
 enum FixedChord: String, CaseIterable, Identifiable {
     /// ↑ in an empty composer.
     case editLastQueued
@@ -99,7 +127,7 @@ enum FixedChord: String, CaseIterable, Identifiable {
         case .editLastQueued: "Edit the last queued message"
         case .moveQueued: "Move the focused message"
         case .deleteQueued: "Delete the focused message"
-        case .stopFromComposer: "Stop pi (from the composer)"
+        case .stopFromComposer: "Stop pi"
         }
     }
 
@@ -339,9 +367,6 @@ final class KeybindingsStore {
 
     func shortcut(_ action: ShortcutAction) -> KeyboardShortcut { chord(for: action).shortcut }
     func isDefault(_ action: ShortcutAction) -> Bool { overrides[action] == nil }
-
-    /// The fixed keys (read-only), in the order Settings lists them.
-    let fixedChords = FixedChord.allCases
 
     func display(_ fixed: FixedChord) -> String { fixed.display }
 
