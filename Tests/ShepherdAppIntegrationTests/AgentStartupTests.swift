@@ -159,6 +159,26 @@ struct AgentStartupTests {
         try await eventuallyAsync("every restored agent to start", timeout: .seconds(30)) { await started().count == agents.count }
     }
 
+    /// Only an agent's first start waits in the launch queue: a pane session made again once it
+    /// has started (a view detached and remounted) binds at once.
+    @Test func aPaneSessionMadeAgainAfterItsAgentStartedBindsAtOnce() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent("worker", in: space, piSession: SessionID())
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]), restoringAgents: true)
+        let first = vm.sessions.session(for: agent.piPane, in: agent.tab)
+        try await eventuallyOnMain("the restored agent's pi to bind") { first.phase == .live }
+
+        vm.sessions.detachPane(agent.piPane.id)
+        let again = vm.sessions.session(for: agent.piPane, in: agent.tab)
+
+        #expect(again !== first)
+        try await eventuallyOnMain("the pane made again to bind the same pi") { again.phase == .live }
+        #expect(again.sessionID == first.sessionID)
+    }
+
     /// A thread on screen comes up the moment the server says its pi serves: this store never
     /// polls on its own, so only that signal can bring it up.
     @Test func aThreadComesUpTheMomentItsPiServesWithoutWaitingForAPoll() async throws {
