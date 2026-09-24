@@ -179,6 +179,8 @@ struct Composer: View {
             if queueStack.isVisible {
                 QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, focusedRow: $focusedRow,
                                focusComposer: { composing = true })
+                    // A lifted row floats over the card too.
+                    .zIndex(queueStack.dragging == nil ? 0 : 1)
                     .nwTransition(.list, edge: .bottom)
             }
             card

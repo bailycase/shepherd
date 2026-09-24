@@ -409,7 +409,9 @@ final class QueueStackState {
             dragging = id
             dragFrom = slots.firstIndex { $0.id == id }
         }
-        self.translation = translation
+        // The lifted row follows the pointer, up to half a row past the first and last rows.
+        let from = CGFloat(dragFrom ?? 0), last = CGFloat(max(0, slots.count - 1)), half = NWQueueMetrics.rowHeight / 2
+        self.translation = min(max(translation, -from * NWQueueMetrics.rowHeight - half), (last - from) * NWQueueMetrics.rowHeight + half)
         let drop = QueueStackLayout.drop(rows: rows, moving: id, translation: translation)
         if drop != self.drop { self.drop = drop }
     }

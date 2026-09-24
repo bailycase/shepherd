@@ -52,6 +52,9 @@ public enum NWQueueMetrics {
     public static let expandedMaxRows = 6
     /// A lifted row leans this far while it is dragged.
     public static let liftTilt: Double = -1
+    /// A lifted row's card sits this far right of its slot (leading) and reaches this far past
+    /// the stack's trailing edge (trailing): lifted out of the stack.
+    public static let liftInset = EdgeInsets(top: 0, leading: 22, bottom: 0, trailing: 14)
 }
 
 // MARK: Glyphs
@@ -151,7 +154,8 @@ public struct NWQueueNumber: View {
 /// "Up next" (Queue & steer boards · QueueStack): a card directly above the composer card, in the
 /// same column. A 32pt header (the queue glyph, "Up next", the count, the ••• options, Collapse),
 /// then one row per message with a hairline between. A collapsed stack is its header alone.
-/// Past `expandedMaxRows` rows it scrolls inside, so it never takes the thread's room.
+/// Past `expandedMaxRows` rows it scrolls inside, so it never takes the thread's room. Rows keep
+/// to the card's rounded corners, but a lifted row floats over the card and past its edges.
 public struct NWQueueStack<Rows: View, Options: View>: View {
     let count: Int
     let paused: String?
@@ -165,8 +169,8 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
     /// `count` is every message in the queue, steering ones included. `paused` says why the
     /// queue waits (its tooltip), when it does. `scrolls` caps the rows at `expandedMaxRows` and
     /// scrolls them, keeping the last row ("Show fewer") below.
-    /// `drop` draws a drag's lantern drop line at the top of that row's slot, over every row,
-    /// the lifted one too.
+    /// `drop` draws a drag's lantern drop line at the top of that row's slot, under the lifted
+    /// row.
     public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil,
                 onToggle: @escaping () -> Void, @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
         self.count = count
@@ -199,16 +203,17 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
                     }
                 }
                 .overlay(alignment: .top) { NWHairline() }
+                // The rows keep to the card's bottom corners; a lifted row floats past its edges.
+                .clipShape(NWOutsideBottomCorners(radius: NW.Radius.m), style: FillStyle(eoFill: true))
                 .nwTransition(.disclosure)
             }
         }
         .background(nw.bgRaised, in: shape)
-        .clipShape(shape)
         .nwBorder(nw.lineStrong, radius: NW.Radius.m)
         .accessibilityElement(children: .contain)
     }
 
-    /// Rows, a hairline above each but the first, and the drop line over them.
+    /// Rows, a hairline above each but the first, and the drop line under them.
     private func list(_ rows: SubviewsCollection.SubSequence, first: Subview.ID?) -> some View {
         VStack(spacing: 0) {
             ForEach(rows) { subview in
@@ -217,7 +222,7 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
                 }
             }
         }
-        .overlay(alignment: .top) {
+        .background(alignment: .top) {
             if let drop {
                 NWDropIndicator(color: .nw.lantern)
                     .padding(.horizontal, NW.Space.m)
@@ -226,6 +231,21 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
             }
         }
         .nwAnimation(.hover, value: drop)
+    }
+}
+
+/// Everything around the stack's rows but the two bottom corners the card rounds off (filled
+/// even-odd): clipped to it, the rows keep to the card's shape while a lifted row, which a drag
+/// keeps within half a row of them, floats past its edges with its shadow.
+private struct NWOutsideBottomCorners: Shape {
+    let radius: CGFloat
+    static let reach = 2 * NWQueueMetrics.rowHeight
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect.insetBy(dx: -Self.reach, dy: -Self.reach))
+        path.addRect(rect)
+        path.addRoundedRect(in: rect, cornerRadii: RectangleCornerRadii(bottomLeading: radius, bottomTrailing: radius))
+        return path
     }
 }
 
@@ -337,8 +357,9 @@ public struct NWQueueDrag {
 ///   Back to the queue.
 ///
 /// Hovered it is `bgHover`; with keyboard focus `bgSelected` and the focus ring drawn inside it,
-/// since a ring outside would cover its neighbours. Lifted by a drag it floats on `bgRaised`
-/// with the popover's shadow.
+/// since a ring outside would cover its neighbours. Lifted by a drag it floats on a card of its
+/// own (`bgRaised` under `bgHover`, the popover's shadow), shifted right of its slot and past
+/// the stack's trailing edge (`liftInset`).
 public struct NWQueueRow: View {
     public enum Kind: Equatable, Sendable {
         /// Waiting; `number` is its place in the order it goes.
@@ -427,16 +448,20 @@ public struct NWQueueRow: View {
                     .allowsHitTesting(false)
             }
         }
+        .padding(.leading, lifted ? NWQueueMetrics.liftInset.leading : 0)
+        .padding(.trailing, lifted ? -NWQueueMetrics.liftInset.trailing : 0)
         .rotationEffect(.degrees(lifted ? NWQueueMetrics.liftTilt : 0))
         .contentShape(Rectangle())
     }
 
     /// Clear at rest, `bgHover` under the pointer, `bgSelected` with focus, `runningTint` while
-    /// steering; a lifted row is a floating card.
+    /// steering; a lifted row is a floating card, still under the pointer.
     @ViewBuilder private var fill: some View {
         let nw = Color.nw
         if lifted {
-            RoundedRectangle(cornerRadius: NW.Radius.m).fill(nw.bgRaised)
+            let card = RoundedRectangle(cornerRadius: NW.Radius.m)
+            card.fill(nw.bgRaised)
+                .overlay { card.fill(nw.bgHover) }
                 .nwBorder(nw.lineStrong, radius: NW.Radius.m)
                 .nwFloatShadow()
         } else {
