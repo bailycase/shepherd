@@ -90,6 +90,24 @@ struct ListPerformanceTests {
         #expect(passes["sidebar.spaceScan", default: 0] == 0, "\(passes)")
     }
 
+    /// Selecting an agent opens and reveals its row from the memoized forest: rebuilding the
+    /// forest searches every pair of spaces and resolves each path on disk.
+    @Test func selectingAnAgentRevealsItFromTheMemoizedForest() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let agents = Array(vm.orderedAgents.prefix(3)) + Array(vm.orderedAgents.suffix(3))
+
+        // Each update asks the sidebar for the row to reveal (`sidebarRevealTarget`).
+        let passes = ListPerf.counting {
+            for agent in agents { ListPerf.time(window) { vm.selectAgent(agent.id) } }
+        }
+        #expect(passes["sidebar.spaceForest", default: 0] == 0, "\(passes)")
+    }
+
     // MARK: Thread
 
     /// A long thread streaming its reply builds only the rows on screen for each chunk, however
