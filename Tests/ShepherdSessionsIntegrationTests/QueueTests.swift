@@ -133,6 +133,50 @@ struct QueueTests {
         #expect(prompts(pi) == ["tools:1 build", "tools:0 old one", "tools:0 old two", "tools:0 new one\n\ntools:0 new two"])
     }
 
+    /// Clients that connected while the server queue was busy waited in the listener's backlog
+    /// and were accepted once it freed: each still keeps what its own hello said, so an older
+    /// one's queued messages go alone while a current one's go together.
+    @Test func clientsAcceptedFromTheBacklogKeepTheQueueTheirHelloAskedFor() async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let pi = try await PiAgent.launch(on: remote.host)
+        let running = try await startRun(pi)
+        let release = DispatchSemaphore(value: 0)
+        await remote.server.holdQueue(until: release)
+        // The kernel completes these handshakes in the backlog; the held queue accepts neither yet.
+        let clients: [RawRemote]
+        do {
+            defer { release.signal() }
+            clients = try (0..<4).map { _ in try RawRemote(port: remote.port) }
+        }
+        for (index, client) in clients.enumerated() {
+            try await client.hello(token: remote.token, capabilities: index % 2 == 0 ? nil : RemoteProtocol.clientCapabilities)
+        }
+        var nextID = 0
+        func send(_ text: String, from client: RawRemote) async throws {
+            nextID += 1
+            let id = nextID
+            try client.send(.nativeThread(id: id, agentID: pi.agent.id, request: .send(
+                expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID(), text: text, delivery: .followUp)))
+            let reply = try await client.frames { frame in
+                if case .nativeThread(id, _) = frame { true } else { false }
+            }.last
+            guard case .nativeThread(_, .accepted)? = reply else { throw WireError("send refused: \(String(describing: reply))") }
+        }
+        try await send("tools:0 old one", from: clients[0])
+        try await send("tools:0 old two", from: clients[2])
+        try await send("tools:0 new one", from: clients[1])
+        try await send("tools:0 new two", from: clients[3])
+        _ = try await pi.snapshot { $0.queue?.items.count == 4 }
+
+        pi.finishTool(1)
+        _ = try await pi.snapshot("the last message to be answered") { s in
+            !s.running && s.queue?.items.isEmpty == true && s.messages.last?.role == "assistant"
+                && s.messages.contains { $0.origin?.parts?.contains { $0.text == "tools:0 new two" } == true }
+        }
+        #expect(prompts(pi) == ["tools:1 build", "tools:0 old one", "tools:0 old two", "tools:0 new one\n\ntools:0 new two"])
+    }
+
     /// pi runs a command or expands a template only at the start of a message: such an item
     /// goes alone, and the items after it wait for the next delivery.
     @Test func aCommandInTheQueueGoesAlone() async throws {
