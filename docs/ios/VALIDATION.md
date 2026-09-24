@@ -59,7 +59,3 @@ terminal `attach`, `input`, or `resize` requests, and that it polled or fetched 
 - A real pi session driven from a phone against the current RPC host.
 - Physical-device signing and TestFlight.
 - iPad layouts, VoiceOver navigation, and large Dynamic Type.
-
-The September 2026 acceptance run (an XCUITest flow on the simulator) exercised a host that
-bridged dialogs through a patched pi. That host no longer exists. Re-run an end-to-end pass
-before calling the client validated again.
