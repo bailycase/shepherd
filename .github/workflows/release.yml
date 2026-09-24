@@ -54,7 +54,15 @@ jobs:
       - name: Plan
         id: plan
         run: |
-          plan=$(python3 scripts/release.py plan "$GITHUB_REF" "$(date -u +%Y%m%d%H%M)")
+          # A re-run keeps the run number (the build number), so release.py
+          # refuses a nightly re-run whose commit already has a nightly tag.
+          published=""
+          if [[ "$GITHUB_RUN_ATTEMPT" != 1 ]]; then
+            published=$(git ls-remote --tags origin 'refs/tags/nightly-*' \
+              | awk -v sha="$GITHUB_SHA" '$1 == sha { sub("refs/tags/", "", $2); print $2; exit }')
+          fi
+          plan=$(python3 scripts/release.py plan "$GITHUB_REF" "$(date -u +%Y%m%d%H%M)" \
+            "$GITHUB_RUN_ATTEMPT" "$published")
           echo "$plan" >> "$GITHUB_OUTPUT"
           jq -r 'if .build then "\(.title): \(.scheme), \(.configuration), \(.dmg)" else "::notice::\(.reason)" end' <<<"${plan#plan=}"
 

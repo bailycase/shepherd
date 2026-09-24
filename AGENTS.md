@@ -634,6 +634,11 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 - **Only `nightly` ships Shepherd Nightly.** A manual run (`workflow_dispatch`) plans like a
   push of its ref, so on any other branch it builds nothing rather than shipping that branch to
   every Shepherd Nightly.
+- **One build number, one release.** A re-run keeps `github.run_number`, the build number.
+  `generate_appcast` refuses a feed directory holding two archives of one build, and that fails
+  every feed's update until one ages out. So a nightly re-run whose commit already carries a
+  `nightly-*` tag builds nothing (push again instead), and a tag's re-run stops at
+  `gh release create`.
 - **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
   (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
   the boundary: its installer picks the new app in an archive by the host's *file name* first

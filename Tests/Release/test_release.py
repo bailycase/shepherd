@@ -5,6 +5,7 @@ Run: python3 -m unittest discover -s Tests/Release -v
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import plistlib
 import re
@@ -89,6 +90,31 @@ class PlanTests(unittest.TestCase):
                 p = release.plan(ref, STAMP)
                 self.assertFalse(p["build"])
                 self.assertIn("only the nightly branch", p["reason"])
+
+    def test_a_rerun_that_already_published_its_nightly_builds_nothing(self):
+        # A re-run keeps the build number (the run number), so a second release of it would put
+        # two archives with one CFBundleVersion in Shepherd Nightly's feed.
+        p = release.plan("refs/heads/nightly", STAMP, 2, "nightly-202609232159")
+        self.assertFalse(p["build"])
+        self.assertIn("nightly-202609232159", p["reason"])
+
+    def test_a_rerun_before_anything_was_published_builds(self):
+        self.assertTrue(release.plan("refs/heads/nightly", STAMP, 2, "")["build"])
+        # A first attempt is a new run, with its own build number, even on a published commit.
+        self.assertTrue(release.plan("refs/heads/nightly", STAMP, 1, "nightly-202609232159")["build"])
+
+    def test_the_plan_command_takes_the_attempt_and_the_published_tag(self):
+        for args, builds in ((["refs/heads/nightly", STAMP], True),
+                             (["refs/heads/nightly", STAMP, "1", ""], True),
+                             (["refs/heads/nightly", STAMP, "3", "nightly-202609232159"], False),
+                             (["refs/tags/v1.2.3", STAMP, "2", ""], True)):
+            with self.subTest(args=args):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    self.assertEqual(release.main(["plan", *args]), 0)
+                line = out.getvalue().strip()
+                self.assertTrue(line.startswith("plan="))
+                self.assertEqual(json.loads(line.removeprefix("plan="))["build"], builds)
 
     def test_a_nightly_needs_a_well_formed_stamp(self):
         with self.assertRaises(ValueError):
