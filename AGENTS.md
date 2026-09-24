@@ -215,7 +215,8 @@ runs them.
 - `ListPerformanceTests` pins each long list's budget as a count of rows built or redrawn
   (opening, scrolling, a highlight or a selection moving, one row changing, a reply streaming).
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
-  budgets differ on macOS 26 (CI) whatever the speed, so there they run as known issues.
+  budgets differ on macOS 26 (CI) and in Xcode 26 builds whatever the speed, so there they run
+  as known issues.
 - `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
   layout, and display, and scrolls a list a step at a time by moving its clip view.
