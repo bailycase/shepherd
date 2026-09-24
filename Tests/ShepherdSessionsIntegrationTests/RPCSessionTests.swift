@@ -158,6 +158,34 @@ struct RPCSessionTests {
         #expect((try? answer.current?.get())?.messages?.count == 12)
     }
 
+    /// pi answering a long history and then dying: the answer, still decoding off the queue when
+    /// pi is reaped, is handled first; only then does the request pi never answered fail, and
+    /// only then is the exit reported.
+    @Test func anExitWaitsForTheRecordsStillDecoding() async throws {
+        let h = try Harness(env: ["STUB_PI_HISTORY_BYTES": String(2 * 1024 * 1024)])
+        defer { h.stop() }
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let order = Locked<[String]>([])
+        #expect(try await h.request(.getState).get().success)
+        await h.onQueue {
+            h.session.beforeOffQueueDecode = { release.wait() }
+            h.session.onExit = { code in order.withValue { $0.append("exit:\(code.map(String.init) ?? "nil")") } }
+            h.session.request(.getMessages) { result in
+                order.withValue { $0.append((try? result.get().messages?.count).map { "history:\($0)" } ?? "history:failed") }
+            }
+            h.session.request(.prompt(message: "die")) { result in
+                order.withValue { $0.append(result == .failure(.exited(code: 3)) ? "die:exited" : "die:\(result)") }
+            }
+        }
+        try await eventually("pi to die with its history decoding") { await h.onQueue { !h.session.isAlive } }
+        #expect(order.current.isEmpty)
+
+        release.signal()
+        try await eventually("the exit to be reported") { order.current.count == 3 }
+        #expect(order.current == ["history:12", "die:exited", "exit:3"])
+    }
+
     @Test func overlappingRequestsAreCorrelatedByID() async throws {
         let h = try Harness()
         defer { h.stop() }
