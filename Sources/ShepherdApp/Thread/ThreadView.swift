@@ -337,10 +337,12 @@ struct ThreadView: View {
 
     static let startingLabel = "Starting pi…"
 
-    /// Connecting or pi still starting, or a fresh agent with nothing said yet. An error keeps
-    /// the last transcript and shows its banner above the composer instead.
+    /// Pi's history not known yet (connecting, or pi still starting with no session file), or an
+    /// agent with nothing said yet: a new one is known to be empty from the start, so its framed
+    /// state shows while pi boots. An error keeps the last transcript and shows its banner above
+    /// the composer instead.
     @ViewBuilder private var emptyState: some View {
-        if store.snapshot == nil || store.starting, store.loadError == nil {
+        if store.snapshot == nil, store.loadError == nil {
             HStack(spacing: AppLayout.startingSpacing) {
                 ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner))
                 Text(Self.startingLabel).font(Font.nw(.body)).foregroundStyle(Color.nw.textSecondary)

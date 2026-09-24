@@ -203,10 +203,13 @@ output grows.
   `wake()` (the servable signal) pulls a visible thread that is not ready yet at once; the polls
   are the fallback.
 - **Starting:** `native_starting` sets `starting`, never `loadError`: the thread shows "Starting
-  pi…" (under a thread kept from before, as its tail row), and `acceptsSend` offers Send. A
-  message sent then waits behind the composer's spinner, still in the field and with nothing
-  dispatched, and the field's text goes once the first snapshot lands; the draft stays if the
-  thread stops or fails first. A pi still
+  pi…" (under a thread kept from before, as its tail row). `acceptsSend` offers Send whenever
+  the thread is not ready yet and has no error: pi starting, the first pull on its way, or a
+  preview. A message sent then waits behind the composer's spinner, still in the field and with
+  nothing dispatched, and the field's text goes once the first snapshot lands; the draft stays
+  if the thread stops or fails first. A new agent's store gets a known-empty preview
+  (`PiSessionPreview.empty`, with the model and thinking level its pi launches with) before the
+  agent is selected, so its thread draws complete at once. A pi still
   starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
 - **Preview:** while a local thread has nothing from pi, `run(request:preview:)` reads the
   agent's pi session file alongside the first pull (`PiSessionFile.previewLoader`, off the main

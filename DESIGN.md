@@ -615,10 +615,12 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   exactly as pi's history is. Nothing in it acts yet (retry, load older, subagent actions)
   until pi answers, and pi's first snapshot then lands on the same rows, so nothing moves or
   flashes. An agent whose file cannot be read waits for pi's history as before.
-- **Empty thread:** "Starting pi…" with a spinner while connecting. Then a framed
-  `NWEmptyState` (a dashed `lineStrong` border, no crook): "New agent in `~/path`" (the path in
-  Geist Mono 15 medium within the 17pt title), with "Describe the task. Drop or paste images to
-  attach them, or type / for commands."
+- **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New
+  agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
+  the task. Drop or paste images to attach them, or type / for commands." A new agent is known
+  to be empty, so it shows from the first frame, with the composer ready, while pi boots behind
+  it. "Starting pi…" with a spinner shows only while a thread's history is not known yet (a
+  resuming agent without a readable session file).
 
 **User turn** (`UserTurn` in `Thread/ThreadTurns.swift`, on `NWUserBubble`):
 
@@ -765,9 +767,9 @@ their menu is open.
 - **Running:** Stop while the field is empty. The field stays editable with "Queue a follow-up —
   sent when the turn ends".
 - **Accepting:** a spinner ("Waiting for pi") takes the button's place.
-- **Starting:** Send is offered. A message sent while pi boots waits behind the spinner, still
-  in the field, and goes once pi answers, as the field has it then (edited, or not at all once
-  cleared).
+- **Starting:** Send is offered from the first frame, before pi has answered anything. A
+  message sent while pi boots waits behind the spinner, still in the field, and goes once pi
+  answers, as the field has it then (edited, or not at all once cleared).
 - **Error:** Send, plus a `failed` banner above the card, "Lost connection to the agent
   process.", with the error and Reconnect: only for a pi that was serving and went away, one
   that failed, or one that never started.

@@ -151,10 +151,11 @@ public final class NativeThreadStore {
         ready && !busy && snapshot?.supportedActions.contains(action) == true
     }
 
-    /// Send is offered: the thread supports it now, or pi is still starting and the send will
-    /// wait for it (every pi thread takes sends).
+    /// Send is offered: the thread supports it now, or it is not ready yet (pi starting, the
+    /// first pull still on its way, a thread shown from disk) and the send will wait for it
+    /// (every pi thread takes sends).
     public var acceptsSend: Bool {
-        supports("send") || (starting && !busy && loadError == nil)
+        supports("send") || (!ready && !busy && loadError == nil)
     }
 
     // MARK: Derived state
@@ -433,12 +434,13 @@ public final class NativeThreadStore {
         for waiter in waiters { waiter.resume(returning: started) }
     }
 
-    /// At once when the thread can act. While pi is starting, holds the caller (the composer
-    /// shows its "Waiting for pi" spinner) until the thread is ready: false instead when the
-    /// thread stops or fails first, or pi never starts. Nothing is dispatched while it waits.
+    /// At once when the thread can act. Until it is ready (pi starting, or the first pull on its
+    /// way), holds the caller (the composer shows its "Waiting for pi" spinner): false instead
+    /// when the thread stops or fails first, or pi never starts. Nothing is dispatched while it
+    /// waits.
     private func readyToAct() async -> Bool {
         if ready { return true }
-        guard starting, loadError == nil, !busy, request != nil else { return false }
+        guard loadError == nil, !busy, request != nil else { return false }
         let run = epoch
         busy = true
         let started = await withCheckedContinuation { startWaiters.append($0) }

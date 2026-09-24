@@ -55,6 +55,14 @@ func until(_ condition: @escaping @MainActor () -> Bool) async {
     }
 }
 
+/// Holds a thread's first snapshot request until the test opens it.
+@MainActor
+@Observable
+final class FirstPullGate {
+    var asked = false
+    var held = true
+}
+
 /// A store whose run loop never polls on its own: its pause ends only when the loop is
 /// cancelled. Every refresh is the test's, so no poll lands between a test's steps however
 /// slowly the machine runs it.
@@ -230,6 +238,39 @@ struct NativeThreadStoreTests {
         defer { task.cancel() }
         await until { store.previewing }
         #expect(store.messages == [fromDisk] && !store.ready)
+    }
+
+    /// Before the thread's first answer (a new agent's empty thread, drawn at once) Send is
+    /// offered, and a send waits for the thread to be ready.
+    @Test func aSendBeforeTheFirstAnswerWaitsForIt() async throws {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.acceptAll()
+        let gate = FirstPullGate()
+        let (opened, open) = AsyncStream<Void>.makeStream()
+        let store = manualStore()
+        store.preview(F.snapshot(generation: "preview", messages: []))
+        #expect(store.acceptsSend && store.previewing && !store.starting)
+        let task = Task {
+            await store.run { request in
+                if gate.held, case .snapshot = request {
+                    gate.held = false
+                    gate.asked = true
+                    for await _ in opened { break }
+                }
+                return try host.handle(request)
+            }
+        }
+        defer { task.cancel() }
+        await until { gate.asked }
+        store.draft = "start with this"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+        #expect(host.actions.isEmpty && store.draft == "start with this")
+
+        open.yield()
+        await sending.value
+
+        #expect(host.actions.count == 1 && store.sentCount == 1 && store.draft.isEmpty && store.ready)
     }
 
     /// The host's signal that pi serves pulls the thread at once; its poll never ran here.

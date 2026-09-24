@@ -52,9 +52,11 @@ struct AgentStartupTests {
         defer { polling.cancel(); store.stop() }
 
         try await eventuallyOnMain("the thread to show pi starting") { store.starting }
-        #expect(store.loadError == nil && !store.ready && store.snapshot == nil)
+        #expect(store.loadError == nil && !store.ready)
         #expect(store.pollInterval == .milliseconds(200))
         #expect(try await creating.value == id)
+        // Known to be empty from the start: the new agent's thread draws before pi answers.
+        #expect(store.previewing && store.messages.isEmpty && store.snapshot?.thinking == app.settings.agentDefaults.thinking.rawValue)
 
         store.draft = "hello while starting"
         #expect(store.acceptsSend)
