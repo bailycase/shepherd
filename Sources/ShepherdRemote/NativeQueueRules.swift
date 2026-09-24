@@ -5,6 +5,12 @@ import ShepherdProtocol
 /// host's, which also keeps the images' bytes.
 public protocol NativeQueueEntry {
     var entry: NativeQueuedMessage { get set }
+    /// Never joined with other items: the host's copy of an older client's message.
+    var goesAlone: Bool { get }
+}
+
+extension NativeQueueEntry {
+    public var goesAlone: Bool { false }
 }
 
 extension NativeQueuedMessage: NativeQueueEntry {
@@ -26,12 +32,13 @@ public enum NativeQueueRules {
     public static let separator = "\n\n"
 
     /// How many queued items (from the head) the next delivery takes. One per turn takes the
-    /// head. All at once takes the run of items from the head up to one that begins with "/"
-    /// (pi runs a command or expands a template only at the start of a message, so such an item
-    /// always goes alone), within `NativeImage.maxPerSend` images and `joinedTextLimit`.
+    /// head. All at once takes the run of items from the head up to one that goes alone: one
+    /// that begins with "/" (pi runs a command or expands a template only at the start of a
+    /// message), or one that `goesAlone`. It stays within `NativeImage.maxPerSend` images and
+    /// `joinedTextLimit`.
     public static func batchCount<T: NativeQueueEntry>(_ queued: [T], mode: NativeQueueMode) -> Int {
         guard let head = queued.first else { return 0 }
-        if mode == .oneAtATime || head.entry.text.hasPrefix("/") { return 1 }
+        if mode == .oneAtATime || head.goesAlone || head.entry.text.hasPrefix("/") { return 1 }
         var count = 1
         var images = head.entry.images.count
         var bytes = head.entry.text.utf8.count
@@ -39,7 +46,7 @@ public enum NativeQueueRules {
             let text = item.entry.text
             images += item.entry.images.count
             bytes += separator.utf8.count + text.utf8.count
-            if text.hasPrefix("/") || images > NativeImage.maxPerSend || bytes > joinedTextLimit { break }
+            if item.goesAlone || text.hasPrefix("/") || images > NativeImage.maxPerSend || bytes > joinedTextLimit { break }
             count += 1
         }
         return count

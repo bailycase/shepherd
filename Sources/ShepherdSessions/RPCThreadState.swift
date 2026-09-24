@@ -285,7 +285,9 @@ final class RPCThreadState {
 
     // MARK: - Requests (server queue)
 
-    func handle(_ request: NativeThreadRequest, completion: @escaping (NativeThreadResult) -> Void) {
+    /// `olderClient`: the request came from a remote client that does not read the host's queue
+    /// (its `hello` listed no `native.queue.v1`); its queued sends go to pi alone.
+    func handle(_ request: NativeThreadRequest, olderClient: Bool = false, completion: @escaping (NativeThreadResult) -> Void) {
         guard let piSessionID, !historyPending else {
             completion(.failure(code: NativeThreadCode.starting, message: "pi is starting."))
             return
@@ -338,7 +340,7 @@ final class RPCThreadState {
             }
             operations.append((key, Operation(fingerprint: request)))
             if operations.count > Self.operationTableSize { operations.removeFirst() }
-            perform(request, operationID: operationID) { [weak self] result in
+            perform(request, operationID: operationID, olderClient: olderClient) { [weak self] result in
                 guard let self else { completion(result); return }
                 guard let index = self.operations.firstIndex(where: { $0.id == key }) else {
                     // Evicted while in flight; still answer this caller.
@@ -369,7 +371,7 @@ final class RPCThreadState {
         }
     }
 
-    private func perform(_ request: NativeThreadRequest, operationID: UUID, completion: @escaping (NativeThreadResult) -> Void) {
+    private func perform(_ request: NativeThreadRequest, operationID: UUID, olderClient: Bool, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
             completion(Self.dispatchFailure(result) ?? accepted)
@@ -389,7 +391,7 @@ final class RPCThreadState {
                 completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
                 return
             }
-            send(id: operationID, text: text, delivery: delivery, images: images, completion: completion)
+            send(id: operationID, text: text, delivery: delivery, images: images, alone: olderClient, completion: completion)
         case .abort:
             stop { settle($0) }
         case .queue(_, _, _, let action):

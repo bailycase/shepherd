@@ -61,7 +61,7 @@ struct HostConnectionCheck {
                 _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
                 if attempt == 0 { usleep(200_000) }
                 do {
-                    guard case .hello(let id, let token, _, _) = try NDJSON.decode(RemoteRequest.self, from: readLine(fd)) else {
+                    guard case .hello(let id, let token, _, _, _) = try NDJSON.decode(RemoteRequest.self, from: readLine(fd)) else {
                         fatalError("expected hello")
                     }
                     precondition(token == "test-token")

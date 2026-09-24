@@ -139,7 +139,8 @@ public final class RemoteHostClient: @unchecked Sendable {
 
             do {
                 let helloReply = try await request(connectionGeneration: attempt) { id in
-                    .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version)
+                    .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version,
+                           capabilities: RemoteProtocol.clientCapabilities)
                 }
                 guard case .helloOk(_, _, let capabilities) = helloReply else {
                     if case .error(_, let code, let message) = helloReply {

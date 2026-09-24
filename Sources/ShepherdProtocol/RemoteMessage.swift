@@ -19,6 +19,11 @@ public enum RemoteProtocol {
     /// The host holds messages sent while pi works (`NativeThreadSnapshot.queue`) and serves
     /// `NativeThreadRequest.queue`. Older hosts send every message straight to pi.
     public static let nativeQueueCapability = "native.queue.v1"
+    /// What this client tells a host in `hello`: it reads the host's queue and where each
+    /// delivered message came from (`nativeQueueCapability`). An older client, which lists
+    /// nothing, finds its own sends in the thread by their text, so a host delivers its queued
+    /// messages one per turn, each as it was sent.
+    public static let clientCapabilities = [nativeQueueCapability]
     public static let version = 1
     public static let pasteCapability = "session.paste.v1"
     public static let paneControlCapability = "pane.control.v1"
@@ -196,8 +201,9 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
 public enum RemoteRequest: Codable, Hashable, Sendable {
     case nativeThread(id: Int, agentID: AgentID, request: NativeThreadRequest)
     /// Authenticate with the host's shared token (`remote-token` in its
-    /// support directory).
-    case hello(id: Int, token: String, clientName: String, protocolVersion: Int)
+    /// support directory). `capabilities` says what the client understands
+    /// (`RemoteProtocol.clientCapabilities`); older clients send none.
+    case hello(id: Int, token: String, clientName: String, protocolVersion: Int, capabilities: [String]? = nil)
     /// Full state snapshot.
     case stateFetch(id: Int)
     /// Attach to a session: the host resizes the PTY to the client's grid,
@@ -250,7 +256,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case request
-        case type, id, token, clientName, protocolVersion
+        case type, id, token, clientName, protocolVersion, capabilities
         case sessionID, cols, rows, data, viewportGeneration
         case path, spaceID, cwd, model, thinking, initialPrompt, worktreeBranch
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
@@ -273,7 +279,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 token: try c.decode(String.self, forKey: .token),
                 clientName: try c.decode(String.self, forKey: .clientName),
-                protocolVersion: try c.decode(Int.self, forKey: .protocolVersion)
+                protocolVersion: try c.decode(Int.self, forKey: .protocolVersion),
+                capabilities: try c.decodeIfPresent([String].self, forKey: .capabilities)
             )
         case .upload:
             self = .upload(id: try c.decode(Int.self, forKey: .id), action: try c.decode(RemoteUploadAction.self, forKey: .action))
@@ -375,12 +382,13 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(request, forKey: .request)
-        case .hello(let id, let token, let clientName, let protocolVersion):
+        case .hello(let id, let token, let clientName, let protocolVersion, let capabilities):
             try c.encode(Kind.hello, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(token, forKey: .token)
             try c.encode(clientName, forKey: .clientName)
             try c.encode(protocolVersion, forKey: .protocolVersion)
+            try c.encodeIfPresent(capabilities, forKey: .capabilities)
         case .upload(let id, let action):
             try c.encode(Kind.upload, forKey: .type)
             try c.encode(id, forKey: .id)

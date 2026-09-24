@@ -97,6 +97,42 @@ struct QueueTests {
         #expect(prompts(pi) == ["tools:1 build", "tools:0 first", "tools:0 second"])
     }
 
+    /// An older Mac finds its sends in the thread by the text it sent, so its queued messages go
+    /// to pi one per turn, each as sent, even all at once; a current client's still go together.
+    @Test func anOlderClientsQueuedMessagesGoOnePerTurnAsSent() async throws {
+        let remote = try RemoteHost()
+        defer { remote.stop() }
+        let pi = try await PiAgent.launch(on: remote.host)
+        let running = try await startRun(pi)
+        let older = try await remote.raw()
+        let current = try RawRemote(port: remote.port)
+        try await current.hello(token: remote.token, capabilities: RemoteProtocol.clientCapabilities)
+        var nextID = 0
+        func send(_ text: String, from client: RawRemote) async throws {
+            nextID += 1
+            let id = nextID
+            try client.send(.nativeThread(id: id, agentID: pi.agent.id, request: .send(
+                expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID(), text: text, delivery: .followUp)))
+            let reply = try await client.frames { frame in
+                if case .nativeThread(id, _) = frame { true } else { false }
+            }.last
+            guard case .nativeThread(_, .accepted)? = reply else { throw WireError("send refused: \(String(describing: reply))") }
+        }
+        try await send("tools:0 old one", from: older)
+        try await send("tools:0 old two", from: older)
+        try await send("tools:0 new one", from: current)
+        try await send("tools:0 new two", from: current)
+        let queued = try await pi.snapshot { $0.queue?.items.count == 4 }
+        #expect(queued.queue?.mode == .all)
+
+        pi.finishTool(1)
+        _ = try await pi.snapshot("the last message to be answered") { s in
+            !s.running && s.queue?.items.isEmpty == true && s.messages.last?.role == "assistant"
+                && s.messages.contains { $0.origin?.parts?.contains { $0.text == "tools:0 new two" } == true }
+        }
+        #expect(prompts(pi) == ["tools:1 build", "tools:0 old one", "tools:0 old two", "tools:0 new one\n\ntools:0 new two"])
+    }
+
     /// pi runs a command or expands a template only at the start of a message: such an item
     /// goes alone, and the items after it wait for the next delivery.
     @Test func aCommandInTheQueueGoesAlone() async throws {
