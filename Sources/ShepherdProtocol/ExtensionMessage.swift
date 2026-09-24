@@ -29,6 +29,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// may deliver unsolicited `ExtensionReply.message` frames (peer-thread
     /// messages) on it from now on. Fire-and-forget.
     case helloAgent(agentID: AgentID)
+    /// The children extension registered this connection as the control
+    /// channel for its agent's native child runs: the app may send
+    /// `ExtensionReply.childCommand` frames on it (card buttons, inspector steer).
+    case helloChildren(agentID: AgentID)
+    /// Outcome of a `childCommand`; `error` is nil on success.
+    case childCommandResult(id: Int, error: String?)
 
     // MARK: Pane control (request/reply)
 
@@ -59,9 +65,15 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Spawn a new top-level agent thread with an opening prompt.
     case spawnAgent(id: Int, agentID: AgentID, cwd: String, prompt: String)
 
-    /// Relayed to the target's live panes extension, never inferred from saved status.
+    /// Read, steer, interrupt, or poll another live agent (relayed to the target's panes
+    /// extension as `ExtensionReply.agentRequest`, never inferred from saved status), or ask
+    /// the user to delete it. Answered with `ExtensionReply.agentResult`.
     case coordinateAgent(id: Int, agentID: AgentID, targetAgentID: AgentID, request: AgentCoordinationRequest)
+    /// The target's answer to a relayed `agentRequest`, by the server's `requestID`. Accepted
+    /// only from the connection the request went to.
     case agentResponse(agentID: AgentID, requestID: String, result: AgentCoordinationResult)
+    /// The caller gave up on its `coordinateAgent` `id` (cancelled or timed out). A pending
+    /// deletion dialog closes; a steer or interrupt already dispatched is not undone.
     case cancelAgentRequest(id: Int, agentID: AgentID)
 
     // MARK: Automations (request/reply)
@@ -86,10 +98,12 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
         case title, body
         case prompt, enabled, start, automationID, targetAgentID, request, requestID, result
+        case error
     }
 
     private enum Kind: String, Codable {
         case setAgentStatus, setAgentName, setAgentSession, setAgentChildren, notify, helloAgent
+        case helloChildren, childCommandResult
         case listPanes, openPane, closePane, focusPane, sendPaneInput, readPane, requestReview
         case createAutomation, listAutomations, updateAutomation, deleteAutomation
         case startAutomation, stopAutomation
@@ -127,6 +141,10 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             )
         case .helloAgent:
             self = .helloAgent(agentID: try c.decode(AgentID.self, forKey: .agentID))
+        case .helloChildren:
+            self = .helloChildren(agentID: try c.decode(AgentID.self, forKey: .agentID))
+        case .childCommandResult:
+            self = .childCommandResult(id: try c.decode(Int.self, forKey: .id), error: try c.decodeIfPresent(String.self, forKey: .error))
         case .listPanes:
             self = .listPanes(
                 id: try c.decode(Int.self, forKey: .id),
@@ -276,6 +294,13 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case .helloAgent(let agentID):
             try c.encode(Kind.helloAgent, forKey: .type)
             try c.encode(agentID, forKey: .agentID)
+        case .helloChildren(let agentID):
+            try c.encode(Kind.helloChildren, forKey: .type)
+            try c.encode(agentID, forKey: .agentID)
+        case .childCommandResult(let id, let error):
+            try c.encode(Kind.childCommandResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encodeIfPresent(error, forKey: .error)
         case .listPanes(let id, let agentID):
             try c.encode(Kind.listPanes, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -437,6 +462,47 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
     /// Run artifact directory, for a later inspector.
     public var asyncDir: String?
 
+    // MARK: Card fields (native children only; all optional so pi-subagents rows still decode)
+
+    /// Agent profile name ("worker").
+    public var role: String?
+    /// "provider/id".
+    public var model: String?
+    public var thinking: String?
+    /// "background" (shepherd_child_start) or "async" (workflow with async:true).
+    public var context: String?
+    public var step: ChildStep?
+    public var turns: Int?
+    public var toolCalls: Int?
+    public var tokens: Int?
+    /// Context-window fill of the child's own session, 0–100.
+    public var contextPercent: Double?
+    public var lastActivity: ChildActivity?
+    /// Present while `needsAttention`.
+    public var question: ChildQuestion?
+    /// Present once `state == complete`.
+    public var result: ChildResultSummary?
+    /// "exit 1 · context limit reached after 41 turns"; present when failed.
+    public var exitReason: String?
+    /// The parent's `shepherd_child_start` tool call id, so the card can replace that row.
+    public var toolCallID: String?
+    /// The delegated task (inspector GOAL block).
+    public var task: String?
+    /// Final assistant text once complete (card summary prose).
+    public var output: String?
+    /// The child's pi session JSONL, for the inspector transcript.
+    public var sessionFile: String?
+    /// Files the child edited or wrote, with line counts aggregated per path (≤ 32 entries).
+    public var files: [ChildFileChange]?
+    /// First two sentences of the final output, ≤ 240 characters.
+    public var summary: String?
+    /// The child's own pi session id (a fork copies its transcript under a fresh id).
+    public var sessionID: String?
+    /// The directory the child ran in; file links resolve against it.
+    public var cwd: String?
+    /// A cooperative pause is requested; the next provider request waits for Continue.
+    public var paused: Bool?
+
     public var id: String { childIndex.map { "\(runID)#\($0)" } ?? runID }
 
     /// Anything not yet finished counts as live, including unknown future
@@ -455,7 +521,29 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         currentTool: String? = nil,
         needsAttention: Bool = false,
         attentionText: String? = nil,
-        asyncDir: String? = nil
+        asyncDir: String? = nil,
+        role: String? = nil,
+        model: String? = nil,
+        thinking: String? = nil,
+        context: String? = nil,
+        step: ChildStep? = nil,
+        turns: Int? = nil,
+        toolCalls: Int? = nil,
+        tokens: Int? = nil,
+        contextPercent: Double? = nil,
+        lastActivity: ChildActivity? = nil,
+        question: ChildQuestion? = nil,
+        result: ChildResultSummary? = nil,
+        exitReason: String? = nil,
+        toolCallID: String? = nil,
+        task: String? = nil,
+        output: String? = nil,
+        sessionFile: String? = nil,
+        files: [ChildFileChange]? = nil,
+        summary: String? = nil,
+        sessionID: String? = nil,
+        cwd: String? = nil,
+        paused: Bool? = nil
     ) {
         self.runID = runID
         self.childIndex = childIndex
@@ -467,8 +555,83 @@ public struct ChildRun: Codable, Hashable, Sendable, Identifiable {
         self.needsAttention = needsAttention
         self.attentionText = attentionText
         self.asyncDir = asyncDir
+        self.role = role
+        self.model = model
+        self.thinking = thinking
+        self.context = context
+        self.step = step
+        self.turns = turns
+        self.toolCalls = toolCalls
+        self.tokens = tokens
+        self.contextPercent = contextPercent
+        self.lastActivity = lastActivity
+        self.question = question
+        self.result = result
+        self.exitReason = exitReason
+        self.toolCallID = toolCallID
+        self.task = task
+        self.output = output
+        self.sessionFile = sessionFile
+        self.files = files
+        self.summary = summary
+        self.sessionID = sessionID
+        self.cwd = cwd
+        self.paused = paused
     }
 }
+
+/// One path a child touched: edit/write calls aggregated (inspector RESULT block).
+public struct ChildFileChange: Codable, Hashable, Sendable {
+    public var path: String
+    public var added: Int
+    public var removed: Int
+    public init(path: String, added: Int, removed: Int) { self.path = path; self.added = added; self.removed = removed }
+}
+
+public struct ChildStep: Codable, Hashable, Sendable {
+    public var index: Int
+    public var total: Int
+    public init(index: Int, total: Int) { self.index = index; self.total = total }
+}
+
+public struct ChildDiff: Codable, Hashable, Sendable {
+    public var added: Int
+    public var removed: Int
+    public init(added: Int, removed: Int) { self.added = added; self.removed = removed }
+}
+
+/// The child's most recent finished tool call.
+public struct ChildActivity: Codable, Hashable, Sendable {
+    public var kind: String
+    public var tool: String
+    public var preview: String?
+    public var diff: ChildDiff?
+    /// Milliseconds since epoch.
+    public var at: Double
+    public init(kind: String = "tool", tool: String, preview: String? = nil, diff: ChildDiff? = nil, at: Double) {
+        self.kind = kind; self.tool = tool; self.preview = preview; self.diff = diff; self.at = at
+    }
+}
+
+public struct ChildQuestion: Codable, Hashable, Sendable {
+    public var text: String
+    public var options: [String]?
+    public init(text: String, options: [String]? = nil) { self.text = text; self.options = options }
+}
+
+public struct ChildResultSummary: Codable, Hashable, Sendable {
+    public var files: Int
+    public var added: Int
+    public var removed: Int
+    public var tools: Int
+    public var tokens: Int
+    public init(files: Int, added: Int, removed: Int, tools: Int, tokens: Int) {
+        self.files = files; self.added = added; self.removed = removed; self.tools = tools; self.tokens = tokens
+    }
+}
+
+/// App → children extension: drive one native child run. Mirrors the tool functions.
+public enum ChildCommandAction: String, Codable, Hashable, Sendable { case message, cancel, resume, pause, `continue` }
 
 /// One top-level agent thread as reported to peers (agent_list).
 public struct AgentPeerInfo: Codable, Hashable, Sendable {
@@ -533,6 +696,9 @@ public struct PaneInfo: Codable, Hashable, Sendable {
 
 /// App → extension replies, correlated by request `id`.
 public enum ExtensionReply: Codable, Hashable, Sendable {
+    /// Sent on a `helloChildren` connection; answered by `ExtensionMessage.childCommandResult`.
+    /// `mode` (steer/followUp) applies to `message`.
+    case childCommand(id: Int, runID: String, action: ChildCommandAction, text: String?, mode: NativeThreadDelivery?)
     case ok(id: Int)
     case error(id: Int, code: String, message: String)
     case panes(id: Int, panes: [PaneInfo])
@@ -549,22 +715,36 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// message for this agent. `id` is always 0 (no request to correlate).
     case message(id: Int, text: String)
 
-    /// Server-generated requestID is independent of caller-local tool request IDs.
+    /// Unsolicited, to the target's registered connection: serve `request` and answer with
+    /// `ExtensionMessage.agentResponse`. `requestID` is the server's token, independent of the
+    /// caller's own request ids; `id` is always 0.
     case agentRequest(id: Int, requestID: String, targetAgentID: AgentID, request: AgentCoordinationRequest)
+    /// The outcome of a `coordinateAgent`, correlated by the caller's `id`. A `code` means it
+    /// failed.
     case agentResult(id: Int, result: AgentCoordinationResult)
 
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text
+        case runID, action, mode
     }
 
     private enum Kind: String, Codable {
-        case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message, agentRequest, agentResult
+        case childCommand, agentRequest, agentResult
+        case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .childCommand:
+            self = .childCommand(
+                id: try c.decode(Int.self, forKey: .id),
+                runID: try c.decode(String.self, forKey: .runID),
+                action: try c.decode(ChildCommandAction.self, forKey: .action),
+                text: try c.decodeIfPresent(String.self, forKey: .text),
+                mode: try c.decodeIfPresent(NativeThreadDelivery.self, forKey: .mode)
+            )
         case .agentRequest:
             self = .agentRequest(
                 id: try c.decode(Int.self, forKey: .id),
@@ -627,6 +807,13 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .childCommand(let id, let runID, let action, let text, let mode):
+            try c.encode(Kind.childCommand, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(runID, forKey: .runID)
+            try c.encode(action, forKey: .action)
+            try c.encodeIfPresent(text, forKey: .text)
+            try c.encodeIfPresent(mode, forKey: .mode)
         case .agentRequest(let id, let requestID, let targetAgentID, let request):
             try c.encode(Kind.agentRequest, forKey: .type)
             try c.encode(id, forKey: .id)

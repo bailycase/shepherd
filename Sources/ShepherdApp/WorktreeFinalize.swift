@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import ShepherdProtocol
 
 /// Async login-shell runner for worktree setup probes and the finalize
@@ -135,11 +136,11 @@ enum WorktreeSetupCheck: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .git: return "git installed"
-        case .identity: return "git identity"
-        case .remote: return "origin reachable"
+        case .git: return "Git installed"
+        case .identity: return "Git identity"
+        case .remote: return "Origin reachable"
         case .gh: return "GitHub CLI"
-        case .ghAuth: return "gh authenticated"
+        case .ghAuth: return "GitHub CLI signed in"
         }
     }
 }
@@ -154,8 +155,8 @@ enum WorktreeRepoSetting: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .deleteBranchOnMerge: return "auto-delete merged branches"
-        case .allowAutoMerge: return "allow auto-merge"
+        case .deleteBranchOnMerge: return "Auto-delete merged branches"
+        case .allowAutoMerge: return "Allow auto-merge"
         }
     }
 
@@ -182,15 +183,16 @@ typealias WorktreeCheckState = RemoteWorktreeCheckState
 /// Probes the finalize prerequisites and applies the fixable remedies.
 /// Repo-scoped: the `remote` check runs against the space's checkout.
 @MainActor
-final class WorktreeSetupModel: ObservableObject {
-    @Published private(set) var states: [WorktreeSetupCheck: WorktreeCheckState]
+@Observable
+final class WorktreeSetupModel {
+    private(set) var states: [WorktreeSetupCheck: WorktreeCheckState]
     /// Recommended GitHub repo settings — informational, never gate `allPassed`.
-    @Published private(set) var repoSettings: [WorktreeRepoSetting: WorktreeRepoSettingState]
-    @Published private(set) var running = false
+    private(set) var repoSettings: [WorktreeRepoSetting: WorktreeRepoSettingState]
+    private(set) var running = false
     private(set) var repoPath: String
-    var remoteAction: ((RemoteWorktreeSetupAction) async throws -> RemoteWorktreeSetup)?
-    @Published private(set) var actionError: String?
-    var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1, timeout: 20) }
+    @ObservationIgnored var remoteAction: ((RemoteWorktreeSetupAction) async throws -> RemoteWorktreeSetup)?
+    private(set) var actionError: String?
+    @ObservationIgnored var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1, timeout: 20) }
 
     var snapshot: RemoteWorktreeSetup {
         .init(repoPath: repoPath,
@@ -340,8 +342,7 @@ final class WorktreeSetupModel: ObservableObject {
                 repoPath
             )
             if r.status == 0 { return .pass("origin reachable with your credentials") }
-            let detail = r.stderr.split(separator: "\n").last.map(String.init)
-            return .fail(detail ?? "origin remote missing or unreachable")
+            return .fail(Self.remoteFailureDetail(r.stderr) ?? "origin remote missing or unreachable")
         case .gh:
             let r = await runner("command -v gh >/dev/null 2>&1 && gh --version | head -1", nil)
             if r.status == 0 {
@@ -361,6 +362,21 @@ final class WorktreeSetupModel: ObservableObject {
             return .fail("not authenticated — run gh auth login")
         }
     }
+
+    /// Why `git ls-remote` failed: its last line that is not git's closing boilerplate, which
+    /// follows every SSH failure and says nothing about this one. nil when nothing else is left.
+    static func remoteFailureDetail(_ stderr: String) -> String? {
+        stderr.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty && !gitRemoteBoilerplate.contains($0) }
+    }
+
+    /// git's closing advice after a failed remote operation; it never names the problem.
+    nonisolated static let gitRemoteBoilerplate: Set<String> = [
+        "fatal: Could not read from remote repository.",
+        "Please make sure you have the correct access rights",
+        "and the repository exists.",
+    ]
 }
 
 enum WorktreeCommitCount {
@@ -473,7 +489,8 @@ struct WorktreePRDescriptionGenerator {
 /// cleanup. The Shepherd agent retires when the user closes the success
 /// dialog, not mid-pipeline.
 @MainActor
-final class WorktreeFinalizer: ObservableObject {
+@Observable
+final class WorktreeFinalizer {
     enum Step: Int, CaseIterable, Identifiable {
         case commit, push, pullRequest, mergePR, verifyClean, removeWorktree, deleteBranch
 
@@ -523,19 +540,27 @@ final class WorktreeFinalizer: ObservableObject {
         var mergeMethod = "squash"
     }
 
-    @Published private(set) var states: [Step: StepState]
-    @Published private(set) var phase: Phase = .idle
-    @Published private(set) var prURL: String?
+    private(set) var states: [Step: StepState]
+    private(set) var phase: Phase = .idle
+    private(set) var prURL: String?
 
     /// Injectable for tests; production uses the login shell.
-    var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1) }
+    @ObservationIgnored var runner: (String, String?) async -> LoginShell.Output = { await LoginShell.run($0, cwd: $1) }
     /// Injectable clean gate; production is the same probe the delete dialog uses.
-    var cleanCheck: (String, String) -> String? = GitWorktree.unreconciledWork
+    @ObservationIgnored var cleanCheck: (String, String) -> String? = GitWorktree.unreconciledWork
 
-    var beforeCleanup: (() async throws -> Void)?
+    @ObservationIgnored var beforeCleanup: (() async throws -> Void)?
 
     init() {
         states = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, .pending) })
+    }
+
+    /// A pipeline already at `steps` (unlisted steps pending), for previews; it never runs.
+    init(staged steps: [Step: StepState], prURL: String? = nil) {
+        states = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, steps[$0] ?? .pending) })
+        self.prURL = prURL
+        let failed = steps.values.contains { if case .failed = $0 { true } else { false } }
+        phase = failed ? .failed : states.values.contains { $0 == .pending || $0 == .running } ? .running : .succeeded
     }
 
     func run(_ ctx: Context) async {
@@ -636,10 +661,25 @@ final class WorktreeFinalizer: ObservableObject {
         }
     }
 
-    private func detail(_ output: LoginShell.Output) -> String {
+    private func detail(_ output: LoginShell.Output) -> String { Self.failureDetail(output) }
+
+    /// A failed step's text: stderr, else stdout, else the exit status. The sheet shows only the
+    /// first line (the rest is its tooltip), so the line that names the problem moves to the
+    /// front: a rejected ref, else the first `fatal:`/`error:` that isn't git's closing
+    /// boilerplate, ahead of the `To <remote>` header and hints.
+    static func failureDetail(_ output: LoginShell.Output) -> String {
         let err = output.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !err.isEmpty { return err }
         let out = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        return out.isEmpty ? "exit \(output.status)" : out
+        let text = err.isEmpty ? out : err
+        guard !text.isEmpty else { return "exit \(output.status)" }
+        let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+        let candidates = lines.indices.filter { !WorktreeSetupModel.gitRemoteBoilerplate.contains(lines[$0]) }
+        let telling = candidates.first { lines[$0].hasPrefix("! [") }
+            ?? candidates.first { index in ["fatal:", "error:"].contains { lines[index].lowercased().hasPrefix($0) } }
+        var reordered = lines
+        if let telling, telling > 0 { reordered.insert(reordered.remove(at: telling), at: 0) }
+        // git pads its ref columns ("! [rejected]        a -> a"); the one-line summary doesn't.
+        reordered[0] = reordered[0].split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return reordered.joined(separator: "\n")
     }
 }

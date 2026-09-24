@@ -163,7 +163,7 @@ enum PanesExtension {
                               break;
                             case "interrupt":
                               ctx.abort();
-                              result = { text: "current-turn cancellation requested, not confirmed stopped; tools must cooperate. In pi TUI queued messages move to the editor; retries and compaction are not cancelled." };
+                              result = { text: "current-turn cancellation requested, not confirmed stopped; tools must cooperate. A pending retry or compaction is cancelled too; queued messages stay queued." };
                               break;
                             case "status":
                               result = { text: "live activity snapshot", idle: ctx.isIdle() && !ctx.hasPendingMessages(),
@@ -476,7 +476,7 @@ enum PanesExtension {
           pi.registerTool({
             name: "agent_interrupt",
             label: "Interrupt Agent Thread",
-            description: "Request best-effort current-turn cancellation on another live agent. Does not confirm it stopped; tools must cooperate. Pi TUI moves queued messages to the editor and does not cancel retries or compaction. Cannot target yourself.",
+            description: "Request best-effort current-turn cancellation on another live agent. Does not confirm it stopped; tools must cooperate. Also cancels a pending retry or compaction; messages already queued stay queued. Cannot target yourself.",
             parameters: Type.Object({ agentID: Type.String() }),
             async execute(_id, params, signal) {
               const reply = await request({ type: "coordinateAgent", targetAgentID: params.agentID,

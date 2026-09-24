@@ -10,6 +10,12 @@ public enum RemoteProtocol {
     public static let uploadMaxBytes = 32 * 1024 * 1024
     public static let uploadCapability = "session.upload.v1"
     public static let creationOptionsCapability = "agent.creation.options.v1"
+    public static let nativeThreadCapability = "native.thread.v1"
+    /// v2: snapshot runtime/stats/commands, setModel/setThinking, send images.
+    public static let nativeThreadV2Capability = "native.thread.v2"
+    /// The host answers `NativeThreadCode.starting` while an agent's pi starts. Older hosts
+    /// answered `native_unavailable` then; clients read that as starting (see RemoteHostClient).
+    public static let nativeThreadStartingCapability = "native.thread.starting.v1"
     public static let version = 1
     public static let pasteCapability = "session.paste.v1"
     public static let paneControlCapability = "pane.control.v1"
@@ -17,7 +23,7 @@ public enum RemoteProtocol {
     public static let worktreeActionsCapability = "agent.worktree.v1"
     public static let worktreeSetupCapability = "agent.worktree.setup.v1"
     public static let agentInspectionCapability = "agent.inspection.v1"
-    public static let capabilities = [pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -164,7 +170,6 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     case reviewPane(paneID: PaneID, pullRequest: Bool? = nil)
     case finishReview(paneID: PaneID, text: String?)
     case children
-    case inspect(childID: String)
     case inspectorPane(tabID: TabID, action: RemoteInspectorPaneAction)
     case search(query: String)
 }
@@ -186,6 +191,7 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
 /// Client → host. The first message on a connection must be a successful
 /// `hello`; anything else closes the connection.
 public enum RemoteRequest: Codable, Hashable, Sendable {
+    case nativeThread(id: Int, agentID: AgentID, request: NativeThreadRequest)
     /// Authenticate with the host's shared token (`remote-token` in its
     /// support directory).
     case hello(id: Int, token: String, clientName: String, protocolVersion: Int)
@@ -240,6 +246,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case agentAction(id: Int, agentID: AgentID, action: RemoteAgentAction)
 
     private enum CodingKeys: String, CodingKey {
+        case request
         case type, id, token, clientName, protocolVersion
         case sessionID, cols, rows, data, viewportGeneration
         case path, spaceID, cwd, model, thinking, initialPrompt, worktreeBranch
@@ -247,6 +254,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     }
 
     private enum Kind: String, Codable {
+        case nativeThread
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
@@ -255,6 +263,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .nativeThread:
+            self = .nativeThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), request: try c.decode(NativeThreadRequest.self, forKey: .request))
         case .hello:
             self = .hello(
                 id: try c.decode(Int.self, forKey: .id),
@@ -357,6 +367,11 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .nativeThread(let id, let agentID, let request):
+            try c.encode(Kind.nativeThread, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(request, forKey: .request)
         case .hello(let id, let token, let clientName, let protocolVersion):
             try c.encode(Kind.hello, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -458,6 +473,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
 /// Host → client. Replies correlate by request `id`; `stateChanged` is an
 /// unsolicited push after every host-side mutation.
 public enum RemoteReply: Codable, Hashable, Sendable {
+    case nativeThread(id: Int, result: NativeThreadResult)
     case uploadResult(id: Int, result: RemoteUploadResult)
     case creationOptions(id: Int, options: RemoteCreationOptions)
     case helloOk(id: Int, protocolVersion: Int, capabilities: [String])
@@ -487,12 +503,14 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case agentCreated(id: Int, agentID: AgentID)
 
     private enum CodingKeys: String, CodingKey {
+        case result
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
-        case path, parent, dirs, models, defaultModel, attachment, result, options
+        case path, parent, dirs, models, defaultModel, attachment, options
     }
 
     private enum Kind: String, Codable {
+        case nativeThread
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
     }
@@ -500,6 +518,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         switch try c.decode(Kind.self, forKey: .type) {
+        case .nativeThread:
+            self = .nativeThread(id: try c.decode(Int.self, forKey: .id), result: try c.decode(NativeThreadResult.self, forKey: .result))
         case .helloOk:
             self = .helloOk(
                 id: try c.decode(Int.self, forKey: .id),
@@ -586,6 +606,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
+        case .nativeThread(let id, let result):
+            try c.encode(Kind.nativeThread, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
         case .helloOk(let id, let protocolVersion, let capabilities):
             try c.encode(Kind.helloOk, forKey: .type)
             try c.encode(id, forKey: .id)

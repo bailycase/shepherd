@@ -3,7 +3,9 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 
-/// Peer requests use the live extension for messages and the normal app lifecycle for deletion.
+/// Peer threads: agents listing, messaging, spawning, and asking to delete other top-level
+/// agents. Messages go through the target's live panes extension; a deletion waits for the
+/// user's answer in `PeerDeleteDialog` and then follows the normal Delete Agent path.
 @MainActor
 extension ShepherdViewModel {
     func installAgentPeerControl() {
@@ -128,16 +130,17 @@ extension ShepherdViewModel {
         confirmation.respond(.failed(code: "cancelled", message: "user cancelled deletion; agent kept"))
     }
 
-    func confirmPeerDeletion(requestID: String) async {
+    /// The dialog's destructive button, and nothing else: it dismisses the dialog, claims the
+    /// request (a timed-out or cancelled one can no longer delete), waits `dismissal` so the
+    /// sheet is gone before a layout is torn down, then deletes through Delete Agent.
+    func confirmPeerDeletion(requestID: String, dismissal: Duration = .zero) async {
         guard let confirmation = peerDeleteConfirmation,
               confirmation.requestID == requestID else { return }
         peerDeleteConfirmation = nil
         guard await server.claimAgentDeletion(confirmation.requestID) else { return }
-        do {
-            try await deleteAgentPersisted(confirmation.agent.id)
-            confirmation.respond(.ok)
-        } catch {
-            confirmation.respond(.failed(code: "delete_failed", message: String(describing: error)))
+        if dismissal > .zero { try? await Task.sleep(for: dismissal) }
+        deleteAgent(confirmation.agent.id) { error in
+            confirmation.respond(error.map { .failed(code: "delete_failed", message: String(describing: $0)) } ?? .ok)
         }
     }
 }

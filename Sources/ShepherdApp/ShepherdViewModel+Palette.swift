@@ -2,85 +2,77 @@ import Foundation
 import AppKit
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 /// The ⌘K command palette: agent and space lifecycle on the keyboard instead
-/// of a menu bar. Items are destinations (agents, spaces, shells, subagent
+/// of a menu bar. Items are destinations (agents, spaces, subagent
 /// runs) plus the commands the menus expose, fuzzy-filtered by PaletteSearch.
 @MainActor
 extension ShepherdViewModel {
     var paletteItems: [PaletteItem] {
-        _ = remoteProjectionRevision
         var items: [PaletteItem] = []
         let keys = KeybindingsStore.shared
 
-        // Commands first, matching the mock's ordering.
+        // Commands.
         let creationSpace = selectedRemoteAgent.flatMap { target in
             remoteHosts.connections.first { $0.id == target.hostID }?.state.spaces.first { $0.id == remoteAgent(target)?.spaceID }
         } ?? selectedSpace ?? state.spaces.first
         if let space = creationSpace {
-            items.append(PaletteItem(
-                id: "action.newAgent",
-                kind: .action("newAgent"),
-                section: .commands,
-                title: "new agent in \(space.name)/",
-                shortcut: keys.display(.newAgent)
-            ))
+            items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
+                                     title: "New agent", subtitle: "in \(space.name)/",
+                                     shortcut: keys.display(.newAgent), icon: "plus"))
         }
-        items.append(PaletteItem(
-            id: "action.newAgentOptions",
-            kind: .action("newAgentOptions"),
-            section: .commands,
-            title: "new agent with options…",
-            shortcut: keys.display(.newAgentOptions)
-        ))
-        items.append(PaletteItem(
-            id: "action.newSpace",
-            kind: .action("newSpace"),
-            section: .commands,
-            title: "new space…",
-            shortcut: keys.display(.newSpace)
-        ))
-        items.append(PaletteItem(
-            id: "action.newShell",
-            kind: .action("newShell"),
-            section: .commands,
-            title: "new shell",
-            shortcut: keys.display(.newShell)
-        ))
+        items.append(PaletteItem(id: "action.newAgentOptions", kind: .action("newAgentOptions"), section: .commands,
+                                 title: "New agent with options…", shortcut: keys.display(.newAgentOptions),
+                                 icon: "slider.horizontal.3"))
+        items.append(PaletteItem(id: "action.newSpace", kind: .action("newSpace"), section: .commands,
+                                 title: "New space…", shortcut: keys.display(.newSpace), icon: "square.stack"))
         for connection in remoteHosts.connections where connection.phase == .connected {
-            items.append(PaletteItem(
-                id: "action.newRemoteSpace.\(connection.id.uuidString)",
-                kind: .remoteSpace(hostID: connection.id),
-                section: .commands,
-                title: "new space on ⌁ \(connection.config.name)…"
-            ))
+            items.append(PaletteItem(id: "action.newRemoteSpace.\(connection.id.uuidString)",
+                                     kind: .remoteSpace(hostID: connection.id), section: .commands,
+                                     title: "New space on \(connection.config.name)…", subtitle: "remote",
+                                     icon: "dot.radiowaves.left.and.right"))
         }
+        items.append(PaletteItem(id: "action.toggleSidebar", kind: .action("toggleSidebar"), section: .commands,
+                                 title: isSidebarVisible ? "Hide sidebar" : "Show sidebar",
+                                 shortcut: keys.display(.toggleSidebar), icon: "sidebar.left"))
+        items.append(PaletteItem(id: "action.settings", kind: .action("settings"), section: .commands,
+                                 title: "Settings…", shortcut: "⌘,", icon: "gearshape"))
+        for target in remoteWorktreeOperationIDs.keys {
+            items.append(PaletteItem(id: "operation.\(target.hostID).\(target.agentID)",
+                                     kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
+                                     section: .commands, title: "Check remote worktree operation",
+                                     subtitle: remoteHosts.connections.first { $0.id == target.hostID }?.config.name,
+                                     icon: "arrow.triangle.branch"))
+        }
+
+        // This thread: what can be done to the agent on screen.
         let actionAgent = selectedRemoteAgent.map { remoteAgent($0) } ?? selectedAgent
         if let agent = actionAgent {
-            items.append(PaletteItem(
-                id: "action.rename",
-                kind: .action("rename"),
-                section: .commands,
-                title: "rename \(agent.name)",
-                shortcut: keys.display(.renameAgent)
-            ))
-            items.append(PaletteItem(
-                id: "action.reviewDiff",
-                kind: .action("reviewDiff"),
-                section: .commands,
-                title: "review diff"
-            ))
-            items.append(PaletteItem(
-                id: "action.reviewPR",
-                kind: .action("reviewPR"),
-                section: .commands,
-                title: "review pr changes"
-            ))
+            items.append(PaletteItem(id: "action.rename", kind: .action("rename"), section: .thisThread,
+                                     title: "Rename", subtitle: agent.name, shortcut: keys.display(.renameAgent),
+                                     icon: "pencil"))
+            if visibleThread != nil {
+                items.append(PaletteItem(id: "action.model", kind: .action("model"), section: .thisThread,
+                                         title: "Choose model…", subtitle: visibleThread?.store.snapshot?.model.map(nativeModelShortName),
+                                         shortcut: keys.display(.modelPicker), icon: "cpu"))
+            }
+            items.append(PaletteItem(id: "action.reviewDiff", kind: .action("reviewDiff"), section: .thisThread,
+                                     title: "Review diff", subtitle: "working tree", icon: "plus.forwardslash.minus"))
+            items.append(PaletteItem(id: "action.reviewPR", kind: .action("reviewPR"), section: .thisThread,
+                                     title: "Review PR changes", icon: "arrow.triangle.pull"))
         }
-        // Settings is omitted: opening a Window scene needs the SwiftUI
-        // environment's openWindow, which a view-model action cannot reach
-        // (the ⌘, chord and app menu already cover it).
 
+        // Subagents, live and recent.
+        for (agentID, children) in childRuns.rows {
+            guard let agent = state.agents.first(where: { $0.id == agentID }) else { continue }
+            for child in children {
+                items.append(PaletteItem(id: "child.\(child.id)", kind: .child(agentID: agentID, child: child),
+                                         section: .subagents, title: child.label,
+                                         subtitle: Self.subagentContext(child, parent: agent.name),
+                                         icon: "arrow.turn.down.right"))
+            }
+        }
         for (target, children) in remoteChildren {
             guard let connection = remoteHosts.connections.first(where: { $0.id == target.hostID }), connection.phase == .connected,
                   let agent = remoteAgent(target) else { continue }
@@ -88,71 +80,53 @@ extension ShepherdViewModel {
                 items.append(PaletteItem(id: "remoteChild.\(target.hostID).\(target.agentID).\(child.id)",
                                          kind: .remoteChild(hostID: target.hostID, agentID: target.agentID, child: child),
                                          section: .subagents, title: child.label,
-                                         subtitle: "subagent · \(agent.name) · ⌁ \(connection.config.name)"))
-            }
-        }
-        for target in remoteWorktreeOperationIDs.keys {
-            items.append(PaletteItem(id: "operation.\(target.hostID).\(target.agentID)",
-                                     kind: .remoteOperation(hostID: target.hostID, agentID: target.agentID),
-                                     section: .commands, title: "check remote worktree operation",
-                                     subtitle: remoteHosts.connections.first { $0.id == target.hostID }?.config.name))
-        }
-        // Remote agents are destinations too — same rows as the sidebar's
-        // REMOTE section, reachable from the keyboard.
-        for connection in remoteHosts.connections where connection.phase == .connected {
-            for agent in connection.state.agents {
-                items.append(PaletteItem(
-                    id: "remoteAgent.\(connection.id.uuidString).\(agent.id.rawValue)",
-                    kind: .remoteAgent(hostID: connection.id, agentID: agent.id),
-                    section: .threads,
-                    title: agent.name,
-                    subtitle: "agent · ⌁ \(connection.config.name)"
-                ))
+                                         subtitle: Self.subagentContext(child, parent: "\(agent.name) · \(connection.config.name)"),
+                                         icon: "arrow.turn.down.right"))
             }
         }
 
-        // Destinations: agents (sidebar order), spaces, shells, live children.
+        // Destinations: agents in sidebar order, then remote agents and spaces.
         for agent in orderedAgents {
             let space = state.spaces.first { $0.id == agent.spaceID }
-            items.append(PaletteItem(
-                id: "agent.\(agent.id.rawValue)",
-                kind: .agent(agent.id),
-                section: .threads,
-                title: agent.name,
-                subtitle: space.map { "agent · \($0.name)" } ?? "agent"
-            ))
+            items.append(PaletteItem(id: "agent.\(agent.id.rawValue)", kind: .agent(agent.id), section: .agents,
+                                     title: agent.name, subtitle: space.map { "\($0.name) · \(Self.statusWord(agent.status))" },
+                                     icon: "bubble.left"))
         }
-        for space in visibleSpaces {
-            items.append(PaletteItem(
-                id: "space.\(space.id.rawValue)",
-                kind: .space(space.id),
-                section: .spaces,
-                title: space.name,
-                subtitle: "space"
-            ))
-        }
-        for shell in shellTabs {
-            items.append(PaletteItem(
-                id: "shell.\(shell.id.rawValue)",
-                kind: .shell(shell.id),
-                section: .shells,
-                title: Self.shellLabel(shell),
-                subtitle: "shell"
-            ))
-        }
-        for (agentID, children) in childRuns.rows {
-            guard let agent = state.agents.first(where: { $0.id == agentID }) else { continue }
-            for child in children {
-                items.append(PaletteItem(
-                    id: "child.\(child.id)",
-                    kind: .child(agentID: agentID, child: child),
-                    section: .subagents,
-                    title: child.label,
-                    subtitle: "subagent · \(agent.name)"
-                ))
+        for connection in remoteHosts.connections where connection.phase == .connected {
+            for agent in connection.state.agents {
+                items.append(PaletteItem(id: "remoteAgent.\(connection.id.uuidString).\(agent.id.rawValue)",
+                                         kind: .remoteAgent(hostID: connection.id, agentID: agent.id), section: .agents,
+                                         title: agent.name, subtitle: connection.config.name, icon: "bubble.left"))
             }
         }
+        for space in visibleSpaces {
+            items.append(PaletteItem(id: "space.\(space.id.rawValue)", kind: .space(space.id), section: .spaces,
+                                     title: space.name, subtitle: (space.path as NSString).abbreviatingWithTildeInPath,
+                                     icon: "folder"))
+        }
         return items
+    }
+
+    private static func statusWord(_ status: AgentStatus) -> String {
+        switch status {
+        case .working: "running"
+        case .blocked: "needs you"
+        case .idle: "idle"
+        case .done: "done"
+        }
+    }
+
+    /// "Fix remote nightly · running 4m" — the parent thread and the run's state.
+    private static func subagentContext(_ child: ChildRun, parent: String) -> String {
+        let state = nativeSubagentState(child)
+        let elapsed = nativeSubagentElapsed(child, now: Date()).map(nativeSubagentShortDuration)
+        let status = switch state {
+        case .running: elapsed.map { "running \($0)" } ?? "running"
+        case .needsYou: "needs you"
+        case .done: "done"
+        case .failed: "failed"
+        }
+        return "\(parent) · \(status)"
     }
 
     /// Agents' current sessions for content search, resolved off the state.
@@ -176,20 +150,13 @@ extension ShepherdViewModel {
             return PaletteItem(
                 id: "fuzzy.\(match.agentID.rawValue)",
                 kind: .agent(agent.id),
-                section: .fuzzyMatches,
+                section: .conversations,
                 title: agent.name,
-                subtitle: space.map { "agent · \($0.name)" } ?? "agent",
+                subtitle: space?.name,
+                icon: "text.magnifyingglass",
                 contentSnippet: match.snippet
             )
         }
-    }
-
-    /// ⌘digit while the palette is open: run the nth visible row. The
-    /// palette view keeps `paletteVisibleRows` current with its filter.
-    func runPaletteQuickPick(_ digit: Int) {
-        let rows = paletteVisibleRows
-        guard rows.indices.contains(digit - 1) else { return }
-        runPaletteItem(rows[digit - 1])
     }
 
     func runPaletteItem(_ item: PaletteItem) {
@@ -199,8 +166,6 @@ extension ShepherdViewModel {
             selectAgent(id)
         case .space(let id):
             selectSpace(id)
-        case .shell(let id):
-            selectShell(id)
         case .child(let agentID, let child):
             openChildInspector(agentID: agentID, child: child)
         case .remoteAgent(let hostID, let agentID):
@@ -216,8 +181,10 @@ extension ShepherdViewModel {
             case "newAgent": quickCreateAgent()
             case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
-            case "newShell": addShell()
             case "rename": renameSelectedAgent()
+            case "model": sendThreadCommand(.modelPicker)
+            case "toggleSidebar": toggleSidebar()
+            case "settings": showSettings = true
             case "reviewDiff": openUserReview()
             case "reviewPR": openUserPRReview()
             default: break

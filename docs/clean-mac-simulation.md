@@ -1,170 +1,181 @@
-# Simulating a "clean Mac" to test the Worktree Finalize setup wizard
+# Simulating a clean Mac for the Finalize setup checks
 
-Goal: make each prerequisite probed by `WorktreeSetupModel` fail on this machine, verify the
-wizard's guided remedies and the re-check verification pass, then restore everything.
+This procedure makes each prerequisite that `WorktreeSetupModel` probes fail on a development
+Mac. You then check each failure text and remedy, run the re-check pass, and restore
+everything. [worktrees.md](worktrees.md) describes the flow under test.
 
-**This machine's reality (captured 2026-08-29):** nix-darwin managed.
+## How the checks see your machine
 
-| Tool | Where it lives | Consequence |
-| --- | --- | --- |
-| `git` | `/etc/profiles/per-user/joshhartzell/bin/git` (nix per-user profile) | Read-only nix store — cannot uninstall casually; **mask via PATH shim** |
-| `gh` | `/etc/profiles/per-user/joshhartzell/bin/gh` (nix per-user profile) | Same — **mask via PATH shim** |
-| CLT / Xcode | `/Applications/Xcode-26.4.0.app` selected | CLT-missing case not reachable here — VM only (Tier C) |
-| git identity | `~/.gitconfig`: `Josh Hartzell` / `joshuahartzell@gmail.com` | Unset the two keys, restore after |
-| gh auth | keyring, account `jhartzell` | `gh auth logout`, re-login after |
+The setup probes run through `/bin/zsh -l -c`, so they see whatever a login shell sees. A shim
+prepended to `PATH` in `~/.zprofile` therefore hides a tool from Shepherd. It also hides it from
+every new terminal you open while the simulation is active, so keep the test window short and
+always run the Restore section.
 
-The wizard probes through `zsh -l -c`, so anything visible to a login shell is visible to the
-wizard. Shims prepended in `~/.zprofile` therefore shadow the nix binaries for Shepherd *and*
-for every new terminal you open while the simulation is active — plan a test window, then
-restore.
+`GitWorktree` is unaffected by the shims. It creates and removes worktrees and probes for
+unreconciled work, and it calls `/usr/bin/git` by absolute path. You can still create a test
+worktree while "git" reads as missing in the setup checks. The finalize pipeline, the
+commit-count preview, and PR descriptions all resolve through the login shell, so they *do* see
+the shims.
 
-> **Safe by construction:** `GitWorktree` (create/remove worktrees, unreconciled-work probe)
-> calls `/usr/bin/git` by absolute path and is untouched by the shims. Only the wizard probes
-> and the finalize pipeline resolve through the login shell. So you can still create the test
-> worktree while "git" reads as missing in the wizard.
+Before you start, write down what you will need to restore:
 
----
+```sh
+git config --global --get user.name
+git config --global --get user.email
+gh auth status --hostname github.com   # which account, and how it signed in
+command -v git gh                      # where the real binaries live
+```
 
-## Tier A — 5-minute reversible simulation (this machine)
+If a package manager like nix-darwin owns `git` and `gh`, you cannot uninstall them casually.
+Mask them with a `PATH` shim (step 1) instead.
 
-Exercises 4 of the 5 failure rows and every remedy except the CLT installer.
+## Tier A: reversible simulation on this Mac (about 5 minutes)
 
-### 1. Set up the shim directory (breaks `git installed` and `GitHub CLI` rows)
+This tier exercises four of the five rows and every remedy except the Command Line Tools
+installer.
+
+### 1. Add a git shim (breaks "Git installed")
 
 ```sh
 mkdir -p ~/.shepherd-clean-sim/bin
 printf '#!/bin/sh\nexit 127\n' > ~/.shepherd-clean-sim/bin/git
-printf '#!/bin/sh\nexit 127\n' > ~/.shepherd-clean-sim/bin/gh
-chmod +x ~/.shepherd-clean-sim/bin/git ~/.shepherd-clean-sim/bin/gh
-# Prepend for login shells (what the wizard uses). Marker comment for clean removal.
+chmod +x ~/.shepherd-clean-sim/bin/git
+# Prepend for login shells; the marker comment makes removal exact.
 echo 'export PATH="$HOME/.shepherd-clean-sim/bin:$PATH" # shepherd-clean-sim' >> ~/.zprofile
+zsh -l -c 'git --version; echo git-exit=$?'   # expect 127
 ```
 
-Verify the mask works exactly the way the wizard will see it:
+While the git shim is active, "Git identity" and "Origin reachable" also fail, because they run
+git. To test those rows on their own, remove the git shim and use steps 2 and 4.
 
-```sh
-zsh -l -c 'git --version; echo git-exit=$?; gh --version; echo gh-exit=$?'
-# expect both exits = 127
-```
+A stub `gh` does **not** break the "GitHub CLI" row. The probe is
+`command -v gh && gh --version | head -1`, and the pipeline's exit status is `head`'s, so a stub
+that exits 127 still passes with an empty detail. It does break "GitHub CLI signed in". To see
+the real not-installed failure, use Tier B, where `gh` is genuinely absent.
 
-To break **only** gh (test rows independently): create only the `gh` stub.
-
-### 2. Break `git identity`
+### 2. Break "Git identity"
 
 ```sh
 git config --global --unset user.name
 git config --global --unset user.email
 ```
 
-### 3. Break `gh authenticated` (do this *before* step 1's gh shim, or temporarily
-remove the shim — the logout needs the real gh)
+### 3. Break "GitHub CLI signed in"
 
 ```sh
 gh auth logout --hostname github.com
 ```
 
-### 4. Break `origin reachable` — use a scratch repo, never your real checkouts
+### 4. Break "Origin reachable" in a scratch repo (never a real checkout)
 
 ```sh
 mkdir -p ~/tmp/clean-sim-repo && cd ~/tmp/clean-sim-repo
 git init -q . && git commit -q --allow-empty -m init   # no origin remote on purpose
 ```
 
-Add `~/tmp/clean-sim-repo` as a Space in Shepherd (Dev build), create a worktree agent on it,
-then open Finalize — the `origin reachable` row must fail with "origin remote missing or
-unreachable". For the *credential-failure* variant (remote exists, auth doesn't):
+Add `~/tmp/clean-sim-repo` as a space in the `Shepherd (Dev)` build. Create a worktree agent on
+it (New Worktree…; the base falls back to the current branch because there is no origin). Then
+open Finalize Worktree….
+
+- **Without the git shim:** the row shows the last line of `git ls-remote`'s stderr that names
+  the problem (git's closing advice about access rights is skipped), for example "fatal:
+  'origin' does not appear to be a git repository".
+- **With the shim:** stderr is empty, so the row shows "origin remote missing or unreachable".
+
+For the credential-failure variant, where the remote exists but auth doesn't, run:
 
 ```sh
-git remote add origin https://github.com/jhartzell/definitely-private-nonexistent.git
+git remote add origin https://github.com/<you>/definitely-private-nonexistent.git
 ```
 
-### 5. Restart the Dev build
+### 5. Relaunch the Dev build
 
-Login-shell environment is captured per spawned process — quit and relaunch Shepherd (Dev)
-after changing shims so probes and shells see the simulated world.
+Each process captures the login-shell environment when it spawns. Quit and relaunch
+`Shepherd (Dev)` after changing shims, so the probes and new terminal panes see the simulated
+machine.
 
----
+## What the setup checks must show
 
-## Test matrix — what the wizard must show
+Open the worktree agent's context menu and choose **Finalize Worktree…**:
 
-Open a worktree agent's context menu → **Finalize Worktree…** with everything broken:
-
-| Row | Expected failure text | Remedy shown | Remedy verification |
+| Row | Expected failure | Remedy shown | Verify the remedy |
 | --- | --- | --- | --- |
-| git installed | "git not found on PATH" | "install command line tools…" button | Button fires `xcode-select --install` (Apple GUI appears; cancel it — CLT is already present here) |
-| git identity | "git user.name / user.email are not set" | inline name/email fields + apply | Fill both, apply → row re-probes and turns green with `name · email` |
-| origin reachable | "origin remote missing or unreachable" (or the git stderr tail) | explanation text | `git remote add origin <real repo>` in the scratch repo, Re-run Checks → green |
-| GitHub CLI | "GitHub CLI not installed" | `brew install gh` + copy button | Copy puts the command on the clipboard (on this machine, restore = remove shim instead) |
-| gh authenticated | "not authenticated — run gh auth login" | "open login shell…" | Opens a Shepherd shell named `gh login` with `gh auth login` pre-typed; complete it (needs the shim removed so real gh resolves), come back, Re-run Checks → green |
+| Git installed | "git not found on PATH" | "Install command line tools…" | Runs `xcode-select --install`. Apple's installer appears; cancel it if the tools are already installed |
+| Git identity | "git user.name / user.email are not set" | Name and email fields, then Apply | Fill both and apply. The row re-checks and shows `name · email` |
+| Origin reachable | git's last stderr line that isn't its closing advice, or "origin remote missing or unreachable" | Text asking for a pushable `origin` | Run `git remote add origin <real repo>` in the scratch repo, then Re-run checks. The row passes |
+| GitHub CLI | "GitHub CLI not installed" (Tier B only) | `brew install gh` with Copy | Copy puts the command on the clipboard |
+| GitHub CLI signed in | "not authenticated — run gh auth login" | "Open a terminal for gh login…" | Closes the sheet and opens a terminal pane beside the agent's thread with `gh auth login` typed in. Finish the login (the real `gh` must resolve), reopen Finalize, then Re-run checks. The row passes |
 
-Then the **verification pass**: with everything repaired, "Re-run Checks" must animate every
-row pending → checking → green, show "✓ all set — ready to finalize", and enable **Continue**.
-Continue must land on the input phase with base pre-filled from `origin/HEAD` (or `main`).
+Then run the verification pass. With everything repaired, "Re-run checks" moves every row
+through checking to passing. It shows "All set — ready to finalize" and enables **Continue**.
+Continue lands on the input phase. The PR base is pre-filled from the agent's recorded base
+(`origin/` stripped); without one it falls back to `origin/HEAD`'s branch, then `main`.
 
-Finally run one real finalize against a scratch **GitHub** repo (create a throwaway repo,
-push the scratch repo to it) and confirm: commit → push → PR URL captured → worktree gone →
-local branch gone → agent retired on Done → PR visible on GitHub with the remote branch
-still present.
+Finally, run one real finalize against a throwaway GitHub repository (push the scratch repo to
+it). Confirm, in order:
 
----
+1. The commit is made.
+2. The branch is pushed.
+3. The PR URL is captured.
+4. The worktree is removed.
+5. The local branch is deleted.
+6. The agent is retired on Done.
+7. The PR is visible on GitHub, and the remote branch still exists.
 
-## Restore (undo everything)
+## Restore
 
 ```sh
-# 1. Remove the shims + PATH line
+# 1. Remove the shims and the PATH line
 rm -rf ~/.shepherd-clean-sim
 sed -i '' '/# shepherd-clean-sim/d' ~/.zprofile
 
-# 2. Restore identity
-git config --global user.name  'Josh Hartzell'
-git config --global user.email 'joshuahartzell@gmail.com'
+# 2. Restore your identity (the values you wrote down)
+git config --global user.name  '<your name>'
+git config --global user.email '<your email>'
 
-# 3. Re-authenticate gh
-gh auth login          # account jhartzell, github.com, HTTPS
+# 3. Sign gh back in
+gh auth login
 
-# 4. Delete the scratch repo (and its worktrees, if any leaked)
+# 4. Delete the scratch repo and any worktrees it leaked
 rm -rf ~/tmp/clean-sim-repo ~/tmp/clean-sim-repo-*
 
-# 5. Verify the real world is back — the same probes the wizard runs:
+# 5. Run the same probes the setup checks run
 zsh -l -c 'git --version && git config --get user.name && git config --get user.email \
   && gh --version | head -1 && gh auth status --hostname github.com'
 ```
 
-Restart Shepherd (Dev) once more and confirm the wizard skips straight to the input phase.
+Relaunch `Shepherd (Dev)` and confirm Finalize skips straight to the input phase.
 
----
+## Tier B: a fresh macOS user account (about 15 minutes)
 
-## Tier B — fresh macOS user account (higher fidelity, ~15 min)
+In System Settings → Users & Groups, add a Standard user and log in as that user.
 
-System Settings → Users & Groups → add a Standard user → log in as them.
+That account is genuinely clean:
 
-What you get genuinely clean: no `~/.gitconfig` (identity fails), no gh auth, **no per-user
-nix profile** — so `gh` is truly absent, exercising the real not-installed path with no shims.
-`/usr/bin/git` resolves against the machine-wide Xcode/CLT install, so the git row passes —
-which is also the realistic new-user state. Run the Dev build from your DerivedData path (it
-is world-readable) with a per-account support dir.
+- There is no `~/.gitconfig`, so "Git identity" fails.
+- `gh` is not authenticated.
+- If `gh` came from your own user's package profile, it is absent, which exercises the real
+  "GitHub CLI not installed" path.
 
-Caveats: Homebrew at `/opt/homebrew` may or may not be on the new user's PATH depending on
-their shell files — the `brew install gh` remedy is realistic there. Nothing in your real
-account is touched; delete the account afterwards.
+`/usr/bin/git` resolves against the machine-wide Xcode or Command Line Tools install, so the git
+row passes, which is also what a real new user sees.
 
-## Tier C — macOS VM (gold standard, exercises the CLT row)
+Run the Dev build from your DerivedData path (it is world-readable). Give it the account's own
+support directory with `SHEPHERD_SUPPORT_DIR`. Homebrew at `/opt/homebrew` may or may not be on
+the new user's `PATH`, so the `brew install gh` remedy is realistic there. Nothing in your own
+account is touched. Delete the account afterwards.
 
-The only way to see the "Apple's Command Line Tools are not installed" failure and honestly
-test its installer button: a macOS VM with no Xcode/CLT (UTM or `tart`, macOS guest).
-`/usr/bin/git` exists as Apple's stub there, `xcode-select -p` fails → the wizard's exit-2
-branch fires. Everything in Tiers A/B also reproduces in the VM. This is the closest thing to
-a true first-run customer machine; do one full wizard + finalize pass here before shipping
-the feature.
+## Tier C: a macOS VM (the only way to exercise the CLT row)
 
----
+The "Apple's Command Line Tools are not installed" failure needs a machine without Xcode or the
+Command Line Tools: a macOS guest in UTM or `tart`. There, `/usr/bin/git` is Apple's stub and
+`xcode-select -p` fails, so the probe's exit-2 branch fires. Everything in Tiers A and B also
+reproduces in the VM. Do one full setup-and-finalize pass here before shipping changes to this
+flow.
 
-## Known deltas to keep in mind while testing
+## Known gaps
 
-- The gh remedy text says `brew install gh`; on nix-darwin machines the real fix is
-  `home.packages`/`environment.systemPackages`. Acceptable for v1 (brew is the mainstream
-  path); revisit if wizard telemetry ever matters.
-- The CLT remedy button cannot be meaningfully verified on this machine (CLT present) — VM
-  only.
-- Shims leak into every login shell while active (your own terminals included). Keep the
-  simulation window short and always run the Restore section.
+- The `gh` remedy says `brew install gh`. On a nix-managed Mac the real fix is the nix
+  configuration.
+- The Command Line Tools installer button can only be verified meaningfully in Tier C.
+- A stub cannot fail the "GitHub CLI" row (see step 1).

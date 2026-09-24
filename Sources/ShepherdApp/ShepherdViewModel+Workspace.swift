@@ -14,10 +14,7 @@ extension ShepherdViewModel {
             state: state,
             selectedSpaceID: selectedSpaceID,
             selectedAgentID: selectedAgentID,
-            inspectingAgentID: inspectingAgentID,
-            selectedShellID: selectedShellID,
             remoteSelectionActive: selectedRemoteAgent != nil,
-            visitedTabIDs: visitedSpaceShellTabs,
             parkedTabIDs: parkedTabIDs
         )
     }
@@ -72,12 +69,9 @@ extension ShepherdViewModel {
         syncParkSweepTimer()
     }
 
-    /// Record the currently visible layout so it stays mounted after
-    /// selection moves on (space shell tabs mount lazily — see
-    /// `WorkspaceSelection`). Called by the workspace view on every
-    /// active-tab change, which covers all selection paths.
+    /// Called by the workspace view on every active-tab change, which covers all selection
+    /// paths: keeps cold-parking bookkeeping current.
     func noteActiveTabVisited() {
-        if let id = activeTabID { visitedSpaceShellTabs.insert(id) }
         noteActiveTabForParking()
     }
 
@@ -165,6 +159,22 @@ extension ShepherdViewModel {
         focusedPaneID = newPane.id
     }
 
+    /// Split a terminal pane off the agent's thread and type `command` into its fresh shell
+    /// (visible and cancelable, not a hidden exec).
+    func openTerminalPane(besideAgent agent: Agent, running command: String) {
+        guard let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return }
+        let anchor = agent.paneID.flatMap { tab.layout.contains($0) ? $0 : nil } ?? tab.layout.firstLeaf.id
+        guard let leaf = tab.layout.leaf(withID: anchor) else { return }
+        let pane = LeafPane(cwd: leaf.cwd)
+        guard let layout = tab.layout.splitting(pane: anchor, axis: .vertical, newPane: pane) else { return }
+        setLayout(layout, forTab: tab.id)
+        focusedPaneID = pane.id
+        Task {
+            guard let session = await sessions.awaitSession(forPane: pane.id, timeout: .seconds(10)) else { return }
+            server.write(sessionID: session, data: Data((command + "\n").utf8))
+        }
+    }
+
     func closeFocusedPane() {
         if let remote = selectedRemoteAgent {
             if remoteInspectingAgent == remote, let tab = remoteVisibleTab(remote) {
@@ -207,14 +217,8 @@ extension ShepherdViewModel {
             NSSound.beep()
             return
         }
-        if closeLocalPane(focus) {
-            return
-        } else if tab.isShell {
-            // ⌘W on a shell's last pane closes the shell — that is what
-            // closing "the shell" means; there is no process worth guarding.
-            deleteShell(tab.id)
-        } else {
-            // A layout always keeps its last pane; exit the process instead.
+        if !closeLocalPane(focus) {
+            // A layout always keeps its last pane.
             NSSound.beep()
         }
     }
@@ -278,24 +282,8 @@ extension ShepherdViewModel {
         let tab = state.tabs[tabIndex]
         let exitedAgentID = tab.layout.leaf(withID: paneID)?.agentID
 
-        if let inspected = tab.inspectorFor {
-            // The inspector's shell ended (user exited it): the ephemeral
-            // layout goes with it, and the workspace falls back to the
-            // agent's terminal.
-            sessions.detachPane(paneID)
-            state.tabs.remove(at: tabIndex)
-            if inspectingAgentID == inspected { inspectingAgentID = nil }
-            inspectedChild.removeValue(forKey: inspected)
-            sessions.stateDidChange(state)
-            let tabID = tab.id
-            enqueuePersistence("inspector exit cleanup") { try await $0.removeTab(tabID) }
-            syncFocus()
-            return
-        }
-
         if let agentID = exitedAgentID {
             cancelReviews(for: agentID)
-            endAgentLaunch(agentID)
             childRuns.clear(agent: agentID)
             state.agents.removeAll { $0.id == agentID }
             if selectedAgentID == agentID {
@@ -361,7 +349,7 @@ extension ShepherdViewModel {
               let branch = agent.worktreeBranch,
               let repo = state.spaces.first(where: { $0.id == agent.spaceID })?.path else { return }
         let path = agent.worktreePath ?? GitWorktree.destination(repo: repo, branch: branch)
-        let sessionIDs = state.tabs.filter { $0.id == agent.tabID || $0.inspectorFor == id }
+        let sessionIDs = state.tabs.filter { $0.id == agent.tabID }
             .flatMap { $0.layout.leaves.compactMap(\.sessionID) }
         Task {
             do {
@@ -385,12 +373,19 @@ extension ShepherdViewModel {
         }
     }
 
-    func deleteAgent(_ id: AgentID) {
+    /// `completion` hears the outcome once the deletion is persisted (a peer's `agent_delete`
+    /// waits on it).
+    func deleteAgent(_ id: AgentID, completion: (@MainActor (Error?) -> Void)? = nil) {
         enqueuePersistence("agent deletion") { [weak self] _ in
             guard let self else { return }
-            do { try await self.deleteAgentPersisted(id) }
-            catch {
-                await MainActor.run { self.remoteActionError = String(describing: error) }
+            do {
+                try await self.deleteAgentPersisted(id)
+                await MainActor.run { completion?(nil) }
+            } catch {
+                await MainActor.run {
+                    self.remoteActionError = String(describing: error)
+                    completion?(error)
+                }
                 throw error
             }
         }
@@ -405,12 +400,12 @@ extension ShepherdViewModel {
             guard !hostBusyWorktrees.contains(path) else { throw GitWorktree.Failure(message: "A worktree operation is running for this checkout") }
         }
         let doomedTabs = state.tabs.filter { tab in
-            tab.inspectorFor == id || state.agents.contains { $0.id == id && $0.tabID == tab.id }
+            state.agents.contains { $0.id == id && $0.tabID == tab.id }
         }
         try await server.deleteAgent(id)
         for leaf in doomedTabs.flatMap({ $0.layout.leaves }) { sessions.detachPane(leaf.id) }
         cancelReviews(for: id)
-        endAgentLaunch(id)
+        subagentInspector.runByAgent.removeValue(forKey: id)
         childRuns.clear(agent: id)
         if selectedAgentID == id { selectPreviousAgent(after: id) }
         else { selectionHistory.removeAll { $0 == id } }

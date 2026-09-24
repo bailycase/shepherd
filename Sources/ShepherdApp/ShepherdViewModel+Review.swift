@@ -21,6 +21,29 @@ extension ShepherdViewModel {
         }
     }
 
+    /// Open the agent's review (right pane) scrolled to `path`, reusing an open one: the
+    /// thread's "review ›" links land here.
+    func openReview(agentID: AgentID, path: String?) {
+        let existing = reviewSessions.values.first { $0.agentID == agentID }
+        subagentInspector.runByAgent.removeValue(forKey: agentID)
+        if existing == nil { beginReview(agentID: agentID, cwd: nil, reference: nil, respond: nil) }
+        focus(reviewSessions.values.first { $0.agentID == agentID }, path: path)
+    }
+
+    func openRemoteReview(_ target: RemoteAgentRef, path: String?) {
+        subagentInspector.remoteRuns.removeValue(forKey: target)
+        if remoteReviews[target] == nil { openRemoteReview(target, pullRequest: false) }
+        focus(remoteReviews[target], path: path)
+    }
+
+    /// Scroll to `path` now or, while the diff loads, once it arrives (ReviewPane resolves
+    /// a pending `focusFile` on appear and whenever `focusRequest` changes).
+    private func focus(_ session: ReviewSession?, path: String?) {
+        guard let session, let path else { return }
+        session.focusFile = path
+        session.focusRequest = UUID()
+    }
+
     /// The header button toggles: open a review pane for the selected agent,
     /// or close the one already open (comments are discarded like cancel).
     func openUserReview() {
@@ -36,6 +59,7 @@ extension ShepherdViewModel {
             cancelReview(existing)
             return
         }
+        subagentInspector.runByAgent.removeValue(forKey: agent.id)
         beginReview(agentID: agent.id, cwd: nil, reference: nil, respond: nil)
     }
 
@@ -51,42 +75,111 @@ extension ShepherdViewModel {
             NSSound.beep()
             return
         }
+        subagentInspector.runByAgent.removeValue(forKey: agent.id)
         if let existing = reviewSessions.values.first(where: { $0.agentID == agent.id }) {
-            cancelReview(existing)
+            reloadReview(existing, reference: "pr")
+            return
         }
         beginReview(agentID: agent.id, cwd: nil, reference: "pr", respond: nil)
     }
 
     func submitReview(_ session: ReviewSession) {
+        finishReview(session, sending: formatReview(files: session.files, comments: session.comments, summary: session.summary, reference: session.reference))
+    }
+
+    /// Commit: the agent commits what is under review (the review's comments ride along).
+    func commitReview(_ session: ReviewSession) {
+        let hasNotes = !session.comments.isEmpty || !session.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let review = hasNotes ? "\n\n" + formatReview(files: session.files, comments: session.comments, summary: session.summary, reference: session.reference) : ""
+        finishReview(session, sending: "Commit these changes." + (hasNotes ? " Address the review below first." : "") + review)
+    }
+
+    /// Send `text` as the agent's next turn and close the review.
+    private func finishReview(_ session: ReviewSession, sending text: String) {
         if let target = remoteReviews.first(where: { $0.value === session })?.key {
             guard !session.isSubmitting else { return }
             session.isSubmitting = true
-            let text = formatReview(files: session.files, comments: session.comments, summary: session.summary, reference: session.reference)
             Task {
                 defer { session.isSubmitting = false }
                 do {
                     if session.hostReviewPane {
                         _ = try await remoteHosts.agentQuery(target, query: .finishReview(paneID: session.paneID, text: text))
-                    } else { try await remoteHosts.submitReview(target, text: text) }
+                    } else { try await remoteHosts.sendUserMessage(target, text: text) }
                     if remoteReviews[target] === session { remoteReviews.removeValue(forKey: target) }
                 } catch { remoteActionError = String(describing: error) }
             }
             return
         }
-        guard reviewSessions[session.paneID] === session else { return }
-        let text = formatReview(
-            files: session.files,
-            comments: session.comments,
-            summary: session.summary,
-            reference: session.reference
-        )
-        if let piSessionID = piSessionID(for: session.agentID) {
-            server.write(sessionID: piSessionID, data: Data((text + "\n").utf8))
-        } else {
-            NSSound.beep()
+        guard reviewSessions[session.paneID] === session, !session.isSubmitting else { return }
+        session.isSubmitting = true
+        let agentID = session.agentID
+        Task {
+            defer { session.isSubmitting = false }
+            do {
+                try await sendUserMessage(text, to: agentID)
+                if reviewSessions[session.paneID] === session { removeReview(session) }
+            } catch { remoteActionError = String(describing: error) }
         }
-        reviewSessions.removeValue(forKey: session.paneID)
-        closeLocalPane(session.paneID)
+    }
+
+    /// Discard one file's changes (the pane confirmed first) in `cwd`, the directory its diff
+    /// came from, then reload the diff in place. A review retargeted meanwhile is left alone.
+    func revertReviewFile(_ session: ReviewSession, file: DiffFile, in cwd: String) {
+        guard reviewSessions[session.paneID] === session, !session.isPRMode else { return }
+        Task {
+            do {
+                try await Task.detached { try GitDiff.revert(file, cwd: cwd) }.value
+            } catch {
+                remoteActionError = "Could not revert \(file.displayPath): \(error)"
+            }
+            guard reviewSessions[session.paneID] === session, session.cwd == cwd else { return }
+            session.comments.removeAll { $0.fileID == file.id }
+            session.viewed.remove(file.id)
+            reloadReview(session, reference: session.reference)
+        }
+    }
+
+    /// Open a reviewed file in Xcode (the system default editor when Xcode is absent).
+    func openReviewFile(_ session: ReviewSession, file: DiffFile) {
+        let cwd = session.cwd
+        Task {
+            let root = await Task.detached { GitDiff.repositoryRoot(cwd: cwd) }.value
+            let url = URL(fileURLWithPath: root).appendingPathComponent(file.displayPath)
+            if let xcode = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.dt.Xcode") {
+                _ = try? await NSWorkspace.shared.open([url], withApplicationAt: xcode, configuration: NSWorkspace.OpenConfiguration())
+            } else {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    /// The pane's actions for `session`, local or remote.
+    func reviewActions(for session: ReviewSession, remote: Bool) -> ReviewActions {
+        ReviewActions(
+            setPullRequest: { [weak self] pr in self?.reloadReview(session, reference: pr ? "pr" : nil) },
+            requestChanges: { [weak self] in self?.submitReview(session) },
+            commit: { [weak self] in self?.commitReview(session) },
+            close: { [weak self] in self?.cancelReview(session) },
+            revert: remote ? nil : { [weak self] file, cwd in self?.revertReviewFile(session, file: file, in: cwd) },
+            open: remote ? nil : { [weak self] file in self?.openReviewFile(session, file: file) },
+            focusThread: { [weak self] in
+                guard let self else { return }
+                if remote { self.remoteFocusedPaneID = nil } else { self.focusedPaneID = self.activeTab?.layout.firstLeaf.id }
+            }
+        )
+    }
+
+    /// Queue `text` as the agent's next user turn: delivered now when idle, as a follow-up
+    /// when the agent is mid-turn.
+    func sendUserMessage(_ text: String, to agentID: AgentID) async throws {
+        guard case .snapshot(let snapshot) = try await server.nativeThread(agentID: agentID, request: .snapshot()),
+              !snapshot.piSessionID.isEmpty else {
+            throw AgentStartFailure(message: "The agent is not ready yet. Try again in a moment.")
+        }
+        let result = try await server.nativeThread(agentID: agentID, request: .send(
+            expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
+            operationID: UUID(), text: text, delivery: .followUp))
+        if case .failure(_, let message) = result { throw AgentStartFailure(message: message) }
     }
 
     func cancelReview(_ session: ReviewSession) {
@@ -101,8 +194,14 @@ extension ShepherdViewModel {
             return
         }
         guard reviewSessions[session.paneID] === session else { return }
+        removeReview(session)
+    }
+
+    /// Reviews dock in the right pane; a review a remote client adopted from a layout leaf
+    /// (older hosts split the layout) also closes that leaf.
+    private func removeReview(_ session: ReviewSession) {
         reviewSessions.removeValue(forKey: session.paneID)
-        closeLocalPane(session.paneID)
+        if state.tabs.contains(where: { $0.layout.contains(session.paneID) }) { closeLocalPane(session.paneID) }
     }
 
     func discardReviewSession(_ paneID: PaneID) {
@@ -117,13 +216,8 @@ extension ShepherdViewModel {
     }
 
     func pruneReviewSessions() {
-        let liveReviewPanes = Set(
-            state.tabs.flatMap { $0.layout.leaves }.filter { $0.isReview == true }.map(\.id)
-        )
         let liveAgents = Set(state.agents.map(\.id))
-        let doomed = reviewSessions.values.filter {
-            !liveReviewPanes.contains($0.paneID) || !liveAgents.contains($0.agentID)
-        }
+        let doomed = reviewSessions.values.filter { !liveAgents.contains($0.agentID) }
         for session in doomed {
             reviewSessions.removeValue(forKey: session.paneID)
         }
@@ -143,7 +237,6 @@ extension ShepherdViewModel {
         session.isPRMode = reference == "pr"
         session.isLoading = true
         session.loadError = nil
-        session.files = []
         loadReviewDiff(session)
     }
 
@@ -180,56 +273,40 @@ extension ShepherdViewModel {
     ) {
         guard let agent = state.agents.first(where: { $0.id == agentID }),
               let tab = state.tabs.first(where: { $0.id == agent.tabID }),
-              let piPane = tab.layout.leaves.first(where: { $0.agentID == agentID }) else {
+              let piPane = tab.layout.leaves.first(where: { $0.agentID == agentID }) ?? tab.layout.leaves.first else {
             respond?(.failed(code: "no_such_agent", message: "unknown agent \(agentID)"))
             return
         }
 
+        // Never changes the agent's own directory; no cwd means the agent's, even when the open
+        // review targets another repository.
         let cwdPath = ((requestedCwd ?? piPane.cwd) as NSString).expandingTildeInPath
 
-        // One review pane per agent, regardless of entry point: an agent
-        // re-requesting a review reloads the open pane instead of splitting
-        // a second one.
+        // One review per agent, regardless of entry point: an agent re-requesting a review
+        // reloads the open one and brings it back in front of an inspected subagent.
         if let existing = reviewSessions.values.first(where: { $0.agentID == agentID }) {
-            if existing.cwd != cwdPath {
-                existing.cwd = cwdPath
-                existing.comments = []
-                existing.summary = ""
-                setLayout(tab.layout.updatingLeaf(existing.paneID) { $0.cwd = cwdPath }, forTab: tab.id)
-            }
+            if existing.cwd != cwdPath { existing.retarget(cwd: cwdPath) }
+            subagentInspector.runByAgent.removeValue(forKey: agentID)
             reloadReview(existing, reference: reference)
-            if isVisibleTab(tab) {
-                focusedPaneID = existing.paneID
-            }
             respond?(.submitted(
                 text: "Review pane already open; reloaded. The user's review will arrive as a message when they submit."
             ))
             return
         }
 
-        let reviewPane = LeafPane(cwd: cwdPath, isReview: true)
-        // Dock beside the entire terminal layout, never inside an individual pane.
-        let layout = PaneNode.split(
-            axis: .vertical,
-            ratio: 0.5,
-            first: tab.layout,
-            second: .leaf(reviewPane)
-        )
-
-        let visible = isVisibleTab(tab)
-        setLayout(layout, forTab: tab.id)
+        // The review docks in the agent's right pane: a view slot, not a layout leaf, so it
+        // never touches the persisted layout.
         let session = ReviewSession(
             agentID: agentID,
-            paneID: reviewPane.id,
+            paneID: PaneID(),
             cwd: cwdPath,
+            agentCwd: (piPane.cwd as NSString).expandingTildeInPath,
             reference: reference,
             isLoading: true
         )
         session.isPRMode = reference == "pr"
-        reviewSessions[reviewPane.id] = session
-        if visible {
-            focusedPaneID = reviewPane.id
-        }
+        subagentInspector.runByAgent.removeValue(forKey: agentID)
+        reviewSessions[session.paneID] = session
         // The tool returns immediately; the review itself arrives later as a
         // typed prompt message when the user submits.
         respond?(.submitted(
@@ -237,11 +314,5 @@ extension ShepherdViewModel {
         ))
 
         loadReviewDiff(session)
-    }
-
-    private func piSessionID(for agentID: AgentID) -> SessionID? {
-        guard let agent = state.agents.first(where: { $0.id == agentID }),
-              let tab = state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }
-        return tab.layout.leaves.first(where: { $0.agentID == agentID })?.sessionID
     }
 }

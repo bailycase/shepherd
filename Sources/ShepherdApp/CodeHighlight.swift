@@ -1,5 +1,7 @@
 import Foundation
+import os
 import SwiftUI
+import ShepherdUI
 import SwiftTreeSitter
 import TreeSitterSwift
 import TreeSitterPython
@@ -16,9 +18,12 @@ import TreeSitterJSON
 
 private final class CodeHighlightBundleToken: NSObject {}
 
-@MainActor
+/// Tree-sitter syntax colors. Not main-actor bound: the review's diff and the thread's code
+/// blocks highlight off the main thread. Compiled grammars are shared (a `Query` is
+/// thread-safe); each call parses with its own `Parser`.
 enum CodeHighlight {
-    struct Style {
+    /// Highlight colors, from the theme's syntax roles (dynamic: they follow light/dark).
+    struct Style: Sendable {
         let comment: Color
         let string: Color
         let number: Color
@@ -26,19 +31,31 @@ enum CodeHighlight {
         let type: Color
         let function: Color
 
-        init(palette: [String]) {
-            let fallback = palette.first.map { Color(hex: $0) } ?? .clear
-            func color(at index: Int) -> Color {
-                palette.indices.contains(index) ? Color(hex: palette[index]) : fallback
-            }
-
-            comment = color(at: 8)
-            string = color(at: 2)
-            number = color(at: 3)
-            keyword = color(at: 4)
-            type = color(at: 5)
-            function = color(at: 6)
+        @MainActor static var theme: Style {
+            Style(comment: Color.nw.synComment, string: Color.nw.synString, number: Color.nw.synNumber,
+                  keyword: Color.nw.synKeyword, type: Color.nw.synType, function: Color.nw.synFunction)
         }
+    }
+
+    /// A pseudo path whose extension picks the grammar for a Markdown fence's language word.
+    static func path(forFenceLanguage language: String?) -> String? {
+        guard let language = language?.lowercased() else { return nil }
+        let ext: String? = switch language {
+        case "swift": "swift"
+        case "python", "py": "py"
+        case "go", "golang": "go"
+        case "rust", "rs": "rs"
+        case "javascript", "js", "jsx", "mjs": "js"
+        case "typescript", "ts": "ts"
+        case "tsx": "tsx"
+        case "c", "h": "c"
+        case "cpp", "c++", "cc", "hpp": "cpp"
+        case "bash", "sh", "zsh", "shell", "console": "sh"
+        case "ruby", "rb": "rb"
+        case "json", "jsonc": "json"
+        default: nil
+        }
+        return ext.map { "fence.\($0)" }
     }
 
     private enum GrammarID: Hashable {
@@ -109,13 +126,15 @@ enum CodeHighlight {
         }
     }
 
-    private struct CachedGrammar {
-        let parser: Parser
+    private struct CachedGrammar: Sendable {
         let language: Language
         let query: Query
     }
 
-    private static var grammarCache: [GrammarID: CachedGrammar] = [:]
+    private static let grammarCache = OSAllocatedUnfairLock<[GrammarID: CachedGrammar]>(initialState: [:])
+
+    /// Whether `path`'s extension has a grammar (other files stay plain).
+    static func supports(path: String) -> Bool { GrammarID(path: path) != nil }
 
     static func highlightLines(_ lines: [String], path: String, style: Style) -> [AttributedString] {
         guard !lines.isEmpty else { return [] }
@@ -124,9 +143,9 @@ enum CodeHighlight {
             return lines.map(AttributedString.init)
         }
 
-        let fullText = lines.joined(separator: "\n") as NSString
-        let source = fullText as String
-        guard let tree = grammar.parser.parse(source) else {
+        let source = lines.joined(separator: "\n")
+        let parser = Parser()
+        guard (try? parser.setLanguage(grammar.language)) != nil, let tree = parser.parse(source) else {
             return lines.map(AttributedString.init)
         }
 
@@ -159,7 +178,7 @@ enum CodeHighlight {
     }
 
     private static func cachedGrammar(for id: GrammarID) -> CachedGrammar? {
-        if let cached = grammarCache[id] {
+        if let cached = grammarCache.withLock({ $0[id] }) {
             return cached
         }
 
@@ -169,13 +188,9 @@ enum CodeHighlight {
             return nil
         }
 
-        let parser = Parser()
-        guard (try? parser.setLanguage(language)) != nil else {
-            return nil
-        }
-
-        let cached = CachedGrammar(parser: parser, language: language, query: query)
-        grammarCache[id] = cached
+        // Two threads racing here both compile the query; the second write is harmless.
+        let cached = CachedGrammar(language: language, query: query)
+        grammarCache.withLock { $0[id] = cached }
         return cached
     }
 

@@ -1,151 +1,146 @@
 import SwiftUI
+import ShepherdUI
 import AppKit
 import ShepherdCore
 import ShepherdProtocol
 
-/// The Settings window (⌘,): a category list beside grouped setting rows.
+/// Settings replaces the window content in place. A 232pt nav on `bgBase` (Back to Shepherd,
+/// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column.
 ///
-/// Everything here is wired — a row exists only if changing it changes the
-/// app. Chrome follows the same rules as the main window: theme tokens, no
-/// saturated fills, mono metadata, hairline separators.
+/// Everything here is wired: a row exists only if changing it changes the app.
 struct SettingsView: View {
     var vm: ShepherdViewModel
-    @ObservedObject private var themes = ThemeManager.shared
+    private var themes: ThemeManager { .shared }
+    private var piUpdates: PiUpdateManager { .shared }
     @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var query: String { searchText.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     private var matchingSections: [SettingsSection] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return Array(SettingsSection.allCases) }
-        return SettingsSection.allCases.filter { section in
-            section.title.localizedCaseInsensitiveContains(query)
-                || section.items.contains { $0.localizedCaseInsensitiveContains(query) }
-        }
+        return SettingsSection.allCases.filter { !$0.matches(for: query).isEmpty || $0.title.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
-        // Same shell as the main window: the sidebar material runs
-        // continuously behind the traffic-light strip, and the right column
-        // carries its own header over the window background.
         HStack(spacing: 0) {
-            categoryList
-            VStack(spacing: 0) {
-                header
-                detail
-            }
-            .background(Tokens.workspaceBg)
+            nav
+            NWHairline(.vertical)
+            detail
         }
-        .frame(
-            minWidth: Metrics.settingsMinWidth,
-            minHeight: Metrics.settingsMinHeight
-        )
-        .background(Tokens.workspaceBg)
-        .background(WindowChrome())
+        .background(Color.nw.bgWindow)
+        .background { WindowChrome() }
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
-        .id(themes.current.id)
-        .onChange(of: searchText) {
-            if let first = matchingSections.first, !matchingSections.contains(vm.settingsSection) {
-                vm.settingsSection = first
-            }
+        // Settings replaces the window content: it cross-fades in and out on the sheet motion
+        // however `showSettings` changed (⌘,, the app menu, Back, Esc, the palette).
+        .transition(NW.Motion.content.transition(reduceMotion: reduceMotion)
+            .animation(NW.Motion.sheet.animation(reduceMotion: reduceMotion)))
+        .onChange(of: searchText) { Self.showFirstMatch(of: matchingSections, in: vm) }
+        .background {
+            // ⌘F focuses the search field.
+            Button("Search settings") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+                .opacity(0)
+                .accessibilityHidden(true)
         }
     }
 
-    /// Names the pane the user is looking at. The window has no system title,
-    /// so this is the only label the window carries.
-    private var header: some View {
-        HStack(spacing: 0) {
-            Text(vm.settingsSection.title.lowercased())
-                .font(Fonts.mono(12.5, .semibold))
-                .foregroundStyle(Tokens.textPrimary)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 20)
-        .frame(height: Metrics.headerHeight)
-        .frame(maxWidth: .infinity)
-        .background(Tokens.workspaceBg)
-        .contentShape(Rectangle())
-        .gesture(WindowDragGesture())
-    }
-
-    private var categoryList: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private var nav: some View {
+        let sections = matchingSections
+        return VStack(alignment: .leading, spacing: 0) {
             // Traffic-light strip: draggable, nothing else lives up here.
             Color.clear
-                .frame(height: Metrics.trafficLightHeight)
+                .frame(height: AppLayout.trafficLightHeight)
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
 
-            // Everything below shares one 14pt content edge: the back
-            // chevron, the search field's icon, the SETTINGS heading, and
-            // each category row's icon all start at the same x.
-            Button {
-                vm.showSettings = false
-            } label: {
-                HStack(spacing: 6) {
+            Button { vm.showSettings = false } label: {
+                HStack(spacing: NW.Space.m) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 10, weight: .medium))
-                    Text("back to app")
-                        .font(Fonts.mono(11.5))
+                        .font(.nw(.ui, weight: .semibold))
+                        .imageScale(.small)
+                        .frame(width: NW.Space.xl)
+                        .accessibilityHidden(true)
+                    Text("Back to Shepherd").font(.nw(.ui))
+                    Spacer(minLength: 0)
                 }
-                .foregroundStyle(Tokens.textSecondary)
+                .foregroundStyle(Color.nw.textSecondary)
+                .padding(.horizontal, NW.Space.m)
+                .frame(minHeight: NW.Height.row)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 4)
+            .buttonStyle(.nwRow())
+            .keyboardShortcut(.escape, modifiers: [])
+            .padding(.horizontal, NW.Space.s)
 
-            SettingsSearchField(text: $searchText)
-                .padding(.horizontal, 6)
-                .padding(.top, 10)
+            NWSearchField("Search settings", text: $searchText, shortcut: "⌘F")
+                .focused($searchFocused)
+                .padding(.horizontal, NW.Space.m)
+                .padding(.top, NW.Space.m)
+                .padding(.bottom, NW.Space.l)
+                .task {
+                    // Typing filters immediately after opening; delayed a beat because focusing
+                    // while SwiftUI installs the key-view loop silently loses the request.
+                    try? await Task.sleep(for: .milliseconds(150))
+                    searchFocused = true
+                }
 
-            Text("SETTINGS")
-                .font(Fonts.mono(10.5, .semibold))
-                .tracking(0.74)
-                .foregroundStyle(Tokens.textTertiary)
-                .padding(EdgeInsets(top: 16, leading: 14, bottom: 6, trailing: 14))
-
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(matchingSections) { item in
-                    SettingsCategoryRow(section: item, selected: vm.settingsSection == item) {
-                        vm.settingsSection = item
-                    }
-                    if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        // Matching rows within the section, indented to the
-                        // category title's text column and clickable.
-                        ForEach(item.sidebarItems(for: searchText), id: \.self) { child in
-                            Button {
-                                vm.settingsSection = item
-                            } label: {
-                                Text(child.lowercased())
-                                    .font(Fonts.mono(10.5))
-                                    .foregroundStyle(Tokens.textTertiary)
-                                    .padding(.leading, 30)
-                                    .padding(.vertical, 3)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
+            ScrollView(.vertical) {
+                VStack(alignment: .leading, spacing: AppLayout.settingsNavRowSpacing) {
+                    ForEach(sections) { section in
+                        NWSettingsNavRow(section.title, systemImage: section.symbol, selected: vm.settingsSection == section) {
+                            vm.settingsSection = section
+                        }
+                        if !query.isEmpty {
+                            ForEach(section.matches(for: query), id: \.self) { item in
+                                SettingsSearchHit(title: item, section: section.title) { vm.settingsSection = section }
                             }
-                            .buttonStyle(.plain)
                         }
                     }
+                    if sections.isEmpty {
+                        Text("No matching settings")
+                            .font(.nw(.caption))
+                            .foregroundStyle(Color.nw.textTertiary)
+                            .padding(.horizontal, NW.Space.m)
+                            .padding(.top, NW.Space.xs)
+                    }
                 }
+                .padding(.horizontal, NW.Space.s)
             }
-            .padding(.horizontal, 6)
-            if matchingSections.isEmpty {
-                Text("no matching settings")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textTertiary)
-                    .padding(EdgeInsets(top: 4, leading: 14, bottom: 0, trailing: 14))
-            }
+            .scrollIndicators(.hidden)
+
             Spacer(minLength: 0)
+            Text(versions)
+                .font(.nw(.micro))
+                .foregroundStyle(Color.nw.textTertiary)
+                .lineLimit(1)
+                .padding(.horizontal, NW.Space.s + NW.Space.m)
+                .padding(.bottom, NW.Space.l)
         }
-        .frame(width: Metrics.settingsSidebarWidth)
-        // Flat sidebar surface, exactly like the main window's.
-        .background(Tokens.sidebarBg.ignoresSafeArea())
+        .frame(width: AppLayout.settingsNavWidth)
+        .background(Color.nw.bgBase.ignoresSafeArea())
+    }
+
+    /// Searching shows the first page with a match when the current one has none. It lands at
+    /// once: the page cross-fades when it is picked, never per keystroke.
+    static func showFirstMatch(of sections: [SettingsSection], in vm: ShepherdViewModel) {
+        guard let first = sections.first, !sections.contains(vm.settingsSection) else { return }
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { vm.settingsSection = first }
+    }
+
+    /// "Shepherd 0.1.0 · pi 0.87.1", or "Shepherd Nightly 0.0.0-nightly.… · pi 0.87.1"
+    private var versions: String {
+        let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+        return "\(ShepherdEdition.current.displayName) \(app)" + (piUpdates.currentVersion.map { " · pi \($0)" } ?? "")
     }
 
     private var detail: some View {
         ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: 18) {
+            Group {
                 switch vm.settingsSection {
                 case .appearance: AppearanceSettings(vm: vm)
                 case .terminal: TerminalSettings(vm: vm)
@@ -157,53 +152,42 @@ struct SettingsView: View {
                 case .advanced: AdvancedSettings(vm: vm)
                 }
             }
-            .padding(EdgeInsets(top: 16, leading: 20, bottom: 24, trailing: 20))
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .nwTransition(.content)
+            .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
+            .padding(.top, AppLayout.settingsTop)
+            .padding(.bottom, AppLayout.settingsBottom)
+            .padding(.horizontal, AppLayout.settingsGutter)
+            .frame(maxWidth: .infinity)
+            // A page picked in the nav cross-fades in place; search switches pages at once.
+            .nwAnimation(.content, value: vm.settingsSection)
         }
         .scrollContentBackground(.hidden)
-        .background(Tokens.workspaceBg)
-        // System controls default to the OS accent (blue), which is the one
-        // saturated color DESIGN.md rules out. One tint here covers every
-        // slider, switch, and segmented selection in the pane.
-        .tint(Tokens.accentButton)
+        .background(Color.nw.bgWindow)
+        .overlay(alignment: .top) {
+            // The window has no title bar; the strip above the content still drags it.
+            Color.clear.frame(height: AppLayout.trafficLightHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
+        }
     }
 }
 
-private struct SettingsSearchField: View {
-    @Binding var text: String
-    @FocusState private var focused: Bool
+/// A row found by the search, listed under its page: jumps to the page.
+private struct SettingsSearchHit: View {
+    let title: String
+    let section: String
+    let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
-                .foregroundStyle(Tokens.textTertiary)
-            TextField("search settings…", text: $text)
-                .textFieldStyle(.plain)
-                .font(Fonts.mono(11.5))
-                .focused($focused)
-                // Settings just opened (this view mounts with the surface):
-                // typing should filter immediately, no click first. Delayed a
-                // beat — focusing while SwiftUI is still installing the
-                // overlay's key-view loop silently loses the request.
-                .task {
-                    try? await Task.sleep(for: .milliseconds(150))
-                    focused = true
-                }
-            if !text.isEmpty {
-                Button { text = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Tokens.textTertiary)
-            }
+        Button(action: action) {
+            Text(title)
+                .font(.nw(.caption))
+                .foregroundStyle(Color.nw.textSecondary)
+                .lineLimit(1)
+                .padding(.leading, NW.Space.m + NW.Space.xl + NW.Space.m)
+                .frame(maxWidth: .infinity, minHeight: NW.Height.controlS, alignment: .leading)
+                .contentShape(Rectangle())
         }
-        .padding(.horizontal, 8)
-        .frame(height: 28)
-        .background(Tokens.rowActiveHeader)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Tokens.chipBorder, lineWidth: 1))
+        .buttonStyle(.nwRow())
+        .accessibilityLabel("\(title), in \(section)")
     }
 }
 
@@ -225,69 +209,55 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         }
     }
 
+    /// Row titles on the page, as the search lists them under the section.
     var items: [String] {
         switch self {
-        case .appearance: return ["Theme", "UI Density", "UI Text Scale", "Sidebar Width"]
-        case .terminal: return ["Terminal Font", "Font Size", "Shell"]
-        case .agents: return ["Default Model", "Default Thinking Level"]
-        case .worktrees: return ["Base Branch", "Fetch Before Creating", "Commit Remaining Work", "Delete Local Branch", "Merge PR Automatically"]
-        case .pi: return ["Update Pi", "Update Extensions", "Installed Version", "Status", "Check Now", "Auto-name Agents", "Bundled Pi Extensions", "Sync Pi Theme", "Panes and Agent Tools", "Diff Review Tool", "Subagent Display"]
-        case .remote: return ["Hosts", "Serve This Mac"]
-        case .keyboard: return ["New Agent", "Settings", "Pane Shortcuts"]
-        case .advanced: return ["Files", "Reset Settings", "Updates", "About"]
+        case .appearance: ["Theme", "Mode", "Sidebar rows", "Density", "Text size", "Sidebar width"]
+        case .terminal: ["Font family", "Font size", "Shell"]
+        case .agents: ["Default model", "Default thinking level"]
+        case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
+        case .pi: ["Name agents automatically", "Sync pi theme", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
+        case .remote: ["Hosts", "Add host", "Listener", "Token"]
+        case .keyboard: ["Shortcuts", "Reset all shortcuts"]
+        case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
         }
     }
 
-    func sidebarItems(for query: String) -> [String] {
+    /// Words people search for that aren't row titles ("dark" → Appearance).
+    private var keywords: [String: [String]] {
+        switch self {
+        case .appearance: ["Mode": ["dark", "light", "color", "night watch", "theme"], "Text size": ["font", "zoom", "scale"], "Sidebar rows": ["row height", "comfortable"], "Density": ["compact", "spacing"]]
+        case .terminal: ["Font family": ["ghostty", "monospace"], "Shell": ["zsh", "bash", "fish"]]
+        case .agents: ["Default model": ["claude", "gpt", "provider"], "Default thinking level": ["reasoning", "effort"]]
+        case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
+        case .pi: ["Native subagents": ["children", "workflows"], "Update pi daily": ["version", "upgrade"]]
+        case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
+        case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord"]]
+        case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
+        }
+    }
+
+    /// Items matching `query` by title or keyword; every item when the section's name matches.
+    func matches(for query: String) -> [String] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        return title.localizedCaseInsensitiveContains(query)
-            ? items
-            : items.filter { $0.localizedCaseInsensitiveContains(query) }
+        guard !query.isEmpty else { return [] }
+        if title.localizedCaseInsensitiveContains(query) { return items }
+        return items.filter { item in
+            item.localizedCaseInsensitiveContains(query)
+                || (keywords[item] ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
+        }
     }
 
     var symbol: String {
         switch self {
-        case .appearance: return "paintpalette"
+        case .appearance: return "circle.lefthalf.filled"
         case .terminal: return "terminal"
         case .agents: return "person.2"
-        case .worktrees: return "arrow.triangle.branch"
-        case .pi: return "arrow.triangle.2.circlepath"
-        case .remote: return "antenna.radiowaves.left.and.right"
+        case .worktrees: return "arrow.branch"
+        case .pi: return "pi"
+        case .remote: return "desktopcomputer"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         }
     }
 }
-
-/// A real `Button` (not a tap gesture) so the list is keyboard- and
-/// VoiceOver-navigable like the main window's menu commands.
-private struct SettingsCategoryRow: View {
-    let section: SettingsSection
-    let selected: Bool
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: section.symbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(selected ? Tokens.focusAccent : Tokens.textTertiary)
-                    .frame(width: 14)
-                Text(section.title.lowercased())
-                    .font(Fonts.mono(12, selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Tokens.textPrimary : Tokens.textSecondary)
-                Spacer(minLength: 0)
-            }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 8)
-            .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .accessibilityLabel(section.title)
-        .accessibilityAddTraits(selected ? [.isSelected] : [])
-    }
-}
-

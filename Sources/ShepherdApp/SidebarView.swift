@@ -1,635 +1,562 @@
 import SwiftUI
+import ShepherdUI
 import AppKit
 import ShepherdCore
 import ShepherdProtocol
 import UniformTypeIdentifiers
 
-/// The sidebar tree: waiting summary, spaces with their agents nested under
-/// them, then the `+ new space` footer and the fleet dot-count strip.
-/// Everything is mono, flat, and full-bleed — no chips, no vibrancy.
+/// The sidebar (Navigation board, `NWSidebar`): room for the window controls, then THIS MAC and
+/// each remote host as sections, spaces as disclosure rows with their agents nested beneath,
+/// and Automations as the footer. Subagents have no rows; they live in their agent's thread.
+///
+/// The tree is flattened into one lazy list (`SidebarTree`): a fleet runs to hundreds of rows,
+/// and only the rows on screen are built. Each row is a plain value compared before it redraws,
+/// so a status report or a selection redraws the rows it changed and nothing else.
+///
+/// Rows arriving, leaving, reordering, and disclosing animate (`.list`) whatever changed them: a
+/// broadcast, a drop, a click, a reveal. Selecting a row changes no row, so it lands at once.
 struct SidebarView: View {
     var vm: ShepherdViewModel
-    /// Density/text-scale live in AppSettings; observing re-renders the tree
-    /// when a slider moves (rows read Fonts/Metrics inside body, so parent
-    /// re-render is what re-evaluates them — rows carry closures, which
-    /// makes SwiftUI re-run their bodies rather than skip them).
-    @ObservedObject private var appearance = AppSettings.shared
+    @State private var dropZone: SidebarDropZone
+
+    /// `dropZone` lets a test drive a reorder drag as the drop delegate does.
+    init(vm: ShepherdViewModel, dropZone: SidebarDropZone? = nil) {
+        self.vm = vm
+        _dropZone = State(initialValue: dropZone ?? SidebarDropZone())
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if vm.blockedCount > 0 {
-                WaitingSummary(vm: vm)
-            }
-
+        let tree = vm.sidebarTree()
+        NWSidebar {
             ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Machine roots: THIS MAC, then each host — one unified
-                        // tree, so remote fleets are the same species as local.
-                        // The local root only appears once a second machine
-                        // exists; a purely local setup keeps today's flat tree.
-                        if vm.remoteHosts.connections.isEmpty {
-                            ForEach(vm.spaceTree, id: \.space.id) { group in
-                                SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth)
-                                    .id(group.space.id)
-                            }
-                        } else {
-                            MachineHeaderRow(
-                                marker: nil,
-                                name: "this mac",
-                                collapsed: vm.localMachineCollapsed,
-                                detail: .count(vm.state.agents.count),
-                                keycap: vm.machineKeycap(forHost: nil),
-                                onToggle: { vm.localMachineCollapsed.toggle() }
-                            )
-                            if !vm.localMachineCollapsed {
-                                ForEach(vm.spaceTree, id: \.space.id) { group in
-                                    SpaceSection(vm: vm, space: group.space, agents: group.agents, depth: group.depth + 1)
-                                        .id(group.space.id)
-                                }
-                            }
-                            ForEach(vm.remoteHosts.connections) { connection in
-                                Rectangle().fill(Tokens.separator).frame(height: 1)
-                                    .padding(.vertical, 3)
-                                RemoteHostBlock(vm: vm, connection: connection)
-                            }
-                        }
-                        if let hint = vm.agentsHintText {
-                            Text(hint)
-                                .font(Fonts.mono(10.5))
-                                .foregroundStyle(Tokens.textDim)
-                                .padding(EdgeInsets(top: 10, leading: 14, bottom: 3, trailing: 8))
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
+                        ForEach(tree.items) { item in
+                            SidebarItemRow(vm: vm, zone: dropZone, item: item)
+                                .equatable()
+                                .nwTransition(item.motion)
                         }
                     }
-                    .padding(.top, 2)
+                    .sidebarDropZone(dropZone, vm: vm)
+                    .padding(.horizontal, AppLayout.sidebarPadding)
+                    .padding(.bottom, NW.Space.m)
                 }
-                // Keyboard navigation (⌘1–9, ⌘↑/↓, ⌃⇧digits) can land on a
-                // row scrolled out of view. Reveal it with a minimal animated
-                // scroll; mouse and palette selections arrive here too and are
-                // no-ops when the row is already visible. The trigger is a
-                // counter, not the target value, so re-selecting the same row
-                // still scrolls back to it.
-                // The same selection may have just opened a disclosure (the
-                // local machine root, an ancestor space, a host), so the row
-                // can be absent from the tree at this instant — scroll on the
-                // next runloop turn, once it exists.
+                .scrollIndicators(.hidden)
+                // Keyboard navigation (⌘1–9, ⌘↑/↓, ⌃⇧digits) can land on a row scrolled out of
+                // view; the same selection may have just opened a disclosure, so scroll on the
+                // next runloop turn once the row exists. The trigger is a counter so re-selecting
+                // the same row still scrolls back to it. Rows are identified by the reveal
+                // target's own ids, so the lazy list finds a row it hasn't built yet.
                 .onChange(of: vm.sidebarRevealRequest) {
                     guard let target = vm.sidebarRevealTarget else { return }
                     DispatchQueue.main.async {
-                        withAnimation(
-                            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                                ? nil
-                                : .easeOut(duration: 0.12) // DESIGN.md: ≤120ms
-                        ) {
-                            proxy.scrollTo(target)
-                        }
+                        withNWAnimation(.scroll) { proxy.scrollTo(target) }
                     }
                 }
             }
-
-            Spacer(minLength: 0)
-
-            AutomationsSection(vm: vm)
-            ShellsSection(vm: vm)
-            // Breathing room under the last row now that the footer is gone.
-            Color.clear.frame(height: 8)
-        }
-    }
-}
-
-/// `● 3 waiting` block under the traffic lights — attention lives at the top
-/// of the sidebar, where scanning starts. Hidden at zero (see SidebarView).
-struct WaitingSummary: View {
-    var vm: ShepherdViewModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 7) {
-                Circle()
-                    .fill(Tokens.statusBlocked)
-                    .frame(width: 7, height: 7)
-                Text("\(vm.blockedCount) waiting")
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.textSecondary)
-                Spacer(minLength: 0)
+        } footer: {
+            if !vm.state.automations.isEmpty {
+                AutomationsFooter(vm: vm)
+                    .nwTransition(.list, edge: .bottom)
             }
-            Text(vm.waitingSummaryDetail)
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.textMetadata)
-                .lineLimit(1)
-                .truncationMode(.tail)
         }
-        .padding(EdgeInsets(top: 2, leading: 14, bottom: 10, trailing: 10))
+        .nwAnimation(.list, value: tree.layout)
     }
 }
 
-/// One space: header row (disclosure, uppercase name, count / `+`) and its
-/// agent rows nested under it. Collapsed spaces show only the header, dimmer.
-struct SpaceSection: View {
-    var vm: ShepherdViewModel
-    let space: Space
-    let agents: [Agent]
-    /// 0 for a root space; deeper spaces are projects nested by path
-    /// containment and indent under their parent.
-    var depth: Int = 0
+// MARK: Rows
 
-    private var collapsed: Bool { vm.collapsedSpaces.contains(space.id) }
-    private var isActive: Bool {
-        // A shell or remote agent owns the workspace; no local space reads active.
-        vm.selectedShellID == nil && vm.selectedRemoteAgent == nil
-            && (vm.selectedAgent?.spaceID == space.id
-                || (vm.selectedAgentID == nil && vm.selectedSpaceID == space.id))
+/// The sidebar's rows in display order, and what its motion watches.
+struct SidebarTree {
+    var items: [SidebarItem] = []
+    /// Everything that adds, removes, reorders, or discloses rows, local and remote, and the
+    /// Automations footer.
+    var layout: [AnyHashable] = []
+
+    mutating func append(_ item: SidebarItem) {
+        items.append(item)
+        layout.append(item.id)
+        if let collapsed = item.collapsed { layout.append(collapsed) }
     }
-    private var blockedHere: Int { agents.count { $0.status == .blocked } }
+}
+
+/// One row of the sidebar tree, as plain values.
+enum SidebarItem: Identifiable, Equatable {
+    /// A machine's section header: This Mac, or a remote host.
+    case machine(SidebarMachine)
+    case space(SidebarSpace)
+    case agent(SidebarAgentRowModel)
+    case remoteAgent(hostID: UUID, model: SidebarAgentRowModel)
+    /// A host that isn't connected: one status row stands in for its spaces.
+    case notice(hostID: UUID, phase: RemoteHostStore.Phase.Kind)
+
+    /// Local agents and spaces and remote agents use the ids `sidebarRevealTarget` names, so
+    /// the list scrolls to them; the rest are keyed so they never collide with those.
+    var id: AnyHashable {
+        switch self {
+        case .machine(let machine): AnyHashable(SidebarRowKey.machine(machine.hostID))
+        case .space(let space):
+            space.hostID.map { AnyHashable(SidebarRowKey.remoteSpace($0, space.id)) } ?? AnyHashable(space.id)
+        case .agent(let model): AnyHashable(model.agent.id)
+        case .remoteAgent(let hostID, let model): AnyHashable(RemoteAgentRef(hostID: hostID, agentID: model.agent.id))
+        case .notice(let hostID, _): AnyHashable(SidebarRowKey.notice(hostID))
+        }
+    }
+
+    /// A disclosure's state, for the motion key: a chevron turns even when nothing is nested.
+    var collapsed: Bool? {
+        switch self {
+        case .machine(let machine): machine.collapsed
+        case .space(let space): space.collapsed
+        default: nil
+        }
+    }
+
+    /// Agents disclose under their space; everything else arrives like a row.
+    var motion: NW.Motion {
+        switch self {
+        case .agent, .remoteAgent: .disclosure
+        default: .list
+        }
+    }
+}
+
+private enum SidebarRowKey: Hashable {
+    case machine(UUID?)
+    case remoteSpace(UUID, SpaceID)
+    case notice(UUID)
+}
+
+/// A machine's section header.
+struct SidebarMachine: Equatable {
+    /// Nil for This Mac.
+    var hostID: UUID?
+    var title: String
+    var detail: NWSidebarSectionDetail
+    var collapsed: Bool
+    var hoverHint: String?
+    /// Shows the `+` for a new space (a host only while connected).
+    var canAddSpace: Bool
+    /// A host's worktree operations still pending: its context menu offers to check each.
+    var pendingOperations: [RemoteAgentRef] = []
+}
+
+/// A space's disclosure row, local or on a host.
+struct SidebarSpace: Equatable {
+    /// Nil for a space on this Mac.
+    var hostID: UUID?
+    var id: SpaceID
+    var name: String
+    var collapsed: Bool
+    var count: Int
+    var blocked: Int
+    var worktrees = 0
+    var depth = 0
+    /// A drop may land below the row: it is collapsed, or nothing is nested beneath it.
+    var allowsDropBelow = false
+    /// A git checkout: its context menu offers worktrees.
+    var isRepo = false
+}
+
+/// One sidebar row, a single view whatever it shows (a lazy stack's fast path), redrawn only
+/// when its values change.
+private struct SidebarItemRow: View, Equatable {
+    var vm: ShepherdViewModel
+    let zone: SidebarDropZone
+    let item: SidebarItem
+
+    static func == (a: SidebarItemRow, b: SidebarItemRow) -> Bool { a.vm === b.vm && a.zone === b.zone && a.item == b.item }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SpaceHeaderRow(
-                name: space.name,
-                collapsed: collapsed,
-                active: isActive,
-                blockedCount: blockedHere,
-                agentCount: agents.count,
-                worktreeCount: agents.count { $0.worktreeBranch != nil },
-                depth: depth,
-                onToggle: { vm.toggleSpaceCollapsed(space.id) },
-                onNewAgent: { vm.quickCreateAgent(in: space.id) }
-            )
-            .onDrag { NSItemProvider(object: ShepherdViewModel.dragPayload(space: space.id) as NSString) }
-            .sidebarDropTarget { payload in vm.dropSpace(payload: payload, on: space.id) }
+        VStack(spacing: 0) {
+            switch item {
+            case .machine(let machine):
+                MachineHeader(vm: vm, machine: machine)
+            case .space(let space):
+                if let hostID = space.hostID {
+                    RemoteSpaceRow(vm: vm, hostID: hostID, space: space)
+                } else {
+                    LocalSpaceRow(vm: vm, zone: zone, space: space)
+                }
+            case .agent(let model):
+                LocalAgentRow(vm: vm, zone: zone, model: model)
+            case .remoteAgent(let hostID, let model):
+                RemoteAgentRow(vm: vm, zone: zone, hostID: hostID, model: model)
+            case .notice(let hostID, let phase):
+                HostNoticeRow(vm: vm, hostID: hostID, phase: phase)
+            }
+        }
+    }
+}
+
+extension ShepherdViewModel {
+    /// The sidebar's rows in display order: This Mac's spaces and agents, then each host's.
+    /// Built once per render from the memoized tree; the rows compare these values.
+    func sidebarTree() -> SidebarTree {
+        var tree = SidebarTree()
+        let hosts = remoteHosts.connections
+        tree.append(.machine(SidebarMachine(hostID: nil, title: "This Mac", detail: .count(localAgentCount),
+                                            collapsed: localMachineCollapsed,
+                                            hoverHint: hosts.isEmpty ? nil : machineKeycap(forHost: nil), canAddSpace: true)))
+        if !localMachineCollapsed {
+            let groups = spaceTree
+            // A space whose next row is deeper has nested projects drawn beneath it.
+            let parents = Set(groups.indices.dropLast().filter { groups[$0 + 1].depth > groups[$0].depth }.map { groups[$0].space.id })
+            let badges = sidebarShortcutBadges
+            let repos = spaceRepoFlags
+            for group in groups {
+                let collapsed = collapsedSpaces.contains(group.space.id)
+                tree.append(.space(SidebarSpace(
+                    id: group.space.id, name: group.space.name, collapsed: collapsed, count: group.agents.count,
+                    blocked: SidebarAttention.count(group.agents, children: childRuns.rows),
+                    worktrees: group.agents.count { $0.worktreeBranch != nil }, depth: group.depth,
+                    allowsDropBelow: collapsed || (group.agents.isEmpty && !parents.contains(group.space.id)),
+                    isRepo: repos[group.space.id] ?? spaceIsRepo(group.space))))
+                guard !collapsed else { continue }
+                for agent in group.agents {
+                    tree.append(.agent(sidebarRowModel(for: agent, depth: group.depth + 1, badge: badges[agent.id])))
+                }
+            }
+        }
+        for connection in hosts { appendHost(connection, to: &tree) }
+        tree.layout += [state.automations.map(\.id), automationsExpanded]
+        return tree
+    }
+}
+
+// MARK: This Mac
+
+/// A machine's section header: This Mac, or a host, whose context menu reconnects it.
+private struct MachineHeader: View {
+    var vm: ShepherdViewModel
+    let machine: SidebarMachine
+
+    var body: some View {
+        if let hostID = machine.hostID {
+            header { vm.toggleHostCollapsed(hostID) } plus: {
+                if machine.canAddSpace {
+                    SidebarPlus(help: "New Space on \(machine.title)") { vm.remoteSpacePickerHostID = hostID }
+                }
+            }
             .contextMenu {
-                Button("Rename…") { vm.spaceRenameTarget = space.id }
-                if GitWorktree.isRepo(space.path) {
-                    Button("New Worktree…") { vm.worktreeSheetTarget = space.id }
-                    Button("Import Existing Worktree…") {
-                        vm.importExistingWorktreeFromPanel(in: space.id)
-                    }
+                ForEach(machine.pendingOperations, id: \.self) { target in
+                    Button("Check Worktree Operation…") { vm.remoteWorktreeSheet = target }
+                }
+                Button("New Space…") { vm.remoteSpacePickerHostID = hostID }
+                Button("Reconnect") { vm.remoteHosts.reconnect(id: hostID) }
+            }
+        } else {
+            header { vm.localMachineCollapsed.toggle() } plus: {
+                SidebarPlus(help: "New Space…") { vm.addSpaceFromPanel() }
+            }
+        }
+    }
+
+    private func header(toggle: @escaping () -> Void, @ViewBuilder plus: @escaping () -> some View) -> some View {
+        NWSidebarSection(machine.title, detail: machine.detail, collapsed: machine.collapsed, hoverHint: machine.hoverHint,
+                         toggle: toggle, accessory: plus)
+    }
+}
+
+/// The hover `+` in section and space headers. A real button with a label.
+struct SidebarPlus: View {
+    let help: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus").font(.system(size: AppLayout.sidebarPlusGlyph, weight: .medium))
+        }
+        .buttonStyle(.nwIcon(size: AppLayout.sidebarPlusSize))
+        .nwHelp(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// A space on this Mac: its disclosure row, dragged to reorder, with its context menu. Its
+/// agents follow it in the list.
+private struct LocalSpaceRow: View {
+    var vm: ShepherdViewModel
+    let zone: SidebarDropZone
+    let space: SidebarSpace
+
+    var body: some View {
+        let id = space.id
+        SpaceRow(name: space.name, collapsed: space.collapsed, count: space.count, blocked: space.blocked,
+                 worktrees: space.worktrees, depth: space.depth,
+                 onToggle: { vm.toggleSpaceCollapsed(id) },
+                 onNewAgent: { vm.quickCreateAgent(in: id) })
+            .onDrag { vm.beginSidebarDrag(ShepherdViewModel.dragPayload(space: id)) }
+            .sidebarDropRow(zone, id: id, target: .space(id, allowsBelow: space.allowsDropBelow))
+            .contextMenu {
+                Button("New Agent") { vm.quickCreateAgent(in: id) }
+                Button("Rename…") { vm.spaceRenameTarget = id }
+                if space.isRepo {
+                    Button("New Worktree…") { vm.worktreeSheetTarget = id }
+                    Button("Import Existing Worktree…") { vm.importExistingWorktreeFromPanel(in: id) }
                 }
                 Divider()
-                Button(role: .destructive) {
-                    vm.spaceDeleteTarget = space.id
-                } label: {
-                    Text("Remove Space…").foregroundStyle(Tokens.destructive)
-                }
+                Button("Remove Space…", role: .destructive) { vm.spaceDeleteTarget = id }
             }
-            if !collapsed {
-                ForEach(agents) { agent in
-                    let children = vm.children(of: agent.id)
-                    let showsSubagents = AgentRow.showsSubagents(for: agent.status)
-                    let childrenHidden = vm.collapsedChildren.contains(agent.id)
-                    AgentRow(
-                        agent: agent,
-                        selected: vm.selectedAgentID == agent.id && vm.selectedShellID == nil
-                            && vm.selectedRemoteAgent == nil && vm.inspectingAgentID == nil,
-                        badge: vm.shortcutBadge(for: agent.id),
-                        subCount: showsSubagents && childrenHidden ? children.count : 0,
-                        subAttention: showsSubagents && childrenHidden && children.contains { $0.needsAttention },
-                        depth: depth,
-                        subAction: {
-                            if childrenHidden {
-                                vm.collapsedChildren.remove(agent.id)
-                            } else {
-                                vm.collapsedChildren.insert(agent.id)
-                            }
-                        }
-                    ) {
-                        // Fold/unfold only when the click is a true re-click:
-                        // the agent's own terminal is already what the
-                        // workspace shows. Coming back from a subagent
-                        // inspector or a shell just returns to the terminal.
-                        let showingAgentTerminal = vm.selectedAgentID == agent.id
-                            && vm.inspectingAgentID == nil
-                            && vm.selectedShellID == nil
-                            && vm.selectedRemoteAgent == nil
-                        if showingAgentTerminal, showsSubagents, !children.isEmpty {
-                            if childrenHidden {
-                                vm.collapsedChildren.remove(agent.id)
-                            } else {
-                                vm.collapsedChildren.insert(agent.id)
-                            }
-                        }
-                        vm.selectAgent(agent.id)
-                    }
-                    .onDrag { NSItemProvider(object: ShepherdViewModel.dragPayload(agent: agent.id) as NSString) }
-                    .sidebarDropTarget { payload in vm.dropAgent(payload: payload, on: agent.id) }
-                    .contextMenu {
-                        Button("Rename…") { vm.agentRenameTarget = agent.id }
-                        Divider()
-                        if agent.worktreeBranch != nil {
-                            Button("Finalize Worktree…") { vm.beginFinalizeWorktree(agent.id) }
-                            Divider()
-                            // Confirms: deleting can also remove the checkout.
-                            Button(role: .destructive) {
-                                vm.worktreeDeleteTarget = agent.id
-                            } label: {
-                                Text("Delete Worktree Agent…").foregroundStyle(Tokens.destructive)
-                            }
-                        } else {
-                            Button(role: .destructive) {
-                                vm.deleteAgent(agent.id)
-                            } label: {
-                                Text("Delete Agent").foregroundStyle(Tokens.destructive)
-                            }
-                        }
-                    }
-                    // Scroll target for keyboard selection (see SidebarView).
-                    .id(agent.id)
-                    // Live pi-subagents child runs nest under their agent.
-                    // Clicking opens the run's inspector dashboard in a pane
-                    // beside the agent (steer/stop at its prompt; closing the
-                    // pane never touches the run).
-                    if showsSubagents, !childrenHidden {
-                        ForEach(children) { child in
-                            ChildRunRow(
-                                child: child,
-                                selected: vm.inspectingAgentID == agent.id
-                                    && vm.inspectedChild[agent.id] == child.id,
-                                depth: depth
-                            ) {
-                                vm.openChildInspector(agentID: agent.id, child: child)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.bottom, depth == 0 ? 6 : 0)
     }
 }
 
-struct SpaceHeaderRow: View {
+struct SpaceRow: View, Equatable {
     let name: String
     let collapsed: Bool
-    let active: Bool
-    let blockedCount: Int
-    let agentCount: Int
-    /// Agents in this space running on their own git worktree — shown as a
-    /// dim `⎇n` beside the count so the space advertises them even collapsed.
-    var worktreeCount: Int = 0
-    var depth: Int = 0
+    let count: Int
+    /// Questions waiting on you (`SidebarAttention`), shown in place of the agent count.
+    var blocked = 0
+    var worktrees = 0
+    var depth = 0
+    var dimmed = false
     let onToggle: () -> Void
-    let onNewAgent: () -> Void
-    @State private var hovering = false
+    var onNewAgent: (() -> Void)?
+
+    static func == (a: SpaceRow, b: SpaceRow) -> Bool {
+        a.name == b.name && a.collapsed == b.collapsed && a.count == b.count && a.blocked == b.blocked
+            && a.worktrees == b.worktrees && a.depth == b.depth && a.dimmed == b.dimmed
+            && (a.onNewAgent == nil) == (b.onNewAgent == nil)
+    }
 
     var body: some View {
-        HStack(spacing: 7) {
-            Text(collapsed ? "▸" : "▾")
-                .font(Fonts.mono(9))
-                .foregroundStyle(collapsed ? Tokens.textDim : Tokens.textTertiary)
-                .frame(width: 9)
-            // Roots are UPPERCASE section headers; nested projects read as
-            // paths: lowercase with a trailing slash (see DESIGN mock).
-            Text(depth == 0 ? name.uppercased() : name + "/")
-                .font(Fonts.mono(depth == 0 ? 10.5 : 11, .semibold))
-                .tracking(depth == 0 ? 0.74 : 0)
-                .foregroundStyle(collapsed ? Tokens.textDim : Tokens.textSecondary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-            if blockedCount > 0 {
-                Text("\(blockedCount)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.statusBlocked)
-            } else if agentCount > 0 {
-                Text("\(agentCount)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
+        NWSidebarDisclosureRow(name, expanded: !collapsed, depth: depth) { hovering in trailing(hovering: hovering) }
+        .opacity(dimmed ? 0.55 : 1)
+        .sidebarTapRow(action: onToggle)
+        .accessibilityLabel(Self.accessibilityText(name: name, count: count, blocked: blocked, collapsed: collapsed))
+        .accessibilityActions {
+            if let onNewAgent { Button("New Agent in \(name)", action: onNewAgent) }
+        }
+    }
+
+    /// Worktree count, then one slot the agent count (or waiting count) and the hover `+` share.
+    @ViewBuilder func trailing(hovering: Bool) -> some View {
+        if worktrees > 0 {
+            Text("⎇\(worktrees)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+                .help("\(worktrees) worktree agent\(worktrees == 1 ? "" : "s")")
+                .nwContentTransition(.numeric())
+                .nwAnimation(.content, value: worktrees)
+        }
+        // The count and the hover `+` share one slot and crossfade, so hovering resizes nothing.
+        let showsPlus = hovering && onNewAgent != nil
+        ZStack(alignment: .trailing) {
+            ZStack(alignment: .trailing) {
+                if blocked > 0 {
+                    Text("\(blocked)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.lanternText)
+                } else if count > 0 {
+                    Text("\(count)").font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary)
+                }
             }
-            if worktreeCount > 0 {
-                Text("⎇\(worktreeCount)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-                    .help("\(worktreeCount) worktree agent\(worktreeCount == 1 ? "" : "s")")
-            }
-            if active || hovering {
-                Text("+")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textTertiary)
-                    .contentShape(Rectangle())
-                    .onTapGesture(perform: onNewAgent)
-                    .help("New Agent in This Space")
+            // Counts roll, and waiting ⇄ agents cross-fade, as broadcasts change them.
+            .nwContentTransition(.numeric())
+            .nwAnimation(.content, value: [blocked, count])
+            .opacity(showsPlus ? 0 : 1)
+            if let onNewAgent {
+                SidebarPlus(help: "New Agent in \(name)", action: onNewAgent)
+                    .opacity(showsPlus ? 1 : 0)
+                    .allowsHitTesting(showsPlus)
+                    .accessibilityHidden(true)
             }
         }
-        .padding(.leading, 10 + CGFloat(depth) * 12)
-        .padding(.trailing, 14)
-        .frame(height: Metrics.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(active ? Tokens.rowActiveHeader : hovering ? Tokens.rowHover : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: onToggle)
+    }
+
+    static func accessibilityText(name: String, count: Int, blocked: Int, collapsed: Bool) -> String {
+        var parts = [name, "\(count) agent\(count == 1 ? "" : "s")"]
+        if blocked > 0 { parts.append("\(blocked) need\(blocked == 1 ? "s" : "") you") }
+        parts.append(collapsed ? "collapsed" : "expanded")
+        return parts.joined(separator: ", ")
+    }
+}
+
+// MARK: Agent rows
+
+/// Everything an agent row draws, as plain values. Subagents have no rows: they show in their
+/// agent's thread, and one waiting on you makes its agent's row ask.
+struct SidebarAgentRowModel: Equatable {
+    let agent: Agent
+    let selected: Bool
+    let depth: Int
+    var badge: Int?
+    var statusSince: Date?
+    /// One of the agent's subagents is waiting on your answer.
+    var subagentNeedsYou: Bool
+    var dimmed: Bool
+
+    init(agent: Agent, selected: Bool, depth: Int, badge: Int? = nil, statusSince: Date? = nil,
+         children: [ChildRun] = [], dimmed: Bool = false) {
+        self.agent = agent
+        self.selected = selected
+        self.depth = depth
+        self.badge = badge
+        self.statusSince = statusSince
+        self.subagentNeedsYou = children.contains(where: \.needsAttention)
+        self.dimmed = dimmed
+    }
+
+    /// A question waits on the user: the agent's own, or one of its subagents'.
+    var needsYou: Bool { agent.status == .blocked || subagentNeedsYou }
+
+    /// The dot: needs you wins over the agent's own status.
+    var state: AgentState { needsYou ? .attention : AgentState(agent.status) }
+
+    /// The agent row's trailing slot, in priority order: the ⌘-digit hint while ⌘ is held,
+    /// needs you, then elapsed time while working.
+    var accessory: NWSidebarRow.Accessory {
+        if let badge { return .shortcut("⌘\(badge)") }
+        if needsYou { return .ask }
+        if agent.status == .working, let statusSince { return .elapsed(since: statusSince, tone: .running) }
+        return .none
+    }
+
+    /// "Fix the login, worktree, running".
+    var accessibilityLabel: String {
+        "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(needsYou ? "needs you" : AgentRow.statusWord(agent.status))"
+    }
+}
+
+/// What the sidebar counts as needing you: each blocked agent, plus each subagent asking a
+/// question, so a space or host with a waiting subagent reads as waiting.
+enum SidebarAttention {
+    static func count(_ agents: [Agent], children: [AgentID: [ChildRun]]) -> Int {
+        agents.reduce(0) { total, agent in
+            total + (agent.status == .blocked ? 1 : 0) + (children[agent.id] ?? []).count(where: \.needsAttention)
+        }
+    }
+}
+
+extension ShepherdViewModel {
+    /// The row values for a local agent.
+    func sidebarRowModel(for agent: Agent, depth: Int) -> SidebarAgentRowModel {
+        sidebarRowModel(for: agent, depth: depth, badge: shortcutBadge(for: agent.id))
+    }
+
+    /// The row values for a local agent, with its ⌘-digit badge already looked up.
+    func sidebarRowModel(for agent: Agent, depth: Int, badge: Int?) -> SidebarAgentRowModel {
+        SidebarAgentRowModel(
+            agent: agent, selected: selectedAgentID == agent.id && selectedRemoteAgent == nil, depth: depth,
+            badge: badge, statusSince: statusSince[agent.id], children: children(of: agent.id)
+        )
+    }
+
+    /// The row values for an agent on a remote host, with the children the host reports.
+    func remoteSidebarRowModel(for agent: Agent, on connection: RemoteHostStore.Connection) -> SidebarAgentRowModel {
+        remoteSidebarRowModel(for: agent, on: connection, badges: remoteShortcutBadges(hostID: connection.id))
+    }
+
+    /// The row values for an agent on a remote host, with the host's ⌘-digit badges.
+    func remoteSidebarRowModel(for agent: Agent, on connection: RemoteHostStore.Connection,
+                               badges: [AgentID: Int]) -> SidebarAgentRowModel {
+        SidebarAgentRowModel(
+            agent: agent, selected: selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: agent.id),
+            depth: 1, badge: badges[agent.id], children: connection.children[agent.id] ?? []
+        )
+    }
+
+    /// ⌘-digit badges for a host's first nine agents while ⌘ is held with one of its agents
+    /// selected; empty otherwise.
+    func remoteShortcutBadges(hostID: UUID) -> [AgentID: Int] {
+        guard showAgentShortcutBadges, selectedRemoteAgent?.hostID == hostID else { return [:] }
+        return Dictionary(remoteOrderedAgents(hostID: hostID).prefix(9).enumerated().map { ($1.id, $0 + 1) }) { first, _ in first }
+    }
+}
+
+/// A local agent's row, with its drag, drop, and context menu.
+struct LocalAgentRow: View, Equatable {
+    var vm: ShepherdViewModel
+    let zone: SidebarDropZone
+    let model: SidebarAgentRowModel
+
+    static func == (a: LocalAgentRow, b: LocalAgentRow) -> Bool { a.vm === b.vm && a.zone === b.zone && a.model == b.model }
+
+    var body: some View {
+        let agent = model.agent
+        AgentRow(model: model) { vm.selectAgent(agent.id) }
+            .onDrag { vm.beginSidebarDrag(ShepherdViewModel.dragPayload(agent: agent.id)) }
+            .sidebarDropRow(zone, id: agent.id, target: .agent(agent.id))
+            .contextMenu {
+                Button("Rename…") { vm.agentRenameTarget = agent.id }
+                Button("Review Changes") { vm.selectAgent(agent.id); vm.openUserReview() }
+                Divider()
+                if agent.worktreeBranch != nil {
+                    Button("Finalize Worktree…") { vm.beginFinalizeWorktree(agent.id) }
+                    Divider()
+                    Button("Delete Worktree Agent…", role: .destructive) { vm.worktreeDeleteTarget = agent.id }
+                } else {
+                    Button("Delete Agent", role: .destructive) { vm.deleteAgent(agent.id) }
+                }
+            }
     }
 }
 
 struct AgentRow: View {
-    let agent: Agent
-    let selected: Bool
-    var badge: Int?
-    /// Hidden-children count; nonzero shows the `n sub` chip.
-    var subCount: Int = 0
-    /// A hidden child needs attention — the chip must not mute it.
-    var subAttention: Bool = false
-    var depth: Int = 0
-    var subAction: (() -> Void)? = nil
+    let model: SidebarAgentRowModel
     let action: () -> Void
-    @State private var hovering = false
-
-    enum TrailingAccessory: Equatable {
-        case status(String)
-        case badge(Int)
-        case subagents(Int)
-        case none
-    }
-
-    static func showsSubagents(for status: AgentStatus) -> Bool {
-        status != .done && status != .blocked
-    }
-
-    static func trailingAccessory(
-        status: AgentStatus,
-        badge: Int?,
-        subCount: Int
-    ) -> TrailingAccessory {
-        if !showsSubagents(for: status) { return .status(status.rawValue) }
-        if let badge { return .badge(badge) }
-        if subCount > 0 { return .subagents(subCount) }
-        return .none
-    }
-
-    private var trailingAccessory: TrailingAccessory {
-        Self.trailingAccessory(status: agent.status, badge: badge, subCount: subCount)
-    }
-
-    private var containsSubagentButton: Bool {
-        if case .subagents = trailingAccessory { return true }
-        return false
-    }
-
-    private var nameColor: Color {
-        if selected { return Tokens.textPrimary }
-        switch agent.status {
-        case .working, .blocked: return Tokens.textSecondary
-        case .done: return Tokens.textSecondary
-        case .idle: return Tokens.textDim
-        }
-    }
 
     var body: some View {
-        HStack(spacing: 8) {
-            // A worktree agent reads as a sub-checkout of its space: a tree
-            // connector (with the extra indent below) into the status marker,
-            // then the branch glyph in front of its name.
-            if agent.worktreeBranch != nil {
-                Text("└─")
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(Tokens.textDim)
-            }
-            StatusMarker(status: agent.status)
-            if agent.worktreeBranch != nil {
-                Text("⎇")
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.textTertiary)
-            }
-            // Titles are generated, so they can run long (and a provisional
-            // name is a truncated prompt): keep rows one line.
-            Text(agent.name)
-                .font(Fonts.mono(12))
-                .foregroundStyle(nameColor)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(agent.worktreeBranch.map { "worktree \($0)" } ?? agent.name)
-            Spacer(minLength: 0)
-            switch trailingAccessory {
-            case .status(let status):
-                Text(status)
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(Tokens.statusColor(agent.status))
-            case .badge(let badge):
-                Text("⌘\(badge)")
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(Tokens.textTertiary)
-                    .transition(.opacity)
-            case .subagents(let count):
-                Button(action: { subAction?() }) {
-                    Text("\(count) sub")
-                        .font(Fonts.mono(9.5))
-                        .foregroundStyle(subAttention ? Tokens.statusBlocked : Tokens.textMetadata)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(subAttention ? Tokens.statusBlocked.opacity(0.5) : Tokens.chipBorder, lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Show \(count) subagents")
-            case .none:
-                EmptyView()
-            }
+        NWSidebarRow(model.agent.name, state: model.state, selected: model.selected,
+                     depth: model.depth, worktree: model.agent.worktreeBranch != nil, dimmed: model.dimmed,
+                     accessory: model.accessory)
+            .help(model.agent.worktreeBranch.map { "\(model.agent.name) · worktree \($0)" } ?? model.agent.name)
+            .sidebarTapRow(action: action)
+            .accessibilityLabel(model.accessibilityLabel)
+            .accessibilityAddTraits(model.selected ? .isSelected : [])
+    }
+
+    static func statusWord(_ status: AgentStatus) -> String {
+        switch status {
+        case .working: "running"
+        case .blocked: "needs you"
+        case .idle: "idle"
+        case .done: "done"
         }
-        .animation(
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                ? nil
-                : .easeOut(duration: 0.12),
-            value: badge
-        )
-        .padding(.leading, 16 + CGFloat(depth) * 12 + (agent.worktreeBranch != nil ? 12 : 0))
-        .padding(.trailing, 10)
-        .frame(height: Metrics.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-        .overlay(alignment: .leading) {
-            if selected {
-                Rectangle()
-                    .fill(Tokens.statusColor(agent.status))
-                    .frame(width: 2)
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
-        .accessibilityElement(children: containsSubagentButton ? .contain : .ignore)
-        .accessibilityLabel(
-            "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(agent.status.rawValue), pi"
-        )
     }
 }
 
-
-/// Plain-text drop target for sidebar reordering: highlights while a drag
-/// hovers, hands the payload string to `perform`, and rejects (no flash, no
-/// state change) anything `perform` returns false for — wrong row kind,
-/// cross-space agent drops, self-drops.
-private struct SidebarDropTarget: ViewModifier {
-    let perform: (String) -> Bool
-    @State private var hovering = false
-
-    func body(content: Content) -> some View {
-        content
-            .overlay(alignment: .top) {
-                if hovering {
-                    Rectangle().fill(Tokens.focusAccent).frame(height: 2)
-                }
-            }
-            .onDrop(of: [.plainText], isTargeted: $hovering) { providers in
-                guard let provider = providers.first else { return false }
-                _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-                    guard let payload = object as? String else { return }
-                    Task { @MainActor in _ = perform(payload) }
-                }
-                return true
-            }
+enum SidebarTime {
+    /// "12s", "4m", "2h", "3d" — the sidebar's coarse elapsed time.
+    static func elapsed(since start: Date, now: Date) -> String {
+        NWDuration.text(now.timeIntervalSince(start))
     }
 }
 
-extension View {
-    func sidebarDropTarget(perform: @escaping (String) -> Bool) -> some View {
-        modifier(SidebarDropTarget(perform: perform))
-    }
-}
+// MARK: Automations
 
-/// One pi-subagents child run, nested under its agent. Ephemeral: rows come
-/// and go with the run (see `ChildRuns`). The trailing text is elapsed time
-/// while live, the terminal state once finished.
-struct ChildRunRow: View {
-    let child: ChildRun
-    /// True while this child's inspector is what the workspace shows.
-    var selected = false
-    var depth: Int = 0
-    let action: () -> Void
-    @State private var hovering = false
-
-    private var dotColor: Color {
-        if child.needsAttention { return Tokens.statusBlocked }
-        switch child.state {
-        case "running", "queued": return Tokens.statusWorking
-        case "complete": return Tokens.statusDone
-        case "failed", "stopped", "rejected": return Tokens.statusBlocked
-        default: return Tokens.textDim
-        }
-    }
-
-    private var trailing: String {
-        if child.needsAttention { return "waiting" }
-        if child.isTerminal { return child.state == "complete" ? "done" : child.state }
-        guard let started = child.startedAt else { return "" }
-        let seconds = max(0, Int(Date().timeIntervalSince1970 - started / 1000))
-        switch seconds {
-        case ..<60: return "\(seconds)s"
-        case ..<3600: return "\(seconds / 60)m"
-        default: return "\(seconds / 3600)h"
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 5, height: 5)
-            Text(child.label)
-                .font(Fonts.mono(11.5, selected ? .semibold : .regular))
-                .foregroundStyle(
-                    selected ? Tokens.textPrimary
-                        : child.isTerminal ? Tokens.textDim : Tokens.textSecondary
-                )
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .help(child.attentionText ?? child.label)
-            Spacer(minLength: 0)
-            // TimelineView keeps the elapsed age moving while the run lives.
-            TimelineView(.periodic(from: .now, by: 1)) { _ in
-                Text(trailing)
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(child.needsAttention ? Tokens.statusBlocked : Tokens.textMetadata)
-            }
-        }
-        .padding(.leading, 30 + CGFloat(depth) * 12)
-        .padding(.trailing, 10)
-        .frame(height: Metrics.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-        .overlay(alignment: .leading) {
-            if selected {
-                Rectangle().fill(dotColor).frame(width: 2)
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(child.label), subagent, \(child.state)")
-    }
-}
-
-/// Colored dot; the word beside it (row `done` label, header `blocked 4m`,
-/// waiting summary) carries the state for accessibility.
-struct StatusMarker: View {
-    let status: AgentStatus
-    @State private var dimmed = false
-
-    var body: some View {
-        Circle()
-            .fill(Tokens.statusColor(status))
-            .frame(width: 7, height: 7)
-            .opacity(status == .working && dimmed ? 0.45 : 1)
-            .onAppear {
-                guard status == .working,
-                      !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
-                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
-                    dimmed = true
-                }
-            }
-    }
-}
-
-/// AUTOMATIONS: saved monitoring prompts run by ordinary agents. Pinned
-/// above SHELLS. A row's chip mirrors its running agent's status; clicking a
-/// running row selects that agent. Hidden entirely while empty — automations
-/// are created by pi (the skill) or a running agent, not a sidebar `+`.
-struct AutomationsSection: View {
+/// AUTOMATIONS: saved watch prompts run by ordinary agents, as the sidebar's footer. Hidden
+/// while empty; the footer discloses the rows.
+private struct AutomationsFooter: View {
     var vm: ShepherdViewModel
 
     var body: some View {
         let automations = vm.state.automations
-        if !automations.isEmpty {
-            Rectangle().fill(Tokens.separator).frame(height: 1)
-            HStack(spacing: 7) {
-                Text("AUTOMATIONS")
-                    .font(Fonts.mono(10.5, .semibold))
-                    .tracking(0.74)
-                    .foregroundStyle(Tokens.textSecondary)
-                Spacer(minLength: 0)
-                Text("\(automations.count)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
+        let blocked = automations.contains { vm.automationAgent($0)?.status == .blocked }
+        VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
+            NWSidebarFooter("Automations", systemImage: "bolt", count: automations.count,
+                            tone: blocked ? .attention : .neutral, expanded: vm.automationsExpanded) {
+                vm.automationsExpanded.toggle()
             }
-            .padding(.horizontal, 14)
-            .frame(height: Metrics.rowHeight)
-            ForEach(automations) { automation in
-                let agent = vm.automationAgent(automation)
-                AutomationRow(
-                    automation: automation,
-                    agent: agent,
-                    selected: agent != nil && vm.selectedAgentID == agent?.id && vm.selectedShellID == nil
-                ) {
-                    // Click selects a running agent; a stopped row does
-                    // nothing — starting is deliberate (context menu Run Now).
-                    if let agent { vm.selectAgent(agent.id) }
-                }
-                .contextMenu {
-                    if automation.agentID == nil {
-                        Button("Run Now") {
-                            Task { @MainActor in try? await vm.startAutomation(automation.id) }
+            if vm.automationsExpanded {
+                VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
+                    ForEach(automations) { automation in
+                        let agent = vm.automationAgent(automation)
+                        AutomationRow(automation: automation, agent: agent,
+                                      selected: agent != nil && vm.selectedAgentID == agent?.id) {
+                            if let agent { vm.selectAgent(agent.id) }
                         }
-                    } else {
-                        Button("Stop") { vm.stopAutomation(automation.id) }
-                    }
-                    Divider()
-                    Button(role: .destructive) {
-                        vm.deleteAutomation(automation.id)
-                    } label: {
-                        Text("Delete Automation").foregroundStyle(Tokens.destructive)
+                        .contextMenu {
+                            if automation.agentID == nil {
+                                Button("Run Now") { Task { @MainActor in try? await vm.startAutomation(automation.id) } }
+                            } else {
+                                Button("Stop") { vm.stopAutomation(automation.id) }
+                            }
+                            Divider()
+                            Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation.id) }
+                        }
+                        .nwTransition(.list)
                     }
                 }
+                .padding(.horizontal, AppLayout.sidebarPadding)
+                .padding(.bottom, NW.Space.m)
+                .nwTransition(.disclosure)
             }
         }
     }
@@ -641,150 +568,190 @@ struct AutomationRow: View {
     let agent: Agent?
     let selected: Bool
     let action: () -> Void
-    @State private var hovering = false
+
+    private var stateWord: String {
+        guard let agent else { return "stopped" }
+        return switch agent.status {
+        case .working: "running"
+        case .blocked: "needs you"
+        case .idle, .done: "done"
+        }
+    }
+
+    private var state: AgentState {
+        guard let agent else { return .idle }
+        return agent.status == .idle ? .done : AgentState(agent.status)
+    }
 
     var body: some View {
-        HStack(spacing: 8) {
-            if let agent {
-                StatusMarker(status: agent.status)
-            } else {
-                Circle()
-                    .strokeBorder(Tokens.textDim, lineWidth: 1)
-                    .frame(width: 7, height: 7)
-            }
-            Text(automation.name)
-                .font(Fonts.mono(12))
-                .foregroundStyle(selected ? Tokens.textPrimary : Tokens.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
-            Text(agent.map { $0.status == .working ? "running" : $0.status.rawValue } ?? "stopped")
-                .font(Fonts.mono(10))
-                .foregroundStyle(Tokens.textMetadata)
-        }
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
-        .frame(height: Metrics.rowHeight)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
+        NWSidebarRow(automation.name, state: state, selected: selected,
+                     accessory: agent?.status == .blocked ? .ask : .text(stateWord))
+            .sidebarTapRow(enabled: agent != nil, action: action)
+            .accessibilityLabel("\(automation.name), automation, \(stateWord)")
     }
 }
 
-/// SHELLS: global terminal workspaces outside every space, for one-off work
-/// (logs, htop, scratch dirs). Pinned above the footer, like the mock.
-struct ShellsSection: View {
-    var vm: ShepherdViewModel
-    @State private var hoveringHeader = false
+// MARK: Interaction
 
-    var body: some View {
-        let shells = vm.shellTabs
-        if !shells.isEmpty || hoveringHeader {
-            Rectangle().fill(Tokens.separator).frame(height: 1)
+extension View {
+    /// Row interaction: rows are tap views with button traits (not `Button`s) so they can also
+    /// be dragged to reorder.
+    func sidebarTapRow(enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        contentShape(Rectangle())
+            .onTapGesture { if enabled { action() } }
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(enabled ? .isButton : [])
+            .accessibilityAction { if enabled { action() } }
+    }
+}
+
+// MARK: Reordering
+
+/// Sidebar reordering: a 2pt running line at a row's top or bottom edge (by pointer half) while
+/// a valid drag hovers it. Only drags that started in this sidebar qualify; their payload type
+/// is private to the process.
+///
+/// One drop target covers the whole list, and each row on screen registers its frame and how it
+/// takes a drop. A drop target is an AppKit registration: one per row, built as each row scrolled
+/// into view, cost about four times the rest of the row and made scrolling drop frames.
+@MainActor @Observable
+final class SidebarDropZone {
+    /// How a row takes a drop.
+    enum Target: Equatable {
+        /// `allowsBelow`: a drop may land below the row (see `SidebarSpace.allowsDropBelow`).
+        case space(SpaceID, allowsBelow: Bool)
+        case agent(AgentID)
+        case remoteAgent(RemoteAgentRef)
+
+        var allowsBelow: Bool {
+            if case .space(_, let allowsBelow) = self { return allowsBelow }
+            return true
         }
-        HStack(spacing: 7) {
-            Text("SHELLS")
-                .font(Fonts.mono(10.5, .semibold))
-                .tracking(0.74)
-                .foregroundStyle(shells.isEmpty ? Tokens.textDim : Tokens.textSecondary)
-            Spacer(minLength: 0)
-            if !shells.isEmpty {
-                Text("\(shells.count)")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-            }
-            if hoveringHeader || shells.isEmpty {
-                Text("+")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textTertiary)
-                    .contentShape(Rectangle())
-                    .onTapGesture { vm.addShell() }
-                    .help("New Shell")
-            }
+    }
+
+    /// Where the line is drawn: the hovered row's frame in the list, and its edge.
+    struct Line: Equatable {
+        var row: AnyHashable
+        var frame: CGRect
+        var edge: SidebarDropEdge
+    }
+
+    /// The list's coordinate space: rows register their frames in it, and drops arrive in it.
+    nonisolated static let space = "sidebar.list"
+
+    private(set) var line: Line?
+    @ObservationIgnored private var frames: [AnyHashable: CGRect] = [:]
+    @ObservationIgnored private var targets: [AnyHashable: Target] = [:]
+
+    func setFrame(_ frame: CGRect, of row: AnyHashable) { frames[row] = frame }
+    func setTarget(_ target: Target, of row: AnyHashable) { targets[row] = target }
+
+    /// A row that left the screen can't be hovered.
+    func remove(_ row: AnyHashable) {
+        frames[row] = nil
+        targets[row] = nil
+    }
+
+    func show(_ line: Line?) {
+        if self.line != line { self.line = line }
+    }
+
+    /// The drop row under `point`, in the list's coordinate space.
+    func row(at point: CGPoint) -> (id: AnyHashable, frame: CGRect, target: Target)? {
+        for (id, frame) in frames where frame.minY <= point.y && point.y < frame.maxY {
+            if let target = targets[id] { return (id, frame, target) }
         }
-        .padding(.horizontal, 14)
-        .frame(height: Metrics.rowHeight)
-        .contentShape(Rectangle())
-        .onHover { hoveringHeader = $0 }
-        ForEach(vm.shellTabs) { shell in
-            ShellRow(
-                label: ShepherdViewModel.shellLabel(shell),
-                selected: vm.selectedShellID == shell.id,
-                process: vm.shellProcessLabel(for: shell.id),
-                badge: vm.shellShortcutBadge(for: shell.id)
-            ) {
-                vm.selectShell(shell.id)
-            }
-            .contextMenu {
-                Button("Rename…") { vm.shellRenameTarget = shell.id }
-                Divider()
-                Button(role: .destructive) {
-                    vm.deleteShell(shell.id)
-                } label: {
-                    Text("Close Shell").foregroundStyle(Tokens.destructive)
-                }
-            }
+        return nil
+    }
+
+    /// A drag of `payload` moved to `point`: draws the line where it would land, and answers
+    /// whether it would.
+    func hover(_ payload: String?, at point: CGPoint, vm: ShepherdViewModel) -> Bool {
+        guard let payload, let row = row(at: point) else {
+            show(nil)
+            return false
+        }
+        let edge = SidebarDropEdge.at(y: point.y - row.frame.minY, height: row.frame.height, allowsBelow: row.target.allowsBelow)
+        guard vm.dropOnSidebar(payload, at: row.target, edge: edge, validateOnly: true) else {
+            show(nil)
+            return false
+        }
+        show(Line(row: row.id, frame: row.frame, edge: edge))
+        return true
+    }
+
+    /// Drops `payload` where the line is, and clears the line.
+    func drop(_ payload: String?, vm: ShepherdViewModel) -> Bool {
+        defer { show(nil) }
+        guard let payload, let line, let target = targets[line.row] else { return false }
+        return vm.dropOnSidebar(payload, at: target, edge: line.edge, validateOnly: false)
+    }
+}
+
+extension ShepherdViewModel {
+    /// Applies (or with `validateOnly`, answers whether it would apply) a sidebar drop of
+    /// `payload` at `edge` of the row `target` describes.
+    func dropOnSidebar(_ payload: String, at target: SidebarDropZone.Target, edge: SidebarDropEdge, validateOnly: Bool) -> Bool {
+        switch target {
+        case .space(let id, _): dropSpace(payload: payload, on: id, edge: edge, validateOnly: validateOnly)
+        case .agent(let id): dropAgent(payload: payload, on: id, edge: edge, validateOnly: validateOnly)
+        case .remoteAgent(let ref): dropRemoteAgent(payload: payload, on: ref, edge: edge, validateOnly: validateOnly)
         }
     }
 }
 
-struct ShellRow: View {
-    let label: String
-    let selected: Bool
-    /// Foreground process, when it isn't the login shell itself ("pi").
-    var process: String?
-    var badge: String?
-    let action: () -> Void
-    @State private var hovering = false
+private struct SidebarDropDelegate: DropDelegate {
+    let vm: ShepherdViewModel
+    let zone: SidebarDropZone
 
-    var body: some View {
-        HStack(spacing: 8) {
-            Text("$")
-                .font(Fonts.mono(11))
-                .foregroundStyle(selected ? Tokens.focusAccent : Tokens.textDim)
-            Text(label)
-                .font(Fonts.mono(12))
-                .foregroundStyle(selected ? Tokens.textPrimary : Tokens.textSecondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            if let process {
-                Text("· \(process)")
-                    .font(Fonts.mono(11))
-                    .foregroundStyle(Tokens.statusWorking)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if let badge {
-                Text(badge)
-                    .font(Fonts.mono(10))
-                    .foregroundStyle(Tokens.textTertiary)
-                    .transition(.opacity)
-            }
-        }
-        .animation(
-            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                ? nil
-                : .easeOut(duration: 0.12),
-            value: badge
-        )
-        .padding(.leading, 16)
-        .padding(.trailing, 10)
-        .frame(height: Metrics.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-        .overlay(alignment: .leading) {
-            if selected {
-                Rectangle().fill(Tokens.focusAccent).frame(width: 2)
-            }
-        }
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(label), shell")
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.shepherdSidebarItem]) && vm.sidebarDragPayload != nil
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: zone.hover(vm.sidebarDragPayload, at: info.location, vm: vm) ? .move : .forbidden)
+    }
+
+    func dropExited(info: DropInfo) { zone.show(nil) }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer { vm.sidebarDragPayload = nil }
+        return zone.drop(vm.sidebarDragPayload, vm: vm)
     }
 }
 
-/// `+ new space` row and the fleet dot-count strip.
+/// The drop line over the list: a fresh line fades in at each row and edge it moves to.
+private struct SidebarDropLine: View {
+    let zone: SidebarDropZone
 
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if let line = zone.line {
+                NWDropIndicator()
+                    .frame(width: line.frame.width)
+                    .offset(x: line.frame.minX, y: line.edge == .above ? line.frame.minY : line.frame.maxY - NWDropIndicator.thickness)
+                    .id([line.row, AnyHashable(line.edge == .above)])
+                    .nwTransition(.hover)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .nwAnimation(.hover, value: zone.line)
+        .allowsHitTesting(false)
+    }
+}
+
+extension View {
+    /// The list's single reorder drop target and its drop line.
+    func sidebarDropZone(_ zone: SidebarDropZone, vm: ShepherdViewModel) -> some View {
+        coordinateSpace(.named(SidebarDropZone.space))
+            .onDrop(of: [.shepherdSidebarItem], delegate: SidebarDropDelegate(vm: vm, zone: zone))
+            .overlay { SidebarDropLine(zone: zone) }
+    }
+
+    /// Registers this row with the list's drop target while it is on screen.
+    func sidebarDropRow(_ zone: SidebarDropZone, id: AnyHashable, target: SidebarDropZone.Target) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .named(SidebarDropZone.space)) } action: { zone.setFrame($0, of: id) }
+            .onChange(of: target, initial: true) { zone.setTarget(target, of: id) }
+            .onDisappear { zone.remove(id) }
+    }
+}

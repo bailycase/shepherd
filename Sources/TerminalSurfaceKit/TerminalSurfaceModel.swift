@@ -396,6 +396,8 @@ public final class TerminalSurfaceModel: ObservableObject {
     /// Insert Finder-dropped files using Ghostty's native macOS convention:
     /// absolute paths, shell-escaped and separated by spaces.
     func sendDroppedFiles(_ urls: [URL]) -> Bool {
+        // Async image resolution can outlive a presentation switch.
+        guard renderingActive, acceptsFileDrops else { return false }
         if let onFileDrop { onFileDrop(urls); return true }
         guard let text = TerminalFileDrop.text(for: urls) else { return false }
         return viewState.send(text)
@@ -491,27 +493,23 @@ extension TerminalConfiguration {
     private static let appOwnedChords = [
         // ⌘N new agent · ⌘⇧T agent options · ⌘⇧N new space · ⌘W close
         // pane · ⌘⇧W delete agent · ⌘D/⌘⇧D split.
-        "cmd+n", "cmd+t", "shift+cmd+t", "shift+cmd+n", "cmd+w", "shift+cmd+w",
+        "cmd+n", "shift+cmd+t", "shift+cmd+n", "cmd+w", "shift+cmd+w",
         "cmd+d", "shift+cmd+d", "cmd+r",
         // ⇧⌘]/[ have no app binding, but ghostty's next_tab/previous_tab
         // defaults are no-ops in embedded libghostty — unbinding keeps them
         // from being silently swallowed.
         "shift+cmd+right_bracket", "shift+cmd+left_bracket",
         "alt+cmd+left", "alt+cmd+right",
-        // ⌘↑/↓: previous/next agent in sidebar tree order.
-        "cmd+up", "cmd+down",
+        // ⌘↑/↓: previous/next agent in sidebar tree order. ⌥⌘↑/↓: turn jumps.
+        "cmd+up", "cmd+down", "alt+cmd+up", "alt+cmd+down",
+        // ⇧⌘S sidebar · ⇧⌘B review pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.
+        "shift+cmd+s", "shift+cmd+b", "shift+cmd+m", "cmd+period", "cmd+i",
         // ⌘1–9: agent selection in sidebar tree order.
         "cmd+one", "cmd+two", "cmd+three", "cmd+four", "cmd+five",
         "cmd+six", "cmd+seven", "cmd+eight", "cmd+nine",
         "cmd+physical:one", "cmd+physical:two", "cmd+physical:three",
         "cmd+physical:four", "cmd+physical:five", "cmd+physical:six",
         "cmd+physical:seven", "cmd+physical:eight", "cmd+physical:nine",
-        // ⌃1–9: shell selection, mirroring the agent digits.
-        "ctrl+one", "ctrl+two", "ctrl+three", "ctrl+four", "ctrl+five",
-        "ctrl+six", "ctrl+seven", "ctrl+eight", "ctrl+nine",
-        "ctrl+physical:one", "ctrl+physical:two", "ctrl+physical:three",
-        "ctrl+physical:four", "ctrl+physical:five", "ctrl+physical:six",
-        "ctrl+physical:seven", "ctrl+physical:eight", "ctrl+physical:nine",
         // ⌃⇧1–9: machine jump (local + remote hosts in sidebar order).
         "ctrl+shift+one", "ctrl+shift+two", "ctrl+shift+three",
         "ctrl+shift+four", "ctrl+shift+five", "ctrl+shift+six",

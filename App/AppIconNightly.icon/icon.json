@@ -1,0 +1,33 @@
+{
+  "fill" : {
+    "solid" : "srgb:0.05098,0.05490,0.06275,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "crook.svg",
+          "name" : "Crook"
+        },
+        {
+          "glass" : false,
+          "image-name" : "moon.svg",
+          "name" : "Moon"
+        }
+      ]
+    },
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "glow.svg",
+          "name" : "Glow"
+        }
+      ]
+    }
+  ],
+  "supported-platforms" : {
+    "squares" : "shared"
+  }
+}

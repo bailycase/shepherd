@@ -40,9 +40,8 @@ body:
       label: Update channel
       options:
         - Stable
-        - Release Candidate
         - Beta
-        - Nightly
+        - Shepherd Nightly
         - Built from source
         - Unknown
     validations:

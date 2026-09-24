@@ -1,0 +1,174 @@
+import SwiftUI
+
+/// One finished run in a ledger.
+public struct NWRunLedgerEntry: Identifiable, Equatable, Sendable {
+    public var id: String
+    public var name: String
+    public var state: AgentState
+    /// One line: what it did, or why it failed.
+    public var summary: String
+    /// "5 files · 41m".
+    public var meta: String
+
+    public init(id: String, name: String, state: AgentState, summary: String, meta: String) {
+        self.id = id
+        self.name = name
+        self.state = state
+        self.summary = summary
+        self.meta = meta
+    }
+}
+
+/// A finished group of runs, as the ledger shows it.
+public struct NWRunLedgerSummary: Equatable, Sendable {
+    /// "3 subagents".
+    public var title: String
+    /// The header glyph's state: done, or failed when any run failed.
+    public var state: AgentState
+    /// "all done · 45m".
+    public var status: String
+    /// The group's combined diff; hidden when zero.
+    public var added: Int
+    public var removed: Int
+    /// In spawn order.
+    public var entries: [NWRunLedgerEntry]
+
+    public init(title: String, state: AgentState, status: String, added: Int, removed: Int, entries: [NWRunLedgerEntry]) {
+        self.title = title
+        self.state = state
+        self.status = status
+        self.added = added
+        self.removed = removed
+        self.entries = entries
+    }
+
+    /// The header as VoiceOver reads it: "3 subagents, all done · 45m, 318 added, 64 removed".
+    public var accessibilityLabel: String {
+        let diff = added + removed > 0 ? "\(added) added, \(removed) removed" : nil
+        return ([title, status, diff] as [String?]).compactMap { $0 }.joined(separator: ", ")
+    }
+}
+
+/// The permanent record of a finished run group (Agents board): a header on `bgSunken` (glyph,
+/// title, one step per run, status, combined diff) and one row per run. Selecting a row opens
+/// it in the inspector; the selected row is tinted with a running rule on the pane side.
+public struct NWRunLedger: View, Equatable {
+    let ledger: NWRunLedgerSummary
+    @Binding var selection: String?
+    /// The selection when built, for `==`.
+    private let selected: String?
+
+    public init(_ ledger: NWRunLedgerSummary, selection: Binding<String?>) {
+        self.ledger = ledger
+        self._selection = selection
+        self.selected = selection.wrappedValue
+    }
+
+    public nonisolated static func == (a: NWRunLedger, b: NWRunLedger) -> Bool {
+        a.ledger == b.ledger && a.selected == b.selected
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        let selected = selection
+        // Lazy: a workflow can finish hundreds of runs, and inside a scrolling thread only the
+        // rows on screen are built. Each row is one view, redrawn only when it changes.
+        LazyVStack(spacing: 0) {
+            header
+            ForEach(ledger.entries) { entry in
+                NWRunLedgerRow(entry: entry, selected: entry.id == selected) { selection = entry.id }
+                    .equatable()
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .background(nw.bgWindow)
+        .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
+        .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+        .accessibilityElement(children: .contain)
+    }
+
+    private var header: some View {
+        let nw = Color.nw
+        return HStack(spacing: 10) {
+            NWBranchGlyph(ledger.state, size: 13)
+            Text(ledger.title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1).fixedSize()
+            NWStepStrip(ledger.entries.map(\.state), segmentWidth: NWRunLayout.stepWidth).fixedSize()
+            Text(ledger.status).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).lineLimit(1)
+            Spacer(minLength: NW.Space.m)
+            if ledger.added + ledger.removed > 0 {
+                NWDiffStat(added: ledger.added, removed: ledger.removed, font: .nwMono(11))
+            }
+        }
+        .padding(.horizontal, NW.Space.l)
+        .frame(minHeight: NWRunLayout.headerHeight)
+        .background(nw.bgSunken)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(ledger.accessibilityLabel)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+private struct NWRunLedgerRow: View, Equatable {
+    let entry: NWRunLedgerEntry
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    nonisolated static func == (a: NWRunLedgerRow, b: NWRunLedgerRow) -> Bool {
+        a.entry == b.entry && a.selected == b.selected
+    }
+
+    /// The rule above the row, then the row.
+    var body: some View {
+        VStack(spacing: 0) {
+            NWHairline()
+            row
+        }
+    }
+
+    private var row: some View {
+        let _ = NWRenderProbe.tick("runs.ledgerRow")
+        let nw = Color.nw
+        return Button(action: action) {
+            HStack(spacing: 10) {
+                NWStatusDot(entry.state)
+                Text(entry.name).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                    .frame(width: NWRunLayout.nameWidth * ThemeStore.shared.textScale, alignment: .leading)
+                Text(entry.summary).font(.nw(.ui, weight: .regular))
+                    .foregroundStyle(entry.state == .failed ? nw.failed : nw.textSecondary)
+                    .lineLimit(1).truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(entry.meta).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).monospacedDigit().lineLimit(1).fixedSize()
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(selected ? nw.running : nw.textTertiary)
+            }
+            .padding(.horizontal, NW.Space.l)
+            .frame(maxWidth: .infinity, minHeight: NW.Height.rowComfortable)
+            .background(selected ? nw.runningTint : hovering ? nw.bgHover : .clear)
+            .overlay(alignment: .trailing) {
+                if selected { nw.running.frame(width: NWRunLayout.selectionRule) }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
+        .nwAnimation(.hover, value: selected)
+        .accessibilityLabel("\(entry.name), \(entry.state.label), \(entry.summary)")
+        .accessibilityValue(entry.meta)
+        .accessibilityHint("Opens the run in the inspector")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// The ledger's and runs strip's own dimensions (Agents board).
+enum NWRunLayout {
+    static let headerHeight: CGFloat = 32
+    static let stepWidth: CGFloat = 14
+    /// The strip holds many runs, so its steps are narrower.
+    static let stripCellWidth: CGFloat = 8
+    /// A hovered strip segment thickens to show it is the one a click opens.
+    static let stripHoverHeight: CGFloat = 5
+    static let nameWidth: CGFloat = 70
+    static let selectionRule: CGFloat = 2
+}

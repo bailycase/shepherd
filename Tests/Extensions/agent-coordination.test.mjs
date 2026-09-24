@@ -1,19 +1,29 @@
+// The panes extension's live coordination (agent_read/steer/interrupt/wait/delete) against a
+// local socket standing in for Shepherd: no pi process, no model provider.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as net from "node:net";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import * as path from "node:path";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { createRequire, stripTypeScriptTypes } from "node:module";
-import { pathToFileURL } from "node:url";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 
-// Use the same installed TypeBox as pi. Run with NODE_PATH="$(npm root -g)".
-const piRequire = createRequire(`${process.env.NODE_PATH}/@earendil-works/pi-coding-agent/package.json`);
-const source = stripTypeScriptTypes(await readFile(new URL("../../Extensions/shepherd-panes.ts", import.meta.url), "utf8"))
-  .replace('from "typebox"', `from ${JSON.stringify(pathToFileURL(piRequire.resolve("typebox")).href)}`);
-const { default: install } = await import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const pkg = process.env.PI_PACKAGE_DIR;
+if (!pkg) throw Error("Set PI_PACKAGE_DIR to the installed Pi package");
+const require = createRequire(path.join(pkg, "package.json"));
+const { createJiti } = require("jiti");
+const jiti = createJiti(import.meta.url, { alias: {
+  "@earendil-works/pi-coding-agent": path.join(pkg, "dist/index.js"),
+  typebox: path.join(pkg, "node_modules/typebox/build/index.mjs"),
+} });
+const { default: install } = await jiti.import(path.join(root, "Extensions/shepherd-panes.ts"));
 
 test("live recipient read, control, cancellable wait and deletion request", async () => {
   const dir = await mkdtemp(`${tmpdir()}/sh-peer-`);
+  const oldHome = process.env.HOME;
+  process.env.HOME = dir;
   process.env.SHEPHERD_SOCKET = `${dir}/s`;
   process.env.SHEPHERD_AGENT_ID = "recipient";
   const frames = [];
@@ -179,6 +189,7 @@ test("live recipient read, control, cancellable wait and deletion request", asyn
     events.get("session_shutdown")();
     connection?.destroy();
     await new Promise((r) => server.close(r));
+    if (oldHome === undefined) delete process.env.HOME; else process.env.HOME = oldHome;
     await rm(dir, { recursive: true, force: true });
   }
 });

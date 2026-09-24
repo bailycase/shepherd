@@ -1,173 +1,162 @@
 import SwiftUI
+import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
-/// The ⌘K palette, drawn to the design mock: floating over the workspace,
-/// `>` prompt with a dim "commands" tag, sectioned rows (commands · threads ·
-/// shells · spaces · subagents) with trailing keycaps, `⏎ select · esc` footer.
+/// The ⌘K palette (Composer board, `.nwCommandPalette`): a 620pt card 18% from the top over the
+/// scrim, capped to the window. A 44pt search row with All · Commands · Agents scopes, then
+/// results under mono caps headers — Commands, This thread, Subagents, and Agents/Spaces once
+/// there is a query. Rows show an icon, the label, dim context, and the real shortcut.
 ///
-/// Draggable by its prompt row; the offset from the top-center anchor
-/// persists in UserDefaults, so the palette reopens where the user left it
-/// across resizes (the anchor scales with the window, the offset does not).
-///
-/// Queries of 3+ characters also search agents' session transcripts in the
-/// background (bounded tail scan, debounced), so a thread is findable by
-/// remembered conversation text; those rows show a dim `…snippet…` line.
+/// Queries of 3+ characters also search agents' session transcripts in the background
+/// (bounded tail scan, debounced), so a thread is findable by remembered conversation text;
+/// those rows show a dim `…snippet…` line.
 struct CommandPaletteView: View {
     var vm: ShepherdViewModel
+
+    var body: some View {
+        PaletteCard(
+            items: vm.paletteItems,
+            run: { vm.runPaletteItem($0) },
+            close: { vm.showCommandPalette = false },
+            contentSearch: { query, existing in
+                let targets = vm.paletteSearchTargets
+                let matches = await Task.detached(priority: .userInitiated) {
+                    PaletteContentSearch.search(query: query, agents: targets)
+                }.value
+                guard !Task.isCancelled else { return [] }
+                let local = vm.paletteContentRows(matches: matches, excluding: existing)
+                return local + (await vm.remoteContentRows(query: query, excluding: existing))
+            }
+        )
+    }
+}
+
+/// The palette itself, independent of the view model so it renders in tests.
+struct PaletteCard: View {
+    let items: [PaletteItem]
+    let run: (PaletteItem) -> Void
+    let close: () -> Void
+    /// Transcript search: rows for agents whose conversation matched (excluding ids already shown).
+    var contentSearch: ((String, Set<String>) async -> [PaletteItem])?
+    var initialQuery = ""
     @State private var query = ""
-    @State private var selectedIndex = 0
-    @FocusState private var fieldFocused: Bool
+    @State private var scope: PaletteItem.Scope = .all
+    /// The highlighted row: ↑↓ and hover move it.
+    @State private var highlight: PaletteHighlight
     @State private var contentRows: [PaletteItem] = []
     @State private var contentSearchTask: Task<Void, Never>?
-    @AppStorage("shepherd.palette.offsetX") private var offsetX = 0.0
-    @AppStorage("shepherd.palette.offsetY") private var offsetY = 0.0
-    @State private var dragStart: CGSize?
+    /// Filtered once per query, scope, items or transcript matches; hover and the arrow keys
+    /// only move the highlight.
+    @State private var results = PaletteResults()
+    @FocusState private var fieldFocused: Bool
+    @Environment(\.nwPaletteMaxListHeight) private var maxListHeight
 
-    private var results: [PaletteItem] {
-        // Fuzzy (content) matches trail everything in their own section.
-        PaletteSearch.filter(vm.paletteItems, query: query) + contentRows
+    /// `highlight` lets a test move the highlight as ↑↓ and hover do.
+    init(items: [PaletteItem], run: @escaping (PaletteItem) -> Void, close: @escaping () -> Void,
+         contentSearch: ((String, Set<String>) async -> [PaletteItem])? = nil, initialQuery: String = "",
+         highlight: PaletteHighlight? = nil) {
+        self.items = items
+        self.run = run
+        self.close = close
+        self.contentSearch = contentSearch
+        self.initialQuery = initialQuery
+        _highlight = State(initialValue: highlight ?? PaletteHighlight())
+        // The first results are there as the card appears, so opening never animates the list.
+        _results = State(initialValue: PaletteResults(items: items, query: initialQuery, scope: .all, contentRows: []))
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            promptRow
-            Rectangle().fill(Tokens.separator).frame(height: 1)
+        NWPaletteCard {
+            NWPaletteSearchRow("Search commands, agents, subagents…", text: $query, focus: $fieldFocused, submit: runSelected) {
+                NWSegmentedPicker("Scope", selection: $scope, options: PaletteItem.Scope.allCases.map { ($0, $0.title) }, size: .s)
+                    .nwHelp("Switch scope", shortcut: "⇥")
+            }
+        } results: {
             resultsList
-            Rectangle().fill(Tokens.separator).frame(height: 1)
-            footer
         }
-        .frame(width: 460)
-        .background(Tokens.paletteBg)
-        .clipShape(RoundedRectangle(cornerRadius: 9))
-        .overlay(
-            RoundedRectangle(cornerRadius: 9)
-                .stroke(Tokens.chipBorder, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
-        .offset(x: offsetX, y: offsetY)
-        .onAppear { fieldFocused = true }
+        // Rows arrive, leave, and reorder as the query or scope changes, and the card follows
+        // their height; moving the highlight (↑↓, hover) changes no row, so it lands at once.
+        .nwAnimation(.list, value: results.layout)
+        .onAppear {
+            query = initialQuery
+            fieldFocused = true
+        }
         .onChange(of: query) {
-            selectedIndex = 0
+            highlight.move(to: 0)
             scheduleContentSearch()
-            vm.paletteVisibleRows = results
+            refreshResults()
         }
-        .onChange(of: contentRows.count) { vm.paletteVisibleRows = results }
-        .onAppear { vm.paletteVisibleRows = results }
-        .onDisappear {
-            contentSearchTask?.cancel()
-            vm.paletteVisibleRows = []
+        .onChange(of: scope) {
+            highlight.move(to: 0)
+            refreshResults()
         }
+        .onChange(of: contentRows) { refreshResults() }
+        // The initializer built the first results from these items.
+        .onChange(of: items) { refreshResults() }
         .onKeyPress(.upArrow) {
-            selectedIndex = max(0, selectedIndex - 1)
+            highlight.move(to: max(0, highlight.index - 1))
             return .handled
         }
         .onKeyPress(.downArrow) {
-            selectedIndex = min(max(0, results.count - 1), selectedIndex + 1)
+            highlight.move(to: min(max(0, results.rows.count - 1), highlight.index + 1))
+            return .handled
+        }
+        .onKeyPress(.tab) {
+            let all = PaletteItem.Scope.allCases
+            scope = all[((all.firstIndex(of: scope) ?? 0) + 1) % all.count]
             return .handled
         }
         .onKeyPress(.escape) {
-            vm.showCommandPalette = false
+            close()
             return .handled
         }
-        // ⌘digit quick-pick is routed through the menu-bar shortcuts (they
-        // fire before local key handlers); see runPaletteQuickPick.
-    }
-
-    // MARK: Prompt (also the drag handle)
-
-    private var promptRow: some View {
-        HStack(spacing: 8) {
-            Text(">")
-                .font(Fonts.mono(13))
-                .foregroundStyle(Tokens.focusAccent)
-            TextField("", text: $query)
-                .textFieldStyle(.plain)
-                .font(Fonts.mono(13))
-                .foregroundStyle(Tokens.textPrimary)
-                .focused($fieldFocused)
-                .onSubmit(runSelected)
-            Text("commands")
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.textDim)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 40)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(coordinateSpace: .global)
-                .onChanged { value in
-                    let base = dragStart ?? CGSize(width: offsetX, height: offsetY)
-                    dragStart = base
-                    offsetX = base.width + value.translation.width
-                    offsetY = base.height + value.translation.height
-                }
-                .onEnded { _ in dragStart = nil }
-        )
-        .onTapGesture(count: 2) {
-            // Double-click the handle to reset to center.
-            offsetX = 0
-            offsetY = 0
-        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Command palette")
     }
 
     // MARK: Results
 
     private var resultsList: some View {
         ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 0) {
-                    let rows = results
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, item in
-                        if index == 0 || rows[index - 1].section != item.section {
-                            PaletteSectionHeader(title: item.section.title)
-                        }
-                        PaletteRow(
-                            item: item,
-                            selected: index == selectedIndex,
-                            highlightTerm: item.contentSnippet != nil ? query : nil,
-                            // Hold ⌘: the first nine rows advertise their
-                            // instant pick, mirroring the sidebar's ⌘1–9.
-                            quickPick: vm.paletteModifierHeld && index < 9 ? "⌘\(index + 1)" : nil
-                        ) {
-                            vm.runPaletteItem(item)
-                        }
-                        .id(item.id)
+            ScrollView(.vertical) {
+                // Lazy: a query can match every agent and subagent, and only the rows on screen
+                // are built. The card still hugs a short list: the stack's height is exact once
+                // every row is realized, and past the cap the list scrolls.
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    let highlighted = highlight.index
+                    ForEach(results.entries) { entry in
+                        PaletteEntryRow(entry: entry, highlighted: entry.index == highlighted, run: run,
+                                        hover: { highlight.move(to: $0) })
+                            .equatable()
+                            .nwTransition(.list)
                     }
-                    if rows.isEmpty {
-                        Text("no matches")
-                            .font(Fonts.mono(11))
-                            .foregroundStyle(Tokens.textDim)
-                            .frame(height: 30)
+                    if results.rows.isEmpty {
+                        Text(query.isEmpty ? "Nothing here yet" : "No matches")
+                            .font(Font.nw(.caption))
+                            .foregroundStyle(Color.nw.textTertiary)
+                            .frame(maxWidth: .infinity, minHeight: NWPaletteMetrics.sectionHeight * 2)
+                            .nwTransition(.content)
                     }
                 }
             }
-            .frame(maxHeight: 10 * 30)
-            .onChange(of: selectedIndex) {
-                if results.indices.contains(selectedIndex) {
-                    proxy.scrollTo(results[selectedIndex].id)
-                }
+            .scrollIndicators(.hidden)
+            .frame(maxHeight: maxListHeight)
+            .fixedSize(horizontal: false, vertical: true)
+            .onChange(of: highlight.index) {
+                if results.rows.indices.contains(highlight.index) { proxy.scrollTo(results.rows[highlight.index].id) }
             }
         }
     }
 
-    private var footer: some View {
-        HStack {
-            Text("⏎ select")
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.textHint)
-            Spacer()
-            Text("esc")
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.textHint)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 30)
+    private func refreshResults() {
+        results = PaletteResults(items: items, query: query, scope: scope, contentRows: contentRows).following(results)
     }
 
     private func runSelected() {
-        guard results.indices.contains(selectedIndex) else { return }
-        vm.runPaletteItem(results[selectedIndex])
+        guard results.rows.indices.contains(highlight.index) else { return }
+        run(results.rows[highlight.index])
     }
 
     // MARK: Content search (debounced, off-main)
@@ -176,104 +165,170 @@ struct CommandPaletteView: View {
         contentSearchTask?.cancel()
         contentRows = []
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard trimmed.count >= PaletteContentSearch.minQueryLength else { return }
-        let targets = vm.paletteSearchTargets
-        let existing = Set(
-            PaletteSearch.filter(vm.paletteItems, query: query)
-                .filter { $0.section == .threads }
-                .map(\.id)
-        )
+        guard let contentSearch, trimmed.count >= PaletteContentSearch.minQueryLength else { return }
+        let existing = Set(PaletteSearch.filter(items, query: trimmed).filter { $0.section == .agents }.map(\.id))
         contentSearchTask = Task {
             try? await Task.sleep(for: .milliseconds(250))
             guard !Task.isCancelled else { return }
-            let matches = await Task.detached(priority: .userInitiated) {
-                PaletteContentSearch.search(query: trimmed, agents: targets)
-            }.value
+            let rows = await contentSearch(trimmed, existing)
             guard !Task.isCancelled else { return }
-            contentRows = vm.paletteContentRows(matches: matches, excluding: existing)
-            let remote = await vm.remoteContentRows(query: trimmed, excluding: existing)
-            guard !Task.isCancelled else { return }
-            contentRows += remote
+            contentRows = rows
         }
     }
 }
 
-private struct PaletteSectionHeader: View {
-    let title: String
+/// The results list for one query, scope, item list and set of transcript matches: the rows in
+/// order and the list's entries, snippets already split around their match. Built when one of
+/// those inputs changes, never on hover or selection.
+struct PaletteResults {
+    var rows: [PaletteItem] = []
+    var entries: [PaletteEntry] = []
+    /// Counts the changes to which rows the list shows and in what order: the key the list's
+    /// motion watches, so a render never compares every row's id.
+    private(set) var layout = 0
+
+    init() {}
+
+    init(items: [PaletteItem], query: String, scope: PaletteItem.Scope, contentRows: [PaletteItem]) {
+        rows = PaletteSearch.filter(items, query: query, scope: scope) + (scope == .commands ? [] : contentRows)
+        entries = PaletteEntry.entries(rows, highlighting: query)
+    }
+
+    /// These results replacing `previous`: the same layout count while the same rows show.
+    func following(_ previous: PaletteResults) -> PaletteResults {
+        var next = self
+        let same = entries.count == previous.entries.count && entries.map(\.id) == previous.entries.map(\.id)
+        next.layout = same ? previous.layout : previous.layout + 1
+        return next
+    }
+}
+
+/// The palette's highlighted row, as an index into its results.
+@MainActor @Observable
+final class PaletteHighlight {
+    private(set) var index = 0
+
+    init(index: Int = 0) {
+        self.index = index
+    }
+
+    /// Moves the highlight; a move to where it is already changes nothing.
+    func move(to index: Int) {
+        if self.index != index { self.index = index }
+    }
+}
+
+/// A transcript match's `…snippet…`, split around the first occurrence of the query.
+struct PaletteSnippet: Equatable {
+    var before: String
+    var match = ""
+    var after = ""
+
+    init(_ snippet: String, term: String) {
+        let term = term.trimmingCharacters(in: .whitespaces)
+        guard !term.isEmpty, let range = snippet.range(of: term, options: .caseInsensitive) else {
+            before = snippet
+            return
+        }
+        before = String(snippet[..<range.lowerBound])
+        match = String(snippet[range])
+        after = String(snippet[range.upperBound...])
+    }
+}
+
+/// One line of the results list: a section header or a result, each a single lazy-stack view
+/// with a stable id (a result's own id, so `scrollTo` finds it).
+enum PaletteEntry: Identifiable, Equatable {
+    case header(PaletteItem.Section)
+    case row(index: Int, item: PaletteItem, snippet: PaletteSnippet?)
+
+    var id: String {
+        switch self {
+        case .header(let section): "section.\(section.rawValue)"
+        case .row(_, let item, _): item.id
+        }
+    }
+
+    /// A result's place in the rows (what the highlight points at); nil for a header.
+    var index: Int? {
+        if case .row(let index, _, _) = self { return index }
+        return nil
+    }
+
+    /// Headers go before the first row of each section; `index` is the row's place in `rows`.
+    /// A row with a transcript snippet carries it split around `query`.
+    static func entries(_ rows: [PaletteItem], highlighting query: String = "") -> [PaletteEntry] {
+        var entries: [PaletteEntry] = []
+        for (index, item) in rows.enumerated() {
+            if index == 0 || rows[index - 1].section != item.section { entries.append(.header(item.section)) }
+            entries.append(.row(index: index, item: item, snippet: item.contentSnippet.map { PaletteSnippet($0, term: query) }))
+        }
+        return entries
+    }
+}
+
+/// One line of the results, always a single view (a lazy stack's fast path: rows off screen are
+/// never built). Equal while its entry and highlight are, so moving the highlight redraws the
+/// two rows it leaves and lands on.
+private struct PaletteEntryRow: View, Equatable {
+    let entry: PaletteEntry
+    let highlighted: Bool
+    let run: (PaletteItem) -> Void
+    let hover: (Int) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.entry == rhs.entry && lhs.highlighted == rhs.highlighted
+    }
 
     var body: some View {
-        HStack {
-            Text(title.uppercased())
-                .font(Fonts.mono(9.5, .semibold))
-                .tracking(0.74)
-                .foregroundStyle(Tokens.textDim)
-            Spacer()
+        VStack(spacing: 0) {
+            switch entry {
+            case .header(let section):
+                NWPaletteSectionHeader(section.title)
+            case .row(let index, let item, let snippet):
+                PaletteRow(item: item, selected: highlighted, snippet: snippet) { run(item) }
+                    .onHover { if $0 { hover(index) } }
+            }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 7)
-        .padding(.bottom, 3)
     }
 }
 
 private struct PaletteRow: View {
     let item: PaletteItem
     let selected: Bool
-    /// Query term to emphasize inside the content snippet.
-    var highlightTerm: String?
-    /// ⌘-held pick hint ("⌘3"); shown in place of the item's own shortcut.
-    var quickPick: String?
+    /// The transcript snippet, with the matched term to emphasize.
+    let snippet: PaletteSnippet?
     let action: () -> Void
-    @State private var hovering = false
-
-    /// Snippet with the matched term brightened; the rest stays dim.
-    private func snippetText(_ snippet: String) -> Text {
-        guard let term = highlightTerm?.trimmingCharacters(in: .whitespaces),
-              !term.isEmpty,
-              let range = snippet.range(of: term, options: .caseInsensitive) else {
-            return Text(snippet).foregroundStyle(Tokens.textDim)
-        }
-        return Text(snippet[snippet.startIndex..<range.lowerBound]).foregroundStyle(Tokens.textDim)
-            + Text(snippet[range]).foregroundStyle(Tokens.textPrimary).bold()
-            + Text(snippet[range.upperBound...]).foregroundStyle(Tokens.textDim)
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 8) {
-                Text(item.title)
-                    .font(Fonts.mono(12, selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? Tokens.textPrimary : Tokens.textSecondary)
-                    .lineLimit(1)
-                if let subtitle = item.subtitle {
-                    Text(subtitle)
-                        .font(Fonts.mono(10.5))
-                        .foregroundStyle(Tokens.textDim)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 12)
-                if let quickPick {
-                    Text(quickPick)
-                        .font(Fonts.mono(10.5))
-                        .foregroundStyle(Tokens.textTertiary)
-                        .transition(.opacity)
-                } else if let shortcut = item.shortcut {
-                    Text(shortcut)
-                        .font(Fonts.mono(10.5))
-                        .foregroundStyle(Tokens.textMetadata)
-                }
-            }
-            if let snippet = item.contentSnippet {
+        NWPaletteRow(item.title, systemImage: item.icon, context: item.subtitle, shortcut: item.shortcut,
+                     highlighted: selected, iconColor: iconColor, action: action) {
+            if let snippet {
                 snippetText(snippet)
-                    .font(Fonts.mono(10))
+                    .font(Font.nw(.caption))
                     .lineLimit(1)
+                    .padding(.leading, NWPaletteMetrics.titleInset)
+                    .padding(.bottom, NW.Space.xs)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(minHeight: 30)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selected ? Tokens.rowSelection : hovering ? Tokens.rowHover : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: action)
+    }
+
+    /// Subagent rows wear their run state's color; otherwise the row decides.
+    private var iconColor: Color? {
+        switch item.kind {
+        case .child(_, let child), .remoteChild(_, _, let child):
+            AgentState(nativeSubagentState(child)).color
+        default:
+            nil
+        }
+    }
+
+    /// Snippet with the matched term emphasized; the rest stays dim.
+    private func snippetText(_ snippet: PaletteSnippet) -> Text {
+        let before = Text(snippet.before).foregroundStyle(Color.nw.textTertiary)
+        guard !snippet.match.isEmpty else { return before }
+        let match = Text(snippet.match).foregroundStyle(Color.nw.textPrimary).bold()
+        let after = Text(snippet.after).foregroundStyle(Color.nw.textTertiary)
+        return Text("\(before)\(match)\(after)")
     }
 }

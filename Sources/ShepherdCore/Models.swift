@@ -33,86 +33,43 @@ public struct Space: Codable, Hashable, Sendable, Identifiable {
     }
 }
 
+/// A pane layout: an agent's thread plus any terminal panes opened beside it, or a host-side
+/// utility terminal (`inspectorFor`). Global shells and space shell workspaces are gone; the
+/// server drops their tabs from older state files at startup, and the shell-only keys those
+/// tabs carried (`name`, `nameIsFinal`, `restoreCommand`) are ignored when decoding.
 public struct Tab: Codable, Hashable, Sendable, Identifiable {
     public var id: TabID
-    /// nil for a global shell — a workspace outside every space (the sidebar's
-    /// SHELLS section). Space tabs always carry their space.
+    /// The tab's space. Optional only so state files with global shells (nil) still decode.
     public var spaceID: SpaceID?
     public var order: Int
     public var layout: PaneNode
-    /// Set on the ephemeral layout hosting an agent's subagent-inspector
-    /// pane. Inspector tabs are session-scoped UI: the server purges them at
-    /// startup (their viewer process died with the app) and deletes them
+    /// Set on a host-side utility terminal opened for a remote client (a remote
+    /// `gh auth login`). Session-scoped: the server purges them at startup and deletes them
     /// with their agent. Decodes nil from older state files.
     public var inspectorFor: AgentID?
-    /// Display name for global shells ("~/src", "logs"). Space tabs derive
-    /// their identity from agents and never need one.
-    public var name: String?
-    /// True when a shell name was explicitly assigned by the user.
-    public var nameIsFinal: Bool
-    /// The command a shell was running when last observed ("pi", "htop"),
-    /// re-typed into the fresh shell on the first spawn after relaunch —
-    /// processes die with the app, so this is how a shell "restores".
-    /// Shell-only, like `name`.
-    public var restoreCommand: String?
 
     public init(
         id: TabID = TabID(),
         spaceID: SpaceID?,
         order: Int,
         layout: PaneNode,
-        inspectorFor: AgentID? = nil,
-        name: String? = nil,
-        nameIsFinal: Bool = false,
-        restoreCommand: String? = nil
+        inspectorFor: AgentID? = nil
     ) {
         self.id = id
         self.spaceID = spaceID
         self.order = order
         self.layout = layout
         self.inspectorFor = inspectorFor
-        self.name = name
-        self.nameIsFinal = nameIsFinal
-        self.restoreCommand = restoreCommand
     }
+}
 
-    /// A global shell: no space, no agents, just a terminal workspace.
-    public var isShell: Bool { spaceID == nil }
-
-    private enum CodingKeys: String, CodingKey {
-        case id, spaceID, order, layout, inspectorFor, name, nameIsFinal, restoreCommand
-    }
-
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(TabID.self, forKey: .id)
-        spaceID = try c.decodeIfPresent(SpaceID.self, forKey: .spaceID)
-        order = try c.decode(Int.self, forKey: .order)
-        layout = try c.decode(PaneNode.self, forKey: .layout)
-        inspectorFor = try c.decodeIfPresent(AgentID.self, forKey: .inspectorFor)
-        // `name`/`restoreCommand` are shell-only. Daemon-era state files
-        // carried a (now meaningless) title on every space tab; dropping it
-        // there keeps those files converging on the next write.
-        name = spaceID == nil ? try c.decodeIfPresent(String.self, forKey: .name) : nil
-        // Older shell names were user-assigned; preserve them rather than
-        // guessing whether "~" was automatic or explicit.
-        nameIsFinal = spaceID == nil ? (try c.decodeIfPresent(Bool.self, forKey: .nameIsFinal) ?? true) : false
-        restoreCommand = spaceID == nil ? try c.decodeIfPresent(String.self, forKey: .restoreCommand) : nil
-    }
-
-    public func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(id, forKey: .id)
-        try c.encodeIfPresent(spaceID, forKey: .spaceID)
-        try c.encode(order, forKey: .order)
-        try c.encode(layout, forKey: .layout)
-        try c.encodeIfPresent(inspectorFor, forKey: .inspectorFor)
-        if isShell {
-            try c.encodeIfPresent(name, forKey: .name)
-            try c.encode(nameIsFinal, forKey: .nameIsFinal)
-            try c.encodeIfPresent(restoreCommand, forKey: .restoreCommand)
-        }
-    }
+/// How a session's process is driven. Every agent runs `pi --mode rpc`; PTYs serve shells.
+/// Raw values are the wire spelling and must not change.
+public enum SessionRuntime: String, Codable, Hashable, Sendable {
+    /// A PTY rendered by Ghostty (shells and auxiliary panes).
+    case pty = "terminal"
+    /// `pi --mode rpc` on pipes; Shepherd is the only UI.
+    case rpc
 }
 
 public struct Agent: Codable, Hashable, Sendable, Identifiable {
@@ -186,7 +143,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, runtime
     }
 
     public init(from decoder: Decoder) throws {
@@ -209,6 +166,28 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
         worktreePath = try c.decodeIfPresent(String.self, forKey: .worktreePath)
+        // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
+        // the same pi session, which is the whole migration.
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(spaceID, forKey: .spaceID)
+        try c.encode(tabID, forKey: .tabID)
+        try c.encodeIfPresent(paneID, forKey: .paneID)
+        try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(model, forKey: .model)
+        try c.encodeIfPresent(thinkingLevel, forKey: .thinkingLevel)
+        try c.encode(nameIsFinal, forKey: .nameIsFinal)
+        try c.encodeIfPresent(piSessionID, forKey: .piSessionID)
+        try c.encodeIfPresent(worktreeBranch, forKey: .worktreeBranch)
+        try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
+        try c.encodeIfPresent(worktreePath, forKey: .worktreePath)
+        // Older remote clients default a missing runtime to terminal and would try to attach a
+        // PTY that does not exist.
+        try c.encode(SessionRuntime.rpc, forKey: .runtime)
     }
 }
 

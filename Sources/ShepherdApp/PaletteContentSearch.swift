@@ -22,9 +22,7 @@ enum PaletteContentSearch {
     /// The session file pi is writing for `piSessionID` in `cwd`, resolved
     /// the same way PiSessionFile names them (any timestamp prefix).
     static func sessionFile(piSessionID: String, cwd: String) -> URL? {
-        let directory = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".pi/agent/sessions", isDirectory: true)
-            .appendingPathComponent("--\(PiSessionFile.mangled(cwd))--", isDirectory: true)
+        let directory = PiSessionFile.projectDirectory(forCwd: cwd)
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
             return nil
         }

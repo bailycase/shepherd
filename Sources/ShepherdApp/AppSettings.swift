@@ -1,7 +1,9 @@
 import Foundation
 import AppKit
 import SwiftUI
+import ShepherdUI
 import ShepherdCore
+import ShepherdProtocol
 
 /// What a new worktree branches from (Settings ▸ Worktrees).
 enum WorktreeBaseMode: String, CaseIterable {
@@ -25,8 +27,24 @@ enum WorktreeMergeMethod: String, CaseIterable {
 /// chrome, not shared session state. Every setting here is wired to real
 /// behavior; a preference nothing reads is a bug, not a placeholder.
 @MainActor
-final class AppSettings: ObservableObject {
-    static let shared = AppSettings()
+@Observable
+final class AppSettings {
+    static let shared: AppSettings = {
+        let settings = AppSettings()
+        settings.drivesDesignScale = true
+        settings.publishDesignScale()
+        return settings
+    }()
+
+    /// Only the app's own settings object feeds the design system's text scale and density;
+    /// isolated instances in tests must not restyle anything.
+    @ObservationIgnored private var drivesDesignScale = false
+
+    private func publishDesignScale() {
+        guard drivesDesignScale else { return }
+        ThemeStore.shared.textScale = CGFloat(uiTextScale)
+        ThemeStore.shared.density = CGFloat(uiDensity)
+    }
 
     enum Key {
         static let terminalFontFamily = "shepherd.terminal.fontFamily"
@@ -38,10 +56,17 @@ final class AppSettings: ObservableObject {
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
+        static let piNativeSubagents = "shepherd.pi.extension.nativeSubagents"
+        static let childConcurrency = "shepherd.pi.children.concurrency"
+        static let childModel = "shepherd.pi.children.model"
+        static let childThinking = "shepherd.pi.children.thinking"
+        static let childContext = "shepherd.pi.children.context"
+        static let childScope = "shepherd.pi.children.scope"
         static let shellPath = "shepherd.pane.shell"
         static let uiDensity = "shepherd.ui.density"
         static let uiTextScale = "shepherd.ui.textScale"
         static let sidebarWidth = "shepherd.ui.sidebarWidth"
+        static let sidebarRowDensity = "shepherd.sidebarRowDensity"
         static let remoteListenerEnabled = "shepherd.remote.listener"
         static let remoteListenerPort = "shepherd.remote.listenerPort"
         static let autoUpdatePi = "shepherd.pi.autoUpdate"
@@ -57,8 +82,9 @@ final class AppSettings: ObservableObject {
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, shellPath,
-            piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension,
-            uiDensity, uiTextScale, sidebarWidth,
+            piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
+            childConcurrency, childModel, childThinking, childContext, childScope,
+            uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             remoteListenerEnabled, remoteListenerPort,
             autoUpdatePi, autoUpdateExtensions,
             worktreeBaseMode, worktreeFetchBeforeCreate,
@@ -84,83 +110,127 @@ final class AppSettings: ObservableObject {
 
     /// Terminal surfaces are rebuilt on change, so both font values are
     /// applied to every live pane the moment they are edited.
-    @Published var terminalFontFamily: String {
+    var terminalFontFamily: String {
         didSet { store.set(terminalFontFamily, forKey: Key.terminalFontFamily) }
     }
 
-    @Published var terminalFontSize: Double {
+    var terminalFontSize: Double {
         didSet { store.set(terminalFontSize, forKey: Key.terminalFontSize) }
     }
 
     /// Empty means "whatever pi picks" — Shepherd never invents a model id.
-    @Published var defaultModel: String {
+    var defaultModel: String {
         didSet { store.set(defaultModel, forKey: Key.defaultModel) }
     }
 
-    @Published var defaultThinking: ThinkingLevel {
+    var defaultThinking: ThinkingLevel {
         didSet { store.set(defaultThinking.rawValue, forKey: Key.defaultThinking) }
     }
 
     /// Off means agents keep their provisional name (the truncated opening
     /// prompt) and the namer extension is never passed to pi.
-    @Published var autoNameAgents: Bool {
+    var autoNameAgents: Bool {
         didSet { store.set(autoNameAgents, forKey: Key.autoNameAgents) }
     }
 
-    @Published var piThemeExtension: Bool {
+    var piThemeExtension: Bool {
         didSet { store.set(piThemeExtension, forKey: Key.piThemeExtension) }
     }
 
-    @Published var piPanesExtension: Bool {
+    var piPanesExtension: Bool {
         didSet { store.set(piPanesExtension, forKey: Key.piPanesExtension) }
     }
 
-    @Published var piReviewExtension: Bool {
+    var piReviewExtension: Bool {
         didSet { store.set(piReviewExtension, forKey: Key.piReviewExtension) }
     }
 
-    @Published var piSubagentsExtension: Bool {
+    var piSubagentsExtension: Bool {
         didSet { store.set(piSubagentsExtension, forKey: Key.piSubagentsExtension) }
     }
 
-    @Published var autoUpdatePi: Bool {
+    var piNativeSubagents: Bool {
+        didSet { store.set(piNativeSubagents, forKey: Key.piNativeSubagents) }
+    }
+
+    var childConcurrency: Int {
+        didSet { store.set(childConcurrency, forKey: Key.childConcurrency) }
+    }
+
+    var childModel: String {
+        didSet { store.set(childModel, forKey: Key.childModel) }
+    }
+
+    var childThinking: String {
+        didSet { store.set(childThinking, forKey: Key.childThinking) }
+    }
+
+    var childContext: String {
+        didSet { store.set(childContext, forKey: Key.childContext) }
+    }
+
+    var childScope: String {
+        didSet { store.set(childScope, forKey: Key.childScope) }
+    }
+
+    var childEnvironment: [String: String] {
+        ["SHEPHERD_CHILD_CONCURRENCY": String(min(16, max(1, childConcurrency))),
+         "SHEPHERD_CHILD_MODEL": childModel.trimmingCharacters(in: .whitespacesAndNewlines),
+         "SHEPHERD_CHILD_THINKING": childThinking,
+         "SHEPHERD_CHILD_CONTEXT": childContext,
+         "SHEPHERD_CHILD_SCOPE": childScope]
+    }
+
+    var autoUpdatePi: Bool {
         didSet { store.set(autoUpdatePi, forKey: Key.autoUpdatePi) }
     }
 
-    @Published var autoUpdateExtensions: Bool {
+    var autoUpdateExtensions: Bool {
         didSet { store.set(autoUpdateExtensions, forKey: Key.autoUpdateExtensions) }
     }
 
     /// Shell for panes that are not an agent's pi process (⌘D splits, space
     /// workspaces, panes an agent opens for itself).
-    @Published var shellPath: String {
+    var shellPath: String {
         didSet { store.set(shellPath, forKey: Key.shellPath) }
     }
 
     /// Row-height multiplier for app chrome (sidebar rows, headers). 1.0 is
     /// the designed density; smaller packs more agents on screen.
-    @Published var uiDensity: Double {
-        didSet { store.set(uiDensity, forKey: Key.uiDensity) }
+    var uiDensity: Double {
+        didSet {
+            store.set(uiDensity, forKey: Key.uiDensity)
+            publishDesignScale()
+        }
     }
 
     /// Multiplier on every chrome font size (never the terminal's — that is
     /// `terminalFontSize`).
-    @Published var uiTextScale: Double {
-        didSet { store.set(uiTextScale, forKey: Key.uiTextScale) }
+    var uiTextScale: Double {
+        didSet {
+            store.set(uiTextScale, forKey: Key.uiTextScale)
+            publishDesignScale()
+        }
     }
 
-    @Published var sidebarWidth: Double {
+    var sidebarWidth: Double {
         didSet { store.set(sidebarWidth, forKey: Key.sidebarWidth) }
+    }
+
+    /// Sidebar and menu row height (Compact 22 · Standard 28 · Comfortable 36), before the
+    /// density scale.
+    var sidebarRowDensity: NWDensity {
+        didSet { store.set(sidebarRowDensity.rawValue, forKey: Key.sidebarRowDensity) }
     }
 
     /// Serve this Mac's sessions to remote Shepherd clients (the mini role).
     /// Applied at launch and on toggle; persists so a host stays a host
     /// across reboots.
-    @Published var remoteListenerEnabled: Bool {
+    var remoteListenerEnabled: Bool {
         didSet { store.set(remoteListenerEnabled, forKey: Key.remoteListenerEnabled) }
     }
 
-    @Published var remoteListenerPort: Int {
+    var remoteListenerPort: Int {
         didSet { store.set(remoteListenerPort, forKey: Key.remoteListenerPort) }
     }
 
@@ -169,32 +239,32 @@ final class AppSettings: ObservableObject {
     /// = the primary checkout's current branch, for deliberately stacking on
     /// in-progress work. The New Worktree sheet shows and lets the user
     /// override the resolved base either way.
-    @Published var worktreeBaseMode: WorktreeBaseMode {
+    var worktreeBaseMode: WorktreeBaseMode {
         didSet { store.set(worktreeBaseMode.rawValue, forKey: Key.worktreeBaseMode) }
     }
 
     /// Fetch the base branch from origin before creating a worktree, so
     /// "fresh" means the remote's latest, not a stale local snapshot. Off =
     /// no network at creation; the cached ref is used.
-    @Published var worktreeFetchBeforeCreate: Bool {
+    var worktreeFetchBeforeCreate: Bool {
         didSet { store.set(worktreeFetchBeforeCreate, forKey: Key.worktreeFetchBeforeCreate) }
     }
 
     /// Finalize commits remaining work automatically. Off = finalize stops
     /// on a dirty worktree and asks the user to commit themselves.
-    @Published var worktreeAutoCommit: Bool {
+    var worktreeAutoCommit: Bool {
         didSet { store.set(worktreeAutoCommit, forKey: Key.worktreeAutoCommit) }
     }
 
     /// Generate an editable pull-request description when Finalize opens.
     /// Failure falls back to the branch's commit subjects.
-    @Published var worktreeGeneratePRDescription: Bool {
+    var worktreeGeneratePRDescription: Bool {
         didSet { store.set(worktreeGeneratePRDescription, forKey: Key.worktreeGeneratePRDescription) }
     }
 
     /// Finalize deletes the local branch after the worktree is removed. Off
     /// keeps it (the remote branch is never touched either way).
-    @Published var worktreeDeleteLocalBranch: Bool {
+    var worktreeDeleteLocalBranch: Bool {
         didSet { store.set(worktreeDeleteLocalBranch, forKey: Key.worktreeDeleteLocalBranch) }
     }
 
@@ -203,18 +273,20 @@ final class AppSettings: ObservableObject {
     /// strictly opt-in. On: GitHub auto-merge first (respects branch
     /// protection and checks), immediate merge as fallback; failure leaves
     /// the PR open and never blocks cleanup.
-    @Published var worktreeAutoMergePR: Bool {
+    var worktreeAutoMergePR: Bool {
         didSet { store.set(worktreeAutoMergePR, forKey: Key.worktreeAutoMergePR) }
     }
 
     /// Merge method for auto-merged finalize PRs.
-    @Published var worktreeMergeMethod: WorktreeMergeMethod {
+    var worktreeMergeMethod: WorktreeMergeMethod {
         didSet { store.set(worktreeMergeMethod.rawValue, forKey: Key.worktreeMergeMethod) }
     }
 
     private let store: UserDefaults
 
-    init(store: UserDefaults = .standard) {
+    /// `edition` picks defaults that differ between Shepherd and Shepherd Nightly (the
+    /// listener port); each app already has its own preferences domain.
+    init(store: UserDefaults = .standard, edition: ShepherdEdition = .current) {
         self.store = store
         terminalFontFamily = store.string(forKey: Key.terminalFontFamily) ?? Defaults.terminalFontFamily
         let size = store.double(forKey: Key.terminalFontSize)
@@ -227,6 +299,15 @@ final class AppSettings: ObservableObject {
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
+        piNativeSubagents = store.object(forKey: Key.piNativeSubagents) as? Bool ?? true
+        childConcurrency = min(16, max(1, store.object(forKey: Key.childConcurrency) as? Int ?? 4))
+        childModel = store.string(forKey: Key.childModel) ?? ""
+        let childReasoning = store.string(forKey: Key.childThinking) ?? ""
+        childThinking = ["", "off", "minimal", "low", "medium", "high", "xhigh", "max"].contains(childReasoning) ? childReasoning : ""
+        let context = store.string(forKey: Key.childContext) ?? "fresh"
+        childContext = ["fresh", "fork"].contains(context) ? context : "fresh"
+        let scope = store.string(forKey: Key.childScope) ?? "both"
+        childScope = ["user", "project", "both", "bundled"].contains(scope) ? scope : "both"
         autoUpdatePi = store.object(forKey: Key.autoUpdatePi) as? Bool ?? Defaults.autoUpdatePi
         // The former combined toggle ran both commands. Preserve that intent
         // when the new extension-specific preference has not been written.
@@ -238,10 +319,11 @@ final class AppSettings: ObservableObject {
         let textScale = store.double(forKey: Key.uiTextScale)
         uiTextScale = min(max(textScale == 0 ? 1 : textScale, Self.uiTextScaleRange.lowerBound), Self.uiTextScaleRange.upperBound)
         let width = store.double(forKey: Key.sidebarWidth)
-        sidebarWidth = Self.clampSidebarWidth(width == 0 ? 230 : width)
+        sidebarWidth = Self.clampSidebarWidth(width == 0 ? Self.defaultSidebarWidth : width)
+        sidebarRowDensity = store.string(forKey: Key.sidebarRowDensity).flatMap(NWDensity.init(rawValue:)) ?? .standard
         remoteListenerEnabled = store.bool(forKey: Key.remoteListenerEnabled)
         let port = store.integer(forKey: Key.remoteListenerPort)
-        remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(RemoteSettingsDefaults.port)
+        remoteListenerPort = (port > 0 && port <= 65535) ? port : Int(edition.defaultRemoteListenerPort)
         worktreeBaseMode = store.string(forKey: Key.worktreeBaseMode)
             .flatMap(WorktreeBaseMode.init(rawValue:)) ?? .fresh
         worktreeFetchBeforeCreate = store.object(forKey: Key.worktreeFetchBeforeCreate) as? Bool ?? true
@@ -255,20 +337,13 @@ final class AppSettings: ObservableObject {
 
     static let uiDensityRange: ClosedRange<Double> = 0.8...1.5
     static let uiTextScaleRange: ClosedRange<Double> = 0.85...1.3
-    static let sidebarWidthRange: ClosedRange<Double> = 190...340
+    static let sidebarWidthRange = Double(AppLayout.sidebarMinWidth)...Double(AppLayout.sidebarMaxWidth)
+    static let defaultSidebarWidth = Double(AppLayout.sidebarDefaultWidth)
 
     static func clampSidebarWidth(_ width: Double) -> Double {
         min(max(width, sidebarWidthRange.lowerBound), sidebarWidthRange.upperBound)
     }
 
-    /// Chrome identity key: views wrap their appearance-sensitive subtrees in
-    /// `.id(settings.appearanceKey)` so a slider drag rebuilds rows whose
-    /// SwiftUI inputs did not change (fonts and metrics are read inside
-    /// `body`, invisible to struct diffing). Never applied around terminal
-    /// panes — chrome only, so surfaces are not torn down.
-    var appearanceKey: String {
-        "\(uiDensity)-\(uiTextScale)"
-    }
 
     // MARK: Derived values
 
@@ -302,10 +377,20 @@ final class AppSettings: ObservableObject {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
+        uiDensity = 1
+        uiTextScale = 1
+        sidebarWidth = Self.defaultSidebarWidth
+        sidebarRowDensity = .standard
         piThemeExtension = true
         piPanesExtension = true
         piReviewExtension = true
         piSubagentsExtension = true
+        piNativeSubagents = true
+        childConcurrency = 4
+        childModel = ""
+        childThinking = ""
+        childContext = "fresh"
+        childScope = "both"
         autoUpdatePi = Defaults.autoUpdatePi
         autoUpdateExtensions = Defaults.autoUpdateExtensions
         shellPath = Defaults.shellPath

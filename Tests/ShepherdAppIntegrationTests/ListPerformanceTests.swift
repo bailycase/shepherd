@@ -1,0 +1,332 @@
+import AppKit
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
+import ShepherdRemote
+import ShepherdTestSupport
+import ShepherdUI
+import SwiftUI
+import Testing
+@testable import ShepherdApp
+
+/// Budgets for the long lists (DESIGN.md › Performance), over realistic large fixtures in
+/// off-screen windows. The budgets count row bodies (`NWRenderProbe`), which a slower machine
+/// doesn't change: a list that builds rows off screen, or redraws every row for a highlight, a
+/// selection, or one row's change, fails whatever the hardware. `ListPerformanceReport` prints the
+/// timings behind them.
+@Suite("List performance", .mainActorExclusive)
+@MainActor
+struct ListPerformanceTests {
+    // MARK: Sidebar
+
+    private static let sidebarSize = CGSize(width: AppLayout.sidebarDefaultWidth, height: 800)
+
+    /// How many rows fit the window, with a row's height and spacing.
+    private static var sidebarRowsOnScreen: Int {
+        Int(sidebarSize.height / (NWDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
+    }
+
+    @Test func openingTheSidebarOverThreeHundredAgentsBuildsOnlyTheRowsOnScreen() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        let built = rows["sidebar.row", default: 0] + rows["sidebar.spaceRow", default: 0]
+        #expect(built <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
+    }
+
+    /// A status report or a selection redraws the rows it changed, never the rest of the fleet.
+    @Test func statusReportsAndSelectionRedrawOnlyTheRowsTheyChange() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        // The first rows in sidebar order: on screen.
+        let shown = Array(vm.orderedAgents.prefix(6))
+
+        let rows = ListPerf.counting {
+            for agent in shown {
+                var next = vm.state
+                if let index = next.agents.firstIndex(where: { $0.id == agent.id }) {
+                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
+                }
+                ListPerf.time(window) { vm.adopt(next) }
+                ListPerf.time(window) { vm.selectAgent(agent.id) }
+            }
+        }
+        // Per round: the reported row, and the rows the selection leaves and lands on (the space
+        // rows count their agents' states).
+        #expect(rows["sidebar.row", default: 0] + rows["sidebar.spaceRow", default: 0] <= shown.count * 4, "\(rows)")
+    }
+
+    /// A report or a selection redraws the tree from one pass over the agents, never a scan of
+    /// every agent for each space (40 spaces: 40 scans per broadcast).
+    @Test func statusReportsAndSelectionGroupTheFleetInOnePass() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let shown = Array(vm.orderedAgents.prefix(6))
+
+        let passes = ListPerf.counting {
+            for agent in shown {
+                var next = vm.state
+                if let index = next.agents.firstIndex(where: { $0.id == agent.id }) {
+                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
+                }
+                ListPerf.time(window) { vm.adopt(next) }
+                ListPerf.time(window) { vm.selectAgent(agent.id) }
+            }
+        }
+        #expect(passes["sidebar.spaceScan", default: 0] == 0, "\(passes)")
+    }
+
+    /// Selecting an agent opens and reveals its row from the memoized forest: rebuilding the
+    /// forest searches every pair of spaces and resolves each path on disk.
+    @Test func selectingAnAgentRevealsItFromTheMemoizedForest() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let agents = Array(vm.orderedAgents.prefix(3)) + Array(vm.orderedAgents.suffix(3))
+
+        // Each update asks the sidebar for the row to reveal (`sidebarRevealTarget`).
+        let passes = ListPerf.counting {
+            for agent in agents { ListPerf.time(window) { vm.selectAgent(agent.id) } }
+        }
+        #expect(passes["sidebar.spaceForest", default: 0] == 0, "\(passes)")
+    }
+
+    // MARK: Thread
+
+    /// A long thread streaming its reply builds only the rows on screen for each chunk, however
+    /// many turns came before.
+    @Test func streamingIntoALongThreadBuildsOnlyTheRowsOnScreen() async throws {
+        var snapshot = ListFixtures.threadSnapshot(turns: 500, running: true)
+        let store = NativeThreadStore()
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
+                                     ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
+                                                commandKey: "budget"))
+        defer {
+            store.stop()
+            window.close()
+        }
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        ListPerf.settle(window)
+
+        NWRenderProbe.start()
+        for index in 0..<5 {
+            let live = ListFixtures.message("live", "assistant", String(repeating: "Streaming sentence \(index). ", count: index + 1))
+            snapshot = ListFixtures.threadSnapshot(turns: 500, running: true, revision: UInt64(index + 2), provisional: [live])
+            await store.refresh()
+            ListPerf.settle(window)
+        }
+        let rows = NWRenderProbe.stop()
+        // A 800pt window shows a dozen turns; five chunks may build each a few times (about 90
+        // here, at any speed). On macOS 26 (CI) the builder ran for every row on each chunk, 4,999
+        // times, while still redrawing only the streaming turn.
+        withKnownIssue("older SwiftUI runs every row's builder for each streamed chunk", isIntermittent: true) {
+            #expect(rows["thread.rowBuilder", default: 0] <= 5 * 40, "\(rows)")
+        } when: { ListPerf.olderLazyStacks }
+        #expect(rows["thread.agentTurn", default: 0] <= 5 * 2, "only the streaming turn redraws: \(rows)")
+    }
+
+    /// Turns scrolled back into the lazy stack are simply there: no entrance plays while reading.
+    @Test func scrollingThroughALongThreadPlaysNoEntrances() async throws {
+        let snapshot = ListFixtures.threadSnapshot(turns: 500)
+        let store = NativeThreadStore()
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
+                                     ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
+                                                commandKey: "entrances"))
+        defer {
+            store.stop()
+            window.close()
+        }
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        ListPerf.settle(window)
+        let scroll = try #require(ListPerf.scrollView(in: window))
+
+        let rows = ListPerf.counting {
+            _ = ListPerf.scroll(window, scroll, step: -400, steps: 30)
+            _ = ListPerf.scroll(window, scroll, step: 400, steps: 30)
+        }
+        #expect(rows["thread.agentTurn", default: 0] > 20, "the thread scrolled: \(rows)")
+        #expect(rows["arrival.animates", default: 0] == 0, "\(rows)")
+    }
+
+    // MARK: Subagents
+
+    /// A turn whose spawn calls started `runs`, as the thread shows it.
+    private static func spawned(_ runs: [ChildRun]) -> NativeThreadSnapshot {
+        let spawns = runs.map { run in
+            NativeThreadMessage(entryID: "t-\(run.runID)", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "{}")],
+                                toolName: "shepherd_child_start", toolCallID: run.toolCallID, argumentsText: "{\"task\":\"part\"}",
+                                status: "complete")
+        }
+        return NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
+                                    supportedActions: ["send", "subagents"], dialogsSupported: true, dialogs: [],
+                                    messages: ListFixtures.conversation(turns: 2)
+                                        + [ListFixtures.message("u", "user", "Split it up"), ListFixtures.message("a", "assistant", "Splitting.")]
+                                        + spawns,
+                                    provisional: [], clipped: false, subagents: runs)
+    }
+
+    /// A finished workflow's ledger in the thread builds only the rows on screen, even though
+    /// it sits inside one of the thread's own lazy rows.
+    @Test func aLedgerOfTwoHundredRunsInAThreadBuildsOnlyTheRowsOnScreen() async throws {
+        let runs = (0..<200).map { index in
+            var run = ListFixtures.run(index, state: "complete")
+            run.toolCallID = "spawn-\(index)"
+            return run
+        }
+        let snapshot = Self.spawned(runs)
+        let store = NativeThreadStore()
+        var window: OffscreenWindow!
+        NWRenderProbe.start()
+        window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
+                                 ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
+                                            commandKey: "ledger", inspectSubagent: { _ in }))
+        defer {
+            store.stop()
+            window.close()
+        }
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        ListPerf.settle(window)
+        let rows = NWRenderProbe.stop()
+
+        #expect(rows["runs.ledgerRow", default: 0] > 0, "the ledger shows: \(rows)")
+        // About twenty rows fit; the lazy stack builds some ahead of the ones on screen (about 50
+        // here, at any speed). On macOS 26 (CI) the ledger built 121, and 112 built with Xcode 26
+        // on macOS 27, while the thread around it built the same rows as here.
+        withKnownIssue("older SwiftUI builds more of a ledger nested in the thread's lazy stack", isIntermittent: true) {
+            #expect(rows["runs.ledgerRow", default: 0] <= 80, "\(rows)")
+        } when: { ListPerf.olderLazyStacks }
+    }
+
+    private struct Stack: View {
+        let runs: [ChildRun]
+
+        var body: some View {
+            SubagentStack(runs: runs, turnLive: true, actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true))
+                .frame(width: 800)
+        }
+    }
+
+    /// Among two hundred live runs folded into the strip, one changing state redraws its own
+    /// segment; the rest keep theirs (and so does hovering, which each segment keeps itself).
+    @Test func oneRunChangingRedrawsOnlyItsSegmentOfTheStrip() throws {
+        let runs = (0..<200).map { ListFixtures.run($0) }
+        let window = OffscreenWindow(size: CGSize(width: 800, height: 400), dark: true, Stack(runs: runs))
+        defer { window.close() }
+        ListPerf.settle(window)
+        var next = runs
+        next[5].state = "complete"
+
+        let rows = ListPerf.counting { ListPerf.time(window) { window.show(Stack(runs: next)) } }
+
+        #expect(rows["runs.stripSegment", default: 0] <= 2, "\(rows)")
+    }
+
+    // MARK: Review
+
+    private func review(_ files: [DiffFile]) -> OffscreenWindow {
+        OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, ReviewPaneContent(model: ListFixtures.reviewModel(files)))
+    }
+
+    @Test func openingAReviewOfThreeHundredFilesBuildsOnlyTheChipsAndLinesInView() throws {
+        let files = (0..<300).map { ListFixtures.diffFile("Sources/Module\($0)/File\($0).swift", lines: 12) }
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = review(files)
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        // A chip is at least its letter, a short name, and padding: about a dozen fit 600pt.
+        #expect(rows["review.fileChip", default: 0] <= 24, "\(rows)")
+        #expect(rows["diff.line", default: 0] <= 2 * Int(800 / NW.Height.rowCompact), "\(rows)")
+    }
+
+    /// Every line can be commented on, but a line builds its `+` only while it is hovered.
+    @Test func scrollingALongDiffBuildsNoCommentButtons() throws {
+        let window = review([ListFixtures.diffFile("Big.swift", lines: 2000)])
+        defer { window.close() }
+        let rows = ListPerf.counting {
+            ListPerf.settle(window)
+            if let scroll = ListPerf.scrollView(in: window) { _ = ListPerf.scroll(window, scroll, step: 400, steps: 40) }
+        }
+        #expect(rows["diff.line", default: 0] > 100, "the diff scrolled: \(rows)")
+        #expect(rows["diff.commentButton", default: 0] == 0, "\(rows)")
+    }
+
+    // MARK: Palette
+
+    private func palette(_ items: [PaletteItem], query: String, highlight: PaletteHighlight = PaletteHighlight()) -> OffscreenWindow {
+        OffscreenWindow(size: CGSize(width: 900, height: 700), dark: true,
+                        Color.clear.nwCommandPalette(isPresented: .constant(true)) {
+                            PaletteCard(items: items, run: { _ in }, close: {}, initialQuery: query, highlight: highlight)
+                        })
+    }
+
+    @Test func openingThePaletteOverAThousandResultsBuildsOnlyTheRowsOnScreen() throws {
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = palette(ListFixtures.paletteItems(1000), query: "fix")
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        // At most 14 rows fit; each may be built twice while the card settles.
+        #expect(rows["palette.row", default: 0] <= 2 * NWPaletteMetrics.maxVisibleRows, "\(rows)")
+    }
+
+    @Test func movingThePaletteHighlightRedrawsOnlyTheRowsItLeavesAndLandsOn() throws {
+        let highlight = PaletteHighlight()
+        let window = palette(ListFixtures.paletteItems(1000), query: "fix", highlight: highlight)
+        defer { window.close() }
+        ListPerf.settle(window)
+
+        let rows = ListPerf.counting {
+            for index in 1...20 { _ = ListPerf.time(window) { highlight.move(to: index) } }
+        }
+        // Two rows per move, plus the rows the highlight scrolls into view.
+        #expect(rows["palette.row", default: 0] <= 20 * 2 + NWPaletteMetrics.maxVisibleRows, "\(rows)")
+    }
+
+    /// Lazy rows still let the card hug a short list, and a long one stops at the cap.
+    @Test(arguments: [3, 1000])
+    func thePaletteHugsAShortListAndCapsALongOne(count: Int) throws {
+        let items = (0..<count).map { PaletteItem(id: "c\($0)", kind: .action("c\($0)"), section: .commands, title: "Command \($0)") }
+        let window = palette(items, query: "")
+        defer { window.close() }
+        ListPerf.settle(window)
+        let scroll = try #require(ListPerf.scrollView(in: window))
+
+        let row = NWDensity.standard.rowHeight
+        let cap = NWPaletteMetrics.placement(in: CGSize(width: 900, height: 700), rowHeight: row).maxListHeight
+        let natural = NWPaletteMetrics.sectionHeight + CGFloat(count) * row
+        #expect(abs(scroll.frame.height - min(natural, cap)) < 1, "list \(scroll.frame.height), rows \(natural), cap \(cap)")
+    }
+
+    @Test func theHighlightScrollsIntoViewPastTheCap() throws {
+        let highlight = PaletteHighlight()
+        let window = palette(ListFixtures.paletteItems(1000), query: "fix", highlight: highlight)
+        defer { window.close() }
+        ListPerf.settle(window)
+        let scroll = try #require(ListPerf.scrollView(in: window))
+
+        ListPerf.time(window) { highlight.move(to: 200) }
+
+        let visible = scroll.contentView.bounds
+        #expect(visible.minY > CGFloat(150) * NWDensity.standard.rowHeight, "scrolled to \(visible.minY)")
+    }
+}

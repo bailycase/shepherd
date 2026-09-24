@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The Night Watch crook (NWCrook) in lantern, as the Mark board draws it: a 24pt glyph box at
+     40/72 of the tile, centred. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <g transform="translate(227.556 227.556) scale(23.7037)">
+    <path
+      d="M9 22V9.5a5 5 0 0 1 10 0v.5a2.5 2.5 0 0 1-5 0"
+      fill="none"
+      stroke="#F2A93B"
+      stroke-width="2.2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>

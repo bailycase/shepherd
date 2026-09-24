@@ -1,0 +1,9 @@
+#ifndef SHEPHERD_TEST_ISOLATION_H
+#define SHEPHERD_TEST_ISOLATION_H
+
+/// The per-process scratch root the load-time constructor created (see ShepherdTestIsolation.c).
+/// Holds `support/` (SHEPHERD_SUPPORT_DIR), `bin/` (first on PATH), `zdotdir/` (ZDOTDIR), and
+/// `pi-agent/` (PI_CODING_AGENT_DIR).
+const char *shepherd_test_isolation_root(void);
+
+#endif

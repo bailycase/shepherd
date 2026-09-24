@@ -6,3 +6,5 @@ xcuserdata/
 dist/
 .swiftpm/
 .build-xcode/
+# Bytecode from running the release script's tests.
+__pycache__/

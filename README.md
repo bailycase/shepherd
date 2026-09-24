@@ -1,156 +1,183 @@
 # Shepherd
 
-A native macOS app for running and supervising many [pi](https://github.com/earendil-works/pi-coding-agent) coding agents at once.
+A native macOS app for running and supervising many
+[pi](https://github.com/earendil-works/pi-coding-agent) coding agents at once.
 
-Shepherd organizes work around agents, not chat threads. Each agent is a real `pi` process in a real terminal (rendered by [libghostty](https://ghostty.org)), with a status, a name it gives itself, and a workspace it runs in. The sidebar is the supervision surface: status dots show who is working, who is blocked waiting on you, and who is done. Selecting an agent drops you into its live terminal.
+Shepherd organizes work around agents, not chats. Each agent is a real `pi` process that the app
+owns. It has a status, a name it gives itself, and a project it works in. Every agent renders as
+a native thread: its transcript, tool calls, questions, and subagents, with a composer for
+follow-ups. The sidebar is where you supervise. Its status dots show who is working, who needs
+you, and who is done.
 
 > Screenshot coming soon.
 
 ## Philosophy
-Shepherd is opinionated software. It's built around my workflow and preferences and it favors staying small and coherent over covering everyone's use case.
+
+Shepherd is opinionated software. It is built around one workflow and favors staying small and
+coherent over covering every use case.
 
 ## What it does
 
-- Spaces group agents by project checkout; agents, shells, and split panes live inside them.
-- Agents run real `pi` TUIs in PTYs owned by the app. No daemon: quit Shepherd and every agent stops. Relaunch restores the workspace and respawns fresh processes.
-- Agents name themselves from their opening prompt and report lifecycle status (`working`, `blocked`, `done`, `idle`) through bundled pi extensions.
-- Agents can open, run, read, and close their own terminal panes; pi subagents surface as child rows with a read-only inspector.
-- Automations: saved monitoring prompts that run as dedicated agents and notify you when a condition is met.
-- Optional remote access: the app can serve its fleet over an authenticated TCP listener to another Mac. Off by default.
-- Command palette with fleet-wide transcript search, rebindable keyboard chords, light/dark Basalt theme synced into pi's TUI.
+- **Spaces and agents.** A space is a project folder; its agents nest beneath it in the sidebar.
+  Start an agent with ⌘N and describe the task. It names itself from your prompt and reports
+  whether it is working, blocked on you, or done.
+- **Native threads.** Each agent is `pi --mode rpc` behind a SwiftUI thread:
+  - activity lines: one quiet line per burst of tool work ("Explored 7 files", "Ran tests · 17
+    passed") that expands to its calls and their output
+  - a changes card at the end of every turn that edited files, one click from the review pane
+  - timed thinking
+  - questions answered in place
+  - pi's slash commands
+  - model and thinking pickers
+  - image attachments
+  - follow-up or steer delivery while a turn runs
+- **Terminal panes beside a thread.** Split a real terminal next to an agent with ⌘D, or let the
+  agent open, run, read, and close its own panes. Terminals render with
+  [libghostty](https://ghostty.org).
+- **Subagents.** The bundled native subagent runtime lets an agent start child agents and script
+  workflows. Runs appear as live cards in the thread and open in an inspector docked beside it;
+  one waiting on your answer marks its agent in the sidebar.
+- **Review.** A review pane docks beside the thread with the working-tree or PR diff and inline
+  comments. It sends "request changes" (or "commit") back to the agent as its next turn. An
+  agent can open it for you, on its own checkout or on another repository or worktree.
+- **Agents working together.** An agent can list, message, and start other agents, read another
+  agent's thread, steer or interrupt it, and wait for it to settle. Deleting another agent always
+  asks you first. See [docs/agent-coordination.md](docs/agent-coordination.md).
+- **Worktrees.** Give an agent its own git worktree, branched from a fresh `origin/<default>`.
+  When the work is done, finalize it: commit, push, open a PR, and clean up. See
+  [docs/worktrees.md](docs/worktrees.md).
+- **Automations.** Saved monitoring prompts run as dedicated agents and notify you when
+  something happens.
+- **Remote.** Run your projects on one Mac and drive them from another. The host serves its
+  agents over an authenticated TCP listener, off by default, meant for a VPN or trusted network.
+- **Keyboard-first.** A command palette (⌘K) with transcript search across all your agents,
+  plus rebindable shortcuts.
+- **Night Watch.** Shepherd's design system, in light and dark, set in Geist and Geist Mono, and
+  also applied to terminal panes and to pi run by hand in one.
+
+Nothing runs in the background without the app. Quit Shepherd and every agent stops. Relaunch it
+and the workspace comes back, with each agent resumed in its pi session.
 
 ## Requirements
 
-- macOS 26 or later (Apple Silicon)
-- Xcode with the macOS 26 SDK
-- [pi](https://github.com/earendil-works/pi-coding-agent) installed and on your login-shell `PATH`:
+- macOS 26 or later on Apple Silicon.
+- [pi](https://github.com/earendil-works/pi-coding-agent), on your login shell's `PATH`:
 
   ```sh
   npm install -g --ignore-scripts @earendil-works/pi-coding-agent
   ```
 
+- To build from source: Xcode with the macOS 26 SDK.
+
 ## Install
 
 Download `Shepherd.dmg` from the [latest release](../../releases/latest), open it, and drag
-Shepherd to Applications. Builds are signed and notarized; updates arrive automatically
-via Sparkle on the channel you choose in Settings ▸ Advanced: **Stable** (tagged releases),
-**Release Candidate** and **Beta** (pre-releases — both also receive newer stable builds, so
-you are never stranded behind a hotfix), or **Nightly** (every push, least tested).
+Shepherd to Applications. Updates arrive through Sparkle on the channel you choose in
+Settings ▸ Advanced:
+
+- **Stable:** tagged releases.
+- **Beta:** pre-releases. Beta also receives newer stable builds, so you are never stranded
+  behind a hotfix.
+
+**Shepherd Nightly** is a separate app built from every push to the integration branch, and the
+least tested. Download `Shepherd-Nightly.dmg` from the newest
+[nightly release](../../releases?q=nightly&expanded=true). It installs beside Shepherd and keeps
+its own agents, settings and support folder (`~/Library/Application Support/Shepherd Nightly`),
+so the two run at once. It updates only to newer Shepherd Nightly builds.
+
+A copy of Shepherd that rode the old Nightly or Release Candidate channels moves to Beta on its
+next update, and a former nightly rider is told once where nightly builds went.
 
 ## Build from source
 
-Open `Shepherd.xcodeproj`, pick a scheme, destination My Mac, Run. Two Mac schemes keep a stable install and a development build from sharing state:
+Open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. There are three Mac schemes,
+so that a development build never shares state with your everyday copy. The Dev build also has
+its own bundle id (`com.bailycase.shepherd.dev`), so its preferences and notifications stay
+apart from an installed Shepherd's, and it never updates itself:
 
-| Scheme | Config | State directory |
-| --- | --- | --- |
-| `Shepherd (Dev)` | Debug | `~/Library/Application Support/Shepherd-dev` |
-| `Shepherd (Prod)` | Release | `~/Library/Application Support/Shepherd` |
+| Scheme | Config | Builds | State directory |
+| --- | --- | --- | --- |
+| `Shepherd (Dev)` | Debug | Shepherd | `~/Library/Application Support/Shepherd-dev` |
+| `Shepherd (Prod)` | Release | Shepherd | `~/Library/Application Support/Shepherd` |
+| `Shepherd (Nightly)` | Nightly | Shepherd Nightly | `~/Library/Application Support/Shepherd Nightly` |
 
-Or from the command line:
-
-```sh
-xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' build
-```
-
-Libraries and tests use plain SwiftPM:
+To build from the command line, and to build and test the libraries with SwiftPM:
 
 ```sh
+xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd (Dev)' -destination 'platform=macOS' \
+  -onlyUsePackageVersionsFromResolvedFile build
 swift build
-swift test
+swift test --filter UnitTests          # fast
+swift test                             # everything
 ```
 
-The GUI only runs through the Xcode project; `ShepherdApp` is a library product.
+The GUI runs only through the Xcode project; `ShepherdApp` is a library product.
+[CONTRIBUTING.md](CONTRIBUTING.md) explains the test tiers.
 
-## Agent coordination
-
-Agents can use `agent_list`, `agent_send` and `agent_spawn` to work with other top-level
-threads. Live coordination also provides:
-
-- `agent_read`: finalized visible messages from the recipient's current pi branch. Defaults
-  to the latest 20 entries, with an optional `limit` of 1–100 and an exclusive entry-ID
-  `after` cursor for forward paging. The JSON text includes `nextCursor`, `hasMore`,
-  `omittedEarlier` and per-message `truncated` flags. Text is capped at 4,000 characters per
-  entry and about 48 KiB per response. Thinking, image payloads, tool arguments and hidden
-  extension entries are omitted. A cursor outside the current branch fails; restart without
-  `after`. This is live `ctx.sessionManager.getBranch()`, not a Swift transcript parser.
-- `agent_steer`: calls `pi.sendUserMessage` with `deliverAs: "steer"`. Existing `agent_send`
-  stays `followUp`. Both report dispatch requested, not accepted or consumed.
-- `agent_interrupt`: requests best-effort cancellation of the current turn through `ctx.abort()`.
-  It does not confirm the agent stopped. Tools must cooperate. In pi 0.85.1's TUI, abort moves
-  queued messages into the editor and does not cancel retries or compaction.
-- `agent_wait`: polls the recipient's live `ctx.isIdle()` and `hasPendingMessages()` until
-  current activity settles. Default timeout is 30 seconds, maximum 120. This is not proof that
-  a sent task succeeded or was consumed. Caller disconnection, a changed recipient connection
-  or pi session, or timeout fails the wait, including reconnects between polls. Recipient
-  status replies carry a per-connection ID, so reconnecting with the same pi session still
-  fails. Cancellation stops polling, not the target.
-- `agent_delete`: opens Shepherd's native Delete Agent confirmation naming the requester and
-  target and warning that the pi session and all auxiliary processes will terminate. Only the
-  user's destructive button can approve it. Cancel, caller disconnection or a 120-second
-  confirmation timeout leaves the target intact. Once the user confirms, deletion follows the
-  normal Delete Agent lifecycle and keeps all worktrees and branches. There is no approval
-  boolean and this never invokes Delete Worktree Agent.
-
-Self-steer, self-interrupt, self-wait and self-delete are rejected. Read and control require a
-live recipient panes extension; agents already running an older extension need a fresh pi
-session. Each short live request has a server-generated token, a five-second timeout and a
-reply accepted only from the selected target connection. Cancelling a request cannot undo a
-steer or interrupt already dispatched. The local socket remains same-user IPC, not an
-independent security boundary. Coordination adds no remote TCP API or task scheduler.
-
-The extension behavior check uses the installed pi dependencies and Node's built-in test runner:
-
-```bash
-NODE_PATH="$(npm root -g)" node --test Tests/Extensions/agent-coordination.test.mjs
-env -u SHEPHERD_SUPPORT_DIR swift test --filter 'AgentCoordinationTests|AgentPeerDeletionTests|ProtocolTests|PiThemeTests'
-```
-
-## Diff review
-
-Agents can call `review_diff` to open a native review pane. Pass `cwd` to review another
-repository or worktree, for example `{"cwd":"~/src/project-worktree"}`. Omitting `cwd`
-uses the agent's directory, even if the open review targets somewhere else. This never
-changes the agent process's working directory.
-
-Repeated calls reuse the agent's review pane and focus it when that agent's layout is
-visible, without switching away from another workspace. Changing the target directory
-clears the previous comments and summary. The tool returns immediately; the user's review
-arrives as a message when submitted. Use `reference` for a commit, branch, or range, or omit
-it for working-tree changes versus HEAD.
-
-## Pi in shell panes
-
-With the theme extension enabled, typing `pi` in a new zsh, bash, or fish pane loads
-Shepherd's theme for that run. Startup files live in Shepherd's support directory;
-Shepherd does not edit your shell rc files or pi settings. Existing `pi` aliases and
-functions take precedence. Absolute paths and `command pi` bypass the integration.
-Reopen existing shell panes after upgrading or changing the theme-extension toggle.
-
-Shell-launched pi has no Shepherd agent identity, so agent-only pane, review,
-automation, and peer tools remain unavailable. Status, naming, and subagent reporting
-also stay off. Use a Shepherd agent when you need those integrations.
-
-Zsh and fish retain native login startup. Bash loads `/etc/profile` and the first
-readable `.bash_profile`, `.bash_login`, or `.profile` through an interactive rc file;
-its `login_shell` flag is off and `.bash_logout` does not run automatically. Other
-configured shells keep their normal startup without automatic pi theming.
+Coming from herdr? With Shepherd quit, run `swift run shepherd-cli --import herdr` to import your
+herdr workspaces and pi sessions.
 
 ## Remote access
 
-Settings ▸ Remote toggles a TCP listener (default port 7433) that serves the fleet to remote Shepherd clients. Auth is a shared bearer token generated in the support directory. **There is no TLS** — the listener binds on all interfaces and assumes a trusted network or VPN as the transport boundary. Do not expose it to the internet.
+1. **On the Mac that runs the agents (the host):** turn on Settings ▸ Remote ▸ Serve this Mac.
+   It listens on TCP port 7433 on all interfaces (Shepherd Nightly: 7434). The Token row reveals
+   the `remote-token` file; copy its contents.
+2. **On the other Mac:** in Settings ▸ Remote ▸ Add host, enter a name, the host's VPN-reachable
+   address, the port, and the token. The host's agents appear as their own section in the
+   sidebar, with the same rows and threads.
 
-Connected Macs can create, rename, reorder, and delete host agents; inspect subagents; search transcripts; and review diffs or PR changes. Worktree creation, setup, finalization, and confirmed deletion run on the host. File and image drops upload to the host, with a 32 MiB per-file limit. New remote features require a compatible host; ordinary agent creation and terminal access remain available with older hosts.
+A connected Mac can:
 
-## Scope
+- create, rename, reorder, and delete agents on the host
+- open terminal panes
+- inspect subagents
+- search transcripts
+- review diffs
+- create, finalize, and delete worktrees on the host
 
-Shepherd supervises agents and provides explicit worktree creation, finalization, and confirmed deletion actions. Other agent work runs in the selected checkout. Quitting the host app terminates its agent processes; disconnecting a remote client does not.
+Dropped files upload to the host, up to 32 MiB each. Quitting the host stops its agents;
+disconnecting a client does not.
+
+**There is no TLS.** The token keeps other devices on a trusted network out, but the traffic
+itself is unencrypted. Use a VPN or trusted network, and never expose the listener to the
+internet. See [SECURITY.md](SECURITY.md).
+
+An iOS client exists in `App/iOS` but is deferred until after the macOS redesign; see
+[docs/ios](docs/ios/README.md).
+
+## pi in terminal panes
+
+With Settings ▸ Pi ▸ Sync pi theme on, typing `pi` in a zsh, bash, or fish terminal pane loads
+Shepherd's theme for that run. The startup files live in Shepherd's support directory, and
+Shepherd never edits your shell rc files or pi settings. Your own `pi` aliases and functions take
+precedence, and `command pi` or an absolute path bypasses the integration. Reopen existing panes
+after changing the setting.
+
+pi started by hand in a pane has no Shepherd agent identity, so the agent tools (panes, review,
+automations, peers) and status, naming, and subagent reporting are unavailable there. Use a
+Shepherd agent when you want those.
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — dependency direction, state ownership, PTY and protocol flow
-- [DESIGN.md](DESIGN.md) — the UI and interaction specification
-- [AGENTS.md](AGENTS.md) — contributor guide (build, test, invariants, gotchas)
+- [AGENTS.md](AGENTS.md): the working guide for coding agents and contributors. It covers build
+  and test, the source map, and the rules that are easy to break.
+- [ARCHITECTURE.md](ARCHITECTURE.md): modules, runtime ownership, data flow, remote, and
+  persistence.
+- [DESIGN.md](DESIGN.md): the UI and interaction specification: Night Watch, Shepherd's design
+  system, and every surface built on it.
+- [docs/native-thread.md](docs/native-thread.md): how an agent's `pi --mode rpc` process
+  becomes its thread.
+- [docs/native-subagents.md](docs/native-subagents.md): the bundled subagent runtime.
+- [docs/worktrees.md](docs/worktrees.md): worktree creation, finalize, and delete.
+- [docs/agent-coordination.md](docs/agent-coordination.md): the tools agents use on each other
+  and on the review pane.
+- [docs/clean-mac-simulation.md](docs/clean-mac-simulation.md): testing the finalize setup
+  checks.
+- [docs/ios](docs/ios/README.md): the deferred iOS client.
+- [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE). The vendored terminal package under `Vendor/libghostty-spm` is MIT ([Lakr233/libghostty-spm](https://github.com/Lakr233/libghostty-spm)) and bundles a prebuilt libghostty from [Ghostty](https://ghostty.org), which carries its own license terms.
+[MIT](LICENSE). The vendored terminal package in `Vendor/libghostty-spm` is MIT
+([Lakr233/libghostty-spm](https://github.com/Lakr233/libghostty-spm)). It bundles a prebuilt
+libghostty from [Ghostty](https://ghostty.org), which carries its own license terms.

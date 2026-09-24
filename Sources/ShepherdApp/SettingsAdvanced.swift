@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdUI
 import AppKit
 import ShepherdProtocol
 
@@ -6,7 +7,7 @@ import ShepherdProtocol
 
 struct AdvancedSettings: View {
     var vm: ShepherdViewModel
-    @ObservedObject private var updater = AppUpdater.shared
+    private var updater: AppUpdater { .shared }
     @State private var confirmingReset = false
 
     private var version: String {
@@ -17,103 +18,94 @@ struct AdvancedSettings: View {
     }
 
     var body: some View {
-        SettingsGroup(title: "Files") {
-            PathRow(
-                title: "Workspace State",
-                subtitle: "Spaces, agents, and pane layouts restored on relaunch.",
-                url: ShepherdPaths.stateURL(),
-                isFirst: true
-            )
-            PathRow(
-                title: "Extension Socket",
-                subtitle: "Where each pi process reports agent status and pane requests.",
-                url: ShepherdPaths.socketURL()
-            )
-        }
-
-        SettingsGroup(title: "Reset") {
-            SettingsRow(
-                title: "Reset Settings",
-                subtitle: "Restores appearance, font, agent, shell, and keyboard preferences. Spaces, agents, and layouts are untouched.",
-                isFirst: true
-            ) {
-                Button("Reset…") { confirmingReset = true }
+        SettingsPage(title: "Advanced", explanation: "Files, resets and app updates. Quitting Shepherd stops every agent.") {
+            SettingsGroup(title: "Files") {
+                PathRow(title: "Workspace state", subtitle: "Spaces, agents and pane layouts restored on relaunch.",
+                        url: ShepherdPaths.stateURL())
+                PathRow(title: "Extension socket", subtitle: "Where each pi process reports status and pane requests.",
+                        url: ShepherdPaths.socketURL())
             }
-        }
-
-        if updater.available {
             SettingsGroup(title: "Updates") {
-                SettingsRow(
-                    title: "Automatically Check for Updates",
-                    isFirst: true
-                ) {
-                    Toggle("", isOn: Binding(
-                        get: { updater.automaticallyChecks },
-                        set: { updater.automaticallyChecks = $0 }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                }
-                SettingsRow(
-                    title: "Update Channel",
-                    subtitle: "Stable: tagged releases only. Release Candidate and Beta also receive newer stable builds — riding a pre-release channel never strands you behind a hotfix. Nightly: every push, least tested."
-                ) {
-                    Picker("", selection: $updater.channel) {
-                        ForEach(UpdateChannel.allCases) { channel in
-                            Text(channel.label).tag(channel)
-                        }
+                if updater.available {
+                    SettingsRow(title: "Check for updates automatically") {
+                        SettingsSwitch(label: "Check for updates automatically", isOn: Binding(
+                            get: { updater.automaticallyChecks },
+                            set: { updater.automaticallyChecks = $0 }
+                        ))
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: 180)
+                    .nwTransition(.disclosure)
+                    UpdateChannelRow(edition: updater.edition, channel: Binding(
+                        get: { updater.channel },
+                        set: { updater.select($0) }
+                    ))
+                    .nwTransition(.disclosure)
                 }
-                SettingsRow(title: "Check Now") {
-                    Button("Check for Updates…") { updater.checkForUpdates() }
+                SettingsRow(title: "Version \(version)") {
+                    if updater.available {
+                        Button("Check for updates") { updater.checkForUpdates() }
+                            .buttonStyle(.nw(.secondary, size: .s))
+                    }
+                }
+            }
+            SettingsGroup(title: "Reset") {
+                SettingsRow(title: "Reset settings",
+                            subtitle: "Restores appearance, font, agent, shell and keyboard preferences. Spaces, agents and layouts are untouched.") {
+                    Button("Reset…") { confirmingReset = true }
+                        .buttonStyle(.nw(.danger, size: .s))
                 }
             }
         }
-
-        SettingsGroup(title: "About") {
-            SettingsRow(title: "Version", isFirst: true) {
-                Text(version)
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
+        // Sparkle reports whether it can update once it has started.
+        .nwAnimation(.disclosure, value: updater.available)
+        .sheet(isPresented: $confirmingReset) {
+            ResetSettingsDialog {
+                confirmingReset = false
+                vm.resetSettings()
+            } cancel: {
+                confirmingReset = false
             }
         }
-        SettingsNote(text: "sessions live and die with the app · quitting Shepherd stops every agent")
-            .sheet(isPresented: $confirmingReset) {
-                DialogSheet(
-                    title: "Reset Settings to Defaults?",
-                    subtitle: "Your spaces, agents, and pane layouts are not affected.",
-                    actions: [
-                        DialogAction("Cancel", kind: .cancel) { confirmingReset = false },
-                        DialogAction("Reset", kind: .destructive) {
-                            confirmingReset = false
-                            vm.resetSettings()
-                        },
-                    ]
-                )
-            }
     }
 }
 
-struct PathRow: View {
-    let title: String
-    let subtitle: String
-    let url: URL
-    var isFirst = false
+/// Settings ▸ Advanced ▸ Updates: Shepherd picks Stable or Beta; Shepherd Nightly has one
+/// channel and names it.
+struct UpdateChannelRow: View {
+    let edition: ShepherdEdition
+    @Binding var channel: UpdateChannel
 
     var body: some View {
-        SettingsRow(title: title, subtitle: subtitle, isFirst: isFirst) {
-            HStack(spacing: 8) {
-                Text(url.lastPathComponent)
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-                    .help(url.path)
-                Button("Reveal") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                }
+        switch edition {
+        case .main:
+            SettingsRow(title: "Update channel",
+                        subtitle: "Stable: tagged releases. Beta: pre-releases, plus newer stable builds. Nightly builds are a separate app, Shepherd Nightly.") {
+                NWSegmentedPicker("Update channel", selection: $channel,
+                                  options: UpdateChannel.choices(for: edition).map { ($0, $0.label) })
+            }
+        case .nightly:
+            SettingsRow(title: "Update channel",
+                        subtitle: "Every push to the integration branch, least tested. Tagged releases ship as Shepherd.") {
+                Text(UpdateChannel.nightly.label)
+                    .font(.nw(.ui))
+                    .foregroundStyle(Color.nw.textSecondary)
             }
         }
+    }
+}
+
+/// Settings ▸ Advanced ▸ Reset: preferences only; the workspace is untouched.
+struct ResetSettingsDialog: View {
+    let reset: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        DialogSheet(
+            title: "Reset settings to defaults?",
+            subtitle: "Your spaces, agents and pane layouts are not affected.",
+            actions: [
+                DialogAction("Cancel", kind: .cancel, action: cancel),
+                DialogAction("Reset", kind: .destructive, action: reset),
+            ]
+        )
     }
 }

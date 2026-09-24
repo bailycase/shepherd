@@ -1,6 +1,39 @@
 import SwiftUI
+import ShepherdUI
 import AppKit
+import ShepherdProtocol
 import ShepherdSessions
+
+/// The one main window's scene id.
+enum MainWindow {
+    static let id = "main"
+    /// Opens (or fronts) the main window; set once the window has appeared, used to reopen it
+    /// from the Dock after it was closed.
+    @MainActor static var open: (() -> Void)?
+    /// The window itself while it is up, for what AppKit presents on it (the quit
+    /// confirmation). `MainWindowReader` reports it.
+    @MainActor static weak var window: NSWindow? {
+        didSet {
+            if let window, window !== oldValue { QuitConfirmation.shared.mainWindowAppeared(window) }
+        }
+    }
+}
+
+/// Reports the window hosting it as `MainWindow.window`.
+struct MainWindowReader: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ReaderView() }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class ReaderView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { MainWindow.window = window }
+        }
+
+        /// Behind the whole root view: never the target of a click.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
 
 /// The Mac app, exposed as a library so an Xcode app target can provide the
 /// entry point. Launch it with `ShepherdMacApp.main()` — SwiftUI must own the
@@ -9,17 +42,20 @@ import ShepherdSessions
 public struct ShepherdMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var vm: ShepherdViewModel
-    /// Menus rebuild when a shortcut is rebound — the App body observes the
-    /// store so every `.keyboardShortcut` below re-resolves.
-    @ObservedObject private var keys = KeybindingsStore.shared
-    @ObservedObject private var themes = ThemeManager.shared
+    /// Menus rebuild when a shortcut is rebound: the rebindings are passed into each menu.
+    private let keys = KeybindingsStore.shared
+    private let themes = ThemeManager.shared
 
     public init() {
+        // Geist and Geist Mono ship in the ShepherdUI bundle; register them before any view draws.
+        NWFonts.register()
         _vm = State(initialValue: ShepherdViewModel(server: .shared))
     }
 
     public var body: some Scene {
-        WindowGroup {
+        // One window, never tabbed. Sessions belong to the app, not the window: closing it
+        // leaves every agent running, and the Dock or Window menu brings it back.
+        Window(ShepherdEdition.current.displayName, id: MainWindow.id) {
             RootView(vm: vm)
                 // Host role: bind the remote listener if this Mac serves its
                 // sessions (the toggle persists; a host stays a host). The
@@ -31,182 +67,18 @@ public struct ShepherdMacApp: App {
                 }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: Metrics.windowDefaultWidth, height: Metrics.windowDefaultHeight)
+        .defaultSize(width: AppLayout.windowDefaultWidth, height: AppLayout.windowDefaultHeight)
         .windowResizability(.contentMinSize)
         .commands {
-            CommandGroup(replacing: .appSettings) {
-                SettingsCommandButton(vm: vm)
-                if AppUpdater.shared.available {
-                    Button("Check for Updates…") {
-                        AppUpdater.shared.checkForUpdates()
-                    }
-                }
-            }
-            CommandGroup(replacing: .newItem) {
-                Button("New Agent in Current Checkout") {
-                    Task { @MainActor in vm.quickCreateAgent() }
-                }
-                .keyboardShortcut(keys.shortcut(.newAgent))
-                Button("New Agent with Options…") {
-                    Task { @MainActor in vm.showNewAgentSheet = true }
-                }
-                .keyboardShortcut(keys.shortcut(.newAgentOptions))
-                Button("New Space…") {
-                    Task { @MainActor in vm.addSpaceFromPanel() }
-                }
-                .keyboardShortcut(keys.shortcut(.newSpace))
-                Button("New Shell") {
-                    Task { @MainActor in vm.addShell() }
-                }
-                .keyboardShortcut(keys.shortcut(.newShell))
-            }
-            CommandGroup(after: .toolbar) {
-                Button("Command Palette") {
-                    Task { @MainActor in vm.showCommandPalette.toggle() }
-                }
-                .keyboardShortcut(keys.shortcut(.commandPalette))
-            }
-            CommandGroup(replacing: .saveItem) {
-                Button("Close Pane") {
-                    Task { @MainActor in vm.closeFocusedPane() }
-                }
-                .keyboardShortcut(keys.shortcut(.closePane))
-            }
-            CommandMenu("Pane") {
-                Button("Split Vertically") {
-                    Task { @MainActor in vm.splitFocusedPane(axis: .vertical) }
-                }
-                .keyboardShortcut(keys.shortcut(.splitVertical))
-                Button("Split Horizontally") {
-                    Task { @MainActor in vm.splitFocusedPane(axis: .horizontal) }
-                }
-                .keyboardShortcut(keys.shortcut(.splitHorizontal))
-                Divider()
-                Button("Focus Next Pane") {
-                    Task { @MainActor in vm.focusAdjacentPane(1) }
-                }
-                .keyboardShortcut(keys.shortcut(.focusNextPane))
-                Button("Focus Previous Pane") {
-                    Task { @MainActor in vm.focusAdjacentPane(-1) }
-                }
-                .keyboardShortcut(keys.shortcut(.focusPreviousPane))
-            }
-            CommandMenu("Space") {
-                if vm.visibleSpaces.isEmpty {
-                    Button("No Spaces") {}.disabled(true)
-                } else {
-                    ForEach(vm.visibleSpaces) { space in
-                        Button(space.name) {
-                            let id = space.id
-                            Task { @MainActor in vm.selectSpace(id) }
-                        }
-                    }
-                }
-                if !vm.shellTabs.isEmpty {
-                    Divider()
-                    // Shell selection digits 1–9; modifiers follow the
-                    // rebindable "Select Shell 1–9" chord (default ⌃).
-                    ForEach(Array(vm.shellTabs.prefix(9).enumerated()), id: \.element.id) { index, shell in
-                        Button(ShepherdViewModel.shellLabel(shell)) {
-                            let id = shell.id
-                            Task { @MainActor in vm.selectShell(id) }
-                        }
-                        // No palette suppression needed: shell chords always
-                        // carry a modifier beyond ⌘ (validation forbids plain
-                        // ⌘digits), so they cannot collide with the palette's
-                        // ⌘digit quick-pick.
-                        .keyboardShortcut(
-                            KeyEquivalent(Character("\(index + 1)")),
-                            modifiers: keys.shellDigitModifiers
-                        )
-                    }
-                }
-            }
-            CommandMenu("Agent") {
-                let selected = vm.selectedRemoteAgent?.agentID ?? vm.selectedAgentID
-                Button("Focus") {
-                    Task { @MainActor in vm.focusSelectedAgent() }
-                }
-                .disabled(selected == nil && vm.selectedRemoteAgent == nil)
-                Button("Rename…") {
-                    Task { @MainActor in vm.renameSelectedAgent() }
-                }
-                .keyboardShortcut(keys.shortcut(.renameAgent))
-                .disabled(selected == nil)
-                Divider()
-                Button("Next Agent") {
-                    Task { @MainActor in vm.selectAdjacentAgent(1) }
-                }
-                .keyboardShortcut(keys.shortcut(.nextAgent))
-                .disabled(vm.activeMachineAgents.isEmpty)
-                Button("Previous Agent") {
-                    Task { @MainActor in vm.selectAdjacentAgent(-1) }
-                }
-                .keyboardShortcut(keys.shortcut(.previousAgent))
-                .disabled(vm.activeMachineAgents.isEmpty)
-                Divider()
-                Button("Delete Agent") {
-                    Task { @MainActor in vm.deleteSelectedAgent() }
-                }
-                .keyboardShortcut(keys.shortcut(.deleteAgent))
-                .disabled(selected == nil)
-                if !vm.activeMachineAgents.isEmpty {
-                    Divider()
-                    ForEach(Array(vm.activeMachineAgents.prefix(9).enumerated()), id: \.element.id) { index, agent in
-                        Button(agent.name) {
-                            let digit = index + 1
-                            // The chord stays permanently wired (conditional
-                            // nil shortcuts left menus flaky after palette
-                            // close); the action routes to the palette's
-                            // quick-pick while it is open.
-                            Task { @MainActor in
-                                if vm.showCommandPalette {
-                                    vm.runPaletteQuickPick(digit)
-                                } else {
-                                    vm.selectAgentDigit(digit)
-                                }
-                            }
-                        }
-                        .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
-                    }
-                }
-            }
-            // ⌃⇧1–9: machine jump (local is always ⌃⇧1, hosts follow in
-            // configured order). Wired permanently like the agent digits.
-            CommandMenu("Machines") {
-                Button("This Mac") {
-                    Task { @MainActor in vm.jumpToMachine(1) }
-                }
-                .keyboardShortcut("1", modifiers: [.control, .shift])
-                ForEach(Array(vm.remoteHosts.connections.prefix(8).enumerated()), id: \.element.id) { index, connection in
-                    Button("⌁ \(connection.config.name)") {
-                        let digit = index + 2
-                        Task { @MainActor in vm.jumpToMachine(digit) }
-                    }
-                    .keyboardShortcut(KeyEquivalent(Character("\(index + 2)")), modifiers: [.control, .shift])
-                    .disabled(connection.phase != .connected)
-                }
-            }
-            CommandMenu("Appearance") {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Button {
-                        Task { @MainActor in
-                            vm.selectAppearance(
-                                mode,
-                                systemColorScheme: ThemeManager.effectiveSystemColorScheme
-                            )
-                        }
-                    } label: {
-                        if themes.mode == mode {
-                            Label(mode.title, systemImage: "checkmark")
-                        } else {
-                            Text(mode.title)
-                        }
-                    }
-                }
-            }
+            AppSettingsCommands(vm: vm)
+            FileCommands(vm: vm, keys: keys, bindings: keys.overrides)
+            ViewCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+            PaneCommands(vm: vm, keys: keys, bindings: keys.overrides)
+            SpaceCommands(vm: vm, menu: vm.menuState)
+            AgentCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
+            MachineCommands(vm: vm, menu: vm.menuState)
+            AppearanceCommands(vm: vm, themes: themes)
         }
-
     }
 }
 
@@ -214,6 +86,8 @@ public struct ShepherdMacApp: App {
 /// regular app so the window fronts when run from a terminal.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // One window: no tab bar, and no "Show Tab Bar" menu items.
+        NSWindow.allowsAutomaticWindowTabbing = false
         do {
             _ = try ShepherdPiTheme.installedPath(for: ThemeManager.shared.current)
         } catch {
@@ -258,6 +132,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
+        QuitConfirmation.shared.watchForPowerOff()
+
         // Sessions live and die with the app: start the in-process session
         // server (extension socket) and shut it down on quit so every agent
         // stops when Shepherd stops, like any terminal app.
@@ -268,26 +144,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Quitting kills every agent process (sessions die with the app), so a
-    /// quit while agents are mid-turn asks first. Idle/done agents quit
-    /// silently — their transcripts are on disk and respawn on relaunch.
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let busy = SessionServer.shared.state.agents.filter {
-            $0.status == .working || $0.status == .blocked
-        }
-        guard !busy.isEmpty else { return .terminateNow }
+    /// Agents keep running with the window closed; only Quit stops them.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = busy.count == 1
-            ? "1 agent is still working"
-            : "\(busy.count) agents are still working"
-        let names = busy.prefix(5).map(\.name).joined(separator: "\n")
-        let more = busy.count > 5 ? "\n…" : ""
-        alert.informativeText = "Quitting stops their processes mid-turn. Conversations stay on disk and reopen on next launch.\n\n\(names)\(more)"
-        alert.addButton(withTitle: "Quit")
-        alert.addButton(withTitle: "Cancel")
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    /// Clicking the Dock icon with the window closed brings it back.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { MainActor.assumeIsolated { MainWindow.open?() } }
+        return true
+    }
+
+    /// Quitting kills every agent process (sessions die with the app), so a quit while agents
+    /// are mid-turn asks first, in a dialog on the main window (`QuitConfirmation`).
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        QuitConfirmation.shared.shouldTerminate(agents: SessionServer.shared.state.agents)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

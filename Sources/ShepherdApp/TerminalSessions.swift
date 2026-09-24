@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
@@ -22,13 +23,16 @@ enum TerminalSessionStoreError: Error, CustomStringConvertible {
 /// external connect/bootstrap dance: the store adopts
 /// the persisted state at init and every pane renders against live sessions.
 /// On relaunch all previously bound sessions are dead (they died with the
-/// app), so each pane respawns fresh — pi for agent panes, a login shell for
-/// everything else.
+/// app), so each pane respawns fresh — `pi --mode rpc` for an agent's primary
+/// pane, a login shell for everything else.
 @MainActor
-final class TerminalSessionStore: ObservableObject {
+final class TerminalSessionStore {
 
+    /// One pane's session. Views observe only `phase`; everything else is attach and replay
+    /// bookkeeping, and the terminal model is built lazily while a view renders.
     @MainActor
-    final class PaneSession: ObservableObject {
+    @Observable
+    final class PaneSession {
         enum Phase: Equatable {
             case connecting
             case live
@@ -37,35 +41,16 @@ final class TerminalSessionStore: ObservableObject {
         }
 
         let paneID: PaneID
-        let terminal: AppTerminalModel
-        @Published var phase: Phase = .connecting
-        var sessionID: SessionID?
-        struct BufferedOutput {
-            let data: Data
-            let sequence: UInt64
-        }
-
-        /// Output that races the attach replay. Sequence watermarks decide
-        /// which chunks the snapshot already contains.
-        fileprivate var buffered: [BufferedOutput] = []
-        /// True while subscribed, including the atomic snapshot handoff.
-        fileprivate var attachRequested = false
-        fileprivate var surfaceGeneration: UInt64?
-        private var nextAttachAttempt: UInt64 = 0
-        fileprivate var activeAttachAttempt: UInt64?
-        /// Last grid the surface reported via onResize; the PTY keeps this
-        /// size. Defaults match createSession's fallback 80×24.
-        fileprivate(set) var lastCols = 80
-        fileprivate(set) var lastRows = 24
-        /// True after Ghostty reports this surface's actual grid at least once.
-        fileprivate var hasReportedGrid = false
-        /// Suspended `awaitGrid` callers, resumed by the first grid report (or
-        /// by its timeout).
-        private var gridWaiters: [CheckedContinuation<Void, Never>] = []
-
-        init(paneID: PaneID) {
-            self.paneID = paneID
-            self.terminal = AppTerminalModel(
+        /// True for the pi pane of an RPC agent: no Ghostty surface, no grid, no replay.
+        /// The pane's process is reached only through `SessionServer.nativeThread`.
+        let isRPC: Bool
+        /// Set once `terminal` has been built; RPC panes must never build one.
+        @ObservationIgnored private(set) var hasTerminalModel = false
+        /// Built on first use so an RPC pane never pays for a Ghostty model.
+        @ObservationIgnored lazy var terminal: AppTerminalModel = {
+            assert(!isRPC, "RPC pane \(paneID) must not build a terminal model")
+            hasTerminalModel = true
+            return AppTerminalModel(
                 fontSize: AppSettings.shared.terminalFontSize,
                 fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
                 terminal: ThemeManager.shared.current.terminal,
@@ -73,6 +58,35 @@ final class TerminalSessionStore: ObservableObject {
                 // exactly like the built-in ones.
                 extraUnbinds: KeybindingsStore.shared.customGhosttyUnbinds
             )
+        }()
+        var phase: Phase = .connecting
+        @ObservationIgnored var sessionID: SessionID?
+        struct BufferedOutput {
+            let data: Data
+            let sequence: UInt64
+        }
+
+        /// Output that races the attach replay. Sequence watermarks decide
+        /// which chunks the snapshot already contains.
+        @ObservationIgnored fileprivate var buffered: [BufferedOutput] = []
+        /// True while subscribed, including the atomic snapshot handoff.
+        @ObservationIgnored fileprivate var attachRequested = false
+        @ObservationIgnored fileprivate var surfaceGeneration: UInt64?
+        @ObservationIgnored private var nextAttachAttempt: UInt64 = 0
+        @ObservationIgnored fileprivate var activeAttachAttempt: UInt64?
+        /// Last grid the surface reported via onResize; the PTY keeps this
+        /// size. Defaults match createSession's fallback 80×24.
+        @ObservationIgnored fileprivate(set) var lastCols = 80
+        @ObservationIgnored fileprivate(set) var lastRows = 24
+        /// True after Ghostty reports this surface's actual grid at least once.
+        @ObservationIgnored fileprivate var hasReportedGrid = false
+        /// Suspended `awaitGrid` callers, resumed by the first grid report (or
+        /// by its timeout).
+        @ObservationIgnored private var gridWaiters: [CheckedContinuation<Void, Never>] = []
+
+        init(paneID: PaneID, isRPC: Bool = false) {
+            self.paneID = paneID
+            self.isRPC = isRPC
         }
 
         /// Record a surface grid report and wake anyone waiting for the first
@@ -277,7 +291,7 @@ final class TerminalSessionStore: ObservableObject {
     /// configuration without replacing the NSView, so no detach or replay is
     /// involved and Pi's simultaneous repaint cannot race a screen snapshot.
     func updateAppearance(_ terminal: ShepherdTheme.Terminal) {
-        for session in sessions.values {
+        for session in sessions.values where !session.isRPC {
             session.terminal.updateAppearance(terminal)
         }
     }
@@ -286,7 +300,7 @@ final class TerminalSessionStore: ObservableObject {
     /// keybind unbinds). Like updateAppearance, ghostty applies the config
     /// without replacing the NSView — no detach, no replay, no blank pane.
     func updateSurfaceConfiguration() {
-        for session in sessions.values {
+        for session in sessions.values where !session.isRPC {
             session.terminal.updateConfiguration(
                 fontSize: AppSettings.shared.terminalFontSize,
                 fontFamily: AppSettings.shared.resolvedTerminalFontFamily,
@@ -299,13 +313,14 @@ final class TerminalSessionStore: ObservableObject {
     /// local surface; pane views rebuild lazily and reattach with replay.
     /// Session processes remain alive in the in-process server.
     func rebuildAllSurfaces() {
-        for session in sessions.values {
+        for session in sessions.values where !session.isRPC {
             session.stopOutput()
             if let sessionID = session.sessionID {
                 server.detach(sessionID: sessionID)
             }
         }
-        sessions.removeAll()
+        // RPC panes have no surface to rebuild; their binding stays.
+        sessions = sessions.filter { $0.value.isRPC }
     }
 
     /// Mirror view-model-originated state mutations already persisted (or
@@ -356,10 +371,19 @@ final class TerminalSessionStore: ObservableObject {
     /// `session(for:in:)` → `start` → `adopt`, which reattaches with the
     /// server's screen snapshot at the surface's real grid.
     func parkPane(_ paneID: PaneID) {
-        guard let session = sessions.removeValue(forKey: paneID),
+        // Nothing to release for an RPC pane; the native view stops polling on its own.
+        guard sessions[paneID]?.isRPC != true,
+              let session = sessions.removeValue(forKey: paneID),
               let sessionID = session.sessionID else { return }
         session.stopOutput()
         server.detach(sessionID: sessionID)
+    }
+
+    /// True when `pane` is `agent`'s primary pane, where its pi runs over RPC. Auxiliary
+    /// panes an agent opens are ordinary shells.
+    private func isRPCPane(_ pane: LeafPane, agent: Agent?) -> Bool {
+        guard let agent else { return false }
+        return pane.agentID == agent.id && agent.paneID == pane.id
     }
 
     private func session(forSessionID id: SessionID) -> PaneSession? {
@@ -392,8 +416,9 @@ final class TerminalSessionStore: ObservableObject {
     /// SwiftUI structural changes (splits collapsing, panes moving in the
     /// tree) recreate the ghostty NSView; the fresh surface starts blank, so
     /// re-pull the server's current-screen replay into it.
-    private func makeSession(paneID: PaneID) -> PaneSession {
-        let session = PaneSession(paneID: paneID)
+    private func makeSession(paneID: PaneID, isRPC: Bool = false) -> PaneSession {
+        let session = PaneSession(paneID: paneID, isRPC: isRPC)
+        if isRPC { return session }
         session.terminal.onInput = { [weak self, weak session] data in
             guard let self, let session, let sessionID = session.sessionID else { return }
             self.server.write(sessionID: sessionID, data: data)
@@ -424,10 +449,18 @@ final class TerminalSessionStore: ObservableObject {
     }
 
     func session(for pane: LeafPane, in tab: Tab) -> PaneSession {
+        // Before bootstrap the mirror is empty; the pane's role decides the session kind, so
+        // read the server directly rather than guess a shell.
+        let agents = (serverState ?? server.state).agents
+        let agent = pane.agentID.flatMap { id in agents.first { $0.id == id } }
+        let rpc = isRPCPane(pane, agent: agent)
         if let existing = sessions[pane.id] {
-            return existing
+            if existing.isRPC == rpc { return existing }
+            // The pane changed role under an unbound pane session: a session of the other
+            // kind can never serve this pane.
+            detachPane(pane.id)
         }
-        let session = makeSession(paneID: pane.id)
+        let session = makeSession(paneID: pane.id, isRPC: rpc)
         sessions[pane.id] = session
         Task { await start(session, pane: pane, tab: tab) }
         return session
@@ -443,21 +476,21 @@ final class TerminalSessionStore: ObservableObject {
             throw TerminalSessionStoreError.paneUnavailable(pane.id)
         }
 
-        let session = sessions[pane.id] ?? makeSession(paneID: pane.id)
+        let rpc = isRPCPane(pane, agent: agent)
+        if let stale = sessions[pane.id], stale.isRPC != rpc { detachPane(pane.id) }
+        let session = sessions[pane.id] ?? makeSession(paneID: pane.id, isRPC: rpc)
         sessions[pane.id] = session
         var createdSessionID: SessionID?
         do {
-            guard session.sessionID == nil, liveBinding(forPane: pane.id) == nil else {
+            guard session.sessionID == nil, liveBinding(forPane: pane.id) == nil, session.isRPC == rpc else {
                 throw TerminalSessionStoreError.paneUnavailable(pane.id)
             }
             let cwd = Self.resolvedCwd(pane.cwd)
-            let command = try Self.agentCommand(for: agent, cwd: cwd, initialPrompt: initialPrompt, isAutomation: isAutomation)
+            guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
+            // RPC mode ignores a positional prompt; it goes in as the first `prompt` command below.
+            let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, isAutomation: isAutomation)
             // Give pi a session to find, so --session-id does not warn.
-            PiSessionFile.seedIfMissing(sessionID: agent.id.rawValue, cwd: cwd)
-            // Spawn at the surface's real grid: pi paints its TUI once, at the
-            // right size, instead of drawing at 80×24 and visibly reflowing on
-            // the first resize.
-            await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds)
+            PiSessionFile.seedIfMissing(sessionID: agent.effectivePiSessionID, cwd: cwd)
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
                   session.sessionID == nil,
                   liveBinding(forPane: pane.id) == nil else {
@@ -471,7 +504,8 @@ final class TerminalSessionStore: ObservableObject {
                     command: command.argv,
                     cols: session.lastCols,
                     rows: session.lastRows,
-                    env: command.env.isEmpty ? nil : command.env
+                    env: command.env.isEmpty ? nil : command.env,
+                    runtime: .rpc
                 )
             )
             createdSessionID = info.id
@@ -495,6 +529,9 @@ final class TerminalSessionStore: ObservableObject {
             }
             try await adopt(session, sessionID: info.id)
             createdSessionID = nil
+            if let initialPrompt, !initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                sendOpeningPrompt(initialPrompt, to: agent.id, sessionID: info.id)
+            }
         } catch {
             if let createdSessionID {
                 await discardCreatedSession(
@@ -507,6 +544,30 @@ final class TerminalSessionStore: ObservableObject {
                 session.phase = .failed(String(describing: error))
             }
             throw error
+        }
+    }
+
+    /// An agent's opening prompt: wait for pi to answer its first snapshot, then send
+    /// it as a normal native `send`. Detached so creation does not block on pi's startup;
+    /// a failure is logged, never fatal (the user can type the prompt again).
+    private func sendOpeningPrompt(_ text: String, to agentID: AgentID, sessionID: SessionID) {
+        Task { [weak self] in
+            guard let self else { return }
+            let deadline = ContinuousClock.now + .seconds(60)
+            while ContinuousClock.now < deadline, self.aliveSessions.contains(sessionID) {
+                if case .snapshot(let snapshot) = try? await self.server.nativeThread(agentID: agentID, request: .snapshot()),
+                   !snapshot.piSessionID.isEmpty {
+                    let result = try? await self.server.nativeThread(agentID: agentID, request: .send(
+                        expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
+                        operationID: UUID(), text: text, delivery: .followUp))
+                    if case .failure(let code, let message) = result {
+                        NSLog("Shepherd: opening prompt for agent \(agentID) rejected: \(code) \(message)")
+                    }
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            NSLog("Shepherd: agent \(agentID) never became ready for its opening prompt")
         }
     }
 
@@ -526,8 +587,10 @@ final class TerminalSessionStore: ObservableObject {
     /// with the previous app run), so `aliveSessions` is whatever the server
     /// holds right now — normally empty.
     private func bootstrap() async throws {
+        serverState = server.state
         aliveSessions = Set(await server.listSessions().filter(\.isAlive).map(\.id))
-        // Read after the suspension so bootstrap cannot republish an older workspace.
+        // Read again: adopting the snapshot from before the await would roll back anything
+        // committed meanwhile (a space added while the app starts).
         let state = server.state
         serverState = state
         onStateChanged?(state)
@@ -678,16 +741,20 @@ final class TerminalSessionStore: ObservableObject {
             // in one pane.
             if reservedPanes.contains(session.paneID) { return }
 
-            // No live binding: agent leaves come back as pi (rebuilt from the
-            // agent record), everything else as a login shell in the leaf cwd.
+            // No live binding: an agent's primary pane comes back as `pi --mode rpc` (rebuilt
+            // from the agent record, resuming its pi session), everything else as a login
+            // shell in the leaf cwd.
             let cwd = Self.resolvedCwd(pane.cwd)
             let command: SessionCommand
             if let agentID = pane.agentID,
                let agent = serverState?.agents.first(where: { $0.id == agentID }) {
-                command = try Self.agentCommand(for: agent, cwd: cwd, initialPrompt: nil)
+                guard session.isRPC, isRPCPane(pane, agent: agent) else {
+                    throw TerminalSessionStoreError.paneUnavailable(session.paneID)
+                }
+                command = try Self.rpcAgentCommand(for: agent, cwd: cwd)
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
-                PiSessionFile.seedIfMissing(sessionID: agent.id.rawValue, cwd: cwd)
+                PiSessionFile.seedIfMissing(sessionID: agent.effectivePiSessionID, cwd: cwd)
             } else {
                 let settings = AppSettings.shared
                 command = try ShellIntegration.command(
@@ -696,26 +763,8 @@ final class TerminalSessionStore: ObservableObject {
                     themePath: settings.piThemeExtension
                         ? try ShepherdPiTheme.installedPath(for: ThemeManager.shared.current) : nil
                 )
-                // A global shell that was running something when the app
-                // last quit restarts it: type the recorded command into the
-                // fresh shell (visible and cancelable, not a hidden exec).
-                if let restore = serverState?.tabs.first(where: {
-                    $0.isShell && $0.layout.firstLeaf.id == pane.id
-                })?.restoreCommand, !restore.isEmpty {
-                    let paneID = session.paneID
-                    Task { [weak self] in
-                        guard let self else { return }
-                        guard let sessionID = await self.awaitSession(forPane: paneID, timeout: .seconds(5)) else {
-                            return
-                        }
-                        // A beat for the shell to print its prompt and
-                        // install its own tty settings.
-                        try? await Task.sleep(for: .milliseconds(500))
-                        self.server.write(sessionID: sessionID, data: Data((restore + "\n").utf8))
-                    }
-                }
             }
-            await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds)
+            if !session.isRPC { await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds) }
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID),
                   session.sessionID == nil,
                   liveBinding(forPane: session.paneID) == nil else {
@@ -729,7 +778,8 @@ final class TerminalSessionStore: ObservableObject {
                     command: command.argv,
                     cols: session.lastCols,
                     rows: session.lastRows,
-                    env: command.env.isEmpty ? nil : command.env
+                    env: command.env.isEmpty ? nil : command.env,
+                    runtime: session.isRPC ? .rpc : .pty
                 )
             )
             createdSessionID = info.id
@@ -796,6 +846,12 @@ final class TerminalSessionStore: ObservableObject {
             return
         }
 
+        // No terminal: the binding itself is the whole attachment.
+        if session.isRPC {
+            session.phase = .live
+            return
+        }
+
         if session.hasReportedGrid {
             server.reportLocalViewport(
                 sessionID: sessionID,
@@ -836,40 +892,26 @@ final class TerminalSessionStore: ObservableObject {
         }
     }
 
-    private static func agentCommand(for agent: Agent, cwd: String, initialPrompt: String?, isAutomation: Bool = false) throws -> SessionCommand {
+    /// `pi --mode rpc` for an agent, with Shepherd's socket, status, panes, review, subagents,
+    /// and namer extensions.
+    private static func rpcAgentCommand(for agent: Agent, cwd: String, isAutomation: Bool = false) throws -> SessionCommand {
         let settings = AppSettings.shared
-        let theme = ThemeManager.shared.current
-        // Pass model/thinking only into a session pi has never written to.
-        // Once pi owns the session it persists both (model_change /
-        // thinking_level_change events) and restores them on resume; passing
-        // the flags again would reset in-session changes on every relaunch.
-        let sessionIsFresh = !PiSessionFile.hasRuntimeState(
-            sessionID: agent.effectivePiSessionID,
-            cwd: cwd
-        )
+        let sessionIsFresh = !PiSessionFile.hasRuntimeState(sessionID: agent.effectivePiSessionID, cwd: cwd)
         return StatusExtension.command(
             agentID: agent.id,
             piSessionID: agent.effectivePiSessionID,
             socketPath: ShepherdPaths.socketURL().path,
             extensionPath: try StatusExtension.installedPath(),
-            themeExtensionPath: settings.piThemeExtension ? try ThemeExtension.installedPath() : nil,
             panesExtensionPath: settings.piPanesExtension ? try PanesExtension.installedPath() : nil,
             reviewExtensionPath: settings.piReviewExtension ? try ReviewExtension.installedPath() : nil,
             subagentsExtensionPath: settings.piSubagentsExtension ? try SubagentsExtension.installedPath() : nil,
-            // The namer loads whenever auto-naming is on: besides titling a
-            // provisional agent from its opening prompt, it retitles on
-            // /resume (pi session names are free; unnamed resumed sessions
-            // cost one cheap-model call).
-            namerExtensionPath: settings.autoNameAgents
-                ? try NamerExtension.installedPath()
-                : nil,
+            childrenExtensionPath: settings.piNativeSubagents ? try ChildrenExtension.installedPath() : nil,
+            childEnvironment: settings.childEnvironment,
+            namerExtensionPath: settings.autoNameAgents ? try NamerExtension.installedPath() : nil,
             needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
             isAutomation: isAutomation,
-            piThemePath: settings.piThemeExtension ? try ShepherdPiTheme.installedPath(for: theme) : nil,
-            piThemeName: ShepherdPiTheme.name,
             model: sessionIsFresh ? agent.model : nil,
-            thinking: sessionIsFresh ? agent.thinkingLevel : nil,
-            initialPrompt: initialPrompt
+            thinking: sessionIsFresh ? agent.thinkingLevel : nil
         )
     }
 
