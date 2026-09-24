@@ -3,7 +3,7 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// Thread per docs/design-spec page 5/6 + page 9 §8: back · title with a status line beneath ·
+// Thread (DESIGN.md › iOS): back · title with a status line beneath ·
 // options (Stop while running); turns from nativeTurns; pill composer with Send inside the
 // field; approval as a bottom sheet. Attachments are not supported by the bridge, so there is
 // no attach icon (no fake affordances).

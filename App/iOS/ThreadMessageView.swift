@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdProtocol
 import ShepherdRemote
 
-// Turn rendering per docs/design-spec page 5 + page 9 §4/§8. Derivations (turns, items,
+// Turn rendering (DESIGN.md › iOS). Derivations (turns, items,
 // tool rows, group summary, head truncation) come from ShepherdRemote and are shared with
 // the desktop; this file only lays them out at phone sizes.
 
