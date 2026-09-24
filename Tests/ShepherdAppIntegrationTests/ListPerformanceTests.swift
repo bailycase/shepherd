@@ -227,6 +227,23 @@ struct ListPerformanceTests {
         }
     }
 
+    /// Switching is a visibility flip: hiding a thread and showing it again each rebuild it (and
+    /// its composer) once, and the rows on screen, whatever its first pull brings back.
+    @Test func aSwitchRebuildsEachThreadOnce() async throws {
+        let thread = try await chromeThread(running: false)
+        defer { thread.close() }
+
+        let hide = try await counting(thread.window) { try await thread.show(false) }
+        let show = try await counting(thread.window) { try await thread.show(true) }
+
+        for (name, rows) in [("hide", hide), ("show", show)] {
+            #expect(rows["thread.view", default: 0] <= 1, "\(name): \(rows)")
+            #expect(rows["composer.body", default: 0] <= 1, "\(name): \(rows)")
+        }
+        // An 800pt window shows a few turns; the lazy stack builds some ahead.
+        #expect(show["thread.rowBuilder", default: 0] <= 40, "\(show)")
+    }
+
     // MARK: Subagents
 
     /// A turn whose spawn calls started `runs`, as the thread shows it.
@@ -280,7 +297,7 @@ struct ListPerformanceTests {
         let runs: [ChildRun]
 
         var body: some View {
-            SubagentStack(runs: runs, turnLive: true, actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true))
+            SubagentStack(runs: runs, turnLive: true, actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
                 .frame(width: 800)
         }
     }

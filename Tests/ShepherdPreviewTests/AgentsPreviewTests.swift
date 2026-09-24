@@ -16,7 +16,7 @@ import Testing
 @Suite("Agents previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
 @MainActor
 struct AgentsPreviewTests {
-    private let actions = SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true)
+    private let actions = SubagentActions(inspect: { _ in }, command: { _, _, _, _ in })
 
     private static var nowMs: Double { Date().timeIntervalSince1970 * 1000 }
 
@@ -62,7 +62,7 @@ struct AgentsPreviewTests {
                 Text("Cards").nwSectionLabel()
                 VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
                     ForEach(cards, id: \.id) { run in
-                        SubagentCard(run: run, selected: run.runID == "native-worker", enabled: true, inspect: { _ in }, command: { _, _, _, _ in })
+                        SubagentCard(run: run, selected: run.runID == "native-worker", inspect: { _ in }, command: { _, _, _, _ in })
                     }
                 }
                 Text("Many parallel runs").nwSectionLabel()
@@ -77,7 +77,7 @@ struct AgentsPreviewTests {
                 Text("Narrow").nwSectionLabel()
                 VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
                     ForEach(cards.suffix(2), id: \.id) { run in
-                        SubagentCard(run: run, selected: false, enabled: true, inspect: { _ in }, command: { _, _, _, _ in })
+                        SubagentCard(run: run, selected: false, inspect: { _ in }, command: { _, _, _, _ in })
                     }
                     SubagentStack(runs: Self.manyRuns.filter { !$0.needsAttention }, turnLive: true, actions: actions)
                 }

@@ -9,13 +9,15 @@ import SwiftUI
 
 /// A `ThreadView` in an off-screen window whose pi is an in-process closure: it answers each
 /// snapshot request with `snapshot` (or `starting`), and accepts every action. Tests change
-/// what it serves and have the store pull, as a poll would.
+/// what it serves and have the store pull, as a poll would. With `history` set, snapshots carry
+/// its newest page and older pages are served by cursor, as a host pages pi's session.
 @MainActor
 final class FakeThread {
     /// Whether the thread is on screen, and whether its layout is the visible one.
     @MainActor @Observable final class Visibility {
         var active = true
         var motionPaused = false
+        var focused = false
     }
 
     private struct Hosted: View {
@@ -23,40 +25,58 @@ final class FakeThread {
         let store: NativeThreadStore
         let request: NativeThreadStore.Request
         let header: Bool
+        let commands: ThreadCommandCenter
 
         var body: some View {
             VStack(spacing: 0) {
                 if header {
                     ThreadHeader(store: store, project: "project", title: "Thread", toggleReview: {}, toggleSubagents: {}, rename: {})
                 }
-                ThreadView(store: store, active: visibility.active, isFocused: false, request: request, commandKey: "fake")
+                ThreadView(store: store, active: visibility.active, isFocused: visibility.focused, request: request, commandKey: "fake")
             }
+            // As the workspace hides a layout it keeps mounted.
+            .opacity(visibility.active ? 1 : 0)
             .environment(\.nwMotionPaused, visibility.motionPaused)
+            .environment(\.threadCommands, commands)
         }
     }
 
     let store: NativeThreadStore
     let visibility = Visibility()
+    /// Keyboard commands for the thread (⌥⌘↑/↓ turn jumps), as the app sends them.
+    let commands = ThreadCommandCenter()
     var snapshot: NativeThreadSnapshot
+    /// The whole session, oldest first, when the thread pages it.
+    var history: [NativeThreadMessage]?
+    static let pageSize = 50
     /// While true, snapshot requests answer that pi is still starting.
     var starting = false
     private(set) var snapshotRequests = 0
     let window: OffscreenWindow
 
     /// `header` puts the thread's toolbar (`ThreadHeader`) above it, as the workspace does.
-    init(_ snapshot: NativeThreadSnapshot, starting: Bool = false, store: NativeThreadStore = NativeThreadStore(),
-         size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true, header: Bool = false) {
+    init(_ snapshot: NativeThreadSnapshot, history: [NativeThreadMessage]? = nil, starting: Bool = false,
+         store: NativeThreadStore = NativeThreadStore(), size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true,
+         header: Bool = false, focused: Bool = false) {
         self.snapshot = snapshot
+        self.history = history
         self.starting = starting
         self.store = store
+        visibility.focused = focused
         window = OffscreenWindow(size: size, dark: dark)
         let request: NativeThreadStore.Request = { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "harness released") }
             switch value {
-            case .snapshot:
+            case .snapshot(_, let before, _):
                 self.snapshotRequests += 1
                 if self.starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
-                return .snapshot(value: self.snapshot)
+                guard let history = self.history else { return .snapshot(value: self.snapshot) }
+                let end = before.flatMap { cursor in history.firstIndex { $0.entryID == cursor } } ?? history.count
+                let start = max(0, end - Self.pageSize)
+                var page = self.snapshot
+                page.messages = Array(history[start..<end])
+                page.olderCursor = start > 0 ? history[start].entryID : nil
+                return .snapshot(value: page)
             case .send(_, _, let operation, _, _, _), .abort(_, _, let operation), .answer(_, _, let operation, _, _),
                  .setModel(_, _, let operation, _), .setThinking(_, _, let operation, _),
                  .subagentCommand(_, _, let operation, _, _, _, _):
@@ -65,7 +85,7 @@ final class FakeThread {
                 return .failure(code: "x", message: "unscripted")
             }
         }
-        window.show(Hosted(visibility: visibility, store: store, request: request, header: header))
+        window.show(Hosted(visibility: visibility, store: store, request: request, header: header, commands: commands))
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.
@@ -79,6 +99,27 @@ final class FakeThread {
         try await eventuallyOnMain("the thread to load") { store.ready }
         ListPerf.settle(window)
     }
+
+    /// Flips the thread off screen (`shown` false) or back, as switching agents does: the
+    /// layout stays mounted, its thread stops being active, and its motion pauses. Returns
+    /// once the thread has settled: shown again, its first pull since has landed.
+    func show(_ shown: Bool) async throws {
+        let requests = snapshotRequests
+        visibility.active = shown
+        visibility.motionPaused = !shown
+        ListPerf.settle(window)
+        if shown {
+            try await eventuallyOnMain("the thread's first pull since it was shown") { self.snapshotRequests > requests }
+        }
+        // Let the pull land and whatever it sets off run.
+        for _ in 0..<5 {
+            try await Task.sleep(for: .milliseconds(20))
+            ListPerf.settle(window)
+        }
+    }
+
+    /// The thread's scroll view.
+    var scrollView: NSScrollView? { ListPerf.scrollView(in: window) }
 
     func close() {
         store.stop()

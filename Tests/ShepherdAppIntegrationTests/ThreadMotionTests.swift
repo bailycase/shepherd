@@ -85,6 +85,47 @@ struct ThreadMotionTests {
     /// A lightness difference a reader would see.
     static let visible = 0.03
 
+    // MARK: Switching
+
+    /// Entrances counted (`nwArrival`) while `work` runs.
+    private func entrances(_ work: () async throws -> Void) async rethrows -> Int {
+        NWRenderProbe.start()
+        try await work()
+        return NWRenderProbe.stop()["arrival.animates", default: 0]
+    }
+
+    /// Switching back to an agent is a flip: the turns its thread catches up on, which arrived
+    /// while it was hidden, are simply there.
+    @Test func nothingMakesAnEntranceOnASwitch() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(4)), dark: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await thread.show(false)
+        thread.snapshot = ThreadFixture.snapshot(ThreadFixture.history(4) + [ThreadFixture.user("u9", "Asked while you were away"),
+                                                                             ThreadFixture.assistant("a9", "Answered.")], revision: 2)
+
+        let count = try await entrances { try await thread.show(true) }
+
+        #expect(thread.store.rows.count == 6, "the thread caught up")
+        #expect(count == 0)
+    }
+
+    /// Caught up, the thread's motion is back: a turn that arrives after switching back rises in.
+    @Test func aTurnAfterSwitchingBackMakesItsEntrance() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(4)), dark: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await thread.show(false)
+        try await thread.show(true)
+
+        let count = await entrances {
+            await thread.serve(ThreadFixture.snapshot(ThreadFixture.history(4) + [ThreadFixture.user("u9", "One more thing")], revision: 2))
+            ListPerf.settle(thread.window)
+        }
+
+        #expect(count > 0)
+    }
+
     /// Text streaming into a reply appears at once: no row, part, or line animates per chunk.
     @Test func streamedTextAppearsAtOnce() async throws {
         let first = "Streaming a reply that keeps growing."
@@ -192,8 +233,9 @@ struct ThreadMotionTests {
         defer { thread.close() }
         try await thread.waitUntilReady()
         thread.visibility.active = false
-        try await eventuallyOnMain("the hidden thread to stop polling") { !thread.store.ready }
-        // Hidden, it stopped running: let Stop finish turning back into Send before looking.
+        try await eventuallyOnMain("the hidden thread to stop polling") { thread.store.catchUp == nil }
+        // Hidden, it keeps what it showed (still running): the pull that catches it up turns
+        // Stop back into Send with everything else.
         try await thread.settle(whole: true)
         thread.stage(Self.caughtUp)
 

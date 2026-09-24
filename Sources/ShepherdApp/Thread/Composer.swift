@@ -23,10 +23,11 @@ struct Composer: View {
 
     @Bindable var store: NativeThreadStore
     let active: Bool
+    /// The thread is the focused pane: the field takes the keyboard while it is on screen.
+    let isFocused: Bool
     let agentName: String?
     let hasTurns: Bool
     let gutter: CGFloat
-    var composing: FocusState<Bool>.Binding
     var listModels: (() async -> [PiModelCatalog.Entry])?
     /// Set by the command center: open that menu.
     var menuRequest: ComposerMenuRequest?
@@ -48,10 +49,12 @@ struct Composer: View {
     /// The card's top edge in the thread, once laid out: a menu takes at most the room above it.
     @State private var cardTop: CGFloat?
     @State private var dismissal = ComposerMenuDismissal()
-    /// Motion starts once the thread has loaded since it came on screen: what arrives with that
-    /// pull (a widget, a waiting question, the model) is simply there, whether the thread just
-    /// opened or an agent switched back to is catching up.
-    @State private var loaded = false
+    /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
+    @FocusState private var composing: Bool
+    /// Motion starts once the thread has caught up since it came on screen: what arrives with
+    /// that pull (a widget, a waiting question, the model) is simply there, whether the thread
+    /// just opened or an agent switched back to is catching up.
+    @State private var catchUp = CatchUpGate()
     /// pi has kept the thread waiting past `threadStartingDelay`: the control row says so.
     @State private var startingShown = false
     @Environment(\.threadStartingDelay) private var startingDelay
@@ -132,6 +135,7 @@ struct Composer: View {
     /// typing and filtering stay instant.
     var body: some View {
         let _ = NWRenderProbe.tick("composer.body")
+        let catchingUp = catchUp.catchingUp(caughtUpAt: store.catchUp?.chrome, version: store.chromeVersion)
         let widgets = store.widgets
         let query = commandQuery
         VStack(alignment: .leading, spacing: AppLayout.menuGap) {
@@ -161,16 +165,26 @@ struct Composer: View {
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.threadSpace)).minY } action: { cardTop = $0 }
                 .overlay(alignment: .topLeading) { menus(query: query) }
         }
-        .nwAnimation(.list, value: loaded ? accessories : nil)
+        .nwAnimation(.list, value: accessories)
         .nwAnimation(.list, value: attachments.map(\.id))
-        .nwAnimation(.disclosure, value: loaded ? questionKey : nil)
+        .nwAnimation(.disclosure, value: questionKey)
+        // What a catch-up brings lands at once, however it changes the composer; keyed on what
+        // the render drew, so a menu or a chip's own later motion still runs.
+        .transaction(value: CatchUpGate.Key(version: store.chromeVersion, active: active)) {
+            if catchingUp { $0.disablesAnimations = true }
+        }
         .onChange(of: openMenu, initial: true) { _, open in
             dismissal.dismiss = closeMenu(open)
             dismissal.watch(open != .none)
         }
         .onDisappear { dismissal.watch(false) }
-        .task(id: [active, store.ready]) {
-            if !active { loaded = false } else if store.ready { loaded = true }
+        // Let any deferred AppKit focus release finish before claiming the field.
+        .task(id: active && isFocused) {
+            composing = false
+            guard active && isFocused else { return }
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            composing = true
         }
         // A normal start is over before the delay: only a slow pi is ever said to be starting.
         .task(id: StartingWait(awaiting: active && store.awaitingPi, blank: store.session == nil)) {
@@ -260,18 +274,18 @@ struct Composer: View {
             if menu == .models, let picker {
                 ModelPicker(state: picker, maxHeight: room) { model in
                     menu = nil
-                    composing.wrappedValue = true
+                    composing = true
                     RecentModels.record(model, thread: agentName)
                     Task { await store.setModel(model) }
-                } close: { menu = nil; composing.wrappedValue = true }
+                } close: { menu = nil; composing = true }
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
             if menu == .thinking, let thinking = store.thinking {
                 NWThinkingMenu(options: Self.thinkingLevels, current: thinking) { level in
                     menu = nil
-                    composing.wrappedValue = true
+                    composing = true
                     Task { await store.setThinking(level.id) }
-                } onClose: { menu = nil; composing.wrappedValue = true }
+                } onClose: { menu = nil; composing = true }
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
         }
@@ -279,7 +293,7 @@ struct Composer: View {
         .fixedSize(horizontal: false, vertical: true)
         .background { ComposerMenuRegion(dismissal: dismissal) }
         .alignmentGuide(.top) { $0[.bottom] + AppLayout.menuGap }
-        .nwAnimation(.overlay, value: loaded ? openMenu : nil)
+        .nwAnimation(.overlay, value: openMenu)
     }
 
     /// What a click outside the open menu and the card does: it closes the menu, as Esc does
@@ -295,7 +309,7 @@ struct Composer: View {
     // MARK: Card
 
     private var card: some View {
-        let focused = composing.wrappedValue || dropTargeted || menuOpen
+        let focused = composing || dropTargeted || menuOpen
         return NWComposer(isFocused: focused) {
             ForEach(attachments) { attachment in
                 NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
@@ -346,7 +360,7 @@ struct Composer: View {
             .lineSpacing(max(0, NWTextStyle.body.lineSpacing - 1))
             .foregroundStyle(Color.nw.textPrimary)
             .autocorrectionDisabled()
-            .focused(composing)
+            .focused($composing)
             .onKeyPress(.return, phases: .down) { press in
                 if press.modifiers.contains(.shift) { store.draft += "\n"; return .handled }
                 if commandQuery != nil {
@@ -398,8 +412,8 @@ struct Composer: View {
         }
         // A new model or level cross-fades, and the delivery chip fades in as a draft starts
         // while the agent runs. Only these: typing and width changes stay instant.
-        .nwAnimation(.content, value: loaded ? [store.model, store.thinking] : nil)
-        .nwAnimation(.list, value: loaded && showsDelivery)
+        .nwAnimation(.content, value: [store.model, store.thinking])
+        .nwAnimation(.list, value: showsDelivery)
     }
 
     private var showsDelivery: Bool { running && !store.draft.isEmpty }
@@ -419,7 +433,7 @@ struct Composer: View {
                     store.draft = "/"
                     dismissedQuery = nil
                     menu = nil
-                    composing.wrappedValue = true
+                    composing = true
                 } label: {
                     HStack(spacing: NW.Space.s) {
                         Text("/").font(Font.nw(.code))
@@ -586,7 +600,7 @@ struct Composer: View {
     private func choose(_ command: NativeCommand) {
         store.draft = "/\(command.name)"
         dismissedQuery = nil
-        composing.wrappedValue = true
+        composing = true
         guard canSend else { return }
         sendDraft()
     }
