@@ -87,8 +87,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
   the preview renders, the live-model run, and the long-list timing report (see Testing).
-  **`SHEPHERD_BENCHMARK`** switches on `ComposerMenuBenchmarkTests`, which prints what the
-  composer's menus cost over a full model catalog.
+  **`SHEPHERD_BENCHMARK`** switches on the benchmarks that print timings: `ComposerMenuBenchmarkTests`
+  (the composer's menus over a full model catalog), `DataPathBenchmarks` (the server's data path),
+  and `PiSessionFileTests`' runtime-state check.
 - **`SHEPHERD_TIMING_TESTS=1`** runs the timing-sensitive tests even where `CI=true` skips them
   (see Testing).
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
@@ -220,6 +221,16 @@ runs them.
 - `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
   layout, and display, and scrolls a list a step at a time by moving its clip view.
+
+**The server's data path** is pinned by counts too: the server queue held by a test hook
+(`SessionServer.holdQueue`, `beforeOffQueueDecode`) while reads, connects, and other agents are
+served; revisions pushed per change; and, in debug builds, the bytes a commit rehashes and the
+JSON encodes a snapshot makes (`RPCThreadState.bytesHashedByLastCommit`,
+`encodesByLastSnapshot`). Timings are opt-in: build with `swift build -c release -Xswiftc
+-enable-testing --build-tests`, then `SHEPHERD_BENCHMARK=1 swift test -c release --skip-build
+--filter DataPathBenchmarks` prints a history's decode, projection and release, a delta's cost
+beside many tool results, snapshot round trips, a status report's CPU, the server queue's
+latency while a long history reloads, and a relaunch of agents with long histories.
 
 **Extension tests** (`Tests/Extensions/*.test.mjs`, Node's test runner) need `PI_PACKAGE_DIR`
 pointing at the installed pi package. They isolate `HOME` and use a local fake provider.
