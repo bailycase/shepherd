@@ -239,6 +239,10 @@ public final class SessionServer: @unchecked Sendable {
     private let socketPath: String
     private let store: StateStore
     private let modelCatalog: ModelCatalog
+    /// Where each delivered message came from, per pi session (support directory).
+    private let originStore: ThreadOriginStore
+    /// How queues go for agents with no choice of their own (Settings ▸ Agents).
+    private var defaultQueueMode: NativeQueueMode = .all
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
     private var remoteListenFD: Int32 = -1
@@ -405,6 +409,15 @@ public final class SessionServer: @unchecked Sendable {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
         self.modelCatalog = modelCatalog
+        self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
+    }
+
+    /// The queue mode of every agent that has not chosen its own (`NativeQueueAction.setMode`).
+    public func setDefaultQueueMode(_ mode: NativeQueueMode) {
+        queue.async {
+            self.defaultQueueMode = mode
+            for session in self.sessions.values { session.thread?.defaultQueueMode = mode }
+        }
     }
 
     /// The last committed state, from any thread and without waiting for the server queue: a
@@ -1779,6 +1792,12 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
+        // Between queued turns pi settles for a moment; the agent is not done (and must not
+        // post "Agent finished") while its queue goes next.
+        if status == .done, let thread = rpcThread(forAgent: agentID), thread.continuesAfterSettle {
+            thread.doneHeld = true
+            return
+        }
         if let index = store.state.agents.firstIndex(where: { $0.id == agentID }) {
             let current = store.state.agents[index].status
             if current == status {
@@ -2217,7 +2236,15 @@ public final class SessionServer: @unchecked Sendable {
             }
             let sid = session.id
             session.beforeOffQueueDecode = beforeOffQueueDecode
-            let thread = RPCThreadState(session: session, queue: sessionQueue)
+            let thread = RPCThreadState(session: session, queue: sessionQueue, originStore: originStore)
+            thread.defaultQueueMode = defaultQueueMode
+            // The queue did not go after all (pi refused it, or it paused): pi is idle, so the
+            // agent is done even though its status report was held for the queue.
+            thread.onIdleAfterQueue = { [weak serverWeak] in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid),
+                      server.store.state.agents.first(where: { $0.id == agentID })?.status == .working else { return }
+                server.applyAgentStatus(agentID: agentID, status: .done)
+            }
             // Card actions go to the children extension's control channel, never the parent model.
             thread.dispatchSubagentCommand = { [weak serverWeak] runID, action, text, mode, done in
                 guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { done("Agent is gone."); return }

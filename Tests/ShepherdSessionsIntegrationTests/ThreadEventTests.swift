@@ -88,7 +88,8 @@ struct ThreadEventTests {
         #expect(s.thinking == "medium")
         #expect(!s.running)
         #expect(s.runtime == "rpc" && s.dialogsSupported)
-        #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents"])
+        #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue"])
+        #expect(s.queue == NativeQueue(mode: .all), "an empty queue says the host holds one")
         #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
         #expect(s.messages.first?.blocks == [NativeThreadBlock(kind: .text, text: "Hello!")])
         #expect(s.stats == NativeThreadStats(contextTokens: 60000, contextWindow: 200000, contextPercent: 30, totalTokens: 105000, cost: 0.45))
@@ -259,15 +260,68 @@ struct ThreadEventTests {
         #expect(try await t.snapshot().provisional.map { $0.blocks.map(\.text) } == [["mid-turn"]])
     }
 
-    @Test func userAndToolMessagesDoNotOpenAssistantRows() async throws {
+    /// pi's user message joins the run where pi read it, with the id history will give it, and
+    /// opens no assistant row.
+    @Test func aUserMessagePiStartsJoinsTheRunWithItsHistoryID() async throws {
         let t = try Thread()
         defer { t.stop() }
         _ = try await t.ready()
         try await t.feed(
-            #"{"type":"message_start","message":{"role":"user","content":"hi"}}"#,
-            #"{"type":"message_end","message":{"role":"user","content":"hi"}}"#
+            #"{"type":"agent_start"}"#,
+            #"{"type":"message_start","message":{"role":"user","content":"hi","timestamp":1733234567999}}"#,
+            #"{"type":"message_end","message":{"role":"user","content":"hi","timestamp":1733234567999}}"#
         )
-        #expect(try await t.snapshot().provisional.isEmpty)
+        let s = try await t.snapshot()
+        #expect(s.provisional.map(\.entryID) == ["user:1733234567999"])
+        #expect(s.provisional.first?.blocks == [NativeThreadBlock(kind: .text, text: "hi")])
+        #expect(s.provisional.first?.origin == nil, "pi's own message, not one this host delivered")
+    }
+
+    /// Two messages pi stamps in one millisecond (two queued messages delivered together) get
+    /// the ids history gives them: the second is "#1".
+    @Test func userMessagesStampedInOneMillisecondKeepTheirHistoryIDs() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"agent_start"}"#,
+            #"{"type":"message_start","message":{"role":"user","content":"one","timestamp":1733234568000}}"#,
+            #"{"type":"message_start","message":{"role":"user","content":"two","timestamp":1733234568000}}"#
+        )
+        #expect(try await t.snapshot().provisional.map(\.entryID) == ["user:1733234568000", "user:1733234568000#1"])
+    }
+
+    /// A run is over at agent_settled, not agent_end: pi may retry or continue in between, and
+    /// until it settles a prompt needs a streaming behavior (pi refused a plain one there).
+    @Test func aRunLastsUntilPiSettlesNotUntilAgentEnd() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(#"{"type":"agent_start"}"#)
+        // In the same queue turn: the stub, which is not in a run, answers the refresh that
+        // agent_end asks for with isStreaming false.
+        #expect(try await t.feedThenSnapshot(#"{"type":"agent_end","messages":[],"willRetry":true}"#).running)
+        #expect(try await !t.feedThenSnapshot(#"{"type":"agent_settled"}"#).running)
+    }
+
+    /// Live rows are one list in pi's order: a steer read after a tool call sits after it, and
+    /// the reply to it after that.
+    @Test func liveRowsKeepPisOrderAcrossAssistantToolAndUserMessages() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(
+            #"{"type":"agent_start"}"#,
+            #"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
+            #"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Looking."}],"stopReason":"toolUse"}}"#,
+            #"{"type":"tool_execution_start","toolCallId":"c1","toolName":"bash","args":{"command":"ls"}}"#,
+            #"{"type":"tool_execution_end","toolCallId":"c1","toolName":"bash","result":{"content":[]},"isError":false}"#,
+            #"{"type":"message_start","message":{"role":"user","content":"turn left","timestamp":1733234569000}}"#,
+            #"{"type":"message_start","message":{"role":"assistant","content":[]}}"#,
+            #"{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Turning."}],"stopReason":"stop"}}"#
+        )
+        #expect(try await t.snapshot().provisional.map(\.entryID)
+            == ["provisional:assistant:1", "provisional:tool:c1", "user:1733234569000", "provisional:assistant:2"])
     }
 
     /// "Thought for Ns": measured live, frozen once the answer starts, and carried onto the

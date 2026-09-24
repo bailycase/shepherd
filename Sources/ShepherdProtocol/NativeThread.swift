@@ -15,6 +15,9 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case subagentCommand(expectedSessionID: String, generation: String, operationID: UUID, runID: String, action: NativeSubagentAction, text: String? = nil, mode: NativeThreadDelivery? = nil)
     /// v2: one page (50) of a subagent's transcript, newest first, from its session file.
     case subagentTranscript(expectedSessionID: String, runID: String, beforeEntryID: String? = nil)
+    /// v3: change the messages the host holds while pi works (`NativeQueue`). Gated by `queue`
+    /// in `supportedActions` and, remotely, `native.queue.v1`.
+    case queue(expectedSessionID: String, generation: String, operationID: UUID, action: NativeQueueAction)
 
     public var images: [NativeImage] {
         if case .send(_, _, _, _, _, let images) = self { return images ?? [] }
@@ -28,10 +31,206 @@ public struct NativeImage: Codable, Hashable, Sendable {
     public static let maxPerSend = 4
     public var mimeType: String
     public var data: Data
+    /// The file it came from, for the queue's attachment chips. Absent from older clients.
+    public var name: String?
 
-    public init(mimeType: String, data: Data) {
+    public init(mimeType: String, data: Data, name: String? = nil) {
         self.mimeType = mimeType
         self.data = data
+        self.name = name
+    }
+}
+
+// MARK: - Queue (v3)
+
+/// What the host holds for pi while it works: messages sent during a run, delivered when pi
+/// settles (`mode`), or steered in. Nothing in `items` has reached pi except a `.steering` item,
+/// which pi has queued and reads once its current tool calls finish. Held by the host, so every
+/// client sees and edits the same queue.
+public struct NativeQueue: Codable, Hashable, Sendable {
+    /// Steering items first, in the order they were steered, then the queue in delivery order.
+    public var items: [NativeQueuedMessage]
+    /// How the queue goes when pi settles: this agent's choice, else the host's default. nil
+    /// when this client does not know the host's mode.
+    public var mode: NativeQueueMode?
+    /// The queue waits instead of going when pi settles: the user stopped pi, or a turn or a
+    /// delivery failed. A new message, Send now, or Steer resumes it.
+    public var paused: Bool
+    /// Why the queue paused on its own (a delivery pi refused), for the stack to say.
+    public var notice: String?
+
+    public init(items: [NativeQueuedMessage] = [], mode: NativeQueueMode? = nil, paused: Bool = false, notice: String? = nil) {
+        self.items = items
+        self.mode = mode
+        self.paused = paused
+        self.notice = notice
+    }
+
+    private enum CodingKeys: String, CodingKey { case items, mode, paused, notice }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        items = try values.decodeIfPresent([NativeQueuedMessage].self, forKey: .items) ?? []
+        // A mode a newer host added is unknown here, not a broken snapshot.
+        mode = try? values.decodeIfPresent(NativeQueueMode.self, forKey: .mode)
+        paused = try values.decodeIfPresent(Bool.self, forKey: .paused) ?? false
+        notice = try values.decodeIfPresent(String.self, forKey: .notice)
+    }
+
+    /// The items still waiting for their turn (not steering), in delivery order.
+    public var queued: [NativeQueuedMessage] { items.filter { $0.state == .queued } }
+}
+
+/// One message in the host's queue. Its id is the operation id of the `send` that queued it.
+public struct NativeQueuedMessage: Codable, Hashable, Sendable, Identifiable {
+    public enum State: String, Codable, Hashable, Sendable {
+        /// Waiting on the host for pi to settle.
+        case queued
+        /// Handed to pi to read after its current tool calls; not in the thread until pi does.
+        case steering
+
+        public init(from decoder: Decoder) throws {
+            self = State(rawValue: try decoder.singleValueContainer().decode(String.self)) ?? .queued
+        }
+    }
+
+    public var id: UUID
+    public var text: String
+    /// The images it carries; their bytes stay on the host.
+    public var images: [NativeQueuedImage]
+    /// When the user sent it (ms since epoch).
+    public var sentAt: Double
+    public var state: State
+    /// An editor is open on it somewhere: the queue waits rather than send it mid-edit.
+    public var held: Bool
+
+    public init(id: UUID, text: String, images: [NativeQueuedImage] = [], sentAt: Double, state: State = .queued, held: Bool = false) {
+        self.id = id
+        self.text = text
+        self.images = images
+        self.sentAt = sentAt
+        self.state = state
+        self.held = held
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, text, images, sentAt, state, held }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        text = try values.decode(String.self, forKey: .text)
+        images = try values.decodeIfPresent([NativeQueuedImage].self, forKey: .images) ?? []
+        sentAt = try values.decodeIfPresent(Double.self, forKey: .sentAt) ?? 0
+        state = try values.decodeIfPresent(State.self, forKey: .state) ?? .queued
+        held = try values.decodeIfPresent(Bool.self, forKey: .held) ?? false
+    }
+}
+
+public struct NativeQueuedImage: Codable, Hashable, Sendable {
+    public var mimeType: String
+    public var name: String?
+
+    public init(mimeType: String, name: String? = nil) {
+        self.mimeType = mimeType
+        self.name = name
+    }
+}
+
+public enum NativeQueueMode: String, Codable, Hashable, Sendable, CaseIterable {
+    /// The head of the queue opens the next turn; the rest wait for the one after.
+    case oneAtATime
+    /// Everything queued arrives as one turn, in order.
+    case all
+}
+
+/// A change to the host's queue. Indexes count queued items only (steering items are not
+/// placed): 0 goes first.
+public enum NativeQueueAction: Codable, Hashable, Sendable {
+    case edit(id: UUID, text: String)
+    case delete(id: UUID)
+    /// Undo a delete or a clear: the host keeps what it removed for a while.
+    case restore(ids: [UUID], index: Int)
+    case move(id: UUID, index: Int)
+    /// Hand these to pi now, in order, to read after its current tool calls. While pi is idle
+    /// this is `sendNow`.
+    case steer(ids: [UUID])
+    /// Take a steering item back before pi reads it; it returns to the head of the queue.
+    case unsteer(id: UUID)
+    /// Delete every queued item (steering items stay).
+    case clear
+    /// An editor opened (true) or closed on the item. A hold lapses on its own after a while.
+    case hold(id: UUID, held: Bool)
+    /// This agent's delivery mode; nil follows the host's default.
+    case setMode(mode: NativeQueueMode?)
+    /// While pi is idle (a paused queue): send these now as the next turn.
+    case sendNow(ids: [UUID])
+}
+
+/// How a user message reached pi, when Shepherd delivered it: steered into a running turn, or
+/// from the queue (several queued messages arrive as one message, one part each).
+public enum NativeMessageOrigin: Codable, Hashable, Sendable {
+    case steered
+    case queue(parts: [NativeQueuePart])
+    /// From a newer host.
+    case unknown
+
+    private enum CodingKeys: String, CodingKey { case steered, queue }
+    private enum QueueKeys: String, CodingKey { case parts }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        if values.contains(.steered) {
+            self = .steered
+        } else if values.contains(.queue) {
+            let queue = try values.nestedContainer(keyedBy: QueueKeys.self, forKey: .queue)
+            self = .queue(parts: try queue.decode([NativeQueuePart].self, forKey: .parts))
+        } else {
+            self = .unknown
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .steered:
+            _ = values.nestedContainer(keyedBy: QueueKeys.self, forKey: .steered)
+        case .queue(let parts):
+            var queue = values.nestedContainer(keyedBy: QueueKeys.self, forKey: .queue)
+            try queue.encode(parts, forKey: .parts)
+        case .unknown:
+            break
+        }
+    }
+
+    public var parts: [NativeQueuePart]? {
+        if case .queue(let parts) = self { return parts }
+        return nil
+    }
+}
+
+/// One queued message inside a delivered one: its own text, the time it was sent, and how
+/// many of the message's images are its.
+public struct NativeQueuePart: Codable, Hashable, Sendable {
+    public var id: UUID?
+    public var text: String
+    public var sentAt: Double
+    public var images: Int
+
+    public init(id: UUID? = nil, text: String, sentAt: Double, images: Int = 0) {
+        self.id = id
+        self.text = text
+        self.sentAt = sentAt
+        self.images = images
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, text, sentAt, images }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(UUID.self, forKey: .id)
+        text = try values.decode(String.self, forKey: .text)
+        sentAt = try values.decodeIfPresent(Double.self, forKey: .sentAt) ?? 0
+        images = try values.decodeIfPresent(Int.self, forKey: .images) ?? 0
     }
 }
 
@@ -149,6 +348,8 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var commands: [NativeCommand]?
     /// v2: native child runs (RPC agents with the children extension). nil from older hosts.
     public var subagents: [NativeSubagent]?
+    /// v3: the messages the host holds for pi. nil from older hosts (they send straight to pi).
+    public var queue: NativeQueue?
 
     public var isRPC: Bool { runtime == "rpc" }
 
@@ -157,7 +358,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         thinking: String? = nil, supportedActions: [String], dialogsSupported: Bool, dialogs: [NativeThreadDialog],
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
-        commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil
+        commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil
     ) {
         self.piSessionID = piSessionID
         self.generation = generation
@@ -177,6 +378,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.stats = stats
         self.commands = commands
         self.subagents = subagents
+        self.queue = queue
     }
 }
 
@@ -198,11 +400,16 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
     /// Assistant messages: how long the model thought before answering, when the host
     /// observed it streaming. Absent from older hosts and for history it never saw live.
     public var thinkingSeconds: Double?
+    /// v3, user messages Shepherd delivered: steered in, or from the queue.
+    public var origin: NativeMessageOrigin?
+    /// v3, user messages: the `send` that became this message. A host's pending row
+    /// ("pending:<id>") and pi's message share it, so the turn keeps its identity.
+    public var operationID: UUID?
 
     public init(
         entryID: String, role: String, blocks: [NativeThreadBlock], toolName: String? = nil, toolCallID: String? = nil,
         argumentsText: String? = nil, status: String? = nil, isError: Bool? = nil, truncated: Bool = false, timestamp: Double? = nil,
-        startedAt: Double? = nil, thinkingSeconds: Double? = nil
+        startedAt: Double? = nil, thinkingSeconds: Double? = nil, origin: NativeMessageOrigin? = nil, operationID: UUID? = nil
     ) {
         self.entryID = entryID
         self.role = role
@@ -216,6 +423,8 @@ public struct NativeThreadMessage: Codable, Hashable, Sendable {
         self.timestamp = timestamp
         self.startedAt = startedAt
         self.thinkingSeconds = thinkingSeconds
+        self.origin = origin
+        self.operationID = operationID
     }
 }
 
