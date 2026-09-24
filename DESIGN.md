@@ -617,7 +617,9 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   session file (`PiSessionPreview`): the newest page, the model, and the thinking level, drawn
   exactly as pi's history is. Nothing in it acts yet (retry, load older, subagent actions)
   until pi answers, and pi's first snapshot then lands on the same rows, so nothing moves or
-  flashes. An agent whose file cannot be read waits for pi's history as before.
+  flashes. Only what pi alone knows arrives with that snapshot: the "/ commands" chip (and the
+  placeholder's "or / for commands"), and the toolbar's context counters. An agent whose file
+  cannot be read stays blank until pi sends its history.
 - **Empty thread:** a framed `NWEmptyState` (a dashed `lineStrong` border, no crook): "New
   agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
   the task. Drop or paste images to attach them, or type / for commands." A new agent is known
