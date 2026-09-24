@@ -30,6 +30,8 @@ final class RPCThreadState {
         var raw: RPCMessage
         var value: NativeThreadMessage
         var ended: Bool
+        /// `value`'s hash, taken when it was assigned.
+        var hash: Int
     }
 
     private struct Operation {
@@ -62,9 +64,20 @@ final class RPCThreadState {
     private(set) var model: String?
     private(set) var thinking: String?
     private(set) var stats: NativeThreadStats?
-    private(set) var commands: [NativeCommand]?
+    // A commit combines hashes taken when each part was assigned (the lists here, each
+    // provisional and tool entry), so a streamed delta rehashes only the message it grew.
+    private(set) var commands: [NativeCommand]? { didSet { commandsHash = commands.hashValue } }
     /// Native child runs as last published by the children extension over the socket.
-    private(set) var subagents: [NativeSubagent] = []
+    private(set) var subagents: [NativeSubagent] = [] { didSet { subagentsHash = subagents.hashValue } }
+    private var commandsHash = Optional<[NativeCommand]>.none.hashValue
+    private var subagentsHash = [NativeSubagent]().hashValue
+    private var dialogsHash = [NativeThreadDialog]().hashValue
+    private var widgetsHash = [NativeThreadWidget]().hashValue
+    #if DEBUG
+    /// Tests: text bytes of the entries rehashed since the last commit, and by the last commit.
+    private var bytesHashedSinceCommit = 0
+    private(set) var bytesHashedByLastCommit = 0
+    #endif
     /// Installed by SessionServer: writes a childCommand to the children extension and answers
     /// with its error text (nil on success). Runs on the server queue.
     var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
@@ -72,15 +85,15 @@ final class RPCThreadState {
     private var provisional: [Provisional] = []
     private var sequence = 0
     private var currentAssistant: Int?
-    private var tools: [(id: String, value: NativeThreadMessage)] = []
+    private var tools: [(id: String, value: NativeThreadMessage, hash: Int)] = []
     /// When each tool execution was first seen (ms), for durations of live calls.
     private var toolStarts: [String: Double] = [:]
     /// Live thinking spans per provisional assistant message (ms), and the finished ones keyed
     /// by the message's pi timestamp so history projected later keeps "Thought for Ns".
     private var thinkingSpans: [Int: (start: Double, end: Double?)] = [:]
     private var thinkingByTimestamp: [Double: Double] = [:]
-    private var dialogs: [NativeThreadDialog] = []
-    private var widgets: [(id: String, value: NativeThreadWidget)] = []
+    private var dialogs: [NativeThreadDialog] = [] { didSet { dialogsHash = dialogs.hashValue } }
+    private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
     private var operations: [(id: String, operation: Operation)] = []
     private var projectionClipped = false
     private static let encoder = JSONEncoder()
@@ -510,10 +523,11 @@ final class RPCThreadState {
             value.thinkingSeconds = seconds
             if ended, let time = raw.timestamp { thinkingByTimestamp[time] = seconds }
         }
+        let entry = Provisional(key: key, raw: raw, value: value, ended: ended, hash: entryHash(value))
         if let index = provisional.firstIndex(where: { $0.key == key }) {
-            provisional[index] = Provisional(key: key, raw: raw, value: value, ended: ended)
+            provisional[index] = entry
         } else {
-            provisional.append(Provisional(key: key, raw: raw, value: value, ended: ended))
+            provisional.append(entry)
         }
         if provisional.count > Self.pageSize {
             provisional.removeFirst()
@@ -534,9 +548,9 @@ final class RPCThreadState {
         value.startedAt = toolStarts[id]
         if status == "complete", value.timestamp == nil { value.timestamp = Date().timeIntervalSince1970 * 1000 }
         if let index = tools.firstIndex(where: { $0.id == id }) {
-            tools[index].value = value
+            tools[index] = (id, value, entryHash(value))
         } else {
-            tools.append((id, value))
+            tools.append((id, value, entryHash(value)))
         }
         if tools.count > Self.pageSize {
             tools.removeFirst()
@@ -664,20 +678,29 @@ final class RPCThreadState {
 
     // MARK: - Snapshot
 
+    /// Everything a snapshot shows, as one signature: a change anywhere moves the revision, and
+    /// nothing else does. The parts' hashes were taken when they were assigned.
     private func commit() {
+        #if DEBUG
+        bytesHashedByLastCommit = bytesHashedSinceCommit
+        bytesHashedSinceCommit = 0
+        #endif
         var hasher = Hasher()
         hasher.combine(history.count)
-        hasher.combine(provisional.map(\.value))
-        hasher.combine(tools.map(\.value))
-        hasher.combine(dialogs)
-        hasher.combine(widgets.map(\.value))
+        hasher.combine(history.last?.entryID)
+        hasher.combine(provisional.count)
+        for entry in provisional { hasher.combine(entry.hash) }
+        hasher.combine(tools.count)
+        for tool in tools { hasher.combine(tool.hash) }
+        hasher.combine(dialogsHash)
+        hasher.combine(widgetsHash)
         hasher.combine(running)
         hasher.combine(model)
         hasher.combine(thinking)
         hasher.combine(piSessionID)
         hasher.combine(stats)
-        hasher.combine(commands)
-        hasher.combine(subagents)
+        hasher.combine(commandsHash)
+        hasher.combine(subagentsHash)
         let next = hasher.finalize()
         if next != signature {
             signature = next
@@ -688,6 +711,13 @@ final class RPCThreadState {
     private func bumpRevision() {
         revision += 1
         onRevision?()
+    }
+
+    private func entryHash(_ value: NativeThreadMessage) -> Int {
+        #if DEBUG
+        bytesHashedSinceCommit += value.blocks.reduce(0) { $0 + $1.text.utf8.count } + (value.argumentsText?.utf8.count ?? 0)
+        #endif
+        return value.hashValue
     }
 
     private func snapshot(beforeEntryID: String?) -> NativeThreadResult {
