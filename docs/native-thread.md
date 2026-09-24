@@ -383,8 +383,9 @@ output grows.
   `supportsQueue` gates all of it.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
   boundaries don't flicker the working row or the Stop button.
-- **Drafts and gating:** `draft` and `delivery` (follow-up or steer) belong to the store;
-  `send(images:delivery:)` sends with a delivery chosen at send time.
+- **Drafts and gating:** `draft` belongs to the store; `send(images:delivery:)` sends with a
+  delivery chosen at send time (the Mac composer's ↩, ⌘↩, or its Send menu). `delivery` is kept
+  for the iOS client, which still picks one ahead of time.
   `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
   busy.
 - **Errors:** transport failures and a pi that is gone surface as `loadError` (the composer's
@@ -433,8 +434,10 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
   tree-sitter off the main actor and cached.
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
-  - chips: model with its picker on ⇧⌘M, thinking, and delivery (Follow-up / Steer, shown only
-    while a turn runs with a draft)
+  - chips: model with its picker on ⇧⌘M, and thinking
+  - Up next (`QueueStack`): the host's queue above the card, with the stack's own view state
+    (`QueueStackState`: the editor, Undo rows, expansion, a drag) around `NativeQueueRules`
+  - the Send menu, and the keys that send while pi works (↩ per Settings, ⌘↩ the other)
   - the slash menu, fed from pi's command registry
   - the question panel and extension widgets
 - **`Subagents`** and **`SubagentPresentation`:** cards, the runs strip, and the ledger, with

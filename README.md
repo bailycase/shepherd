@@ -30,7 +30,8 @@ coherent over covering every use case.
   - pi's slash commands
   - model and thinking pickers
   - image attachments
-  - follow-up or steer delivery while a turn runs
+  - messages sent while a turn runs wait in a queue above the composer, where each can be steered
+    in, edited, reordered, or deleted
 - **Terminal panes beside a thread.** Split a real terminal next to an agent with ⌘D, or let the
   agent open, run, read, and close its own panes. Terminals render with
   [libghostty](https://ghostty.org).
