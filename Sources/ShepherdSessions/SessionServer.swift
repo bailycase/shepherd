@@ -386,9 +386,10 @@ public final class SessionServer: @unchecked Sendable {
         self.modelCatalog = modelCatalog
     }
 
-    /// Current persisted state (safe to read from any thread).
+    /// The last committed state, from any thread and without waiting for the server queue: a
+    /// mutation still running (or queued) is not in it, and one that has returned always is.
     public var state: ShepherdState {
-        queue.sync { store.state }
+        store.committed
     }
 
     /// Bind the extension socket and clear stale persisted state from the

@@ -48,6 +48,62 @@ struct StateMutationTests {
         #expect(h.broadcasts.current.isEmpty)
     }
 
+    // MARK: - Reading state
+
+    /// `state` never waits for the server queue: while a turn holds it, a read returns the last
+    /// committed state at once.
+    @Test func readingStateWhileTheServerQueueIsBusyReturnsTheLastCommittedState() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space()
+        try await h.seed(ShepherdState(spaces: [space]))
+        let release = DispatchSemaphore(value: 0)
+        await h.server.holdQueue(until: release)
+        defer { release.signal() }
+
+        let read = Locked<ShepherdState?>(nil)
+        let returned = DispatchSemaphore(value: 0)
+        let server = h.server
+        Thread.detachNewThread {
+            read.withValue { $0 = server.state }
+            returned.signal()
+        }
+        let answered = try await blocking { returned.wait(timeout: .now() + 10) == .success }
+        #expect(answered, "the read waited for the busy queue")
+        #expect(read.current == ShepherdState(spaces: [space]))
+    }
+
+    enum AwaitedMutation: String, CaseIterable, Sendable {
+        case updatePaneSession, setAgentStatus, addSpace
+    }
+
+    /// Whatever a mutation committed is in `state` by the time its caller hears it finished.
+    @Test(arguments: AwaitedMutation.allCases)
+    func aReadAfterAnAwaitedMutationSeesIt(mutation: AwaitedMutation) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let space = Fixture.space()
+        let worker = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([worker], space: space))
+        switch mutation {
+        case .updatePaneSession:
+            let session = SessionID()
+            let paneID = try #require(worker.agent.paneID)
+            try await h.server.updatePaneSession(tabID: worker.tab.id, paneID: paneID, sessionID: session)
+            #expect(h.server.state.tabs.first?.layout.leaf(withID: paneID)?.sessionID == session)
+        case .setAgentStatus:
+            let client = try ExtensionClient(path: h.socketPath)
+            try client.send(.setAgentStatus(agentID: worker.agent.id, status: .working))
+            try await eventually("the status callback") { callbacks.statuses.current.contains { $0 == (worker.agent.id, .working) } }
+            #expect(h.server.state.agents.first?.status == .working)
+        case .addSpace:
+            let added = Fixture.space("added")
+            try await h.server.addSpace(added)
+            #expect(h.server.state.spaces == [space, added])
+        }
+    }
+
     // MARK: - putState
 
     @Test func putStateReplacesTheWholeWorkspace() async throws {
