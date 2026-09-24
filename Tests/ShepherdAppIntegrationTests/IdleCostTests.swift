@@ -58,19 +58,25 @@ struct IdleCostTests {
         #expect(Self.spinners(in: thread.window.host).turning == 0)
     }
 
-    /// The control: a thread whose pi is still starting shows its spinner, and it turns.
+    /// The control: a thread whose pi keeps it waiting says so in its composer, and that spinner
+    /// turns.
     @Test func aVisibleStartingThreadStillSpins() async throws {
         let thread = FakeThread(ThreadFixture.snapshot([]), starting: true)
         defer { thread.close() }
         let store = thread.store
+        let host = thread.window.host
         try await eventuallyOnMain("pi to be reported starting") { store.starting }
-        ListPerf.settle(thread.window)
+        try await eventuallyOnMain("the composer to say pi is starting") {
+            ListPerf.settle(thread.window)
+            return Self.spinners(in: host).all == 1
+        }
 
-        #expect(Self.spinners(in: thread.window.host).turning == 1)
+        #expect(Self.spinners(in: host).turning == 1)
     }
 
     /// Layouts the workspace keeps mounted behind the visible one draw no clock frames, and
-    /// their threads (never shown, so never loaded) hold "Starting pi…" spinners that rest.
+    /// nothing in them turns: their threads (never shown, so never loaded) say nothing about pi
+    /// starting, which only a thread on screen does.
     @Test func hiddenLayoutsDrawNoClockFrames() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -91,7 +97,7 @@ struct IdleCostTests {
 
         #expect(frames == 0, "\(frames) clock frames")
         let spinners = Self.spinners(in: window.host)
-        #expect(spinners.all >= agents.count - 1 && spinners.turning == 0, "\(spinners)")
+        #expect(spinners.turning == 0, "\(spinners)")
     }
 
     /// A paused spinner resumes as its layout comes back on screen.
