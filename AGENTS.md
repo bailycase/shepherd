@@ -764,6 +764,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
     the app with `App/Shepherd.entitlements` (both apps). Only nested apps and XPC services keep
     their own entitlements.
+  - The iOS client is archived unsigned and signed only at export, with the team's
+    cloud-managed Apple Distribution certificate through the `APP_STORE_CONNECT_*` API key
+    (`-allowProvisioningUpdates`). There is no `.p12` and no keychain.
   - Developer ID items get the hardened runtime and a secure timestamp, and both the app and the
     DMG are notarized and stapled. Ad-hoc builds skip the runtime, because library validation
     rejects ad-hoc frameworks, which have no Team ID.
