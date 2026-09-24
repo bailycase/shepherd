@@ -55,9 +55,21 @@ func until(_ condition: @escaping @MainActor () -> Bool) async {
     }
 }
 
+/// A store whose run loop never polls on its own: its pause ends only when the loop is
+/// cancelled. Every refresh is the test's, so no poll lands between a test's steps however
+/// slowly the machine runs it.
+@MainActor
+func manualStore(startingLimit: Duration = .seconds(60)) -> NativeThreadStore {
+    NativeThreadStore(startingLimit: startingLimit) { _ in
+        let (cancelled, continuation) = AsyncStream<Void>.makeStream()
+        for await _ in cancelled {}
+        continuation.finish()
+        throw CancellationError()
+    }
+}
+
 /// Starts the store's run loop and returns once the first answer (a snapshot, or pi still
-/// starting) has been applied. The loop then sleeps for its poll interval (2s while idle, 200ms
-/// while starting), far longer than any test here.
+/// starting) has been applied.
 @MainActor
 func start(_ store: NativeThreadStore, _ host: FakeHost) async -> Task<Void, Never> {
     var task: Task<Void, Never>?
@@ -76,7 +88,7 @@ struct NativeThreadStoreTests {
 
     private func started(_ snapshot: NativeThreadSnapshot? = nil) async -> (NativeThreadStore, FakeHost, Task<Void, Never>) {
         let host = FakeHost(snapshot ?? F.snapshot(messages: [hi]))
-        let store = NativeThreadStore()
+        let store = manualStore()
         let task = await start(store, host)
         return (store, host, task)
     }
@@ -158,7 +170,7 @@ struct NativeThreadStoreTests {
 
     // MARK: Starting
 
-    private func startedWhileStarting(_ store: NativeThreadStore = NativeThreadStore()) async -> (NativeThreadStore, FakeHost, Task<Void, Never>) {
+    private func startedWhileStarting(_ store: NativeThreadStore = manualStore()) async -> (NativeThreadStore, FakeHost, Task<Void, Never>) {
         let host = FakeHost(F.snapshot(messages: [hi]))
         host.starting = true
         let task = await start(store, host)
@@ -264,7 +276,7 @@ struct NativeThreadStoreTests {
     }
 
     @Test func aPiThatNeverStartsBecomesAnErrorAfterTheLimitAndClearsWhenItAnswers() async {
-        let (store, host, task) = await startedWhileStarting(NativeThreadStore(startingLimit: .zero))
+        let (store, host, task) = await startedWhileStarting(manualStore(startingLimit: .zero))
         defer { task.cancel() }
         #expect(!store.starting && !store.acceptsSend)
         #expect(store.loadError?.hasPrefix("The agent's pi has not started after") == true)

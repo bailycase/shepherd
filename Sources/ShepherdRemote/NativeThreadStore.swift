@@ -25,6 +25,8 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
 @Observable
 public final class NativeThreadStore {
     public typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
+    /// Waits out one poll interval; throws once the run loop's task is cancelled.
+    public typealias Pause = @Sendable (Duration) async throws -> Void
 
     public private(set) var snapshot: NativeThreadSnapshot?
     public private(set) var messages: [NativeThreadMessage] = []
@@ -67,8 +69,13 @@ public final class NativeThreadStore {
     /// a pi that answers later still clears it.
     public let startingLimit: Duration
 
-    public init(startingLimit: Duration = .seconds(60)) {
+    /// How `run` waits between polls. Tests pass one that never ends, to drive every refresh
+    /// themselves.
+    private let pause: Pause
+
+    public init(startingLimit: Duration = .seconds(60), pause: @escaping Pause = { try await Task.sleep(for: $0) }) {
         self.startingLimit = startingLimit
+        self.pause = pause
     }
 
     @ObservationIgnored private var request: Request?
@@ -221,7 +228,7 @@ public final class NativeThreadStore {
         await withTaskCancellationHandler {
             await refresh(fresh: true, resetHistory: true)
             while !Task.isCancelled && epoch == run {
-                do { try await Task.sleep(for: pollInterval) } catch { break }
+                do { try await pause(pollInterval) } catch { break }
                 guard epoch == run else { break }
                 await refresh()
             }
