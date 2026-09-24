@@ -86,9 +86,15 @@ struct ThreadView: View {
                         }
                         if rows.isEmpty { emptyState }
                         ForEach(rows) { row in
-                            turn(row, running: running, working: row.live ? working : nil, arriving: arrived.contains(row.id),
-                                 settled: caughtUp)
-                                .id(row.id)
+                            let _ = NWRenderProbe.tick("thread.rowBuilder")
+                            // One view per row whatever it holds, so the lazy stack builds only the
+                            // rows on screen: a row that could be nothing would make it evaluate
+                            // every row of a long thread on each streamed chunk.
+                            VStack(spacing: 0) {
+                                turn(row, running: running, working: row.live ? working : nil, arriving: arrived.contains(row.id),
+                                     settled: caughtUp)
+                            }
+                            .id(row.id)
                         }
                         if let working, liveRow == nil { WorkingRow(label: working).nwArrival(settled) }
                         Color.clear.frame(height: 1).id(Self.bottomID)
