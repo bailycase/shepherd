@@ -346,9 +346,18 @@ enum NWPop {
     static let peak: Double = 1.12
 }
 
+extension EnvironmentValues {
+    /// True under a subtree that stays mounted but is not on screen (an agent layout the
+    /// workspace keeps while another one shows): the continuous motions (the spinner, the glow,
+    /// the shimmer) stop drawing frames there. It changes only when visibility flips.
+    @Entry public var nwMotionPaused: Bool = false
+}
+
 /// Time-driven phase for the continuous motions. Deriving the phase from the clock (instead of
 /// a repeating animation started in `onAppear`) keeps a spinner or glow correct when Reduce
-/// Motion toggles while it is on screen: the timeline simply pauses or resumes.
+/// Motion toggles while it is on screen: the timeline simply pauses or resumes. A timeline also
+/// pauses under `nwMotionPaused` and while its view is off screen (`onDisappear`), so motion no
+/// one sees costs nothing.
 enum NWPhase {
     /// 0..<1 through one period of `motion`.
     static func fraction(_ date: Date, _ motion: NW.Motion) -> Double {

@@ -67,18 +67,23 @@ public struct NWStatusDot: View {
     }
 }
 
-/// Opacity pulse driven by the clock; static under Reduce Motion.
+/// Opacity pulse driven by the clock; static under Reduce Motion. Paused off screen.
 struct NWGlow<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nwMotionPaused) private var motionPaused
+    @State private var onScreen = false
 
     var body: some View {
         if reduceMotion {
             content()
         } else {
-            TimelineView(.animation) { context in
+            TimelineView(.animation(minimumInterval: nil, paused: motionPaused || !onScreen)) { context in
+                let _ = NWRenderProbe.tick("ui.glowFrame")
                 content().opacity(NWPhase.glowOpacity(context.date))
             }
+            .onAppear { onScreen = true }
+            .onDisappear { onScreen = false }
         }
     }
 }
@@ -108,6 +113,10 @@ struct NWSpinnerArc: View {
     let size: CGFloat
     let color: Color?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.nwMotionPaused) private var motionPaused
+    /// Between `onAppear` and `onDisappear`: a row a lazy stack has let go of keeps its view
+    /// for a while, and must not keep turning.
+    @State private var onScreen = false
 
     var body: some View {
         let arc = Circle().trim(from: 0, to: 0.75)
@@ -117,9 +126,12 @@ struct NWSpinnerArc: View {
             if reduceMotion {
                 arc
             } else {
-                TimelineView(.animation) { context in
+                TimelineView(.animation(minimumInterval: nil, paused: motionPaused || !onScreen)) { context in
+                    let _ = NWRenderProbe.tick("ui.spinnerFrame")
                     arc.rotationEffect(.degrees(NWPhase.fraction(context.date, .spin) * 360))
                 }
+                .onAppear { onScreen = true }
+                .onDisappear { onScreen = false }
             }
         }
         .frame(width: size, height: size)
