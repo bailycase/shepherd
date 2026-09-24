@@ -10,7 +10,7 @@ pi --mode rpc                                           ShepherdSessions
   → RPCSession            JSONL over stdin/stdout, owned in-process
   → RPCThreadState        pi events → NativeThreadSnapshot; requests → RPC commands
   → SessionServer.nativeThread (local, direct)  |  RemoteRequest.nativeThread (TCP)
-  → NativeThreadStore     poll, page, echo, settle; derive rows ShepherdRemote
+  → NativeThreadStore     poll, page, queue, echo; derive rows  ShepherdRemote
   → ThreadView · Composer · SubagentInspector                   ShepherdApp/Thread
 ```
 
@@ -118,16 +118,25 @@ events come out on stdout, one record per LF.
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
   than the 10 s request deadline answers requests already given up on; when `get_state` times
   out, the bootstrap asks again.
-- **Events** update the projection in place:
+- **Events** update the projection in place. The run pi is streaming is one ordered list of
+  live rows (`provisional`), in the order pi produced them:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
-    as a provisional entry.
+    as a live row.
   - `tool_execution_*` upserts running and finished tool calls, with start times for live
     durations.
-  - `agent_start` and `agent_end` drive `running`. `agent_end` also re-fetches messages, state,
-    and stats, which settles the provisional entries into history.
+  - A user `message_start` is pi reading a user message: it joins the run there, with the id
+    history will give it (`user:<ms>`, `#<n>` for a second one stamped in the same millisecond),
+    and with where it came from when Shepherd delivered it (`origin`, `operationID`; see The
+    queue). This is the only way a user message enters the thread; nothing is matched by text
+    or position after the fact.
+  - `agent_start` sets `running`; `agent_settled`, not `agent_end`, clears it. Between the two
+    pi may retry, compact, or continue, and a prompt without a streaming behavior is refused
+    ("Agent is already processing"). `agent_end` re-fetches messages, state, and stats, which
+    settles the ended live rows into history.
+  - `queue_update` tells the host which text pi queued for a steer (see The queue).
   - Thinking spans are timed as they stream, so history can show "Thought for Ns".
-  - `turn_*` and `queue_update` events are ignored, and so is anything the lenient `RPCWire`
-    decoder doesn't know (compaction included).
+  - `turn_*` events are ignored, and so is anything the lenient `RPCWire` decoder doesn't know
+    (compaction included).
 - **Session switches** are detected whenever `get_state` reports a new session ID. The
   projection resets and gets a new `generation`.
 - **Questions:** `extension_ui_request` with `select`, `confirm`, `input`, or `editor` becomes a
@@ -142,8 +151,9 @@ events come out on stdout, one record per LF.
   of text each, 32 KiB in total. Machine payloads, `notify`, `setStatus`, and `setTitle` are
   dropped, because they belong to pi's TUI chrome.
 - **Snapshots** are bounded:
-  - 240 KiB in total, of which live content (provisional entries, then dialogs) may use
-    120 KiB.
+  - 240 KiB in total, of which live content (live rows, then dialogs) may use 120 KiB. A page
+    each of live assistant messages and tool calls stays; user rows always stay, because they
+    open the turns the rest belong to.
   - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
     128 blocks per message. Clipped content is flagged.
   - A monotonically increasing `revision`, the pi session ID, and a `generation`, so nothing
@@ -157,18 +167,94 @@ events come out on stdout, one record per LF.
     on the same rows. Only a message without a timestamp, which pi never sends, falls back to
     its position (`m:<index>`).
 - **Requests** (`NativeThreadRequest`): `snapshot`, `send` (follow-up or steer delivery, optional
-  images), `abort`, `answer`, `setModel`, `setThinking`, `subagentCommand` (message, cancel,
-  resume, pause, continue; routed to the children extension's control connection, never the
-  parent model), and `subagentTranscript` (one page of a child's session file, read from its
-  last 8 MiB).
+  images; see The queue), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
+  `subagentCommand` (message, cancel, resume, pause, continue; routed to the children
+  extension's control connection, never the parent model), `subagentTranscript` (one page of a
+  child's session file, read from its last 8 MiB), and `queue` (`NativeQueueAction`).
   - Every mutating request carries an operation ID and the expected session and generation.
     Replaying an ID returns the recorded result; reusing it with a different payload gets
     `operation_conflict`. A session mismatch gets `stale_session`.
   - An accepted result means the command was dispatched, not that the work finished.
+  - A refusal from pi is `dispatch_failed` with pi's own reason. No answer within the deadline
+    (10 s, 30 s for a prompt: pi answers a prompt only after its preflight) is
+    `outcome_unknown`, never reported as a refusal: pi may still run it.
   - `supportedActions` lists what clients may offer: `send`, `abort`, `answer`, `setModel`,
-    `setThinking`, `sendImages`, `subagents`.
+    `setThinking`, `sendImages`, `subagents`, `queue`.
 - **Subagents:** the rows the subagent display extension publishes (`setAgentChildren`) ride the
   snapshot as `subagents`.
+
+## The queue
+
+Messages sent while pi works wait on the host (`RPCThreadState+Queue.swift`), not in pi, so
+every client (this Mac, a remote Mac, later iOS) sees and edits one queue, and it survives
+switching agents. Nothing in it has reached pi except a steering item. The snapshot carries it
+as `queue` (`NativeQueue`: items, mode, paused, notice); a snapshot without one comes from an
+older host, which sends every message straight to pi.
+
+pi 0.87.1's own queues are text-only lists with no edit, remove, or reorder
+(`clear_queue` empties both), and `set_steering_mode` / `set_follow_up_mode` write the user's
+pi `settings.json`, so Shepherd never sends them and keeps its own queue instead, handing pi
+one prompt at a time.
+
+- **Send** (`send`): while pi is idle (`running` false and no prompt of ours on its way) the
+  message goes to pi at once as a prompt, with `streamingBehavior: followUp` so a pi that has
+  just started a run of its own queues it rather than refusing it (idle, pi treats it as a
+  plain prompt). While pi works, a follow-up is appended to the queue and answered at once; a
+  steer is handed to pi (below). The queued item's id is the send's operation id. A send also
+  resumes a paused queue. At most 32 items and 64 KiB of text wait (`queue_full`).
+- **Delivery:** when pi settles (`agent_settled`) and the queue is not paused, not held, and no
+  question is pending, the queue goes as one prompt:
+  - **One per turn** (`oneAtATime`): the head.
+  - **All at once** (`all`, the default): every item from the head that can go together,
+    joined with a blank line (`NativeQueueRules.batchCount`): an item that begins with "/"
+    goes alone (pi runs a command or expands a template only at the start of a message), and
+    a delivery carries at most 4 images and 64 KiB. pi runs one turn for it: it is one user
+    message, and every model call of that turn reads it (checked against real pi 0.87.1).
+    pi's own follow-up queue could not do this without writing the user's settings: in its
+    default one-at-a-time mode each queued follow-up opens its own model call.
+  - The mode is the agent's own choice (`setMode`), else the host's default
+    (`SessionServer.setDefaultQueueMode`, for the app's Settings to set).
+  - Until pi starts the message, the host shows it as a pending row (`pending:<id>`, status
+    `pending`). When pi starts it, it joins the run with `origin: .queue(parts)`: each part is
+    one queued message with its own text, send time, and image count, so the thread can show
+    them apart even though pi has one message. A refusal puts the items back at the head,
+    pauses the queue, and says why (`notice`).
+- **Steer:** the item is marked steering (steering items sit above the queue, in the order
+  they were steered) and sent as `prompt` with `streamingBehavior: steer`. pi's `queue_update`
+  names the text it queued for it (pi expands templates first), and the user message pi later
+  starts with that text is the item landing: it leaves the queue and joins the run with
+  `origin: .steered`, after the tool calls pi was running. pi runs every call of a batch and
+  reads steering only after the whole batch (it has not skipped calls since 0.58.4), so there
+  is no "skipped" work to show. A steer to a pi whose run has not started yet (a prompt of
+  ours still on its way) waits at the head of the queue instead.
+- **Back to the queue** (`unsteer`): `clear_queue`; the item returns to the head of the queue
+  if pi still held it, and everything else pi returned is handed back in order. If pi already
+  read it, nothing changes.
+- **Stop** (`abort`): `clear_queue` first, then `abort` (pi's recipe; `abort` alone delivers a
+  queued steer into the aborted turn and keeps follow-ups for a later run). Steering items pi
+  still held return to the head, anything else pi had queued joins the queue, and the queue
+  pauses. A turn that ends in a provider error pauses it too.
+- **Settle:** prompts pi accepted but never started as a message (an extension command, an
+  input handler that took it) drop their pending rows; so does a prompt pi answered while idle
+  (checked with `get_state`). A steer pi queued after its last look at its queue is stranded
+  there: the host takes it back with `clear_queue` and sends it as the next turn.
+- **Editing:** `edit`, `delete`, `restore` (undo of a delete or `clear`; the host keeps the
+  last 64 removed items), `move` (indexes count queued items only), `hold` (an editor is open:
+  the queue waits; a hold lapses after two minutes unless renewed), `steer`, `unsteer`,
+  `clear`, `setMode`, and `sendNow` (pi idle: these open the next turn, and the rest resumes
+  after it). A missing item gets `queue_item_unavailable`.
+- **Status:** between queued turns pi settles for a moment. While the queue goes next,
+  `SessionServer` holds back the status extension's "done" (no "Agent finished" banner), and
+  reports it once the queue does not go after all.
+- **Where a message came from** outlives the app: the host records each delivered message's
+  origin by entry id in the support directory's `thread-origins/<pi session>.json` (newest 512
+  per session) and applies it to history, so after a relaunch a queue delivery still shows its
+  parts and a steer is still marked steered. pi's session has no room for it. A part is kept as
+  its length, id, send time, and image count; its text is pi's message split where it was
+  joined, and a message that no longer splits there gets no origin.
+- **The queue itself is not persisted.** Like pi's own queue, it lives with the process: the
+  app kills pi on quit (asking first while agents work), and on relaunch every agent resumes
+  idle, so a restored queue could only come back paused against a run that no longer exists.
 
 ## Serving
 
@@ -181,7 +267,8 @@ transport differs.
   requests get `native_limit`. Remote requests are also bound by the 1 MiB TCP frame, so
   `RemoteHostClient` rejects larger image sends before sending.
 - **Remote capabilities:** remote model, thinking, and image requests need the host's
-  `native.thread.v2` capability.
+  `native.thread.v2` capability, and `queue` requests its `native.queue.v1`
+  (`RemoteHostClient` refuses them against an older host with `update_required`).
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
     agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
@@ -280,12 +367,24 @@ output grows.
   pi's, or one in an older format (which pi rewrites when it loads it) is no preview: the thread
   waits for pi. Remote clients get no preview; the remote
   protocol is unchanged.
-- **Message order:** `messages` is the paged history (`loadOlder`). `displayedMessages` is
-  history, then optimistic echoes of accepted sends, then pi's provisional entries. This order
-  never flips when pi persists a message, so the tail never re-lays out.
+- **Message order:** `messages` is the paged history (`loadOlder`). From a host with a queue,
+  `displayedMessages` is history, then the host's live rows in pi's order (user messages where
+  pi read them, the host's pending rows last), then an echo of an idle send until the host's
+  next snapshot. The echo, the host's pending row, and pi's message share one turn identity
+  (`pending:<operation id>`, through `operationID`), so the tail never re-lays out. From an
+  older host it is history, then echoes, then pi's provisional entries, with follow-up echoes
+  ("queued") last.
+- **The queue:** `queue` is the host's, with this client's own changes applied at once
+  (`editQueued`, `deleteQueued` and `clearQueue` return what an undo restores,
+  `restoreQueued`, `moveQueued`, `steerQueued`, `unsteer`, `holdQueued`, `setQueueMode`,
+  `sendQueuedNow`) until a snapshot requested after the host answered arrives. A send while pi
+  works shows there at once, never as a thread row. Queue actions never make the composer busy.
+  `queuedImages(_:)` keeps the images this client queued (the host keeps only their names).
+  `supportsQueue` gates all of it.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
   boundaries don't flicker the working row or the Stop button.
-- **Drafts and gating:** `draft` and `delivery` (follow-up or steer) belong to the store.
+- **Drafts and gating:** `draft` and `delivery` (follow-up or steer) belong to the store;
+  `send(images:delivery:)` sends with a delivery chosen at send time.
   `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
   busy.
 - **Errors:** transport failures and a pi that is gone surface as `loadError` (the composer's
@@ -299,8 +398,15 @@ The pure derivations live in ShepherdRemote:
 - **`NativeTurnPresentation`:** a reply's items, built once per turn change, in the order they
   happened: thinking (folded into one block at the start of each stretch of work between
   prose), prose (Markdown parsed once), activity lines, the positions of subagent cards (a spawn
-  call with a card leaves the activity), notes, and errors. It also carries the changes card,
-  the countable tool calls, and the copy text.
+  call with a card leaves the activity), notes, errors, and steers (`.steer`: a message the user
+  steered in, where pi read it). It also carries the changes card, the countable tool calls, and
+  the copy text.
+- **Turns** (`nativeTurns`): a user message the host marks `.steered` stays inside the reply
+  it steered, so the reply keeps one footer and one changes card. A user turn's `bubbles` are
+  one per message, or one per queued part of a delivery from the queue (each with its own send
+  time), and `fromQueue` counts those parts ("From the queue · 2").
+- **`NativeQueueRules`:** the queue's rules (what one delivery takes, moves, restores, steers),
+  shared by the host and the store's instant edits.
 - **`NativeActivity`:** tool calls as activity lines. `NativeActivityCall` reads one call (its
   kind, label, path or command, stat, output head, and live tail); `nativeActivityBursts` merges
   consecutive calls of one kind into lines (a failed or running call stands alone);
@@ -349,7 +455,10 @@ requests sent to its host.
   (`ScratchServer`) driving the scripted stub pi (`StubPi.command`,
   `Tests/ShepherdTestSupport/Resources/stub-pi.py`). The stub's prompt keywords script
   questions, hangs, crashes, oversized records, widgets, session switches, and long histories.
-  For example, `LargeHistoryTests` loads a 6 MiB history. Its startup options
+  For example, `LargeHistoryTests` loads a 6 MiB history. A "tools:N" prompt runs a pi-like
+  agent loop with pi 0.87.1's queues (steering read after each tool batch, follow-ups when the
+  run would stop, `queue_update`, `clear_queue`, abort keeping follow-ups, and a stranded steer
+  with "hold-settle"); `QueueTests` drive the host's queue against it. Its startup options
   (`STUB_PI_STARTUP_DELAY`, `_GATE`, `_EXIT`, or `stub-pi-startup.json` in its cwd for a pi the
   app launches) hold or fail pi's boot, as `ThreadStartupTests` and `AgentStartupTests` do.
 - **Previews:** `ShepherdPreviewTests` render thread states offscreen in light and dark into
