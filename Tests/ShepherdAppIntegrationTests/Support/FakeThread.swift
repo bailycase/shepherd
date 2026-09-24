@@ -210,6 +210,17 @@ enum MainThreadCPU {
     }
 }
 
+/// The whole process's CPU time, every thread (`getrusage`): what work moved off the main thread
+/// still costs.
+enum ProcessCPU {
+    static func now() -> Duration {
+        var usage = rusage()
+        getrusage(RUSAGE_SELF, &usage)
+        func duration(_ time: timeval) -> Duration { .seconds(time.tv_sec) + .microseconds(Int64(time.tv_usec)) }
+        return duration(usage.ru_utime) + duration(usage.ru_stime)
+    }
+}
+
 /// Snapshots for the thread fixtures in this target's cost tests.
 enum ThreadFixture {
     static let answer = Array(repeating: "Answer paragraph with enough words to wrap a line or two in the column, like a real reply.",

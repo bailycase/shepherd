@@ -420,7 +420,7 @@ struct TurnPresentationTests {
 
     @Test func proseIsParsedOnceIntoBlocks() {
         let presentation = nativeTurnPresentation([F.assistant("# Title\n\n- a\n- b")], live: false)
-        guard case .prose(_, _, let blocks) = presentation.items.first else { Issue.record("no prose"); return }
+        guard case .prose(_, _, let blocks, _) = presentation.items.first else { Issue.record("no prose"); return }
         #expect(blocks.count == 2)
     }
 

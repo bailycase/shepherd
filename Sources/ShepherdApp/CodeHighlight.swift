@@ -136,7 +136,10 @@ enum CodeHighlight {
     /// Whether `path`'s extension has a grammar (other files stay plain).
     static func supports(path: String) -> Bool { GrammarID(path: path) != nil }
 
-    static func highlightLines(_ lines: [String], path: String, style: Style) -> [AttributedString] {
+    /// `isCancelled` is checked between the parse, the captures, and the lines: once it holds,
+    /// the lines come back empty and the caller drops them.
+    static func highlightLines(_ lines: [String], path: String, style: Style,
+                               isCancelled: () -> Bool = { false }) -> [AttributedString] {
         guard !lines.isEmpty else { return [] }
         guard let grammarID = GrammarID(path: path),
               let grammar = cachedGrammar(for: grammarID) else {
@@ -148,6 +151,7 @@ enum CodeHighlight {
         guard (try? parser.setLanguage(grammar.language)) != nil, let tree = parser.parse(source) else {
             return lines.map(AttributedString.init)
         }
+        if isCancelled() { return [] }
 
         let attributed = NSMutableAttributedString(string: source)
         let foregroundColorKey = NSAttributedString.Key(
@@ -156,7 +160,8 @@ enum CodeHighlight {
         let context = Predicate.Context(string: source)
         let matches = grammar.query.execute(in: tree).resolve(with: context)
 
-        for match in matches {
+        for (index, match) in matches.enumerated() {
+            if index.isMultiple(of: 64), isCancelled() { return [] }
             for capture in match.captures {
                 guard let color = color(for: capture.nameComponents, style: style),
                       let range = clamped(capture.range, to: attributed.length) else {
@@ -165,6 +170,7 @@ enum CodeHighlight {
                 attributed.addAttribute(foregroundColorKey, value: color, range: range)
             }
         }
+        if isCancelled() { return [] }
 
         var location = 0
         return lines.map { line in

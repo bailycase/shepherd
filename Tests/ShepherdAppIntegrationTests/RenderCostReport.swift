@@ -106,6 +106,43 @@ struct RenderCostReport {
         report.add("workspace (\(count) layouts mounted)", "hidden agent's status report: bodies each", counts: counts)
     }
 
+    /// Fifteen chunks of a reply writing a Swift fence that grows to about a hundred lines, one
+    /// every 100 ms: the median main-thread cost of a chunk, over three runs, with the colors'
+    /// tree-sitter renders counted.
+    @Test func streamedCodeChunk() async throws {
+        var perChunk: [Double] = [], processPerChunk: [Double] = []
+        var renders: [Int] = []
+        for run in 0..<3 {
+            // Each run its own code, so no run colors from another's cache.
+            func reply(_ lines: Int) -> String { ListPerformanceTests.codeReply(lines).replacingOccurrences(of: "value", with: "value\(run)_") }
+            let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it")]
+            let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(reply(2))], running: true))
+            try await thread.waitUntilReady()
+            try await Task.sleep(for: Self.atRest)
+            var costs: [Double] = []
+            NWRenderProbe.start()
+            let process = ProcessCPU.now()
+            for chunk in 1...15 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.streaming(reply(2 + chunk * 7) + "    let partial")]
+                costs.append(await cost(thread.window) {
+                    await thread.serve(next)
+                    try? await Task.sleep(for: .milliseconds(100))
+                })
+            }
+            processPerChunk.append(ListPerf.milliseconds(ProcessCPU.now() - process) / 15)
+            renders.append(NWRenderProbe.stop()["highlight.render", default: 0])
+            perChunk.append(MainThreadCPU.median(costs))
+            thread.close()
+        }
+        report.add("thread writing a Swift fence (15 chunks, 100 ms apart)", "code chunk: main-thread CPU (median of 3)",
+                   ms: MainThreadCPU.median(perChunk))
+        report.add("thread writing a Swift fence (15 chunks, 100 ms apart)", "code chunk: process CPU, all threads (median of 3)",
+                   ms: MainThreadCPU.median(processPerChunk))
+        report.add("thread writing a Swift fence (15 chunks, 100 ms apart)", "tree-sitter renders", "\(renders)")
+    }
+
     /// A poll that moves only the context count.
     @Test func statsOnlyPoll() async throws {
         var runs: [Double] = []
