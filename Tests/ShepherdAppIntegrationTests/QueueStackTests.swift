@@ -117,6 +117,10 @@ struct QueueStackIntegrationTests {
 
         #expect(!monitor.handle(elsewhere), "another window's ⌘↩ passes by")
         #expect(!monitor.handle(thread.key("\r", keyCode: 36)), "a plain ↩ is the field's")
+        let draft = thread.store.draft
+        thread.store.draft = "  "
+        #expect(!monitor.handle(thread.key("\r", keyCode: 36, modifiers: .command)), "with nothing to send it goes on to the window")
+        thread.store.draft = draft
         #expect(monitor.handle(thread.key("\r", keyCode: 36, modifiers: .command)))
         try await eventuallyOnMain("the draft to be steered in") { thread.host.sends.count == 1 }
 

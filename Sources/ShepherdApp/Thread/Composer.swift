@@ -202,7 +202,16 @@ struct Composer: View {
         }
         .onChange(of: store.queue, initial: true) { _, queue in queueStack.update(queue, images: store.queuedImages) }
         // ⌘↩ is watched only while this composer (or one of its queued messages) has focus.
-        .onChange(of: composing || focusedRow != nil, initial: true) { _, focused in keyMonitor.watch(focused) }
+        .onChange(of: composing || focusedRow != nil, initial: true) { _, focused in
+            // Only a press it can use: a focused message, or a draft ready to send. Anything
+            // else is left to the window (the review pane's ⌘⏎).
+            keyMonitor.accepts = { [store, focusedRow = $focusedRow] in
+                focusedRow.wrappedValue != nil
+                    || (!store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.acceptsSend && !store.busy
+                        && store.dialogs.isEmpty)
+            }
+            keyMonitor.watch(focused)
+        }
         .onChange(of: keyMonitor.presses) { _, _ in sendTheOtherWay() }
         // A hold that opened the Send menu and let go elsewhere leaves the next click a send.
         .onChange(of: menu) { _, menu in if menu != .send { sendHeld = false } }
@@ -929,13 +938,16 @@ final class ComposerKeyMonitor {
     private(set) var presses = 0
     @ObservationIgnored weak var window: NSWindow?
     @ObservationIgnored var chord: () -> KeyChord = { KeybindingsStore.shared.chord(for: .alternateSend) }
+    /// Whether the composer can use a press now; one it cannot use goes on to the window.
+    @ObservationIgnored var accepts: () -> Bool = { true }
     @ObservationIgnored private var monitor: Any?
 
     /// Watches the window's key presses while the composer has focus, and only then.
     func watch(_ focused: Bool) {
         if focused, monitor == nil {
             monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                MainActor.assumeIsolated { self?.handle(event) == true ? nil : event }
+                let taken = MainActor.assumeIsolated { self?.handle(event) == true }
+                return taken ? nil : event
             }
         } else if !focused, let monitor {
             NSEvent.removeMonitor(monitor)
@@ -946,7 +958,7 @@ final class ComposerKeyMonitor {
     /// Takes `event` when it is the chord, in the composer's window.
     @discardableResult
     func handle(_ event: NSEvent) -> Bool {
-        guard let window, event.window === window, chord().matches(event) else { return false }
+        guard let window, event.window === window, chord().matches(event), accepts() else { return false }
         presses += 1
         return true
     }
