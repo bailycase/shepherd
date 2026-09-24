@@ -206,14 +206,20 @@ class FeedTests(unittest.TestCase):
             self.assertEqual(read("appcast.xml"), sources["stable"])
             self.assertEqual(read("appcast-beta.xml"), sources["beta"])
             self.assertEqual(read("appcast-shepherd-nightly.xml"), sources["shepherd-nightly"])
-            # Old rc and nightly installs of Shepherd read the beta feed under their own tag.
-            for alias, channel in (("appcast-rc.xml", "rc"), ("appcast-nightly.xml", "nightly")):
+            # Old rc and nightly installs of Shepherd read the beta feed's items on the default
+            # channel, which Sparkle shows whatever channels a build allows (the first nightly
+            # builds allowed none).
+            for alias in ("appcast-rc.xml", "appcast-nightly.xml"):
                 with self.subTest(alias=alias):
                     xml = read(alias)
-                    self.assertEqual(xml, sources["beta"].replace("<sparkle:channel>beta<", f"<sparkle:channel>{channel}<"))
-                    self.assertEqual(xml.count(f"<sparkle:channel>{channel}</sparkle:channel>"), 2)
-                    self.assertNotIn("<sparkle:channel>beta<", xml)
+                    self.assertEqual(xml, sources["beta"].replace("<sparkle:channel>beta</sparkle:channel>", ""))
+                    self.assertNotIn("sparkle:channel", xml)
+                    self.assertEqual(xml.count("<item>"), 2)
                     self.assertNotIn("Shepherd-Nightly", xml)
+
+    def test_untag_drops_every_channel_element_and_its_indentation(self):
+        xml = "<item>\n    <title>62</title>\n    <sparkle:channel>beta</sparkle:channel>\n    <sparkle:version>62</sparkle:version>\n</item>"
+        self.assertEqual(release.untag(xml), "<item>\n    <title>62</title>\n    <sparkle:version>62</sparkle:version>\n</item>")
 
 
 class VerifyAppTests(unittest.TestCase):
