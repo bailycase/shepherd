@@ -56,13 +56,15 @@ struct NWMenuRow<Label: View>: View {
     }
 }
 
+/// The popover a menu sits on: its board width, or narrower when that is all the room offered
+/// (a composer beside a docked pane).
 private struct NWMenuSurface: ViewModifier {
     let width: CGFloat
 
     func body(content: Content) -> some View {
         content
             .padding(NW.Space.s)
-            .frame(width: width)
+            .frame(idealWidth: width, maxWidth: width)
             .nwPopover()
     }
 }
@@ -89,26 +91,28 @@ public struct NWSlashCommand: Identifiable, Equatable, Sendable {
 
 /// The slash menu (NWComposer board): "Commands · n of m", then 28pt rows: the command in mono
 /// 12 with the typed prefix in semibold `textPrimary` and the rest `textSecondary` (a 150pt
-/// column), its description, and a tag for prompt templates. At most 8 rows show. The field
-/// keeps focus and drives the selection.
+/// column), its description, and a tag for prompt templates. At most 8 rows show, fewer when
+/// `maxHeight` leaves less room. The field keeps focus and drives the selection.
 public struct NWSlashMenu: View {
     let commands: [NWSlashCommand]
     let total: Int
     let query: String
     @Binding var selection: Int
+    let maxHeight: CGFloat?
     let onChoose: (NWSlashCommand) -> Void
 
-    public init(commands: [NWSlashCommand], total: Int, query: String, selection: Binding<Int>,
+    public init(commands: [NWSlashCommand], total: Int, query: String, selection: Binding<Int>, maxHeight: CGFloat? = nil,
                 onChoose: @escaping (NWSlashCommand) -> Void) {
         self.commands = commands
         self.total = total
         self.query = query
         _selection = selection
+        self.maxHeight = maxHeight
         self.onChoose = onChoose
     }
 
     public var body: some View {
-        let rows = CGFloat(min(max(commands.count, 1), NWComposerMetrics.menuMaxRows))
+        let rows = CGFloat(min(max(commands.count, 1), Self.visibleRows(in: maxHeight)))
         VStack(alignment: .leading, spacing: 0) {
             NWMenuHeader("Commands", trailing: "\(commands.count) of \(total)")
             ScrollViewReader { proxy in
@@ -142,6 +146,13 @@ public struct NWSlashMenu: View {
         .modifier(NWMenuSurface(width: NWComposerMetrics.slashMenuWidth))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Commands")
+    }
+
+    /// How many rows fit a menu at most `height` tall (at least one, at most the board's eight).
+    static func visibleRows(in height: CGFloat?) -> Int {
+        guard let height else { return NWComposerMetrics.menuMaxRows }
+        let room = height - NWComposerMetrics.menuHeaderHeight - 2 * NW.Space.s
+        return max(1, min(NWComposerMetrics.menuMaxRows, Int((room / NWComposerMetrics.menuRowHeight).rounded(.down))))
     }
 
     private func name(_ command: NWSlashCommand) -> Text {
@@ -186,24 +197,33 @@ public struct NWModelSection: Identifiable, Equatable, Sendable {
 
 /// The model picker (NWComposer board): 260pt, "Search models" on top, then Recent and one
 /// section per provider; 28pt rows with the model in mono 12 and a check on the current one.
-/// The search field takes focus and drives the selection.
+/// The list is at most 360pt tall, and the whole picker at most `maxHeight`. The search field
+/// takes focus and drives the selection.
 public struct NWModelPicker: View {
     @Binding var query: String
     let sections: [NWModelSection]
     let loading: Bool
     @Binding var selection: Int
+    let maxHeight: CGFloat?
     let onChoose: (NWModelOption) -> Void
     let onClose: () -> Void
     @FocusState private var searching: Bool
 
     public init(query: Binding<String>, sections: [NWModelSection], loading: Bool = false, selection: Binding<Int>,
-                onChoose: @escaping (NWModelOption) -> Void, onClose: @escaping () -> Void) {
+                maxHeight: CGFloat? = nil, onChoose: @escaping (NWModelOption) -> Void, onClose: @escaping () -> Void) {
         _query = query
         self.sections = sections
         self.loading = loading
         _selection = selection
+        self.maxHeight = maxHeight
         self.onChoose = onChoose
         self.onClose = onClose
+    }
+
+    /// The list's height limit: the board's 360pt, or what `maxHeight` leaves under the search.
+    static func listMaxHeight(in height: CGFloat?) -> CGFloat {
+        let chrome = NWComposerMetrics.modelSearchHeight + NW.Space.xs + 2 * NW.Space.s
+        return max(NWComposerMetrics.menuRowHeight, min(NWComposerMetrics.modelPickerMaxHeight, (height ?? .infinity) - chrome))
     }
 
     public var body: some View {
@@ -262,7 +282,7 @@ public struct NWModelPicker: View {
                     // The catalog arriving replaces "Loading models…"; filtering stays instant.
                     .nwAnimation(.content, value: loading)
                 }
-                .frame(maxHeight: NWComposerMetrics.modelPickerMaxHeight)
+                .frame(maxHeight: Self.listMaxHeight(in: maxHeight))
                 .onChange(of: selection) { _, index in
                     guard flat.indices.contains(index) else { return }
                     let option = flat[index]

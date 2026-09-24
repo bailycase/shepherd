@@ -44,7 +44,7 @@ struct ThreadView: View {
     /// Measured height of the floating composer: the scroll view insets by exactly this, so the
     /// thread neither hides under the card nor scrolls into blank space below the last turn.
     @State private var composerHeight: CGFloat = 120
-    @State private var modelPickerRequest = 0
+    @State private var menuRequest: ComposerMenuRequest?
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
@@ -149,9 +149,11 @@ struct ThreadView: View {
                 }
             }
             Composer(store: store, active: active, agentName: agentName, hasTurns: !rows.isEmpty, gutter: gutter,
-                     composing: $composing, listModels: listModels, modelPickerRequest: modelPickerRequest)
+                     composing: $composing, listModels: listModels, menuRequest: menuRequest)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         }
+        // The composer's menus float over the thread and fit the room above the card in it.
+        .coordinateSpace(.named(Composer.threadSpace))
         // Switching back to an agent is a visibility flip: the pull that catches its thread up
         // runs none of the thread's or the composer's view-attached motion.
         .transaction { if !caughtUp { $0.disablesAnimations = true } }
@@ -252,7 +254,9 @@ struct ThreadView: View {
     private func handle(_ command: ThreadCommandCenter.Command, proxy: ScrollViewProxy) {
         switch command {
         case .modelPicker:
-            modelPickerRequest += 1
+            menuRequest = ComposerMenuRequest(menu: .models)
+        case .thinkingMenu:
+            menuRequest = ComposerMenuRequest(menu: .thinking)
         case .inspectSubagent:
             if let run = store.subagents.first(where: { !$0.isTerminal }) ?? store.subagents.last { inspectSubagent?(run) }
             else { NSSound.beep() }

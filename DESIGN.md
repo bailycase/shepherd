@@ -753,9 +753,15 @@ answerable:
 micro caps title and its text. Machine payloads, `setStatus`, and `notify` are not shown.
 Widgets are display-only, and the app chooses every font and color.
 
-**Menus** open above the card, left-aligned, 8pt above it, one at a time. They share one anatomy:
-`.nwPopover()` at radius 12 with 6pt padding, 24pt mono caps section headers, and 28pt rows with
-a `runningTint` highlight. ↑↓ move, ⏎ chooses, Esc closes and returns focus to the field.
+**Menus** float over the thread above the card, one at a time: left-aligned with it, 8pt above it,
+and growing from that corner (`.overlay`). They take no room in the composer, so opening one never
+changes the composer's height, the thread's inset or scroll position, or any of the thread outside
+the menu (`ComposerMenuTests`). A menu is never taller than the room above the card (it keeps 8pt
+from the thread's top, and its list scrolls inside), and beside a docked pane it narrows to the
+card. They share one anatomy: `.nwPopover()` at radius 12 with 6pt padding, 24pt mono caps
+section headers, and 28pt rows with a `runningTint` highlight. ↑↓ move, ⏎ chooses, Esc closes
+and returns focus to the field, and a click anywhere outside the menu and the card closes it (the
+click still lands where it was aimed).
 
 - **Slash menu** (`NWSlashMenu`, 448pt): opens when the draft is "/…" (or from the chip).
   "Commands · n of m"; rows show the command in mono 12 with the typed prefix in semibold
