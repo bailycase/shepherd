@@ -327,7 +327,8 @@ Sources/
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
       +RemoteInspection, +RemoteWorktrees)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
-                       Composer, Subagents, SubagentPresentation, SubagentInspector
+                       Composer, QueueStack ("Up next", the queue above the composer), Subagents,
+                       SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
@@ -372,7 +373,8 @@ Tests/
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
   ShepherdTestKit/        ScratchDefaults, makeScratchDirectory, Locked, CommandFailure, TestProcess
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
-                          eventually, recordingErrors, the time-limit and timing-sensitive traits
+                          QueueFixture (a host's queue without pi), eventually, recordingErrors,
+                          the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
   Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
