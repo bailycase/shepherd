@@ -64,13 +64,13 @@ per-agent `runtime` key (and always encodes `"rpc"` so older remote clients neve
 a PTY). `LegacyTerminalAgents.forgetPresentationPreferences` clears the old per-agent view
 defaults.
 
-The view model starts every restored agent's pi on its first adoption of the workspace,
-whatever has mounted, through `AgentStartQueue`. Thirty pi processes booting at once each take
-several times longer than one alone, so the agent on screen starts first, alone, and the rest
-wait until it serves (or two seconds pass), then start a few at a time (half the cores, 2 to
-8), each holding its slot until its pi serves or five seconds pass. Selecting an agent that is
-still waiting starts it at once, ahead of the rest. A new agent's pi spawns with its creation
-and never waits in the queue.
+The view model starts every restored agent's pi on its first adoption of the workspace, whatever
+has mounted, through `AgentStartQueue`. Thirty pi processes booting at once each take several
+times longer than one alone, so the agent on screen starts first, alone, and the rest wait until
+it serves or exits (or two seconds pass), then start a few at a time (half the cores, 2 to 8),
+each holding its slot until its pi serves or exits, or five seconds pass. Selecting an agent
+that is still waiting starts it at once, ahead of the rest. A new agent's pi spawns with its
+creation and never waits in the queue.
 
 ## Status and session reporting
 
