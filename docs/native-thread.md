@@ -157,7 +157,11 @@ events come out on stdout, one record per LF.
   - One 16 KiB text budget per message, shared across its blocks and tool fields, and at most
     128 blocks per message. Clipped content is flagged.
   - A monotonically increasing `revision`, the pi session ID, and a `generation`, so nothing
-    from an old session can be acted on.
+    from an old session can be acted on. Anything a snapshot shows moves it, the queue and
+    where a message came from included, so a queue change is pushed like one of pi's events.
+    Each part is hashed once per change (a live row when it changes, the queue when it differs
+    from the one last hashed), and each row is sized once, so a streamed delta beside a full
+    queue rehashes and measures only the message it grew.
   - History pages hold 50 entries, walked with `olderCursor`. A stale cursor gets
     `stale_cursor`.
   - A history entry's id names its message, not its place in pi's list
@@ -385,7 +389,8 @@ output grows.
   `sendQueuedNow`) until a snapshot requested after the host answered arrives. A send while pi
   works shows there at once, never as a thread row. Queue actions never make the composer busy.
   `queuedImages(_:)` keeps the images this client queued (the host keeps only their names).
-  `supportsQueue` gates all of it.
+  `supportsQueue` gates all of it. The queue's properties are chrome (`chromeVersion`), so a
+  queue that changed while the thread was hidden lands without motion when it catches up.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
   boundaries don't flicker the working row or the Stop button.
 - **Drafts and gating:** `draft` belongs to the store; `send(images:delivery:)` sends with a
