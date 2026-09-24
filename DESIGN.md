@@ -967,10 +967,13 @@ reached pi, except a Steering row.
 - **Long stack:** up to three rows all show; past three, the first two and "Show N more" (a 32pt
   link row, 34pt leading), which expands the stack in place ("Show fewer"). Expanded past six
   rows it scrolls inside. An editor opened below the fold expands it.
-- **Reordering:** dragging the grip lifts the row onto a floating card (`bgRaised`, radius 8, a
-  `lineStrong` line, the popover's shadow, a 1° lean) that follows the pointer at once; its
-  neighbours step aside (`list`), and a 2pt `lantern` drop line (`NWDropIndicator(color:)`) tops
-  the gap. Nothing drops above a Steering row. ⌥↑ ⌥↓ move a focused row.
+- **Reordering:** dragging the grip lifts the row out of the stack onto a floating card
+  (`bgRaised` under `bgHover`, radius 8, a `lineStrong` line, the popover's shadow, a 1° lean),
+  22pt right of its slot and 14pt past the stack's trailing edge (`NWQueueMetrics.liftInset`),
+  over its neighbours, the drop line and the composer card. It follows the pointer at once, up
+  to half a row past the first and last rows; its neighbours step aside (`list`), and a 2pt
+  `lantern` drop line (`NWDropIndicator(color:)`) tops the gap. Nothing drops above a Steering
+  row. ⌥↑ ⌥↓ move a focused row.
 - **The ••• menu** (native): Steer all now (Send all now while pi is idle), "When the turn ends,
   send" with One message per turn and Everything at once (this agent's choice; Settings sets the
   host's default), and Clear the queue (destructive, with its Undo row).

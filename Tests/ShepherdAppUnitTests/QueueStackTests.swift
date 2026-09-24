@@ -102,6 +102,17 @@ struct QueueStackTests {
         #expect(QueueStackLayout.drop(rows: rows, moving: Self.steering.id.uuidString, translation: 200) == nil)
     }
 
+    /// A lifted message follows the pointer, but floats no further than half a row past the
+    /// stack's first and last rows; where it lands still follows the pointer.
+    @Test(arguments: [(-400, -100), (400, 20), (-30, -30)] as [(CGFloat, CGFloat)])
+    func aLiftedMessageStaysWithinHalfARowOfTheStack(translation: CGFloat, lift: CGFloat) {
+        let state = QueueStackState()
+        state.update([Self.a, Self.b, Self.c])
+        state.drag(Self.c.id.uuidString, by: translation)
+        #expect(state.translation == lift)
+        if translation < -100 { #expect(state.drop == .init(boundary: 0, index: 0)) }
+    }
+
     /// Undo rows are slots a drag passes, not places in the order.
     @Test func undoRowsAreNotCountedInTheOrder() {
         let rows = QueueStackLayout.rows(queue: [Self.a, Self.c], undo: [Self.undo(Self.b, at: 1)])
