@@ -50,6 +50,21 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// A thread scrolled up from its tail: the reply runs under the fade the composer lays on
+    /// the thread, and "Jump to latest" sits over that fade, above the card, drawn crisply.
+    @Test func threadJumpPill() async throws {
+        let fixture = ThreadFixture(ActivityThreads.idle)
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        let size = CGSize(width: 1180, height: 700)
+        try await Preview.render("thread-jump-pill", size: size, ready: { store.ready && !store.rows.isEmpty }) {
+            DetachedThread(store: store)
+                .frame(width: size.width, height: size.height)
+                // No thread view drives this store here; feed it its fixture directly.
+                .task { await store.run(request: fixture.request) }
+        }
+    }
+
     /// Running board: a finished commit line, the live push with its last output lines, and
     /// the working row.
     @Test func threadActivityRunning() async throws {
@@ -358,6 +373,36 @@ private struct HoveredReplyThread: View {
         .padding(.horizontal, AppLayout.gutter)
         .padding(.top, AppLayout.threadTop)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.nw.bgWindow)
+    }
+}
+
+/// The thread's rows run down under the real composer, which shows "Jump to latest" as a
+/// detached thread does.
+private struct DetachedThread: View {
+    let store: NativeThreadStore
+    @FocusState private var composing: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: AppLayout.turnSpacing) {
+                ForEach(store.rows) { row in
+                    if row.isUser {
+                        UserTurn(messages: row.turn.messages, caption: nil)
+                    } else if let presentation = row.presentation {
+                        AgentTurn(presentation: presentation, live: row.live, startedAt: row.startedAt, retry: {}, review: { _ in },
+                                  hover: MessageHover(hovering: false))
+                    }
+                }
+            }
+            .frame(maxWidth: AppLayout.threadMaxWidth)
+            .padding(.horizontal, AppLayout.gutter)
+            // The last reply ends under the card, as a thread scrolled up from its tail does.
+            .padding(.bottom, AppLayout.composerFade)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            Composer(store: store, active: true, agentName: "Investigate", hasTurns: true, gutter: AppLayout.gutter,
+                     composing: $composing, jumpToLatest: {})
+        }
         .background(Color.nw.bgWindow)
     }
 }

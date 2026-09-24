@@ -30,6 +30,8 @@ struct Composer: View {
     var listModels: (() async -> [PiModelCatalog.Entry])?
     /// Set by the command center: open that menu.
     var menuRequest: ComposerMenuRequest?
+    /// Set while the thread is detached from its tail: what "Jump to latest" does.
+    var jumpToLatest: (() -> Void)? = nil
     @State private var attachments: [ImageAttachment] = []
     @State private var attachmentError: String?
     @State private var dropTargeted = false
@@ -181,9 +183,14 @@ struct Composer: View {
         .padding(.bottom, AppLayout.composerBottom)
         .frame(maxWidth: .infinity)
         .background(alignment: .top) {
-            // The thread fades under the composer.
-            LinearGradient(colors: [Color.nw.bgWindow.opacity(0), Color.nw.bgWindow], startPoint: .top, endPoint: .bottom)
-                .frame(height: AppLayout.composerFade).offset(y: -AppLayout.composerFade).allowsHitTesting(false)
+            ZStack(alignment: .top) {
+                // The thread fades under the composer.
+                LinearGradient(colors: [Color.nw.bgWindow.opacity(0), Color.nw.bgWindow], startPoint: .top, endPoint: .bottom)
+                    .frame(height: AppLayout.composerFade).offset(y: -AppLayout.composerFade).allowsHitTesting(false)
+                // Over the fade, under the card and its menus.
+                JumpToLatestPill(action: jumpToLatest)
+                    .offset(y: -(NW.Height.controlM + NW.Space.m))
+            }
         }
         .background(Color.nw.bgWindow)
         .onChange(of: query) { _, query in

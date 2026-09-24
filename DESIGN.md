@@ -598,7 +598,9 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
   growth, the composer resizing, and history swaps never do. "↓ Jump to latest" (a
   `bgRaised` capsule above the composer) appears while detached if the agent runs or unseen
-  output arrived. Sending re-attaches. The composer floats over the scroll view, which is inset
+  output arrived. The composer draws it over the fade it lays on the thread and under its card
+  and menus, so the fade never washes it out and it never covers an open menu. Sending
+  re-attaches. The composer floats over the scroll view, which is inset
   by the composer's measured height, so the thread always ends at its last turn.
 - **Turn jumps:** ⌥⌘↑ and ⌥⌘↓ move between user turns (the target lands at the top); stepping
   past the last returns to the tail.
@@ -1236,8 +1238,8 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
 
 - **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
   - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting
-    before and after the delay, restoring from disk, a hovered turn) and the activity-line
-    states
+    before and after the delay, restoring from disk, a hovered turn, "Jump to latest" over the
+    fade) and the activity-line states
   - the composer and its menus
   - subagent cards, the ledger, and the inspector
   - the review pane
