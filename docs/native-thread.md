@@ -97,7 +97,9 @@ events come out on stdout, one record per LF.
 - **Bootstrap** runs on spawn or resume. It sends `get_state` (session ID, model, thinking
   level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost), and
   `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` answers,
-  requests fail with `native_unavailable` ("Session is not ready.").
+  requests fail with `native_starting` ("pi is starting."). pi reads stdin only once it has
+  started, so a pi slower than the 10 s request deadline answers requests already given up on;
+  when `get_state` times out, the bootstrap asks again.
 - **Events** update the projection in place:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
     as a provisional entry.
@@ -156,7 +158,16 @@ transport differs.
   `RemoteHostClient` rejects larger image sends before sending.
 - **Remote capabilities:** remote model, thinking, and image requests need the host's
   `native.thread.v2` capability.
-- **Unavailable agents:** a missing or dead pi process answers `native_unavailable`.
+- **Starting and unavailable agents** (`NativeThreadCode`):
+  - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
+    agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
+    the previous run's session until its pi respawns, and pi itself takes a moment to answer
+    `get_state`. Clients poll from the moment an agent appears, so this is never an error.
+  - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
+    its pi exited (with the exit code, also after the app retired the session).
+  - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
+    from an older host as starting: such a host said that while pi started, and it retires an
+    agent whose pi exits.
 
 ## NativeThreadStore
 
@@ -244,7 +255,9 @@ requests sent to its host.
   (`ScratchServer`) driving the scripted stub pi (`StubPi.command`,
   `Tests/ShepherdTestSupport/Resources/stub-pi.py`). The stub's prompt keywords script
   questions, hangs, crashes, oversized records, widgets, session switches, and long histories.
-  For example, `LargeHistoryTests` loads a 6 MiB history.
+  For example, `LargeHistoryTests` loads a 6 MiB history. Its startup options
+  (`STUB_PI_STARTUP_DELAY`, `_GATE`, `_EXIT`, or `stub-pi-startup.json` in its cwd for a pi the
+  app launches) hold or fail pi's boot, as `ThreadStartupTests` and `AgentStartupTests` do.
 - **Previews:** `ShepherdPreviewTests` render thread states offscreen in light and dark into
   `$SHEPHERD_PREVIEW_DIR`.
 - **Live model:** the opt-in run is gated on `SHEPHERD_LIVE_MODEL`.

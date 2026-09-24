@@ -16,9 +16,9 @@ struct ThreadEventTests {
         let state: RPCThreadState
         let dir: URL
 
-        init(bootstrap: Bool = true) throws {
+        init(bootstrap: Bool = true, env: [String: String]? = nil) throws {
             dir = try makeScratchDirectory("thread")
-            session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command, runtime: .rpc), queue: queue)
+            session = try RPCSession(params: CreateSessionParams(cwd: dir.path, command: StubPi.command, env: env, runtime: .rpc), queue: queue)
             state = RPCThreadState(session: session, queue: queue)
             session.onEvent = { [weak state] event in state?.handle(event) }
             session.start()
@@ -83,10 +83,26 @@ struct ThreadEventTests {
         #expect(s.provisional.isEmpty && s.dialogs.isEmpty && s.widgets == [] && !s.clipped && s.olderCursor == nil)
     }
 
-    @Test func requestsBeforePiReportsItsSessionAreUnavailable() async throws {
+    @Test func requestsBeforePiReportsItsSessionAreStarting() async throws {
         let t = try Thread(bootstrap: false)
         defer { t.stop() }
-        #expect(await t.request(.snapshot()) == .failure(code: "native_unavailable", message: "Session is not ready."))
+        #expect(await t.request(.snapshot()) == .failure(code: NativeThreadCode.starting, message: "pi is starting."))
+    }
+
+    /// pi reads stdin only once it has started, so a pi slower than the request deadline
+    /// answers requests already given up on. The bootstrap asks again until one lands.
+    @Test func aPiSlowerThanTheRequestDeadlineIsAskedAgainUntilItAnswers() async throws {
+        let t = try Thread(bootstrap: false, env: ["STUB_PI_STARTUP_GATE": "release-pi"])
+        defer { t.stop() }
+        t.queue.async { t.state.bootstrap(timeout: 0.2) }
+        try await eventually("the bootstrap to ask again") {
+            await withCheckedContinuation { continuation in t.queue.async { continuation.resume(returning: t.state.bootstrapAttempts >= 2) } }
+        }
+        #expect(await t.request(.snapshot()).failureCode == NativeThreadCode.starting)
+
+        FileManager.default.createFile(atPath: t.dir.appendingPathComponent("release-pi").path, contents: nil)
+        let s = try await t.ready()
+        #expect(s.piSessionID == "stub-session")
     }
 
     @Test func anUnchangedThreadAnswersUnchangedAndAChangeBumpsTheRevision() async throws {
