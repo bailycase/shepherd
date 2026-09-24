@@ -37,6 +37,11 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-
 
+      # The release workflow's rules (scripts/release.py): feeds, bundle ids,
+      # and their agreement with the Xcode project and the apps.
+      - name: Release rules
+        run: python3 -m unittest discover -s Tests/Release
+
       - name: Run tests
         run: |
           # SwiftPM copies binary frameworks (Sparkle) to Products/<config>,

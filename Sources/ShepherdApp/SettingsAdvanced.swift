@@ -34,15 +34,10 @@ struct AdvancedSettings: View {
                         ))
                     }
                     .nwTransition(.disclosure)
-                    SettingsRow(title: "Update channel",
-                                subtitle: "Stable: tagged releases. Release Candidate and Beta also get newer stable builds. Nightly: every push, least tested.") {
-                        NWPopupMenu(updater.channel.label, minWidth: AppLayout.settingsPopupWidth) {
-                            ForEach(UpdateChannel.allCases) { channel in
-                                Button(channel.label) { updater.channel = channel }
-                            }
-                        }
-                        .accessibilityLabel("Update channel")
-                    }
+                    UpdateChannelRow(edition: updater.edition, channel: Binding(
+                        get: { updater.channel },
+                        set: { updater.select($0) }
+                    ))
                     .nwTransition(.disclosure)
                 }
                 SettingsRow(title: "Version \(version)") {
@@ -68,6 +63,31 @@ struct AdvancedSettings: View {
                 vm.resetSettings()
             } cancel: {
                 confirmingReset = false
+            }
+        }
+    }
+}
+
+/// Settings ▸ Advanced ▸ Updates: Shepherd picks Stable or Beta; Shepherd Nightly has one
+/// channel and names it.
+struct UpdateChannelRow: View {
+    let edition: ShepherdEdition
+    @Binding var channel: UpdateChannel
+
+    var body: some View {
+        switch edition {
+        case .main:
+            SettingsRow(title: "Update channel",
+                        subtitle: "Stable: tagged releases. Beta: pre-releases, plus newer stable builds. Nightly builds are a separate app, Shepherd Nightly.") {
+                NWSegmentedPicker("Update channel", selection: $channel,
+                                  options: UpdateChannel.choices(for: edition).map { ($0, $0.label) })
+            }
+        case .nightly:
+            SettingsRow(title: "Update channel",
+                        subtitle: "Every push to the integration branch, least tested. Tagged releases ship as Shepherd.") {
+                Text(UpdateChannel.nightly.label)
+                    .font(.nw(.ui))
+                    .foregroundStyle(Color.nw.textSecondary)
             }
         }
     }
