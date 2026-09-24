@@ -465,7 +465,8 @@ final class SubagentTranscriptModel {
     private(set) var loadingOlder = false
     /// Set while the newest page is at the tail; "Show all" keeps the reader's place instead.
     private(set) var following = true
-    /// The turns the latest reload brought after the first page: they fade in where they land.
+    /// The turns the latest reload added to a transcript already showing turns: they fade in
+    /// where they land. The first turns to show ("No transcript yet" giving way) land at once.
     private(set) var arrived: Set<String> = []
     @ObservationIgnored private var olderCursor: String?
     @ObservationIgnored private var runID: String?
@@ -502,7 +503,7 @@ final class SubagentTranscriptModel {
         }
         guard !Task.isCancelled, generation == epoch, reloadTicket == ticket, self.runID == runID else { return }
         let spliced = Self.splice(messages, newest: page)
-        setMessages(spliced.messages, marksArrivals: loaded)
+        setMessages(spliced.messages, marksArrivals: loaded && !messages.isEmpty)
         if spliced.replaced {
             olderCursor = page.olderCursor
             setEarlierCount(page.earlierCount)
