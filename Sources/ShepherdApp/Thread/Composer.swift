@@ -44,8 +44,9 @@ struct Composer: View {
     private var errored: Bool { store.loadError != nil }
     private var running: Bool { !errored && store.settledRunning }
     private var dialogs: [NativeThreadDialog] { errored ? [] : (store.snapshot?.dialogs ?? []) }
+    /// While pi starts, a send waits for it behind the spinner.
     private var canSend: Bool {
-        active && store.supports("send") && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        active && store.acceptsSend && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
     private var canAttach: Bool { store.snapshot?.supportedActions.contains("sendImages") == true }
     /// pi answers `/name` prompts itself; the list comes from its command registry.

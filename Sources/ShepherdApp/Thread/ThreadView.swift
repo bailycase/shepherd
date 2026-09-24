@@ -60,8 +60,10 @@ struct ThreadView: View {
         let liveRow = rows.last(where: \.live)
         // One persistent tail row for the whole run, the last part of the streaming reply (or on
         // its own before the reply starts). A question replaces it with the composer's question
-        // panel, and live thinking carries its own spinner.
-        let working = running && store.snapshot?.dialogs.isEmpty != false ? workingLabel(liveRow) : nil
+        // panel, and live thinking carries its own spinner. Under a thread kept from before, a pi
+        // that is starting again says so there.
+        let working = running && store.snapshot?.dialogs.isEmpty != false ? workingLabel(liveRow)
+            : store.starting && !rows.isEmpty ? Self.startingLabel : nil
         // Loaded before this change: the tail row appearing with the first load just shows.
         let settled = arrivals.armed
         let arrived = arrivals.update(rows.map(\.id), session: store.snapshot.map { $0.piSessionID + ":" + $0.generation },
@@ -313,19 +315,21 @@ struct ThreadView: View {
 
     @ViewBuilder private var notices: some View {
         if let snapshot = store.snapshot {
-            if !store.ready, store.loadError == nil { quiet("Last known thread · refreshing before enabling actions") }
+            if !store.ready, store.loadError == nil, !store.starting { quiet("Last known thread · refreshing before enabling actions") }
             if !snapshot.dialogsSupported { quiet("This host's pi cannot answer questions here · update Shepherd on the host") }
             if snapshot.clipped { quiet("Some earlier output is clipped") }
         }
     }
 
-    /// Connecting, or a fresh agent with nothing said yet. An error keeps the last transcript and
-    /// shows its banner above the composer instead.
+    static let startingLabel = "Starting pi…"
+
+    /// Connecting or pi still starting, or a fresh agent with nothing said yet. An error keeps
+    /// the last transcript and shows its banner above the composer instead.
     @ViewBuilder private var emptyState: some View {
-        if store.snapshot == nil, store.loadError == nil {
+        if store.snapshot == nil || store.starting, store.loadError == nil {
             HStack(spacing: AppLayout.startingSpacing) {
                 ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner))
-                Text("Starting pi…").font(Font.nw(.body)).foregroundStyle(Color.nw.textSecondary)
+                Text(Self.startingLabel).font(Font.nw(.body)).foregroundStyle(Color.nw.textSecondary)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, AppLayout.startingTop)

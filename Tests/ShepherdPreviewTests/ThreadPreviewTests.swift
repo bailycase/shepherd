@@ -93,6 +93,61 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// A new agent whose pi is still booting: "Starting pi…" in the empty thread, no banner, and
+    /// Send offered for a typed draft.
+    @Test func threadStarting() async throws {
+        let fixture = ThreadFixture(Threads.empty)
+        fixture.starting = true
+        defer { fixture.store.stop() }
+        fixture.store.draft = "Fix the login redirect"
+        try await Preview.render("thread-starting", size: CGSize(width: 1180, height: 700), ready: {
+            fixture.store.starting
+        }) {
+            fixture.thread(title: "New agent")
+        }
+    }
+
+    /// A message sent while pi boots waits for it behind the composer's spinner.
+    @Test func threadStartingSend() async throws {
+        let fixture = ThreadFixture(Threads.empty)
+        fixture.starting = true
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        final class Once { var sent = false }
+        let once = Once()
+        try await Preview.render("thread-starting-send", size: CGSize(width: 1180, height: 700), ready: {
+            guard store.starting else { return false }
+            if !once.sent {
+                once.sent = true
+                store.draft = "Fix the login redirect"
+                Task { await store.send() }
+            }
+            return store.busy
+        }) {
+            // Each appearance renders in a new window, with the send waiting in each.
+            let _ = once.sent = false
+            fixture.thread(title: "New agent")
+        }
+    }
+
+    /// A thread kept from before (a host that relaunched) while its pi starts again: the
+    /// transcript stays, and the tail says pi is starting.
+    @Test func threadStartingAgain() async throws {
+        let fixture = ThreadFixture(Threads.idle)
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        try await Preview.render("thread-starting-again", size: CGSize(width: 1180, height: 900), ready: {
+            if store.ready, !fixture.starting {
+                fixture.starting = true
+                Task { await store.refresh() }
+            }
+            return store.starting
+        }) {
+            let _ = fixture.starting = false
+            fixture.thread()
+        }
+    }
+
     /// Failed test runs stay red; a turn that failed as a whole ends in NWTurnError with Retry.
     @Test func threadActivityFailed() async throws {
         try await render("thread-activity-failed", ActivityThreads.failed)

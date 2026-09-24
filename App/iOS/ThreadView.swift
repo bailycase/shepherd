@@ -244,7 +244,7 @@ struct ThreadView: View {
         let running = store.snapshot?.running == true
         let waiting = pendingDialog != nil
         let draftEmpty = store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let canSend = available && store.supports("send") && !draftEmpty
+        let canSend = available && store.acceptsSend && !draftEmpty
         let showStop = (running || waiting) && draftEmpty
         let widgets = (store.snapshot?.widgets ?? []).filter { $0.kind != .unknown }
         let placeholder = waiting ? "Waiting for you…"
