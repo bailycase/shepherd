@@ -30,7 +30,9 @@ final class PreviewWorkspace {
         vm = ShepherdViewModel(
             server: scratch.server, settings: settings, keybindings: KeybindingsStore(store: defaults),
             themeManager: ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .light),
-            remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in }
+            remoteHosts: RemoteHostStore(defaults: defaults), sidebarDefaults: defaults, themeInstaller: { _ in },
+            // Only the agents a preview mounts get a pi, and those get the stub.
+            restoresAgentsAtLaunch: false
         )
     }
 

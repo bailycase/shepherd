@@ -314,7 +314,8 @@ Sources/
       +RemoteInspection, +RemoteWorktrees)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, Subagents, SubagentPresentation, SubagentInspector
-    TerminalSessions (TerminalSessionStore), TerminalHost (the only TerminalSurfaceKit import),
+    TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
+      TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
     DiffReview (ReviewSession), DiffReviewView (ReviewPane), GitDiff, CodeHighlight (tree-sitter)
     GitWorktree, WorktreeFinalize, ChecklistStatus, NewWorktreeSheet, FinalizeWorktreeSheet,
@@ -386,6 +387,14 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 - `--model`/`--thinking` go only to a fresh session.
 - Extensions follow Settings ▸ Pi ▸ Bundled extensions.
 - The opening prompt is the first native `send`, not a positional argument.
+- A new agent's pi spawns with its creation. At launch every restored agent's pi starts from
+  the first adoption of the workspace, not when its layout mounts, in `AgentStartQueue`'s
+  order: the agent on screen first (and any agent selected while it waits), then the rest a
+  few at a time. Every agent still starts. Test harnesses that seed agents only to draw them
+  opt out (`restoresAgentsAtLaunch: false`); their pi starts when a pane's session is asked for.
+- Starting is quiet: a thread draws what it knows at once (a new agent's empty state, a
+  resuming agent's history read from pi's session file), accepts a send that waits for pi, and
+  says "Starting pi…" only when pi is slow (DESIGN.md › Thread, Composer).
 
 `RPCThreadState` projects pi's events into the `NativeThreadSnapshot` that
 `SessionServer.nativeThread` serves locally and, over TCP, remotely

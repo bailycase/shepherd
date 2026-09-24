@@ -324,6 +324,12 @@ final class ShepherdViewModel {
     @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
+    /// The first adoption starts every restored agent's pi (`TerminalSessionStore.startRestoredAgents`).
+    /// Off in harnesses that seed agents only to draw them: their pi then starts when a layout
+    /// mounts or a test asks, as before.
+    @ObservationIgnored let restoresAgentsAtLaunch: Bool
+    /// One-shot launch guard for starting the restored agents' pi.
+    @ObservationIgnored var didStartRestoredAgents = false
     /// Recently selected agents, most recent last, no duplicates. When the
     /// selected agent goes away (⌘⇧W, process exit) selection returns to the
     /// agent you were on before it — not the space's blank shell.
@@ -344,10 +350,12 @@ final class ShepherdViewModel {
         sidebarDefaults: UserDefaults = .standard,
         themeInstaller: @escaping (ShepherdTheme) throws -> Void = { theme in
             _ = try ShepherdPiTheme.installedPath(for: theme)
-        }
+        },
+        restoresAgentsAtLaunch: Bool = true
     ) {
         self.state = ShepherdState()
         self.server = server
+        self.restoresAgentsAtLaunch = restoresAgentsAtLaunch
         self.settings = settings ?? .shared
         self.sidebarDefaults = sidebarDefaults
         LegacyTerminalAgents.forgetPresentationPreferences(in: sidebarDefaults)
@@ -673,6 +681,13 @@ final class ShepherdViewModel {
         }
         if selectedAgent == nil {
             selectedAgentID = state.agents.first { $0.spaceID == selectedSpaceID }?.id
+        }
+        // First adoption of the restored workspace: every agent's pi starts now, not when its
+        // layout mounts, the one on screen first and the rest a few at a time.
+        if restoresAgentsAtLaunch, !didStartRestoredAgents {
+            didStartRestoredAgents = true
+            sessions.startRestoredAgents(orderedAgents.map(\.id) + state.agents.map(\.id),
+                                         first: selectedAgentID.map { [$0] } ?? [], in: state)
         }
         focusMemory.prune(liveTabs: Set(state.tabs.map(\.id)))
 

@@ -82,9 +82,9 @@ struct AgentStartupTests {
     }
 
     /// A relaunch: every restored pane still names the previous run's pi, and every agent's pi
-    /// respawns at once as its layout mounts. Each thread starts quietly, a thread switched
+    /// respawns (a few at a time, `AgentStartQueue`). Each thread starts quietly, a thread switched
     /// away from and back to meanwhile starts again, and all come up with their history.
-    @Test func restoredAgentsStartTogetherQuietlyAfterARelaunch() async throws {
+    @Test func restoredAgentsStartQuietlyAfterARelaunch() async throws {
         try StubPi.installOnPath()
         let app = try AppHarness()
         defer { app.stop() }
@@ -122,6 +122,41 @@ struct AgentStartupTests {
             #expect(recorder.errorsShown.isEmpty, "no poll ever found the thread showing an error")
             #expect(!recorder.answers.contains(NativeThreadCode.unavailable))
         }
+    }
+
+    /// A launch starts every restored agent's pi without waiting for its layout to mount: the
+    /// agent on screen first, alone while it boots; one selected meanwhile at once; then the rest.
+    @Test func atLaunchTheAgentOnScreenStartsFirstAndEveryAgentStarts() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        try Self.holdPi(in: app.dir)
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<5).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
+        let server = app.server
+        let onScreen = try #require(vm.selectedAgentID)
+        /// The agents whose pane is bound to a live pi.
+        func started() async -> Set<AgentID> {
+            let alive = Set(await server.listSessions().filter(\.isAlive).map(\.id))
+            let state = server.state
+            return Set(state.agents.filter { agent in
+                guard let paneID = agent.paneID, let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+                      let session = tab.layout.leaf(withID: paneID)?.sessionID else { return false }
+                return alive.contains(session)
+            }.map(\.id))
+        }
+
+        try await eventuallyAsync("the agent on screen to start") { await started().contains(onScreen) }
+        #expect(await started() == [onScreen], "the others wait while it boots")
+        let selected = try #require(agents.last?.agent.id)
+        vm.selectAgent(selected)
+        try await eventuallyAsync("the agent selected meanwhile to start at once") { await started().contains(selected) }
+        #expect(await started() == [onScreen, selected])
+
+        Self.releasePi(in: app.dir)
+
+        try await eventuallyAsync("every restored agent to start", timeout: .seconds(30)) { await started().count == agents.count }
     }
 
     /// A thread on screen comes up the moment the server says its pi serves: this store never
