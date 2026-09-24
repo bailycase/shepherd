@@ -31,6 +31,10 @@ public final class NativeThreadStore {
     public private(set) var olderCursor: String?
     public private(set) var loadingOlder = false
     public private(set) var ready = false
+    /// The agent's pi is starting (`native_starting`): not ready, and not an error. The thread
+    /// shows "Starting pi…", polls quickly, and a send waits for it (see `acceptsSend`). A pi
+    /// that has not started within `startingLimit` becomes a `loadError`.
+    public private(set) var starting = false
     public private(set) var busy = false
     public private(set) var loadError: String?
     public private(set) var notice: String?
@@ -59,9 +63,20 @@ public final class NativeThreadStore {
     /// queued follow-up has not opened a turn yet; nil while the newest prompt is an echo.
     public private(set) var lastPromptAt: Double?
 
-    public init() {}
+    /// How long `starting` may last before it is reported as an error. Polling continues, so
+    /// a pi that answers later still clears it.
+    public let startingLimit: Duration
+
+    public init(startingLimit: Duration = .seconds(60)) {
+        self.startingLimit = startingLimit
+    }
 
     @ObservationIgnored private var request: Request?
+    /// When the current stretch of `native_starting` answers began.
+    @ObservationIgnored private var startingSince: ContinuousClock.Instant?
+    /// Sends waiting for pi to start: resumed with true once the thread is ready, false when it
+    /// stops or fails first. Nothing has been dispatched for them yet.
+    @ObservationIgnored private var startWaiters: [CheckedContinuation<Bool, Never>] = []
     @ObservationIgnored private var settleTask: Task<Void, Never>?
     @ObservationIgnored private var epoch = UUID()
     @ObservationIgnored private var recentRequest = UUID()
@@ -110,15 +125,23 @@ public final class NativeThreadStore {
         message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Live subagents keep the fast cadence too: their cards tick counters and activity.
+    /// Live subagents keep the fast cadence too: their cards tick counters and activity. A
+    /// starting pi is polled faster still, so the thread comes up as soon as pi answers.
     public var pollInterval: Duration {
-        snapshot?.running == true || snapshot?.dialogs.isEmpty == false || hasLiveSubagents ? .milliseconds(500) : .seconds(2)
+        if starting { return .milliseconds(200) }
+        return snapshot?.running == true || snapshot?.dialogs.isEmpty == false || hasLiveSubagents ? .milliseconds(500) : .seconds(2)
     }
 
     public var hasLiveSubagents: Bool { subagents.contains { !$0.isTerminal } }
 
     public func supports(_ action: String) -> Bool {
         ready && !busy && snapshot?.supportedActions.contains(action) == true
+    }
+
+    /// Send is offered: the thread supports it now, or pi is still starting and the send will
+    /// wait for it (every pi thread takes sends).
+    public var acceptsSend: Bool {
+        supports("send") || (starting && !busy && loadError == nil)
     }
 
     // MARK: Derived state
@@ -212,12 +235,18 @@ public final class NativeThreadStore {
     }
 
     public func stop() {
-        if busy { notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically." }
+        // A send still waiting for pi to start was never dispatched: its draft stays as it is.
+        if busy, startWaiters.isEmpty {
+            notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+        }
+        resumeStartWaiters(false)
         epoch = UUID()
         recentRequest = UUID()
         historyEpoch = UUID()
         request = nil
         if ready { ready = false }
+        // Unknown until the thread polls again.
+        endStarting()
         if busy { busy = false }
         if loadingOlder { loadingOlder = false }
         settleTask?.cancel()
@@ -275,19 +304,25 @@ public final class NativeThreadStore {
                 }
                 if value != snapshot { snapshot = value }
                 if !ready { ready = true }
+                endStarting()
                 if loadError != nil { loadError = nil }
                 derive()
+                resumeStartWaiters(true)
             case .unchanged(let session, let generation, _):
                 if previous?.piSessionID != session || previous?.generation != generation || fresh {
                     ready = false
                     await refresh(fresh: true)
                 } else {
                     if !ready { ready = true }
+                    endStarting()
                     if loadError != nil {
                         loadError = nil
                         derive()
                     }
+                    resumeStartWaiters(true)
                 }
+            case .failure(let code, _) where code == NativeThreadCode.starting:
+                noteStarting()
             case .failure(let code, let message):
                 ready = false
                 setLoadError(message)
@@ -296,6 +331,9 @@ public final class NativeThreadStore {
                 ready = false
                 setLoadError("Unexpected thread response. Refresh to try again.")
             }
+        } catch RemoteHostClientError.rejected(let code, _) where code == NativeThreadCode.starting {
+            guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
+            noteStarting()
         } catch {
             guard !Task.isCancelled, epoch == run, recentRequest == ticket else { return }
             ready = false
@@ -303,10 +341,72 @@ public final class NativeThreadStore {
         }
     }
 
+    /// Any failure but `native_starting`: the thread is not starting, it is in trouble.
     private func setLoadError(_ message: String) {
+        endStarting()
+        resumeStartWaiters(false)
         guard loadError != message else { return }
         loadError = message
         derive()
+    }
+
+    /// pi has not answered yet (the host is still binding or booting it): quiet, with no
+    /// error, until it has taken longer than `startingLimit`.
+    private func noteStarting() {
+        if ready { ready = false }
+        let now = ContinuousClock.now
+        let since = startingSince ?? now
+        startingSince = since
+        // A thread cached from before (a host that relaunched) is not running while pi restarts.
+        if settledRunning {
+            settleTask?.cancel()
+            settleTask = nil
+            settledRunning = false
+            derive()
+        }
+        guard now - since < startingLimit else {
+            if starting { starting = false }
+            resumeStartWaiters(false)
+            let limit = startingLimit.formatted(.units(allowed: [.minutes, .seconds], width: .wide))
+            let message = "The agent's pi has not started after \(limit)."
+            if loadError != message {
+                loadError = message
+                derive()
+            }
+            return
+        }
+        if !starting { starting = true }
+        if loadError != nil {
+            loadError = nil
+            derive()
+        }
+    }
+
+    private func endStarting() {
+        if starting { starting = false }
+        startingSince = nil
+    }
+
+    private func resumeStartWaiters(_ started: Bool) {
+        guard !startWaiters.isEmpty else { return }
+        let waiters = startWaiters
+        startWaiters = []
+        for waiter in waiters { waiter.resume(returning: started) }
+    }
+
+    /// At once when the thread can act. While pi is starting, holds the caller (the composer
+    /// shows its "Waiting for pi" spinner) until the thread is ready: false instead when the
+    /// thread stops or fails first, or pi never starts. Nothing is dispatched while it waits.
+    private func readyToAct() async -> Bool {
+        if ready { return true }
+        guard starting, loadError == nil, !busy, request != nil else { return false }
+        let run = epoch
+        busy = true
+        let started = await withCheckedContinuation { startWaiters.append($0) }
+        // stop() already reset everything for a thread that went away meanwhile.
+        guard epoch == run else { return false }
+        busy = false
+        return started && ready
     }
 
     public func loadOlder() async {
@@ -340,10 +440,11 @@ public final class NativeThreadStore {
     // MARK: Actions
 
     /// `images` requires `sendImages` support (v2, RPC agents); they are dropped otherwise.
+    /// Sent while pi is starting, the draft waits for it (see `acceptsSend`), then goes.
     public func send(images: [NativeImage] = []) async {
-        guard supports("send"), !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let current = snapshot else { return }
         let text = draft
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct(),
+              supports("send"), let current = snapshot else { return }
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
@@ -353,7 +454,8 @@ public final class NativeThreadStore {
 
     /// Send `text` as a new user message without touching the draft (a turn's Retry).
     public func send(text: String) async {
-        guard supports("send"), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, let current = snapshot else { return }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct(),
+              supports("send"), let current = snapshot else { return }
         let operation = UUID()
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
                             operationID: operation, text: text, delivery: delivery),

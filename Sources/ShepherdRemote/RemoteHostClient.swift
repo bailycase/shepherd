@@ -371,12 +371,26 @@ public final class RemoteHostClient: @unchecked Sendable {
         } catch RemoteHostClientError.disconnected {
             throw RemoteHostClientError.outcomeUnknown(message: "Connection lost. Refresh before acting; do not automatically retry.")
         }
-        if case .nativeThread(_, let result) = reply { return result }
+        let legacy = !capabilities.contains(RemoteProtocol.nativeThreadStartingCapability)
+        if case .nativeThread(_, let result) = reply {
+            if case .failure(let code, let message) = result {
+                return .failure(code: Self.availabilityCode(code, legacyHost: legacy), message: message)
+            }
+            return result
+        }
         if case .error(_, let code, let message) = reply {
             if code == "outcome_unknown" { throw RemoteHostClientError.outcomeUnknown(message: message) }
-            throw RemoteHostClientError.rejected(code: code, message: message)
+            throw RemoteHostClientError.rejected(code: Self.availabilityCode(code, legacyHost: legacy), message: message)
         }
         throw RemoteHostClientError.outcomeUnknown(message: "Native action outcome unknown. Refresh before acting; do not automatically retry.")
+    }
+
+    /// A host from before `native_starting` answered `native_unavailable` while an agent's pi
+    /// started (its pane not bound yet, or pi not answering yet). Such a host retires an agent
+    /// whose pi exits, so an agent it still lists is almost always starting: read it as that.
+    /// The store's starting limit bounds the rare agent whose launch failed there.
+    static func availabilityCode(_ code: String, legacyHost: Bool) -> String {
+        legacyHost && code == NativeThreadCode.unavailable ? NativeThreadCode.starting : code
     }
 
     public func agentQuery(agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
