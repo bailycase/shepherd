@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shepherd Nightly's glow: the Mark board's lantern glow at the same size, in
+     moonlight instead of lantern, centred behind the crescent. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="glow" gradientUnits="userSpaceOnUse" cx="307.2" cy="240" r="853.33"
+                    gradientTransform="translate(307.2 240) scale(1 0.8333) translate(-307.2 -240)">
+      <stop offset="0" stop-color="#E8E9EC" stop-opacity="0.22"/>
+      <stop offset="0.7" stop-color="#E8E9EC" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+</svg>
