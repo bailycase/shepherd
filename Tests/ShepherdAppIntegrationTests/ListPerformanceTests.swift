@@ -165,6 +165,68 @@ struct ListPerformanceTests {
         #expect(rows["arrival.animates", default: 0] == 0, "\(rows)")
     }
 
+    // MARK: Thread chrome
+
+    /// Row bodies counted while `work` runs, with the window settled after it.
+    private func counting(_ window: OffscreenWindow, _ work: () async throws -> Void) async rethrows -> [String: Int] {
+        NWRenderProbe.start()
+        try await work()
+        ListPerf.settle(window)
+        return NWRenderProbe.stop()
+    }
+
+    /// A thread of sixty turns under its toolbar, loaded and at rest.
+    private func chromeThread(running: Bool) async throws -> FakeThread {
+        let snapshot = ThreadFixture.snapshot(ThreadFixture.history(120) + (running ? [ThreadFixture.user("u", "Go on")] : []),
+                                              provisional: running ? [ThreadFixture.streaming("Streaming")] : [], running: running,
+                                              stats: NativeThreadStats(contextTokens: 42_000))
+        let thread = FakeThread(snapshot, header: true)
+        try await thread.waitUntilReady()
+        // What loading sets off (the catch-up, the composer's models) lands before counting.
+        try await Task.sleep(for: .milliseconds(200))
+        ListPerf.settle(thread.window)
+        return thread
+    }
+
+    /// A poll that moves only the context count redraws the toolbar's counters: not the
+    /// composer, the header around them, or the thread.
+    @Test func aStatsOnlyPollRedrawsOnlyTheCounters() async throws {
+        let thread = try await chromeThread(running: false)
+        defer { thread.close() }
+        var next = thread.snapshot
+        next.revision += 1
+        next.stats = NativeThreadStats(contextTokens: 43_000)
+
+        let rows = try await counting(thread.window) { await thread.serve(next) }
+
+        #expect(rows["thread.counters", default: 0] == 1, "\(rows)")
+        for key in ["composer.body", "thread.header", "thread.view"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+    }
+
+    /// A streamed chunk redraws the thread and its streaming row, never the composer, its
+    /// chips, or the toolbar.
+    @Test func aStreamedChunkRedrawsNoComposerOrToolbar() async throws {
+        let thread = try await chromeThread(running: true)
+        defer { thread.close() }
+
+        let rows = try await counting(thread.window) {
+            for index in 1...5 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.streaming("Streaming" + String(repeating: " more words", count: index * 4))]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+
+        #expect(rows["thread.view", default: 0] >= 5, "the reply streamed: \(rows)")
+        for key in ["composer.body", "composer.chips", "thread.header", "thread.counters", "toolbar.thread"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+    }
+
     // MARK: Subagents
 
     /// A turn whose spawn calls started `runs`, as the thread shows it.

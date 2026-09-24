@@ -21,17 +21,22 @@ struct ThreadHeader: View {
     var rename: (() -> Void)?
 
     var body: some View {
-        NWThreadToolbar(title, titleHelp: "\(project) / \(title)", counters: ThreadCounters.text(store),
-                        countersHelp: nativeContextTooltip(store.snapshot?.stats), leadingInset: leadingInset,
-                        sidebar: showSidebar, toggles: toggles) {
-            NWOptionsMenu("Thread options") {
-                Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
-                if store.olderCursor != nil {
-                    Button("Load Older Messages") { Task { await store.loadOlder() } }
-                }
-                if let rename {
-                    Divider()
-                    Button("Rename…", action: rename)
+        let _ = NWRenderProbe.tick("thread.header")
+        let toggles = toggles
+        // The counters are read in their own view: a poll that moves only them (the context
+        // count) redraws the toolbar, not this.
+        ThreadCountersReader(store: store) { counters, help in
+            NWThreadToolbar(title, titleHelp: "\(project) / \(title)", counters: counters, countersHelp: help,
+                            leadingInset: leadingInset, sidebar: showSidebar, toggles: toggles) {
+                NWOptionsMenu("Thread options") {
+                    Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
+                    if store.olderCursor != nil {
+                        Button("Load Older Messages") { Task { await store.loadOlder() } }
+                    }
+                    if let rename {
+                        Divider()
+                        Button("Rename…", action: rename)
+                    }
                 }
             }
         }
@@ -39,7 +44,7 @@ struct ThreadHeader: View {
 
     private var toggles: [(NWPaneToggle, () -> Void)] {
         var toggles: [(NWPaneToggle, () -> Void)] = []
-        if let toggleSubagents, !store.subagents.isEmpty {
+        if let toggleSubagents, store.hasSubagents {
             toggles.append((NWPaneToggle(systemImage: "arrow.triangle.branch", label: inspectorOpen ? "Close subagent" : "Inspect subagents",
                                          shortcut: inspectShortcut, isOn: inspectorOpen), toggleSubagents))
         }
@@ -56,16 +61,27 @@ struct ThreadHeader: View {
 enum ThreadCounters {
     @MainActor static func text(_ store: NativeThreadStore) -> String? {
         let parts = [
-            store.olderCursor == nil && store.snapshot != nil ? turns(store) : nil,
-            store.snapshot?.stats?.contextTokens.map { "\(nativeTokenCount($0)) ctx" },
+            store.olderCursor == nil && store.session != nil ? turns(store) : nil,
+            store.stats?.contextTokens.map { "\(nativeTokenCount($0)) ctx" },
             nativeSubagentRollup(store.subagents),
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     @MainActor private static func turns(_ store: NativeThreadStore) -> String {
-        let turns = store.turns.count(where: \.isUser)
+        let turns = store.userTurnCount
         return "\(turns) turn\(turns == 1 ? "" : "s")"
+    }
+}
+
+/// Reads the toolbar's counters and their tooltip for `content`, in a view of its own.
+private struct ThreadCountersReader<Content: View>: View {
+    var store: NativeThreadStore
+    @ViewBuilder let content: (_ counters: String?, _ help: String) -> Content
+
+    var body: some View {
+        let _ = NWRenderProbe.tick("thread.counters")
+        content(ThreadCounters.text(store), nativeContextTooltip(store.stats))
     }
 }
 

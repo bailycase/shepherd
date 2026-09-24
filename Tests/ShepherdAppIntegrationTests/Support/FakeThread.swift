@@ -22,10 +22,16 @@ final class FakeThread {
         let visibility: Visibility
         let store: NativeThreadStore
         let request: NativeThreadStore.Request
+        let header: Bool
 
         var body: some View {
-            ThreadView(store: store, active: visibility.active, isFocused: false, request: request, commandKey: "fake")
-                .environment(\.nwMotionPaused, visibility.motionPaused)
+            VStack(spacing: 0) {
+                if header {
+                    ThreadHeader(store: store, project: "project", title: "Thread", toggleReview: {}, toggleSubagents: {}, rename: {})
+                }
+                ThreadView(store: store, active: visibility.active, isFocused: false, request: request, commandKey: "fake")
+            }
+            .environment(\.nwMotionPaused, visibility.motionPaused)
         }
     }
 
@@ -37,8 +43,9 @@ final class FakeThread {
     private(set) var snapshotRequests = 0
     let window: OffscreenWindow
 
+    /// `header` puts the thread's toolbar (`ThreadHeader`) above it, as the workspace does.
     init(_ snapshot: NativeThreadSnapshot, starting: Bool = false, store: NativeThreadStore = NativeThreadStore(),
-         size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true) {
+         size: CGSize = CGSize(width: 900, height: 800), dark: Bool = true, header: Bool = false) {
         self.snapshot = snapshot
         self.starting = starting
         self.store = store
@@ -58,7 +65,7 @@ final class FakeThread {
                 return .failure(code: "x", message: "unscripted")
             }
         }
-        window.show(Hosted(visibility: visibility, store: store, request: request))
+        window.show(Hosted(visibility: visibility, store: store, request: request, header: header))
     }
 
     /// Serves `next` and has the store pull it now, outside any animation.

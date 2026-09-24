@@ -208,7 +208,13 @@ Drafts, history pages, and scroll state therefore survive switching and cold par
 The store is `@MainActor @Observable`, and it derives what the thread draws once per change:
 `turns`, `rows` (`NativeThreadRow`: a turn, and for a reply its `NativeTurnPresentation`), each
 reply's subagent `placements`, and `lastPromptAt` (the running pill's start). Views read those
-stored values, so a keystroke in the composer re-renders only the composer. A finished tool
+stored values, so a keystroke in the composer re-renders only the composer. What the chrome
+draws is cached the same way, one property each (`session`, `dialogs`, `widgets`, `commands`,
+`model`, `thinking`, `stats`, `supportedActions`, `clipped`, `running`, `workingLabel`,
+`userTurnCount`, …), assigned only when it changes. The snapshot is one value that every
+streamed chunk replaces, so the composer and the toolbar never read it: a chunk
+redraws the thread and its live row, and a poll that moves only the context count redraws only
+the toolbar's counters (`ListPerformanceTests`). A finished tool
 call is parsed once (`NativeActivityCall`, cached by entry); a running call is re-read as its
 output grows.
 
