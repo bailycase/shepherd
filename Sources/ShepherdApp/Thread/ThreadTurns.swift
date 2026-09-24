@@ -19,11 +19,14 @@ final class MessageHover {
 }
 
 extension View {
-    /// Reports the pointer entering and leaving this message to `hover`.
+    /// Reports the pointer entering and leaving this message to `hover`. The whole row counts:
+    /// hover follows hit-testing, so without the shape the gaps between parts and the hidden
+    /// details' own place would drop it, and the footer would fade away on the way to it.
     func messageHover(_ hover: MessageHover) -> some View {
-        onHover { inside in
-            if hover.hovering != inside { hover.hovering = inside }
-        }
+        contentShape(Rectangle())
+            .onHover { inside in
+                if hover.hovering != inside { hover.hovering = inside }
+            }
     }
 }
 
