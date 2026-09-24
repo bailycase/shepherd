@@ -63,7 +63,8 @@ public struct NWRunsStrip: View, Equatable {
     let open: (String) -> Void
     /// The expansion when built, for `==`.
     private let expanded: Bool
-    @State private var hovered: String?
+    /// The segment that starts hovered (previews).
+    private let initiallyHovered: String?
 
     /// `open` receives a segment's run id.
     public init(_ summary: NWRunsStripSummary, isExpanded: Binding<Bool>, open: @escaping (String) -> Void) {
@@ -76,7 +77,7 @@ public struct NWRunsStrip: View, Equatable {
         self._isExpanded = isExpanded
         self.open = open
         self.expanded = isExpanded.wrappedValue
-        self._hovered = State(initialValue: hovered)
+        self.initiallyHovered = hovered
     }
 
     public nonisolated static func == (a: NWRunsStrip, b: NWRunsStrip) -> Bool {
@@ -133,36 +134,14 @@ public struct NWRunsStrip: View, Equatable {
                     let strip = proxy[anchor]
                     ForEach(Array(summary.cells.enumerated()), id: \.element.id) { index, cell in
                         let target = Self.target(index, strip: strip, height: proxy.size.height)
-                        segment(cell)
+                        NWRunsStripSegment(cell: cell, hovering: cell.id == initiallyHovered, open: open)
+                            .equatable()
                             .frame(width: target.width, height: target.height)
                             .position(x: target.midX, y: target.midY)
                     }
                 }
             }
         }
-    }
-
-    private func segment(_ cell: NWRunsStripCell) -> some View {
-        let _ = NWRenderProbe.tick("runs.stripSegment")
-        return Button { open(cell.id) } label: {
-            ZStack {
-                // At rest the target draws nothing: the strip underneath is the segment.
-                if hovered == cell.id {
-                    RoundedRectangle(cornerRadius: NWStepStrip.cornerRadius)
-                        .fill(NWStepStrip.fill(cell.state))
-                        .frame(width: NWRunLayout.stripCellWidth, height: NWRunLayout.stripHoverHeight)
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { inside in
-            if inside { hovered = cell.id } else if hovered == cell.id { hovered = nil }
-        }
-        .nwAnimation(.hover, value: hovered == cell.id)
-        .help(cell.help)
-        .accessibilityLabel(cell.accessibilityLabel)
     }
 
     /// Segment `index`'s click target, in the space `strip` (the segments' bounds) is measured
@@ -184,6 +163,44 @@ public struct NWRunsStrip: View, Equatable {
             }
         }
         .fixedSize()
+    }
+}
+
+/// One run's click target over the strip. It keeps its own hover, so moving along the strip
+/// redraws the segment the pointer leaves and the one it enters, and a run changing state
+/// redraws only its segment.
+private struct NWRunsStripSegment: View, Equatable {
+    let cell: NWRunsStripCell
+    let open: (String) -> Void
+    @State private var hovering: Bool
+
+    init(cell: NWRunsStripCell, hovering: Bool, open: @escaping (String) -> Void) {
+        self.cell = cell
+        self.open = open
+        _hovering = State(initialValue: hovering)
+    }
+
+    nonisolated static func == (a: NWRunsStripSegment, b: NWRunsStripSegment) -> Bool { a.cell == b.cell }
+
+    var body: some View {
+        let _ = NWRenderProbe.tick("runs.stripSegment")
+        Button { open(cell.id) } label: {
+            ZStack {
+                // At rest the target draws nothing: the strip underneath is the segment.
+                if hovering {
+                    RoundedRectangle(cornerRadius: NWStepStrip.cornerRadius)
+                        .fill(NWStepStrip.fill(cell.state))
+                        .frame(width: NWRunLayout.stripCellWidth, height: NWRunLayout.stripHoverHeight)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .nwAnimation(.hover, value: hovering)
+        .help(cell.help)
+        .accessibilityLabel(cell.accessibilityLabel)
     }
 }
 

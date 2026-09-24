@@ -40,32 +40,30 @@ struct ListPerformanceTests {
         #expect(built <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
     }
 
-    /// A status report or a selection costs about the same with 300 agents as with 30: the
-    /// sidebar lays out and redraws the rows on screen, never the whole fleet. A ratio on the
-    /// same machine, so a slower one doesn't change it.
-    @Test func statusReportsAndSelectionCostTheSameForAFleetAsForAFewAgents() async throws {
-        func cost(agents: Int, spaces: Int) async throws -> Double {
-            let app = try AppHarness()
-            defer { app.stop() }
-            let vm = try await app.start(with: ListFixtures.fleet(in: app.dir, spaces: spaces, agents: agents))
-            let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
-            defer { window.close() }
-            ListPerf.settle(window)
-            var times: [Double] = []
-            for round in 0..<3 {
-                for index in 0..<8 {
-                    var next = vm.state
+    /// A status report or a selection redraws the rows it changed, never the rest of the fleet.
+    @Test func statusReportsAndSelectionRedrawOnlyTheRowsTheyChange() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        // The first rows in sidebar order: on screen.
+        let shown = Array(vm.orderedAgents.prefix(6))
+
+        let rows = ListPerf.counting {
+            for agent in shown {
+                var next = vm.state
+                if let index = next.agents.firstIndex(where: { $0.id == agent.id }) {
                     next.agents[index].status = next.agents[index].status == .working ? .done : .working
-                    times.append(ListPerf.time(window) { vm.adopt(next) })
-                    times.append(ListPerf.time(window) { vm.selectAgent(vm.state.agents[(index + round) % agents].id) })
                 }
+                ListPerf.time(window) { vm.adopt(next) }
+                ListPerf.time(window) { vm.selectAgent(agent.id) }
             }
-            // The median: a stray slow frame on a busy machine doesn't decide it.
-            return times.sorted()[times.count / 2]
         }
-        let few = try await cost(agents: 30, spaces: 4)
-        let fleet = try await cost(agents: 300, spaces: 40)
-        #expect(fleet < few * 2.5, "\(String(format: "300 agents %.2f ms, 30 agents %.2f ms", fleet, few))")
+        // Per round: the reported row, and the rows the selection leaves and lands on (the space
+        // rows count their agents' states).
+        #expect(rows["sidebar.row", default: 0] + rows["sidebar.spaceRow", default: 0] <= shown.count * 4, "\(rows)")
     }
 
     // MARK: Thread
@@ -119,6 +117,75 @@ struct ListPerformanceTests {
         }
         #expect(rows["thread.agentTurn", default: 0] > 20, "the thread scrolled: \(rows)")
         #expect(rows["arrival.animates", default: 0] == 0, "\(rows)")
+    }
+
+    // MARK: Subagents
+
+    /// A turn whose spawn calls started `runs`, as the thread shows it.
+    private static func spawned(_ runs: [ChildRun]) -> NativeThreadSnapshot {
+        let spawns = runs.map { run in
+            NativeThreadMessage(entryID: "t-\(run.runID)", role: "toolResult", blocks: [NativeThreadBlock(kind: .text, text: "{}")],
+                                toolName: "shepherd_child_start", toolCallID: run.toolCallID, argumentsText: "{\"task\":\"part\"}",
+                                status: "complete")
+        }
+        return NativeThreadSnapshot(piSessionID: "s", generation: "g", revision: 1, running: false,
+                                    supportedActions: ["send", "subagents"], dialogsSupported: true, dialogs: [],
+                                    messages: ListFixtures.conversation(turns: 2)
+                                        + [ListFixtures.message("u", "user", "Split it up"), ListFixtures.message("a", "assistant", "Splitting.")]
+                                        + spawns,
+                                    provisional: [], clipped: false, subagents: runs)
+    }
+
+    /// A finished workflow's ledger in the thread builds only the rows on screen, even though
+    /// it sits inside one of the thread's own lazy rows.
+    @Test func aLedgerOfTwoHundredRunsInAThreadBuildsOnlyTheRowsOnScreen() async throws {
+        let runs = (0..<200).map { index in
+            var run = ListFixtures.run(index, state: "complete")
+            run.toolCallID = "spawn-\(index)"
+            return run
+        }
+        let snapshot = Self.spawned(runs)
+        let store = NativeThreadStore()
+        var window: OffscreenWindow!
+        NWRenderProbe.start()
+        window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
+                                 ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
+                                            commandKey: "ledger", inspectSubagent: { _ in }))
+        defer {
+            store.stop()
+            window.close()
+        }
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        ListPerf.settle(window)
+        let rows = NWRenderProbe.stop()
+
+        #expect(rows["runs.ledgerRow", default: 0] > 0, "the ledger shows: \(rows)")
+        // About twenty rows fit; the lazy stack builds some ahead of the ones on screen.
+        #expect(rows["runs.ledgerRow", default: 0] <= 80, "\(rows)")
+    }
+
+    private struct Stack: View {
+        let runs: [ChildRun]
+
+        var body: some View {
+            SubagentStack(runs: runs, turnLive: true, actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true))
+                .frame(width: 800)
+        }
+    }
+
+    /// Among two hundred live runs folded into the strip, one changing state redraws its own
+    /// segment; the rest keep theirs (and so does hovering, which each segment keeps itself).
+    @Test func oneRunChangingRedrawsOnlyItsSegmentOfTheStrip() throws {
+        let runs = (0..<200).map { ListFixtures.run($0) }
+        let window = OffscreenWindow(size: CGSize(width: 800, height: 400), dark: true, Stack(runs: runs))
+        defer { window.close() }
+        ListPerf.settle(window)
+        var next = runs
+        next[5].state = "complete"
+
+        let rows = ListPerf.counting { ListPerf.time(window) { window.show(Stack(runs: next)) } }
+
+        #expect(rows["runs.stripSegment", default: 0] <= 2, "\(rows)")
     }
 
     // MARK: Review

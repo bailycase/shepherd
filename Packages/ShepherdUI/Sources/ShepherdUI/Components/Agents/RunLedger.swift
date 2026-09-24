@@ -70,11 +70,14 @@ public struct NWRunLedger: View, Equatable {
 
     public var body: some View {
         let nw = Color.nw
-        VStack(spacing: 0) {
+        let selected = selection
+        // Lazy: a workflow can finish hundreds of runs, and inside a scrolling thread only the
+        // rows on screen are built. Each row is one view, redrawn only when it changes.
+        LazyVStack(spacing: 0) {
             header
             ForEach(ledger.entries) { entry in
-                NWHairline()
-                NWRunLedgerRow(entry: entry, selected: entry.id == selection) { selection = entry.id }
+                NWRunLedgerRow(entry: entry, selected: entry.id == selected) { selection = entry.id }
+                    .equatable()
             }
         }
         .frame(maxWidth: .infinity)
@@ -105,16 +108,28 @@ public struct NWRunLedger: View, Equatable {
     }
 }
 
-private struct NWRunLedgerRow: View {
+private struct NWRunLedgerRow: View, Equatable {
     let entry: NWRunLedgerEntry
     let selected: Bool
     let action: () -> Void
     @State private var hovering = false
 
+    nonisolated static func == (a: NWRunLedgerRow, b: NWRunLedgerRow) -> Bool {
+        a.entry == b.entry && a.selected == b.selected
+    }
+
+    /// The rule above the row, then the row.
     var body: some View {
+        VStack(spacing: 0) {
+            NWHairline()
+            row
+        }
+    }
+
+    private var row: some View {
         let _ = NWRenderProbe.tick("runs.ledgerRow")
         let nw = Color.nw
-        Button(action: action) {
+        return Button(action: action) {
             HStack(spacing: 10) {
                 NWStatusDot(entry.state)
                 Text(entry.name).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
