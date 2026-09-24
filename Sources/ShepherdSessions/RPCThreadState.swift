@@ -420,31 +420,11 @@ final class RPCThreadState {
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success,
                   let messages = try? response.data?["messages"]?.decode([RPCMessage].self) else { return }
-            // Same filter as the terminal extension: custom messages are model-only unless the
-            // extension marked them display (pi-subagents' task-completed JSON is the usual case).
-            // Indices stay positional so `m:<i>` cursors remain stable across refreshes.
-            // pi keeps a call's arguments on the assistant's toolCall block; the toolResult row
-            // is what we show, so hand the arguments across by call id.
-            var arguments: [String: JSONValue] = [:]
-            var callTimes: [String: Double] = [:]
-            for message in messages where message.role == "assistant" {
-                for case .toolCall(let id, _, let args) in message.content {
-                    if let args { arguments[id] = args }
-                    if let time = message.timestamp { callTimes[id] = time }
-                }
-            }
-            self.history = messages.enumerated().compactMap { index, message in
-                if message.role == "custom" && message.display != true { return nil }
-                // Child reports ("Child native-… (worker): complete … Session: …") restate the card and
-                // ledger, which own that information in the RPC thread; the TUI still shows them.
-                if message.role == "custom" && message.customType == "shepherd-child" { return nil }
-                let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
-                var value = Self.project(entryID: "m:\(index)", message: message, args: args)
-                if let id = message.toolCallId, message.role == "toolResult" {
-                    value.startedAt = self.toolStarts[id] ?? callTimes[id]
+            self.history = Self.projectHistory(messages) { value, message in
+                if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
+                    value.startedAt = started
                 }
                 if message.role == "assistant", let time = message.timestamp { value.thinkingSeconds = self.thinkingByTimestamp[time] }
-                return value
             }
             // message_end precedes persistence; a refresh means everything ended is now history.
             self.provisional.removeAll { $0.ended }
@@ -706,8 +686,7 @@ final class RPCThreadState {
     private func snapshot(beforeEntryID: String?) -> NativeThreadResult {
         var end = history.count
         if let beforeEntryID {
-            // Entry ids are positional in pi's message list, but history skips model-only
-            // customs, so resolve the cursor by id rather than by array index.
+            // Entry ids name messages (`historyEntryID`), so resolve the cursor by id.
             guard let index = history.firstIndex(where: { $0.entryID == beforeEntryID }) else {
                 return .failure(code: "stale_cursor", message: "History changed. Refresh the recent page.")
             }
@@ -753,6 +732,58 @@ final class RPCThreadState {
     }
 
     // MARK: - Projection
+
+    /// pi's message list as thread history, with the same rules wherever it comes from (pi's
+    /// `get_messages`, or its session file read from disk): custom messages are model-only
+    /// unless their extension marked them display (pi-subagents' task-completed JSON is the
+    /// usual case), and child reports ("Child native-… (worker): complete … Session: …") restate
+    /// the card and ledger, which own that information here (the TUI still shows them). pi keeps
+    /// a call's arguments and start on the assistant's toolCall block; the toolResult row is
+    /// what the thread shows, so both are handed across by call id. `adjust` sees each row with
+    /// its message last.
+    static func projectHistory(
+        _ messages: [RPCMessage],
+        adjust: (inout NativeThreadMessage, RPCMessage) -> Void = { _, _ in }
+    ) -> [NativeThreadMessage] {
+        var arguments: [String: JSONValue] = [:]
+        var callTimes: [String: Double] = [:]
+        for message in messages where message.role == "assistant" {
+            for case .toolCall(let id, _, let args) in message.content {
+                if let args { arguments[id] = args }
+                if let time = message.timestamp { callTimes[id] = time }
+            }
+        }
+        var seen: [String: Int] = [:]
+        return messages.enumerated().compactMap { index, message in
+            if message.role == "custom" && message.display != true { return nil }
+            if message.role == "custom" && message.customType == "shepherd-child" { return nil }
+            let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
+            var value = project(entryID: historyEntryID(message, index: index, seen: &seen), message: message, args: args)
+            if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
+            adjust(&value, message)
+            return value
+        }
+    }
+
+    /// A history entry's id names the message, never its place in pi's list, so a message keeps
+    /// its id across refreshes and when it is read from pi's session file before pi answers
+    /// (history pages start at different places). A tool result is its call ("t:<call id>");
+    /// anything else with pi's millisecond timestamp is "<role>:<ms>", a repeat of that within
+    /// the list becoming "#<n>"; a message without a timestamp (never from pi itself) keeps its
+    /// position ("m:<index>").
+    static func historyEntryID(_ message: RPCMessage, index: Int, seen: inout [String: Int]) -> String {
+        let key: String
+        if message.role == "toolResult", let call = message.toolCallId, !call.isEmpty {
+            key = "t:\(call)"
+        } else if let time = message.timestamp, time.isFinite {
+            key = "\(message.role.isEmpty ? "custom" : message.role):\(Int64(time))"
+        } else {
+            return "m:\(index)"
+        }
+        let repeats = seen[key, default: 0]
+        seen[key] = repeats + 1
+        return repeats == 0 ? key : "\(key)#\(repeats)"
+    }
 
     static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil) -> NativeThreadMessage {
         var remaining = textLimit

@@ -58,7 +58,7 @@ struct NativeThreadTests {
         pi.release(2)
         let done = try await pi.snapshot("the settled history") { !$0.running && $0.provisional.isEmpty && $0.messages.count == 5 }
         #expect(done.messages.map(\.role) == ["user", "assistant", "user", "assistant", "toolResult"])
-        #expect(done.messages.map(\.entryID) == (0..<5).map { "m:\($0)" })
+        #expect(done.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891", "m:2", "m:3", "t:call_abc123"])
         #expect(done.messages[4].blocks.first?.text == "total 48\n")
         #expect(done.messages[4].startedAt == toolStarted, "history keeps the start time the host observed")
     }
@@ -276,7 +276,7 @@ struct NativeThreadTests {
         let older = try #require(try await pi.request(.snapshot(beforeEntryID: "m:72")).snapshotValue)
         #expect(older.messages.map(\.entryID) == (22...71).map { "m:\($0)" })
         let oldest = try #require(try await pi.request(.snapshot(beforeEntryID: "m:22")).snapshotValue)
-        #expect(oldest.messages.map(\.entryID) == (0...21).map { "m:\($0)" })
+        #expect(oldest.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"] + (2...21).map { "m:\($0)" })
         #expect(oldest.olderCursor == nil)
 
         let staleCursor = NativeThreadResult.failure(code: "stale_cursor", message: "History changed. Refresh the recent page.")
@@ -284,17 +284,18 @@ struct NativeThreadTests {
         #expect(try await pi.request(.snapshot(beforeEntryID: "provisional:assistant:1")) == staleCursor)
     }
 
-    /// Model-only customs and Shepherd's own child reports stay out; entry ids stay positional.
+    /// Model-only customs and Shepherd's own child reports stay out; ids of messages without a
+    /// timestamp keep their position in pi's list.
     @Test func subagentNoiseStaysOutOfTheTranscript() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
         _ = try await pi.send("subagent-noise", from: try await pi.ready())
         let s = try await pi.snapshot("the noisy history") { $0.messages.last?.entryID == "m:8" }
-        #expect(s.messages.map(\.entryID) == ["m:0", "m:1", "m:2", "m:3", "m:4", "m:6", "m:8"])
+        #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891", "m:2", "m:3", "t:call_1", "m:6", "m:8"])
         #expect(s.messages.first { $0.entryID == "m:6" }?.blocks.first?.text == "A note the user should see")
         #expect(s.messages.first { $0.entryID == "m:3" }?.blocks.map(\.text) == ["Spawning."])
-        #expect(s.messages.first { $0.entryID == "m:4" }?.argumentsText == #"{"action":"list"}"#)
+        #expect(s.messages.first { $0.entryID == "t:call_1" }?.argumentsText == #"{"action":"list"}"#)
         #expect(try await pi.request(.snapshot(beforeEntryID: "m:8")).snapshotValue?.messages.last?.entryID == "m:6")
     }
 
