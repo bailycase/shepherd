@@ -169,6 +169,13 @@ struct QueueStackTests {
     }
 
     /// The Send menu lists Queue then Steer now, with ↩ on the Return setting's row.
+    /// The Send menu stands beside the card only where the thread has room for it and its
+    /// margin; else it opens above the card.
+    @Test(arguments: [(0, false), (283, false), (284, true), (400, true)] as [(CGFloat, Bool)])
+    func theSendMenuGoesBesideTheCardOnlyWhenItFits(room: CGFloat, beside: Bool) {
+        #expect(Composer.sendMenuBeside(room: room) == beside)
+    }
+
     @Test(arguments: [(ReturnWhileWorking.queue, ["↩", "⌘↩"]), (.steer, ["⌘↩", "↩"])])
     func theSendMenusKeysFollowTheReturnSetting(setting: ReturnWhileWorking, shortcuts: [String]) {
         let options = Composer.sendOptions(setting, send: "↩", alternate: "⌘↩")

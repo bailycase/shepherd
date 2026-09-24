@@ -85,7 +85,7 @@ And the rules that follow from them:
 | Queue & steer: Steer "lands after the tool call pi is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | "Lands once pi's current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
 | Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5 | 8 (the composer's), 6, 4 | The radius scale |
 | Queue & steer: a custom 280pt QueueOptions popover; tooltips with keycaps | The native ••• menu (`NWOptionsMenu`); system tooltips (`.nwHelp`) | As every other ••• and tooltip in the app |
-| Queue & steer: the Send menu beside the card, highlighted in `bgSelected` | Above Send, trailing edges aligned; the composer menus' `runningTint` highlight | Canvas layout; the menus' one anatomy |
+| Queue & steer: the Send menu beside the card, highlighted in `bgSelected` | Beside the card where the thread has room for it; in a narrower thread above Send, trailing edges aligned, over the trailing end of Up next while it is open; the composer menus' `runningTint` highlight | The app's column is 820pt (the boards' 620), so the room beside it runs out; the menus' one anatomy |
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: "Pi" | "pi" | The app's spelling, until the rest of that redesign lands |
@@ -859,9 +859,11 @@ focus. ⇧↩ inserts a newline; while pi is idle ↩ and ⌘↩ both send. Atta
 queued or steered message.
 
 **Send menu** (`NWSendMenu`): right-clicking Send, or holding it for
-`AppLayout.sendHoldDelay` (500ms), while pi works with a draft, opens the choice at send time,
-8pt above the card with its trailing edge on the card's, growing from that corner
-(`.overlay`). Nothing about the choice is written under the composer.
+`AppLayout.sendHoldDelay` (500ms), while pi works with a draft, opens the choice at send time
+(`.overlay`): beside the card, 8pt after its trailing edge and bottom-aligned with it, where
+the thread has room for it and its margin (`Composer.sendMenuBeside`), so it covers none of Up
+next; otherwise 8pt above the card with its trailing edge on the card's. It grows from the
+corner nearest Send. Nothing about the choice is written under the composer.
 
 - 268pt on the menus' popover, 6pt padding, rows 2pt apart; each row top-aligned with 8×10
   padding and the `runningTint` highlight: a 14pt glyph in `textSecondary`, the title in Geist
@@ -892,7 +894,7 @@ micro caps title and its text. Machine payloads, `setStatus`, and `notify` are n
 Widgets are display-only, and the app chooses every font and color.
 
 **Menus** float over the thread above the card, one at a time: left-aligned with it (the Send
-menu with Send, at its trailing corner), 8pt above it, and growing from that corner (`.overlay`). They take no room in the composer, so opening one never
+menu beside the card, or at its trailing corner), 8pt above it, and growing from that corner (`.overlay`). They take no room in the composer, so opening one never
 changes the composer's height, the thread's inset or scroll position, or any of the thread outside
 the menu (`ComposerMenuTests`). A menu is never taller than the room above the card (it keeps 8pt
 from the thread's top, and its list scrolls inside), and beside a docked pane it narrows to the

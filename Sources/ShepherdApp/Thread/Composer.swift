@@ -52,6 +52,8 @@ struct Composer: View {
     @State private var picking = false
     /// The card's top edge in the thread, once laid out: a menu takes at most the room above it.
     @State private var cardTop: CGFloat?
+    /// The thread's room after the card's trailing edge: the Send menu stands there when it fits.
+    @State private var roomBeside: CGFloat = 0
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
     @FocusState private var composing: Bool
@@ -187,8 +189,13 @@ struct Composer: View {
                 .background { ComposerMenuRegion(dismissal: dismissal) }
                 .background { ComposerWindowReader(monitor: keyMonitor) }
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.threadSpace)).minY } action: { cardTop = $0 }
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    (proxy.bounds(of: .named(Self.threadSpace))?.maxX ?? proxy.size.width) - proxy.size.width
+                } action: { roomBeside = $0 }
                 .overlay(alignment: .topLeading) { menus(query: query) }
-                .overlay(alignment: .topTrailing) { sendMenu }
+                .overlay(alignment: Self.sendMenuBeside(room: roomBeside) ? .bottomTrailing : .topTrailing) {
+                    sendMenu(beside: Self.sendMenuBeside(room: roomBeside))
+                }
         }
         .nwAnimation(.list, value: accessories)
         .nwAnimation(.list, value: attachments.map(\.id))
@@ -711,10 +718,17 @@ struct Composer: View {
         menu = .send
     }
 
-    /// Queue and Steer now, above the card at its trailing corner; the Return setting's row
-    /// leads the highlight and wears ↩.
-    @ViewBuilder private var sendMenu: some View {
-        ZStack(alignment: .bottomTrailing) {
+    /// The Send menu stands beside the card, bottom-aligned, where the thread has room for it
+    /// (Queue & steer boards), so it covers none of Up next; else above the card at its
+    /// trailing corner.
+    static func sendMenuBeside(room: CGFloat) -> Bool {
+        room >= AppLayout.menuGap + NWQueueMetrics.sendMenuWidth + AppLayout.menuMargin
+    }
+
+    /// Queue and Steer now, beside the card or above it (`sendMenuBeside`), growing from the
+    /// corner nearest Send; the Return setting's row leads the highlight and wears ↩.
+    @ViewBuilder private func sendMenu(beside: Bool) -> some View {
+        ZStack(alignment: beside ? .bottomLeading : .bottomTrailing) {
             if menu == .send {
                 let setting = AppSettings.shared.returnWhileWorking
                 let keys = KeybindingsStore.shared
@@ -727,12 +741,15 @@ struct Composer: View {
                     menu = nil
                     composing = true
                 }
-                .nwTransition(.overlay, anchor: .bottomTrailing)
+                .nwTransition(.overlay, anchor: beside ? .bottomLeading : .bottomTrailing)
             }
         }
         .fixedSize()
         .background { ComposerMenuRegion(dismissal: dismissal) }
+        // Above: its bottom 8pt over the card's top. Beside: its leading edge 8pt after the
+        // card's trailing one, bottoms aligned.
         .alignmentGuide(.top) { $0[.bottom] + AppLayout.menuGap }
+        .alignmentGuide(.trailing) { beside ? $0[.leading] - AppLayout.menuGap : $0[.trailing] }
         .nwAnimation(.overlay, value: menu == .send)
     }
 
