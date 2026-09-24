@@ -164,6 +164,30 @@ struct QueueTests {
         #expect(done.messages.first { $0.operationID == back }?.origin?.parts?.map(\.id) == [back])
     }
 
+    /// pi reads a steer when its tool batch ends: a Back to the queue whose `clear_queue` arrives
+    /// just after that finds nothing to take back, so it is refused, and the message lands where
+    /// pi read it, steered, without being sent again.
+    @Test func backToTheQueueJustAfterPiReadItIsRefused() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let op = UUID()
+        _ = try await pi.send("tools:0 raced", delivery: .steer, operationID: op, from: running)
+        _ = try await pi.snapshot { $0.queue?.items.first?.state == .steering }
+
+        #expect(try await pi.queue(.unsteer(id: op), from: running).failureCode == "queue_item_unavailable")
+        let after = try await pi.snapshot()
+        #expect(after.queue?.items.map(\.id) == [op] && after.queue?.items.first?.state == .steering, "still pi's to land")
+
+        pi.finishTool(1)
+        let done = try await pi.snapshot("the steer to land") { s in
+            !s.running && s.queue?.items.isEmpty == true && s.messages.contains { $0.operationID == op }
+        }
+        #expect(done.messages.first { $0.operationID == op }?.origin == .steered)
+        #expect(prompts(pi) == ["tools:1 build", "tools:0 raced"], "nothing was sent again")
+    }
+
     @Test func backToTheQueueAfterPiReadItChangesNothing() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

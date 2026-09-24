@@ -35,7 +35,8 @@ pi's queues, as pi 0.87.1 behaves (docs/rpc-commands.md, and transcripts of the 
     next steer, ends with an empty error reply, then agent_end, agent_settled, and only then
     the abort response. Follow-ups stay queued (pi does not clear its queue on abort).
   - `clear_queue` empties both queues, emits an empty `queue_update`, and answers with their
-    text.
+    text. A steer with "raced" in it stays queued and unreported, as when pi reads a steer
+    (its tool batch ended) just before a `clear_queue` arrives: it still lands.
   - Idle, a prompt with a streamingBehavior is a plain prompt.
 $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and saves it
 after every "tools:N" run, like pi resuming its session file.
@@ -418,8 +419,9 @@ for raw in sys.stdin.buffer:
             emit({"type": "agent_settled"})
     elif t == "clear_queue":
         with QUEUE_LOCK:
-            cleared = {"steering": [t for t, _, _ in steering], "followUp": [t for t, _, _ in follow_up]}
-            steering.clear()
+            raced = [item for item in steering if "raced" in item[0]]
+            cleared = {"steering": [t for t, _, _ in steering if "raced" not in t], "followUp": [t for t, _, _ in follow_up]}
+            steering[:] = raced
             follow_up.clear()
         queue_update()
         respond(cmd, t, data=cleared)
