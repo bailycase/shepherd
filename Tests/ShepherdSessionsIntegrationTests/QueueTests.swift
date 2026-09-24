@@ -220,9 +220,13 @@ struct QueueTests {
         let clear = try #require(types.firstIndex(of: "clear_queue"))
         let abort = try #require(types.firstIndex(of: "abort"))
         #expect(clear < abort)
-        let stopped = try await pi.snapshot("the run to end") { !$0.running }
+        // pi ends a run stopped mid-tool-call with an error reply (the stub does too).
+        let stopped = try await pi.snapshot("the run to end in an error reply") { s in
+            !s.running && s.messages.last { $0.role == "assistant" }?.status == "error"
+        }
         #expect(stopped.queue?.items.map(\.id) == [steer, follow] && stopped.queue?.items.allSatisfy { $0.state == .queued } == true)
         #expect(stopped.queue?.paused == true)
+        #expect(stopped.queue?.notice == nil, "the queue waits because of the stop, not a turn that failed")
         #expect(!stopped.messages.contains { $0.operationID == steer }, "the steer did not land in the stopped run")
         #expect(prompts(pi).count == 2, "a stopped queue waits")
 

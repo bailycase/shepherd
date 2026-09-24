@@ -233,7 +233,8 @@ one prompt at a time.
 - **Stop** (`abort`): `clear_queue` first, then `abort` (pi's recipe; `abort` alone delivers a
   queued steer into the aborted turn and keeps follow-ups for a later run). Steering items pi
   still held return to the head, anything else pi had queued joins the queue, and the queue
-  pauses. A turn that ends in a provider error pauses it too.
+  pauses. A turn that ends in a provider error pauses it too, and says so (`notice`); a
+  stopped run does not, although pi ends a run stopped mid-tool-call with an error reply.
 - **Settle:** prompts pi accepted but never started as a message (an extension command, an
   input handler that took it) drop their pending rows; so does a prompt pi answered while idle
   (checked with `get_state`). A steer pi queued after its last look at its queue is stranded

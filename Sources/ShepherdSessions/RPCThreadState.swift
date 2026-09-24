@@ -135,6 +135,9 @@ final class RPCThreadState {
     var projectionClipped = false
     /// The last assistant message of the current run ended in a provider error.
     var runFailed = false
+    /// The user stopped this run: pi ends a run stopped mid-tool-call with an error reply,
+    /// which is not a turn that failed.
+    var stopRequested = false
 
     // Queue state (RPCThreadState+Queue.swift).
     var items: [QueueItem] = []
@@ -215,6 +218,7 @@ final class RPCThreadState {
         case .agentStart:
             running = true
             runFailed = false
+            stopRequested = false
             settleAwaitingSteers = false
             doneHeld = false
         case .agentEnd:

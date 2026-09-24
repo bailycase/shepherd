@@ -445,10 +445,14 @@ extension RPCThreadState {
     /// Stop: pi's queue is emptied first (pi's recipe; `abort` alone still delivers it), steering
     /// items return to the queue, and the queue pauses until the user resumes it.
     func stop(_ done: @escaping (Result<RPCResponse, RPCError>) -> Void) {
+        stopRequested = true
         clearPiQueue { [weak self] steering, followUp, _ in
             guard let self else { return }
             self.reclaim(steering: steering, followUp: followUp)
-            if !self.items.isEmpty { self.paused = true }
+            if !self.items.isEmpty {
+                self.paused = true
+                self.queueNotice = nil
+            }
             self.commit()
             self.session.request(.abort, completion: done)
         }
@@ -458,7 +462,7 @@ extension RPCThreadState {
     /// never read (queued after its last look) is reclaimed; then the queue goes.
     func settled() {
         for dispatch in dispatches where dispatch.responded { dropDispatch(dispatch.id) }
-        if runFailed, !items.isEmpty {
+        if runFailed, !stopRequested, !items.isEmpty {
             paused = true
             queueNotice = "pi's turn ended with an error, so the queue is waiting."
         }
