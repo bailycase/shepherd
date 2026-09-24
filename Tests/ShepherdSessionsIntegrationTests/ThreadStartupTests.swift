@@ -49,6 +49,24 @@ struct ThreadStartupTests {
         #expect(ready.piSessionID == "stub-session")
     }
 
+    /// pi answers `get_state` before `get_messages`, and a long history takes a moment to
+    /// arrive. A resumed thread served in between would show as a new, empty one.
+    @Test func aResumedThreadIsStartingUntilItsHistoryHasArrived() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_HISTORY_BYTES": String(6 * 1024 * 1024)])
+
+        var first: NativeThreadSnapshot?
+        try await eventually("pi to serve its thread", timeout: .seconds(30)) {
+            let answer = try await pi.request(.snapshot())
+            first = answer.snapshotValue
+            if first == nil { #expect(answer.failureCode == NativeThreadCode.starting) }
+            return first != nil
+        }
+        let messages = try #require(first).messages
+        #expect(messages.contains { $0.blocks.contains { $0.text == "seeded reply" } }, "the first snapshot carries the history")
+    }
+
     /// A pi that exits while it starts (not installed, a broken config) is gone, with its exit
     /// code, before and after the app retires its session: never an endless start.
     @Test func aPiThatExitsWhileStartingIsUnavailableWithItsExitCode() async throws {
