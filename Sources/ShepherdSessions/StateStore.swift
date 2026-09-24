@@ -51,6 +51,15 @@ final class StateStore: @unchecked Sendable {
         commit(candidate)
     }
 
+    /// Commits a change that no invariant depends on and no relaunch needs (an agent's status,
+    /// which `start()` resets to idle anyway): published at once, but neither validated nor
+    /// written. The next `update` writes it along with its own change.
+    func updateLive(_ mutate: (inout ShepherdState) -> Void) {
+        var next = state
+        mutate(&next)
+        commit(next)
+    }
+
     private func commit(_ next: ShepherdState) {
         state = next
         version &+= 1

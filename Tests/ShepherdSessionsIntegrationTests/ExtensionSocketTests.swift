@@ -15,7 +15,8 @@ struct ExtensionSocketTests {
 
     // MARK: - Status
 
-    @Test func aStatusReportIsPersistedBroadcastAndForwarded() async throws {
+    /// A status is live state: broadcast and forwarded, but not written (StateMutationTests).
+    @Test func aStatusReportIsBroadcastAndForwarded() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let callbacks = Callbacks(h.server)
@@ -28,7 +29,6 @@ struct ExtensionSocketTests {
         try await eventually("the status callback") { callbacks.statuses.current.contains { $0 == (worker.agent.id, .working) } }
         await drainMainQueue()
         #expect(h.server.state.agents.first?.status == .working)
-        #expect(try h.persisted().agents.first?.status == .working)
         #expect(h.broadcasts.current.map { $0.agents.first?.status } == [.working])
     }
 

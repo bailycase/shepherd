@@ -1773,13 +1773,8 @@ public final class SessionServer: @unchecked Sendable {
             if !current.canTransition(to: status) {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }
-            do {
-                try store.update { $0.agents[index].status = status }
-            } catch {
-                let persistenceError = SessionServerError.persistFailed(String(describing: error))
-                ShepherdLog.error("failed to persist status for agent \(agentID): \(persistenceError)")
-                return
-            }
+            // Two reports a turn: kept in memory, never validated or written on their own.
+            store.updateLive { $0.agents[index].status = status }
         } else {
             ShepherdLog.warning("setAgentStatus for unknown agent \(agentID); dropped")
             return

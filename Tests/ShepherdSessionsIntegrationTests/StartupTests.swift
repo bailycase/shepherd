@@ -29,6 +29,26 @@ struct StartupTests {
         #expect(try h.persisted().agents.map(\.status) == [.idle, .idle])
     }
 
+    /// A status only ever written along with another change still comes back idle.
+    @Test func aStatusWrittenAlongAnotherChangeResetsToIdle() async throws {
+        let first = try ScratchServer.fresh()
+        let space = Fixture.space()
+        let worker = Fixture.agent(in: space)
+        try await first.seed(Fixture.workspace([worker], space: space))
+        let client = try ExtensionClient(path: first.socketPath)
+        try client.send(.setAgentStatus(agentID: worker.agent.id, status: .working))
+        try await eventually("the status to apply") { first.server.state.agents.first?.status == .working }
+        try await first.server.addSpace(Fixture.space("added"))
+        #expect(try first.persisted().agents.first?.status == .working)
+        client.closeConnection()
+        first.stop(keepFiles: true)
+
+        let h = try ScratchServer(dir: first.dir)
+        defer { h.stop() }
+        #expect(h.server.state.agents.first?.status == .idle)
+        #expect(try h.persisted().agents.first?.status == .idle)
+    }
+
     @Test func utilityTerminalsArePurged() async throws {
         let space = Fixture.space()
         let worker = Fixture.agent(in: space)

@@ -104,6 +104,40 @@ struct StateMutationTests {
         }
     }
 
+    // MARK: - Status reports
+
+    /// Two reports a turn stay in memory: broadcast and readable, but state.json is not touched
+    /// until a structural mutation writes the status along with its own change.
+    @Test func aStatusReportIsLiveStateThatTheNextMutationWrites() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let callbacks = Callbacks(h.server)
+        let space = Fixture.space()
+        let worker = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([worker], space: space))
+        let onDisk = try Data(contentsOf: h.stateURL)
+        let file = try FileManager.default.attributesOfItem(atPath: h.stateURL.path)
+        let client = try ExtensionClient(path: h.socketPath)
+
+        for status in [AgentStatus.working, .done] {
+            try client.send(.setAgentStatus(agentID: worker.agent.id, status: status))
+            try await eventually("the \(status) report") { callbacks.statuses.current.contains { $0 == (worker.agent.id, status) } }
+        }
+        await drainMainQueue()
+        #expect(h.server.state.agents.first?.status == .done)
+        #expect(h.broadcasts.current.map { $0.agents.first?.status } == [.working, .done])
+        #expect(try Data(contentsOf: h.stateURL) == onDisk)
+        let after = try FileManager.default.attributesOfItem(atPath: h.stateURL.path)
+        #expect(after[.systemFileNumber] as? Int == file[.systemFileNumber] as? Int, "no atomic rewrite")
+        #expect(after[.modificationDate] as? Date == file[.modificationDate] as? Date)
+
+        let added = Fixture.space("added")
+        try await h.server.addSpace(added)
+        let persisted = try h.persisted()
+        #expect(persisted.agents.first?.status == .done)
+        #expect(persisted.spaces == [space, added])
+    }
+
     // MARK: - putState
 
     @Test func putStateReplacesTheWholeWorkspace() async throws {
