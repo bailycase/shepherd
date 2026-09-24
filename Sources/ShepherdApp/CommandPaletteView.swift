@@ -43,22 +43,26 @@ struct PaletteCard: View {
     var initialQuery = ""
     @State private var query = ""
     @State private var scope: PaletteItem.Scope = .all
-    @State private var selectedIndex = 0
+    /// The highlighted row: ↑↓ and hover move it.
+    @State private var highlight: PaletteHighlight
     @State private var contentRows: [PaletteItem] = []
     @State private var contentSearchTask: Task<Void, Never>?
     /// Filtered once per query, scope, items or transcript matches; hover and the arrow keys
-    /// only move `selectedIndex`.
+    /// only move the highlight.
     @State private var results = PaletteResults()
     @FocusState private var fieldFocused: Bool
     @Environment(\.nwPaletteMaxListHeight) private var maxListHeight
 
+    /// `highlight` lets a test move the highlight as ↑↓ and hover do.
     init(items: [PaletteItem], run: @escaping (PaletteItem) -> Void, close: @escaping () -> Void,
-         contentSearch: ((String, Set<String>) async -> [PaletteItem])? = nil, initialQuery: String = "") {
+         contentSearch: ((String, Set<String>) async -> [PaletteItem])? = nil, initialQuery: String = "",
+         highlight: PaletteHighlight? = nil) {
         self.items = items
         self.run = run
         self.close = close
         self.contentSearch = contentSearch
         self.initialQuery = initialQuery
+        _highlight = State(initialValue: highlight ?? PaletteHighlight())
         // The first results are there as the card appears, so opening never animates the list.
         _results = State(initialValue: PaletteResults(items: items, query: initialQuery, scope: .all, contentRows: []))
     }
@@ -80,22 +84,22 @@ struct PaletteCard: View {
             fieldFocused = true
         }
         .onChange(of: query) {
-            selectedIndex = 0
+            highlight.move(to: 0)
             scheduleContentSearch()
             refreshResults()
         }
         .onChange(of: scope) {
-            selectedIndex = 0
+            highlight.move(to: 0)
             refreshResults()
         }
         .onChange(of: contentRows) { refreshResults() }
         .onChange(of: items, initial: true) { refreshResults() }
         .onKeyPress(.upArrow) {
-            selectedIndex = max(0, selectedIndex - 1)
+            highlight.move(to: max(0, highlight.index - 1))
             return .handled
         }
         .onKeyPress(.downArrow) {
-            selectedIndex = min(max(0, results.rows.count - 1), selectedIndex + 1)
+            highlight.move(to: min(max(0, results.rows.count - 1), highlight.index + 1))
             return .handled
         }
         .onKeyPress(.tab) {
@@ -125,8 +129,8 @@ struct PaletteCard: View {
                             NWPaletteSectionHeader(section.title)
                                 .nwTransition(.list)
                         case .row(let index, let item, let snippet):
-                            PaletteRow(item: item, selected: index == selectedIndex, snippet: snippet) { run(item) }
-                                .onHover { if $0 { selectedIndex = index } }
+                            PaletteRow(item: item, selected: index == highlight.index, snippet: snippet) { run(item) }
+                                .onHover { if $0 { highlight.move(to: index) } }
                                 .nwTransition(.list)
                         }
                     }
@@ -142,8 +146,8 @@ struct PaletteCard: View {
             .scrollIndicators(.hidden)
             .frame(maxHeight: maxListHeight)
             .fixedSize(horizontal: false, vertical: true)
-            .onChange(of: selectedIndex) {
-                if results.rows.indices.contains(selectedIndex) { proxy.scrollTo(results.rows[selectedIndex].id) }
+            .onChange(of: highlight.index) {
+                if results.rows.indices.contains(highlight.index) { proxy.scrollTo(results.rows[highlight.index].id) }
             }
         }
     }
@@ -153,8 +157,8 @@ struct PaletteCard: View {
     }
 
     private func runSelected() {
-        guard results.rows.indices.contains(selectedIndex) else { return }
-        run(results.rows[selectedIndex])
+        guard results.rows.indices.contains(highlight.index) else { return }
+        run(results.rows[highlight.index])
     }
 
     // MARK: Content search (debounced, off-main)
@@ -187,6 +191,21 @@ struct PaletteResults {
     init(items: [PaletteItem], query: String, scope: PaletteItem.Scope, contentRows: [PaletteItem]) {
         rows = PaletteSearch.filter(items, query: query, scope: scope) + (scope == .commands ? [] : contentRows)
         entries = PaletteEntry.entries(rows, highlighting: query)
+    }
+}
+
+/// The palette's highlighted row, as an index into its results.
+@MainActor @Observable
+final class PaletteHighlight {
+    private(set) var index = 0
+
+    init(index: Int = 0) {
+        self.index = index
+    }
+
+    /// Moves the highlight; a move to where it is already changes nothing.
+    func move(to index: Int) {
+        if self.index != index { self.index = index }
     }
 }
 
