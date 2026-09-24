@@ -14,7 +14,7 @@ import Testing
 /// one side's diff cross-fades into the other's, a reload of the same side lands at once,
 /// marking a file viewed pops its check, and keyboard navigation lands at once where a click
 /// scrolls.
-@Suite("Review motion", .mainActorExclusive)
+@Suite("Review motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct ReviewMotionTests {
     private static let size = CGSize(width: 600, height: 500)

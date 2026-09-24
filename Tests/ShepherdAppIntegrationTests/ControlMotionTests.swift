@@ -10,7 +10,7 @@ import Testing
 /// (or cross-fades under Reduce Motion), a switch's knob slides, a disabled control fades while
 /// its label changes at once, a status pill fades to a new state but ticks at once, a toast
 /// rises, and a slider tracks its value without easing.
-@Suite("Control motion", .mainActorExclusive)
+@Suite("Control motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct ControlMotionTests {
     @MainActor @Observable
@@ -285,7 +285,7 @@ struct ControlMotionTests {
 /// search lands on a page at once, a conditional row discloses as its card grows, a sheet keeps
 /// its title still while it grows, and a failed Finalize check reveals its remedy as the list
 /// makes room.
-@Suite("Settings and dialog motion", .mainActorExclusive)
+@Suite("Settings and dialog motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct SettingsMotionTests {
     private static let window = CGSize(width: 1100, height: 700)

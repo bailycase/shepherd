@@ -8,7 +8,7 @@ import Testing
 /// The command palette's motion, recorded from an off-screen window: the card grows from its
 /// top edge over a fading scrim (a plain fade under Reduce Motion), and its results list
 /// animates when its rows change, the card following their height.
-@Suite("Palette motion", .mainActorExclusive)
+@Suite("Palette motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct PaletteMotionTests {
     @MainActor @Observable

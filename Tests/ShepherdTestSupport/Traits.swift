@@ -1,8 +1,33 @@
+import Foundation
 import Testing
 
 /// A happy path takes seconds and no wait is longer than a minute, so a test still running after
 /// two minutes is hung: it fails by name instead of stalling the whole run.
 private let integrationMinutes = 2
+
+/// Whether tests whose verdict depends on the machine run here: everywhere but CI (`CI=true`,
+/// which GitHub Actions sets), unless `SHEPHERD_TIMING_TESTS=1` asks for them there too.
+///
+/// Such a test checks a real rule, but the machine can fail it without a regression: frame
+/// sampling that has to catch a motion between its two ends, which a busy shared runner may not
+/// capture (CI's VM also drew slides as fades), or a wall-clock budget. CI skips them, since a
+/// failure there says nothing about the code, and every local `swift test` still runs them. A
+/// test that also guards an instant rule keeps that part on CI and checks only its motion
+/// control under `enabled`.
+public enum TimingTests {
+    public static let enabled: Bool = {
+        let environment = ProcessInfo.processInfo.environment
+        if environment["SHEPHERD_TIMING_TESTS"] == "1" { return true }
+        return !["true", "1"].contains(environment["CI"]?.lowercased() ?? "")
+    }()
+}
+
+extension Trait where Self == ConditionTrait {
+    /// See `TimingTests`: skipped on CI unless `SHEPHERD_TIMING_TESTS=1`.
+    public static var timingSensitive: Self {
+        .enabled(if: TimingTests.enabled, "depends on the machine's speed: skipped on CI unless SHEPHERD_TIMING_TESTS=1")
+    }
+}
 
 extension Trait where Self == TimeLimitTrait {
     /// The bound on each test of an integration suite that does not carry `.mainActorExclusive`

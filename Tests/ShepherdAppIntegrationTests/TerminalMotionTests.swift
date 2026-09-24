@@ -9,7 +9,8 @@ import TerminalSurfaceKit
 /// A real Ghostty surface beside a pane that slides in and narrows it, the way the docked
 /// sidebar, a split, or a right pane move a terminal. Every grid the surface reports is a PTY
 /// resize (SIGWINCH, and a remote smallest-viewer recompute), so it must take its final grid
-/// once rather than one per cell the animated edge crosses.
+/// once rather than one per cell the animated edge crosses. The rule runs on CI; the controls
+/// that catch the slide mid-way depend on the machine (`.timingSensitive`).
 @Suite("Terminal motion", .serialized, .mainActorExclusive)
 @MainActor
 struct TerminalMotionTests {
@@ -70,13 +71,13 @@ struct TerminalMotionTests {
 
         let (grids, animated) = try await gridsWhileAPaneSlidesIn(terminal, view: view, model: model)
 
-        #expect(animated, "the pane slides")
+        if TimingTests.enabled { #expect(animated, "the pane slides") }
         #expect(grids.count == 1, "one PTY resize, not one per column: \(grids)")
     }
 
     /// The control: the same surface without `AppTerminalView`'s `nwInstant()` is resized
     /// frame by frame, so the check above is not vacuous.
-    @Test func withoutInstantTheSameSurfaceIsResizedFrameByFrame() async throws {
+    @Test(.timingSensitive) func withoutInstantTheSameSurfaceIsResizedFrameByFrame() async throws {
         let model = Model()
         let terminal = AppTerminalModel(terminal: ShepherdTheme.nightWatchLight.terminal)
         let view = PaneBesideTerminal(model: model) { TerminalSurfaceView(model: terminal.model, isFocused: false) }
@@ -134,14 +135,14 @@ struct ShellTerminalMotionTests {
             try await quiet(log)
             #expect(vm.sidebarHidden == hidden)
             #expect(log.grids.count - before == 1, "one PTY resize per slide (hidden: \(hidden)): \(log.grids[before...])")
-            if !hidden { #expect(!recording.inBetween.isEmpty, "the sidebar slides in") }
+            if !hidden, TimingTests.enabled { #expect(!recording.inBetween.isEmpty, "the sidebar slides in") }
         }
 
         let before = log.grids.count
         let opening = await MotionProbe.record(window, region: row) { vm.toggleReviewPane() }
         try await quiet(log)
         #expect(vm.isReviewPaneShowing)
-        #expect(!opening.inBetween.isEmpty, "the review slides in")
+        if TimingTests.enabled { #expect(!opening.inBetween.isEmpty, "the review slides in") }
         #expect(log.grids.count - before == 1, "one PTY resize as the docked pane opens: \(log.grids[before...])")
     }
 

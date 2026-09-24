@@ -37,8 +37,10 @@ struct OutputDeliveryTests {
 
         try await eventually("the final marker", timeout: .seconds(30)) { callbacks.text(info.id).hasSuffix("END") }
         expectInOrder(callbacks.text(info.id), lines: lines)
-        // ~1.2 MiB is over a thousand PTY reads unmerged; the bound is loose for slow runners.
-        #expect((callbacks.deliveries.current[info.id] ?? 0) < 300)
+        // ~1.2 MiB is over a thousand PTY reads unmerged. How many merge depends on the child's
+        // speed against the main queue's: a slow child beside an idle main queue has each read
+        // delivered alone, so CI checks only that every byte arrived in order.
+        if TimingTests.enabled { #expect((callbacks.deliveries.current[info.id] ?? 0) < 300) }
     }
 
     /// The pane renders the attach snapshot and then only later output; together they must equal

@@ -40,7 +40,7 @@ struct ThreadHoverTests {
 
     /// At rest the footer draws nothing; the pointer over the turn fades it in (`.hover`, also
     /// under Reduce Motion) below everything the turn already showed, which never redraws.
-    @Test(arguments: [false, true])
+    @Test(.timingSensitive, arguments: [false, true])
     func aFinishedTurnsFooterShowsOnlyWhileHovered(reduceMotion: Bool) async throws {
         let hover = MessageHover()
         let window = OffscreenWindow(size: CGSize(width: Self.width, height: 240), dark: false,
@@ -66,7 +66,7 @@ struct ThreadHoverTests {
 
     /// The user's time shows under the bubble only while the turn is hovered. In a child's
     /// transcript "from parent" always shows, and the time fades in beside it without moving it.
-    @Test(arguments: [nil, "from parent"] as [String?])
+    @Test(.timingSensitive, arguments: [nil, "from parent"] as [String?])
     func aUserTurnsTimeShowsOnlyWhileHovered(note: String?) async throws {
         let hover = MessageHover()
         let window = OffscreenWindow(size: CGSize(width: Self.width, height: 140), dark: false, userTurn(hover, note: note))
@@ -98,7 +98,7 @@ struct ThreadHoverTests {
 
     /// VoiceOver never depends on the pointer: while it runs the footer's buttons (Copy
     /// response, Retry turn, the subagents link) show at rest exactly as they do on hover.
-    @Test func underVoiceOverTheFootersControlsShowAtRest() async throws {
+    @Test(.timingSensitive) func underVoiceOverTheFootersControlsShowAtRest() async throws {
         func footer(revealed: Bool, voiceOver: Bool) -> some View {
             NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                          revealed: revealed, voiceOver: voiceOver)
@@ -121,7 +121,7 @@ struct ThreadHoverTests {
     }
 
     /// A turn that ends under the pointer brings its footer in, rising from just below its place.
-    @Test func aHoveredTurnThatEndsBringsItsFooterInFromBelow() async throws {
+    @Test(.timingSensitive) func aHoveredTurnThatEndsBringsItsFooterInFromBelow() async throws {
         let ending = Ending()
         let window = OffscreenWindow(size: CGSize(width: Self.width, height: 240), dark: false,
                                      EndingTurn(ending: ending, hover: MessageHover(hovering: true)))

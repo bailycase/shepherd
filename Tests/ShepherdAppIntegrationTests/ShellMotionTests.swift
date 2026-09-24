@@ -10,7 +10,8 @@ import Testing
 
 /// The toolbar's and workspace's motion, recorded from off-screen windows: the status pill
 /// easing between states while its clock ticks without motion, the counters rolling, the
-/// toolbar replaced at once when switching agents, and the empty workspace cross-fading.
+/// toolbar replaced at once when switching agents, and the empty workspace cross-fading. Only the
+/// instant rules run on CI: catching a motion mid-way depends on the machine (`.timingSensitive`).
 @Suite("Shell motion", .mainActorExclusive)
 @MainActor
 struct ShellMotionTests {
@@ -31,7 +32,7 @@ struct ShellMotionTests {
 
     /// Idle → Running cross-fades the word and eases the tint; the running clock then ticks
     /// without motion.
-    @Test func theStatusPillEasesBetweenStatesAndItsClockTicksWithoutMotion() async throws {
+    @Test(.timingSensitive) func theStatusPillEasesBetweenStatesAndItsClockTicksWithoutMotion() async throws {
         let served = Served()
         let store = NativeThreadStore()
         let request: NativeThreadStore.Request = { value in
@@ -69,7 +70,7 @@ struct ShellMotionTests {
     }
 
     /// The toolbar's counters roll as the thread reports them.
-    @Test func theToolbarCountersRoll() async {
+    @Test(.timingSensitive) func theToolbarCountersRoll() async {
         let counters = Counters()
         let size = CGSize(width: 600, height: NWToolbarMetrics.height)
         let window = OffscreenWindow(size: size, dark: false, CountersToolbar(counters: counters))
@@ -175,7 +176,7 @@ struct ShellMotionTests {
     }
 
     /// Selecting another empty space cross-fades the empty state's words.
-    @Test func theEmptyWorkspaceCrossFadesBetweenSpaces() async throws {
+    @Test(.timingSensitive) func theEmptyWorkspaceCrossFadesBetweenSpaces() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let one = Fixture.space("one", path: app.dir.appendingPathComponent("one").path)
