@@ -190,8 +190,9 @@ output grows.
   poll passes the last revision; older snapshots are ignored. A hidden thread stops polling.
 - **Starting:** `native_starting` sets `starting`, never `loadError`: the thread shows "Starting
   pi…" (under a thread kept from before, as its tail row), and `acceptsSend` offers Send. A
-  message sent then waits behind the composer's spinner, with nothing dispatched, and goes once
-  the first snapshot lands; the draft stays if the thread stops or fails first. A pi still
+  message sent then waits behind the composer's spinner, still in the field and with nothing
+  dispatched, and the field's text goes once the first snapshot lands; the draft stays if the
+  thread stops or fails first. A pi still
   starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
 - **Message order:** `messages` is the paged history (`loadOlder`). `displayedMessages` is
   history, then optimistic echoes of accepted sends, then pi's provisional entries. This order

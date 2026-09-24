@@ -718,7 +718,8 @@ their menu is open.
   sent when the turn ends".
 - **Accepting:** a spinner ("Waiting for pi") takes the button's place.
 - **Starting:** Send is offered. A message sent while pi boots waits behind the spinner, still
-  in the field, and goes once pi answers.
+  in the field, and goes once pi answers, as the field has it then (edited, or not at all once
+  cleared).
 - **Error:** Send, plus a `failed` banner above the card, "Lost connection to the agent
   process.", with the error and Reconnect: only for a pi that was serving and went away, one
   that failed, or one that never started.
