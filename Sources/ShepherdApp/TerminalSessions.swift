@@ -260,7 +260,7 @@ final class TerminalSessionStore {
     }
     private var servableWaiters: [AgentID: [ServableWaiter]] = [:]
     /// The order restored agents' pi start in, and the work that starts each one queued.
-    private var startQueue = AgentStartQueue()
+    private(set) var startQueue = AgentStartQueue()
     private var queuedStarts: [AgentID: () async -> Bool] = [:]
 
     init(server: SessionServer) {
