@@ -135,17 +135,25 @@ public struct NWChipChevron: View {
     }
 }
 
-/// The composer's single action, a 28pt circle: Send (an arrow on the lantern fill, 35% until
-/// there is something to send) or Stop (a square on `failed`) while a turn runs.
+/// The composer's action, a 28pt circle: Send (an arrow on the lantern fill, 35% until there is
+/// something to send) or Stop (a square on `failed`) while a turn runs. With a draft while a turn
+/// runs, Stop steps aside outlined (a hairline, a `failed` square, no fill) and Send takes the
+/// corner.
 public struct NWComposerActionButton: View {
     public enum Mode: Sendable { case send, stop }
 
     let mode: Mode
+    let outlined: Bool
+    let ringed: Bool
     let enabled: Bool
     let action: () -> Void
 
-    public init(_ mode: Mode, enabled: Bool = true, action: @escaping () -> Void) {
+    /// `outlined` draws Stop beside Send; `ringed` wears Send's 3pt `lanternTint` ring while its
+    /// Send menu is open.
+    public init(_ mode: Mode, outlined: Bool = false, ringed: Bool = false, enabled: Bool = true, action: @escaping () -> Void) {
         self.mode = mode
+        self.outlined = outlined && mode == .stop
+        self.ringed = ringed && mode == .send
         self.enabled = enabled
         self.action = action
     }
@@ -159,20 +167,26 @@ public struct NWComposerActionButton: View {
         Button(action: action) {
             Image(systemName: send ? "arrow.up" : "stop.fill")
                 .font(.system(size: send ? 13 : 10, weight: .semibold))
-                .foregroundStyle(send ? nw.textOnLantern : nw.textOnFailed)
+                .foregroundStyle(send ? nw.textOnLantern : outlined ? nw.failed : nw.textOnFailed)
                 .nwContentTransition(.crossFade)
         }
-        .buttonStyle(NWComposerActionStyle(fill: send ? nw.lantern : nw.failed))
+        .buttonStyle(NWComposerActionStyle(fill: send ? nw.lantern : outlined ? nil : nw.failed))
         .disabled(!enabled)
+        .background {
+            Circle().inset(by: -NWComposerMetrics.focusRing).fill(nw.lanternTint)
+                .opacity(ringed ? 1 : 0)
+                .nwAnimation(.hover, value: ringed)
+        }
         .nwAnimation(.content, value: send)
+        .nwAnimation(.content, value: outlined)
         .accessibilityLabel(send ? "Send" : "Stop")
     }
 }
 
 /// The action's circle. Its own style, because the plain style dims a disabled label again on
-/// top of the board's 35%.
+/// top of the board's 35%. No fill: the outlined Stop, `bgHover` under the pointer.
 private struct NWComposerActionStyle: ButtonStyle {
-    let fill: Color
+    let fill: Color?
 
     func makeBody(configuration: Configuration) -> some View {
         NWComposerActionCircle(configuration: configuration, fill: fill)
@@ -181,17 +195,25 @@ private struct NWComposerActionStyle: ButtonStyle {
 
 private struct NWComposerActionCircle: View {
     let configuration: ButtonStyleConfiguration
-    let fill: Color
+    let fill: Color?
     @Environment(\.isEnabled) private var enabled
+    @State private var hovering = false
 
     var body: some View {
+        let nw = Color.nw
+        let pressed = enabled && configuration.isPressed
+        let background = fill.map { $0.mix(with: .black, by: pressed ? 0.1 : 0) }
+            ?? (pressed ? nw.bgSelected : enabled && hovering ? nw.bgHover : .clear)
         configuration.label
             .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-            .background(fill.mix(with: .black, by: enabled && configuration.isPressed ? 0.1 : 0), in: Circle())
+            .background(background, in: Circle())
+            .nwBorder(fill == nil ? nw.lineStrong : .clear, in: Circle())
             // Send brightens as soon as there is something to send.
             .opacity(enabled ? 1 : 0.35)
             .nwAnimation(.hover, value: enabled)
+            .nwAnimation(.hover, value: hovering)
             .contentShape(Circle())
+            .onHover { hovering = $0 }
             .nwFocusRingCircle()
     }
 }

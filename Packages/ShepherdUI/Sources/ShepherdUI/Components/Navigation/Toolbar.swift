@@ -123,13 +123,16 @@ extension NWThreadToolbar where Options == EmptyView {
     }
 }
 
-/// The options (`⋯`) menu of a toolbar or pane header: a native menu on a 28pt icon button.
+/// The options (`⋯`) menu of a toolbar or pane header: a native menu on a 28pt icon button
+/// (24pt in the queue's header).
 public struct NWOptionsMenu<Content: View>: View {
     let label: String
+    let size: CGFloat
     @ViewBuilder let content: () -> Content
 
-    public init(_ label: String = "Options", @ViewBuilder content: @escaping () -> Content) {
+    public init(_ label: String = "Options", size: CGFloat = NW.Height.controlM, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
+        self.size = size
         self.content = content
     }
 
@@ -139,7 +142,7 @@ public struct NWOptionsMenu<Content: View>: View {
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
-        .buttonStyle(.nwIcon)
+        .buttonStyle(.nwIcon(size: size))
         .fixedSize()
         .accessibilityLabel(label)
     }

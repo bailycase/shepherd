@@ -239,6 +239,12 @@ extension View {
         modifier(NWTransitionModifier(motion: motion, edge: nil, anchor: anchor))
     }
 
+    /// Comes from `insertion` and goes toward `removal` (a queued message rises from the bottom
+    /// of its stack and leaves toward the thread when pi takes it).
+    public func nwTransition(_ motion: NW.Motion, insertion: Edge, removal: Edge) -> some View {
+        modifier(NWAsymmetricTransitionModifier(motion: motion, insertion: insertion, removal: removal))
+    }
+
     /// How this view's content changes in place, honoring Reduce Motion. The change still
     /// needs an animation (`nwAnimation(.content, value:)`) to be seen.
     public func nwContentTransition(_ motion: NW.ContentMotion) -> some View {
@@ -312,6 +318,18 @@ private struct NWTransitionModifier: ViewModifier {
         let style = anchor.map { motion.transitionStyle(reduceMotion: reduceMotion, anchor: $0) }
             ?? motion.transitionStyle(reduceMotion: reduceMotion, edge: edge)
         content.transition(style.transition)
+    }
+}
+
+private struct NWAsymmetricTransitionModifier: ViewModifier {
+    let motion: NW.Motion
+    let insertion: Edge
+    let removal: Edge
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content.transition(.asymmetric(insertion: motion.transition(reduceMotion: reduceMotion, edge: insertion),
+                                       removal: motion.transition(reduceMotion: reduceMotion, edge: removal)))
     }
 }
 

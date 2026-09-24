@@ -40,6 +40,8 @@ public enum NWThreadMetrics {
     public static let ruleWidth: CGFloat = 2
     public static let attachmentHeight: CGFloat = 26
     public static let attachmentThumbnail: CGFloat = 20
+    /// "From the queue"'s glyph.
+    public static let queueGlyph: CGFloat = 11
 }
 
 enum NWPasteboard {
@@ -95,38 +97,73 @@ public struct NWInlineCode: View {
     }
 }
 
+/// Above the messages the queue delivered as one turn (Queue & steer boards · In the thread): a
+/// hairline each side of the queue glyph and "From the queue · 2" in caption tertiary, or "From
+/// the queue" for one.
+public struct NWQueueDivider: View {
+    let count: Int
+
+    public init(count: Int) { self.count = count }
+
+    private var label: String { count > 1 ? "From the queue · \(count)" : "From the queue" }
+
+    public var body: some View {
+        HStack(spacing: NW.Space.m) {
+            NWHairline()
+            HStack(spacing: NW.Space.xs) {
+                NWQueueGlyph(size: NWThreadMetrics.queueGlyph)
+                Text(label)
+            }
+            .font(.nw(.caption))
+            .foregroundStyle(.nw.textTertiary)
+            .fixedSize()
+            NWHairline()
+        }
+        .padding(.vertical, NW.Space.xs)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+}
+
 /// A file or image with a message (NWThread board): 26pt, a 1px strong line, radius 6. Files
 /// lead with a document glyph; images with their 20pt thumbnail. In the composer it has a
-/// remove button; in a sent bubble it has none.
+/// remove button; in a sent bubble it has none. `.compact` is the queue's read-only chip: 22pt,
+/// a 16pt thumbnail (or a photo glyph where the bytes stayed on another Mac), radius 4.
 public struct NWAttachmentChip: View {
+    public enum Size: Sendable { case regular, compact }
+
     let name: String
     let prefix: String?
     let thumbnail: Image?
+    let size: Size
     let remove: (() -> Void)?
 
     /// `thumbnail` shows an image's preview in place of the file glyph; `remove` adds the
     /// remove button.
-    public init(_ name: String, prefix: String? = nil, thumbnail: Image? = nil, remove: (() -> Void)? = nil) {
+    public init(_ name: String, prefix: String? = nil, thumbnail: Image? = nil, size: Size = .regular, remove: (() -> Void)? = nil) {
         self.name = name
         self.prefix = prefix
         self.thumbnail = thumbnail
+        self.size = size
         self.remove = remove
     }
 
     public var body: some View {
         let nw = Color.nw
-        HStack(spacing: NW.Space.s) {
+        let compact = size == .compact
+        let side = compact ? NWQueueMetrics.chipThumbnail : NWThreadMetrics.attachmentThumbnail
+        HStack(spacing: compact ? NW.Space.xs : NW.Space.s) {
             if let thumbnail {
                 thumbnail
                     .resizable()
                     .aspectRatio(contentMode: .fill)
-                    .frame(width: NWThreadMetrics.attachmentThumbnail, height: NWThreadMetrics.attachmentThumbnail)
+                    .frame(width: side, height: side)
                     .background(nw.bgSunken)
-                    .clipShape(RoundedRectangle(cornerRadius: NW.Radius.xs))
+                    .clipShape(RoundedRectangle(cornerRadius: compact ? NWQueueMetrics.chipThumbnailRadius : NW.Radius.xs))
                     .accessibilityHidden(true)
             } else {
-                Image(systemName: "doc")
-                    .font(.system(size: 10, weight: .medium))
+                Image(systemName: compact ? "photo" : "doc")
+                    .font(.system(size: compact ? 11 : 10, weight: .medium))
                     .foregroundStyle(nw.textSecondary)
                     .frame(width: 12, height: 12)
                     .accessibilityHidden(true)
@@ -135,7 +172,7 @@ public struct NWAttachmentChip: View {
                 if let prefix { Text(prefix).foregroundStyle(nw.textTertiary) }
                 Text(name).foregroundStyle(nw.textPrimary)
             }
-            .font(.nwSans(12))
+            .font(.nwSans(compact ? 11 : 12))
             .lineLimit(1)
             .truncationMode(.middle)
             if let remove {
@@ -148,10 +185,11 @@ public struct NWAttachmentChip: View {
                 .accessibilityLabel("Remove \(name)")
             }
         }
-        .padding(.leading, thumbnail == nil ? NW.Space.m : 3)
-        .padding(.trailing, remove == nil && thumbnail != nil ? NW.Space.xs : NW.Space.m)
-        .frame(height: NWThreadMetrics.attachmentHeight)
-        .nwBorder(nw.lineStrong, radius: NW.Radius.s)
+        .padding(.leading, thumbnail == nil ? (compact ? NW.Space.s : NW.Space.m) : 3)
+        .padding(.trailing, compact ? NW.Space.s : remove == nil && thumbnail != nil ? NW.Space.xs : NW.Space.m)
+        .frame(height: compact ? NWQueueMetrics.chipHeight : NWThreadMetrics.attachmentHeight)
+        .nwBorder(nw.lineStrong, radius: compact ? NW.Radius.xs : NW.Radius.s)
+        .fixedSize(horizontal: compact, vertical: false)
         .accessibilityElement(children: .contain)
     }
 }
