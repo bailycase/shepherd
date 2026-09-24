@@ -95,8 +95,8 @@ struct FleetView: View {
             .scrollContentBackground(.hidden)
             .background(tokens.canvas)
             .navigationTitle("Agents")
-            // The system large-title bar imposes its own type and glass chrome; page 4 is a flat
-            // display-size "Agents" with the gear beside it, so the row is drawn here.
+            // The system large-title bar imposes its own type and glass chrome; the list wants a
+            // flat display-size "Agents" with the gear beside it, so the row is drawn here.
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .top, spacing: 0) {
                 HStack {

@@ -15,8 +15,8 @@ struct PaletteItem: Identifiable, Equatable {
         case action(String)
     }
 
-    /// Grouping header in the results list, in display order (spec §12: Commands, This thread,
-    /// Subagents, and Agents when searching).
+    /// Grouping header in the results list, in display order (DESIGN.md › Command palette:
+    /// Commands, This thread, Subagents, and Agents when searching).
     enum Section: Int, CaseIterable {
         case commands, thisThread, subagents, agents, spaces, conversations
 

@@ -4,8 +4,8 @@ import Observation
 import ShepherdCore
 import ShepherdRemote
 
-/// The right pane beside a thread (spec §9, §10): the subagent inspector or the review. While
-/// one is open the sidebar keeps its width.
+/// The right pane beside a thread (DESIGN.md › Right pane): the subagent inspector or the
+/// review. While one is open the sidebar keeps its width.
 extension ShepherdViewModel {
     enum RightPaneContent: Equatable {
         case inspector(runID: String)
