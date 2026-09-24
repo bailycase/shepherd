@@ -92,6 +92,7 @@ BETA = re.compile(r"^v\d+\.\d+\.\d+-beta\.\d+$")
 RC = re.compile(r"^v\d+\.\d+\.\d+-rc\.\d+$")
 NIGHTLY = re.compile(r"^nightly-\d{12}$")
 STAMP = re.compile(r"^\d{12}$")
+NIGHTLY_BRANCH = "refs/heads/nightly"
 
 
 def plan(ref: str, stamp: str) -> dict:
@@ -106,10 +107,13 @@ def plan(ref: str, stamp: str) -> dict:
             return {"build": False, "reason": f"{tag}: release candidates are retired; tag a beta "
                     "(vX.Y.Z-beta.N) or a release (vX.Y.Z) instead"}
         return {"build": False, "reason": f"{tag}: not a release tag (vX.Y.Z or vX.Y.Z-beta.N)"}
-    if ref.startswith("refs/heads/"):
+    if ref == NIGHTLY_BRANCH:
         if not STAMP.match(stamp):
             raise ValueError(f"bad nightly stamp {stamp!r}; expected yyyymmddHHMM")
         return _build(APPS["nightly"], "nightly", f"0.0.0-nightly.{stamp}", f"nightly-{stamp}", prerelease=True)
+    if ref.startswith("refs/heads/"):
+        # A manual run on another branch would ship that branch to every Shepherd Nightly.
+        return {"build": False, "reason": f"{ref}: only the nightly branch ships Shepherd Nightly"}
     return {"build": False, "reason": f"{ref}: neither a tag nor a branch"}
 
 
