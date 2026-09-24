@@ -183,7 +183,8 @@ see its work.
 **Long lists** (DESIGN.md › Performance) are measured, not guessed:
 
 - `NWRenderProbe` (ShepherdUI, debug builds only) counts row bodies while a test records:
-  `let _ = NWRenderProbe.tick("sidebar.row")` at the top of a row's `body`.
+  `let _ = NWRenderProbe.tick("sidebar.row")` at the top of a row's `body`. It also counts
+  derivation passes that must not scale with a change (`sidebar.spaceScan`, `sidebar.spaceForest`).
 - `ListPerformanceTests` pins each long list's budget as a count of rows built or redrawn
   (opening, scrolling, a highlight or a selection moving, one row changing, a reply streaming).
   Counts hold on a slow or busy runner; timing budgets do not, so don't add those.
