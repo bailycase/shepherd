@@ -159,6 +159,37 @@ struct AgentStartupTests {
         try await eventuallyAsync("every restored agent to start", timeout: .seconds(30)) { await started().count == agents.count }
     }
 
+    /// A new agent's pi is its creation's to spawn: it never waits in the launch queue behind the
+    /// restored agents still waiting their turn.
+    @Test func aNewAgentsPiStartsAtOnceWhileRestoredAgentsWaitTheirTurn() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        try Self.holdPi(in: app.dir)
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
+        let server = app.server
+        let onScreen = try #require(vm.selectedAgentID)
+        /// The agents whose pane is bound to a live pi.
+        func started() async -> Set<AgentID> {
+            let alive = Set(await server.listSessions().filter(\.isAlive).map(\.id))
+            let state = server.state
+            return Set(state.agents.filter { agent in
+                guard let paneID = agent.paneID, let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+                      let session = tab.layout.leaf(withID: paneID)?.sessionID else { return false }
+                return alive.contains(session)
+            }.map(\.id))
+        }
+        try await eventuallyAsync("the agent on screen to start") { await started().contains(onScreen) }
+
+        let created = try await quickCreate(vm, in: space, app: app).value
+
+        #expect(await started() == [onScreen, created], "the new agent started; the restored ones still wait")
+        Self.releasePi(in: app.dir)
+        try await eventuallyAsync("every agent to start", timeout: .seconds(30)) { await started().count == agents.count + 1 }
+    }
+
     /// The agent on screen at launch whose pi exits while it boots stops holding the queue at
     /// once: the others start then, not when its hold (`AgentStartQueue.aheadHold`) runs out.
     @Test func anAgentOnScreenWhosePiExitsAtLaunchLetsTheOthersStartAtOnce() async throws {
