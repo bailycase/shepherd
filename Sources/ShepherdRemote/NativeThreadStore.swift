@@ -46,21 +46,21 @@ public final class NativeThreadStore {
 
     public private(set) var snapshot: NativeThreadSnapshot?
     public private(set) var messages: [NativeThreadMessage] = []
-    public private(set) var olderCursor: String?
-    public private(set) var loadingOlder = false
-    public private(set) var ready = false
+    public private(set) var olderCursor: String? { didSet { threadVersion &+= 1 } }
+    public private(set) var loadingOlder = false { didSet { threadVersion &+= 1 } }
+    public private(set) var ready = false { didSet { bothVersions() } }
     /// The agent's pi is starting (`native_starting`): not ready, and not an error. The thread
     /// polls quickly, a send waits for it (see `acceptsSend`), and a slow start is said in the
     /// composer (`awaitingPi`). A pi that has not started within `startingLimit` becomes a
     /// `loadError`.
-    public private(set) var starting = false
+    public private(set) var starting = false { didSet { bothVersions() } }
     /// The thread shows history read from pi's session file while pi starts (`preview(_:)`),
     /// not a snapshot pi served: nothing can be done with it yet, and pi's first snapshot
     /// replaces it in place (its entries carry the ids pi's will).
-    public private(set) var previewing = false
-    public private(set) var busy = false
-    public private(set) var loadError: String?
-    public private(set) var notice: String?
+    public private(set) var previewing = false { didSet { bothVersions() } }
+    public private(set) var busy = false { didSet { bothVersions() } }
+    public private(set) var loadError: String? { didSet { bothVersions() } }
+    public private(set) var notice: String? { didSet { chromeVersion &+= 1 } }
     public private(set) var sentCount = 0
     /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending",
     /// or "queued" when sent as a follow-up while a turn ran). Each one leaves once pi persists
@@ -78,10 +78,10 @@ public final class NativeThreadStore {
     /// queued follow-up waits below the reply still streaming, which is not its answer.
     public private(set) var displayedMessages: [NativeThreadMessage] = []
     public private(set) var turns: [NativeTurn] = []
-    public private(set) var rows: [NativeThreadRow] = []
+    public private(set) var rows: [NativeThreadRow] = [] { didSet { threadVersion &+= 1 } }
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
-    public private(set) var placements: [String: NativeSubagentPlacement] = [:]
-    public private(set) var subagents: [NativeSubagent] = []
+    public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
+    public private(set) var subagents: [NativeSubagent] = [] { didSet { chromeVersion &+= 1 } }
     /// When the prompt that opened the current turn was sent (ms). A queued follow-up has not
     /// opened a turn yet; nil while the newest prompt is an echo.
     public private(set) var lastPromptAt: Double?
@@ -92,32 +92,63 @@ public final class NativeThreadStore {
     // that moves only the context count redraws only the toolbar's counters.
 
     /// The snapshot's pi session, nil before the first one.
-    public private(set) var session: NativeThreadSession?
-    public private(set) var dialogs: [NativeThreadDialog] = []
-    public private(set) var dialogsSupported = true
+    public private(set) var session: NativeThreadSession? { didSet { bothVersions() } }
+    public private(set) var dialogs: [NativeThreadDialog] = [] { didSet { chromeVersion &+= 1 } }
+    public private(set) var dialogsSupported = true { didSet { threadVersion &+= 1 } }
     /// Extension widgets of the kinds this client draws.
-    public private(set) var widgets: [NativeThreadWidget] = []
-    public private(set) var commands: [NativeCommand] = []
-    public private(set) var model: String?
-    public private(set) var thinking: String?
+    public private(set) var widgets: [NativeThreadWidget] = [] { didSet { chromeVersion &+= 1 } }
+    public private(set) var commands: [NativeCommand] = [] { didSet { chromeVersion &+= 1 } }
+    public private(set) var model: String? { didSet { chromeVersion &+= 1 } }
+    public private(set) var thinking: String? { didSet { chromeVersion &+= 1 } }
     public private(set) var stats: NativeThreadStats?
-    public private(set) var supportedActions: Set<String> = []
-    public private(set) var clipped = false
+    public private(set) var supportedActions: Set<String> = [] { didSet { bothVersions() } }
+    public private(set) var clipped = false { didSet { threadVersion &+= 1 } }
     /// The thread's own running state: `settledRunning` unless the connection is lost (a
     /// cached running snapshot is not running). The working row and Stop read it.
-    public private(set) var running = false
+    public private(set) var running = false { didSet { bothVersions() } }
     /// What the host last reported, without the settling `running` adds.
     public private(set) var hostRunning = false
     /// The thread's tail row: pi's current activity while it runs (nil under live thinking,
     /// which has its own spinner, and while a question waits). A pi starting again says so in
     /// the composer (`awaitingPi`), never here.
-    public private(set) var workingLabel: String?
+    public private(set) var workingLabel: String? { didSet { threadVersion &+= 1 } }
     /// User turns in the thread (the toolbar counts them once the whole history is loaded).
     public private(set) var userTurnCount = 0
     public private(set) var hasSubagents = false
 
     /// "piSessionID:generation", nil before the first snapshot.
     public var sessionKey: String? { session?.key }
+
+    // MARK: Catching up
+
+    /// Where the thread stood once it caught up after coming on screen: the versions of what
+    /// its rows and its chrome showed then.
+    public struct CatchUp: Equatable, Sendable {
+        public let thread: Int
+        public let chrome: Int
+    }
+
+    /// Set, in the same update, by the first pull that lands after `run` starts; nil from
+    /// `suspend` (the thread went off screen) until then. Everything up to these versions
+    /// arrived while the thread was away or loading and lands without motion; what changes
+    /// after moves as usual (`CatchUpGate`). Not observed: it changes no pixel itself, so
+    /// catching up costs no pass of its own.
+    @ObservationIgnored public private(set) var catchUp: CatchUp?
+    /// Bumped whenever what the thread's rows show changes (rows, the working label, the
+    /// notices, readiness), and what the composer and the toolbar show (`chromeVersion`). Not
+    /// observed: views read them as they render.
+    @ObservationIgnored public private(set) var threadVersion = 0
+    @ObservationIgnored public private(set) var chromeVersion = 0
+
+    private func bothVersions() {
+        threadVersion &+= 1
+        chromeVersion &+= 1
+    }
+
+    /// The first pull since `run` started has landed.
+    private func caughtUp() {
+        if catchUp == nil { catchUp = CatchUp(thread: threadVersion, chrome: chromeVersion) }
+    }
 
     /// How long `starting` may last before it is reported as an error. Polling continues, so
     /// a pi that answers later still clears it.
@@ -321,11 +352,12 @@ public final class NativeThreadStore {
 
     // MARK: Polling
 
-    // The view's foreground task owns this loop. Reconnection always starts without a revision.
+    // The view's foreground task owns this loop, while the thread is on screen. Reconnection
+    // always starts without a revision.
     /// `preview` is read alongside the first pull while the thread has nothing to show yet.
     public func run(request: @escaping Request, preview: Preview? = nil) async {
         guard !Task.isCancelled else { return }
-        stop()
+        suspend()
         let run = epoch
         self.request = request
         if let preview, snapshot == nil {
@@ -335,17 +367,20 @@ public final class NativeThreadStore {
             }
         }
         await withTaskCancellationHandler {
-            await refresh(fresh: true, resetHistory: true)
+            // The newest page merges onto the history already loaded, as a poll's does: a thread
+            // shown again keeps the older pages read in it. Another session or generation, or no
+            // overlap, starts over from that page.
+            await refresh(fresh: true)
             while !Task.isCancelled && epoch == run {
                 do { try await pause(pollInterval) } catch { break }
                 guard epoch == run else { break }
                 await refresh()
             }
-            if epoch == run { stop() }
+            if epoch == run { suspend() }
         } onCancel: {
             Task { @MainActor [weak self] in
                 guard let self, self.epoch == run else { return }
-                self.stop()
+                self.suspend()
             }
         }
     }
@@ -368,7 +403,11 @@ public final class NativeThreadStore {
         Task { await refresh() }
     }
 
-    public func stop() {
+    /// The thread went off screen (its agent is hidden): the poll loop ends, and everything the
+    /// thread shows stays as it was (ready, running, the rows, the pages of history), so showing
+    /// it again is a flip, and the first pull then catches it up. An action still in flight is
+    /// reported as unknown.
+    public func suspend() {
         // A send still waiting for pi to start was never dispatched: its draft stays as it is.
         if busy, startWaiters.isEmpty {
             notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
@@ -378,11 +417,20 @@ public final class NativeThreadStore {
         recentRequest = UUID()
         historyEpoch = UUID()
         request = nil
+        catchUp = nil
+        // The starting limit counts from the next answer.
+        startingSince = nil
+        if busy { busy = false }
+        if loadingOlder { loadingOlder = false }
+    }
+
+    /// Detaches the store from its host (an error, a pruned agent, a view that went away): as
+    /// `suspend`, and nothing is ready or running until it polls again.
+    public func stop() {
+        suspend()
         if ready { ready = false }
         // Unknown until the thread polls again.
         endStarting()
-        if busy { busy = false }
-        if loadingOlder { loadingOlder = false }
         settleTask?.cancel()
         settleTask = nil
         if settledRunning {
@@ -391,11 +439,15 @@ public final class NativeThreadStore {
         }
     }
 
-    private func settleRunning(_ running: Bool) {
+    /// `catchingUp`: the first pull since the thread came on screen, which lands what happened
+    /// while it was away all at once, a finished turn included.
+    private func settleRunning(_ running: Bool, catchingUp: Bool) {
         settleTask?.cancel()
         settleTask = nil
         if running {
             if !settledRunning { settledRunning = true }
+        } else if catchingUp {
+            if settledRunning { settledRunning = false }
         } else if settledRunning {
             settleTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(400))
@@ -424,7 +476,7 @@ public final class NativeThreadStore {
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
                 if sameSession, let previous, value.revision < previous.revision { return }
                 settlePending(value, sameSession: sameSession)
-                settleRunning(value.running)
+                settleRunning(value.running, catchingUp: catchUp == nil)
                 if !resetHistory, sameSession, value.olderCursor != nil,
                    let first = value.messages.first,
                    let overlap = messages.firstIndex(where: { $0.entryID == first.entryID }) {
@@ -442,6 +494,7 @@ public final class NativeThreadStore {
                 endStarting()
                 if loadError != nil { loadError = nil }
                 derive()
+                caughtUp()
                 resumeStartWaiters(true)
             case .unchanged(let session, let generation, _):
                 if previous?.piSessionID != session || previous?.generation != generation || fresh {
@@ -454,6 +507,7 @@ public final class NativeThreadStore {
                         loadError = nil
                         derive()
                     }
+                    caughtUp()
                     resumeStartWaiters(true)
                 }
             case .failure(let code, _) where code == NativeThreadCode.starting:

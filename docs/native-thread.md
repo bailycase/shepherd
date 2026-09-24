@@ -220,9 +220,18 @@ output grows.
 
 - **Polling:** the visible thread's task polls every 200 ms while pi starts, every 500 ms while
   the agent runs, a question is pending, or a subagent is live, and every 2 s otherwise. Each
-  poll passes the last revision; older snapshots are ignored. A hidden thread stops polling.
+  poll passes the last revision; older snapshots are ignored.
   `wake()` (the servable signal) pulls a visible thread that is not ready yet at once; the polls
   are the fallback.
+- **Switching:** a hidden thread stops polling (`suspend`) and keeps everything it shows: it
+  stays ready and running, with the same rows and pages of history, so showing it again is a
+  flip that rebuilds the thread and its composer once. The first pull after (`run`) merges the
+  newest page onto the history already loaded, as any poll does; another session or
+  generation, or a page with no overlap, starts over. That pull also marks where the thread
+  caught up (`catchUp`, with `threadVersion` and `chromeVersion`, none of them observed), in the
+  same update: what it brought back lands without motion (`CatchUpGate`), and what arrives
+  after moves as usual. `stop` is the teardown (an error, a pruned agent, a view that went
+  away): nothing is ready or running until it polls again.
 - **Starting:** `native_starting` sets `starting`, never `loadError`. `awaitingPi` (starting,
   previewing, or no snapshot yet, without an error) is what the composer watches: only after it
   has held for `AppLayout.startingIndicatorDelay` (two seconds, past a normal start of about

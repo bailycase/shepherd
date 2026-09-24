@@ -132,7 +132,6 @@ struct AgentTurn: View, Equatable {
             && lhs.startedAt == rhs.startedAt && lhs.working == rhs.working
             && (lhs.retry == nil) == (rhs.retry == nil) && (lhs.review == nil) == (rhs.review == nil)
             && (lhs.subagentActions == nil) == (rhs.subagentActions == nil)
-            && lhs.subagentActions?.enabled == rhs.subagentActions?.enabled
             && lhs.subagentActions?.inspectedRunID == rhs.subagentActions?.inspectedRunID
     }
 

@@ -37,7 +37,6 @@ struct ThreadView: View {
     var review: ((String) -> Void)? = nil
     /// The models the host offers, for the composer's model picker.
     var listModels: (() async -> [PiModelCatalog.Entry])? = nil
-    @FocusState private var composing: Bool
     @State private var follower = NativeScrollFollower()
     /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
     @State private var gutter = AppLayout.gutter
@@ -54,9 +53,6 @@ struct ThreadView: View {
     /// The user turn the last ⌥⌘↑/↓ landed on.
     @State private var jumpedTurn: String?
     @State private var arrivals = ThreadArrivals()
-    /// The thread has loaded since it came on screen. Until then (opening it, or the first
-    /// pull after switching back to the agent) whatever changes lands at once.
-    @State private var caughtUp = false
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.view")
@@ -68,9 +64,11 @@ struct ThreadView: View {
         // panel, and live thinking carries its own spinner. A pi that is starting says so in the
         // composer, never here (`NativeThreadStore.workingLabel`).
         let working = store.workingLabel
-        // Loaded before this change: the tail row appearing with the first load just shows.
-        let settled = arrivals.armed
-        let arrived = arrivals.update(rows.map(\.id), session: store.sessionKey, active: active, ready: store.ready)
+        // Until the thread has caught up since it came on screen (opening it, or the first pull
+        // after switching back to the agent), whatever changes lands at once.
+        let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
+        let settled = active && !catchingUp
+        let arrived = arrivals.update(rows.map(\.id), session: store.sessionKey, active: active, catchingUp: catchingUp)
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
                 ScrollView {
@@ -95,7 +93,7 @@ struct ThreadView: View {
                             // every row of a long thread on each streamed chunk.
                             VStack(spacing: 0) {
                                 turn(row, running: running, working: row.live ? working : nil, arriving: arrived.contains(row.id),
-                                     settled: caughtUp)
+                                     settled: settled)
                             }
                             .id(row.id)
                         }
@@ -105,6 +103,9 @@ struct ThreadView: View {
                     .frame(maxWidth: AppLayout.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
+                    // The subagent cards' controls: it changes only when the thread is switched
+                    // to or away from (and when the host's support does), and redraws the cards.
+                    .environment(\.threadActionsEnabled, active && store.supports("subagents"))
                 }
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
@@ -155,8 +156,8 @@ struct ThreadView: View {
                 })
                 // The composer draws "Jump to latest" over the fade it lays on the thread and under
                 // its card and menus, so the pill reads clearly and never covers an open menu.
-                Composer(store: store, active: active, agentName: agentName, hasTurns: !rows.isEmpty, gutter: gutter,
-                         composing: $composing, listModels: listModels, menuRequest: menuRequest,
+                Composer(store: store, active: active, isFocused: isFocused, agentName: agentName, hasTurns: !rows.isEmpty,
+                         gutter: gutter, listModels: listModels, menuRequest: menuRequest,
                          jumpToLatest: follower.showsJump(running: running) ? {
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
@@ -167,10 +168,11 @@ struct ThreadView: View {
         // The composer's menus float over the thread and fit the room above the card in it.
         .coordinateSpace(.named(Composer.threadSpace))
         // Switching back to an agent is a visibility flip: the pull that catches its thread up
-        // runs none of the thread's or the composer's view-attached motion.
-        .transaction { if !caughtUp { $0.disablesAnimations = true } }
-        .task(id: [active, store.ready]) {
-            if !active { caughtUp = false } else if store.ready { caughtUp = true }
+        // runs none of the thread's view-attached motion (the composer gates its own).
+        // Keyed on what the render drew, so only the update carrying it is touched: a hover or a
+        // disclosure inside the thread later still moves.
+        .transaction(value: CatchUpGate.Key(version: store.threadVersion, active: active)) {
+            if catchingUp { $0.disablesAnimations = true }
         }
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
@@ -183,17 +185,11 @@ struct ThreadView: View {
             if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
             wheelMonitor = nil
         }
+        // Hidden, the thread stops polling and keeps what it shows; shown again, it polls from
+        // there (`NativeThreadStore.suspend`).
         .task(id: active) {
-            guard active else { store.stop(); return }
+            guard active else { store.suspend(); return }
             await store.run(request: request, preview: preview)
-        }
-        // Let any deferred AppKit focus release finish before claiming the composer.
-        .task(id: active && isFocused) {
-            composing = false
-            guard active && isFocused else { return }
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            composing = true
         }
     }
 
@@ -218,7 +214,6 @@ struct ThreadView: View {
         SubagentActions(
             inspect: { run in inspectSubagent?(run) },
             command: { run, action, text, mode in Task { await store.subagentCommand(runID: run.runID, action: action, text: text, mode: mode) } },
-            enabled: active && store.supports("subagents"),
             inspectedRunID: inspectedRunID)
     }
 
@@ -332,6 +327,33 @@ struct ThreadView: View {
     }
 }
 
+/// Tells a view whether the render it is in draws a catch-up: what a thread brought back from
+/// while it was away (or loading), which lands without motion. The store marks where it caught
+/// up (`NativeThreadStore.catchUp`, with its content version then) in the same update as the
+/// pull, so catching up takes no pass of its own; this remembers the version the view last
+/// drew, so the render showing those changes, and only it, counts as the catch-up. A thread
+/// that came back unchanged is caught up at once. Read in `body`, and a reference, so keeping
+/// it current never re-renders the view.
+@MainActor
+final class CatchUpGate {
+    private var drawn = Int.min
+
+    /// What a view keys its `transaction(value:)` on, so that only the update in which it drew
+    /// a catch-up (or flipped on screen) is touched, never its subviews' later updates.
+    struct Key: Equatable {
+        let version: Int
+        let active: Bool
+    }
+
+    /// `caughtUpAt` is the version the store had when it caught up (nil until then), and
+    /// `version` its version now.
+    func catchingUp(caughtUpAt: Int?, version: Int) -> Bool {
+        defer { drawn = version }
+        guard let caughtUpAt else { return true }
+        return caughtUpAt > drawn
+    }
+}
+
 /// Which turns arrived at a thread's tail with its latest change, so they (and only they) make
 /// an entrance. Loading is instant: opening the thread, the first pull after it comes back on
 /// screen (an agent switched back to catches up at once), a page of older history, and a
@@ -339,8 +361,9 @@ struct ThreadView: View {
 /// keeping it current never re-renders the thread; the same rows always answer the same set.
 @MainActor
 final class ThreadArrivals {
-    /// The thread is on screen and has loaded since it came there: from now on, turns appended
-    /// at its tail arrive.
+    /// Whether the thread's latest render showed a catch-up (see `CatchUpGate`).
+    let catchUp = CatchUpGate()
+    /// The thread is on screen and caught up: turns appended at its tail arrive.
     private(set) var armed = false
     /// The first rows this saw were still loading (pi's history not known yet).
     private(set) var startedLoading = false
@@ -357,30 +380,29 @@ final class ThreadArrivals {
 
     /// The rows in `ids` that arrived with this change. `session` names the snapshot's pi
     /// session (nil before the first one), `active` is whether the thread is on screen (a hidden
-    /// thread stops polling), and `ready` whether the store's latest pull has landed.
-    func update(_ ids: [String], session: String?, active: Bool, ready: Bool) -> Set<String> {
+    /// thread stops polling), and `catchingUp` whether this render shows a catch-up.
+    func update(_ ids: [String], session: String?, active: Bool, catchingUp: Bool) -> Set<String> {
         if !seen {
             seen = true
             startedLoading = session == nil
         }
-        if !active { armed = false }
+        armed = active && !catchingUp && session != nil
         let next = Signature(session: session, count: ids.count, first: ids.first, last: ids.last)
-        guard armed else {
+        let previous = signature
+        guard armed, let previous else {
             signature = next
             arrived = []
-            armed = active && ready && session != nil
             return arrived
         }
-        guard next != signature else { return arrived }
-        let previous = signature
+        guard next != previous else { return arrived }
         signature = next
-        if previous?.session != session {
+        if previous.session != session {
             arrived = []
-        } else if let last = previous?.last, let index = ids.lastIndex(of: last) {
+        } else if let last = previous.last, let index = ids.lastIndex(of: last) {
             arrived = Set(ids[(index + 1)...])
         } else {
             // An empty thread's first turns arrive; a different window does not.
-            arrived = previous?.last == nil ? Set(ids) : []
+            arrived = previous.last == nil ? Set(ids) : []
         }
         return arrived
     }

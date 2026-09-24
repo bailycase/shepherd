@@ -630,6 +630,80 @@ struct NativeThreadStoreTests {
         #expect(store.messages.map(\.entryID) == ["f"] && store.olderCursor == nil)
     }
 
+    // MARK: Switching away and back
+
+    /// Hiding an agent suspends its thread: polling stops, and everything the thread shows stays
+    /// as it was (ready, still running, the same rows), so showing it again is a flip.
+    @Test func suspendingKeepsTheThreadAsItIs() async {
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [F.user("go", id: "u"), hi]))
+        defer { task.cancel() }
+        let rows = store.rows
+        #expect(store.ready && store.settledRunning && store.running)
+
+        store.suspend()
+        await store.refresh()
+
+        #expect(host.requests.count == 1, "a suspended thread stops pulling")
+        #expect(store.ready && store.settledRunning && store.running && store.rows == rows)
+        #expect(store.catchUp == nil, "it is no longer caught up")
+    }
+
+    /// Four older pages loaded, the agent hidden and shown again: the newest page merges onto
+    /// them as a poll's does, instead of the thread starting over from one page.
+    @Test func aResumedRunOfTheSameSessionKeepsOlderPages() async {
+        let m2 = F.assistant("two", id: "m2"), m3 = F.assistant("three", id: "m3")
+        let (store, host, task) = await started(F.snapshot(messages: [m2, m3], olderCursor: "m2"))
+        let m0 = F.user("zero", id: "m0"), m1 = F.assistant("one", id: "m1")
+        host.next = [.success(.snapshot(value: F.snapshot(messages: [m0, m1, m2], olderCursor: "m0")))]
+        await store.loadOlder()
+        store.suspend()
+        task.cancel()
+
+        host.snapshot = F.snapshot(revision: 2, messages: [m3, F.assistant("four", id: "m4")], olderCursor: "m3")
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+
+        #expect(host.requests.last == .snapshot())
+        #expect(store.messages.map(\.entryID) == ["m0", "m1", "m2", "m3", "m4"] && store.olderCursor == "m0")
+        #expect(store.catchUp != nil)
+    }
+
+    /// A new generation of the session (or another session) is another thread: it starts over.
+    @Test func aResumedRunOfAnotherGenerationStartsOver() async {
+        let m2 = F.assistant("two", id: "m2"), m3 = F.assistant("three", id: "m3")
+        let (store, host, task) = await started(F.snapshot(messages: [m2, m3], olderCursor: "m2"))
+        host.next = [.success(.snapshot(value: F.snapshot(messages: [F.user("zero", id: "m0"), m2], olderCursor: nil)))]
+        await store.loadOlder()
+        store.suspend()
+        task.cancel()
+
+        host.snapshot = F.snapshot(generation: "g2", messages: [m3], olderCursor: "m3")
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+
+        #expect(store.messages.map(\.entryID) == ["m3"] && store.olderCursor == "m3")
+    }
+
+    /// The catch-up latch: set, with the versions of what the thread and the chrome showed then,
+    /// by the first pull after a run starts, and cleared when the run ends.
+    @Test func theFirstPullOfARunCatchesTheThreadUp() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = manualStore()
+        #expect(store.catchUp == nil)
+        let task = await start(store, host)
+        let first = try? #require(store.catchUp)
+        #expect(first?.thread == store.threadVersion && first?.chrome == store.chromeVersion)
+
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("more", id: "u")])
+        await store.refresh()
+        #expect(store.catchUp == first, "later pulls leave it")
+        #expect(store.threadVersion > first?.thread ?? .max, "the thread changed since")
+
+        store.suspend()
+        task.cancel()
+        #expect(store.catchUp == nil)
+    }
+
     @Test func thereIsNoOlderPageWithoutACursor() async {
         let (store, host, task) = await started()
         defer { task.cancel() }

@@ -392,7 +392,6 @@ private struct HoveredReplyThread: View {
 /// detached thread does.
 private struct DetachedThread: View {
     let store: NativeThreadStore
-    @FocusState private var composing: Bool
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -411,8 +410,8 @@ private struct DetachedThread: View {
             // The last reply ends under the card, as a thread scrolled up from its tail does.
             .padding(.bottom, AppLayout.composerFade)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            Composer(store: store, active: true, agentName: "Investigate", hasTurns: true, gutter: AppLayout.gutter,
-                     composing: $composing, jumpToLatest: {})
+            Composer(store: store, active: true, isFocused: false, agentName: "Investigate", hasTurns: true,
+                     gutter: AppLayout.gutter, jumpToLatest: {})
         }
         .background(Color.nw.bgWindow)
     }

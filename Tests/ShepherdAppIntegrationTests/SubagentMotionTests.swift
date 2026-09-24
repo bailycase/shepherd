@@ -131,7 +131,7 @@ struct SubagentMotionTests {
             VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
                 ForEach(model.runs, id: \.id) { run in
                     SubagentStack(runs: [run], turnLive: true,
-                                  actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true))
+                                  actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
                 }
                 Spacer(minLength: 0)
             }
@@ -161,7 +161,7 @@ struct SubagentMotionTests {
         var body: some View {
             VStack(spacing: 0) {
                 SubagentStack(runs: model.runs, turnLive: true,
-                              actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true))
+                              actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
                 Spacer(minLength: 0)
             }
             .padding(NW.Space.l)

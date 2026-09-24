@@ -54,6 +54,29 @@ struct RenderCostReport {
                    ms: MainThreadCPU.median(perChunk))
     }
 
+    /// Hiding a sixty-turn thread and showing it again (its first pull brings nothing new):
+    /// main-thread CPU for each flip, and the bodies each rebuilds.
+    @Test func switchAwayAndBack() async throws {
+        var hides: [Double] = [], shows: [Double] = []
+        var hidden: [String: Int] = [:], shown: [String: Int] = [:]
+        for run in 0..<3 {
+            let snapshot = ThreadFixture.snapshot(ThreadFixture.history(120), stats: NativeThreadStats(contextTokens: 42_000))
+            let thread = FakeThread(snapshot, header: true)
+            try await thread.waitUntilReady()
+            try await Task.sleep(for: .milliseconds(200))
+            if run == 0 { NWRenderProbe.start() }
+            hides.append(await MainThreadCPU.milliseconds { try? await thread.show(false) })
+            if run == 0 { hidden = NWRenderProbe.stop(); NWRenderProbe.start() }
+            shows.append(await MainThreadCPU.milliseconds { try? await thread.show(true) })
+            if run == 0 { shown = NWRenderProbe.stop() }
+            thread.close()
+        }
+        report.add("thread (60 turns) under its toolbar", "switch: hide / show main-thread CPU (median of 3)",
+                   String(format: "%.1f ms / %.1f ms", MainThreadCPU.median(hides), MainThreadCPU.median(shows)))
+        report.add("thread (60 turns) under its toolbar", "switch: hide", counts: hidden)
+        report.add("thread (60 turns) under its toolbar", "switch: show", counts: shown)
+    }
+
     /// A poll that moves only the context count.
     @Test func statsOnlyPoll() async throws {
         var runs: [Double] = []

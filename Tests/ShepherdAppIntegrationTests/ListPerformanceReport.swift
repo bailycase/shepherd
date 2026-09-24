@@ -307,7 +307,7 @@ struct ListPerformanceReport {
         var body: some View {
             ScrollView {
                 SubagentStack(runs: runs, turnLive: runs.contains { !$0.isTerminal },
-                              actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true))
+                              actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
                     .padding(NW.Space.l)
             }
             .frame(width: 800, height: 800)

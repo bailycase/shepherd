@@ -140,6 +140,40 @@ struct WorkspaceNavigationTests {
         #expect(vm.mountedTabs.contains { $0.id == agents[0].tab.id })
     }
 
+    /// Switching away from an agent and back is a flip: the older pages read in its thread and
+    /// where it was scrolled to are still there (the hidden thread keeps its store and its view;
+    /// the first pull after it comes back merges onto the history).
+    @Test func switchingAwayAndBackKeepsLoadedHistoryAndScrollPosition() async throws {
+        let history = ThreadFixture.history(300)
+        let thread = FakeThread(ThreadFixture.snapshot([]), history: history)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        for _ in 0..<4 {
+            await thread.store.loadOlder()
+            ListPerf.settle(thread.window)
+        }
+        #expect(thread.store.messages.count == 250)
+        // Up into the older pages, reading: ⌥⌘↑ from there detaches the thread from its tail.
+        let scroll = try #require(thread.scrollView)
+        _ = ListPerf.scroll(thread.window, scroll, step: -600, steps: 20)
+        thread.commands.send(.previousTurn, to: "fake")
+        let clip = scroll.contentView
+        var last = clip.bounds.origin.y, still = 0
+        try await eventuallyOnMain("the turn jump to come to rest", poll: .milliseconds(30)) {
+            ListPerf.settle(thread.window)
+            still = clip.bounds.origin.y == last ? still + 1 : 0
+            last = clip.bounds.origin.y
+            return still >= 5
+        }
+        let offset = clip.bounds.origin.y
+
+        try await thread.show(false)
+        try await thread.show(true)
+
+        #expect(thread.store.messages.count == 250)
+        #expect(abs(clip.bounds.origin.y - offset) < 1, "scrolled to \(offset), now \(clip.bounds.origin.y)")
+    }
+
     @Test func draggingAnAgentOntoASiblingReordersItsSpaceAndPersists() async throws {
         let app = try AppHarness()
         defer { app.stop() }
