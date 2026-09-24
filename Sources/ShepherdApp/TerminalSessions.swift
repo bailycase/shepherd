@@ -504,7 +504,8 @@ final class TerminalSessionStore {
         sessions[pane.id] = session
         // The agent-creation flow spawns a new agent's pi and adopts this session.
         if reservedPanes.contains(pane.id) { return session }
-        guard rpc, let agentID = pane.agentID else {
+        // Only an agent's first start waits its turn; a pane session made again later starts now.
+        guard rpc, let agentID = pane.agentID, !startQueue.started.contains(agentID) else {
             Task { await start(session, pane: pane, tab: tab) }
             return session
         }
