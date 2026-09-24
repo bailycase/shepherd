@@ -328,9 +328,14 @@ overshoot as they grow from their anchor) and the confirmation pop (`.bouncy`, 4
 | `shimmer` | 1.4s | ease-in-out, repeating | loading placeholders | — | static |
 
 The glow, the spinner, and the shimmer are clock-driven (`NWPhase`), so Reduce Motion can change
-while they are on screen. A Reduce Motion cross-fade still eases the layout a change moves (the
-rows under an opening disclosure, a column a pane narrows) over its 120ms; only what arrives or
-leaves stops travelling.
+while they are on screen. The spinner and the glow are render-server animations: Core Animation
+turns the arc and pulses the dot on their own layers (`NWLayerSpinner`, `NWLayerGlowDot`),
+started at the clock's phase so every one moves in step, and one on screen costs the app no
+frames (drawn by a SwiftUI timeline, a single spinner redrew and relaid out its window on every
+display frame: most of a core in a debug build). The shimmer stays a timeline. None of them
+moves under `nwMotionPaused` (see Performance). A Reduce Motion cross-fade still eases the
+layout a change moves (the rows under an opening disclosure, a column a pane narrows) over its
+120ms; only what arrives or leaves stops travelling.
 
 **Applying motion.** Never write a duration or a curve in a view: an ad-hoc
 `withAnimation(.easeOut(duration: 0.15))` is a bug, like a hardcoded color.
@@ -414,6 +419,11 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
   (between `onDisappear` and `onAppear`: a lazy stack keeps a row it let go of for a while). A
   restored workspace of twelve agents drew about 6,000 spinner frames and spent about 4 s of
   main-thread CPU every 4 s idle until they did; `IdleCostTests` counts the frames.
+- **Motion on screen runs on the render server.** A spinner or a glow is a Core Animation
+  animation on a layer (see Motion), never a view redrawn per frame: one spinner drawn by a
+  timeline cost 2.8 s of main-thread CPU every 3 s, and now costs what an empty window does.
+  `IdleCostTests` checks that one turning and one glowing draw no frames and never lay the
+  window out.
 
 ## Density and row settings
 

@@ -353,11 +353,12 @@ extension EnvironmentValues {
     @Entry public var nwMotionPaused: Bool = false
 }
 
-/// Time-driven phase for the continuous motions. Deriving the phase from the clock (instead of
-/// a repeating animation started in `onAppear`) keeps a spinner or glow correct when Reduce
-/// Motion toggles while it is on screen: the timeline simply pauses or resumes. A timeline also
-/// pauses under `nwMotionPaused` and while its view is off screen (`onDisappear`), so motion no
-/// one sees costs nothing.
+/// Time-driven phase for the continuous motions. The spinner and the glow are Core Animation
+/// animations started at the clock's phase (`NWLayerMotion`), so every one on screen moves in
+/// step and costs the app nothing per frame; the shimmer is a timeline that reads the phase each
+/// frame. Either way Reduce Motion can toggle while one is on screen: the animation is removed
+/// or the timeline pauses. Both also stop under `nwMotionPaused`, and the timeline while its view
+/// is off screen (`onDisappear`), so motion no one sees costs nothing.
 enum NWPhase {
     /// 0..<1 through one period of `motion`.
     static func fraction(_ date: Date, _ motion: NW.Motion) -> Double {

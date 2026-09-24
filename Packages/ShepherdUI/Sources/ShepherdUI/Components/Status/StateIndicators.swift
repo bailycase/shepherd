@@ -56,7 +56,7 @@ public struct NWStatusDot: View {
             if state.isHollow {
                 Circle().strokeBorder(fill, lineWidth: 1)
             } else if state.glows {
-                NWGlow { Circle().fill(fill) }
+                NWLayerGlowDot(color: fill)
             } else {
                 Circle().fill(fill)
             }
@@ -67,29 +67,9 @@ public struct NWStatusDot: View {
     }
 }
 
-/// Opacity pulse driven by the clock; static under Reduce Motion. Paused off screen.
-struct NWGlow<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.nwMotionPaused) private var motionPaused
-    @State private var onScreen = false
-
-    var body: some View {
-        if reduceMotion {
-            content()
-        } else {
-            TimelineView(.animation(minimumInterval: nil, paused: motionPaused || !onScreen)) { context in
-                let _ = NWRenderProbe.tick("ui.glowFrame")
-                content().opacity(NWPhase.glowOpacity(context.date))
-            }
-            .onAppear { onScreen = true }
-            .onDisappear { onScreen = false }
-        }
-    }
-}
-
-/// The running spinner: a 3/4 arc turning once a second. Static under Reduce Motion. As a
-/// style on a native `ProgressView`: `.progressViewStyle(.nwSpinner)`.
+/// The running spinner: a 3/4 arc turning once a second (by Core Animation: `NWLayerSpinner`).
+/// Static under Reduce Motion. As a style on a native `ProgressView`:
+/// `.progressViewStyle(.nwSpinner)`.
 public struct NWSpinnerStyle: ProgressViewStyle {
     let size: CGFloat
     let color: Color?
@@ -112,29 +92,9 @@ extension ProgressViewStyle where Self == NWSpinnerStyle {
 struct NWSpinnerArc: View {
     let size: CGFloat
     let color: Color?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.nwMotionPaused) private var motionPaused
-    /// Between `onAppear` and `onDisappear`: a row a lazy stack has let go of keeps its view
-    /// for a while, and must not keep turning.
-    @State private var onScreen = false
 
     var body: some View {
-        let arc = Circle().trim(from: 0, to: 0.75)
-            .stroke(color ?? .nw.running, style: StrokeStyle(lineWidth: max(1.5, size * 0.145), lineCap: .round))
-            .padding(max(1.5, size * 0.145) / 2)
-        Group {
-            if reduceMotion {
-                arc
-            } else {
-                TimelineView(.animation(minimumInterval: nil, paused: motionPaused || !onScreen)) { context in
-                    let _ = NWRenderProbe.tick("ui.spinnerFrame")
-                    arc.rotationEffect(.degrees(NWPhase.fraction(context.date, .spin) * 360))
-                }
-                .onAppear { onScreen = true }
-                .onDisappear { onScreen = false }
-            }
-        }
-        .frame(width: size, height: size)
+        NWLayerSpinner(size: size, color: color ?? .nw.running)
     }
 }
 

@@ -124,6 +124,34 @@ struct MotionTests {
         #expect(abs(NWPhase.glowOpacity(start.addingTimeInterval(0.8)) - 0.35) < 1e-9)
     }
 
+    /// The render server plays the glow from keyframes: the clock's curve, sampled evenly over
+    /// one period and closed where it began, so the pulse is the cosine it was.
+    @Test func theGlowsKeyframesFollowItsCurve() {
+        let frames = NWPhase.glowKeyframes(count: 64)
+        #expect(frames.values.count == 65 && frames.keyTimes.count == 65)
+        #expect(frames.keyTimes.first == 0 && frames.keyTimes.last == 1)
+        #expect(abs(frames.values[0] - 1) < 1e-9 && abs(frames.values[64] - 1) < 1e-9)
+        #expect(abs(frames.values[32] - 0.35) < 1e-9)
+        for (value, time) in zip(frames.values, frames.keyTimes) {
+            let date = Date(timeIntervalSinceReferenceDate: time * Motion.glow.duration)
+            #expect(abs(value - NWPhase.glowOpacity(date)) < 1e-9)
+        }
+        // Linear between frames, the pulse never strays a percent from the cosine.
+        for step in 0..<640 {
+            let fraction = Double(step) / 640
+            let index = Int(fraction * 64)
+            let local = fraction * 64 - Double(index)
+            let interpolated = frames.values[index] + (frames.values[index + 1] - frames.values[index]) * local
+            let exact = NWPhase.glowOpacity(Date(timeIntervalSinceReferenceDate: fraction * Motion.glow.duration))
+            #expect(abs(interpolated - exact) < 0.01)
+        }
+    }
+
+    @Test(arguments: [(CGFloat(8), CGFloat(1.5)), (13, 1.885), (48, 6.96)])
+    func theSpinnersStrokeScalesWithItsSize(size: CGFloat, width: CGFloat) {
+        #expect(abs(NWPhase.spinnerLineWidth(size: size) - width) < 1e-6)
+    }
+
     @Test func theShimmerPulsesBetweenDimAndFull() {
         let start = Date(timeIntervalSinceReferenceDate: 0)
         #expect(abs(NWPhase.shimmerOpacity(start) - 0.55) < 1e-9)
