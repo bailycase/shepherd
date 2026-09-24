@@ -2,17 +2,21 @@
 """Release plumbing for .github/workflows/release.yml, kept out of the YAML so it can be
 tested (Tests/Release/test_release.py) and run locally.
 
-Shepherd ships as two apps from one workflow:
+Shepherd ships as two Mac apps from one workflow:
 
   Shepherd          tag vX.Y.Z (stable) or vX.Y.Z-beta.N (beta)
   Shepherd Nightly  every push to the nightly branch: its own bundle id, name, feed and DMG
+
+The same push to nightly also uploads the iOS client (Shepherd iOS) to TestFlight for internal
+testing, when an App Store Connect key is configured. No other trigger uploads it yet.
 
 Release candidates are retired: an rc tag builds nothing. Feed names and bundle ids are a
 contract with the apps (UpdateChannel and ShepherdEdition in Sources/).
 
 usage:
-  release.py plan <ref> <stamp> [<attempt> [<published-tag>]]
-                                        the build for a pushed ref, as plan=<json> for $GITHUB_OUTPUT
+  release.py plan <ref> <stamp> [<attempt> [<published-tag>]] [--asc-key]
+                                        the build for a pushed ref, as plan=<json> for $GITHUB_OUTPUT;
+                                        --asc-key says the App Store Connect key is configured
   release.py route                      tags on stdin (newest first) -> "tag asset archive feeds"
   release.py latest <feed>              tags on stdin (newest first) -> the newest tag in <feed>
   release.py feeds                      "dir channel" per feed generate_appcast builds
@@ -21,6 +25,7 @@ usage:
                                         feed at them; prints the files to upload
   release.py publish <casts> <pages>    write every gh-pages feed, legacy aliases included
   release.py verify-app <app> <app-key> [version]  check a built app is the app it claims to be
+  release.py verify-ios <app> <build>   check an archived iOS app before it is uploaded
 """
 from __future__ import annotations
 
@@ -88,6 +93,25 @@ LEGACY_ALIASES = [
     ("appcast-nightly.xml", "beta"),
 ]
 
+@dataclass(frozen=True)
+class IOSApp:
+    name: str
+    bundle_id: str
+    scheme: str
+    configuration: str
+    export_options: str
+    testing: str   # the TestFlight audience a build of this lane reaches
+
+    @property
+    def product(self) -> str:
+        return f"{self.name}.app"
+
+
+# The nightly lane only. Beta tags (external testing) and stable tags (the App Store) come later.
+IOS = IOSApp("Shepherd iOS", "com.bailycase.shepherd.ios", "Shepherd iOS", "Release",
+             "App/iOS/ExportOptions.plist", "internal")
+IOS_SECRETS = ("APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_P8")
+
 STABLE = re.compile(r"^v\d+\.\d+\.\d+$")
 BETA = re.compile(r"^v\d+\.\d+\.\d+-beta\.\d+$")
 RC = re.compile(r"^v\d+\.\d+\.\d+-rc\.\d+$")
@@ -96,10 +120,38 @@ STAMP = re.compile(r"^\d{12}$")
 NIGHTLY_BRANCH = "refs/heads/nightly"
 
 
-def plan(ref: str, stamp: str, attempt: int = 1, published: str = "") -> dict:
+def plan(ref: str, stamp: str, attempt: int = 1, published: str = "", asc_key: bool = False) -> dict:
     """What a push of `ref` builds. `stamp` (UTC yyyymmddHHMM) names a nightly. `attempt` is
     the workflow run's attempt, and `published` the nightly-* tag already on the pushed commit,
-    if any."""
+    if any. `asc_key` says the App Store Connect key the iOS upload signs with is configured."""
+    mac = _plan_mac(ref, stamp, attempt, published)
+    return {**mac, **_plan_ios(ref, mac, asc_key)}
+
+
+def _plan_ios(ref: str, mac: dict, asc_key: bool) -> dict:
+    """The iOS client rides the nightly lane: whenever Shepherd Nightly builds, it goes to
+    TestFlight internal testing too. It never gates the Mac build, and is skipped (with a
+    reason the workflow prints) when the key is missing."""
+    if ref != NIGHTLY_BRANCH:
+        return {"ios": False, "ios_reason": "only a push to nightly uploads the iOS client to TestFlight"}
+    if not mac["build"]:
+        return {"ios": False, "ios_reason": mac["reason"]}
+    if not asc_key:
+        return {"ios": False, "ios_reason": "TestFlight upload skipped: " + ", ".join(IOS_SECRETS)
+                + " are not all set. The Mac release is unaffected"}
+    return {
+        "ios": True,
+        "ios_name": IOS.name,
+        "ios_bundle_id": IOS.bundle_id,
+        "ios_scheme": IOS.scheme,
+        "ios_configuration": IOS.configuration,
+        "ios_product": IOS.product,
+        "ios_export_options": IOS.export_options,
+        "ios_testing": IOS.testing,
+    }
+
+
+def _plan_mac(ref: str, stamp: str, attempt: int, published: str) -> dict:
     if ref.startswith("refs/tags/"):
         tag = ref.removeprefix("refs/tags/")
         if STABLE.match(tag):
@@ -266,6 +318,41 @@ def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
     return problems
 
 
+VERSION_STRING = re.compile(r"^\d+(\.\d+){0,2}$")
+
+
+def verify_ios(path: str, build: str) -> list[str]:
+    """Problems App Store Connect would reject, or that would upload the wrong app, found in the
+    archived app before it is signed and sent. Empty when it is ready."""
+    problems = []
+    if os.path.basename(os.path.normpath(path)) != IOS.product:
+        problems.append(f"bundle is named {os.path.basename(os.path.normpath(path))!r}, expected {IOS.product!r}")
+    try:
+        with open(os.path.join(path, "Info.plist"), "rb") as f:
+            info = plistlib.load(f)
+    except OSError as error:
+        return problems + [f"no Info.plist: {error}"]
+    expected = {
+        "CFBundleIdentifier": IOS.bundle_id,
+        "CFBundleVersion": build,
+        # Without it every build waits at Missing Compliance until answered by hand.
+        "ITSAppUsesNonExemptEncryption": False,
+    }
+    for key_name, value in expected.items():
+        if info.get(key_name) != value:
+            problems.append(f"{key_name} is {info.get(key_name)!r}, expected {value!r}")
+    short = info.get("CFBundleShortVersionString")
+    if not isinstance(short, str) or not VERSION_STRING.match(short):
+        # A Mac nightly's 0.0.0-nightly.<stamp> is refused (ITMS-90060).
+        problems.append(f"CFBundleShortVersionString {short!r} is not one to three integers")
+    if not os.path.isfile(os.path.join(path, "PrivacyInfo.xcprivacy")):
+        problems.append("PrivacyInfo.xcprivacy is missing")
+    executable = info.get("CFBundleExecutable")
+    if not executable or not os.path.isfile(os.path.join(path, executable)):
+        problems.append(f"CFBundleExecutable {executable!r} is not in the bundle")
+    return problems
+
+
 def _tags_from_stdin() -> list[str]:
     return [line.strip() for line in sys.stdin if line.strip()]
 
@@ -275,11 +362,13 @@ def main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 64
     command, args = argv[0], argv[1:]
-    if command == "plan" and 2 <= len(args) <= 4:
+    if command == "plan" and 2 <= len([a for a in args if a != "--asc-key"]) <= 4:
+        asc_key = "--asc-key" in args
+        args = [a for a in args if a != "--asc-key"]
         ref, stamp = args[:2]
         attempt = int(args[2]) if len(args) > 2 else 1
         published = args[3] if len(args) > 3 else ""
-        print("plan=" + json.dumps(plan(ref, stamp, attempt, published), sort_keys=True))
+        print("plan=" + json.dumps(plan(ref, stamp, attempt, published, asc_key), sort_keys=True))
     elif command == "route" and not args:
         for tag in _tags_from_stdin():
             routed = route(tag)
@@ -312,6 +401,13 @@ def main(argv: list[str]) -> int:
         if problems:
             return 1
         print(f"{args[0]} is {APPS[args[1]].name} ({APPS[args[1]].bundle_id})")
+    elif command == "verify-ios" and len(args) == 2:
+        problems = verify_ios(*args)
+        for problem in problems:
+            print(f"::error::{args[0]}: {problem}", file=sys.stderr)
+        if problems:
+            return 1
+        print(f"{args[0]} is {IOS.name} ({IOS.bundle_id}) build {args[1]}")
     else:
         print(__doc__, file=sys.stderr)
         return 64
