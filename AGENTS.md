@@ -563,6 +563,10 @@ Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a vie
 therefore mutually exclusive without locks.
 
 - Never `.sync` between these queues; it deadlocks.
+- Never `.sync` onto the server queue from the main thread either: a busy queue (a history
+  decoding at launch) stalls every frame. `SessionServer.state` reads the copy `StateStore`
+  publishes under a lock each time it commits, so it never waits; a mutation the caller awaited
+  is always in it. Code on the queue reads `store.state`.
 - Attach stays atomic: snapshot, attachment registration, and output watermark in one queue turn.
 - Callbacks (`onOutput`, `onStateChanged`, …) hop to the main queue in FIFO order. Never call them
   from the server queue directly.
