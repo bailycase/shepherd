@@ -771,7 +771,11 @@ click still lands where it was aimed).
 - **Model picker** (`ModelPicker` on `NWModelPicker`, 260pt, at most 360pt tall): from the
   model chip or ⇧⌘M. A search field, then Recent (up to four, from any thread), then one section
   per provider. Rows show the model in mono 12 and a running check on the current one, or its
-  context size. It picks the model only.
+  context size. It picks the model only. A catalog runs to hundreds of models, so the list is
+  lazy (only the rows on screen exist), derived once per catalog and query rather than while
+  drawing (`ModelCatalog`, `ModelPickerState`; this Mac's catalog is asked once per process, off
+  the main actor), and a hover moves the highlight without redrawing the list or scrolling it
+  (`ComposerMenuPerformanceTests`).
 - **Thinking menu** (`NWThinkingMenu`, 220pt): Off, Low ("quick"), Medium ("default"), High
   ("slower, deeper"), with a check on the current level.
 

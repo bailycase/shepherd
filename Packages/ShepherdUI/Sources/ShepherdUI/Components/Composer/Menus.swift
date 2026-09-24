@@ -32,6 +32,14 @@ public struct NWMenuHeader: View {
     }
 }
 
+#if DEBUG
+/// Debug builds count the menu rows they draw, so tests can pin how much of a long menu a change
+/// redraws (opening, filtering, scrolling, a hover).
+@MainActor public enum NWMenuDiagnostics {
+    public static var rowBodies = 0
+}
+#endif
+
 /// A 28pt menu row: `runningTint` while highlighted. The row is a button; hovering highlights it.
 struct NWMenuRow<Label: View>: View {
     let highlighted: Bool
@@ -42,6 +50,9 @@ struct NWMenuRow<Label: View>: View {
     @ViewBuilder let label: () -> Label
 
     var body: some View {
+        #if DEBUG
+        let _ = NWMenuDiagnostics.rowBodies += 1
+        #endif
         Button(action: action) {
             HStack(spacing: spacing) { label() }
                 .padding(.horizontal, NW.Space.m)
@@ -195,13 +206,72 @@ public struct NWModelSection: Identifiable, Equatable, Sendable {
     }
 }
 
+/// The model picker's list, flattened once from its sections rather than on every draw: one row
+/// per section header and per model, each model's position among the models (what ↑↓ and the
+/// highlight count in), and the list's height.
+public struct NWModelList: Equatable, Sendable {
+    public struct Row: Identifiable, Equatable, Sendable {
+        public enum Kind: Equatable, Sendable {
+            case header(String)
+            case option(NWModelOption, position: Int)
+        }
+
+        /// Unique in the list: a model can be in Recent and in its provider's section.
+        public let id: String
+        public let kind: Kind
+
+        /// The model's position among the list's models; nil for a header.
+        public var position: Int? {
+            if case .option(_, let position) = kind { return position }
+            return nil
+        }
+    }
+
+    public let rows: [Row]
+    /// Every model in order: `options[selection]` is the highlighted one.
+    public let options: [NWModelOption]
+    /// The row of each model in `options`.
+    private let optionRows: [String]
+    /// Every row at its fixed height: headers 24pt, models 28pt.
+    public let height: CGFloat
+
+    public init(sections: [NWModelSection]) {
+        var rows: [Row] = []
+        var options: [NWModelOption] = []
+        var optionRows: [String] = []
+        for section in sections where !section.options.isEmpty {
+            rows.append(Row(id: "#" + section.title, kind: .header(section.title)))
+            for option in section.options {
+                let id = section.title + "/" + option.id
+                rows.append(Row(id: id, kind: .option(option, position: options.count)))
+                options.append(option)
+                optionRows.append(id)
+            }
+        }
+        self.rows = rows
+        self.options = options
+        self.optionRows = optionRows
+        let headers = rows.count - options.count
+        height = CGFloat(headers) * NWComposerMetrics.menuHeaderHeight + CGFloat(options.count) * NWComposerMetrics.menuRowHeight
+    }
+
+    /// The row that shows `options[position]`.
+    public func rowID(ofOption position: Int) -> String? {
+        optionRows.indices.contains(position) ? optionRows[position] : nil
+    }
+}
+
 /// The model picker (NWComposer board): 260pt, "Search models" on top, then Recent and one
 /// section per provider; 28pt rows with the model in mono 12 and a check on the current one.
 /// The list is at most 360pt tall, and the whole picker at most `maxHeight`. The search field
 /// takes focus and drives the selection.
+///
+/// A catalog runs to hundreds of models, so the list is lazy: only the rows on screen exist, a
+/// row redraws only when its model or its highlight changes, and the pointer passing over rows
+/// (or the list scrolling under it) moves the highlight without scrolling the list.
 public struct NWModelPicker: View {
     @Binding var query: String
-    let sections: [NWModelSection]
+    let list: NWModelList
     let loading: Bool
     @Binding var selection: Int
     let maxHeight: CGFloat?
@@ -209,15 +279,21 @@ public struct NWModelPicker: View {
     let onClose: () -> Void
     @FocusState private var searching: Bool
 
-    public init(query: Binding<String>, sections: [NWModelSection], loading: Bool = false, selection: Binding<Int>,
+    public init(query: Binding<String>, list: NWModelList, loading: Bool = false, selection: Binding<Int>,
                 maxHeight: CGFloat? = nil, onChoose: @escaping (NWModelOption) -> Void, onClose: @escaping () -> Void) {
         _query = query
-        self.sections = sections
+        self.list = list
         self.loading = loading
         _selection = selection
         self.maxHeight = maxHeight
         self.onChoose = onChoose
         self.onClose = onClose
+    }
+
+    public init(query: Binding<String>, sections: [NWModelSection], loading: Bool = false, selection: Binding<Int>,
+                maxHeight: CGFloat? = nil, onChoose: @escaping (NWModelOption) -> Void, onClose: @escaping () -> Void) {
+        self.init(query: query, list: NWModelList(sections: sections), loading: loading, selection: selection, maxHeight: maxHeight,
+                  onChoose: onChoose, onClose: onClose)
     }
 
     /// The list's height limit: the board's 360pt, or what `maxHeight` leaves under the search.
@@ -226,78 +302,105 @@ public struct NWModelPicker: View {
         return max(NWComposerMetrics.menuRowHeight, min(NWComposerMetrics.modelPickerMaxHeight, (height ?? .infinity) - chrome))
     }
 
+    private static let top = "top"
+
     public var body: some View {
         let nw = Color.nw
-        let flat = sections.flatMap(\.options)
-        let positions = Dictionary(flat.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).foregroundStyle(nw.textTertiary)
-                TextField(text: $query, prompt: Text("Search models").foregroundStyle(nw.textTertiary)) { Text("Search models") }
-                    .textFieldStyle(.plain)
-                    .font(.nw(.ui, weight: .regular))
-                    .focused($searching)
-                    .onKeyPress(.downArrow) { selection = min(max(0, flat.count - 1), selection + 1); return .handled }
-                    .onKeyPress(.upArrow) { selection = max(0, selection - 1); return .handled }
-                    .onKeyPress(.return) {
-                        if flat.indices.contains(selection) { onChoose(flat[selection]) }
-                        return .handled
-                    }
-                    .onKeyPress(.escape) { onClose(); return .handled }
-                    .accessibilityLabel("Search models")
-            }
-            .padding(.horizontal, NW.Space.m)
-            .frame(height: NWComposerMetrics.modelSearchHeight)
-            .overlay(alignment: .bottom) { NWHairline() }
-            .padding(.bottom, NW.Space.xs)
-            ScrollViewReader { proxy in
+        // Rows have fixed heights, so the list's height is known without laying any of them out.
+        let height = min(list.height + (loading ? NWComposerMetrics.menuRowHeight : 0), Self.listMaxHeight(in: maxHeight))
+        ScrollViewReader { proxy in
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: NW.Space.m) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 11, weight: .medium)).foregroundStyle(nw.textTertiary)
+                    TextField(text: $query, prompt: Text("Search models").foregroundStyle(nw.textTertiary)) { Text("Search models") }
+                        .textFieldStyle(.plain)
+                        .font(.nw(.ui, weight: .regular))
+                        .focused($searching)
+                        .onKeyPress(.downArrow) { move(to: selection + 1, proxy); return .handled }
+                        .onKeyPress(.upArrow) { move(to: selection - 1, proxy); return .handled }
+                        .onKeyPress(.return) {
+                            if list.options.indices.contains(selection) { onChoose(list.options[selection]) }
+                            return .handled
+                        }
+                        .onKeyPress(.escape) { onClose(); return .handled }
+                        .accessibilityLabel("Search models")
+                }
+                .padding(.horizontal, NW.Space.m)
+                .frame(height: NWComposerMetrics.modelSearchHeight)
+                .overlay(alignment: .bottom) { NWHairline() }
+                .padding(.bottom, NW.Space.xs)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        Color.clear.frame(height: 0).id(Self.top)
                         if loading {
                             HStack(spacing: NW.Space.m) {
                                 ProgressView().progressViewStyle(.nwSpinner(size: 12))
                                 Text("Loading models…").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
                             }
-                            .padding(NW.Space.m)
+                            .padding(.horizontal, NW.Space.m)
+                            .frame(height: NWComposerMetrics.menuRowHeight)
                             .nwTransition(.content)
                         }
-                        ForEach(sections) { section in
-                            NWMenuHeader(section.title)
-                            ForEach(section.options) { option in
-                                let position = positions[option.id] ?? 0
-                                NWMenuRow(highlighted: position == selection, action: { onChoose(option) }, onHover: { selection = position }) {
-                                    Text(option.title).font(.nwMono(12)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                                    Spacer(minLength: NW.Space.m)
-                                    if option.isCurrent {
-                                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.running)
-                                    } else if let note = option.note {
-                                        Text(note).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
-                                    }
-                                }
-                                .id("\(section.title)/\(option.id)")
-                                .accessibilityLabel(option.id + (option.isCurrent ? ", current" : ""))
-                            }
+                        ForEach(list.rows) { row in
+                            NWModelListRow(row: row, highlighted: row.position == selection, choose: onChoose, hover: { selection = $0 })
+                                .equatable()
                         }
                     }
                     // The catalog arriving replaces "Loading models…"; filtering stays instant.
                     .nwAnimation(.content, value: loading)
                 }
-                .frame(maxHeight: Self.listMaxHeight(in: maxHeight))
-                .onChange(of: selection) { _, index in
-                    guard flat.indices.contains(index) else { return }
-                    let option = flat[index]
-                    if let section = sections.first(where: { $0.options.contains(option) }) {
-                        proxy.scrollTo("\(section.title)/\(option.id)")
-                    }
+                .frame(height: height)
+                // A new query starts over at the top of its results.
+                .onChange(of: query) { _, _ in
+                    selection = 0
+                    proxy.scrollTo(Self.top, anchor: .top)
                 }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
         .modifier(NWMenuSurface(width: NWComposerMetrics.modelPickerWidth))
         .onAppear { searching = true }
-        .onChange(of: query) { _, _ in selection = 0 }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Choose a model")
+    }
+
+    /// ↑↓: the highlight moves, and the list scrolls just enough to show it.
+    private func move(to position: Int, _ proxy: ScrollViewProxy) {
+        selection = min(max(0, list.options.count - 1), max(0, position))
+        if let row = list.rowID(ofOption: selection) { proxy.scrollTo(row) }
+    }
+}
+
+/// One row of the model list. Equatable on what it draws (closures aside), so a highlight moving
+/// redraws the two rows it moves between and nothing else. One view whatever the row is, so the
+/// lazy list never has to build a row to learn its shape.
+struct NWModelListRow: View, Equatable {
+    let row: NWModelList.Row
+    let highlighted: Bool
+    let choose: (NWModelOption) -> Void
+    let hover: (Int) -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.row == b.row && a.highlighted == b.highlighted }
+
+    var body: some View {
+        let nw = Color.nw
+        VStack(spacing: 0) {
+            switch row.kind {
+            case .header(let title):
+                NWMenuHeader(title)
+            case .option(let option, let position):
+                NWMenuRow(highlighted: highlighted, action: { choose(option) }, onHover: { hover(position) }) {
+                    Text(option.title).font(.nwMono(12)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                    Spacer(minLength: NW.Space.m)
+                    if option.isCurrent {
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)).foregroundStyle(nw.running)
+                    } else if let note = option.note {
+                        Text(note).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
+                    }
+                }
+                .accessibilityLabel(option.id + (option.isCurrent ? ", current" : ""))
+            }
+        }
     }
 }
 
