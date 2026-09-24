@@ -239,6 +239,8 @@ final class TerminalSessionStore {
     var onAgentChildren: ((AgentID, [ChildRun]) -> Void)?
     /// Fired when an agent's notify tool asks for a system notification.
     var onNotify: ((AgentID, String, String) -> Void)?
+    /// Fired when an agent's native thread has a new revision to fetch.
+    var onThreadRevision: ((AgentID) -> Void)?
     /// Fired when a pane's process exits, after the local session is marked
     /// exited and before it is dropped from the store.
     var onPaneSessionExited: ((PaneID) -> Void)?
@@ -299,6 +301,9 @@ final class TerminalSessionStore {
         }
         server.onNativeThreadServable = { [weak self] agentID in
             self?.threadServable(agentID)
+        }
+        server.onThreadRevision = { [weak self] agentID in
+            self?.onThreadRevision?(agentID)
         }
     }
 

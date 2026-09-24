@@ -355,6 +355,64 @@ struct NativeThreadTests {
         #expect(pi.stdin("abort").isEmpty)
     }
 
+    // MARK: - Revision pushes
+
+    /// A thread's new revisions reach the app on the main queue for that agent alone, never in
+    /// more hops than revisions, and nothing is pushed while nothing changes.
+    @Test func revisionsArePushedForTheirAgentOnlyAndNeverWhileIdle() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pushes = Locked<[AgentID]>([])
+        let childReports = Locked(0)
+        h.server.onThreadRevision = { agentID in
+            dispatchPrecondition(condition: .onQueue(.main))
+            pushes.withValue { $0.append(agentID) }
+        }
+        h.server.onAgentChildren = { _, _ in childReports.withValue { $0 += 1 } }
+        let pi = try await PiAgent.launch(on: h)
+        let bystander = try await PiAgent.launch(on: h)
+        func settled(_ agent: PiAgent) async throws -> NativeThreadSnapshot {
+            try await agent.snapshot("the bootstrap to land") { !$0.messages.isEmpty && $0.stats != nil && $0.commands != nil }
+        }
+        _ = try await settled(bystander)
+        let idle = try await settled(pi)
+        // A reply hops to the main queue after every push its queue turn follows.
+        let quiet = pushes.current.count
+
+        for _ in 0..<10 { _ = try await pi.request(.snapshot(expectedSessionID: idle.piSessionID, afterRevision: idle.revision)) }
+        let reports = try ExtensionClient(path: h.socketPath)
+        try reports.send(.setAgentChildren(agentID: pi.agent.id, children: []))
+        try await eventually("the unchanged children report") { childReports.current == 1 }
+        #expect(pushes.current.count == quiet, "polls and a report that changes nothing push nothing")
+
+        _ = try await pi.send("slow", from: idle)
+        _ = try await pi.snapshot("the paused turn to stream") { $0.running && !$0.provisional.isEmpty }
+        pi.release(1)
+        pi.release(2)
+        let done = try await pi.snapshot("the settled history") { !$0.running && $0.provisional.isEmpty && $0.messages.count == 5 }
+        let streamed = Array(pushes.current.dropFirst(quiet))
+        #expect(!streamed.isEmpty)
+        #expect(streamed.allSatisfy { $0 == pi.agent.id })
+        #expect(UInt64(streamed.count) <= done.revision - idle.revision, "one hop carries every revision it waited behind")
+    }
+
+    /// Revisions pi reached before its pane was bound had no agent to reach: binding pushes one.
+    @Test func bindingAPaneToAPiPushesItsAgent() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pushes = Locked<[AgentID]>([])
+        h.server.onThreadRevision = { agentID in pushes.withValue { $0.append(agentID) } }
+        let session = try await h.server.createSession(params: CreateSessionParams(cwd: h.dir.path, command: StubPi.command, runtime: .rpc))
+        let space = Fixture.space(path: h.dir.path)
+        let worker = Fixture.agent(in: space)
+        try await h.seed(Fixture.workspace([worker], space: space))
+        #expect(pushes.current.isEmpty)
+
+        let paneID = try #require(worker.agent.paneID)
+        try await h.server.updatePaneSession(tabID: worker.tab.id, paneID: paneID, sessionID: session.id)
+        try await eventually("the binding's push") { pushes.current.contains(worker.agent.id) }
+    }
+
     // MARK: - Subagents
 
     /// The children extension publishes run cards; card actions go back to it as childCommand
