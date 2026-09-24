@@ -36,25 +36,32 @@ struct RPCSessionTests {
         func send(_ command: RPCCommand) { queue.async { self.session.send(command) } }
 
         func types() -> [String] {
-            events.current.map { event in
-                switch event {
-                case .agentStart: "agent_start"
-                case .agentEnd: "agent_end"
-                case .agentSettled: "agent_settled"
-                case .turnStart: "turn_start"
-                case .turnEnd: "turn_end"
-                case .messageStart: "message_start"
-                case .messageUpdate: "message_update"
-                case .messageEnd: "message_end"
-                case .toolExecutionStart: "tool_execution_start"
-                case .toolExecutionUpdate: "tool_execution_update"
-                case .toolExecutionEnd: "tool_execution_end"
-                case .queueUpdate: "queue_update"
-                case .extensionUIRequest: "extension_ui_request"
-                case .extensionError: "extension_error"
-                case .unknown(let type): "unknown:\(type)"
-                }
+            events.current.map(Self.type)
+        }
+
+        static func type(_ event: RPCEvent) -> String {
+            switch event {
+            case .agentStart: "agent_start"
+            case .agentEnd: "agent_end"
+            case .agentSettled: "agent_settled"
+            case .turnStart: "turn_start"
+            case .turnEnd: "turn_end"
+            case .messageStart: "message_start"
+            case .messageUpdate: "message_update"
+            case .messageEnd: "message_end"
+            case .toolExecutionStart: "tool_execution_start"
+            case .toolExecutionUpdate: "tool_execution_update"
+            case .toolExecutionEnd: "tool_execution_end"
+            case .queueUpdate: "queue_update"
+            case .extensionUIRequest: "extension_ui_request"
+            case .extensionError: "extension_error"
+            case .unknown(let type): "unknown:\(type)"
             }
+        }
+
+        /// Runs `body` on the session's queue and returns its result.
+        func onQueue<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T {
+            await withCheckedContinuation { continuation in queue.async { continuation.resume(returning: body()) } }
         }
 
         func waitFor(_ type: String) async throws {
@@ -97,6 +104,37 @@ struct RPCSessionTests {
             text += delta.delta ?? ""
         }
         #expect(text == "Hello line\u{2028}sep world")
+    }
+
+    /// A record long enough to decode off the queue keeps its place in line: what pi wrote after
+    /// it waits, and the session handles every record in the order pi wrote them.
+    @Test func recordsAfterALargeResponseAreHandledAfterItInOrder() async throws {
+        let h = try Harness(env: ["STUB_PI_HISTORY_BYTES": String(2 * 1024 * 1024)])
+        defer { h.stop() }
+        let order = Locked<[String]>([])
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        await h.onQueue {
+            h.session.beforeOffQueueDecode = { release.wait() }
+            let record = h.session.onEvent
+            h.session.onEvent = { event in
+                order.withValue { $0.append(Harness.type(event)) }
+                record?(event)
+            }
+            // pi answers the long history, then the prompt, then streams the prompt's turn.
+            h.session.request(.getMessages) { result in
+                order.withValue { $0.append((try? result.get().messages?.count).map { "history:\($0)" } ?? "history:failed") }
+            }
+            h.session.request(.prompt(message: "hello")) { _ in order.withValue { $0.append("prompt") } }
+        }
+        try await eventually("the turn to wait behind the history") { await h.onQueue { h.session.deferredRecordCount } >= 18 }
+        #expect(order.current.isEmpty)
+
+        release.signal()
+        try await h.waitFor("agent_settled")
+        #expect(order.current == ["history:12", "prompt", "agent_start", "turn_start", "message_start"]
+            + Array(repeating: "message_update", count: 7)
+            + ["message_end", "tool_execution_start", "tool_execution_end", "turn_end", "unknown:compaction_start", "agent_end", "agent_settled"])
     }
 
     @Test func overlappingRequestsAreCorrelatedByID() async throws {

@@ -567,6 +567,10 @@ therefore mutually exclusive without locks.
   decoding at launch) stalls every frame. `SessionServer.state` reads the copy `StateStore`
   publishes under a lock each time it commits, so it never waits; a mutation the caller awaited
   is always in it. Code on the queue reads `store.state`.
+- Nothing slow runs on the queue. An RPC record of 256 KiB or more (a long history's
+  `get_messages`) decodes on a concurrent queue while its session holds every later record, in
+  order, until the decoded one is handled back on the queue; exit and unanswered-request
+  failures wait for them too. Only the projection runs on the server queue.
 - Attach stays atomic: snapshot, attachment registration, and output watermark in one queue turn.
 - Callbacks (`onOutput`, `onStateChanged`, …) hop to the main queue in FIFO order. Never call them
   from the server queue directly.

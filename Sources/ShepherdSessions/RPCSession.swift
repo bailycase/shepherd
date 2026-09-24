@@ -55,6 +55,15 @@ final class RPCSession: @unchecked Sendable {
     static let maxStderrLineBytes = 64 * 1024
     /// `kill()` waits this long for SIGTERM before SIGKILL.
     static let killGrace: DispatchTimeInterval = .seconds(2)
+    /// Records at least this long (a long history's `get_messages`) decode off the session queue,
+    /// which targets the server queue: decoding one held every other session, terminal, and
+    /// request behind it for hundreds of milliseconds.
+    static let offQueueDecodeBytes = 256 * 1024
+    /// Concurrent, so the histories of agents resuming together decode side by side.
+    private static let decodeQueue = DispatchQueue(label: "shepherd.rpc.decode", qos: .utility, attributes: .concurrent)
+
+    /// Tests only: runs on the decode queue before each off-queue decode.
+    var beforeOffQueueDecode: (() -> Void)?
 
     private let queue: DispatchQueue
     private let childPID: pid_t
@@ -79,6 +88,14 @@ final class RPCSession: @unchecked Sendable {
     private var stdoutClosed = false
     private var stderrClosed = false
     private var stdinClosed = false
+    private var isShutDown = false
+    /// A record is decoding off the queue: every later record waits in `deferredRecords`, in
+    /// arrival order, so the session handles its records in exactly the order pi wrote them.
+    private var decodingOffQueue = false
+    private var deferredRecords: [Data] = []
+    private var recordsInFlight: Bool { decodingOffQueue || !deferredRecords.isEmpty }
+    /// Tests: records waiting behind an off-queue decode.
+    var deferredRecordCount: Int { deferredRecords.count }
 
     var info: SessionInfo {
         SessionInfo(id: id, cwd: cwd, command: command, cols: 0, rows: 0, isAlive: isAlive)
@@ -264,6 +281,8 @@ final class RPCSession: @unchecked Sendable {
         }
         isAlive = false
         exitDelivered = true
+        isShutDown = true
+        deferredRecords.removeAll()
         onEvent = nil
         onStderr = nil
         onExit = nil
@@ -388,13 +407,56 @@ final class RPCSession: @unchecked Sendable {
                 continue
             }
             if line.isEmpty { continue }
-            handleRecord(Data(line))
+            receiveRecord(Data(line))
         }
         if stdoutBuffer.count > Self.maxRecordBytes {
             ShepherdLog.warning("rpc session \(id) dropping an unterminated record over \(Self.maxRecordBytes) bytes")
             stdoutBuffer.removeAll(keepingCapacity: false)
             discardingRecord = true
         }
+    }
+
+    private func receiveRecord(_ line: Data) {
+        if decodingOffQueue {
+            deferredRecords.append(line)
+        } else if line.count >= Self.offQueueDecodeBytes {
+            decodeOffQueue(line)
+        } else {
+            handleRecord(line)
+        }
+    }
+
+    private func decodeOffQueue(_ line: Data) {
+        decodingOffQueue = true
+        let hook = beforeOffQueueDecode
+        Self.decodeQueue.async { [weak self] in
+            hook?()
+            let decoded = Result { try NDJSON.decode(RPCIncoming.self, from: line) }
+            guard let self else { return }
+            self.queue.async { self.finishOffQueueDecode(decoded) }
+        }
+    }
+
+    /// Back on the session queue: handle the record, then the ones that arrived behind it, until
+    /// they run out or another long one goes off the queue.
+    private func finishOffQueueDecode(_ decoded: Result<RPCIncoming, Error>) {
+        decodingOffQueue = false
+        guard !isShutDown else { return }
+        switch decoded {
+        case .success(let incoming): dispatch(incoming)
+        case .failure(let error): ShepherdLog.warning("rpc session \(id) dropped a malformed record: \(error)")
+        }
+        var waiting = deferredRecords[...]
+        deferredRecords.removeAll()
+        while let line = waiting.popFirst() {
+            receiveRecord(line)
+            if decodingOffQueue {
+                deferredRecords = Array(waiting)
+                return
+            }
+        }
+        failRequestsAfterExit()
+        deliverExitIfReady()
     }
 
     private func handleRecord(_ line: Data) {
@@ -405,6 +467,10 @@ final class RPCSession: @unchecked Sendable {
             ShepherdLog.warning("rpc session \(id) dropped a malformed record: \(error)")
             return
         }
+        dispatch(incoming)
+    }
+
+    private func dispatch(_ incoming: RPCIncoming) {
         switch incoming {
         case .event(let event):
             if case .unknown(let type) = event {
@@ -495,17 +561,24 @@ final class RPCSession: @unchecked Sendable {
         signalProcessGroup(SIGKILL)
         cancelProcessSources()
         closeStdin()
-        let outstanding = pendingRequests
-        pendingRequests.removeAll()
-        for (_, completion) in outstanding {
-            completion(.failure(.exited(code: code)))
-        }
+        failRequestsAfterExit()
         deliverExitIfReady()
         return true
     }
 
+    /// Requests pi never answered fail once it is gone, but only after every record it wrote
+    /// has been handled: an answer may still be decoding.
+    private func failRequestsAfterExit() {
+        guard reaped, !recordsInFlight else { return }
+        let outstanding = pendingRequests
+        pendingRequests.removeAll()
+        for (_, completion) in outstanding {
+            completion(.failure(.exited(code: exitCode)))
+        }
+    }
+
     private func deliverExitIfReady() {
-        guard reaped, stdoutClosed, !exitDelivered else { return }
+        guard reaped, stdoutClosed, !exitDelivered, !recordsInFlight else { return }
         exitDelivered = true
         onExit?(exitCode)
     }
