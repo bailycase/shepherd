@@ -658,7 +658,8 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   stored `nightly` (or the pre-picker nightly bool) becomes Beta and arms a one-time notice
   under the toolbar (`NightlyMovedNotice`) linking to Shepherd Nightly. The birth channel reads
   `-beta.`, `-rc.` and `-nightly.` versions as Beta. Shepherd Nightly always rides nightly and
-  stores no channel.
+  stores no channel. Debug builds (the Dev scheme) share Shepherd's bundle id and preferences, so
+  they only read through the same rules and never migrate the stored channel or arm the notice.
 - **Promotion re-tags the same commit** (`v0.2.0-beta.1` → `v0.2.0`). Never rebuild for a
   promotion.
 - **The beta feed is a superset**, so riding beta never strands a user behind a stable hotfix.
