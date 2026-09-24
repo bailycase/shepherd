@@ -62,10 +62,22 @@ public final class NativeThreadStore {
     public private(set) var loadError: String? { didSet { bothVersions() } }
     public private(set) var notice: String? { didSet { chromeVersion &+= 1 } }
     public private(set) var sentCount = 0
-    /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending",
-    /// or "queued" when sent as a follow-up while a turn ran). Each one leaves once pi persists
-    /// a user message with the same text, or when the session changes.
+    /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending").
+    /// A host that holds the queue (`NativeQueue`) shows its own pending row under the same id,
+    /// so an echo lasts only until the host's next snapshot. From an older host, an echo is
+    /// "queued" when it was sent as a follow-up while a turn ran, and leaves once pi persists a
+    /// user message with the same text, or when the session changes.
     public private(set) var pending: [NativeThreadMessage] = []
+    /// The host's queue as this client shows it: the last snapshot's, with this client's own
+    /// changes applied at once until the host's next snapshot confirms them. Empty from a host
+    /// without a queue (`supportsQueue`).
+    public private(set) var queue: [NativeQueuedMessage] = []
+    /// How the queue goes when pi settles, as the host reports it (or as this client just set).
+    public private(set) var queueMode: NativeQueueMode?
+    /// The queue waits for the user (pi was stopped, or a turn or delivery failed).
+    public private(set) var queuePaused = false
+    /// Why the host paused the queue on its own.
+    public private(set) var queueNotice: String?
     /// `snapshot.running` held true for 400 ms after it drops, so tool boundaries never flicker
     /// the tail indicator or the Stop button.
     public private(set) var settledRunning = false
@@ -188,9 +200,25 @@ public final class NativeThreadStore {
     @ObservationIgnored private var historyEpoch = UUID()
     /// Saved user entries → the echo they replaced, so the turn keeps its identity.
     @ObservationIgnored private var aliases: [String: String] = [:]
+    /// Snapshot requests started so far. A change of this client's (a queue edit, an echo)
+    /// stands until a snapshot requested after the host accepted it arrives.
+    @ObservationIgnored private var pulls = 0
+    @ObservationIgnored private var overlays: [QueueOverlay] = []
+    /// Echo id → the pull count when its send was accepted (hosts with a queue).
+    @ObservationIgnored private var echoAccepted: [String: Int] = [:]
+    /// Images this client queued, by queued message id: the host keeps only their names.
+    @ObservationIgnored private var sentImages: [UUID: [NativeImage]] = [:]
     @ObservationIgnored private var presentationCache: [String: (key: PresentationKey, value: NativeTurnPresentation)] = [:]
     /// Calls parse their JSON and output once; a finished call never changes.
     @ObservationIgnored private var callCache: [CallKey: NativeActivityCall] = [:]
+
+    private struct QueueOverlay {
+        let id: UUID
+        /// The pull count when the host answered; nil while the request is on its way.
+        var accepted: Int?
+        var mode: NativeQueueMode?
+        let apply: (inout [NativeQueuedMessage]) -> Void
+    }
 
     private struct PresentationKey: Equatable {
         var messages: [NativeThreadMessage]
@@ -209,10 +237,27 @@ public final class NativeThreadStore {
     }
 
     /// Reconcile echoes against a snapshot: gone when the real message landed or the session moved on.
-    private func settlePending(_ value: NativeThreadSnapshot, sameSession: Bool) {
+    private func settlePending(_ value: NativeThreadSnapshot, sameSession: Bool, pull: Int) {
+        guard sameSession else {
+            if !pending.isEmpty { pending = [] }
+            aliases = [:]
+            echoAccepted = [:]
+            overlays = []
+            return
+        }
+        // Everything this client changed before the host answered the pull that brought this
+        // snapshot is in it.
+        overlays.removeAll { $0.accepted.map { $0 < pull } ?? false }
         guard !pending.isEmpty else { return }
-        guard sameSession else { pending = []; aliases = [:]; return }
-        let persisted = (value.messages + value.provisional).filter { $0.role == "user" }
+        if value.queue != nil {
+            // The host shows its own row for the send (same id), or has it in its queue.
+            let settled = echoAccepted.filter { $0.value < pull }.map(\.key)
+            guard !settled.isEmpty else { return }
+            pending.removeAll { settled.contains($0.entryID) }
+            for id in settled { echoAccepted[id] = nil }
+            return
+        }
+        let persisted = (messages + value.messages + value.provisional).filter { $0.role == "user" }
         let texts = Set(persisted.map(Self.userText))
         let landed = pending.filter { texts.contains(Self.userText($0)) }
         guard !landed.isEmpty else { return }
@@ -238,6 +283,12 @@ public final class NativeThreadStore {
     }
 
     public var hasLiveSubagents: Bool { subagents.contains { !$0.isTerminal } }
+
+    /// The host holds messages sent while pi works (`NativeQueue`): sends during a run join
+    /// `queue`, and the queue actions below apply.
+    public var supportsQueue: Bool {
+        ready && snapshot?.queue != nil && snapshot?.supportedActions.contains("queue") == true
+    }
 
     public func supports(_ action: String) -> Bool {
         ready && !busy && supportedActions.contains(action)
@@ -266,10 +317,23 @@ public final class NativeThreadStore {
         let provisional = (snapshot?.provisional ?? []).filter {
             !ids.contains($0.entryID) && ($0.toolCallID == nil || !toolIDs.contains($0.toolCallID!))
         }
-        let displayed = messages + pending.filter { $0.status != "queued" } + provisional + pending.filter { $0.status == "queued" }
+        let displayed: [NativeThreadMessage]
+        if snapshot?.queue != nil {
+            // The host orders the run (user messages where pi read them) and shows its own
+            // pending row for a send; an echo stands in only until the host's next snapshot.
+            let live = Set(provisional.map(\.entryID))
+            displayed = messages + provisional + pending.filter { !live.contains($0.entryID) }
+        } else {
+            displayed = messages + pending.filter { $0.status != "queued" } + provisional + pending.filter { $0.status == "queued" }
+        }
         if displayed != displayedMessages { displayedMessages = displayed }
-        let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" }?.timestamp
+        // A steer lands inside the running turn; it does not restart its clock.
+        let promptAt = displayed.last { $0.role == "user" && $0.status != "queued" && $0.origin != .steered }?.timestamp
         if promptAt != lastPromptAt { lastPromptAt = promptAt }
+        var aliases = self.aliases
+        for message in displayed where message.role == "user" {
+            if let operation = message.operationID, aliases[message.entryID] == nil { aliases[message.entryID] = "pending:\(operation.uuidString)" }
+        }
         let turns = nativeTurns(displayed, aliases: aliases)
         if turns != self.turns { self.turns = turns }
         let runs = snapshot?.subagents ?? []
@@ -349,6 +413,26 @@ public final class NativeThreadStore {
             if presentation.endsInLiveActivity { return "Working…" }
         }
         return nativeWorkingLabel(snapshot?.provisional ?? [])
+    }
+
+    /// The queue as the host last reported it, with this client's unconfirmed changes on top.
+    private func deriveQueue() {
+        var items = snapshot?.queue?.items ?? []
+        var mode = snapshot?.queue?.mode
+        for overlay in overlays {
+            overlay.apply(&items)
+            if let chosen = overlay.mode { mode = chosen }
+        }
+        if items != queue { queue = items }
+        if mode != queueMode { queueMode = mode }
+        let paused = snapshot?.queue?.paused == true && !items.isEmpty
+        if paused != queuePaused { queuePaused = paused }
+        let notice = items.isEmpty ? nil : snapshot?.queue?.notice
+        if notice != queueNotice { queueNotice = notice }
+        if sentImages.count > 64 {
+            let kept = Set(items.map(\.id))
+            sentImages = sentImages.filter { kept.contains($0.key) }
+        }
     }
 
     private func call(_ message: NativeThreadMessage) -> NativeActivityCall {
@@ -507,6 +591,8 @@ public final class NativeThreadStore {
         let run = epoch
         let ticket = UUID()
         recentRequest = ticket
+        pulls += 1
+        let pull = pulls
         let previous = snapshot
         let fresh = fresh || !ready
         do {
@@ -519,7 +605,7 @@ public final class NativeThreadStore {
             case .snapshot(let value):
                 let sameSession = previous?.piSessionID == value.piSessionID && previous?.generation == value.generation
                 if sameSession, let previous, value.revision < previous.revision { return }
-                settlePending(value, sameSession: sameSession)
+                settlePending(value, sameSession: sameSession, pull: pull)
                 settleRunning(value.running, catchingUp: catchUp == nil)
                 if !resetHistory, sameSession, value.olderCursor != nil,
                    let first = value.messages.first,
@@ -537,6 +623,7 @@ public final class NativeThreadStore {
                 if !ready { ready = true }
                 endStarting()
                 if loadError != nil { loadError = nil }
+                deriveQueue()
                 derive()
                 caughtUp()
                 resumeStartWaiters(true)
@@ -547,6 +634,11 @@ public final class NativeThreadStore {
                 } else {
                     if !ready { ready = true }
                     endStarting()
+                    // Nothing changed on the host: whatever this client changed before it asked
+                    // is in the snapshot it already has, or was refused.
+                    let before = overlays.count
+                    overlays.removeAll { $0.accepted.map { $0 < pull } ?? false }
+                    if overlays.count != before { deriveQueue() }
                     if loadError != nil {
                         loadError = nil
                         derive()
@@ -686,6 +778,12 @@ public final class NativeThreadStore {
     /// Sent while pi is starting, the draft waits for it (see `acceptsSend`), still in the field,
     /// then goes as the field has it by then: edited, or not at all once cleared.
     public func send(images: [NativeImage] = []) async {
+        await send(images: images, delivery: delivery)
+    }
+
+    /// While pi works, `delivery` says whether the message waits in the queue (`followUp`) or
+    /// is steered in; while pi is idle it goes at once either way.
+    public func send(images: [NativeImage] = [], delivery: NativeThreadDelivery) async {
         guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct() else { return }
         let text = draft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -694,7 +792,7 @@ public final class NativeThreadStore {
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
                             operationID: operation, text: text, delivery: delivery, images: attached),
-                      operation: operation, current: current, sentText: text)
+                      operation: operation, current: current, sentText: text, delivery: delivery, images: attached ?? [])
     }
 
     /// Send `text` as a new user message without touching the draft (a turn's Retry).
@@ -704,7 +802,118 @@ public final class NativeThreadStore {
         let operation = UUID()
         await perform(.send(expectedSessionID: current.piSessionID, generation: current.generation,
                             operationID: operation, text: text, delivery: delivery),
-                      operation: operation, current: current, sentText: text)
+                      operation: operation, current: current, sentText: text, delivery: delivery)
+    }
+
+    // MARK: Queue
+
+    /// The images this client sent with a queued message (the host keeps only their names);
+    /// empty for another client's.
+    public func queuedImages(_ id: UUID) -> [NativeImage] {
+        sentImages[id] ?? []
+    }
+
+    /// Saves an edit to a queued message; it keeps its place. Also releases the item's hold.
+    public func editQueued(_ id: UUID, text: String) async {
+        await queueAction(.edit(id: id, text: text)) { NativeQueueRules.edit(id, text: text, in: &$0) }
+    }
+
+    /// Deletes a queued message, returning it and the place it had, for an Undo
+    /// (`restoreQueued`). nil when it is not queued.
+    @discardableResult
+    public func deleteQueued(_ id: UUID) async -> (message: NativeQueuedMessage, index: Int)? {
+        guard let index = NativeQueueRules.queuedIndex(of: id, in: queue), let message = queue.first(where: { $0.id == id }) else { return nil }
+        await queueAction(.delete(id: id)) { NativeQueueRules.remove([id], from: &$0) }
+        return (message, index)
+    }
+
+    /// Deletes every queued message (steering ones stay), returning them for an Undo.
+    @discardableResult
+    public func clearQueue() async -> [NativeQueuedMessage] {
+        let cleared = queue.filter { $0.state == .queued }
+        guard !cleared.isEmpty else { return [] }
+        await queueAction(.clear) { items in items.removeAll { $0.state == .queued } }
+        return cleared
+    }
+
+    /// Undoes a delete or a clear: the messages return at queued index `index`, in order.
+    public func restoreQueued(_ messages: [NativeQueuedMessage], at index: Int) async {
+        guard !messages.isEmpty else { return }
+        await queueAction(.restore(ids: messages.map(\.id), index: index)) { NativeQueueRules.insert(messages, atQueuedIndex: index, into: &$0) }
+    }
+
+    /// Moves a queued message to queued index `index` (0 goes first).
+    public func moveQueued(_ id: UUID, to index: Int) async {
+        await queueAction(.move(id: id, index: index)) { NativeQueueRules.move(id, toQueuedIndex: index, in: &$0) }
+    }
+
+    /// Steers queued messages in now, in order (Steer now, Steer all now). While pi is idle the
+    /// host sends them as the next turn instead.
+    public func steerQueued(_ ids: [UUID]) async {
+        let running = snapshot?.running == true
+        await queueAction(.steer(ids: ids)) { items in
+            if running { NativeQueueRules.steer(ids, in: &items) }
+        }
+    }
+
+    /// Takes a steering message back before pi reads it: it returns to the head of the queue.
+    public func unsteer(_ id: UUID) async {
+        await queueAction(.unsteer(id: id)) { NativeQueueRules.unsteer(id, in: &$0) }
+    }
+
+    /// An editor opened (true) or closed on a queued message: the host waits to send the queue
+    /// while it is held. A hold lapses on the host after two minutes unless renewed.
+    public func holdQueued(_ id: UUID, _ held: Bool) async {
+        await queueAction(.hold(id: id, held: held)) { NativeQueueRules.hold(id, held, in: &$0) }
+    }
+
+    /// This agent's delivery mode; nil follows the host's default.
+    public func setQueueMode(_ mode: NativeQueueMode?) async {
+        await queueAction(.setMode(mode: mode), mode: mode) { _ in }
+    }
+
+    /// While pi is idle (a paused queue): these messages open the next turn now, and the rest of
+    /// the queue resumes after it.
+    public func sendQueuedNow(_ ids: [UUID]) async {
+        await queueAction(.sendNow(ids: ids)) { items in items.removeAll { ids.contains($0.id) } }
+    }
+
+    /// Applies `apply` to `queue` at once, then asks the host. Queue actions never make the
+    /// composer busy: they are not the draft's.
+    @discardableResult
+    private func queueAction(_ action: NativeQueueAction, mode: NativeQueueMode? = nil,
+                             apply: @escaping (inout [NativeQueuedMessage]) -> Void) async -> Bool {
+        guard supportsQueue, let request, let current = snapshot else { return false }
+        let run = epoch
+        let operation = UUID()
+        overlays.append(QueueOverlay(id: operation, accepted: nil, mode: mode, apply: apply))
+        deriveQueue()
+        var accepted = false
+        do {
+            let result = try await request(.queue(expectedSessionID: current.piSessionID, generation: current.generation,
+                                                  operationID: operation, action: action))
+            guard epoch == run else { return false }
+            switch result {
+            case .accepted(let id) where id == operation:
+                accepted = true
+                if let index = overlays.firstIndex(where: { $0.id == operation }) { overlays[index].accepted = pulls }
+            case .failure(_, let message):
+                notice = message
+            default:
+                notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+            }
+        } catch {
+            guard epoch == run else { return false }
+            if case RemoteHostClientError.outcomeUnknown = error {
+                notice = "Action outcome unknown. Refresh and check the thread before trying again. Nothing will be resent automatically."
+            } else { notice = String(describing: error) }
+        }
+        if !accepted {
+            overlays.removeAll { $0.id == operation }
+            deriveQueue()
+        }
+        await refresh()
+        return accepted
     }
 
     /// "provider/id"; gated by `setModel` in `supportedActions`.
@@ -761,11 +970,13 @@ public final class NativeThreadStore {
                               dialogID: dialogID, answer: answer), operation: operation, current: current)
     }
 
-    private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil) async {
+    private func perform(_ action: NativeThreadRequest, operation: UUID, current: NativeThreadSnapshot, sentText: String? = nil,
+                         delivery: NativeThreadDelivery = .followUp, images: [NativeImage] = []) async {
         guard let request else { return }
         let run = epoch
-        // A follow-up sent while a turn runs waits in pi's queue until the turn ends.
+        // A follow-up sent while a turn runs waits in the queue until the turn ends.
         let queued = current.running && delivery == .followUp
+        let hostQueues = current.queue != nil
         busy = true
         notice = nil
         do {
@@ -781,9 +992,24 @@ public final class NativeThreadStore {
                 if let sentText {
                     if draft == sentText { draft = "" }
                     sentCount += 1
-                    pending.append(NativeThreadMessage(entryID: "pending:\(operation.uuidString)", role: "user",
-                                                       blocks: [NativeThreadBlock(kind: .text, text: sentText)],
-                                                       status: queued ? "queued" : "pending"))
+                    if hostQueues && current.running {
+                        // The host queued it (or steered it in): it shows in the queue, not the thread.
+                        let item = NativeQueuedMessage(id: operation, text: sentText,
+                                                       images: images.map { NativeQueuedImage(mimeType: $0.mimeType, name: $0.name) },
+                                                       sentAt: Date().timeIntervalSince1970 * 1000,
+                                                       state: delivery == .steer ? .steering : .queued)
+                        if !images.isEmpty { sentImages[operation] = images }
+                        overlays.append(QueueOverlay(id: operation, accepted: pulls, mode: nil) { items in
+                            if !items.contains(where: { $0.id == item.id }) { items.append(item); NativeQueueRules.normalize(&items) }
+                        })
+                        deriveQueue()
+                    } else {
+                        let id = "pending:\(operation.uuidString)"
+                        pending.append(NativeThreadMessage(entryID: id, role: "user",
+                                                           blocks: [NativeThreadBlock(kind: .text, text: sentText)],
+                                                           status: queued ? "queued" : "pending"))
+                        if hostQueues { echoAccepted[id] = pulls }
+                    }
                     derive()
                 }
                 // Success is visible in the thread itself; only failures earn a notice.

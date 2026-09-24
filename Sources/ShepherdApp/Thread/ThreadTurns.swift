@@ -209,6 +209,10 @@ struct AgentTurn: View, Equatable {
             NWTurnError(final ? nativeTurnErrorText(text, toolCalls: presentation.toolCalls) : text,
                         count: count, retry: final ? retry : nil)
                 .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
+        case .steer(_, let text, _, let images):
+            // Where pi read it, inside the turn it steered.
+            NWUserBubble(text, attachments: Array(repeating: "Image", count: images))
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 

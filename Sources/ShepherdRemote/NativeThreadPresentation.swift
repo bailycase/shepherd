@@ -176,7 +176,8 @@ public extension NativeToolRow {
 /// the review pane's "being edited" dots. Empty when the agent is not running.
 public func nativeTouchedPaths(_ messages: [NativeThreadMessage], running: Bool) -> Set<String> {
     guard running else { return [] }
-    let turn = messages.lastIndex { $0.role == "user" }.map { messages.index(after: $0) } ?? messages.startIndex
+    // A steer is part of the turn it steered.
+    let turn = messages.lastIndex { $0.role == "user" && $0.origin != .steered }.map { messages.index(after: $0) } ?? messages.startIndex
     var paths: Set<String> = []
     for message in messages[turn...] where message.toolName == "edit" || message.toolName == "write" {
         guard let data = message.argumentsText?.data(using: .utf8),
@@ -236,17 +237,60 @@ public func nativeAgentPill(running: Bool, awaitingAnswer: Bool, error: Bool, st
     return .idle
 }
 
-/// Consecutive non-user messages form one agent turn.
+/// Consecutive non-user messages form one agent turn. A user message pi read mid-run (a steer)
+/// stays inside the agent turn it steered (`nativeTurns`).
 public struct NativeTurn: Identifiable, Equatable, Sendable {
     public var id: String
     public var isUser: Bool
     public var messages: [NativeThreadMessage]
+
+    /// A user turn from the queue: how many queued messages it carries ("From the queue · 2").
+    /// nil for a message the user sent straight to pi.
+    public var fromQueue: Int? {
+        guard isUser else { return nil }
+        let counts = messages.compactMap { $0.origin?.parts?.count }
+        return counts.isEmpty ? nil : counts.reduce(0, +)
+    }
+
+    /// A user turn's bubbles: one per message, or one per part of a message the queue
+    /// delivered (each with the time it was sent).
+    public var bubbles: [NativeUserBubble] {
+        guard isUser else { return [] }
+        return messages.flatMap(nativeUserBubbles)
+    }
+}
+
+/// One bubble of a user turn: a message, or one queued message inside a delivered one.
+public struct NativeUserBubble: Equatable, Identifiable, Sendable {
+    public var id: String
+    public var text: String
+    /// When it was sent (ms): a queued part's own time, else pi's timestamp.
+    public var sentAt: Double?
+    public var images: Int
+    /// A send pi has not read yet (the host's pending row, or a client echo).
+    public var pending: Bool
+}
+
+public func nativeUserBubbles(_ message: NativeThreadMessage) -> [NativeUserBubble] {
+    let pending = message.status == "pending" || message.status == "queued"
+    if let parts = message.origin?.parts, !parts.isEmpty {
+        return parts.enumerated().map { index, part in
+            NativeUserBubble(id: "\(message.entryID)/\(index)", text: part.text, sentAt: part.sentAt, images: part.images, pending: pending)
+        }
+    }
+    let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
+    return [NativeUserBubble(id: message.entryID, text: text, sentAt: message.timestamp,
+                             images: message.blocks.count { $0.kind == .unsupportedImage }, pending: pending)]
 }
 
 /// Turns keep their identity while pi persists them: a user turn is its first message (or the
 /// optimistic echo it replaced, through `aliases`), and a reply is the user turn it answers,
 /// so the live reply and its saved copy are one view. A reply with no user turn above it (the
 /// start of a paged history) is its first message.
+///
+/// A steer stays inside the reply it steered, where pi read it (the host marks it `.steered`,
+/// and remembers that across relaunches). The reply keeps one footer and one changes card. A
+/// user message after a tool result is not taken for one: a tool can end pi's run itself.
 public func nativeTurns(_ messages: [NativeThreadMessage], aliases: [String: String] = [:]) -> [NativeTurn] {
     var turns: [NativeTurn] = []
     // pi's system entries (prompt-section updates) and blank messages have nothing to read; kept,
@@ -256,6 +300,10 @@ public func nativeTurns(_ messages: [NativeThreadMessage], aliases: [String: Str
         || message.role == "toolResult" || message.truncated || message.status == "error"
         || message.blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.kind == .unsupportedImage })) {
         let isUser = message.role == "user"
+        if isUser, message.origin == .steered, let last = turns.last, !last.isUser {
+            turns[turns.count - 1].messages.append(message)
+            continue
+        }
         if let last = turns.last, last.isUser == isUser {
             turns[turns.count - 1].messages.append(message)
         } else {
