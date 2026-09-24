@@ -11,7 +11,8 @@ listener must never be exposed to the internet.
 ## Build and connect
 
 1. On the Mac, run Shepherd (for development, the `Shepherd (Dev)` scheme). Turn on
-   Settings ▸ Remote ▸ Serve this Mac ▸ Listener. The default port is 7433. The token is the
+   Settings ▸ Remote ▸ Serve this Mac ▸ Listener. The default port is 7433 (7434 in Shepherd
+   Nightly). The token is the
    contents of `remote-token` in Shepherd's support directory; the Token row there reveals the
    file.
 2. Build the `Shepherd iOS` scheme for an iOS 27 simulator or device. The target uses automatic
