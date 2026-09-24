@@ -203,6 +203,7 @@ extension ShepherdViewModel {
             // A space whose next row is deeper has nested projects drawn beneath it.
             let parents = Set(groups.indices.dropLast().filter { groups[$0 + 1].depth > groups[$0].depth }.map { groups[$0].space.id })
             let badges = sidebarShortcutBadges
+            let repos = spaceRepoFlags
             for group in groups {
                 let collapsed = collapsedSpaces.contains(group.space.id)
                 tree.append(.space(SidebarSpace(
@@ -210,7 +211,7 @@ extension ShepherdViewModel {
                     blocked: SidebarAttention.count(group.agents, children: childRuns.rows),
                     worktrees: group.agents.count { $0.worktreeBranch != nil }, depth: group.depth,
                     allowsDropBelow: collapsed || (group.agents.isEmpty && !parents.contains(group.space.id)),
-                    isRepo: spaceIsRepo(group.space))))
+                    isRepo: repos[group.space.id] ?? spaceIsRepo(group.space))))
                 guard !collapsed else { continue }
                 for agent in group.agents {
                     tree.append(.agent(sidebarRowModel(for: agent, depth: group.depth + 1, badge: badges[agent.id])))

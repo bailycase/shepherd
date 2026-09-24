@@ -66,6 +66,30 @@ struct ListPerformanceTests {
         #expect(rows["sidebar.row", default: 0] + rows["sidebar.spaceRow", default: 0] <= shown.count * 4, "\(rows)")
     }
 
+    /// A report or a selection redraws the tree from one pass over the agents, never a scan of
+    /// every agent for each space (40 spaces: 40 scans per broadcast).
+    @Test func statusReportsAndSelectionGroupTheFleetInOnePass() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        let shown = Array(vm.orderedAgents.prefix(6))
+
+        let passes = ListPerf.counting {
+            for agent in shown {
+                var next = vm.state
+                if let index = next.agents.firstIndex(where: { $0.id == agent.id }) {
+                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
+                }
+                ListPerf.time(window) { vm.adopt(next) }
+                ListPerf.time(window) { vm.selectAgent(agent.id) }
+            }
+        }
+        #expect(passes["sidebar.spaceScan", default: 0] == 0, "\(passes)")
+    }
+
     // MARK: Thread
 
     /// A long thread streaming its reply builds only the rows on screen for each chunk, however
