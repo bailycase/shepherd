@@ -229,7 +229,8 @@ one prompt at a time.
   ours still on its way) waits at the head of the queue instead.
 - **Back to the queue** (`unsteer`): `clear_queue`; the item returns to the head of the queue
   if pi still held it, and everything else pi returned is handed back in order. If pi already
-  read it, nothing changes.
+  read it, even just before the clear arrived, the request is refused (`queue_item_unavailable`)
+  and the message lands where pi read it.
 - **Stop** (`abort`): `clear_queue` first, then `abort` (pi's recipe; `abort` alone delivers a
   queued steer into the aborted turn and keeps follow-ups for a later run). Steering items pi
   still held return to the head, anything else pi had queued joins the queue, and the queue

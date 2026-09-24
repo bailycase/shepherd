@@ -375,20 +375,24 @@ extension RPCThreadState {
     }
 
     /// Takes a steering item back: pi's queue is emptied and everything else in it handed back.
+    /// When pi's queue no longer held it, pi read it before the clear arrived: it lands where
+    /// pi read it, and the request is refused.
     private func unsteer(_ id: UUID, done: @escaping (NativeThreadResult?) -> Void) {
         clearPiQueue { [weak self] steering, followUp, failure in
             guard let self else { return }
             if let failure { done(failure); return }
             var remaining = steering
+            var returned = false
             // The item is still pi's to read: it returns to the head of the queue.
             if let item = self.items.first(where: { $0.entry.id == id }), let index = remaining.firstIndex(of: item.piText ?? item.entry.text) {
                 remaining.remove(at: index)
                 if let at = self.items.firstIndex(where: { $0.entry.id == id }) { self.items[at].piText = nil }
                 NativeQueueRules.unsteer(id, in: &self.items)
+                returned = true
             }
             self.restorePiQueue(steering: remaining, followUp: followUp)
             self.commit()
-            done(nil)
+            done(returned ? nil : .failure(code: "queue_item_unavailable", message: "pi has already read that message."))
         }
     }
 
