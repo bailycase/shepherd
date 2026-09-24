@@ -160,7 +160,11 @@ struct Composer: View {
                 .frame(height: AppLayout.composerFade).offset(y: -AppLayout.composerFade).allowsHitTesting(false)
         }
         .background(Color.nw.bgWindow)
-        .onChange(of: query) { _, _ in commandIndex = 0 }
+        .onChange(of: query) { _, query in
+            commandIndex = 0
+            // One menu at a time: typing a command takes over from a chip's menu.
+            if query != nil { menu = nil }
+        }
         // The catalog decides whether the thinking chip applies; this Mac's is asked once per process.
         .task { if catalog?.isEmpty != false { await loadModels() } }
         .onChange(of: menuRequest) { _, request in
@@ -244,7 +248,7 @@ struct Composer: View {
 
     /// A click outside the menu and the card closes it, as Esc does (without taking focus).
     private func closeMenu() {
-        if menu != nil { menu = nil } else if commandQuery != nil { dismissedQuery = store.draft }
+        if menu != nil { menu = nil } else { dismissCommands() }
     }
 
     // MARK: Card
@@ -494,13 +498,22 @@ struct Composer: View {
         guard store.supports("setModel") else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
         picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.snapshot?.model)
+        dismissCommands()
         menu = .models
         if catalog?.isEmpty != false { Task { await loadModels() } }
     }
 
     private func toggleThinking() {
         guard thinkingAvailable, store.supports("setThinking") else { NSSound.beep(); return }
-        menu = menu == .thinking ? nil : .thinking
+        guard menu != .thinking else { menu = nil; return }
+        dismissCommands()
+        menu = .thinking
+    }
+
+    /// A chip's menu takes over from the slash menu, which stays closed for the draft as typed
+    /// (as Esc leaves it).
+    private func dismissCommands() {
+        if commandQuery != nil { dismissedQuery = store.draft }
     }
 
     private func loadModels() async {

@@ -142,6 +142,39 @@ struct ComposerMenuTests {
         #expect(abs(list.contentView.bounds.origin.y) < 0.5, "scrolled \(list.contentView.bounds.origin.y)pt down its list")
     }
 
+    /// Menus open one at a time: a chip's menu (or ⇧⌘M) takes over from the slash menu a "/"
+    /// draft opened, and typing a command takes over from a chip's menu. Each looks exactly as
+    /// it does opened alone.
+    @Test func menusOpenOneAtATime() async throws {
+        let thread = ComposerThread(animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let above = CGRect(x: 0, y: 0, width: thread.size.width, height: thread.cardTop - NWComposerMetrics.focusRing - 1)
+        func alone(_ menu: Menu, draft: String = "/") async throws -> FrameTimer.Capture {
+            if menu == .slash { thread.store.draft = draft } else { menu.open(in: thread) }
+            try await thread.settle()
+            let capture = FrameTimer.capture(thread.window, above)
+            if menu == .slash { thread.store.draft = "" } else { menu.open(in: thread) }
+            try await thread.settle()
+            return capture
+        }
+        let models = try await alone(.models), thinking = try await alone(.thinking), commands = try await alone(.slash, draft: "/r")
+
+        thread.openSlashMenu()
+        try await thread.settle()
+        thread.openModelPicker()
+        try await thread.settle()
+        #expect(FrameTimer.capture(thread.window, above) == models, "the picker takes over from the slash menu")
+
+        Menu.thinking.open(in: thread)
+        try await thread.settle()
+        #expect(FrameTimer.capture(thread.window, above) == thinking, "the thinking menu takes over from the picker")
+
+        thread.store.draft = "/r"
+        try await thread.settle()
+        #expect(FrameTimer.capture(thread.window, above) == commands, "typing a command takes over from the thinking menu")
+    }
+
     /// A thread that mounts with a "/" draft already in its store (a remounted remote thread)
     /// shows its slash menu from the first frame, before the card has been measured.
     @Test func aThreadThatMountsWithASlashDraftShowsItsMenu() async throws {
