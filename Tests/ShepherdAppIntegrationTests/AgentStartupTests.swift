@@ -168,6 +168,7 @@ struct AgentStartupTests {
         try Self.holdPi(in: app.dir)
         let space = Fixture.space(path: app.dir.path)
         let agents = (0..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
+        let launched = ContinuousClock.now
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
         let server = app.server
         let onScreen = try #require(vm.selectedAgentID)
@@ -185,7 +186,13 @@ struct AgentStartupTests {
 
         let created = try await quickCreate(vm, in: space, app: app).value
 
-        #expect(await started() == [onScreen, created], "the new agent started; the restored ones still wait")
+        #expect(await started().contains(created), "the new agent started")
+        #expect(!vm.sessions.startQueue.started.contains(created), "it never entered the launch queue")
+        // The restored ones wait while the agent on screen holds the queue, which it does for at
+        // most `aheadHold` from launch; a slower creation proves nothing about them.
+        if ContinuousClock.now - launched < AgentStartQueue.aheadHold {
+            #expect(await started() == [onScreen, created], "the restored ones still wait")
+        }
         Self.releasePi(in: app.dir)
         try await eventuallyAsync("every agent to start", timeout: .seconds(30)) { await started().count == agents.count + 1 }
     }
