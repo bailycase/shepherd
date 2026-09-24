@@ -37,7 +37,10 @@ struct Composer: View {
     /// Esc closes the slash menu for the draft as typed; typing more reopens it.
     @State private var dismissedQuery: String?
     @State private var menu: Menu?
-    @State private var models: [PiModelCatalog.Entry] = []
+    /// The models this agent's host offers, derived for the picker; nil until loaded.
+    @State private var catalog: ModelCatalog?
+    /// The open (or last) model picker.
+    @State private var picker: ModelPickerState?
     @State private var confirmingStopAll = false
     @State private var picking = false
     /// The card's top edge in the thread: a menu takes at most the room above it.
@@ -158,8 +161,8 @@ struct Composer: View {
         }
         .background(Color.nw.bgWindow)
         .onChange(of: query) { _, _ in commandIndex = 0 }
-        // The catalog decides whether the thinking chip applies; it is cached per process.
-        .task { if models.isEmpty { await loadModels() } }
+        // The catalog decides whether the thinking chip applies; this Mac's is asked once per process.
+        .task { if catalog?.isEmpty != false { await loadModels() } }
         .onChange(of: menuRequest) { _, request in
             switch request?.menu {
             case .models: openModels()
@@ -214,8 +217,8 @@ struct Composer: View {
                 }
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
-            if menu == .models {
-                ModelPicker(current: store.snapshot?.model, models: models, maxHeight: room) { model in
+            if menu == .models, let picker {
+                ModelPicker(state: picker, maxHeight: room) { model in
                     menu = nil
                     composing.wrappedValue = true
                     RecentModels.record(model, thread: agentName)
@@ -460,7 +463,7 @@ struct Composer: View {
 
     /// Unknown models (a catalog that did not load) keep the chip.
     private var reasoningAvailable: Bool {
-        guard let model = store.snapshot?.model, let entry = models.first(where: { $0.id == model }) else { return true }
+        guard let model = store.snapshot?.model, let entry = catalog?.model(model) else { return true }
         return entry.reasoning
     }
 
@@ -486,11 +489,13 @@ struct Composer: View {
 
     // MARK: Actions
 
+    /// The picker's list is made here, as it opens, so its first frame has everything.
     private func openModels() {
         guard store.supports("setModel") else { NSSound.beep(); return }
-        menu = menu == .models ? nil : .models
-        guard menu == .models, models.isEmpty else { return }
-        Task { await loadModels() }
+        guard menu != .models else { menu = nil; return }
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.snapshot?.model)
+        menu = .models
+        if catalog?.isEmpty != false { Task { await loadModels() } }
     }
 
     private func toggleThinking() {
@@ -499,8 +504,9 @@ struct Composer: View {
     }
 
     private func loadModels() async {
-        if let listModels { models = await listModels() }
-        else { models = await Task.detached(priority: .utility) { PiModelCatalog.entries() }.value }
+        let loaded = if let listModels { await ModelCatalog.derive(listModels()) } else { await ModelCatalog.loadLocal() }
+        catalog = loaded
+        picker?.update(loaded)
     }
 
     private func choose(_ command: NativeCommand) {
@@ -551,73 +557,6 @@ struct Composer: View {
             }
             attachments.append(attachment)
         }
-    }
-}
-
-// MARK: Model picker
-
-/// The model picker over `NWModelPicker`: Recent (up to 4), then one section per provider.
-/// Recent models are read once when the picker opens.
-struct ModelPicker: View {
-    let current: String?
-    let models: [PiModelCatalog.Entry]
-    var maxHeight: CGFloat?
-    let choose: (String) -> Void
-    let close: () -> Void
-    @State private var query = ""
-    @State private var selection = 0
-    @State private var recent: [RecentModels.Item] = []
-
-    var body: some View {
-        NWModelPicker(query: $query, sections: sections, loading: models.isEmpty, selection: $selection, maxHeight: maxHeight,
-                      onChoose: { choose($0.id) }, onClose: close)
-            .onAppear { recent = RecentModels.load() }
-    }
-
-    private var sections: [NWModelSection] {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let entries = q.isEmpty ? models : models.filter { $0.id.lowercased().contains(q) }
-        func option(_ entry: PiModelCatalog.Entry) -> NWModelOption {
-            NWModelOption(id: entry.id, title: nativeModelShortName(entry.id), note: entry.context, isCurrent: entry.id == current)
-        }
-        var result: [NWModelSection] = []
-        let recentOptions = recent.compactMap { item -> NWModelOption? in
-            if let entry = entries.first(where: { $0.id == item.id }) { return option(entry) }
-            return q.isEmpty ? NWModelOption(id: item.id, title: nativeModelShortName(item.id), isCurrent: item.id == current) : nil
-        }
-        if !recentOptions.isEmpty { result.append(NWModelSection(title: "Recent", options: recentOptions)) }
-        let recentIDs = Set(recent.map(\.id))
-        var providers: [String] = []
-        var byProvider: [String: [NWModelOption]] = [:]
-        for entry in entries where !recentIDs.contains(entry.id) {
-            if byProvider[entry.provider] == nil { providers.append(entry.provider) }
-            byProvider[entry.provider, default: []].append(option(entry))
-        }
-        for provider in providers { result.append(NWModelSection(title: provider, options: byProvider[provider] ?? [])) }
-        return result
-    }
-}
-
-/// The last models picked in any thread, newest first (the model picker's Recent group).
-enum RecentModels {
-    struct Item: Codable, Equatable {
-        var id: String
-        var at: Date
-        var thread: String?
-    }
-
-    static let key = "shepherd.recentModels"
-    static let limit = 4
-
-    static func load(_ defaults: UserDefaults = .standard) -> [Item] {
-        guard let data = defaults.data(forKey: key), let items = try? JSONDecoder().decode([Item].self, from: data) else { return [] }
-        return items
-    }
-
-    static func record(_ id: String, thread: String?, at date: Date = Date(), defaults: UserDefaults = .standard) {
-        var items = load(defaults).filter { $0.id != id }
-        items.insert(Item(id: id, at: date, thread: thread), at: 0)
-        if let data = try? JSONEncoder().encode(Array(items.prefix(limit))) { defaults.set(data, forKey: key) }
     }
 }
 

@@ -22,7 +22,8 @@ final class ComposerThread {
     private(set) var threadScroll: NSScrollView?
 
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
-         commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false) {
+         commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
+         animated: Bool = true) {
         self.size = size
         snapshot = Self.snapshot(messages: messages, commands: commands, dialogs: dialogs)
         window = OffscreenWindow(size: size, dark: dark)
@@ -34,7 +35,9 @@ final class ComposerThread {
             }
         }
         window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: Self.key, listModels: { models })
-            .environment(\.threadCommands, self.commands))
+            .environment(\.threadCommands, self.commands)
+            // Without motion, a change's first frame is all of its work.
+            .transaction { if !animated { $0.disablesAnimations = true } })
     }
 
     static func snapshot(messages count: Int, commands: [NativeCommand], dialogs: [NativeThreadDialog] = [],
