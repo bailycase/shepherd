@@ -114,6 +114,7 @@ public struct NWDiffLine: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("diff.line")
         let nw = Color.nw
         HStack(spacing: 0) {
             NWDiffNumber(value: line.oldNumber)

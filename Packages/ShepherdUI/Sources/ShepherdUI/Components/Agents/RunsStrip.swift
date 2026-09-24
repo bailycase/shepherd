@@ -143,7 +143,8 @@ public struct NWRunsStrip: View, Equatable {
     }
 
     private func segment(_ cell: NWRunsStripCell) -> some View {
-        Button { open(cell.id) } label: {
+        let _ = NWRenderProbe.tick("runs.stripSegment")
+        return Button { open(cell.id) } label: {
             ZStack {
                 // At rest the target draws nothing: the strip underneath is the segment.
                 if hovered == cell.id {

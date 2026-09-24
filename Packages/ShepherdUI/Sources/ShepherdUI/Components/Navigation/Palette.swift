@@ -193,6 +193,7 @@ public struct NWPaletteRow<Detail: View>: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("palette.row")
         Button(action: action) {
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
                 HStack(spacing: NWPaletteMetrics.iconGap) {

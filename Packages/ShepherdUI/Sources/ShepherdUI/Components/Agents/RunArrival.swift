@@ -33,7 +33,11 @@ private struct NWRunArrivalModifier: ViewModifier {
             // Attached here and started from a task, after the view is placed: an animation
             // begun while it is laid out would carry that whole layout pass with it.
             .nwAnimation(motion, value: shown)
-            .task { if !shown { shown = true } }
+            .task {
+                guard !shown else { return }
+                NWRenderProbe.tick("arrival.animates")
+                shown = true
+            }
     }
 
     private var offset: CGSize {
