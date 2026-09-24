@@ -103,6 +103,7 @@ private struct NWFileChip: View, Equatable {
     }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.fileChip")
         let nw = Color.nw
         Button(action: action) {
             HStack(spacing: NW.Space.s) {

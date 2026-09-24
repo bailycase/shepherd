@@ -54,6 +54,7 @@ struct UserTurn: View, Equatable {
     }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("thread.userTurn")
         VStack(alignment: .trailing, spacing: AppLayout.activitySpacing) {
             // By position, not entry: an echo and the message pi saves for it have different
             // entries, and the bubble must stay one view to settle in place (70% → 100%, queued
@@ -165,6 +166,7 @@ struct AgentTurn: View, Equatable {
     /// errors) fade in, and the changes card and footer that end it rise into place. Text inside
     /// a part, and the parts a turn opens or scrolls back in with, appear at once.
     var body: some View {
+        let _ = NWRenderProbe.tick("thread.agentTurn")
         let entering = (shown.appeared || arriving) && settled
         VStack(alignment: .leading, spacing: AppLayout.turnItemSpacing) {
             ForEach(parts) { part in

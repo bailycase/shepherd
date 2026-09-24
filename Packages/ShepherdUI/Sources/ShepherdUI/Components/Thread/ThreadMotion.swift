@@ -52,6 +52,7 @@ private struct NWArrivalModifier: ViewModifier {
             .offset(arrived ? .zero : offset)
             .onAppear {
                 guard !arrived else { return }
+                NWRenderProbe.tick("arrival.animates")
                 withAnimation(motion.animation(reduceMotion: reduceMotion)) { arrived = true }
             }
     }

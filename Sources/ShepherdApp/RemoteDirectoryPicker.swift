@@ -258,6 +258,7 @@ private struct RemoteDirRow: View {
     let action: () -> Void
 
     var body: some View {
+        let _ = NWRenderProbe.tick("directory.row")
         Button(action: action) {
             HStack(spacing: NW.Space.m) {
                 Image(systemName: isUp ? "arrow.turn.left.up" : "folder")

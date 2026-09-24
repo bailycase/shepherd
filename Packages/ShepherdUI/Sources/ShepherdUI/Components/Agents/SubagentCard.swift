@@ -104,6 +104,7 @@ public struct NWSubagentCard: View, Equatable {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("subagent.card")
         let nw = Color.nw
         let shape = RoundedRectangle(cornerRadius: NW.Radius.m)
         VStack(alignment: .leading, spacing: NW.Space.m) {

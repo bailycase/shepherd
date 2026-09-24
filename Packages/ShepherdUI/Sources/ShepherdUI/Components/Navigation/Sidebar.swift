@@ -206,6 +206,7 @@ public struct NWSidebarRow: View, Equatable {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("sidebar.row")
         // A status report, a settled name, or ⌘ held changes one part in place (`.content`);
         // selection is not animated here, so it lands at once.
         HStack(spacing: NWSidebarMetrics.rowGap) {
@@ -311,6 +312,7 @@ public struct NWSidebarDisclosureRow<Trailing: View>: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("sidebar.spaceRow")
         HStack(spacing: NW.Space.m) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 9, weight: .semibold))

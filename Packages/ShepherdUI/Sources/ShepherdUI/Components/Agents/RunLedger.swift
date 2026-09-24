@@ -112,6 +112,7 @@ private struct NWRunLedgerRow: View {
     @State private var hovering = false
 
     var body: some View {
+        let _ = NWRenderProbe.tick("runs.ledgerRow")
         let nw = Color.nw
         Button(action: action) {
             HStack(spacing: 10) {
