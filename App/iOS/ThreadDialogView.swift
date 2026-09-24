@@ -1,7 +1,7 @@
 import SwiftUI
 import ShepherdProtocol
 
-/// Approval sheet content (docs/design-spec page 6 + page 9 §8): warning glyph + title,
+/// Approval sheet content (DESIGN.md › iOS): warning glyph + title,
 /// optional command block, stacked 50pt actions. pi's standard dialogs map as confirm →
 /// Allow once / Deny, select → stacked options, input/editor → field + Submit. "Always for
 /// this agent" only appears when a select option literally says so; pi's dialogs carry no

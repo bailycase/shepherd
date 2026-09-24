@@ -1,7 +1,7 @@
 import SwiftUI
 import ShepherdCore
 
-// Agents list per docs/design-spec page 4 + page 9 §8: host section with a Connected /
+// Agents list (DESIGN.md › iOS): host section with a Connected /
 // Unreachable pill, 56pt rows (title + one-line live status in micro/mono, chevron),
 // "Show N more" past five, an Automations section, and a dimmed Retry card when the host is
 // unreachable. The status line shows only what ShepherdState carries (state word + space);

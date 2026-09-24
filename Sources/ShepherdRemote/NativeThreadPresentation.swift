@@ -346,7 +346,7 @@ public func nativeWorkingLabel(_ provisional: [NativeThreadMessage]) -> String {
     return "Working…"
 }
 
-// MARK: Subagent cards (docs/design-spec/boards/09-subagent-cards.png)
+// MARK: Subagent cards (DESIGN.md › Subagents)
 
 /// The four card states. `running` covers queued; every non-complete terminal state
 /// (failed/stopped/rejected) renders as failed, since all of them end without a result.

@@ -1,10 +1,10 @@
 import SwiftUI
 import ShepherdCore
 
-// Design-spec tokens (docs/design-spec page 7), light/dark, same hex as the desktop's
-// NativeTokens. Mobile keeps these local so the app never imports the Mac app module. The
-// spec names IBM Plex Sans + JetBrains Mono; no fonts are bundled, so prose is the system
-// face and code is the system monospace at the spec's iOS sizes (page 9 §8).
+// Tokens from the canvas's Foundations (Option A, superseded) board, light/dark, same hex as
+// the desktop's NativeTokens. Mobile keeps these local so the app never imports the Mac app
+// module. The spec names IBM Plex Sans + JetBrains Mono; no fonts are bundled, so prose is the
+// system face and code is the system monospace at the spec's iOS sizes (DESIGN.md › iOS).
 struct MobileTokens {
     let scheme: ColorScheme
 

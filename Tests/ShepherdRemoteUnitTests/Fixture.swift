@@ -54,7 +54,7 @@ enum Fixture {
     }
 }
 
-/// The subagent board (docs/design-spec/boards/09-subagent-cards.png), timed so durations read
+/// The canvas's Subagent card states board (SubagentCards), timed so durations read
 /// as drawn.
 enum Board {
     static let now = Date(timeIntervalSince1970: 10_000)
