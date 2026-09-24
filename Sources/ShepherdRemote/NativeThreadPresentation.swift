@@ -158,8 +158,8 @@ public extension NativeToolRow {
                 preview = string("action") ?? firstLine
             }
         default:
-            // Spec §5 says unknown tools show the first output line; we prefer an obvious action
-            // field first (a URL beats "<html>") and fall back to output. The 120-char cap is the spec's.
+            // Unknown tools prefer an obvious action field (a URL beats "<html>") and fall back
+            // to the first output line, capped at 120 chars.
             preview = ["command", "path", "query", "url", "pattern"].compactMap(string).first ?? firstLine
         }
         if failed, results.isEmpty { results.append(Result("failed", tone: .danger)) }
@@ -213,7 +213,7 @@ public func nativeDurationText(_ seconds: Double, live: Bool = false) -> String 
     return String(format: "%dh %02dm", whole / 3600, (whole % 3600) / 60)
 }
 
-/// The header pill and sidebar dot share this state; see spec §6.
+/// The header pill and sidebar dot share this state; see DESIGN.md › Status language.
 public enum NativeAgentPill: Equatable, Sendable {
     case idle, running, needsApproval, error, stopped
 
@@ -497,7 +497,7 @@ public func nativeSubagentNeedsYouLabel(_ runs: [ChildRun]) -> String? {
 /// bb's sticky-bottom rule as a value: follow the tail until the user scrolls away, re-stick
 /// once they return to within `threshold` of the bottom. Programmatic growth never detaches.
 public struct NativeScrollFollower: Equatable, Sendable {
-    /// Spec §4: the tail follows while the reader is within 80pt of the bottom.
+    /// DESIGN.md › Thread: the tail follows while the reader is within 80pt of the bottom.
     public static let threshold: Double = 80
     public var sticky = true
     /// Set for the duration of a wheel/drag gesture (or shortly after a wheel tick).

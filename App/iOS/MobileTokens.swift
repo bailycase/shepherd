@@ -3,8 +3,8 @@ import ShepherdCore
 
 // Tokens from the canvas's Foundations (Option A, superseded) board, light/dark, same hex as
 // the desktop's NativeTokens. Mobile keeps these local so the app never imports the Mac app
-// module. The spec names IBM Plex Sans + JetBrains Mono; no fonts are bundled, so prose is the
-// system face and code is the system monospace at the spec's iOS sizes (DESIGN.md › iOS).
+// module (DESIGN.md › iOS). The board names IBM Plex Sans + JetBrains Mono; no fonts are
+// bundled, so prose is the system face and code is the system monospace.
 struct MobileTokens {
     let scheme: ColorScheme
 
@@ -49,7 +49,7 @@ struct MobileTokens {
     var buttonPrimary: Color { text }
     var onButtonPrimary: Color { raised }
 
-    /// Sidebar/list dot per spec §6: running = success ("alive"), blocked = warning, idle = grey.
+    /// Sidebar/list dot: running = success ("alive"), blocked = warning, idle = grey.
     func status(_ status: AgentStatus) -> Color {
         switch status {
         case .working: return success
@@ -76,7 +76,7 @@ struct MobileTokens {
         }
     }
 
-    // Type (spec §8): body 16 ×1.5, user bubble 15, tool rows 12 mono, label/600 title, micro 11 mono.
+    // Type: body 16 ×1.5, user bubble 15, tool rows 12 mono, label/600 title, micro 11 mono.
     static let prose = Font.system(size: 16)
     /// Extra leading so 16pt body reaches ×1.5 (24pt lines).
     static let proseLeading: CGFloat = 5
@@ -123,7 +123,7 @@ struct MobileTokens {
     }
 }
 
-/// Accent spinner; a pulsing dot under Reduce Motion (spec §7).
+/// Accent spinner; a pulsing dot under Reduce Motion.
 struct MobileSpinner: View {
     var color: Color
     var size: CGFloat = 12
@@ -145,7 +145,7 @@ struct MobileSpinner: View {
     }
 }
 
-/// Stacked 50pt sheet/list action (spec §8). Primary = text on raised; secondary = bordered; ghost = plain.
+/// Stacked 50pt sheet/list action. Primary = text on raised; secondary = bordered; ghost = plain.
 struct MobileActionStyle: ButtonStyle {
     enum Kind { case primary, secondary, ghost, destructive }
     let kind: Kind

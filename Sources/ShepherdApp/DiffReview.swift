@@ -249,8 +249,9 @@ struct ReviewRow: Identifiable, Equatable {
     let kind: Kind
 }
 
-/// A file's rows with long runs folded (spec §9): more than eight same-kind lines in a row keep
-/// a few at each end and fold the middle into one strip. `expandedRuns` nil expands everything.
+/// A file's rows with long runs folded (DESIGN.md › Right pane): more than eight same-kind lines
+/// in a row keep a few at each end and fold the middle into one strip. `expandedRuns` nil
+/// expands everything.
 func reviewRows(_ file: DiffFile, expandedRuns: Set<String>?, threshold: Int = AppLayout.diffCollapseThreshold) -> [ReviewRow] {
     var rows: [ReviewRow] = []
     for hunk in file.hunks {

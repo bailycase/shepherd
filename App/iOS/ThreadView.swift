@@ -134,7 +134,7 @@ struct ThreadView: View {
         .foregroundStyle(tokens.text)
         .tint(tokens.accent)
         .navigationTitle(agent?.name ?? "Thread")
-        // The system bar centres its title and wraps leading items in a capsule; page 4 wants
+        // The system bar centres its title and wraps leading items in a capsule; the thread wants
         // back · leading title with a status line · trailing actions on a flat 52pt row.
         .toolbar(.hidden, for: .navigationBar)
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -328,7 +328,7 @@ struct ThreadView: View {
         }
         .padding(.horizontal, MobileTokens.inset)
         .padding(.top, MobileTokens.spacing)
-        // The system bottom safe area (home indicator) supplies the spec's ~30pt; 8 more keeps the pill off it.
+        // The system bottom safe area (home indicator) supplies ~30pt; 8 more keeps the pill off it.
         .padding(.bottom, MobileTokens.spacing)
         .background(alignment: .top) {
             LinearGradient(colors: [tokens.surface.opacity(0), tokens.surface], startPoint: .top, endPoint: .bottom)
