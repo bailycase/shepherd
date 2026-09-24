@@ -260,7 +260,6 @@ struct AgentLayoutView: View, Equatable {
 
     var body: some View {
         let _ = NWRenderProbe.tick("layout.agentLayout")
-        let tab = model.tab
         let thread = model.thread
         let inspecting = model.inspectingRunID
         let review = model.review
