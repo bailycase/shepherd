@@ -68,6 +68,59 @@ struct ListPerformanceTests {
         #expect(fleet < few * 2.5, "\(String(format: "300 agents %.2f ms, 30 agents %.2f ms", fleet, few))")
     }
 
+    // MARK: Thread
+
+    /// A long thread streaming its reply builds only the rows on screen for each chunk, however
+    /// many turns came before.
+    @Test func streamingIntoALongThreadBuildsOnlyTheRowsOnScreen() async throws {
+        var snapshot = ListFixtures.threadSnapshot(turns: 500, running: true)
+        let store = NativeThreadStore()
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
+                                     ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
+                                                commandKey: "budget"))
+        defer {
+            store.stop()
+            window.close()
+        }
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        ListPerf.settle(window)
+
+        NWRenderProbe.start()
+        for index in 0..<5 {
+            let live = ListFixtures.message("live", "assistant", String(repeating: "Streaming sentence \(index). ", count: index + 1))
+            snapshot = ListFixtures.threadSnapshot(turns: 500, running: true, revision: UInt64(index + 2), provisional: [live])
+            await store.refresh()
+            ListPerf.settle(window)
+        }
+        let rows = NWRenderProbe.stop()
+        // A 800pt window shows a dozen turns; five chunks may build each a few times.
+        #expect(rows["thread.rowBuilder", default: 0] <= 5 * 40, "\(rows)")
+        #expect(rows["thread.agentTurn", default: 0] <= 5 * 2, "only the streaming turn redraws: \(rows)")
+    }
+
+    /// Turns scrolled back into the lazy stack are simply there: no entrance plays while reading.
+    @Test func scrollingThroughALongThreadPlaysNoEntrances() async throws {
+        let snapshot = ListFixtures.threadSnapshot(turns: 500)
+        let store = NativeThreadStore()
+        let window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
+                                     ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
+                                                commandKey: "entrances"))
+        defer {
+            store.stop()
+            window.close()
+        }
+        try await eventuallyOnMain("the thread to load") { store.ready }
+        ListPerf.settle(window)
+        let scroll = try #require(ListPerf.scrollView(in: window))
+
+        let rows = ListPerf.counting {
+            _ = ListPerf.scroll(window, scroll, step: -400, steps: 30)
+            _ = ListPerf.scroll(window, scroll, step: 400, steps: 30)
+        }
+        #expect(rows["thread.agentTurn", default: 0] > 20, "the thread scrolled: \(rows)")
+        #expect(rows["arrival.animates", default: 0] == 0, "\(rows)")
+    }
+
     // MARK: Review
 
     private func review(_ files: [DiffFile]) -> OffscreenWindow {
