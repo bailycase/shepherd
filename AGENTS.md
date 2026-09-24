@@ -649,20 +649,32 @@ waiting on you marks its parent's row. Child runs are display state and never pe
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps every
 mounted agent layout in the view tree, and selection only changes which one is visible (opacity,
-hit-testing, and `isRendering`, where Ghostty occlusion stops hidden panes' render loops). Three
-things silently bring back full-repaint lag:
+hit-testing, `nwMotionPaused`, and `isRendering`, where Ghostty occlusion stops hidden panes'
+render loops). A hidden thread suspends its store (`NativeThreadStore.suspend`) and keeps what it
+shows, so showing it again rebuilds the thread and its composer once, and its first pull catches
+it up without motion (docs/native-thread.md). The workspace hands each layout an Equatable
+`AgentLayoutModel` and nothing observable, so a status report reruns none of them. Things that
+silently bring back full-repaint lag:
 
 - reordering `mountedTabs` (ForEach identity)
 - using a conditional branch or `.hidden()` instead of `opacity(0)` (ConditionalContent destroys
   the subtree)
 - applying `setRenderingActive` fire-and-forget (the model retries; see
   [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md))
+- a layout view reading the view model's state instead of its model
 
-The one deliberate unmount is **cold parking**. A layout hidden for 30 s and outside the four
-most recently shown (`WorkspaceSelection.coldParkCandidates`) drops its terminal panes' surfaces
-via `TerminalSessionStore.parkPane`. Its processes and host-side screens keep running, and
-reselecting it remounts from the server snapshot. A thread pane has no surface; its
-`NativeThreadStore` keeps the draft and history. Measurements are in
+**At launch** only the visible layout mounts in the first frame; the rest wait in
+`pendingMountTabIDs` and mount after it, two per run-loop turn, the visible space first
+(`drainPendingMounts`). An agent selected before its turn mounts at once. With forty agents the
+first frame built forty layouts and eighty thread bodies (about 400 ms) until it did.
+
+The one deliberate unmount is **cold parking**, and only for a layout holding a terminal pane. A
+layout hidden for 30 s and outside the four most recently shown
+(`WorkspaceSelection.coldParkCandidates`) drops its terminal panes' surfaces via
+`TerminalSessionStore.parkPane`. Its processes and host-side screens keep running, and
+reselecting it remounts from the server snapshot. A thread-only layout never parks: it has no
+surface, its hidden store polls nothing, and its `NativeThreadStore` keeps the draft and
+history, so returning to it is always a flip. Measurements are in
 [docs/benchmarks](docs/benchmarks/2026-09-03-terminal-baseline.md).
 
 **Sessions and views are separate.** Closing a pane detaches views only. A process that exits on

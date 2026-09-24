@@ -111,7 +111,7 @@ struct WorkspaceSelectionTests {
         hidden[ids[6]] = now.addingTimeInterval(-5)
         hidden[ids[7]] = long // the active layout: its stale entry is ignored
 
-        let candidates = WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: ids[7], now: now)
+        let candidates = WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: ids[7], terminalTabs: Set(ids), now: now)
 
         // Hot set: ids[6], ids[5], ids[4], ids[3].
         #expect(candidates == [ids[0], ids[1], ids[2]])
@@ -120,13 +120,83 @@ struct WorkspaceSelectionTests {
     @Test func nothingParksWithinTheDelay() {
         let now = Date(timeIntervalSince1970: 10_000)
         let hidden = Dictionary(uniqueKeysWithValues: (0..<10).map { _ in (TabID(), now.addingTimeInterval(-29)) })
-        #expect(WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: nil, now: now).isEmpty)
+        #expect(WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: nil, terminalTabs: Set(hidden.keys), now: now).isEmpty)
+    }
+
+    /// Only a layout holding a terminal pane parks: a thread alone has no surface to release.
+    @Test func layoutsWithoutATerminalPaneAreNeverParkCandidates() {
+        let w = Workspace()
+        let now = Date(timeIntervalSince1970: 10_000)
+        let ids = (0..<6).map { _ in TabID() }
+        var hidden: [TabID: Date] = [:]
+        // All hidden an hour, ids[0] most recently: the hot four are ids[0...3].
+        for (index, id) in ids.enumerated() { hidden[id] = now.addingTimeInterval(-3_600 - Double(index)) }
+
+        let candidates = WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: nil,
+                                                               terminalTabs: [ids[1], ids[5]], now: now)
+
+        #expect(candidates == [ids[5]], "ids[4] is past the delay and outside the hot four, but only a thread")
+        #expect(WorkspaceSelection.terminalTabs(in: w.state).isEmpty, "these agents' layouts are only their threads")
+    }
+
+    @Test func aLayoutWithASplitTerminalHoldsATerminalPane() {
+        let w = Workspace()
+        var state = w.state
+        let terminal = LeafPane(cwd: w.home.path)
+        let index = state.tabs.firstIndex { $0.id == w.b.tab.id }!
+        state.tabs[index].layout = .split(axis: .vertical, ratio: 0.5, first: state.tabs[index].layout, second: .leaf(terminal))
+        #expect(WorkspaceSelection.terminalTabs(in: state) == [w.b.tab.id])
+    }
+
+    // MARK: Mounting at launch
+
+    @Test func pendingLayoutsWaitToMount() {
+        let w = Workspace()
+        var selection = w.selecting(w.a.agent)
+        selection.pendingMountTabIDs = [w.b.tab.id, w.c.tab.id]
+        #expect(selection.mountedTabs.map(\.id) == [w.a.tab.id])
+    }
+
+    /// An agent selected before its turn to mount mounts at once.
+    @Test func theActiveLayoutMountsEvenWhilePending() {
+        let w = Workspace()
+        var selection = w.selecting(w.b.agent)
+        selection.pendingMountTabIDs = Set(w.stableOrder)
+        #expect(selection.mountedTabs.map(\.id) == [w.b.tab.id])
+    }
+
+    @Test func theVisibleSpaceMountsFirst() {
+        let w = Workspace()
+        var inOther = w.selecting(w.c.agent, in: w.other)
+        inOther.pendingMountTabIDs = [w.a.tab.id, w.b.tab.id]
+        #expect(inOther.mountOrder == [w.a.tab.id, w.b.tab.id])
+        var inHome = w.selecting(w.a.agent)
+        inHome.pendingMountTabIDs = [w.b.tab.id, w.c.tab.id]
+        #expect(inHome.mountOrder == [w.b.tab.id, w.c.tab.id])
+        var otherFirst = w.selecting(w.c.agent, in: w.other)
+        otherFirst.pendingMountTabIDs = [w.a.tab.id]
+        #expect(otherFirst.mountOrder == [w.a.tab.id])
+    }
+
+    /// Mounting in any order never moves a layout already mounted: each lands in its place in
+    /// the stable order.
+    @Test(arguments: [[0, 1, 2], [2, 0, 1], [1, 2, 0]])
+    func draininglayoutsKeepsTheStableOrder(drain: [Int]) {
+        let w = Workspace()
+        var selection = w.selecting(nil)
+        selection.pendingMountTabIDs = Set(w.stableOrder)
+        for index in drain {
+            selection.pendingMountTabIDs.remove(w.stableOrder[index])
+            let mounted = selection.mountedTabs.map(\.id)
+            #expect(mounted == w.stableOrder.filter(mounted.contains))
+        }
+        #expect(selection.mountedTabs.map(\.id) == w.stableOrder)
     }
 
     @Test func theFourMostRecentlyShownLayoutsNeverPark() {
         let now = Date(timeIntervalSince1970: 10_000)
         let hidden = Dictionary(uniqueKeysWithValues: (0..<4).map { _ in (TabID(), now.addingTimeInterval(-3_600)) })
-        #expect(WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: nil, now: now).isEmpty)
+        #expect(WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: nil, terminalTabs: Set(hidden.keys), now: now).isEmpty)
         #expect(WorkspaceSelection.hotRetainLimit == 4)
         #expect(WorkspaceSelection.parkDelay == .seconds(30))
     }

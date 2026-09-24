@@ -132,8 +132,8 @@ final class FakeThread {
 /// one-file diff.
 @MainActor
 enum MountedWorkspace {
-    static func open(_ count: Int, in app: AppHarness, size: CGSize = CGSize(width: 1200, height: 800))
-        async throws -> (ShepherdViewModel, OffscreenWindow, [AgentFixture]) {
+    /// The workspace restored, the first agent selected, and no window yet.
+    static func start(_ count: Int, in app: AppHarness) async throws -> (ShepherdViewModel, [AgentFixture]) {
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []
         for index in 0..<count { agents.append(try await app.liveAgent("agent \(index)", in: space, order: index)) }
@@ -141,12 +141,54 @@ enum MountedWorkspace {
         let files = [ListFixtures.diffFile("Sources/A.swift", lines: 12)]
         vm.reviewDiffLoader = { _, _ in (files, nil) }
         vm.selectAgent(agents[0].agent.id)
+        return (vm, agents)
+    }
+
+    static func open(_ count: Int, in app: AppHarness, size: CGSize = CGSize(width: 1200, height: 800))
+        async throws -> (ShepherdViewModel, OffscreenWindow, [AgentFixture]) {
+        let (vm, agents) = try await start(count, in: app)
         let window = OffscreenWindow(size: size, dark: true, WorkspaceView(vm: vm))
         let visible = vm.threadStores.store(for: agents[0].agent.id)
         try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
         try await Task.sleep(for: .milliseconds(300))
         ListPerf.settle(window)
         return (vm, window, agents)
+    }
+}
+
+/// How long the main thread goes without waiting (one run-loop turn's work), watched by a
+/// run-loop observer while `work` runs: a mount or an update that stalls the app shows up here
+/// whichever run-loop turn it lands in.
+@MainActor
+final class MainTurnMonitor {
+    private var observer: CFRunLoopObserver?
+    private var turnStart: CFAbsoluteTime?
+    private(set) var durations: [Double] = []
+    var longest: Double { durations.max() ?? 0 }
+    var turns: Int { durations.count }
+
+    func start() {
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue | CFRunLoopActivity.beforeWaiting.rawValue,
+                                                          true, 0) { [weak self] _, activity in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let now = CFAbsoluteTimeGetCurrent()
+                if activity == .afterWaiting {
+                    self.turnStart = now
+                } else if let start = self.turnStart {
+                    self.durations.append(now - start)
+                    self.turnStart = nil
+                }
+            }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        self.observer = observer
+    }
+
+    func stop() {
+        if let observer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        observer = nil
     }
 }
 
