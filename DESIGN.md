@@ -628,8 +628,9 @@ row) shows them.
   confirms, and whenever VoiceOver runs, so Copy response, Retry turn, the subagents link, and
   the time are always reachable (`NWMessageDetails`).
 - **Per message.** Each turn owns its pointer state (`MessageHover` in `ThreadTurns.swift`), and
-  only the time or the footer reads it: the pointer crossing a thread never re-renders a turn's
-  parts or the thread.
+  its whole row counts, gaps and the hidden details' place included. Only what shows the
+  details reads it (an agent turn's footer; a user turn, which is just its bubbles), so the
+  pointer crossing a thread never re-renders an agent turn's parts, other turns, or the thread.
 - The subagent inspector's transcript follows the same rule; there "from parent" always shows
   under a message from the parent, and its time fades in beside it.
 
