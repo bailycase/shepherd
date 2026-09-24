@@ -4,9 +4,9 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Whether the pointer is over one message (a turn). The turn owns it and only its quiet
-/// details (the time, the footer) read it, so the pointer crossing a thread re-renders those
-/// and nothing else.
+/// Whether the pointer is over one message (a turn). The turn owns it, and only what shows its
+/// quiet details reads it: an agent turn's footer, or a user turn (just its bubbles). The
+/// pointer crossing a thread never re-renders an agent turn's parts, other turns, or the thread.
 @MainActor
 @Observable
 final class MessageHover {
