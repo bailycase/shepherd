@@ -8,6 +8,9 @@ import ShepherdSessions
 extension EnvironmentValues {
     /// Keyboard commands for the thread on screen, when the app provides them.
     @Entry var threadCommands: ThreadCommandCenter? = nil
+    /// How long a thread waits for pi before its composer says pi is starting (previews show it
+    /// at once).
+    @Entry var threadStartingDelay: Duration = AppLayout.startingIndicatorDelay
 }
 
 /// An agent's thread (NWThread board): an 820pt column of turns in a scroll view that follows
@@ -62,10 +65,9 @@ struct ThreadView: View {
         let liveRow = rows.last(where: \.live)
         // One persistent tail row for the whole run, the last part of the streaming reply (or on
         // its own before the reply starts). A question replaces it with the composer's question
-        // panel, and live thinking carries its own spinner. Under a thread kept from before, a pi
-        // that is starting again says so there.
-        let working = running && store.snapshot?.dialogs.isEmpty != false ? workingLabel(liveRow)
-            : store.starting && !rows.isEmpty ? Self.startingLabel : nil
+        // panel, and live thinking carries its own spinner. A pi that is starting says so in the
+        // composer, never here.
+        let working = running && store.snapshot?.dialogs.isEmpty != false ? workingLabel(liveRow) : nil
         // Loaded before this change: the tail row appearing with the first load just shows.
         let settled = arrivals.armed
         let arrived = arrivals.update(rows.map(\.id), session: store.snapshot.map { $0.piSessionID + ":" + $0.generation },
@@ -335,28 +337,19 @@ struct ThreadView: View {
         }
     }
 
-    static let startingLabel = "Starting pi…"
-
-    /// Pi's history not known yet (connecting, or pi still starting with no session file), or an
-    /// agent with nothing said yet: a new one is known to be empty from the start, so its framed
-    /// state shows while pi boots. An error keeps the last transcript and shows its banner above
-    /// the composer instead.
+    /// An agent with nothing said yet. A new one is known to be empty from the start, so its
+    /// framed state shows while pi boots. While the history is not known yet (connecting, or pi
+    /// still starting with no session file to read) the thread stays blank and the composer says
+    /// pi is starting; an error keeps the last transcript and shows its banner there instead.
     @ViewBuilder private var emptyState: some View {
-        if store.snapshot == nil, store.loadError == nil {
-            HStack(spacing: AppLayout.startingSpacing) {
-                ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner))
-                Text(Self.startingLabel).font(Font.nw(.body)).foregroundStyle(Color.nw.textSecondary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, AppLayout.startingTop)
-        } else if store.snapshot != nil {
+        if store.snapshot != nil {
             NWEmptyState(
                 Text("New agent in \(Text(abbreviatedPath).font(Font.nwMono(AppLayout.emptyThreadPathSize, .medium)))"),
                 message: "Describe the task. Drop or paste images to attach them, or type / for commands.",
                 showsMark: false, framed: true
             )
             .padding(.top, AppLayout.emptyThreadTop)
-            // Fades in over "Starting pi…"; a thread that opens already started just shows it.
+            // Fades in when pi's history arrives empty; a thread known to be empty just shows it.
             .nwArrival(arrivals.startedLoading)
         }
     }
@@ -381,7 +374,7 @@ final class ThreadArrivals {
     /// The thread is on screen and has loaded since it came there: from now on, turns appended
     /// at its tail arrive.
     private(set) var armed = false
-    /// The first rows this saw were still loading ("Starting pi…").
+    /// The first rows this saw were still loading (pi's history not known yet).
     private(set) var startedLoading = false
     private var seen = false
     private var signature: Signature?

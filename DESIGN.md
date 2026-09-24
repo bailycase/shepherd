@@ -607,9 +607,12 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   refreshing before enabling actions", "This host's pi cannot answer questions here · update
   Shepherd on the host", "Some earlier output is clipped".
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
-  quiet, never an error: "Starting pi…" with a spinner, in the empty thread or, under a thread
-  kept from before, as its working row. A pi that has not started after a minute gets the
-  error banner.
+  ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
+  state, a resuming agent's history), and a message sent meanwhile waits for pi. Nothing says
+  pi is starting unless pi keeps the thread waiting past half a second
+  (`AppLayout.startingIndicatorDelay`); then the composer's control row says so (see Composer
+  › States). There is no spinner in the thread and no starting row at its tail. A pi that has
+  not started after a minute gets the error banner.
 - **Resuming:** an agent resuming after a relaunch shows its history at once, read from pi's
   session file (`PiSessionPreview`): the newest page, the model, and the thinking level, drawn
   exactly as pi's history is. Nothing in it acts yet (retry, load older, subagent actions)
@@ -619,8 +622,8 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   agent in `~/path`" (the path in Geist Mono 15 medium within the 17pt title), with "Describe
   the task. Drop or paste images to attach them, or type / for commands." A new agent is known
   to be empty, so it shows from the first frame, with the composer ready, while pi boots behind
-  it. "Starting pi…" with a spinner shows only while a thread's history is not known yet (a
-  resuming agent without a readable session file).
+  it. While a thread's history is not known yet (a resuming agent without a readable session
+  file) the thread stays blank until pi sends it; an empty history then fades the state in.
 
 **User turn** (`UserTurn` in `Thread/ThreadTurns.swift`, on `NWUserBubble`):
 
@@ -754,8 +757,9 @@ only with the same tool.
   control)
 - the delivery chip (Follow-up · after the turn ends / Steer · after the current tools), only
   while a turn runs with a draft
-- a spacer, then the single action: a 28pt circle, **Send** (an arrow on `lantern`, at 35% until
-  there is something to send) or **Stop** (a square on `failed`)
+- a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
+  then the single action: a 28pt circle, **Send** (an arrow on `lantern`, at 35% until there is
+  something to send) or **Stop** (a square on `failed`)
 
 Chips are 26pt ghost buttons in 12pt `textSecondary`, filled with `bgHover` on hover or while
 their menu is open.
@@ -769,7 +773,13 @@ their menu is open.
 - **Accepting:** a spinner ("Waiting for pi") takes the button's place.
 - **Starting:** Send is offered from the first frame, before pi has answered anything. A
   message sent while pi boots waits behind the spinner, still in the field, and goes once pi
-  answers, as the field has it then (edited, or not at all once cleared).
+  answers, as the field has it then (edited, or not at all once cleared). Once pi has kept the
+  thread waiting for half a second (`AppLayout.startingIndicatorDelay`), "Starting pi…" in
+  caption `textTertiary` with a 10pt `textTertiary` spinner sits in the control row just before
+  the action (its spinner gives way to the action's own while a message waits). It lives in a
+  row that is always there, so it never changes the composer's height or moves the thread; it
+  drops its words before the chips drop theirs, and fades out the moment pi answers. A normal
+  start is over before it would show.
 - **Error:** Send, plus a `failed` banner above the card, "Lost connection to the agent
   process.", with the error and Reconnect: only for a pi that was serving and went away, one
   that failed, or one that never started.
@@ -1095,7 +1105,7 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 | A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | "n subagents need you" | the card's answers and Reply… |
 | Agent done | `done` | green dot | Idle (outlined) | Send |
 | Agent idle | `idle` | hollow ring | Idle (outlined) | Send |
-| pi starting | `idle` | hollow ring | Idle (outlined) | Send, which waits for pi; "Starting pi…" in the thread |
+| pi starting | `idle` | hollow ring | Idle (outlined) | Send, which waits for pi; after half a second, "Starting pi…" beside it |
 | Connection lost | `failed` | — | Error | Send, plus a `failed` banner with Reconnect |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
@@ -1220,8 +1230,9 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
 ## Verifying visuals
 
 - **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
-  - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting,
-    a hovered turn) and the activity-line states
+  - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting
+    before and after the delay, restoring from disk, a hovered turn) and the activity-line
+    states
   - the composer and its menus
   - subagent cards, the ledger, and the inspector
   - the review pane

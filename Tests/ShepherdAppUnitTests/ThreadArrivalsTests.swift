@@ -81,8 +81,8 @@ struct ThreadArrivalsTests {
         #expect(arrivals.show(["u1", "u1/reply", "pending:op", "pending:op/reply"]) == ["pending:op/reply"])
     }
 
-    /// "Starting pi…": nothing arrives until the thread has loaded once, and the empty state
-    /// that replaces the spinner knows it.
+    /// History not known yet: nothing arrives until the thread has loaded once, and the empty state
+    /// that then shows knows it.
     @Test func turnsBeforeTheFirstSnapshotDoNotArrive() {
         let arrivals = ThreadArrivals()
         #expect(arrivals.show([], session: nil, ready: false).isEmpty)
