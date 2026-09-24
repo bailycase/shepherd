@@ -43,8 +43,8 @@ struct Composer: View {
     @State private var picker: ModelPickerState?
     @State private var confirmingStopAll = false
     @State private var picking = false
-    /// The card's top edge in the thread: a menu takes at most the room above it.
-    @State private var cardTop = CGFloat.infinity
+    /// The card's top edge in the thread, once laid out: a menu takes at most the room above it.
+    @State private var cardTop: CGFloat?
     @State private var dismissal = ComposerMenuDismissal()
     /// Motion starts once the thread has loaded since it came on screen: what arrives with that
     /// pull (a widget, a waiting question, the model) is simply there, whether the thread just
@@ -207,7 +207,7 @@ struct Composer: View {
     /// inset never change with it.
     private func menus(query: String?) -> some View {
         // Read only while a menu is open: the card moving as the draft grows re-renders nothing.
-        let room = openMenu == .none ? 0 : max(0, cardTop - AppLayout.menuGap - AppLayout.menuMargin)
+        let room = openMenu == .none ? nil : cardTop.map { max(0, $0 - AppLayout.menuGap - AppLayout.menuMargin) }
         return ZStack(alignment: .bottomLeading) {
             if let query {
                 let matches = commandMatches

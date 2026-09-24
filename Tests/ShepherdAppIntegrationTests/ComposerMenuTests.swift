@@ -128,6 +128,24 @@ struct ComposerMenuTests {
         #expect(list.bounds.height > thread.menuScroll!.contentView.bounds.height, "the list scrolls inside the picker")
     }
 
+    /// A thread that mounts with a "/" draft already in its store (a remounted remote thread)
+    /// shows its slash menu from the first frame, before the card has been measured.
+    @Test func aThreadThatMountsWithASlashDraftShowsItsMenu() async throws {
+        let thread = ComposerThread()
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let closed = FrameTimer.capture(thread.window, CGRect(x: 0, y: 0, width: thread.size.width, height: thread.cardTop - 4))
+        thread.store.draft = "/"
+
+        thread.remount()
+        try await thread.settle()
+
+        let band = CGRect(x: 0, y: 0, width: thread.size.width, height: thread.cardTop - 4)
+        let open = FrameTimer.capture(thread.window, band)
+        let menu = try #require(Pixels.bounds(differing: closed, open, rows: 0..<Int(band.height), by: Self.edge), "the menu shows")
+        #expect(abs(menu.maxY - (thread.cardTop - AppLayout.menuGap)) <= 2, "above the card: \(menu)")
+    }
+
     /// A click outside the menu and the card closes it (and still lands where it was aimed); a
     /// click in the menu, or in the card (a chip toggles its own menu), leaves it open. The
     /// clicks are handed to the composer's watcher directly: nothing is posted to the window.

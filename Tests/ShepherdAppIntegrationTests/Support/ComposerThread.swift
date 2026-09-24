@@ -20,6 +20,7 @@ final class ComposerThread {
     private(set) var snapshot: NativeThreadSnapshot
     /// The thread's own scroll view, found before any menu (which may bring its own) opens.
     private(set) var threadScroll: NSScrollView?
+    private var hosted: () -> AnyView = { AnyView(EmptyView()) }
 
     init(messages: Int = 40, size: CGSize = CGSize(width: 900, height: 600), models: [PiModelCatalog.Entry] = ModelCatalogFixture.entries,
          commands: [NativeCommand] = ModelCatalogFixture.commands, dialogs: [NativeThreadDialog] = [], dark: Bool = false,
@@ -34,10 +35,20 @@ final class ComposerThread {
             default: return .snapshot(value: self.snapshot)
             }
         }
-        window.show(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: Self.key, listModels: { models })
-            .environment(\.threadCommands, self.commands)
-            // Without motion, a change's first frame is all of its work.
-            .transaction { if !animated { $0.disablesAnimations = true } })
+        hosted = { [store, commands = self.commands] in
+            AnyView(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: Self.key, listModels: { models })
+                .environment(\.threadCommands, commands)
+                // Without motion, a change's first frame is all of its work.
+                .transaction { if !animated { $0.disablesAnimations = true } })
+        }
+        window.show(hosted())
+    }
+
+    /// A new `ThreadView` on the same store, as the workspace remounts a remote agent's thread:
+    /// its first frame has the store's snapshot and draft.
+    func remount() {
+        window.show(hosted().id(UUID()))
+        threadScroll = scrollViews().first
     }
 
     static func snapshot(messages count: Int, commands: [NativeCommand], dialogs: [NativeThreadDialog] = [],
