@@ -98,6 +98,53 @@ struct PiSessionPreviewTests {
         #expect(preview.messages.map(\.entryID) == ["user:1", "assistant:2", "user:4", "assistant:5"])
     }
 
+    /// A conversation whose thinking level was set to `levels` in turn, each change followed by
+    /// a run of turns (`filler` characters of tool output each), then a full page of short turns,
+    /// so no change sits on the page: the level pi resumes with is the newest change.
+    private func sessionChangingThinking(_ levels: [String], turnsBetween: Int, filler: Int) -> [[String: Any]] {
+        var entries: [[String: Any]] = []
+        var parent: Any = NSNull()
+        var ms = 0.0
+        func add(_ entry: [String: Any]) {
+            var entry = entry
+            let id = "x\(entries.count)"
+            entry["id"] = id
+            entry["parentId"] = parent
+            entry["timestamp"] = "2026-09-24T00:00:00.000Z"
+            entries.append(entry)
+            parent = id
+        }
+        func turns(_ count: Int, filler: Int) {
+            for _ in 0..<count {
+                ms += 10
+                add(["type": "message", "message": user("go", at: ms)])
+                add(["type": "message", "message": reply("reading", at: ms + 1, call: "c\(ms)")])
+                // Output that quotes a level change is not one.
+                let quoted = #"{"type":"thinking_level_change","id":"q","thinkingLevel":"off"}"#
+                add(["type": "message", "message": result("c\(ms)", quoted + String(repeating: "x", count: filler), at: ms + 2)])
+            }
+        }
+        for level in levels {
+            add(["type": "thinking_level_change", "thinkingLevel": level])
+            turns(turnsBetween, filler: filler)
+        }
+        turns(RPCThreadState.pageSize, filler: 0)
+        return entries
+    }
+
+    /// pi resumes with the newest thinking level on the path, even when it was set long before
+    /// the page, far back in a long file, with output quoting a change after it.
+    @Test(arguments: [(3, 0), (40, 30_000)])
+    func aThinkingLevelSetBeforeThePageIsTheOnePiResumesWith(turnsBetween: Int, filler: Int) throws {
+        let (url, remove) = try sessionFile(sessionChangingThinking(["high", "max"], turnsBetween: turnsBetween, filler: filler))
+        defer { remove() }
+
+        let preview = try #require(PiSessionPreview.snapshot(file: url, sessionID: "s"))
+
+        #expect(preview.thinking == "max")
+        #expect(preview.messages.count == RPCThreadState.pageSize)
+    }
+
     /// After a compaction pi's context is its summary, the entries it kept, and what followed.
     @Test func aCompactionKeepsWhatPiKeeps() throws {
         var entries = chain((0..<6).map { user("m\($0)", at: Double($0 + 1)) })

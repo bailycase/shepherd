@@ -49,12 +49,19 @@ public enum PiSessionPreview {
                 guard let newline = data.firstIndex(of: UInt8(ascii: "\n")) else { return nil }
                 data = data[data.index(after: newline)...]
             }
-            let walk = walk(data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true))
+            let walk = walk(data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true), at: start)
             if !walk.complete, start > 0, window < maxWindow {
                 window = min(Int(size), window * 4, maxWindow)
                 continue
             }
-            return snapshot(walk, head: headLines, sessionID: sessionID, moreBefore: !walk.reachedStart)
+            var settings = settings(walk.path, head: headLines)
+            // A level set before the page (the walk stops once it has one) is still the level pi
+            // resumes with: the newest change before the walk's oldest entry.
+            if !walk.path.contains(where: { $0.type == "thinking_level_change" }), let oldest = walk.oldestOffset,
+               let level = newestThinkingLevel(in: handle, before: oldest) {
+                settings.thinking = level
+            }
+            return snapshot(walk, settings: settings, sessionID: sessionID, moreBefore: !walk.reachedStart)
         }
     }
 
@@ -153,11 +160,14 @@ public enum PiSessionPreview {
         var reachedStart = false
         /// The path has a page (or reached its start): no need to read further back.
         var complete = false
+        /// Where in the file the oldest entry of `path` starts.
+        var oldestOffset: Int?
     }
 
-    /// Follows the path from the newest entry back through `lines` (oldest first), as pi does
-    /// from its leaf, and stops once it holds a page or reaches the start of pi's context.
-    static func walk(_ lines: [Data.SubSequence]) -> Walk {
+    /// Follows the path from the newest entry back through `lines` (oldest first, read from
+    /// `offset` in the file), as pi does from its leaf, and stops once it holds a page or reaches
+    /// the start of pi's context.
+    static func walk(_ lines: [Data.SubSequence], at offset: Int = 0) -> Walk {
         var result = Walk()
         var wanted: String?
         var started = false
@@ -173,6 +183,7 @@ public enum PiSessionPreview {
                 continue
             }
             reversed.append(entry)
+            result.oldestOffset = offset + line.startIndex
             wanted = entry.parentId
             if entry.type == "compaction", keptFrom == nil {
                 keptFrom = entry.firstKeptEntryId
@@ -272,8 +283,41 @@ public enum PiSessionPreview {
         return (model, thinking)
     }
 
-    private static func snapshot(_ walk: Walk, head: [Data.SubSequence], sessionID: String, moreBefore: Bool) -> NativeThreadSnapshot {
-        let settings = settings(walk.path, head: head)
+    /// How far back `newestThinkingLevel` reads at a time, and how much each read overlaps the
+    /// one after it (more than a level change's line, so a line across a boundary is whole in
+    /// one of them).
+    static let searchChunk = 1 << 20
+    static let searchOverlap = 64 * 1024
+
+    /// The level of the newest `thinking_level_change` that starts before `end`, found by its
+    /// type's bytes from `end` backwards, so only lines that hold them are decoded (a message
+    /// that merely quotes the type is passed over).
+    static func newestThinkingLevel(in handle: FileHandle, before end: Int) -> String? {
+        let needle = Data(#""thinking_level_change""#.utf8)
+        let newline = UInt8(ascii: "\n")
+        var upper = end
+        while upper > 0 {
+            let lower = max(0, upper - searchChunk)
+            try? handle.seek(toOffset: UInt64(lower))
+            guard let chunk = try? handle.read(upToCount: upper - lower), !chunk.isEmpty else { return nil }
+            var searchEnd = chunk.endIndex
+            while let found = chunk.range(of: needle, options: .backwards, in: chunk.startIndex..<searchEnd) {
+                searchEnd = found.lowerBound
+                // Only whole lines: one cut off at either end is whole in the neighbouring read.
+                let lineStart = chunk[..<found.lowerBound].lastIndex(of: newline).map { chunk.index(after: $0) }
+                    ?? (lower == 0 ? chunk.startIndex : nil)
+                guard let lineStart, let lineEnd = chunk[found.upperBound...].firstIndex(of: newline) else { continue }
+                if let entry = try? decoder.decode(Entry.self, from: chunk[lineStart..<lineEnd]),
+                   entry.type == "thinking_level_change", let level = entry.thinkingLevel {
+                    return level
+                }
+            }
+            upper = lower == 0 ? 0 : lower + searchOverlap
+        }
+        return nil
+    }
+
+    private static func snapshot(_ walk: Walk, settings: (model: String?, thinking: String?), sessionID: String, moreBefore: Bool) -> NativeThreadSnapshot {
         var value = base(sessionID: sessionID, model: settings.model, thinking: settings.thinking)
         let history = RPCThreadState.projectHistory(messages(walk.path))
         RPCThreadState.fillPage(&value, from: history, end: history.count, moreBefore: moreBefore)

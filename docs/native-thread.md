@@ -240,9 +240,12 @@ output grows.
   the newest entry as pi does from its leaf, stops at a page or at the start of what pi keeps
   (the first entry, or a compaction and the entries it kept), applies context edits, skips
   lines it cannot parse, and pages with the same budget as a snapshot (`fillPage`). The model
-  and thinking level are the newest on the path, else the newest in the file's head. A missing
-  file, or one that is not pi's, is no preview: the thread waits for pi. Remote clients get no
-  preview; the remote protocol is unchanged.
+  is the newest on the path, else the newest in the file's head. The thinking level is the
+  newest on the path, else the newest `thinking_level_change` before the page, found by
+  searching the file backwards for that type and decoding only the lines that hold it (a level
+  set long before the page is still the one pi resumes with). A missing file, or one that is
+  not pi's, is no preview: the thread waits for pi. Remote clients get no preview; the remote
+  protocol is unchanged.
 - **Message order:** `messages` is the paged history (`loadOlder`). `displayedMessages` is
   history, then optimistic echoes of accepted sends, then pi's provisional entries. This order
   never flips when pi persists a message, so the tail never re-lays out.
