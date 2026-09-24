@@ -587,7 +587,8 @@ therefore mutually exclusive without locks.
 - Nothing slow runs on the queue. An RPC record of 256 KiB or more (a long history's
   `get_messages`) decodes on a concurrent queue while its session holds every later record, in
   order, until the decoded one is handled back on the queue; exit and unanswered-request
-  failures wait for them too. Only the projection runs on the server queue.
+  failures (and a deadline that passes meanwhile) wait for them too. Stdout is read at most
+  1 MiB per queue turn. Only the projection runs on the server queue.
 - Attach stays atomic: snapshot, attachment registration, and output watermark in one queue turn.
 - Callbacks (`onOutput`, `onStateChanged`, …) hop to the main queue in FIFO order. Never call them
   from the server queue directly.
