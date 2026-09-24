@@ -79,6 +79,43 @@ final class FakeThread {
     }
 }
 
+/// An off-screen window (as `OffscreenWindow`: borderless, far off every screen, ordered back)
+/// whose hosting view counts its layout passes: a view that animates through SwiftUI lays the
+/// host out on every frame, one the render server animates never does.
+@MainActor
+final class LayoutCountingWindow {
+    final class Host: NSHostingView<AnyView> {
+        var layouts = 0
+
+        override func layout() {
+            layouts += 1
+            super.layout()
+        }
+    }
+
+    let window: NSWindow
+    let host: Host
+
+    init(size: CGSize, dark: Bool = true, _ view: some View) {
+        _ = NSApplication.shared
+        window = NSWindow(contentRect: NSRect(origin: CGPoint(x: -30_000, y: -30_000), size: size),
+                          styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        host = Host(rootView: AnyView(view))
+        host.appearance = window.appearance
+        window.contentView = host
+        window.orderBack(nil)
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+    }
+
+    func close() {
+        window.orderOut(nil)
+        window.contentView = nil
+    }
+}
+
 /// The main thread's own CPU time: what a change or an idle stretch costs the thread that
 /// draws, whatever else the machine runs. Read it on the main thread.
 @MainActor
