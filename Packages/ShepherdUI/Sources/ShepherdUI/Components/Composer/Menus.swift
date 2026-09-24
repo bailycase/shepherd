@@ -169,7 +169,7 @@ public struct NWSlashMenu: View {
 
     /// How many rows fit a menu at most `height` tall (at least one, at most the board's eight).
     static func visibleRows(in height: CGFloat?) -> Int {
-        guard let height else { return NWComposerMetrics.menuMaxRows }
+        guard let height, height.isFinite else { return NWComposerMetrics.menuMaxRows }
         let room = height - NWComposerMetrics.menuHeaderHeight - 2 * NW.Space.s
         return max(1, min(NWComposerMetrics.menuMaxRows, Int((room / NWComposerMetrics.menuRowHeight).rounded(.down))))
     }
