@@ -10,6 +10,7 @@ import SwiftUI
 @MainActor
 enum ListPerf {
     /// Main-thread milliseconds for `change` plus the update, layout, and display it causes.
+    @discardableResult
     static func time(_ window: OffscreenWindow, _ change: () -> Void = {}) -> Double {
         let start = ContinuousClock.now
         change()

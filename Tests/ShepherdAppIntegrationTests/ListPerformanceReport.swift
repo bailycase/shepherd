@@ -21,6 +21,31 @@ import Testing
 struct ListPerformanceReport {
     private let report = PerfReport()
 
+    /// Opens `make()` in a window and closes it: the first surface a test run opens pays
+    /// one-time costs (fonts, SwiftUI's caches) that would otherwise land on whichever test ran
+    /// first.
+    private func warmUp(size: CGSize, _ make: () -> some View) {
+        let window = OffscreenWindow(size: size, dark: true, make())
+        ListPerf.settle(window)
+        window.close()
+    }
+
+    /// Opens `make()` warm, reporting the time and the rows built.
+    private func open(_ name: String, size: CGSize, _ make: () -> some View) -> OffscreenWindow {
+        warmUp(size: size, make)
+        var window: OffscreenWindow!
+        var ms = 0.0
+        let rows = ListPerf.counting {
+            let start = ContinuousClock.now
+            window = OffscreenWindow(size: size, dark: true, make())
+            ListPerf.settle(window)
+            ms = ListPerf.milliseconds(ContinuousClock.now - start)
+        }
+        report.add(name, "open", ms: ms)
+        report.add(name, "open: rows", counts: rows)
+        return window
+    }
+
     // MARK: Sidebar
 
     @Test func sidebar() async throws {
@@ -28,17 +53,8 @@ struct ListPerformanceReport {
         defer { app.stop() }
         let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
         let name = "sidebar (300 agents, 40 spaces)"
-        var window: OffscreenWindow!
-        var open = 0.0
-        let opening = ListPerf.counting {
-            let start = ContinuousClock.now
-            window = OffscreenWindow(size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 800), dark: true, SidebarView(vm: vm))
-            ListPerf.settle(window)
-            open = ListPerf.milliseconds(ContinuousClock.now - start)
-        }
+        let window = open(name, size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 800)) { SidebarView(vm: vm) }
         defer { window.close() }
-        report.add(name, "open", ms: open)
-        report.add(name, "open: rows", counts: opening)
 
         let scroll = try #require(ListPerf.scrollView(in: window))
         var down = ListPerf.Scroll(), up = ListPerf.Scroll()
@@ -74,24 +90,17 @@ struct ListPerformanceReport {
 
     // MARK: Palette
 
-    @Test func palette() throws {
-        let name = "palette (1k results)"
-        let items = ListFixtures.paletteItems(1000)
+    @Test(arguments: [40, 1000])
+    func palette(count: Int) throws {
+        let name = "palette (\(count) results)"
+        let items = ListFixtures.paletteItems(count)
         let highlight = PaletteHighlight()
-        var window: OffscreenWindow!
-        var open = 0.0
-        let opening = ListPerf.counting {
-            let start = ContinuousClock.now
-            window = OffscreenWindow(size: CGSize(width: 900, height: 700), dark: true,
-                                     Color.clear.nwCommandPalette(isPresented: .constant(true)) {
-                                         PaletteCard(items: items, run: { _ in }, close: {}, initialQuery: "fix", highlight: highlight)
-                                     })
-            ListPerf.settle(window)
-            open = ListPerf.milliseconds(ContinuousClock.now - start)
+        let window = open(name, size: CGSize(width: 900, height: 700)) {
+            Color.clear.nwCommandPalette(isPresented: .constant(true)) {
+                PaletteCard(items: items, run: { _ in }, close: {}, initialQuery: "fix", highlight: highlight)
+            }
         }
         defer { window.close() }
-        report.add(name, "open", ms: open)
-        report.add(name, "open: rows", counts: opening)
 
         // ↓ twenty times: each moves the highlight one row, scrolling it into view.
         var moves: [Double] = []
@@ -112,18 +121,9 @@ struct ListPerformanceReport {
 
     @Test func reviewBigFile() throws {
         let name = "review (one 2k-line file)"
-        let model = ListFixtures.reviewModel([ListFixtures.diffFile("Big.swift", lines: 2000)])
-        var window: OffscreenWindow!
-        var open = 0.0
-        let opening = ListPerf.counting {
-            let start = ContinuousClock.now
-            window = OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, ReviewPaneContent(model: model))
-            ListPerf.settle(window)
-            open = ListPerf.milliseconds(ContinuousClock.now - start)
-        }
+        let files = [ListFixtures.diffFile("Big.swift", lines: 2000)]
+        let window = open(name, size: CGSize(width: 600, height: 800)) { ReviewPaneContent(model: ListFixtures.reviewModel(files)) }
         defer { window.close() }
-        report.add(name, "open", ms: open)
-        report.add(name, "open: rows", counts: opening)
 
         let scroll = try #require(ListPerf.scrollView(in: window))
         var down = ListPerf.Scroll(), up = ListPerf.Scroll()
@@ -138,18 +138,10 @@ struct ListPerformanceReport {
 
     @Test func reviewManyFiles() throws {
         let name = "review (300 files)"
-        let model = ListFixtures.reviewModel((0..<300).map { ListFixtures.diffFile("Sources/Module\($0)/File\($0).swift", lines: 12) })
-        var window: OffscreenWindow!
-        var open = 0.0
-        let opening = ListPerf.counting {
-            let start = ContinuousClock.now
-            window = OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, ReviewPaneContent(model: model))
-            ListPerf.settle(window)
-            open = ListPerf.milliseconds(ContinuousClock.now - start)
-        }
+        let files = (0..<300).map { ListFixtures.diffFile("Sources/Module\($0)/File\($0).swift", lines: 12) }
+        let model = ListFixtures.reviewModel(files)
+        let window = open(name, size: CGSize(width: 600, height: 800)) { ReviewPaneContent(model: model) }
         defer { window.close() }
-        report.add(name, "open", ms: open)
-        report.add(name, "open: rows", counts: opening)
 
         var selects: [Double] = []
         let selecting = ListPerf.counting {
@@ -177,6 +169,11 @@ struct ListPerformanceReport {
         let request: NativeThreadStore.Request = { value in
             if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
             return .snapshot(value: snapshot)
+        }
+        let small = ListFixtures.threadSnapshot(turns: 5)
+        let warm = NativeThreadStore()
+        warmUp(size: CGSize(width: 900, height: 800)) {
+            ThreadView(store: warm, active: true, isFocused: false, request: { _ in .snapshot(value: small) }, commandKey: "warm")
         }
         var window: OffscreenWindow!
         defer {
@@ -247,6 +244,7 @@ struct ListPerformanceReport {
             store.stop()
         }
         try await eventuallyOnMain("the thread to connect") { store.ready }
+        warmUp(size: CGSize(width: 600, height: 800)) { SubagentInspector(store: store, runID: "none", active: true, close: {}) }
         var window: OffscreenWindow!
         var open = 0.0
         let opening = try await countingAsync {
@@ -302,17 +300,8 @@ struct ListPerformanceReport {
     func subagents(state: String) throws {
         let name = "subagents (200 runs, \(state == "complete" ? "ledger" : "strip"))"
         let runs = (0..<200).map { ListFixtures.run($0, state: state) }
-        var window: OffscreenWindow!
-        var open = 0.0
-        let opening = ListPerf.counting {
-            let start = ContinuousClock.now
-            window = OffscreenWindow(size: CGSize(width: 800, height: 800), dark: true, GroupHost(runs: runs))
-            ListPerf.settle(window)
-            open = ListPerf.milliseconds(ContinuousClock.now - start)
-        }
+        let window = open(name, size: CGSize(width: 800, height: 800)) { GroupHost(runs: runs) }
         defer { window.close() }
-        report.add(name, "open", ms: open)
-        report.add(name, "open: rows", counts: opening)
 
         // One run changes state: the group is compared by value and redrawn.
         var next = runs
@@ -337,6 +326,10 @@ struct ListPerformanceReport {
     @Test func directoryPicker() async throws {
         let name = "directory picker (2k dirs)"
         let dirs = ListFixtures.directories(2000)
+        warmUp(size: CGSize(width: 600, height: 600)) {
+            RemoteDirectoryPicker(hostName: "this Mac", list: { _ in RemoteHostClient.DirListing(path: "/", parent: nil, dirs: ["a"]) },
+                                  choose: { _ in }, cancel: {})
+        }
         var window: OffscreenWindow!
         var open = 0.0
         let opening = try await countingAsync {
