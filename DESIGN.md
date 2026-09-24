@@ -86,6 +86,7 @@ And the rules that follow from them:
 | Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5 | 8 (the composer's), 6, 4 | The radius scale |
 | Queue & steer: a custom 280pt QueueOptions popover; tooltips with keycaps | The native ••• menu (`NWOptionsMenu`); system tooltips (`.nwHelp`) | As every other ••• and tooltip in the app |
 | Queue & steer: the Send menu beside the card, highlighted in `bgSelected` | Above Send, trailing edges aligned; the composer menus' `runningTint` highlight | Canvas layout; the menus' one anatomy |
+| Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: "Pi" | "pi" | The app's spelling, until the rest of that redesign lands |
 | Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn or asks a question while you aren't watching it (`AgentNotifications`) | Reaches you outside the app |
@@ -95,6 +96,10 @@ And the rules that follow from them:
 
 Additions the boards don't have:
 
+- **A paused queue** (Up next): after Stop, or a turn that failed, the queue waits: "Paused" in
+  its header (why, in the tooltip), and each row's Steer now reads **Send now** (the ••• menu's
+  Send all now) while pi is idle.
+- **Undo for Clear the queue**, as for a single delete.
 - **Transcript search** in the palette ("Found in conversations").
 - A **quit confirmation** while agents are working.
 - A **one-time notice** under the toolbar after an update moved a copy of Shepherd off the
