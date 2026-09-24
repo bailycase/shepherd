@@ -317,6 +317,7 @@ struct PaneTreeView: View {
             isFocused: visible && vm.focusedPaneID == pane.id,
             agentID: agent?.id,
             agentName: agent?.name ?? "",
+            piSessionID: agent?.effectivePiSessionID,
             inspectingRunID: agent.flatMap { vm.subagentInspector.runByAgent[$0.id] }
         )
     }
@@ -387,6 +388,8 @@ struct PaneLeafModel: Equatable {
     /// The agent whose pi runs in this pane; nil for a terminal pane.
     let agentID: AgentID?
     let agentName: String
+    /// The agent's pi session, whose file the thread shows while pi starts.
+    var piSessionID: String? = nil
     /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
 }
@@ -416,6 +419,7 @@ struct PaneLeafView: View, Equatable {
                     active: model.isVisible,
                     isFocused: model.isFocused && inspecting == nil,
                     request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
+                    preview: model.piSessionID.map { PiSessionFile.previewLoader(sessionID: $0, cwd: pane.cwd) },
                     commandKey: ThreadCommandCenter.key(local: agentID),
                     agentName: model.agentName,
                     workingDirectory: pane.cwd,
@@ -446,6 +450,7 @@ struct AgentThreadPane: View {
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request
+    var preview: NativeThreadStore.Preview? = nil
     var commandKey: String?
     let agentName: String
     var workingDirectory: String?
@@ -458,7 +463,7 @@ struct AgentThreadPane: View {
         ZStack {
             switch session.phase {
             case .connecting, .live:
-                ThreadView(store: store, active: active, isFocused: isFocused, request: request, commandKey: commandKey,
+                ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
                            inspectedRunID: inspectedRunID, review: review)
             case .failed(let reason):

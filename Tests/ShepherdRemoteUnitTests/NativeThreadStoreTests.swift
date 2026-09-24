@@ -194,6 +194,44 @@ struct NativeThreadStoreTests {
         #expect(store.pollInterval == .seconds(2))
     }
 
+    /// History read from disk shows while pi starts, with nothing enabled, and pi's snapshot
+    /// replaces it.
+    @Test func aPreviewShowsUntilPisFirstSnapshotReplacesIt() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        let fromDisk = F.assistant("from disk", id: "a")
+        store.preview(F.snapshot(generation: "preview", messages: [fromDisk]))
+        #expect(store.previewing && store.messages == [fromDisk] && store.rows.count == 1)
+        #expect(!store.ready && !store.supports("send") && store.starting)
+
+        host.starting = false
+        await store.refresh()
+        #expect(store.ready && !store.previewing && store.messages == [hi] && store.snapshot?.generation == "g")
+    }
+
+    /// Disk never overwrites what pi served, even once the thread has stopped.
+    @Test func aPreviewNeverReplacesPisThread() async {
+        let (store, _, task) = await started()
+        defer { task.cancel() }
+        store.preview(F.snapshot(generation: "preview", messages: []))
+        #expect(!store.previewing && store.messages == [hi])
+        store.stop()
+        store.preview(F.snapshot(generation: "preview", messages: []))
+        #expect(!store.previewing && store.messages == [hi])
+    }
+
+    /// The run loop reads the preview alongside its first pull, while pi has nothing to show.
+    @Test func runningAThreadLoadsItsPreviewWhilePiStarts() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.starting = true
+        let store = manualStore()
+        let fromDisk = F.assistant("from disk", id: "a")
+        let task = Task { await store.run(request: { try host.handle($0) }, preview: { F.snapshot(generation: "preview", messages: [fromDisk]) }) }
+        defer { task.cancel() }
+        await until { store.previewing }
+        #expect(store.messages == [fromDisk] && !store.ready)
+    }
+
     /// The host's signal that pi serves pulls the thread at once; its poll never ran here.
     @Test func wakingAStartingThreadPullsItsFirstSnapshotAtOnce() async {
         let (store, host, task) = await startedWhileStarting()

@@ -1,4 +1,6 @@
 import Foundation
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 /// Pi's on-disk session files, from Shepherd's side.
@@ -92,6 +94,28 @@ enum PiSessionFile {
         // Anything after the header line (a trailing partial line included) is pi's.
         guard let newline = head.firstIndex(of: UInt8(ascii: "\n")) else { return false }
         return head.index(after: newline) < head.endIndex
+    }
+
+    /// The agent's thread as its session file holds it, to show while pi starts
+    /// (`PiSessionPreview`); nil when pi has no file for the session yet. File work: call it off
+    /// the main actor.
+    static func preview(
+        sessionID: String,
+        cwd: String,
+        sessionsRoot: URL = defaultSessionsRoot
+    ) -> NativeThreadSnapshot? {
+        guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) else { return nil }
+        return PiSessionPreview.snapshot(file: url, sessionID: sessionID)
+    }
+
+    /// `preview(sessionID:cwd:)` for a thread's store, read off the main actor, from the cwd pi
+    /// is launched in.
+    static func previewLoader(sessionID: String, cwd: String) -> NativeThreadStore.Preview {
+        {
+            await Task.detached(priority: .userInitiated) {
+                preview(sessionID: sessionID, cwd: TerminalSessionStore.resolvedCwd(cwd))
+            }.value
+        }
     }
 
     /// Before an agent's pi launches: whether its session is still fresh (so launch flags

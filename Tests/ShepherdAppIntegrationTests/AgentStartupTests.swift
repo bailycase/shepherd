@@ -152,6 +152,62 @@ struct AgentStartupTests {
         #expect(!store.starting && store.loadError == nil && !store.messages.isEmpty)
     }
 
+    /// The stub pi's history, as pi would have written it into the agent's session file.
+    private static func writeStubHistory(sessionID: String, cwd: String) throws {
+        let directory = PiSessionFile.projectDirectory(forCwd: cwd)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let lines = [
+            #"{"type":"session","version":3,"id":"\#(sessionID)","timestamp":"2026-09-24T00:00:00.000Z","cwd":"\#(PiSessionFile.realPath(cwd))"}"#,
+            #"{"type":"message","id":"e0","parentId":null,"timestamp":"2026-09-24T00:00:01.000Z","message":{"role":"user","content":"Hello!","timestamp":1733234567890}}"#,
+            #"{"type":"message","id":"e1","parentId":"e0","timestamp":"2026-09-24T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Hello! How can I help?"}],"provider":"anthropic","model":"claude-sonnet-4-20250514","stopReason":"stop","timestamp":1733234567891}}"#,
+        ]
+        try Data((lines.joined(separator: "\n") + "\n").utf8)
+            .write(to: directory.appendingPathComponent("2026-09-24T00-00-00-000Z_\(sessionID).jsonl"))
+    }
+
+    /// A relaunched agent's thread shows its history from pi's session file while pi boots,
+    /// not live, and pi's first snapshot then lands on the same rows: the thread never empties.
+    @Test func aRestoredThreadShowsItsHistoryFromDiskUntilPiServesTheSameRows() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        try Self.holdPi(in: app.dir)
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent("worker", in: space, piSession: SessionID())
+        try Self.writeStubHistory(sessionID: agent.agent.effectivePiSessionID, cwd: space.path)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let store = vm.threadStores.store(for: agent.agent.id)
+        let server = app.server, id = agent.agent.id
+        let preview = PiSessionFile.previewLoader(sessionID: agent.agent.effectivePiSessionID, cwd: space.path)
+        let polling = Task { await store.run(request: { try await server.nativeThread(agentID: id, request: $0) }, preview: preview) }
+        defer { polling.cancel(); store.stop() }
+
+        try await eventuallyOnMain("the thread to show its history from disk") { store.previewing && !store.rows.isEmpty }
+        #expect(!store.ready && !store.supports("send") && store.loadError == nil)
+        #expect(store.snapshot?.model == "anthropic/claude-sonnet-4-20250514")
+        let fromDisk = store.rows.map(\.id)
+        @MainActor final class Shown { var rows: [[String]] = [] }
+        let shown = Shown()
+        let watching = Task { @MainActor in
+            while !Task.isCancelled {
+                shown.rows.append(store.rows.map(\.id))
+                await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
+                    withObservationTracking { _ = store.rows } onChange: { Task { @MainActor in changed.resume() } }
+                }
+            }
+        }
+        defer { watching.cancel() }
+        let pane = vm.sessions.session(for: agent.piPane, in: agent.tab)
+        try await eventuallyOnMain("the pane to bind its pi") { pane.phase == .live }
+
+        Self.releasePi(in: app.dir)
+
+        try await eventuallyOnMain("pi's snapshot to replace the disk's", timeout: .seconds(20)) { store.ready }
+        #expect(!store.previewing && store.rows.map(\.id) == fromDisk)
+        #expect(store.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
+        #expect(shown.rows.allSatisfy { $0 == fromDisk }, "the rows never changed on the way: \(shown.rows)")
+    }
+
     /// pi not installed, or a broken config: the launch ends in the real error (the pane's
     /// exit, then the agent retired as always), never an endless start.
     @Test func aPiThatExitsWhileStartingEndsInItsErrorNotAnEndlessStart() async throws {
