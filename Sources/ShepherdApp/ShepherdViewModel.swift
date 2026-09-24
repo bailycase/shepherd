@@ -385,6 +385,10 @@ final class ShepherdViewModel {
         sessions.onAgentStatus = { [weak self] agentID, status in
             self?.applyAgentStatus(agentID, status)
         }
+        // A thread on screen shows pi's history the moment pi serves it, not at its next poll.
+        sessions.onThreadServable = { [weak self] agentID in
+            self?.threadStores.existingStore(for: agentID)?.wake()
+        }
         notifications.onSelectAgent = { [weak self] agentID in
             guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return }
             self.selectAgent(agentID)

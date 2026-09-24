@@ -241,6 +241,13 @@ public final class NativeThreadStore {
         }
     }
 
+    /// The host says pi now serves this thread: pull at once instead of at the next poll. Only
+    /// a thread whose run loop is live (on screen) and that is not ready yet pulls.
+    public func wake() {
+        guard !ready, request != nil else { return }
+        Task { await refresh() }
+    }
+
     public func stop() {
         // A send still waiting for pi to start was never dispatched: its draft stays as it is.
         if busy, startWaiters.isEmpty {

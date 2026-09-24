@@ -242,6 +242,20 @@ final class TerminalSessionStore {
     /// Fired when a pane's process exits, after the local session is marked
     /// exited and before it is dropped from the store.
     var onPaneSessionExited: ((PaneID) -> Void)?
+    /// Fired the moment an agent's pi begins serving its thread
+    /// (`SessionServer.onNativeThreadServable`).
+    var onThreadServable: ((AgentID) -> Void)?
+
+    /// Waits for an agent's pi to serve, resumed once by `threadServable` or by a timeout.
+    private final class ServableWaiter {
+        private var continuation: CheckedContinuation<Void, Never>?
+        init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
+        func resume() {
+            continuation?.resume()
+            continuation = nil
+        }
+    }
+    private var servableWaiters: [AgentID: [ServableWaiter]] = [:]
 
     init(server: SessionServer) {
         self.server = server
@@ -279,6 +293,28 @@ final class TerminalSessionStore {
         }
         server.onNotify = { [weak self] agentID, title, body in
             self?.onNotify?(agentID, title, body)
+        }
+        server.onNativeThreadServable = { [weak self] agentID in
+            self?.threadServable(agentID)
+        }
+    }
+
+    private func threadServable(_ agentID: AgentID) {
+        for waiter in servableWaiters.removeValue(forKey: agentID) ?? [] { waiter.resume() }
+        onThreadServable?(agentID)
+    }
+
+    /// Returns once `agentID`'s pi serves its thread, or after `limit`, whichever is first.
+    private func waitUntilServable(_ agentID: AgentID, upTo limit: Duration) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let waiter = ServableWaiter(continuation)
+            servableWaiters[agentID, default: []].append(waiter)
+            Task { [weak self] in
+                try? await Task.sleep(for: limit)
+                waiter.resume()
+                self?.servableWaiters[agentID]?.removeAll { $0 === waiter }
+                if self?.servableWaiters[agentID]?.isEmpty == true { self?.servableWaiters.removeValue(forKey: agentID) }
+            }
         }
     }
 
@@ -549,7 +585,8 @@ final class TerminalSessionStore {
 
     /// An agent's opening prompt: wait for pi to answer its first snapshot, then send
     /// it as a normal native `send`. Detached so creation does not block on pi's startup;
-    /// a failure is logged, never fatal (the user can type the prompt again).
+    /// a failure is logged, never fatal (the user can type the prompt again). The server's
+    /// servable signal ends each wait at once; the checks between them are the fallback.
     private func sendOpeningPrompt(_ text: String, to agentID: AgentID, sessionID: SessionID) {
         Task { [weak self] in
             guard let self else { return }
@@ -565,7 +602,7 @@ final class TerminalSessionStore {
                     }
                     return
                 }
-                try? await Task.sleep(for: .milliseconds(250))
+                await self.waitUntilServable(agentID, upTo: .milliseconds(250))
             }
             NSLog("Shepherd: agent \(agentID) never became ready for its opening prompt")
         }

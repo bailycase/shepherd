@@ -47,6 +47,12 @@ final class RPCThreadState {
     /// long history takes a moment to arrive: served meanwhile, a resumed thread would show
     /// as a new, empty one.
     private var historyPending = true
+    /// Installed by SessionServer: called once, on the session queue, when the thread first
+    /// serves (pi has answered `get_state` and `get_messages`).
+    var onServable: (() -> Void)?
+    private var announcedServable = false
+    /// Requests get a snapshot rather than `native_starting`.
+    var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString
     private(set) var revision: UInt64 = 0
     private var signature = 0
@@ -102,6 +108,7 @@ final class RPCThreadState {
             // an attempt the bootstrap has since repeated waits for the repeat.
             guard let self, attempt == self.bootstrapAttempts else { return }
             self.historyPending = false
+            self.announceIfServable()
         }
         refreshStats(timeout: timeout)
         session.request(.getCommands, timeout: timeout) { [weak self] result in
@@ -398,7 +405,14 @@ final class RPCThreadState {
             self.thinking = data["thinkingLevel"]?.stringValue
             if let streaming = data["isStreaming"]?.boolValue { self.running = streaming }
             self.commit()
+            self.announceIfServable()
         }
+    }
+
+    private func announceIfServable() {
+        guard isServable, !announcedServable else { return }
+        announcedServable = true
+        onServable?()
     }
 
     private func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
