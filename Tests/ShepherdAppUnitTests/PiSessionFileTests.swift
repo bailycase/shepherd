@@ -108,6 +108,28 @@ struct PiSessionFileTests {
         #expect(PiSessionFile.hasRuntimeState(sessionID: id, cwd: scratch.cwd.path, sessionsRoot: scratch.root))
     }
 
+    /// A launch reads only the head of the file, whatever the session's length, and a
+    /// session is fresh until pi writes past the header.
+    @Test func preparingALaunchSeedsAFreshSessionAndKnowsALongOneFromItsHead() throws {
+        let scratch = try Scratch()
+        defer { scratch.remove() }
+        let fresh = UUID().uuidString
+        #expect(PiSessionFile.prepareForLaunch(sessionID: fresh, cwd: scratch.cwd.path, sessionsRoot: scratch.root))
+        #expect(scratch.files(for: fresh).count == 1)
+        #expect(PiSessionFile.prepareForLaunch(sessionID: fresh, cwd: scratch.cwd.path, sessionsRoot: scratch.root))
+
+        let long = UUID().uuidString
+        PiSessionFile.seedIfMissing(sessionID: long, cwd: scratch.cwd.path, sessionsRoot: scratch.root)
+        let file = try #require(scratch.files(for: long).first)
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        let entry = #"{"type":"message","message":{"role":"user","content":"\#(String(repeating: "x", count: 1000))"}}"# + "\n"
+        try handle.write(contentsOf: Data(String(repeating: entry, count: 3 * PiSessionFile.runtimeStateProbeBytes / 1000).utf8))
+        try handle.close()
+        #expect(!PiSessionFile.prepareForLaunch(sessionID: long, cwd: scratch.cwd.path, sessionsRoot: scratch.root))
+        #expect(PiSessionFile.file(sessionID: long, cwd: scratch.cwd.path, sessionsRoot: scratch.root) == file)
+    }
+
     // MARK: Forking a child transcript
 
     private static let childTranscript = """

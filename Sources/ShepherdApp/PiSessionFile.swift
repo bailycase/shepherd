@@ -55,12 +55,25 @@ enum PiSessionFile {
         cwd: String,
         sessionsRoot: URL = defaultSessionsRoot
     ) -> Bool {
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
-            return false
-        }
-        return names.contains { $0.hasSuffix("_\(sessionID).jsonl") }
+        file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot) != nil
     }
+
+    /// The session file pi resolves for `sessionID` in `cwd`, if there is one.
+    static func file(
+        sessionID: String,
+        cwd: String,
+        sessionsRoot: URL = defaultSessionsRoot
+    ) -> URL? {
+        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
+              let name = names.first(where: { $0.hasSuffix("_\(sessionID).jsonl") }) else { return nil }
+        return directory.appendingPathComponent(name)
+    }
+
+    /// How much of a session file `hasRuntimeState` reads: the header line and the start of
+    /// whatever follows it. Long sessions run to tens of megabytes, and reading one whole on
+    /// every launch held the app's launch up for seconds.
+    static let runtimeStateProbeBytes = 64 * 1024
 
     /// True when pi has actually written events into the session (model and
     /// thinking changes land as the first entries). A file we merely seeded
@@ -72,17 +85,26 @@ enum PiSessionFile {
         cwd: String,
         sessionsRoot: URL = defaultSessionsRoot
     ) -> Bool {
-        let directory = projectDirectory(forCwd: cwd, sessionsRoot: sessionsRoot)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path),
-              let name = names.first(where: { $0.hasSuffix("_\(sessionID).jsonl") }),
-              let data = try? Data(contentsOf: directory.appendingPathComponent(name))
-        else { return false }
-        // More than one newline-terminated line means pi appended events.
-        let newlines = data.filter { $0 == UInt8(ascii: "\n") }.count
-        if newlines > 1 { return true }
-        // A trailing partial second line counts too.
-        if let last = data.lastIndex(of: UInt8(ascii: "\n")), last < data.count - 1 { return true }
-        return false
+        guard let url = file(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot),
+              let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        let head = (try? handle.read(upToCount: runtimeStateProbeBytes)) ?? Data()
+        // Anything after the header line (a trailing partial line included) is pi's.
+        guard let newline = head.firstIndex(of: UInt8(ascii: "\n")) else { return false }
+        return head.index(after: newline) < head.endIndex
+    }
+
+    /// Before an agent's pi launches: whether its session is still fresh (so launch flags
+    /// apply), after seeding the header pi needs to find it. File work, kept off the main actor
+    /// by its callers.
+    static func prepareForLaunch(
+        sessionID: String,
+        cwd: String,
+        sessionsRoot: URL = defaultSessionsRoot
+    ) -> Bool {
+        let fresh = !hasRuntimeState(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
+        seedIfMissing(sessionID: sessionID, cwd: cwd, sessionsRoot: sessionsRoot)
+        return fresh
     }
 
     /// Write the one-line session header pi needs to adopt `sessionID` without
