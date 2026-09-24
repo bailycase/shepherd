@@ -11,8 +11,10 @@ import ShepherdCore
 /// Every agent still starts. `TerminalSessionStore` drives it; this is the bookkeeping, pure so
 /// it can be tested without processes.
 struct AgentStartQueue {
-    /// Background starts under way at once.
-    static let limit = max(2, min(6, ProcessInfo.processInfo.activeProcessorCount / 3))
+    /// Background starts under way at once: half the cores (2 to 8), so a burst leaves the rest
+    /// to the app and the agent on screen, while a pi that mostly waits on the network at boot
+    /// does not hold the queue up.
+    static let limit = max(2, min(8, ProcessInfo.processInfo.activeProcessorCount / 2))
     /// How long background starts wait for the agents ahead of them to serve.
     static let aheadHold: Duration = .seconds(2)
     /// How long a background start holds its slot while its pi boots.

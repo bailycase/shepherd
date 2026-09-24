@@ -67,10 +67,10 @@ defaults.
 The view model starts every restored agent's pi on its first adoption of the workspace,
 whatever has mounted, through `AgentStartQueue`. Thirty pi processes booting at once each take
 several times longer than one alone, so the agent on screen starts first, alone, and the rest
-wait until it serves (or two seconds pass), then start a few at a time (about a third of the
-cores, 2 to 6), each holding its slot until its pi serves or five seconds pass. Selecting an
-agent that is still waiting starts it at once, ahead of the rest. A new agent's pi spawns with
-its creation and never waits in the queue.
+wait until it serves (or two seconds pass), then start a few at a time (half the cores, 2 to
+8), each holding its slot until its pi serves or five seconds pass. Selecting an agent that is
+still waiting starts it at once, ahead of the rest. A new agent's pi spawns with its creation
+and never waits in the queue.
 
 ## Status and session reporting
 
