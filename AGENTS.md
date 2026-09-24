@@ -413,6 +413,11 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 It also reports `setAgentSession` with the live pi session ID, so `/new` or `/resume` survives a
 relaunch.
 
+A status is live state (`StateStore.updateLive`): broadcast and readable at once, but neither
+validated nor written to `state.json` on its own, since every turn reports twice and `start()`
+resets statuses anyway. The next structural mutation writes it along with its own change. Keep
+anything that must survive a relaunch out of that path.
+
 **Terminal panes** run the shell from Settings ▸ Terminal as a login shell. Startup files in the
 support directory's `shell-integration/` wrap `pi` so pi run by hand picks up Shepherd's theme.
 The user's rc files and pi settings are never edited, and agent-only variables are blanked.
