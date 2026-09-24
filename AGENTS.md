@@ -40,8 +40,13 @@ Mac schemes:
 | `Shepherd (Prod)` | Release | Shepherd | `~/Library/Application Support/Shepherd` |
 | `Shepherd (Nightly)` | Nightly | Shepherd Nightly | `~/Library/Application Support/Shepherd Nightly` |
 
-⌘R on Dev never disturbs the agents in your everyday copy. `Shepherd iOS` builds the deferred iOS
-client ([docs/ios](docs/ios/README.md)).
+⌘R on Dev never disturbs the agents in your everyday copy. The Debug configuration also has its
+own bundle id, `com.bailycase.shepherd.dev`, because preferences, delivered notifications and
+Sparkle's installer are keyed by bundle id: on a shipped id, every Dev launch would prune the
+installed app's collapsed spaces and clear its notifications, and a setting changed in Dev
+would change it there. `ShepherdEdition` reads the Dev id as Shepherd, and Debug builds have no
+updater. `Tests/Release` holds the Debug id apart from both shipped apps'. `Shepherd iOS` builds
+the deferred iOS client ([docs/ios](docs/ios/README.md)).
 
 **Shepherd Nightly** is the same code built as a second app, so it installs and runs beside
 Shepherd. The `Nightly` configuration is Release plus its identity: bundle id
@@ -702,8 +707,8 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   stored `nightly` (or the pre-picker nightly bool) becomes Beta and arms a one-time notice
   under the toolbar (`NightlyMovedNotice`) linking to Shepherd Nightly. The birth channel reads
   `-beta.`, `-rc.` and `-nightly.` versions as Beta. Shepherd Nightly always rides nightly and
-  stores no channel. Debug builds (the Dev scheme) share Shepherd's bundle id and preferences, so
-  they only read through the same rules and never migrate the stored channel or arm the notice.
+  stores no channel. Debug builds (the Dev scheme, `com.bailycase.shepherd.dev`) have no
+  updater, so they never resolve or migrate a channel.
 - **Promotion re-tags the same commit** (`v0.2.0-beta.1` → `v0.2.0`). Never rebuild for a
   promotion.
 - **The beta feed is a superset**, so riding beta never strands a user behind a stable hotfix.

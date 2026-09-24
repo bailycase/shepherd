@@ -91,7 +91,9 @@ next update, and a former nightly rider is told once where nightly builds went.
 ## Build from source
 
 Open `Shepherd.xcodeproj`, pick a scheme, choose My Mac, and Run. There are three Mac schemes,
-so that a development build never shares state with your everyday copy:
+so that a development build never shares state with your everyday copy. The Dev build also has
+its own bundle id (`com.bailycase.shepherd.dev`), so its preferences and notifications stay
+apart from an installed Shepherd's, and it never updates itself:
 
 | Scheme | Config | Builds | State directory |
 | --- | --- | --- | --- |

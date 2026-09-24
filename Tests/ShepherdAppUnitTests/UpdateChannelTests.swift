@@ -168,8 +168,8 @@ struct UpdateChannelMigrationTests {
         }
     }
 
-    /// The Dev build shares the everyday app's preferences domain: it rides what the migration
-    /// would pick but leaves the stored channel and the notice to the installed app.
+    /// The feed delegate reads the channel on every check: it rides what the migration would
+    /// pick and writes nothing, leaving the stored channel and the notice to the launch.
     @Test func aReadWithoutMigratingWritesNothing() {
         let defaults = Fixture.defaults()
         defaults.set("nightly", forKey: Store.channelKey)

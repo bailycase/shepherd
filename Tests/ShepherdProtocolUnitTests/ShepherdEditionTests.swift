@@ -8,6 +8,8 @@ struct ShepherdEditionTests {
     @Test(arguments: [
         ("com.bailycase.shepherd.nightly", ShepherdEdition.nightly),
         ("com.bailycase.shepherd", .main),
+        // The Dev scheme's own id: Shepherd, with preferences apart from the installed app.
+        ("com.bailycase.shepherd.dev", .main),
         // Not Shepherd Nightly: a SwiftPM tool, a test runner, anything unbundled.
         ("com.apple.dt.xctest.tool", .main),
         ("com.bailycase.shepherd.nightly.extra", .main),
