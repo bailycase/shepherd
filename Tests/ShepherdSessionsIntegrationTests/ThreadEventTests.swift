@@ -205,6 +205,25 @@ struct ThreadEventTests {
         }
         #expect(bytes > 0 && bytes <= "Hello world".utf8.count)
     }
+
+    /// Snapshots size their rows once: after a delta, the next snapshot encodes only its fixed
+    /// part and the message that grew, and its arithmetic is its encoded size.
+    @Test func aSnapshotAfterADeltaEncodesOnlyItsFixedPartAndTheGrownMessage() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        _ = try await t.ready()
+        try await t.feed(Self.start, Self.toolStart, Self.toolUpdate, Self.messageStart, Self.textStart, Self.textDelta("Hello"))
+        _ = try await t.snapshot()
+
+        try await t.feed(Self.textDelta(" world"))
+        let snapshot = try await t.snapshot()
+        let (encodes, bytes) = await withCheckedContinuation { continuation in
+            t.queue.async { continuation.resume(returning: (t.state.encodesByLastSnapshot, t.state.bytesOfLastSnapshot)) }
+        }
+        #expect(encodes == 2)
+        #expect(bytes == (try JSONEncoder().encode(snapshot).count))
+        #expect(snapshot.messages.count == 2 && snapshot.provisional.count == 2)
+    }
     #endif
 
     // MARK: - Streaming
