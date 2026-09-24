@@ -1098,11 +1098,7 @@ Review-pane and menu keys are listed with their surfaces.
 When a change leaves code breaking this document, list the place here until it is fixed toward
 it.
 
-- **Motion:** the shell applies the Motion table (the right pane, the sidebar, the palette, the
-  toolbar, the workspace), but most surfaces inside the thread, the review, and Settings do not
-  yet (menus, disclosures, and row changes there appear and vanish at once), and a few views
-  still write their own curves: `ThreadView` (turn jumps, the jump-to-latest button),
-  `NWFileStrip` (scrolling to a file), and `DiffReviewView`.
+None open.
 
 Deliberate exceptions stay with their rules rather than here: the layout's 1pt dividers, the
 checkbox's 1.5pt border, and the strokes of status glyphs (see Hairlines), and one-off type
