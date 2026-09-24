@@ -52,6 +52,19 @@ struct ThreadEventTests {
             return try #require(result.snapshotValue, "expected a snapshot, got \(result)")
         }
 
+        /// Hand one recorded event to the thread and take a snapshot in the same queue turn, so
+        /// nothing the event scheduled on the queue (a dialog's expiry) can run in between.
+        func feedThenSnapshot(_ record: String) async throws -> NativeThreadSnapshot {
+            let event = try JSONDecoder().decode(RPCEvent.self, from: Data(record.utf8))
+            let result = await withCheckedContinuation { continuation in
+                queue.async {
+                    self.state.handle(event)
+                    self.state.handle(.snapshot()) { continuation.resume(returning: $0) }
+                }
+            }
+            return try #require(result.snapshotValue, "expected a snapshot, got \(result)")
+        }
+
         /// Once pi's state, history, stats, and commands have all landed.
         func ready() async throws -> NativeThreadSnapshot {
             var latest: NativeThreadSnapshot?
@@ -250,12 +263,15 @@ struct ThreadEventTests {
 
     // MARK: - Dialogs
 
+    /// pi's timeout (150 ms) runs from the event, so the first look shares its queue turn: a later
+    /// one, behind a busy machine, could find the dialog already gone.
     @Test func aDialogIsShownUntilItsTimeoutExpires() async throws {
         let t = try Thread()
         defer { t.stop() }
         _ = try await t.ready()
-        try await t.feed(#"{"type":"extension_ui_request","id":"d1","method":"input","title":"Name?","placeholder":"name","prefill":"x","timeout":150}"#)
-        #expect(try await t.snapshot().dialogs == [
+        let shown = try await t.feedThenSnapshot(
+            #"{"type":"extension_ui_request","id":"d1","method":"input","title":"Name?","placeholder":"name","prefill":"x","timeout":150}"#)
+        #expect(shown.dialogs == [
             NativeThreadDialog(id: "d1", kind: .input, title: "Name?", placeholder: "name", prefill: "x", timeout: 150),
         ])
         try await eventually("the dialog to expire") { try await t.snapshot().dialogs.isEmpty }
