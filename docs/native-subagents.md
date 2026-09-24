@@ -297,7 +297,7 @@ family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-
   order: state dot, name, a one-line summary (or the exit reason), and "files · duration". Diff
   counts come from `edit` calls; `write` lists the file at +0/−0.
 - **Turn footer:** reads "time · duration · N tool calls · n subagents". The subagent count
-  links to the first child.
+  links to the first child. Like the rest of the footer, it shows while the turn is hovered.
 
 **Inspector.** It opens in the right pane beside the thread (`RightPaneSplit`: 600pt by default,
 at least 480pt, at most half the main column, the width remembered; it overlays the thread when

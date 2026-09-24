@@ -265,7 +265,8 @@ private struct SubagentRunInspector: View {
                             if turn.isUser {
                                 // In the child's session every user message after the first is the
                                 // parent (a steer or a resume); the first is the task itself.
-                                UserTurn(messages: turn.messages, caption: index > 0 ? parentCaption(turn) : nil)
+                                UserTurn(messages: turn.messages, caption: index > 0 ? parentTime(turn) : nil,
+                                         note: index > 0 ? "from parent" : nil)
                             } else {
                                 AgentTurn(messages: turn.messages, live: !terminal && run != nil && index == turns.count - 1)
                             }
@@ -326,10 +327,9 @@ private struct SubagentRunInspector: View {
         var following: Bool
     }
 
-    /// "10:58 · from parent"; the time is omitted when pi gave none.
-    private func parentCaption(_ turn: NativeTurn) -> String {
-        if let at = turn.messages.first?.timestamp { return "\(nativeClockText(at, meridiem: false)) · from parent" }
-        return "from parent"
+    /// "10:58", before "from parent"; nil when pi gave no time.
+    private func parentTime(_ turn: NativeTurn) -> String? {
+        turn.messages.first?.timestamp.map { nativeClockText($0, meridiem: false) }
     }
 
     // MARK: Footer bars

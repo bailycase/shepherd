@@ -3,25 +3,45 @@ import SwiftUI
 // Messages (NWThread board): the user's bubble, the agent's prose and code, thinking, the turn
 // footer and the turn-level error. Value inputs only; the app owns the thread.
 
+/// When a message's quiet details show: the bubble's time and a finished turn's footer. Only
+/// while the pointer is over the message (`hovering`, which the host tracks for the whole
+/// message), while one of their controls has keyboard focus, while a copy confirms, or while
+/// VoiceOver runs, so they stay reachable. Either way they keep their place and only fade
+/// (`.hover`): showing them never moves or resizes anything.
+enum NWMessageDetails {
+    static func shown(hovering: Bool, focused: Bool = false, confirming: Bool = false, voiceOver: Bool) -> Bool {
+        hovering || focused || confirming || voiceOver
+    }
+}
+
 /// The user's turn: right-aligned, at most 600pt, `bgBubble` with a 1px strong line, radius 8.
-/// No avatar and no name; the time sits beneath. A follow-up typed while a turn runs is queued:
-/// dashed and quiet until it sends. Its text follows `nwProseSize`.
+/// No avatar and no name; the time sits beneath, shown only while the message is hovered. A
+/// follow-up typed while a turn runs is queued: dashed and quiet until it sends. Its text
+/// follows `nwProseSize`.
 public struct NWUserBubble: View {
     let text: String
     let attachments: [String]
     let timestamp: String?
+    let note: String?
+    let revealed: Bool
     let isQueued: Bool
     let onEdit: (() -> Void)?
     let onSendNow: (() -> Void)?
     @Environment(\.nwProseSize) private var proseSize
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
-    /// `attachments` name the images sent with the message. `onEdit` and `onSendNow` add the
-    /// queued bubble's buttons; pass them only when the host can do it.
-    public init(_ text: String, attachments: [String] = [], timestamp: String? = nil, isQueued: Bool = false,
+    /// `attachments` name the images sent with the message. `timestamp` shows only while
+    /// `revealed` (the pointer is over the message); `note` follows it and always shows ("from
+    /// parent"). `onEdit` and `onSendNow` add the queued bubble's buttons; pass them only when
+    /// the host can do it.
+    public init(_ text: String, attachments: [String] = [], timestamp: String? = nil, note: String? = nil,
+                revealed: Bool = false, isQueued: Bool = false,
                 onEdit: (() -> Void)? = nil, onSendNow: (() -> Void)? = nil) {
         self.text = text
         self.attachments = attachments
         self.timestamp = timestamp
+        self.note = note
+        self.revealed = revealed
         self.isQueued = isQueued
         self.onEdit = onEdit
         self.onSendNow = onSendNow
@@ -58,14 +78,30 @@ public struct NWUserBubble: View {
                     if let onEdit { Button("Edit", action: onEdit).buttonStyle(.nw(.ghost, size: .s)) }
                     if let onSendNow { Button("Send now", action: onSendNow).buttonStyle(.nw(.ghost, size: .s)) }
                 }
-            } else if let timestamp {
-                Text(timestamp).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary).monospacedDigit()
+            } else if timestamp != nil || note != nil {
+                caption
             }
         }
         // A queued follow-up turns into a sent message in place when the turn ends.
         .nwAnimation(.content, value: isQueued)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .combine)
+    }
+
+    /// "2:41 PM", or "10:58 · from parent": the time (and its separator) fades in place beside a
+    /// note that always shows.
+    private var caption: some View {
+        let shown = NWMessageDetails.shown(hovering: revealed, voiceOver: voiceOver)
+        return HStack(spacing: 0) {
+            if let timestamp {
+                Text(note == nil ? timestamp : "\(timestamp) · ").monospacedDigit()
+                    .opacity(shown ? 1 : 0)
+                    .nwAnimation(.hover, value: shown)
+            }
+            if let note { Text(note) }
+        }
+        .font(.nwMono(10.5))
+        .foregroundStyle(Color.nw.textTertiary)
     }
 }
 
@@ -360,26 +396,46 @@ public struct NWThinking: View {
 // MARK: Turn footer and errors
 
 /// After a finished turn: copy and retry (24pt icon buttons), then "2:44 PM · 3m 12s · 23 tool
-/// calls" in mono 10.5 tertiary, and "· 3 subagents" as a link when given.
+/// calls" in mono 10.5 tertiary, and "· 3 subagents" as a link when given. The whole row shows
+/// only while its turn is hovered (`revealed`), one of its controls has keyboard focus, a copy
+/// confirms, or VoiceOver runs; at rest it keeps its place, invisible.
 public struct NWTurnFooter: View {
     let meta: String
     let link: String?
     let onLink: (() -> Void)?
     let onCopy: (() -> Void)?
     let onRetry: (() -> Void)?
+    let revealed: Bool
+    /// Stands in for the system's VoiceOver state (tests).
+    private var voiceOverSeed: Bool?
     @State private var copied = false
     @State private var copies = 0
+    @FocusState private var focus: Control?
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
+    private enum Control: Hashable { case copy, retry, link }
+
+    /// `revealed` is whether the pointer is over the turn; the host tracks it for the whole turn.
     public init(meta: String, link: String? = nil, onLink: (() -> Void)? = nil,
-                onCopy: (() -> Void)? = nil, onRetry: (() -> Void)? = nil) {
+                onCopy: (() -> Void)? = nil, onRetry: (() -> Void)? = nil, revealed: Bool = false) {
         self.meta = meta
         self.link = link
         self.onLink = onLink
         self.onCopy = onCopy
         self.onRetry = onRetry
+        self.revealed = revealed
+    }
+
+    /// `voiceOver` stands in for the system's VoiceOver state, for tests.
+    init(meta: String, link: String? = nil, onLink: (() -> Void)? = nil, onCopy: (() -> Void)? = nil,
+         onRetry: (() -> Void)? = nil, revealed: Bool = false, voiceOver: Bool) {
+        self.init(meta: meta, link: link, onLink: onLink, onCopy: onCopy, onRetry: onRetry, revealed: revealed)
+        voiceOverSeed = voiceOver
     }
 
     public var body: some View {
+        let shown = NWMessageDetails.shown(hovering: revealed, focused: focus != nil, confirming: copied,
+                                           voiceOver: voiceOverSeed ?? voiceOver)
         HStack(spacing: NW.Space.xs) {
             if let onCopy {
                 Button {
@@ -389,12 +445,14 @@ public struct NWTurnFooter: View {
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: { NWCopyGlyph(copied: copied, copies: copies) }
                 .buttonStyle(.nwIcon(size: NWThreadMetrics.footerButton))
+                .focused($focus, equals: .copy)
                 .help("Copy the reply")
                 .accessibilityLabel(copied ? "Copied" : "Copy response")
             }
             if let onRetry {
                 Button(action: onRetry) { Image(systemName: "arrow.clockwise").font(.system(size: 12)) }
                     .buttonStyle(.nwIcon(size: NWThreadMetrics.footerButton))
+                    .focused($focus, equals: .retry)
                     .help("Send this turn's prompt again")
                     .accessibilityLabel("Retry turn")
                     .nwTransition(.content)
@@ -404,6 +462,7 @@ public struct NWTurnFooter: View {
                 if let link, let onLink {
                     if !meta.isEmpty { Text(" · ") }
                     Button(link, action: onLink).buttonStyle(.nwLink(font: .nwMono(10.5)))
+                        .focused($focus, equals: .link)
                 }
             }
             .font(.nwMono(10.5))
@@ -412,6 +471,8 @@ public struct NWTurnFooter: View {
         }
         // Retry appears once the agent is idle again.
         .nwAnimation(.content, value: onRetry != nil)
+        .opacity(shown ? 1 : 0)
+        .nwAnimation(.hover, value: shown)
     }
 }
 

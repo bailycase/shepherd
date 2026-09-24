@@ -136,8 +136,9 @@ struct ThreadMotionTests {
     }
 
     /// When a turn ends its reply stays exactly as it streamed (the saved copy is the same view,
-    /// part for part) while the footer rises in beneath it.
-    @Test func aTurnThatEndsKeepsItsReplyStillAndBringsItsFooterIn() async throws {
+    /// part for part), and its footer takes its place beneath out of sight: it shows only while
+    /// the turn is hovered (`ThreadHoverTests` watches it rise in under the pointer).
+    @Test func aTurnThatEndsKeepsItsReplyStillAndItsFooterOutOfSight() async throws {
         let asked = 1_700_000_000_000.0
         let prompt = NativeThreadMessage(entryID: "u2", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Answer me")],
                                          truncated: false, timestamp: asked)
@@ -152,19 +153,23 @@ struct ThreadMotionTests {
         let prose = Int(lines[lines.count - 2])
         let saved = NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)],
                                         truncated: false, timestamp: asked + 5000)
-        // The prose and, below it, the end of the footer's time ("4:13 PM · 5s"), clear of the
+        // The prose and, below it, where the footer's time ("4:13 PM · 5s") would be, clear of the
         // working row's label and the footer's buttons.
         let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 90, y: CGFloat(prose - 8), width: 210, height: 64)
 
-        let recording = await MotionProbe.record(thread.window, region: column) { thread.serve(Fixtures.snapshot(turn + [saved], revision: 2)) }
+        let recording = await MotionProbe.record(thread.window, region: column, timeout: 1) {
+            thread.serve(Fixtures.snapshot(turn + [saved], revision: 2))
+        }
+
+        try await eventuallyOnMain("the turn to end") { thread.store.rows.last?.live == false }
+        let ended = await MotionProbe.record(thread.window, region: column, timeout: 0.3) {}
+        let frames = recording.frames + ended.frames
 
         let proseRows = 0..<16
-        #expect(recording.frames.allSatisfy { frame in !proseRows.contains { frame.differs(from: recording.before, row: $0) } },
+        #expect(frames.allSatisfy { frame in !proseRows.contains { frame.differs(from: recording.before, row: $0) } },
                 "the reply never redrew")
-        let rest = try #require(recording.settled.lastRow(differingFrom: recording.before, by: Self.visible), "the footer came")
-        let bottoms = recording.inBetween.compactMap { $0.lastRow(differingFrom: recording.before, by: Self.visible) }
-        #expect(!bottoms.isEmpty, "it comes in over frames")
-        #expect(bottoms.contains { $0 > rest }, "it rises from below its place: \(bottoms), resting at \(rest)")
+        #expect(frames.allSatisfy { $0.lastRow(differingFrom: recording.before, by: Self.visible) == nil },
+                "nothing shows beneath it until the turn is hovered")
     }
 
     /// Switching back to an agent is a visibility flip: what it did while hidden (the reply it

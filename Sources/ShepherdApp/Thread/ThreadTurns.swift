@@ -4,13 +4,51 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The user's turn: one `NWUserBubble` per message, the time beneath the last. A follow-up
-/// sent while the agent ran is queued until the turn ends. No speaker label: shape carries
-/// the role.
+/// Whether the pointer is over one message (a turn). The turn owns it and only its quiet
+/// details (the time, the footer) read it, so the pointer crossing a thread re-renders those
+/// and nothing else.
+@MainActor
+@Observable
+final class MessageHover {
+    var hovering: Bool
+
+    /// `hovering` seeds the state, for previews and tests.
+    init(hovering: Bool = false) {
+        self.hovering = hovering
+    }
+}
+
+extension View {
+    /// Reports the pointer entering and leaving this message to `hover`.
+    func messageHover(_ hover: MessageHover) -> some View {
+        onHover { inside in
+            if hover.hovering != inside { hover.hovering = inside }
+        }
+    }
+}
+
+/// The user's turn: one `NWUserBubble` per message, the time beneath the last while the turn
+/// is hovered. A follow-up sent while the agent ran is queued until the turn ends. No speaker
+/// label: shape carries the role.
 struct UserTurn: View, Equatable {
     let messages: [NativeThreadMessage]
-    /// "2:41 PM"; "10:58 · from parent" in a child's transcript.
+    /// The time: "2:41 PM", or "10:58" in a child's transcript.
     var caption: String?
+    /// Follows the time and always shows: "from parent" in a child's transcript.
+    var note: String?
+    @State private var hover: MessageHover
+
+    /// `hover` seeds the pointer state, for previews and tests.
+    init(messages: [NativeThreadMessage], caption: String? = nil, note: String? = nil, hover: MessageHover? = nil) {
+        self.messages = messages
+        self.caption = caption
+        self.note = note
+        _hover = State(initialValue: hover ?? MessageHover())
+    }
+
+    static func == (lhs: UserTurn, rhs: UserTurn) -> Bool {
+        lhs.messages == rhs.messages && lhs.caption == rhs.caption && lhs.note == rhs.note
+    }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: AppLayout.activitySpacing) {
@@ -19,22 +57,25 @@ struct UserTurn: View, Equatable {
             // → sent).
             ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
                 let images = message.blocks.count { $0.kind == .unsupportedImage }
+                let last = index == messages.count - 1
                 NWUserBubble(message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"),
                              attachments: Array(repeating: "Image", count: images),
-                             timestamp: index == messages.count - 1 ? caption : nil,
+                             timestamp: last ? caption : nil, note: last ? note : nil, revealed: last && hover.hovering,
                              isQueued: message.status == "queued")
                     .opacity(message.status == "pending" ? 0.7 : 1)
                     .nwAnimation(.hover, value: message.status == "pending")
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+        .messageHover(hover)
     }
 }
 
 /// One agent turn (NWThread board): thinking, prose, activity lines, subagent cards where their
-/// spawn calls were, then, once it has finished, the changes card and the footer. Everything
-/// it shows was derived once per turn change (`NativeTurnPresentation`), and it redraws only
-/// when that, its placement, or its flags change.
+/// spawn calls were, then, once it has finished, the changes card and the footer (shown while
+/// the turn is hovered). Everything it shows was derived once per turn change
+/// (`NativeTurnPresentation`), and it redraws only when that, its placement, or its flags
+/// change; hovering redraws only the footer.
 struct AgentTurn: View, Equatable {
     let presentation: NativeTurnPresentation
     /// True while this turn is the one streaming.
@@ -57,10 +98,12 @@ struct AgentTurn: View, Equatable {
     var settled = true
     @State private var openThinking: Set<String> = []
     @State private var shown = TurnShown()
+    @State private var hover: MessageHover
 
+    /// `hover` seeds the pointer state, for previews and tests.
     init(presentation: NativeTurnPresentation, live: Bool, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
-         working: String? = nil, arriving: Bool = false, settled: Bool = true) {
+         working: String? = nil, arriving: Bool = false, settled: Bool = true, hover: MessageHover? = nil) {
         self.presentation = presentation
         self.live = live
         self.subagents = subagents
@@ -71,6 +114,7 @@ struct AgentTurn: View, Equatable {
         self.working = working
         self.arriving = arriving
         self.settled = settled
+        _hover = State(initialValue: hover ?? MessageHover())
     }
 
     /// A transcript with no store behind it (the subagent inspector): the presentation is
@@ -150,6 +194,7 @@ struct AgentTurn: View, Equatable {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .messageHover(hover)
         .accessibilityElement(children: .contain)
         .onAppear { shown.appeared = true }
     }
@@ -211,7 +256,8 @@ struct AgentTurn: View, Equatable {
                     presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
             .compactMap { $0 }.joined(separator: " · ")
         let copy = presentation.copyText
-        return NWTurnFooter(
+        return TurnFooter(
+            hover: hover,
             meta: meta,
             link: ordered.isEmpty || subagentActions == nil ? nil : nativeCount(ordered.count, "subagent"),
             onLink: ordered.first.flatMap { first in subagentActions.map { actions in { actions.inspect(first) } } },
@@ -220,6 +266,21 @@ struct AgentTurn: View, Equatable {
                 NSPasteboard.general.setString(copy, forType: .string)
             },
             onRetry: retry)
+    }
+}
+
+/// The turn's footer, reading the turn's hover itself: the pointer entering or leaving a turn
+/// re-renders only this.
+private struct TurnFooter: View {
+    let hover: MessageHover
+    let meta: String
+    let link: String?
+    let onLink: (() -> Void)?
+    let onCopy: (() -> Void)?
+    let onRetry: (() -> Void)?
+
+    var body: some View {
+        NWTurnFooter(meta: meta, link: link, onLink: onLink, onCopy: onCopy, onRetry: onRetry, revealed: hover.hovering)
     }
 }
 

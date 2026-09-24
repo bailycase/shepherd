@@ -310,7 +310,7 @@ overshoot as they grow from their anchor) and the confirmation pop (`.bouncy`, 4
 
 | Motion | Anchor | Curve | For | Comes and goes by | Under Reduce Motion |
 | --- | --- | --- | --- | --- | --- |
-| `hover` | 120ms | `.smooth` | hover and press fills, focus rings, a control's color | fading | unchanged |
+| `hover` | 120ms | `.smooth` | hover and press fills, focus rings, a control's color, details shown on hover (a message's time, a turn's footer) | fading | unchanged |
 | `content` | 120ms | `.smooth` | a value or label changing in place: counts, status words, an icon | cross-fading (`nwContentTransition`) | unchanged; rolling digits and symbol swaps cross-fade |
 | `disclosure` | 180ms | `.smooth` | expanding and collapsing in place, the chevron turning | a 6pt nudge from the top, fading | a 120ms cross-fade |
 | `list` | 180ms | `.smooth` | rows arriving, leaving, reordering | a 6pt nudge, fading | a 120ms cross-fade |
@@ -572,7 +572,8 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
 
 - Right-aligned, at most 600pt, `bgBubble` with a 1px `lineStrong` line, radius 8, 10×14
   padding, body text. No avatar and no name.
-- The time sits beneath in mono 10.5 tertiary. Sent images show as attachment chips.
+- The time sits beneath in mono 10.5 tertiary, only while the turn is hovered (see **Details on
+  hover** below). Sent images show as attachment chips.
 - A sent message shows at once, at 70% opacity until pi saves it. A follow-up sent while a turn
   runs is **queued**: a dashed outline with no fill, secondary text, and "queued · sends when the
   turn ends" beneath.
@@ -580,7 +581,7 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
 **Agent turn** (`AgentTurn`): consecutive assistant messages render as one turn. Its parts are
 thinking, prose, activity lines, subagent cards where their spawn calls were, notes, and errors,
 in the order they happened (each stretch of work between prose opens with its thinking). Once
-the turn has finished, the changes card and the footer end it.
+the turn has finished, the changes card and the footer end it. A running turn has no footer.
 
 - **Prose** (`Prose` in `Thread/ThreadMarkdown.swift`, on `NWAgentProse`): body 13.5/1.6 in
   `textPrimary` at the 640pt measure, blocks 12pt apart. Markdown is parsed once per turn:
@@ -615,7 +616,22 @@ the turn has finished, the changes card and the footer end it.
 - **Footer** (`NWTurnFooter`), after a finished turn: copy (the turn's prose) and retry (resend
   the prompt that opened it, only while the agent is idle) as 24pt icon buttons, then "2:44 PM
   · 3m 12s · 23 tool calls" in mono 10.5 tertiary, and "· 3 subagents" as a link to the first
-  run.
+  run. The whole row, link included, shows only while the turn is hovered.
+
+**Details on hover.** A message's time and a finished turn's footer are hidden at rest, so a
+thread reads as the conversation alone; the pointer over the message (anywhere in the turn's
+row) shows them.
+
+- **Nothing moves.** Hidden, they keep their place and draw nothing; they only fade (`.hover`,
+  unchanged under Reduce Motion). A turn measures the same hovered or not.
+- **Also shown** while one of the footer's controls has keyboard focus, for the moment a copy
+  confirms, and whenever VoiceOver runs, so Copy response, Retry turn, the subagents link, and
+  the time are always reachable (`NWMessageDetails`).
+- **Per message.** Each turn owns its pointer state (`MessageHover` in `ThreadTurns.swift`), and
+  only the time or the footer reads it: the pointer crossing a thread never re-renders a turn's
+  parts or the thread.
+- The subagent inspector's transcript follows the same rule; there "from parent" always shows
+  under a message from the parent, and its time fades in beside it.
 
 **Activity lines** (`ActivityLineView` in `Thread/ThreadTools.swift`, on `NWActivityLine` and
 `NWActivityCalls`). A turn's tool calls merge into one quiet line per burst of same-kind work
@@ -819,14 +835,15 @@ layout" above.
   files as `running` links (with their diff stat) that open the review pane at the file, then
   "n more files".
 - **The run's own transcript**, drawn with the thread's components one step smaller
-  (`nwProseSize` `.small`). It follows live, with "n earlier turns · Show all" and "Following
-  live" (or "Reading earlier output") beneath. Scrolling up stops following.
+  (`nwProseSize` `.small`), times and footers on hover as in the thread. It follows live, with
+  "n earlier turns · Show all" and "Following live" (or "Reading earlier output") beneath.
+  Scrolling up stops following.
 - **A Steer composer** while the run is live: the composer card's anatomy, "Steer <name> —
   delivered before its next turn", "to: <name> · not the parent", and a primary Steer button.
   A failed send keeps the draft.
-- **A finished run is read-only:** messages from the parent are captioned "10:58 · from parent",
-  and `NWRunActions` (Re-run · Fork · Copy transcript) replaces the composer. Remote agents have
-  no Fork.
+- **A finished run is read-only:** messages from the parent are captioned "from parent" ("10:58 ·
+  from parent" while hovered), and `NWRunActions` (Re-run · Fork · Copy transcript) replaces the
+  composer. Remote agents have no Fork.
 
 **Review** (`ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
 
@@ -1012,7 +1029,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Status | `NWStatusPill` (20pt, radius 4), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline`, `.nwToast(item:)`, and `.nwShimmer()` have no app use yet |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline` | `SettingsComponents.swift`; hairlines everywhere |
 | Navigation | `NWSidebar`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
-| Thread | `NWUserBubble`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter`, `NWTurnError`, `NWWorkingRow` | `Thread/ThreadView.swift`, `ThreadTurns.swift`, `ThreadTools.swift`, `ThreadMarkdown.swift` |
+| Thread | `NWUserBubble` (its time shown while `revealed`), `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWWorkingRow` | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
 | Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton`, `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu` | `Thread/Composer.swift` |
 | Agents | `NWSubagentCard`, `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup` | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift` |
 | Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer` | `DiffReviewView.swift` |
@@ -1071,8 +1088,9 @@ Review-pane and menu keys are listed with their surfaces.
 
 - **Controls:** every control is a real `Button`, `Toggle`, or text field, or carries button
   traits and actions (sidebar rows are tap views so they can also be dragged). Icon-only buttons
-  carry an `accessibilityLabel`, and hover-only affordances (the sidebar's `+`, a comment's Edit
-  and Delete, a diff line's `+`) are always reachable as buttons or named actions for VoiceOver.
+  carry an `accessibilityLabel`, and hover-only affordances (the sidebar's `+`, a message's time
+  and a turn's footer, a comment's Edit and Delete, a diff line's `+`) are always reachable as
+  buttons or named actions for VoiceOver.
 - **Rows read as one element:**
   - agent rows: "title, [worktree,] running / needs you / idle / done" (needs you also while one
     of its subagents asks); automation rows: "name, automation, state"
@@ -1117,8 +1135,8 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
 ## Verifying visuals
 
 - **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
-  - thread states (idle, running, thinking, queued, failed, prose, question, empty) and the
-    activity-line states
+  - thread states (idle, running, thinking, queued, failed, prose, question, empty, a hovered
+    turn) and the activity-line states
   - the composer and its menus
   - subagent cards, the ledger, and the inspector
   - the review pane

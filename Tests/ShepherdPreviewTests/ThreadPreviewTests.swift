@@ -28,9 +28,25 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// Main board: explored / edited / tests-and-build lines, the changes card and the footer.
+    /// Main board: explored / edited / tests-and-build lines and the changes card, at rest (the
+    /// footer and the prompt's time wait for the pointer).
     @Test func threadActivityIdle() async throws {
         try await render("thread-activity-idle", ActivityThreads.idle)
+    }
+
+    /// The Main board's thread with the pointer resting on the reply: its footer shows (copy,
+    /// retry, time · duration · tool calls), while the prompt above keeps its time hidden.
+    @Test func threadTurnHovered() async throws {
+        let fixture = ThreadFixture(ActivityThreads.idle)
+        defer { fixture.store.stop() }
+        let store = fixture.store
+        let size = CGSize(width: 1180, height: 760)
+        try await Preview.render("thread-turn-hovered", size: size, ready: { store.ready && !store.rows.isEmpty }) {
+            HoveredReplyThread(store: store)
+                .frame(width: size.width, height: size.height)
+                // No thread view drives this store here; feed it its fixture directly.
+                .task { await store.run(request: fixture.request) }
+        }
     }
 
     /// Running board: a finished commit line, the live push with its last output lines, and
@@ -125,8 +141,8 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// The NWThread board's parts: bubbles (plain and queued), attachment chips, thinking open
-    /// and live, the changes card, the footer and a turn error.
+    /// The NWThread board's parts: bubbles (hovered, showing its time, and queued), attachment
+    /// chips, thinking open and live, the changes card, a hovered turn's footer and a turn error.
     @Test func threadParts() async throws {
         let changes = NWChangesCard(title: "4 files changed", added: 149, removed: 63, files: [
             NWChangedFile(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", directory: "Sources/ShepherdApp/", name: "DesktopNativeThreadView.swift", status: .modified, added: 58, removed: 41),
@@ -137,7 +153,8 @@ struct ThreadPreviewTests {
         let size = CGSize(width: 900, height: 900)
         try await Preview.render("thread-parts", size: size) {
             VStack(alignment: .leading, spacing: 20) {
-                NWUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM")
+                NWUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM",
+                             revealed: true)
                 NWUserBubble("Also bump the tool row height to 28.", isQueued: true)
                 HStack(spacing: NW.Space.s) {
                     NWAttachmentChip("Spec.dc.html") {}
@@ -147,7 +164,8 @@ struct ThreadPreviewTests {
                            isExpanded: .constant(true))
                 NWThinking(liveSince: Date().addingTimeInterval(-4))
                 changes
-                NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {})
+                NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
+                             revealed: true)
                 NWTurnError("Model overloaded — the turn stopped after 6 tool calls.", retry: {})
                     .frame(maxWidth: 440)
                 Spacer(minLength: 0)
@@ -228,6 +246,31 @@ struct ThreadPreviewTests {
 }
 
 // MARK: Fixtures
+
+/// A thread's turns laid out in its column the way `ThreadView` lays them out, with the pointer
+/// seeded over the last reply.
+private struct HoveredReplyThread: View {
+    let store: NativeThreadStore
+
+    var body: some View {
+        let rows = store.rows
+        VStack(alignment: .leading, spacing: AppLayout.turnSpacing) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                if row.isUser {
+                    UserTurn(messages: row.turn.messages, caption: row.turn.messages.first?.timestamp.map { nativeClockText($0) })
+                } else if let presentation = row.presentation {
+                    AgentTurn(presentation: presentation, live: row.live, startedAt: row.startedAt, retry: {}, review: { _ in },
+                              hover: MessageHover(hovering: index == rows.count - 1))
+                }
+            }
+        }
+        .frame(maxWidth: AppLayout.threadMaxWidth)
+        .padding(.horizontal, AppLayout.gutter)
+        .padding(.top, AppLayout.threadTop)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.nw.bgWindow)
+    }
+}
 
 /// Threads drawn from the boards. Times are relative to now, so durations and live elapsed
 /// read as drawn.
