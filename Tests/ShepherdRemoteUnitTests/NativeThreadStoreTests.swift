@@ -215,6 +215,29 @@ struct NativeThreadStoreTests {
         #expect(store.draft.isEmpty && store.sentCount == 1 && !store.busy && store.notice == nil)
     }
 
+    /// The waiting message stays in the field, so the field is what goes: edited while pi
+    /// starts, the edit is sent; cleared, nothing is.
+    @Test(arguments: [("do the other thing", "do the other thing"), ("  ", nil)])
+    func aSendWaitingForPiGoesAsTheFieldHasIt(edited: String, sent: String?) async throws {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = "do the thing"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+        store.draft = edited
+
+        host.starting = false
+        await store.refresh()
+        await sending.value
+
+        let texts = host.actions.compactMap { action -> String? in
+            if case .send(_, _, _, let text, _, _) = action { return text } else { return nil }
+        }
+        #expect(texts == (sent.map { [$0] } ?? []))
+        #expect(store.draft == (sent == nil ? edited : "") && !store.busy)
+    }
+
     @Test func aThreadThatStopsWhileASendWaitsKeepsTheDraftWithNothingSent() async {
         let (store, host, task) = await startedWhileStarting()
         defer { task.cancel() }

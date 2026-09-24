@@ -440,10 +440,12 @@ public final class NativeThreadStore {
     // MARK: Actions
 
     /// `images` requires `sendImages` support (v2, RPC agents); they are dropped otherwise.
-    /// Sent while pi is starting, the draft waits for it (see `acceptsSend`), then goes.
+    /// Sent while pi is starting, the draft waits for it (see `acceptsSend`), still in the field,
+    /// then goes as the field has it by then: edited, or not at all once cleared.
     public func send(images: [NativeImage] = []) async {
+        guard !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct() else { return }
         let text = draft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, await readyToAct(),
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               supports("send"), let current = snapshot else { return }
         let operation = UUID()
         let attached: [NativeImage]? = images.isEmpty || !supports("sendImages") ? nil : images
