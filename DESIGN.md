@@ -409,6 +409,11 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
   `nwRunArrival`).
+- **Motion no one sees costs nothing.** A layout the workspace keeps mounted behind the visible
+  one sets `nwMotionPaused`, and a continuous motion pauses while its view is off screen
+  (between `onDisappear` and `onAppear`: a lazy stack keeps a row it let go of for a while). A
+  restored workspace of twelve agents drew about 6,000 spinner frames and spent about 4 s of
+  main-thread CPU every 4 s idle until they did; `IdleCostTests` counts the frames.
 
 ## Density and row settings
 

@@ -39,6 +39,8 @@ struct WorkspaceView: View {
                         // or VoiceOver from the visible one.
                         .allowsHitTesting(isVisible)
                         .accessibilityHidden(!isVisible)
+                        // Nor draw its spinners and glows where no one sees them.
+                        .environment(\.nwMotionPaused, !isVisible)
                 }
 
                 if let remote = vm.selectedRemoteAgent {
