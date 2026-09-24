@@ -18,10 +18,26 @@ struct ShepherdPathsTests {
         #expect(ShepherdPaths.remoteTokenURL(environment: env) == directory.appendingPathComponent("remote-token"))
     }
 
-    @Test func defaultsToShepherdInApplicationSupport() {
-        let directory = ShepherdPaths.supportDirectory(environment: [:])
-        #expect(directory.lastPathComponent == "Shepherd")
+    /// Each app keeps its own folder, so Shepherd Nightly never reads the everyday app's
+    /// state.json or binds over its socket.
+    @Test(arguments: [
+        (ShepherdEdition.main, "Shepherd"),
+        (.nightly, "Shepherd Nightly"),
+    ])
+    func eachEditionDefaultsToItsOwnFolderInApplicationSupport(edition: ShepherdEdition, folder: String) {
+        let directory = ShepherdPaths.supportDirectory(environment: [:], edition: edition)
+        #expect(directory.lastPathComponent == folder)
         #expect(directory.deletingLastPathComponent().lastPathComponent == "Application Support")
+    }
+
+    @Test func theProcessEditionIsTheEverydayAppOutsideShepherdNightly() {
+        #expect(ShepherdPaths.supportDirectory(environment: [:]) == ShepherdPaths.supportDirectory(environment: [:], edition: .main))
+    }
+
+    @Test(arguments: ShepherdEdition.allCases)
+    func theOverrideWinsForEveryEdition(edition: ShepherdEdition) {
+        let env = Self.environment("/tmp/shepherd-dev")
+        #expect(ShepherdPaths.supportDirectory(environment: env, edition: edition).path == "/tmp/shepherd-dev")
     }
 
     @Test func theOverrideMovesEveryPath() {
