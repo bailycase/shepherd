@@ -182,6 +182,14 @@ final class RawRemote: @unchecked Sendable {
         _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
     }
 
+    /// Adopts a socket that is already connected to the listener, in blocking mode.
+    init(connected fd: Int32) {
+        self.fd = fd
+        _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) & ~O_NONBLOCK)
+        var one: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+    }
+
     deinit { closeConnection() }
 
     func closeConnection() {
