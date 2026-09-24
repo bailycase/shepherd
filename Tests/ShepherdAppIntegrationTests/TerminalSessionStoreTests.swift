@@ -153,7 +153,9 @@ struct TerminalSessionStoreTests {
         let pane = LeafPane(cwd: scratch.dir.path)
         let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
         try await server.putState(ShepherdState(spaces: [space], tabs: [tab]))
-        let store = TerminalSessionStore(server: server)
+        // The start gives up only after the ownership wait runs out; the default 3 s is for a
+        // real split's queued layout write, which this removal never makes.
+        let store = TerminalSessionStore(server: server, ownershipTimeout: .milliseconds(300))
         let session = store.session(for: pane, in: tab)
 
         try await server.removeTab(tab.id)
