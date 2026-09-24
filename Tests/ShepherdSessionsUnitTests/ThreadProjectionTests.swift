@@ -199,6 +199,16 @@ struct ThreadProjectionTests {
                                                                     blocks: [NativeThreadBlock(kind: .text, text: String(repeating: "x", count: 15 * 1024))],
                                                                     toolName: "bash", toolCallID: "c\($0)", argumentsText: #"{"command":"make"}"#, status: "running") },
                         history: (0..<30).map { row($0, text: String(repeating: "y", count: 8 * 1024)) }),
+        SnapshotFixture(name: "oversize tool output between the user rows that open its turns",
+                        active: (0..<12).map { index -> NativeThreadMessage in
+                            index % 4 == 0
+                                ? NativeThreadMessage(entryID: "user:\(index)", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "go on \(index)")],
+                                                      origin: index == 4 ? .steered : nil)
+                                : NativeThreadMessage(entryID: "provisional:tool:c\(index)", role: "toolResult",
+                                                      blocks: [NativeThreadBlock(kind: .text, text: String(repeating: "x", count: 20 * 1024))],
+                                                      toolName: "bash", toolCallID: "c\(index)", status: "running")
+                        },
+                        history: (0..<10).map { row($0, text: "short") }),
         SnapshotFixture(name: "dialogs over budget", clipped: true,
                         dialogs: (0..<8).map { NativeThreadDialog(id: "d\($0)", kind: .editor, title: "Edit \($0)",
                                                                   prefill: String(repeating: "z", count: 20 * 1024)) },
@@ -223,8 +233,8 @@ struct ThreadProjectionTests {
         var value = fixture.base()
         value.provisional = fixture.active
         value.dialogs = fixture.dialogs
-        while bytes(value) > RPCThreadState.activeLimit, !value.provisional.isEmpty {
-            value.provisional.removeFirst()
+        while bytes(value) > RPCThreadState.activeLimit, let first = value.provisional.firstIndex(where: { $0.role != "user" }) {
+            value.provisional.remove(at: first)
             value.clipped = true
         }
         while bytes(value) > RPCThreadState.activeLimit, !value.dialogs.isEmpty {

@@ -7,7 +7,8 @@ import ShepherdRemote
 /// The native-thread view of one `RPCSession`, fed by pi's event stream: projection rules,
 /// limits, error codes, and operation idempotency behind `SessionServer.nativeThread`, served
 /// alike to the desktop, remote, and iOS clients. Confined to the session queue (which targets
-/// the server queue).
+/// the server queue). The queue of messages sent while pi works lives here too
+/// (`RPCThreadState+Queue.swift`).
 final class RPCThreadState {
     static let textLimit = 16 * 1024
     static let snapshotLimit = 240 * 1024
@@ -21,17 +22,34 @@ final class RPCThreadState {
     static let widgetTitleBytes = 256
     static let widgetAggregateBytes = 32 * 1024
     static let operationTableSize = 256
-    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents"]
+    static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue"]
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
     static let transcriptReadLimit = 8 * 1024 * 1024
+    /// pi answers a prompt only once its preflight is done: input handlers, a compaction after
+    /// an aborted run, image processing, or an extension command running to its end.
+    static let promptTimeout: TimeInterval = 30
 
-    private struct Provisional {
-        let key: Int
-        var raw: RPCMessage
-        var value: NativeThreadMessage
+    /// One row of the run pi is streaming, in the order pi produced it: its assistant messages,
+    /// tool calls, the user messages it read, and prompts it has not read yet (pending).
+    struct LiveItem {
+        enum Kind: Equatable {
+            case assistant(Int)
+            case tool(String)
+            case user
+            case pending(UUID)
+        }
+        var kind: Kind
+        /// Assigning it forgets its hash and size, so a commit rehashes only the rows that changed.
+        var value: NativeThreadMessage {
+            didSet {
+                hash = nil
+                bytes = nil
+            }
+        }
+        var raw: RPCMessage?
         var ended: Bool
-        /// `value`'s hash, taken when it was assigned.
-        var hash: Int
+        /// `value`'s hash, taken by the first commit after it was assigned.
+        var hash: Int? = nil
         /// `value`'s encoded size, taken by the first snapshot that shows it.
         var bytes: Int? = nil
     }
@@ -42,8 +60,8 @@ final class RPCThreadState {
         var waiters: [(NativeThreadResult) -> Void] = []
     }
 
-    private let session: RPCSession
-    private let queue: DispatchQueue
+    let session: RPCSession
+    let queue: DispatchQueue
     private(set) var piSessionID: String?
     /// How many times the bootstrap has asked pi for its state (more than once: a slow start).
     private(set) var bootstrapAttempts = 0
@@ -62,6 +80,9 @@ final class RPCThreadState {
     /// Called on the session queue each time `revision` moves.
     var onRevision: (() -> Void)?
     private var signature = 0
+    /// From `agent_start` until `agent_settled`: pi's own `isStreaming`. A run's `agent_end` is not
+    /// its end: pi may retry, compact, or continue before it settles, and until then a prompt
+    /// needs a streaming behavior.
     private(set) var running = false
     private(set) var model: String?
     private(set) var thinking: String?
@@ -87,20 +108,22 @@ final class RPCThreadState {
     /// Installed by SessionServer: writes a childCommand to the children extension and answers
     /// with its error text (nil on success). Runs on the server queue.
     var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
-    private var history: [NativeThreadMessage] = [] { didSet { historyBytes = Array(repeating: -1, count: history.count) } }
+    private(set) var history: [NativeThreadMessage] = [] { didSet { historyBytes = Array(repeating: -1, count: history.count) } }
     /// Each history row's encoded size, taken by the first snapshot that shows it (-1 until then).
     private var historyBytes: [Int] = []
-    private var provisional: [Provisional] = []
+    /// Bumped whenever a refresh changes history, so a same-length change (a compaction) is a
+    /// new revision.
+    private var historyVersion = 0
+    var live: [LiveItem] = []
     private var sequence = 0
     private var currentAssistant: Int?
-    private var tools: [(id: String, value: NativeThreadMessage, hash: Int, bytes: Int?)] = []
     /// When each tool execution was first seen (ms), for durations of live calls.
     private var toolStarts: [String: Double] = [:]
     /// Live thinking spans per provisional assistant message (ms), and the finished ones keyed
     /// by the message's pi timestamp so history projected later keeps "Thought for Ns".
     private var thinkingSpans: [Int: (start: Double, end: Double?)] = [:]
     private var thinkingByTimestamp: [Double: Double] = [:]
-    private var dialogs: [NativeThreadDialog] = [] {
+    private(set) var dialogs: [NativeThreadDialog] = [] {
         didSet {
             dialogsHash = dialogs.hashValue
             dialogBytes = nil
@@ -109,15 +132,53 @@ final class RPCThreadState {
     private var dialogBytes: [Int]?
     private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
     private var operations: [(id: String, operation: Operation)] = []
-    private var projectionClipped = false
+    var projectionClipped = false
+    /// The last assistant message of the current run ended in a provider error.
+    var runFailed = false
+
+    // Queue state (RPCThreadState+Queue.swift).
+    var items: [QueueItem] = []
+    var dispatches: [Dispatch] = []
+    var paused = false
+    var queueNotice: String?
+    var modeOverride: NativeQueueMode?
+    /// The host's default for agents with no choice of their own (Settings).
+    var defaultQueueMode: NativeQueueMode = .all {
+        didSet { if defaultQueueMode != oldValue { commit() } }
+    }
+    /// Steering items sent to pi whose queued text pi has not reported yet (`queue_update`).
+    var unboundSteers: [UUID] = []
+    /// Steering prompts pi has not answered; a settle waits for them (`settled()`).
+    var steersInFlight = 0
+    var settleAwaitingSteers = false
+    /// pi's own queue as its last `queue_update` had it.
+    var piSteering: [String] = []
+    var piFollowUp: [String] = []
+    /// What a delete or a clear removed, for an undo.
+    var deleted: [(item: QueueItem, index: Int)] = []
+
+    /// Installed by SessionServer: the queue was expected to go when pi settled, and did not.
+    var onIdleAfterQueue: (() -> Void)?
+    /// The server held back a "done" report because the queue was about to go.
+    var doneHeld = false
+
+    /// Where messages Shepherd delivered came from, by entry id (persisted per pi session).
+    let originStore: ThreadOriginStore?
+    var origins: [String: ThreadOriginStore.Record] = [:]
+    /// Entry ids in `origins`, oldest first.
+    var originOrder: [String] = []
+    /// The send behind each user message this host delivered, by entry id (this run only).
+    var operationsByEntry: [String: UUID] = [:]
+
     private static let encoder = JSONEncoder()
     private static let ansi = try! NSRegularExpression(
         pattern: "\u{1B}(?:\\[[0-?]*[ -/]*[@-~]|\\][^\u{07}\u{1B}]*(?:\u{07}|\u{1B}\\\\)|[@-Z\\\\-_])"
     )
 
-    init(session: RPCSession, queue: DispatchQueue) {
+    init(session: RPCSession, queue: DispatchQueue, originStore: ThreadOriginStore? = nil) {
         self.session = session
         self.queue = queue
+        self.originStore = originStore
     }
 
     /// Populate from a freshly spawned (or resumed) pi. Until `get_state` and `get_messages`
@@ -153,20 +214,27 @@ final class RPCThreadState {
         switch event {
         case .agentStart:
             running = true
+            runFailed = false
+            settleAwaitingSteers = false
+            doneHeld = false
         case .agentEnd:
-            running = false
             refreshMessages()
             refreshState()
             refreshStats()
         case .agentSettled:
             running = false
+            settled()
+        case .messageStart(let message) where message.role == "user":
+            userMessageStarted(message)
+        case .messageEnd(let message) where message.role == "user":
+            userMessageEnded(message)
         case .messageStart(let message):
             guard message.role == "assistant" else { break }
             sequence += 1
             currentAssistant = sequence
             upsertAssistant(message, ended: false)
         case .messageUpdate(let delta):
-            guard let key = currentAssistant, let index = provisional.firstIndex(where: { $0.key == key }) else {
+            guard let key = currentAssistant, let index = live.firstIndex(where: { $0.kind == .assistant(key) }), let current = live[index].raw else {
                 // message_start was missed (spawned mid-turn); start accumulating now.
                 sequence += 1
                 currentAssistant = sequence
@@ -175,7 +243,7 @@ final class RPCThreadState {
                 upsertAssistant(raw, ended: false)
                 break
             }
-            var raw = provisional[index].raw
+            var raw = current
             Self.apply(delta, to: &raw)
             upsertAssistant(raw, ended: false)
         case .messageEnd(let message):
@@ -186,17 +254,20 @@ final class RPCThreadState {
             }
             upsertAssistant(message, ended: true)
             currentAssistant = nil
+            runFailed = message.stopReason == "error"
         case .toolExecutionStart(let id, let name, let args):
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
         case .toolExecutionEnd(let id, let name, let result, let isError):
             upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: "complete")
+        case .queueUpdate(let steering, let followUp):
+            piQueueChanged(steering: steering, followUp: followUp)
         case .extensionUIRequest(let request):
             handleUIRequest(request)
         case .extensionError(let path, let event, let error):
             ShepherdLog.warning("rpc session \(session.id) extension error in \(path ?? "?") (\(event ?? "?")): \(error)")
-        case .turnStart, .turnEnd, .queueUpdate, .unknown:
+        case .turnStart, .turnEnd, .unknown:
             break
         }
         commit()
@@ -242,7 +313,8 @@ final class RPCThreadState {
              .answer(let expectedSessionID, let generation, let operationID, _, _),
              .setModel(let expectedSessionID, let generation, let operationID, _),
              .setThinking(let expectedSessionID, let generation, let operationID, _),
-             .subagentCommand(let expectedSessionID, let generation, let operationID, _, _, _, _):
+             .subagentCommand(let expectedSessionID, let generation, let operationID, _, _, _, _),
+             .queue(let expectedSessionID, let generation, let operationID, _):
             guard expectedSessionID == piSessionID, generation == self.generation else {
                 completion(.failure(code: "stale_session", message: "Refresh the thread before acting."))
                 return
@@ -273,21 +345,30 @@ final class RPCThreadState {
                 let waiters = self.operations[index].operation.waiters
                 self.operations[index].operation.waiters = []
                 self.bumpRevision()
+                self.commit()
                 completion(result)
                 waiters.forEach { $0(result) }
             }
         }
     }
 
+    static func dispatchFailure(_ result: Result<RPCResponse, RPCError>) -> NativeThreadResult? {
+        switch result {
+        case .success(let response) where response.success:
+            return nil
+        case .success(let response):
+            return .failure(code: "dispatch_failed", message: response.error.map { "pi refused it: \($0)" } ?? "pi refused it.")
+        case .failure(.timeout):
+            return .failure(code: "outcome_unknown", message: "pi did not answer in time. Check the thread before trying again; nothing will be resent automatically.")
+        case .failure(let error):
+            return .failure(code: "dispatch_failed", message: error.description)
+        }
+    }
+
     private func perform(_ request: NativeThreadRequest, operationID: UUID, completion: @escaping (NativeThreadResult) -> Void) {
         let accepted = NativeThreadResult.accepted(operationID: operationID)
-        let dispatchFailed = NativeThreadResult.failure(code: "dispatch_failed", message: "Pi rejected native dispatch. Refresh before acting.")
         let settle: (Result<RPCResponse, RPCError>) -> Void = { result in
-            if case .success(let response) = result, response.success {
-                completion(accepted)
-            } else {
-                completion(dispatchFailed)
-            }
+            completion(Self.dispatchFailure(result) ?? accepted)
         }
         switch request {
         case .send(_, _, _, let text, let delivery, let images):
@@ -300,15 +381,15 @@ final class RPCThreadState {
             // under RPCSession's 8 MiB stdin queue once base64-expanded.
             guard images.count <= NativeImage.maxPerSend,
                   images.allSatisfy({ $0.data.count <= NativeImage.maxBytes && $0.mimeType.hasPrefix("image/") }),
-                  images.reduce(0, { $0 + $1.data.count }) <= 5 * 1024 * 1024 else {
+                  images.reduce(0, { $0 + $1.data.count }) <= Self.imageBytesLimit else {
                 completion(.failure(code: "invalid", message: "Send accepts up to \(NativeImage.maxPerSend) images of \(NativeImage.maxBytes / 1024 / 1024) MiB each."))
                 return
             }
-            let behavior: RPCStreamingBehavior? = running ? (delivery == .steer ? .steer : .followUp) : nil
-            let rpcImages = images.map { RPCImage(data: $0.data.base64EncodedString(), mimeType: $0.mimeType) }
-            session.request(.prompt(message: text, images: rpcImages, streamingBehavior: behavior), completion: settle)
+            send(id: operationID, text: text, delivery: delivery, images: images, completion: completion)
         case .abort:
-            session.request(.abort, completion: settle)
+            stop { settle($0) }
+        case .queue(_, _, _, let action):
+            perform(action, operationID: operationID, completion: completion)
         case .setModel(_, _, _, let model):
             // "provider/id"; ids may themselves contain "/" so split on the first one only.
             guard let slash = model.firstIndex(of: "/"), slash > model.startIndex, model.index(after: slash) < model.endIndex else {
@@ -347,7 +428,7 @@ final class RPCThreadState {
             // pi never answers extension_ui_response; the write is the dispatch.
             session.send(command)
             dialogs.remove(at: index)
-            completion(session.isAlive ? accepted : dispatchFailed)
+            completion(session.isAlive ? accepted : .failure(code: "dispatch_failed", message: "pi is not running."))
         case .subagentCommand(_, _, _, let runID, let action, let text, let mode):
             // Unknown runs and empty replies never reach the socket; the dispatch itself is the
             // server's (it owns the children extension's connection).
@@ -359,12 +440,15 @@ final class RPCThreadState {
                 completion(.failure(code: "invalid", message: "A subagent message needs text up to 16 KiB."))
                 return
             }
-            guard let dispatchSubagentCommand else { completion(dispatchFailed); return }
+            guard let dispatchSubagentCommand else {
+                completion(.failure(code: "dispatch_failed", message: "The subagent runtime is not connected."))
+                return
+            }
             dispatchSubagentCommand(runID, action, text, mode) { error in
                 completion(error.map { .failure(code: "child_command_failed", message: $0) } ?? accepted)
             }
         case .snapshot, .subagentTranscript:
-            completion(dispatchFailed)
+            completion(.failure(code: "invalid", message: "Not an action."))
         }
     }
 
@@ -418,13 +502,14 @@ final class RPCThreadState {
 
     // MARK: - Refresh
 
-    private func refreshState(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+    func refreshState(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         session.request(.getState, timeout: timeout) { [weak self] result in
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
                 if self.piSessionID != nil { self.resetForNewSession() }
                 self.piSessionID = id
+                self.loadOrigins(sessionID: id)
             }
             if let m = data["model"], let provider = m["provider"]?.stringValue, let id = m["id"]?.stringValue {
                 self.model = "\(provider)/\(id)"
@@ -432,7 +517,12 @@ final class RPCThreadState {
                 self.model = nil
             }
             self.thinking = data["thinkingLevel"]?.stringValue
-            if let streaming = data["isStreaming"]?.boolValue { self.running = streaming }
+            if let streaming = data["isStreaming"]?.boolValue, streaming != self.running {
+                self.running = streaming
+                // A settle this thread did not see (it came before the bootstrap) still lets the
+                // queue go.
+                if !streaming { self.drainIfReady() }
+            }
             self.commit()
             self.announceIfServable()
         }
@@ -449,15 +539,32 @@ final class RPCThreadState {
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success,
                   let messages = response.messages else { return }
-            self.history = Self.projectHistory(messages) { value, message in
+            let history = Self.projectHistory(messages) { value, message in
                 if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
                     value.startedAt = started
                 }
                 if message.role == "assistant", let time = message.timestamp { value.thinkingSeconds = self.thinkingByTimestamp[time] }
+                if message.role == "user" {
+                    let text = message.content.compactMap { block -> String? in
+                        if case .text(let text) = block { return text }
+                        return nil
+                    }.joined()
+                    value.origin = self.origins[value.entryID]?.origin(text: text)
+                    value.operationID = self.operationsByEntry[value.entryID]
+                }
+            }
+            if history != self.history {
+                self.history = history
+                self.historyVersion += 1
             }
             // message_end precedes persistence; a refresh means everything ended is now history.
-            self.provisional.removeAll { $0.ended }
-            self.tools.removeAll { $0.value.status == "complete" }
+            self.live.removeAll { item in
+                switch item.kind {
+                case .assistant, .user: item.ended
+                case .tool: item.value.status == "complete"
+                case .pending: false
+                }
+            }
             self.commit()
         }
     }
@@ -498,20 +605,81 @@ final class RPCThreadState {
     private func resetForNewSession() {
         generation = UUID().uuidString
         operations.removeAll()
-        provisional.removeAll()
-        tools.removeAll()
+        live.removeAll()
         toolStarts.removeAll()
         thinkingSpans.removeAll()
         thinkingByTimestamp.removeAll()
         widgets.removeAll()
         history.removeAll()
+        historyVersion += 1
         currentAssistant = nil
         projectionClipped = false
+        operationsByEntry.removeAll()
+        resetQueueForNewSession()
         signature = 0
         bumpRevision()
     }
 
-    // MARK: - Provisional items
+    // MARK: - Live rows
+
+    /// The session's record of where delivered messages came from.
+    private func loadOrigins(sessionID: String) {
+        guard let originStore else { return }
+        let loaded = originStore.load(sessionID: sessionID)
+        origins = Dictionary(loaded.map { ($0.id, $0.record) }, uniquingKeysWith: { $1 })
+        originOrder = loaded.map(\.id)
+    }
+
+    func recordOrigin(_ origin: NativeMessageOrigin, entryID: String) {
+        guard let record = ThreadOriginStore.Record(origin) else { return }
+        origins[entryID] = record
+        originOrder.removeAll { $0 == entryID }
+        originOrder.append(entryID)
+        if originOrder.count > ThreadOriginStore.limit {
+            for id in originOrder.prefix(originOrder.count - ThreadOriginStore.limit) { origins[id] = nil }
+            originOrder.removeFirst(originOrder.count - ThreadOriginStore.limit)
+        }
+        guard let piSessionID, let originStore else { return }
+        originStore.save(sessionID: piSessionID, records: originOrder.compactMap { id in origins[id].map { (id, $0) } })
+    }
+
+    /// The id history will give a live user message, so the row keeps it when it settles: a
+    /// repeat of the same key (two messages pi stamped in one millisecond) counts the earlier
+    /// ones in history and the run so far.
+    func liveEntryID(for message: RPCMessage) -> String {
+        guard let time = message.timestamp, time.isFinite else {
+            sequence += 1
+            return "provisional:user:\(sequence)"
+        }
+        let key = "user:\(Int64(time))"
+        func matches(_ id: String) -> Bool { id == key || id.hasPrefix(key + "#") }
+        let repeats = history.count { matches($0.entryID) } + live.count { $0.kind == .user && matches($0.value.entryID) }
+        return repeats == 0 ? key : "\(key)#\(repeats)"
+    }
+
+    /// pi finished writing a user message it read (persisted at message_end).
+    private func userMessageEnded(_ message: RPCMessage) {
+        guard let index = live.lastIndex(where: { $0.kind == .user && !$0.ended && $0.value.timestamp == message.timestamp }) else { return }
+        live[index].ended = true
+    }
+
+    /// Everything in the run, in pi's order, then the prompts pi has not read yet.
+    var liveRows: [NativeThreadMessage] {
+        live.filter { if case .pending = $0.kind { return false } else { return true } }.map(\.value)
+            + live.filter { if case .pending = $0.kind { return true } else { return false } }.map(\.value)
+    }
+
+    /// At most a page of assistant messages and a page of tool calls stay live (oldest go
+    /// first); user rows always stay, since they open the turns the rest belong to.
+    func trimLive() {
+        func trim(_ matches: (LiveItem.Kind) -> Bool) {
+            guard live.count(where: { matches($0.kind) }) > Self.pageSize, let first = live.firstIndex(where: { matches($0.kind) }) else { return }
+            live.remove(at: first)
+            projectionClipped = true
+        }
+        trim { if case .assistant = $0 { true } else { false } }
+        trim { if case .tool = $0 { true } else { false } }
+    }
 
     private func upsertAssistant(_ raw: RPCMessage, ended: Bool) {
         guard let key = currentAssistant else { return }
@@ -537,20 +705,18 @@ final class RPCThreadState {
             value.thinkingSeconds = seconds
             if ended, let time = raw.timestamp { thinkingByTimestamp[time] = seconds }
         }
-        let entry = Provisional(key: key, raw: raw, value: value, ended: ended, hash: entryHash(value))
-        if let index = provisional.firstIndex(where: { $0.key == key }) {
-            provisional[index] = entry
+        let item = LiveItem(kind: .assistant(key), value: value, raw: raw, ended: ended)
+        if let index = live.firstIndex(where: { $0.kind == .assistant(key) }) {
+            live[index] = item
         } else {
-            provisional.append(entry)
-        }
-        if provisional.count > Self.pageSize {
-            provisional.removeFirst()
-            projectionClipped = true
+            live.append(item)
+            trimLive()
         }
     }
 
     private func upsertTool(id: String, name: String, args: JSONValue?, content: [RPCContentBlock], isError: Bool?, status: String) {
-        let previous = tools.first { $0.id == id }?.value
+        let index = live.firstIndex { $0.kind == .tool(id) }
+        let previous = index.map { live[$0].value }
         var value = Self.project(
             entryID: "provisional:tool:\(id)",
             message: RPCMessage(role: "toolResult", content: content, toolName: name, toolCallId: id, isError: isError),
@@ -561,14 +727,11 @@ final class RPCThreadState {
         if toolStarts[id] == nil { toolStarts[id] = Date().timeIntervalSince1970 * 1000 }
         value.startedAt = toolStarts[id]
         if status == "complete", value.timestamp == nil { value.timestamp = Date().timeIntervalSince1970 * 1000 }
-        if let index = tools.firstIndex(where: { $0.id == id }) {
-            tools[index] = (id, value, entryHash(value), nil)
+        if let index {
+            live[index].value = value
         } else {
-            tools.append((id, value, entryHash(value), nil))
-        }
-        if tools.count > Self.pageSize {
-            tools.removeFirst()
-            projectionClipped = true
+            live.append(LiveItem(kind: .tool(id), value: value, raw: nil, ended: false))
+            trimLive()
         }
     }
 
@@ -693,19 +856,17 @@ final class RPCThreadState {
     // MARK: - Snapshot
 
     /// Everything a snapshot shows, as one signature: a change anywhere moves the revision, and
-    /// nothing else does. The parts' hashes were taken when they were assigned.
-    private func commit() {
-        #if DEBUG
-        bytesHashedByLastCommit = bytesHashedSinceCommit
-        bytesHashedSinceCommit = 0
-        #endif
+    /// nothing else does. Each part's hash is taken once per change: the lists here when they are
+    /// assigned, a live row by the first commit after its value changed.
+    func commit() {
         var hasher = Hasher()
         hasher.combine(history.count)
-        hasher.combine(history.last?.entryID)
-        hasher.combine(provisional.count)
-        for entry in provisional { hasher.combine(entry.hash) }
-        hasher.combine(tools.count)
-        for tool in tools { hasher.combine(tool.hash) }
+        hasher.combine(historyVersion)
+        hasher.combine(live.count)
+        for index in live.indices where live[index].hash == nil {
+            live[index].hash = entryHash(live[index].value)
+        }
+        for item in live { hasher.combine(item.hash) }
         hasher.combine(dialogsHash)
         hasher.combine(widgetsHash)
         hasher.combine(running)
@@ -715,6 +876,11 @@ final class RPCThreadState {
         hasher.combine(stats)
         hasher.combine(commandsHash)
         hasher.combine(subagentsHash)
+        hasher.combine(queueHash())
+        #if DEBUG
+        bytesHashedByLastCommit = bytesHashedSinceCommit
+        bytesHashedSinceCommit = 0
+        #endif
         let next = hasher.finalize()
         if next != signature {
             signature = next
@@ -730,8 +896,17 @@ final class RPCThreadState {
     private func entryHash(_ value: NativeThreadMessage) -> Int {
         #if DEBUG
         bytesHashedSinceCommit += value.blocks.reduce(0) { $0 + $1.text.utf8.count } + (value.argumentsText?.utf8.count ?? 0)
+            + (value.origin?.parts?.reduce(0) { $0 + $1.text.utf8.count } ?? 0)
         #endif
         return value.hashValue
+    }
+
+    private func queueHash() -> Int {
+        let queue = queueValue
+        #if DEBUG
+        bytesHashedSinceCommit += queue.items.reduce(0) { $0 + $1.text.utf8.count } + (queue.notice?.utf8.count ?? 0)
+        #endif
+        return queue.hashValue
     }
 
     private func snapshot(beforeEntryID: String?) -> NativeThreadResult {
@@ -752,7 +927,7 @@ final class RPCThreadState {
             model: model, thinking: thinking, supportedActions: Self.supportedActions, dialogsSupported: true,
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
-            runtime: "rpc", stats: stats, commands: commands, subagents: subagents
+            runtime: "rpc", stats: stats, commands: commands, subagents: subagents, queue: queueValue
         )
         let sizedDialogs = zip(dialogs, dialogSizes()).map { Sized(value: $0, bytes: $1) }
         let budgeted = Self.budget(
@@ -795,8 +970,9 @@ final class RPCThreadState {
     /// Applies the snapshot budgets to `base`, whose dialogs, messages and provisional lists are
     /// empty and which encodes to `baseBytes`, by arithmetic over each element's encoded size: a
     /// list adds its elements and the commas between them, and `clipped` turning true saves a
-    /// byte. Active output is trimmed to `activeLimit` first (oldest provisional rows, then the
-    /// newest dialogs), then history fills the rest of `snapshotLimit` from `historyEnd` back, a
+    /// byte. Active output is trimmed to `activeLimit` first (the oldest provisional rows that are
+    /// not user rows, which open the turns the rest belong to; then the newest dialogs), then
+    /// history fills the rest of `snapshotLimit` from `historyEnd` back, a
     /// page at most. The decisions are the ones encoding the growing snapshot made; returns the
     /// snapshot and its exact encoded size.
     static func budget(
@@ -810,16 +986,20 @@ final class RPCThreadState {
         func list(_ count: Int, _ sum: Int) -> Int { count == 0 ? 0 : sum + count - 1 }
         var clipped = base.clipped
         func flag() -> Int { clipped == base.clipped ? 0 : clipped ? -1 : 1 }
-        var activeFrom = 0
+        var dropped = Set<Int>()
         var activeSum = active.reduce(0) { $0 + $1.bytes }
         var dialogCount = dialogs.count
         var dialogSum = dialogs.reduce(0) { $0 + $1.bytes }
         func size() -> Int {
-            baseBytes + flag() + list(active.count - activeFrom, activeSum) + list(dialogCount, dialogSum)
+            baseBytes + flag() + list(active.count - dropped.count, activeSum) + list(dialogCount, dialogSum)
         }
-        while size() > activeLimit, activeFrom < active.count {
-            activeSum -= active[activeFrom].bytes
-            activeFrom += 1
+        var next = 0
+        while size() > activeLimit {
+            while next < active.count, active[next].value.role == "user" { next += 1 }
+            guard next < active.count else { break }
+            activeSum -= active[next].bytes
+            dropped.insert(next)
+            next += 1
             clipped = true
         }
         while size() > activeLimit, dialogCount > 0 {
@@ -844,7 +1024,7 @@ final class RPCThreadState {
         }
         page.reverse()
         var value = base
-        value.provisional = active[activeFrom...].map(\.value)
+        value.provisional = active.indices.filter { !dropped.contains($0) }.map { active[$0].value }
         value.dialogs = dialogs[..<dialogCount].map(\.value)
         value.messages = page.map(\.value)
         value.clipped = clipped
@@ -871,21 +1051,18 @@ final class RPCThreadState {
         return bytes
     }
 
-    /// Provisional rows then tool rows, each sized once for as long as it stays unchanged.
+    /// `liveRows`, each sized once for as long as it stays unchanged.
     private func activeEntries() -> [Sized<NativeThreadMessage>] {
         var entries: [Sized<NativeThreadMessage>] = []
-        entries.reserveCapacity(provisional.count + tools.count)
-        for index in provisional.indices {
-            let bytes = provisional[index].bytes ?? measured(provisional[index].value)
-            provisional[index].bytes = bytes
-            entries.append(Sized(value: provisional[index].value, bytes: bytes))
+        var pending: [Sized<NativeThreadMessage>] = []
+        entries.reserveCapacity(live.count)
+        for index in live.indices {
+            let bytes = live[index].bytes ?? measured(live[index].value)
+            live[index].bytes = bytes
+            let entry = Sized(value: live[index].value, bytes: bytes)
+            if case .pending = live[index].kind { pending.append(entry) } else { entries.append(entry) }
         }
-        for index in tools.indices {
-            let bytes = tools[index].bytes ?? measured(tools[index].value)
-            tools[index].bytes = bytes
-            entries.append(Sized(value: tools[index].value, bytes: bytes))
-        }
-        return entries
+        return entries + pending
     }
 
     /// The sizes of the dialogs a snapshot can carry (the first `dialogLimit`).
@@ -910,7 +1087,7 @@ final class RPCThreadState {
     }
 
     /// A value that cannot be encoded counts as over every budget, without overflowing a sum.
-    private static func bytes<T: Encodable>(_ value: T) -> Int {
+    static func bytes<T: Encodable>(_ value: T) -> Int {
         (try? encoder.encode(value).count) ?? Int(Int32.max)
     }
 
@@ -944,6 +1121,7 @@ final class RPCThreadState {
             var value = project(entryID: historyEntryID(message, index: index, seen: &seen), message: message, args: args)
             if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
             adjust(&value, message)
+            if let origin = value.origin { value.origin = clipped(origin) }
             return value
         }
     }
@@ -966,6 +1144,24 @@ final class RPCThreadState {
         let repeats = seen[key, default: 0]
         seen[key] = repeats + 1
         return repeats == 0 ? key : "\(key)#\(repeats)"
+    }
+
+    /// A queue origin's parts restate the message's text: they share one text budget.
+    static func clipped(_ origin: NativeMessageOrigin) -> NativeMessageOrigin {
+        guard case .queue(var parts) = origin else { return origin }
+        var remaining = textLimit
+        for index in parts.indices {
+            let raw = Array(parts[index].text.utf8)
+            if raw.count <= remaining {
+                remaining -= raw.count
+                continue
+            }
+            var end = remaining
+            while end > 0, raw[end] & 0xC0 == 0x80 { end -= 1 }
+            parts[index].text = String(decoding: raw[0..<end], as: UTF8.self)
+            remaining = 0
+        }
+        return .queue(parts: parts)
     }
 
     static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil) -> NativeThreadMessage {

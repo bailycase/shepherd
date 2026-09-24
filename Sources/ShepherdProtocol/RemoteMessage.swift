@@ -16,6 +16,9 @@ public enum RemoteProtocol {
     /// The host answers `NativeThreadCode.starting` while an agent's pi starts. Older hosts
     /// answered `native_unavailable` then; clients read that as starting (see RemoteHostClient).
     public static let nativeThreadStartingCapability = "native.thread.starting.v1"
+    /// The host holds messages sent while pi works (`NativeThreadSnapshot.queue`) and serves
+    /// `NativeThreadRequest.queue`. Older hosts send every message straight to pi.
+    public static let nativeQueueCapability = "native.queue.v1"
     public static let version = 1
     public static let pasteCapability = "session.paste.v1"
     public static let paneControlCapability = "pane.control.v1"
@@ -23,7 +26,7 @@ public enum RemoteProtocol {
     public static let worktreeActionsCapability = "agent.worktree.v1"
     public static let worktreeSetupCapability = "agent.worktree.setup.v1"
     public static let agentInspectionCapability = "agent.inspection.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)

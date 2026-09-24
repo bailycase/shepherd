@@ -352,6 +352,10 @@ public final class RemoteHostClient: @unchecked Sendable {
             guard capabilities.contains(RemoteProtocol.nativeThreadV2Capability) else {
                 throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to change the model or thinking level.")
             }
+        case .queue:
+            guard capabilities.contains(RemoteProtocol.nativeQueueCapability) else {
+                throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to change its queue.")
+            }
         case .send where !command.images.isEmpty:
             guard capabilities.contains(RemoteProtocol.nativeThreadV2Capability) else {
                 throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to send images.")

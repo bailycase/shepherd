@@ -22,7 +22,7 @@ struct NativeThreadWireTests {
             .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Extensions/native-thread-wire.json")
         let frames = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [[String: Any]])
-        #expect(frames.count >= 13)
+        #expect(frames.count >= 17)
         for frame in frames {
             let json = try JSONSerialization.data(withJSONObject: frame)
             let reencoded = frame["request"] != nil
@@ -54,6 +54,23 @@ struct NativeThreadWireTests {
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .continue),
         .subagentTranscript(expectedSessionID: "s", runID: "native-1"),
         .subagentTranscript(expectedSessionID: "s", runID: "native-1", beforeEntryID: "c:9"),
+        .send(expectedSessionID: "s", generation: "g", operationID: op, text: "see", delivery: .followUp,
+              images: [NativeImage(mimeType: "image/png", data: Data([1]), name: "checkout.png")]),
+    ] + queueActions.map { .queue(expectedSessionID: "s", generation: "g", operationID: op, action: $0) }
+
+    /// Every queue action, as a request carries it.
+    static let queueActions: [NativeQueueAction] = [
+        .edit(id: op, text: "cover partial refunds"),
+        .delete(id: op),
+        .restore(ids: [op, UUID(uuidString: "00000000-0000-0000-0000-000000000002")!], index: 1),
+        .move(id: op, index: 0),
+        .steer(ids: [op]),
+        .unsteer(id: op),
+        .clear,
+        .hold(id: op, held: true),
+        .setMode(mode: .oneAtATime),
+        .setMode(mode: nil),
+        .sendNow(ids: [op]),
     ]
 
     @Test(arguments: requests)
@@ -93,6 +110,22 @@ struct NativeThreadWireTests {
         .transcript(value: NativeSubagentTranscript(
             runID: "native-1", messages: [NativeThreadMessage(entryID: "c:1", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "task")])],
             olderCursor: "c:1", earlierCount: 72
+        )),
+        .snapshot(value: NativeThreadSnapshot(
+            piSessionID: "s", generation: "g", revision: 5, running: true, supportedActions: ["send", "queue"], dialogsSupported: true,
+            dialogs: [],
+            messages: [
+                NativeThreadMessage(entryID: "user:1", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "a\n\nb")], timestamp: 1,
+                                    origin: .queue(parts: [NativeQueuePart(id: op, text: "a", sentAt: 0.5), NativeQueuePart(text: "b", sentAt: 0.75, images: 2)]),
+                                    operationID: op),
+                NativeThreadMessage(entryID: "user:2", role: "user", blocks: [], origin: .steered),
+            ],
+            provisional: [], clipped: false, runtime: "rpc",
+            queue: NativeQueue(items: [
+                NativeQueuedMessage(id: op, text: "steer", sentAt: 3, state: .steering),
+                NativeQueuedMessage(id: UUID(), text: "then", images: [NativeQueuedImage(mimeType: "image/png", name: "a.png"), NativeQueuedImage(mimeType: "image/jpeg")],
+                                    sentAt: 4, held: true),
+            ], mode: .oneAtATime, paused: true, notice: "pi refused it.")
         )),
     ]
 
@@ -177,6 +210,47 @@ struct NativeThreadWireTests {
         #expect(NativeThreadDelivery.steer.rawValue == "steer")
         #expect(NativeThreadBlock.Kind.unsupportedImage.rawValue == "unsupportedImage")
         #expect(NativeSubagentAction.continue.rawValue == "continue")
+    }
+
+    // MARK: Queue (v3)
+
+    /// An older host has no queue: the client then sends straight to pi, as before.
+    @Test func aSnapshotFromAnOlderHostHasNoQueueAndMessagesNoOrigin() throws {
+        #expect(try Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot).queue == nil)
+        let message = try Wire.decode(NativeThreadMessage.self, #"{"entryID":"e","role":"user","blocks":[],"truncated":false}"#)
+        #expect(message.origin == nil && message.operationID == nil)
+        #expect(try Wire.object(Wire.decode(NativeThreadSnapshot.self, Self.v1Snapshot))["queue"] == nil)
+    }
+
+    /// What a newer host adds (a mode, an item state, an origin) is unknown here, never a
+    /// snapshot that fails to load.
+    @Test func aNewerHostsQueueModeItemStateAndOriginDecodeLeniently() throws {
+        let snapshot = try Self.snapshot(adding: [
+            "queue": ["items": [["id": Self.op.uuidString, "text": "t", "sentAt": 1, "state": "delivering"]], "mode": "whenIdle"],
+            "messages": [["entryID": "u", "role": "user", "blocks": [], "truncated": false, "origin": ["forwarded": ["from": "x"]]]],
+        ])
+        #expect(snapshot.queue?.mode == nil)
+        #expect(snapshot.queue?.items.first?.state == .queued)
+        #expect(snapshot.queue?.items.first?.held == false && snapshot.queue?.items.first?.images == [])
+        #expect(snapshot.queue?.paused == false)
+        #expect(snapshot.messages.first?.origin == .unknown)
+    }
+
+    @Test func queueWireSpellingsAreStable() throws {
+        #expect(NativeQueueMode.oneAtATime.rawValue == "oneAtATime" && NativeQueueMode.all.rawValue == "all")
+        #expect(NativeQueuedMessage.State.queued.rawValue == "queued" && NativeQueuedMessage.State.steering.rawValue == "steering")
+        #expect(Wire.caseName(NativeQueueAction.clear) == "clear")
+        let steered = try Wire.object(NativeThreadMessage(entryID: "e", role: "user", blocks: [], origin: .steered))
+        #expect((steered["origin"] as? [String: Any])?.keys.sorted() == ["steered"])
+    }
+
+    @Test func aQueuedPartDefaultsToNoImages() throws {
+        let part = try Wire.decode(NativeQueuePart.self, #"{"text":"t","sentAt":2}"#)
+        #expect(part == NativeQueuePart(text: "t", sentAt: 2) && part.images == 0 && part.id == nil)
+    }
+
+    @Test func anImageNameIsOmittedWhenAbsent() throws {
+        #expect(try Wire.object(NativeImage(mimeType: "image/png", data: Data([1])))["name"] == nil)
     }
 
     @Test func transcriptPagesDefaultToNoEarlierEntries() {
