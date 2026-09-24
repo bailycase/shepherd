@@ -225,6 +225,105 @@ struct ThreadEventTests {
         #expect(bytes == (try JSONEncoder().encode(snapshot).count))
         #expect(snapshot.messages.count == 2 && snapshot.provisional.count == 2)
     }
+
+    /// Queues `texts` while pi works, as sends during a run.
+    private func queue(_ texts: [String], on t: Thread, from s: NativeThreadSnapshot) async throws -> [UUID] {
+        var ids: [UUID] = []
+        for text in texts {
+            let id = UUID()
+            let result = await t.request(.send(expectedSessionID: s.piSessionID, generation: s.generation, operationID: id,
+                                               text: text, delivery: .followUp, images: nil))
+            #expect(result == .accepted(operationID: id))
+            ids.append(id)
+        }
+        return ids
+    }
+
+    private func lastSnapshotBytes(_ t: Thread) async -> Int {
+        await withCheckedContinuation { continuation in
+            t.queue.async { continuation.resume(returning: t.state.bytesOfLastSnapshot) }
+        }
+    }
+
+    /// The queue beside a streaming reply is hashed when it changes, never with each delta.
+    @Test func aDeltaBesideAQueueRehashesOnlyTheMessageItGrew() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        try await t.feed(Self.start)
+        _ = try await queue((0..<3).map { "queued \($0) " + String(repeating: "and more words ", count: 256) }, on: t, from: s)
+        #expect(try await t.snapshot().queue?.items.count == 3)
+
+        try await t.feed(Self.messageStart, Self.textStart, Self.textDelta("Hello"), Self.textDelta(" world"))
+        let bytes = await withCheckedContinuation { continuation in
+            t.queue.async { continuation.resume(returning: t.state.bytesHashedByLastCommit) }
+        }
+        #expect(bytes > 0 && bytes <= "Hello world".utf8.count)
+    }
+
+    static let queueChanges = ["queueing a message", "an edit", "a move", "a delete", "a hold", "a mode", "a clear"]
+
+    /// Every change to the queue is a new revision, and the snapshot that shows it is sized to
+    /// the byte.
+    @Test(arguments: queueChanges)
+    func eachQueueChangeMovesTheRevisionAndSizesItsSnapshot(_ change: String) async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        try await t.feed(Self.start)
+        let ids = try await queue(["first", "second"], on: t, from: s)
+        let before = try await t.snapshot()
+
+        let action: NativeQueueAction? = switch change {
+        case "an edit": .edit(id: ids[0], text: "first, edited")
+        case "a move": .move(id: ids[1], index: 0)
+        case "a delete": .delete(id: ids[0])
+        case "a hold": .hold(id: ids[0], held: true)
+        case "a mode": .setMode(mode: .oneAtATime)
+        case "a clear": .clear
+        default: nil
+        }
+        if let action {
+            let id = UUID()
+            #expect(await t.request(.queue(expectedSessionID: s.piSessionID, generation: s.generation, operationID: id, action: action))
+                == .accepted(operationID: id))
+        } else {
+            _ = try await queue(["third"], on: t, from: s)
+        }
+
+        let after = try await t.snapshot()
+        #expect(after.revision > before.revision)
+        #expect(after.queue != before.queue)
+        #expect(await lastSnapshotBytes(t) == (try JSONEncoder().encode(after).count))
+    }
+
+    /// A steer pi reads leaves the queue and joins the run as a steered message: one revision,
+    /// and a snapshot sized to the byte.
+    @Test func aSteerLandingMovesTheRevisionOnceAndSizesItsSnapshot() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        try await t.feed(Self.start)
+        let op = UUID()
+        // The stub never answers "hang": the steer stays with pi, queued and not yet read.
+        t.queue.async {
+            t.state.handle(.send(expectedSessionID: s.piSessionID, generation: s.generation, operationID: op,
+                                 text: "hang", delivery: .steer, images: nil)) { _ in }
+        }
+        try await eventually("the steer to be handed to pi") {
+            await t.request(.snapshot()).snapshotValue?.queue?.items.first?.state == .steering
+        }
+        try await t.feed(#"{"type":"queue_update","steering":["hang"],"followUp":[]}"#)
+        let before = try await t.snapshot()
+
+        try await t.feed(#"{"type":"message_start","message":{"role":"user","content":"hang","timestamp":1733234569000}}"#)
+        let landed = try await t.snapshot()
+        #expect(landed.revision == before.revision + 1)
+        #expect(landed.queue?.items.isEmpty == true)
+        let message = try #require(landed.provisional.last)
+        #expect(message.origin == .steered && message.operationID == op)
+        #expect(await lastSnapshotBytes(t) == (try JSONEncoder().encode(landed).count))
+    }
     #endif
 
     // MARK: - Streaming

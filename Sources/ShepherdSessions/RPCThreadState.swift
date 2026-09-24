@@ -96,6 +96,11 @@ final class RPCThreadState {
     private var subagentsHash = [NativeSubagent]().hashValue
     private var dialogsHash = [NativeThreadDialog]().hashValue
     private var widgetsHash = [NativeThreadWidget]().hashValue
+    /// The queue as the last commit hashed it, and that hash. The queue is derived state (items,
+    /// mode, pause), so a commit compares it, which is cheap while its texts are the ones it
+    /// hashed, and rehashes it only when it changed.
+    private var hashedQueue: NativeQueue?
+    private var queueHashValue = 0
     #if DEBUG
     /// Tests: text bytes of the entries rehashed since the last commit, and by the last commit.
     private var bytesHashedSinceCommit = 0
@@ -909,10 +914,13 @@ final class RPCThreadState {
 
     private func queueHash() -> Int {
         let queue = queueValue
+        if queue == hashedQueue { return queueHashValue }
+        hashedQueue = queue
         #if DEBUG
         bytesHashedSinceCommit += queue.items.reduce(0) { $0 + $1.text.utf8.count } + (queue.notice?.utf8.count ?? 0)
         #endif
-        return queue.hashValue
+        queueHashValue = queue.hashValue
+        return queueHashValue
     }
 
     private func snapshot(beforeEntryID: String?) -> NativeThreadResult {

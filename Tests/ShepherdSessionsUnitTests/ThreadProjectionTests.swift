@@ -171,6 +171,7 @@ struct ThreadProjectionTests {
         var active: [NativeThreadMessage] = []
         var dialogs: [NativeThreadDialog] = []
         var history: [NativeThreadMessage] = []
+        var queue: NativeQueue? = nil
         var testDescription: String { name }
 
         func base() -> NativeThreadSnapshot {
@@ -179,7 +180,7 @@ struct ThreadProjectionTests {
                 thinking: "medium", supportedActions: RPCThreadState.supportedActions, dialogsSupported: true, dialogs: [],
                 widgets: widgets, messages: [], provisional: [], clipped: clipped, runtime: "rpc",
                 stats: NativeThreadStats(contextTokens: 1, contextWindow: 2, contextPercent: 3, totalTokens: 4, cost: 0.5),
-                commands: [NativeCommand(name: "fix", description: "Fix it", source: "prompt")], subagents: [])
+                commands: [NativeCommand(name: "fix", description: "Fix it", source: "prompt")], subagents: [], queue: queue)
         }
     }
 
@@ -187,6 +188,27 @@ struct ThreadProjectionTests {
         NativeThreadMessage(entryID: "m:\(index)", role: role, blocks: [NativeThreadBlock(kind: .text, text: text)],
                             status: role == "assistant" ? "stop" : nil, timestamp: 1_733_234_567_890 + Double(index))
     }
+
+    private static func queued(_ index: Int) -> NativeQueuedMessage {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-00000000000\(index)")!
+        let images = index == 2 ? [NativeQueuedImage(mimeType: "image/png", name: "shot.png")] : []
+        let text = "queued ü/\(index)\n" + String(repeating: "w", count: 3000)
+        return NativeQueuedMessage(id: id, text: text, images: images, sentAt: 1_733_234_570_000 + Double(index),
+                                   state: index == 0 ? .steering : .queued, held: index == 3)
+    }
+
+    private static let queueFixture = NativeQueue(items: (0..<6).map(queued), mode: .oneAtATime, paused: true, notice: "pi refused it.")
+
+    /// A steered message pi read, and a delivery from the queue it has not started yet.
+    private static let queuedRun: [NativeThreadMessage] = {
+        let steered = NativeThreadMessage(entryID: "user:1733234569000", role: "user",
+                                          blocks: [NativeThreadBlock(kind: .text, text: "look/at \"this\"")],
+                                          origin: .steered, operationID: UUID(uuidString: "6E2A3C1D-3F1B-4D7A-9C2E-1A2B3C4D5E6F"))
+        let parts = [NativeQueuePart(text: "one", sentAt: 1), NativeQueuePart(text: "two", sentAt: 2, images: 1)]
+        let pending = NativeThreadMessage(entryID: "pending:0B1C", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "one\n\ntwo")],
+                                          status: "pending", origin: .queue(parts: parts))
+        return [steered, pending]
+    }()
 
     static let snapshotFixtures: [SnapshotFixture] = [
         SnapshotFixture(name: "empty"),
@@ -209,6 +231,8 @@ struct ThreadProjectionTests {
                                                       toolName: "bash", toolCallID: "c\(index)", status: "running")
                         },
                         history: (0..<10).map { row($0, text: "short") }),
+        SnapshotFixture(name: "a queue and a steered message beside the run", active: queuedRun,
+                        history: (0..<40).map { row($0, text: String(repeating: "q", count: 5000)) }, queue: queueFixture),
         SnapshotFixture(name: "dialogs over budget", clipped: true,
                         dialogs: (0..<8).map { NativeThreadDialog(id: "d\($0)", kind: .editor, title: "Edit \($0)",
                                                                   prefill: String(repeating: "z", count: 20 * 1024)) },
