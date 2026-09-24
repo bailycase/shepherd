@@ -94,6 +94,10 @@ final class RPCSession: @unchecked Sendable {
     private var decodingOffQueue = false
     private var deferredRecords: [Data] = []
     private var recordsInFlight: Bool { decodingOffQueue || !deferredRecords.isEmpty }
+    /// Requests whose deadline passed while records were in flight.
+    private var expiring: [(id: String, type: String, timeout: TimeInterval)] = []
+    /// Tests: requests whose deadline waits on records in flight.
+    var expiringRequestCount: Int { expiring.count }
     /// Tests: records waiting behind an off-queue decode.
     var deferredRecordCount: Int { deferredRecords.count }
 
@@ -252,10 +256,21 @@ final class RPCSession: @unchecked Sendable {
         pendingRequests[requestID] = completion
         send(command, id: requestID)
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-            guard let self, let pending = self.pendingRequests.removeValue(forKey: requestID) else { return }
-            ShepherdLog.warning("rpc session \(self.id) \(command.type) timed out after \(timeout)s")
-            pending(.failure(.timeout))
+            self?.expire(requestID, type: command.type, timeout: timeout)
         }
+    }
+
+    /// A request's deadline passed. An answer that arrived in time may still be decoding off the
+    /// queue, so the verdict waits for the records already read.
+    private func expire(_ requestID: String, type: String, timeout: TimeInterval) {
+        guard pendingRequests[requestID] != nil else { return }
+        if recordsInFlight {
+            expiring.append((requestID, type, timeout))
+            return
+        }
+        guard let pending = pendingRequests.removeValue(forKey: requestID) else { return }
+        ShepherdLog.warning("rpc session \(id) \(type) timed out after \(timeout)s")
+        pending(.failure(.timeout))
     }
 
     /// Graceful stop: SIGTERM the process group, SIGKILL after `killGrace`.
@@ -455,6 +470,9 @@ final class RPCSession: @unchecked Sendable {
                 return
             }
         }
+        let expired = expiring
+        expiring.removeAll()
+        for request in expired { expire(request.id, type: request.type, timeout: request.timeout) }
         failRequestsAfterExit()
         deliverExitIfReady()
     }
