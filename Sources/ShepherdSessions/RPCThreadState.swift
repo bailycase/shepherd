@@ -101,6 +101,10 @@ final class RPCThreadState {
     /// hashed, and rehashes it only when it changed.
     private var hashedQueue: NativeQueue?
     private var queueHashValue = 0
+    /// The queue as the last snapshot sized it, and its encoded size: a snapshot re-encodes the
+    /// queue only when it changed.
+    private var sizedQueue: NativeQueue?
+    private var queueBytesValue = 0
     #if DEBUG
     /// Tests: text bytes of the entries rehashed since the last commit, and by the last commit.
     private var bytesHashedSinceCommit = 0
@@ -108,6 +112,9 @@ final class RPCThreadState {
     /// Tests: JSON encodes the last snapshot made, and its size by arithmetic.
     private var encodesSinceSnapshot = 0
     private(set) var encodesByLastSnapshot = 0
+    /// Tests: JSON bytes those encodes produced.
+    private var bytesEncodedSinceSnapshot = 0
+    private(set) var bytesEncodedByLastSnapshot = 0
     private(set) var bytesOfLastSnapshot = 0
     #endif
     /// Installed by SessionServer: writes a childCommand to the children extension and answers
@@ -179,6 +186,7 @@ final class RPCThreadState {
     var operationsByEntry: [String: UUID] = [:]
 
     private static let encoder = JSONEncoder()
+    private static let queueFieldBytes = #","queue":"#.utf8.count
     private static let ansi = try! NSRegularExpression(
         pattern: "\u{1B}(?:\\[[0-?]*[ -/]*[@-~]|\\][^\u{07}\u{1B}]*(?:\u{07}|\u{1B}\\\\)|[@-Z\\\\-_])"
     )
@@ -923,6 +931,13 @@ final class RPCThreadState {
         return queueHashValue
     }
 
+    private func queueBytes(_ queue: NativeQueue) -> Int {
+        if queue == sizedQueue { return queueBytesValue }
+        sizedQueue = queue
+        queueBytesValue = measured(queue)
+        return queueBytesValue
+    }
+
     private func snapshot(beforeEntryID: String?) -> NativeThreadResult {
         var end = history.count
         if let beforeEntryID {
@@ -934,22 +949,28 @@ final class RPCThreadState {
         }
         #if DEBUG
         encodesSinceSnapshot = 0
+        bytesEncodedSinceSnapshot = 0
         #endif
         let dialogs = Array(self.dialogs.prefix(Self.dialogLimit))
-        let base = NativeThreadSnapshot(
+        var base = NativeThreadSnapshot(
             piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
             model: model, thinking: thinking, supportedActions: Self.supportedActions, dialogsSupported: true,
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
-            runtime: "rpc", stats: stats, commands: commands, subagents: subagents, queue: queueValue
+            runtime: "rpc", stats: stats, commands: commands, subagents: subagents
         )
+        // The rest encodes without the queue, which adds `,"queue":` and its cached size.
+        let queue = queueValue
+        let baseBytes = measured(base) + Self.queueFieldBytes + queueBytes(queue)
+        base.queue = queue
         let sizedDialogs = zip(dialogs, dialogSizes()).map { Sized(value: $0, bytes: $1) }
         let budgeted = Self.budget(
-            base, baseBytes: measured(base), active: activeEntries(), dialogs: sizedDialogs,
+            base, baseBytes: baseBytes, active: activeEntries(), dialogs: sizedDialogs,
             historyEnd: end, history: { self.historyEntry($0) }
         )
         #if DEBUG
         encodesByLastSnapshot = encodesSinceSnapshot
+        bytesEncodedByLastSnapshot = bytesEncodedSinceSnapshot
         bytesOfLastSnapshot = budgeted.bytes
         #endif
         return .snapshot(value: budgeted.snapshot)
@@ -1094,10 +1115,12 @@ final class RPCThreadState {
     }
 
     private func measured<T: Encodable>(_ value: T) -> Int {
+        let bytes = Self.bytes(value)
         #if DEBUG
         encodesSinceSnapshot += 1
+        bytesEncodedSinceSnapshot += bytes
         #endif
-        return Self.bytes(value)
+        return bytes
     }
 
     /// A value that cannot be encoded counts as over every budget, without overflowing a sum.
