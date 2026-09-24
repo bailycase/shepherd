@@ -591,7 +591,8 @@ therefore mutually exclusive without locks.
   1 MiB per queue turn. Only the projection runs on the server queue.
 - Attach stays atomic: snapshot, attachment registration, and output watermark in one queue turn.
 - Callbacks (`onOutput`, `onStateChanged`, …) hop to the main queue in FIFO order. Never call them
-  from the server queue directly.
+  from the server queue directly. `onThreadRevision` alone is paced instead (at most one delivery
+  per display frame, only for watched agents): it says "pull now" and carries no state.
 
 **PTY children.** `PTYSession` resets every child signal disposition to `SIG_DFL` and clears the
 signal mask before exec, using async-signal-safe calls only. Without that, children inherit

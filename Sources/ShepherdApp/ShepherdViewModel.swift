@@ -405,6 +405,15 @@ final class ShepherdViewModel {
         sessions.onThreadServable = { [weak self] agentID in
             self?.threadStores.existing(for: agentID)?.revisionAvailable()
         }
+        // And each revision pi reaches after, within a frame: the server pushes the threads on
+        // screen (those whose poll loop runs), and the store pulls at most every
+        // `NativeThreadStore.pushedPullSpacing`. The polls stay as the fallback.
+        threadStores.onLiveChange = { [weak self] live in
+            self?.sessions.watchThreadRevisions(of: live)
+        }
+        sessions.onThreadRevision = { [weak self] agentID in
+            self?.threadStores.existing(for: agentID)?.revisionAvailable()
+        }
         notifications.onSelectAgent = { [weak self] agentID in
             guard let self, self.state.agents.contains(where: { $0.id == agentID }) else { return }
             self.selectAgent(agentID)

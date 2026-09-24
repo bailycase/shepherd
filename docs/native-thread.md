@@ -222,13 +222,20 @@ output grows.
 - **Polling:** the visible thread's task polls every 200 ms while pi starts, every 500 ms while
   the agent runs, a question is pending, or a subagent is live, and every 2 s otherwise. Each
   poll passes the last revision; older snapshots are ignored.
-- **Pushed revisions:** `revisionAvailable()` says the host has a newer revision. The running
-  poll loop then pulls at once instead of waiting out its pause, pulls once more after a pull
-  in flight however many pushes arrive during it, and pulls at most every
-  `pushedPullSpacing` (33 ms), so a streaming reply lands at about 30 Hz instead of in
-  half-second jumps. A hidden thread has no loop and ignores pushes. The poll interval stays as
-  the fallback, and remote threads keep polling. `NativeThreadStores.existing(for:)` finds an
-  agent's store for a push without making one for a thread never shown.
+- **Pushed revisions:** a local thread on screen pulls each revision its pi reaches within a
+  frame instead of at its next poll. The store says when its poll loop runs (`isLive`,
+  `onLiveChange`), `NativeThreadStores.live` collects those agents, and the view model hands
+  them to the server (`TerminalSessionStore.watchThreadRevisions`), which pushes only watched
+  agents: each revision `RPCThreadState` reaches (or a pane bound to a pi) queues its agent, and
+  one main-queue delivery a display frame (`SessionServer.revisionPushSpacing`) carries every
+  agent queued since, so an agent no one watches costs no main-queue work at all.
+  `onThreadRevision` then calls the agent's `revisionAvailable()`
+  (`NativeThreadStores.existing(for:)`, which never makes a store). The running poll loop pulls
+  at once instead of waiting out its pause, pulls once more after a pull in flight however many
+  pushes arrive during it, and pulls at most every `pushedPullSpacing` (33 ms), so a streaming
+  reply lands at about 30 Hz instead of in half-second jumps. A hidden thread has no loop, is
+  not watched, and ignores a push that crosses its suspend. The poll interval stays as the
+  fallback, and remote threads keep polling: the remote protocol has no push.
 - **Switching:** a hidden thread stops polling (`suspend`) and keeps everything it shows: it
   stays ready and running, with the same rows and pages of history, so showing it again is a
   flip that rebuilds the thread and its composer once. The first pull after (`run`) merges the

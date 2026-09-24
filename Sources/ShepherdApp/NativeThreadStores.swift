@@ -7,16 +7,30 @@ import ShepherdRemote
 @MainActor
 final class NativeThreadStores<Key: Hashable> {
     private var stores: [Key: NativeThreadStore] = [:]
+    /// The keys whose thread is on screen: its store's poll loop runs (`NativeThreadStore.isLive`).
+    private(set) var live: Set<Key> = []
+    /// Told the new `live` whenever it changes: the local app asks its server to push revisions
+    /// for these threads only.
+    var onLiveChange: ((Set<Key>) -> Void)?
 
     func store(for key: Key) -> NativeThreadStore {
         if let store = stores[key] { return store }
         let store = NativeThreadStore()
-        stores[key] = store
+        install(store, for: key)
         return store
     }
 
     /// Gives `key` a store made elsewhere (a test's, which never polls on its own).
-    func install(_ store: NativeThreadStore, for key: Key) { stores[key] = store }
+    func install(_ store: NativeThreadStore, for key: Key) {
+        stores[key] = store
+        store.onLiveChange = { [weak self] isLive in self?.setLive(key, isLive) }
+        setLive(key, store.isLive)
+    }
+
+    private func setLive(_ key: Key, _ isLive: Bool) {
+        let changed = isLive ? live.insert(key).inserted : live.remove(key) != nil
+        if changed { onLiveChange?(live) }
+    }
 
     /// The agent's store if its thread has been shown, without making one: a pushed revision
     /// for a thread never shown has nothing to wake.
