@@ -57,6 +57,14 @@ per-agent `runtime` key (and always encodes `"rpc"` so older remote clients neve
 a PTY). `LegacyTerminalAgents.forgetPresentationPreferences` clears the old per-agent view
 defaults.
 
+The view model starts every restored agent's pi on its first adoption of the workspace,
+whatever has mounted, through `AgentStartQueue`. Thirty pi processes booting at once each take
+several times longer than one alone, so the agent on screen starts first, alone, and the rest
+wait until it serves (or two seconds pass), then start a few at a time (about a third of the
+cores, 2 to 6), each holding its slot until its pi serves or five seconds pass. Selecting an
+agent that is still waiting starts it at once, ahead of the rest. A new agent's pi spawns with
+its creation and never waits in the queue.
+
 ## Status and session reporting
 
 `shepherd-status.ts` connects to the extension socket and reports fire-and-forget NDJSON
@@ -170,9 +178,9 @@ transport differs.
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
     agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
-    the previous run's session until its pi respawns, and pi itself takes a moment to answer
-    `get_state` and `get_messages`. Clients poll from the moment an agent appears, so this is
-    never an error.
+    the previous run's session until its pi respawns (in the launch queue), and pi itself
+    takes a moment to answer `get_state` and `get_messages`. Clients poll from the moment an
+    agent appears, so this is never an error.
   - **Servable signal:** the moment an agent's pi serves (and its pane is bound to that pi,
     whichever comes last), `SessionServer.onNativeThreadServable` tells the local app, once per
     pi, after the state broadcast of the binding. The app wakes that agent's thread store, which

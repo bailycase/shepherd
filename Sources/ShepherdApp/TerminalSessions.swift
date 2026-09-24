@@ -256,6 +256,9 @@ final class TerminalSessionStore {
         }
     }
     private var servableWaiters: [AgentID: [ServableWaiter]] = [:]
+    /// The order restored agents' pi start in, and the work that starts each one queued.
+    private var startQueue = AgentStartQueue()
+    private var queuedStarts: [AgentID: () async -> Bool] = [:]
 
     init(server: SessionServer) {
         self.server = server
@@ -302,6 +305,7 @@ final class TerminalSessionStore {
     private func threadServable(_ agentID: AgentID) {
         for waiter in servableWaiters.removeValue(forKey: agentID) ?? [] { waiter.resume() }
         onThreadServable?(agentID)
+        startFinished(agentID)
     }
 
     /// Returns once `agentID`'s pi serves its thread, or after `limit`, whichever is first.
@@ -498,8 +502,66 @@ final class TerminalSessionStore {
         }
         let session = makeSession(paneID: pane.id, isRPC: rpc)
         sessions[pane.id] = session
-        Task { await start(session, pane: pane, tab: tab) }
+        // The agent-creation flow spawns a new agent's pi and adopts this session.
+        if reservedPanes.contains(pane.id) { return session }
+        guard rpc, let agentID = pane.agentID else {
+            Task { await start(session, pane: pane, tab: tab) }
+            return session
+        }
+        // An agent's pi starts in the queue's order: the ones on screen first.
+        queuedStarts[agentID] = { [weak self, weak session] in
+            guard let self, let session else { return false }
+            return await self.start(session, pane: pane, tab: tab)
+        }
+        if startQueue.enqueue(agentID) { beginStart(agentID, ahead: true) }
+        pumpStarts()
         return session
+    }
+
+    /// At launch: starts every restored agent's pi (in `order`, the sidebar's), whether or not its
+    /// layout has mounted, with `first` (the agents on screen) ahead of the rest
+    /// (`AgentStartQueue`).
+    func startRestoredAgents(_ order: [AgentID], first: [AgentID], in state: ShepherdState) {
+        for agentID in first { startAhead(agentID) }
+        for agentID in first + order {
+            guard let agent = state.agents.first(where: { $0.id == agentID }), let paneID = agent.paneID,
+                  let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+                  let pane = tab.layout.leaf(withID: paneID) else { continue }
+            _ = session(for: pane, in: tab)
+        }
+    }
+
+    /// `agentID` is on screen: if its pi is still waiting to start, it starts now, ahead of the
+    /// others; if it has not been queued yet, it will be as soon as it is.
+    func startAhead(_ agentID: AgentID) {
+        // A new agent's pi is its creation's to spawn, never queued.
+        if let paneID = serverState?.agents.first(where: { $0.id == agentID })?.paneID, reservedPanes.contains(paneID) { return }
+        if startQueue.startAhead(agentID) { beginStart(agentID, ahead: true) }
+    }
+
+    private func beginStart(_ agentID: AgentID, ahead: Bool) {
+        guard let body = queuedStarts.removeValue(forKey: agentID) else {
+            startFinished(agentID)
+            return
+        }
+        Task { [weak self] in
+            let spawned = await body()
+            guard let self else { return }
+            // A pi it spawned holds its place until it serves (`threadServable`), or so long.
+            if spawned {
+                try? await Task.sleep(for: ahead ? AgentStartQueue.aheadHold : AgentStartQueue.slotTimeout)
+            }
+            self.startFinished(agentID)
+        }
+    }
+
+    private func startFinished(_ agentID: AgentID) {
+        startQueue.finished(agentID)
+        pumpStarts()
+    }
+
+    private func pumpStarts() {
+        for agentID in startQueue.next() { beginStart(agentID, ahead: false) }
     }
 
     /// Spawn the pi session for a freshly created agent, bind it to its pane,
@@ -754,7 +816,10 @@ final class TerminalSessionStore {
         handledExits.insert(sessionID)
     }
 
-    private func start(_ session: PaneSession, pane: LeafPane, tab: Tab) async {
+    /// Spawns the pane's process, or adopts the live one already bound to it. True only when it
+    /// spawned one.
+    @discardableResult
+    private func start(_ session: PaneSession, pane: LeafPane, tab: Tab) async -> Bool {
         var createdSessionID: SessionID?
         do {
             try await ensureBootstrapped()
@@ -770,13 +835,13 @@ final class TerminalSessionStore {
 
             if let bound = binding(forPane: session.paneID), aliveSessions.contains(bound) {
                 try await adopt(session, sessionID: bound)
-                return
+                return false
             }
 
             // The agent-creation flow owns this pane's spawn; it will adopt
             // this same PaneSession. Spawning here too put two pi processes
             // in one pane.
-            if reservedPanes.contains(session.paneID) { return }
+            if reservedPanes.contains(session.paneID) { return false }
 
             // No live binding: an agent's primary pane comes back as `pi --mode rpc` (rebuilt
             // from the agent record, resuming its pi session), everything else as a login
@@ -840,6 +905,7 @@ final class TerminalSessionStore {
             }
             try await adopt(session, sessionID: info.id)
             createdSessionID = nil
+            return true
         } catch {
             if let createdSessionID {
                 await discardCreatedSession(
@@ -851,6 +917,7 @@ final class TerminalSessionStore {
             if sessions[session.paneID] === session {
                 session.phase = .failed(String(describing: error))
             }
+            return false
         }
     }
 

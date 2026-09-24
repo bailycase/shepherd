@@ -260,6 +260,8 @@ extension ShepherdViewModel {
         selectedRemoteAgent = nil
         selectionHistory.removeAll { $0 == id }
         selectionHistory.append(id)
+        // A restored agent still waiting to start its pi starts now, ahead of the others.
+        sessions.startAhead(id)
         selectedAgentID = id
         selectedSpaceID = agent.spaceID
         revealLocalSpace(agent.spaceID)

@@ -33,13 +33,16 @@ final class AppHarness {
     }
 
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
-    /// server's snapshot.
+    /// server's snapshot. `restoringAgents` starts every seeded agent's pi at once, as a launch
+    /// does; otherwise an agent's pi starts when a test asks for its pane's session (most tests
+    /// seed agents only to look at them, with no pi on PATH).
     @discardableResult
-    func start(with state: ShepherdState? = nil) async throws -> ShepherdViewModel {
+    func start(with state: ShepherdState? = nil, restoringAgents: Bool = false) async throws -> ShepherdViewModel {
         if let state { try await server.putState(state) }
         let vm = ShepherdViewModel(
             server: server, settings: settings, keybindings: keybindings, themeManager: themeManager,
-            remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in }
+            remoteHosts: remoteHosts, sidebarDefaults: defaults, themeInstaller: { _ in },
+            restoresAgentsAtLaunch: restoringAgents
         )
         self.vm = vm
         let server = server
