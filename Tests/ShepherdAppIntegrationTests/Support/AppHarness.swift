@@ -199,7 +199,7 @@ final class RemoteHostHarness {
 @MainActor
 func eventuallyAsync(
     _ what: String,
-    timeout: Duration = .seconds(10),
+    timeout: Duration = defaultWaitTimeout,
     _ condition: @MainActor () async throws -> Bool
 ) async throws {
     let deadline = ContinuousClock.now + timeout

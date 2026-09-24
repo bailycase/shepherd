@@ -67,7 +67,7 @@ extension ScratchServer {
     }
 
     /// Wait until the session's headless screen shows `text`.
-    func waitForScreen(_ sessionID: SessionID, toContain text: String, timeout: Duration = .seconds(10)) async throws {
+    func waitForScreen(_ sessionID: SessionID, toContain text: String, timeout: Duration = defaultWaitTimeout) async throws {
         do {
             try await eventually("the screen to show \(text.debugDescription)", timeout: timeout) {
                 await screen(sessionID).contains(text)
@@ -80,7 +80,7 @@ extension ScratchServer {
     }
 
     /// The child is reaped. Its last bytes may still be draining; wait on the screen for those.
-    func waitForExit(_ sessionID: SessionID, timeout: Duration = .seconds(10)) async throws {
+    func waitForExit(_ sessionID: SessionID, timeout: Duration = defaultWaitTimeout) async throws {
         try await eventually("session \(sessionID) to exit", timeout: timeout) {
             await server.sessionInfo(sessionID: sessionID)?.isAlive == false
         }
