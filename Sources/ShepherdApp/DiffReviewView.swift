@@ -1,434 +1,435 @@
 import SwiftUI
+import AppKit
+import ShepherdUI
 import ShepherdCore
+import ShepherdRemote
 
-struct DiffReviewPane: View {
-    var vm: ShepherdViewModel
-    @Bindable var session: ReviewSession
-    let isFocused: Bool
-    @ObservedObject private var themes = ThemeManager.shared
-    @State private var editingTarget: CommentTarget?
-    @State private var draft = ""
-    @State private var collapsedFiles: Set<String> = []
-    @State private var highlightedHunks: [HunkKey: [AttributedString]] = [:]
+/// What the review pane can ask of its host (local agents and remote agents differ).
+struct ReviewActions {
+    var setPullRequest: (Bool) -> Void
+    /// Send the overall and inline comments as the agent's next turn (queued if it is mid-turn).
+    var requestChanges: () -> Void
+    /// Ask the agent to commit what is under review.
+    var commit: () -> Void
+    var close: () -> Void
+    /// Local reviews only: discard a file's changes (confirmed first) in the directory its diff
+    /// came from, open it in an editor.
+    var revert: ((DiffFile, _ cwd: String) -> Void)? = nil
+    var open: ((DiffFile) -> Void)? = nil
+    /// Return keyboard focus to the thread's composer (esc).
+    var focusThread: () -> Void = {}
+}
 
-    private struct CommentTarget: Hashable {
-        let fileID: String
-        let lineID: Int
+/// The review pane (Review board): a companion docked right of the thread. A header with the
+/// scope and totals, the file strip, sticky file headers over a syntax-colored unified diff with
+/// long runs folded, inline comments, and the review composer.
+///
+/// Equal when it shows the same session and touched files: the actions are rebuilt by every
+/// parent render but always act on this session, so a thread streaming beside the pane never
+/// re-renders it.
+struct ReviewPane: View, Equatable {
+    let session: ReviewSession
+    let actions: ReviewActions
+    /// Files the running agent is editing right now: their chips carry a running dot.
+    var touchedPaths: Set<String> = []
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.session === rhs.session && lhs.touchedPaths == rhs.touchedPaths
     }
 
-    private struct HunkKey: Hashable {
-        let fileID: String
-        let hunkID: String
+    var body: some View {
+        // A review retargeted at another repository starts over: folds, the comment being
+        // edited, the current file, and syntax colors all belonged to the old diff.
+        ReviewPaneContent(session: session, actions: actions, touchedPaths: touchedPaths)
+            .id(Identity(session: session.id, cwd: session.cwd))
+    }
+
+    private struct Identity: Hashable {
+        let session: UUID
+        let cwd: String
+    }
+}
+
+/// The review pane beside a thread: observes the agent's thread for the files it is editing.
+struct ReviewPaneHost: View {
+    let session: ReviewSession
+    let actions: ReviewActions
+    var store: NativeThreadStore
+    @State private var touched = ReviewTouchedPaths()
+
+    var body: some View {
+        ReviewPane(session: session, actions: actions,
+                   touchedPaths: touched.paths(store.messages, running: store.snapshot?.running ?? false))
+    }
+}
+
+/// The pane for one session; its state lives in `ReviewPaneModel`.
+struct ReviewPaneContent: View {
+    let session: ReviewSession
+    let touchedPaths: Set<String>
+    @State private var model: ReviewPaneModel
+    @FocusState private var summaryFocused: Bool
+    @FocusState private var commentFocused: Bool
+
+    init(session: ReviewSession, actions: ReviewActions, touchedPaths: Set<String>) {
+        self.init(model: ReviewPaneModel(session: session, actions: actions), touchedPaths: touchedPaths)
+    }
+
+    /// A pane over a model the caller holds (tests drive it as the pane's own controls do).
+    init(model: ReviewPaneModel, touchedPaths: Set<String> = []) {
+        session = model.session
+        self.touchedPaths = touchedPaths
+        _model = State(initialValue: model)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Rectangle()
-                .fill(Tokens.separator)
-                .frame(height: 1)
-            content
-            if session.loadError == nil {
-                Rectangle()
-                    .fill(Tokens.separator)
-                    .frame(height: 1)
-                bottomBar
+            ReviewHeader(model: model, session: session)
+            if !session.files.isEmpty {
+                ReviewFileStrip(model: model, session: session, touchedPaths: touchedPaths)
+                    .nwTransition(.content)
             }
+            ReviewBody(model: model, session: session, commentFocused: $commentFocused)
+            ReviewComposerBar(model: model, session: session, focused: $summaryFocused)
         }
-        .background(Tokens.terminalBg)
-        .accessibilityLabel("diff review")
-        .accessibilityValue(isFocused ? "focused" : "not focused")
-        .onChange(of: themes.current.id) {
-            highlightedHunks.removeAll()
+        // Loading, the diff, "No changes", and an error cross-fade, as does one side's diff for
+        // the other (Local | PR); a reload of the same side changes in place.
+        .nwAnimation(.content, value: ReviewBody.Content(session))
+        // Controls read focus from their nearest focusable ancestor: without this boundary the
+        // focused pane would draw every button's focus ring.
+        .focusable(false)
+        .focusable()
+        .focusEffectDisabled()
+        .onKeyPress(characters: .init(charactersIn: "jknpvc")) { press in
+            guard !commentFocused, !summaryFocused else { return .ignored }
+            return model.handleKey(press.characters) ? .handled : .ignored
         }
-        .onChange(of: session.cwd) {
-            editingTarget = nil
-            draft = ""
-            collapsedFiles.removeAll()
-            highlightedHunks.removeAll()
+        .onKeyPress(.escape) { model.actions.focusThread(); return .handled }
+        .background(Color.nw.bgWindow)
+        .modifier(RevertConfirmation(model: model))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Review")
+    }
+}
+
+/// Per-file Revert, confirmed first (local working-tree reviews only).
+private struct RevertConfirmation: ViewModifier {
+    @Bindable var model: ReviewPaneModel
+
+    func body(content: Content) -> some View {
+        content.sheet(item: $model.reverting) { file in
+            RevertFileDialog(path: file.displayPath, repository: (model.cwd as NSString).abbreviatingWithTildeInPath, isNew: file.isNew,
+                             revert: { model.actions.revert?(file, model.cwd); model.reverting = nil },
+                             cancel: { model.reverting = nil })
+        }
+    }
+}
+
+// MARK: Header
+
+/// The pane header: "Review" over "4 files · +67 −58", the Local | PR control, the options
+/// menu, and close.
+private struct ReviewHeader: View, Equatable {
+    @Bindable var model: ReviewPaneModel
+    let session: ReviewSession
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
+
+    var body: some View {
+        NWPaneHeader("Review", closeLabel: "Close review", close: model.actions.close) {
+            // Cross-faded, not rolled: rolling digits through its colored runs leaves the old
+            // count's ghost for most of a second.
+            subtitle.truncationMode(.middle)
+                .nwContentTransition(.crossFade)
+                .nwAnimation(.content, value: [session.isLoading ? -1 : session.files.count, session.addedCount, session.removedCount])
+        } controls: {
+            NWSegmentedPicker("Diff", selection: $model.pullRequestMode, options: [(false, "Local"), (true, prLabel)], size: .s)
+                .disabled(session.isLoading)
+            NWOptionsMenu("Review options") {
+                Button("Expand All Files") { model.expandAllFiles() }
+                Button("Collapse All Files") { model.collapseAllFiles() }
+                Divider()
+                Button("Copy Review as Text") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(formatReview(files: session.files, comments: session.comments, summary: session.summary,
+                                                                reference: session.reference), forType: .string)
+                }
+            }
+            .nwHelp("Review options")
         }
     }
 
-    private var header: some View {
-        HStack(spacing: Metrics.spacing8) {
-            VStack(alignment: .leading, spacing: Metrics.spacing2) {
-                Text("review")
-                    .font(Fonts.mono(12, .semibold))
-                    .foregroundStyle(isFocused ? Tokens.textPrimary : Tokens.textSecondary)
-                Text("\(cwdTail) · \(session.isPRMode ? "PR · \(session.reference ?? "resolving…")" : session.reference ?? "working tree vs HEAD")")
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textMetadata)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer(minLength: Metrics.spacing8)
-            Text("\(session.comments.count) comment\(session.comments.count == 1 ? "" : "s")")
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.textMetadata)
-            // Mode toggle: uncommitted working-tree changes vs the branch's PR.
-            HStack(spacing: 0) {
-                ReviewModeButton("local", active: !session.isPRMode) {
-                    if session.isPRMode { vm.reloadReview(session, reference: nil) }
-                }
-                ReviewModeButton("pr", active: session.isPRMode) {
-                    if !session.isPRMode { vm.reloadReview(session, reference: "pr") }
-                }
-            }
-            .overlay(Rectangle().stroke(Tokens.paneBorder, lineWidth: 1))
-            ReviewActionButton("submit", prominent: true, disabled: session.loadError != nil || session.isSubmitting || session.isLoading) {
-                vm.submitReview(session)
-            }
-        }
-        .padding(.horizontal, Metrics.spacing12)
-        .frame(height: Metrics.headerHeight)
-        .frame(maxWidth: .infinity)
+    private var prLabel: String {
+        guard session.isPRMode, let reference = session.reference else { return "PR" }
+        return "PR · \(reference)"
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if let loadError = session.loadError {
-            reviewMessage(loadError)
-        } else if session.isLoading {
-            Spacer().frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if session.files.isEmpty {
-            reviewMessage("no changes")
-        } else {
-            ScrollView(.vertical, showsIndicators: true) {
-                // pinnedViews keeps the current file's header at the top
-                // while its hunks scroll under it.
+    /// "4 files · +67 −58", led by a reference the agent asked for ("main..HEAD · …"), and before
+    /// that by the directory's name when it is not the agent's own ("project-worktree · …").
+    private var subtitle: Text {
+        let directory = session.otherDirectoryName.map { "\($0) · " } ?? ""
+        let scope = directory + (!session.isPRMode ? session.reference.map { "\($0) · " } ?? "" : "")
+        if session.isLoading { return Text("\(scope)loading…") }
+        let count = session.files.count
+        if count == 0 { return Text("\(scope)0 files") }
+        let added = Text("+\(session.addedCount)").foregroundStyle(Color.nw.done)
+        let removed = Text("\u{2212}\(session.removedCount)").foregroundStyle(Color.nw.failed)
+        return Text("\(scope)\(count) file\(count == 1 ? "" : "s") · \(added) \(removed)")
+    }
+}
+
+// MARK: File strip
+
+private struct ReviewFileStrip: View {
+    let model: ReviewPaneModel
+    let session: ReviewSession
+    let touchedPaths: Set<String>
+
+    var body: some View {
+        NWFileStrip(items, selection: model.currentFile, animatesSelection: !model.movedByKey) { model.select($0) }
+            .overlay(alignment: .bottom) { NWHairline() }
+    }
+
+    private var items: [NWFileStrip.Item] {
+        session.files.map { file in
+            NWFileStrip.Item(id: file.id, path: file.displayPath, status: file.reviewStatus, added: file.addedCount, removed: file.removedCount,
+                             isViewed: session.viewed.contains(file.id),
+                             isTouched: touchedPaths.contains { reviewFile(matching: $0, in: [file]) != nil })
+        }
+    }
+}
+
+// MARK: Diff
+
+/// The diff, or its loading, empty, and error states.
+private struct ReviewBody: View, Equatable {
+    let model: ReviewPaneModel
+    let session: ReviewSession
+    var commentFocused: FocusState<Bool>.Binding
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
+
+    /// What the body shows.
+    enum Content: Equatable {
+        case error, loading, empty
+        /// The diff of one side (`pr`: the PR's), so switching sides swaps the whole list.
+        case diff(pr: Bool)
+
+        @MainActor init(_ session: ReviewSession) {
+            if session.loadError != nil { self = .error }
+            else if session.isLoading && session.files.isEmpty { self = .loading }
+            else if session.files.isEmpty { self = .empty }
+            else { self = .diff(pr: session.filesArePR) }
+        }
+    }
+
+    var body: some View {
+        // Overlaid, so the state leaving and the one arriving cross-fade in the same place.
+        ZStack {
+            switch Content(session) {
+            case .error:
+                NWBanner(.failed, title: session.loadError ?? "")
+                    .padding(NW.Space.l)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .nwTransition(.content)
+            case .loading:
+                HStack(spacing: NW.Space.m) {
+                    ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.reviewLoadingSpinner))
+                    Text("Loading the diff…").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .nwTransition(.content)
+            case .empty:
+                NWEmptyState(Text("No changes"), message: emptyMessage, showsMark: false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .nwTransition(.content)
+            case .diff(let pr):
+                ReviewDiffList(model: model, session: session, commentFocused: commentFocused)
+                    .id(pr)
+                    .nwTransition(.content)
+            }
+        }
+    }
+
+    private var emptyMessage: String {
+        if session.isPRMode { return "This branch matches its PR base." }
+        return session.reference.map { "\($0) has no changes." } ?? "The working tree matches HEAD."
+    }
+}
+
+private struct ReviewDiffList: View, Equatable {
+    let model: ReviewPaneModel
+    let session: ReviewSession
+    var commentFocused: FocusState<Bool>.Binding
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
+
+    var body: some View {
+        let canRevert = model.actions.revert != nil && !session.isPRMode
+        let canOpen = model.actions.open != nil
+        ScrollViewReader { proxy in
+            ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(session.files) { file in
-                        fileSection(file)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Highlight every hunk up front (yielding between hunks so the
-            // first frame and scrolling stay responsive); LazyVStack row
-            // creation then only does dictionary lookups. Keyed to the file
-            // list too so the fill-in after the async git load triggers it.
-            .task(id: "\(themes.current.id)-\(session.files.count)") {
-                let style = highlightStyle
-                for file in session.files {
-                    for hunk in file.hunks {
-                        let key = HunkKey(fileID: file.id, hunkID: hunk.id)
-                        guard highlightedHunks[key] == nil else { continue }
-                        highlightedHunks[key] = CodeHighlight.highlightLines(
-                            hunk.lines.map(\.text), path: file.displayPath, style: style
+                        let folded = model.isFolded(file.id)
+                        DiffFileSection(
+                            model: model, file: file, rows: folded ? [] : model.rows(for: file),
+                            comments: session.commentsByFile[file.id] ?? [:],
+                            editingLine: model.editing?.fileID == file.id ? model.editing?.lineID : nil,
+                            isFolded: folded, isViewed: session.viewed.contains(file.id),
+                            canRevert: canRevert, canOpen: canOpen, commentFocused: commentFocused
                         )
-                        await Task.yield()
-                        if Task.isCancelled { return }
                     }
                 }
+                // A reload of the same side (after a Revert, a refresh) lands at once: easing the
+                // sections' offsets under pinned headers mid-scroll opens and closes blank gaps.
+                .nwAnimation(.disclosure, value: model.disclosures)
             }
+            .modifier(ReviewScrollFollower(model: model, session: session, proxy: proxy))
         }
+        .task(id: session.files) { await model.highlightFiles(style: .theme) }
+        .onAppear { if model.currentFile == nil { model.currentFile = session.files.first?.id } }
+    }
+}
+
+/// Scrolls the diff to a requested file (the strip, n/p, a "review ›" link) or hunk (j/k). Its
+/// own view, so the requests it watches never re-render the list. A click or a link scrolls
+/// there; keyboard navigation lands at once.
+private struct ReviewScrollFollower: ViewModifier {
+    let model: ReviewPaneModel
+    let session: ReviewSession
+    let proxy: ScrollViewProxy
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: session.focusRequest) { _, _ in scrollToFocus(animated: true) }
+            // A file asked for before the diff loaded: the diff opens there.
+            .onChange(of: session.files) { _, _ in scrollToFocus(animated: false) }
+            .onChange(of: model.currentHunk) { _, hunk in
+                if let hunk { proxy.scrollTo(hunk, anchor: .top) }
+            }
+            .onAppear { DispatchQueue.main.async { scrollToFocus(animated: false) } }
     }
 
-    private func reviewMessage(_ text: String) -> some View {
-        VStack(spacing: Metrics.spacing8) {
-            Text(text)
-                .font(Fonts.mono(11))
-                .foregroundStyle(session.loadError == nil ? Tokens.textDim : Tokens.statusBlocked)
-            ReviewActionButton("close") {
-                vm.cancelReview(session)
-            }
+    private func scrollToFocus(animated: Bool) {
+        guard let id = model.takeFocusRequest() else { return }
+        if animated, !model.movedByKey {
+            withNWAnimation(.scroll) { proxy.scrollTo(id, anchor: .top) }
+        } else {
+            proxy.scrollTo(id, anchor: .top)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// One file: its pinned header and rows. Equal when nothing it draws changed, so a comment or a
+/// fold in one file never re-renders the others.
+private struct DiffFileSection: View, Equatable {
+    let model: ReviewPaneModel
+    let file: DiffFile
+    let rows: [NWDiffRow]
+    let comments: [Int: ReviewComment]
+    let editingLine: Int?
+    let isFolded: Bool
+    let isViewed: Bool
+    let canRevert: Bool
+    let canOpen: Bool
+    var commentFocused: FocusState<Bool>.Binding
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.model === rhs.model && lhs.file == rhs.file && lhs.rows == rhs.rows && lhs.comments == rhs.comments
+            && lhs.editingLine == rhs.editingLine && lhs.isFolded == rhs.isFolded && lhs.isViewed == rhs.isViewed
+            && lhs.canRevert == rhs.canRevert && lhs.canOpen == rhs.canOpen
     }
 
-    private func fileSection(_ file: DiffFile) -> some View {
-        let collapsed = collapsedFiles.contains(file.id)
-        return Section {
-            if !collapsed {
-                ForEach(file.hunks) { hunk in
-                    hunkView(file: file, hunk: hunk)
+    var body: some View {
+        Section {
+            // Where the file's rows start: a fold eases only while the file sits in its place.
+            Color.clear.frame(height: 0)
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .scrollView).minY } action: { model.noteRowsTop($0, of: file.id) }
+            if !isFolded {
+                if file.isBinary {
+                    Text("Binary file")
+                        .font(.nw(.caption))
+                        .foregroundStyle(Color.nw.textTertiary)
+                        .padding(.vertical, NW.Space.m)
+                        .padding(.leading, NWDiffMetrics.annotationLeading)
+                } else {
+                    NWDiffView(rows, onComment: { model.startComment(fileID: file.id, lineID: $0.key) },
+                               onExpand: { model.expandFold($0, in: file.id) }, onExpandFile: { model.expandFile(file.id) }) { line in
+                        annotation(line)
+                    }
                 }
-                Spacer().frame(height: Metrics.spacing12)
             }
         } header: {
-            fileHeader(file, collapsed: collapsed)
+            NWFileHeader(path: file.displayPath, hunkCount: file.hunks.count, commentCount: comments.count,
+                         isExpanded: !isFolded, isViewed: isViewed,
+                         toggle: { model.toggleFolded(file.id) }, toggleViewed: { model.toggleViewed(file.id) },
+                         revert: canRevert ? { model.reverting = file } : nil,
+                         open: canOpen ? { model.actions.open?(file) } : nil)
+                .contentShape(Rectangle())
+                .onTapGesture { model.point(at: file.id) }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { model.noteHeaderHeight($0) }
         }
     }
 
-    private func fileHeader(_ file: DiffFile, collapsed: Bool) -> some View {
-        let commentCount = session.commentCountByFile[file.id] ?? 0
-        return Button {
-            if collapsed {
-                collapsedFiles.remove(file.id)
-            } else {
-                collapsedFiles.insert(file.id)
-            }
-        } label: {
-            HStack(spacing: Metrics.spacing8) {
-                Text(collapsed ? "▸" : "▾")
-                    .foregroundStyle(Tokens.textMetadata)
-                Text(file.displayPath)
-                    .font(Fonts.mono(11.5, .medium))
-                    .foregroundStyle(Tokens.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: Metrics.spacing8)
-                if collapsed && commentCount > 0 {
-                    Text("\(commentCount)↳")
-                        .foregroundStyle(Tokens.textSecondary)
-                }
-                if file.addedCount > 0 {
-                    Text("+\(file.addedCount)")
-                        .foregroundStyle(Tokens.statusWorking)
-                }
-                if file.removedCount > 0 {
-                    Text("-\(file.removedCount)")
-                        .foregroundStyle(Tokens.statusBlocked)
-                }
-                ForEach(fileBadges(file), id: \.self) { badge in
-                    Text(badge)
-                        .foregroundStyle(Tokens.textDim)
-                }
-            }
-            .font(Fonts.mono(10.5))
-            .padding(.horizontal, Metrics.spacing12)
-            .frame(height: Metrics.rowHeight)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Tokens.rowActiveHeader)
-            .contentShape(Rectangle())
+    @ViewBuilder private func annotation(_ line: NWDiffLineContent) -> some View {
+        if editingLine == line.key {
+            ReviewCommentEditor(initialText: comments[line.key]?.text ?? "", focused: commentFocused,
+                                save: { model.saveComment($0, fileID: file.id, lineID: line.key) },
+                                cancel: { model.cancelComment() })
+                .nwTransition(.disclosure)
+        } else if let comment = comments[line.key] {
+            NWInlineComment(initial: ReviewAuthor.initial, author: "You",
+                            meta: "line \(comment.lineNumber) · \(reviewCommentAge(comment.createdAt))", text: comment.text,
+                            onEdit: { model.startComment(fileID: file.id, lineID: line.key) },
+                            onDelete: { model.deleteComment(fileID: file.id, lineID: line.key) })
+                .nwTransition(.disclosure)
         }
-        .buttonStyle(.plain)
-    }
-
-    private func fileBadges(_ file: DiffFile) -> [String] {
-        var badges: [String] = []
-        if file.isNew { badges.append("new") }
-        if file.isDeleted { badges.append("deleted") }
-        if file.isRenamed { badges.append("renamed") }
-        if file.isBinary { badges.append("binary") }
-        return badges
-    }
-
-    private var highlightStyle: CodeHighlight.Style { Tokens.codeHighlightStyle }
-
-    private func hunkView(file: DiffFile, hunk: DiffHunk) -> some View {
-        let key = HunkKey(fileID: file.id, hunkID: hunk.id)
-        let highlightedLines = highlightedHunks[key] ?? []
-        return VStack(alignment: .leading, spacing: 0) {
-            Text(hunk.header)
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.textDim)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Metrics.spacing8)
-                .frame(height: Metrics.rowHeight)
-                .background(Tokens.workspaceBg)
-            ForEach(hunk.lines.indices, id: \.self) { index in
-                let line = hunk.lines[index]
-                let highlighted = highlightedLines.indices.contains(index)
-                    ? highlightedLines[index]
-                    : AttributedString(line.text)
-                lineView(file: file, line: line, highlighted: highlighted)
-            }
-        }
-    }
-
-    private func lineView(file: DiffFile, line: DiffLine, highlighted: AttributedString) -> some View {
-        let target = CommentTarget(fileID: file.id, lineID: line.id)
-        let comment = session.commentsByLine[.init(fileID: target.fileID, lineID: target.lineID)]
-        return VStack(alignment: .leading, spacing: 0) {
-            Button {
-                beginComment(file: file, line: line)
-            } label: {
-                diffLineRow(line, highlighted: highlighted)
-            }
-            .buttonStyle(.plain)
-            .contentShape(Rectangle())
-
-            if editingTarget == target {
-                composer(target: target)
-            } else if let comment {
-                commentRow(comment) {
-                    beginComment(file: file, line: line)
-                }
-            }
-        }
-    }
-
-    private func diffLineRow(_ line: DiffLine, highlighted: AttributedString) -> some View {
-        let background: Color = switch line.kind {
-        case .added: Tokens.statusWorking.opacity(0.12)
-        case .removed: Tokens.statusBlocked.opacity(0.12)
-        case .context: Color.clear
-        }
-        return HStack(spacing: Metrics.spacing5) {
-            Text(line.oldLine.map(String.init) ?? "")
-                .foregroundStyle(Tokens.textMetadata)
-                .frame(width: Metrics.spacing20 * 2, alignment: .trailing)
-            Text(line.newLine.map(String.init) ?? "")
-                .foregroundStyle(Tokens.textMetadata)
-                .frame(width: Metrics.spacing20 * 2, alignment: .trailing)
-            Text(line.kind.reviewMarker)
-                .frame(width: Metrics.spacing20, alignment: .center)
-                .foregroundStyle(line.kind == .added ? Tokens.statusWorking : line.kind == .removed ? Tokens.statusBlocked : Tokens.textMetadata)
-            Text(highlighted)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .font(Fonts.mono(10.5))
-        .foregroundStyle(Tokens.textPrimary)
-        .padding(.horizontal, Metrics.spacing8)
-        .frame(height: Metrics.rowHeight)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(background)
-    }
-
-    private func commentRow(_ comment: ReviewComment, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: Metrics.spacing5) {
-                Text("↳")
-                    .foregroundStyle(Tokens.textMetadata)
-                Text(comment.text)
-                    .font(Fonts.mono(10.5))
-                    .foregroundStyle(Tokens.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, Metrics.spacing8)
-            .padding(.vertical, Metrics.spacing5)
-            .padding(.leading, Metrics.spacing20 * 2)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Tokens.rowSelection)
-            .overlay(Rectangle().stroke(Tokens.paneBorder, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func composer(target: CommentTarget) -> some View {
-        VStack(alignment: .leading, spacing: Metrics.spacing5) {
-            TextEditor(text: $draft)
-                .font(Fonts.mono(10.5))
-                .foregroundStyle(Tokens.textPrimary)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: Metrics.rowHeight * 2, maxHeight: Metrics.rowHeight * 3)
-                .padding(.horizontal, Metrics.spacing5)
-                .background(Tokens.workspaceBg)
-                .overlay(Rectangle().stroke(Tokens.paneBorder, lineWidth: 1))
-                // Enter saves the comment; ⇧Enter inserts a newline.
-                .onKeyPress(.return, phases: .down) { press in
-                    guard !press.modifiers.contains(.shift) else { return .ignored }
-                    saveComment(target)
-                    return .handled
-                }
-            HStack(spacing: Metrics.spacing5) {
-                Spacer(minLength: 0)
-                ReviewActionButton("cancel") {
-                    editingTarget = nil
-                }
-                ReviewActionButton("save", prominent: true) {
-                    saveComment(target)
-                }
-            }
-        }
-        .padding(.horizontal, Metrics.spacing20 * 2)
-        .padding(.vertical, Metrics.spacing5)
-        .background(Tokens.rowSelection)
-    }
-
-    private var bottomBar: some View {
-        HStack(spacing: Metrics.spacing8) {
-            TextField(
-                "",
-                text: $session.summary,
-                prompt: Text("overall comments…").foregroundStyle(Tokens.textDim)
-            )
-            .textFieldStyle(.plain)
-            .font(Fonts.mono(10.5))
-            .foregroundStyle(Tokens.textPrimary)
-            .padding(.horizontal, Metrics.spacing8)
-            .frame(height: Metrics.rowHeight)
-            .overlay(Rectangle().stroke(Tokens.paneBorder, lineWidth: 1))
-            ReviewActionButton("submit", prominent: true, disabled: session.loadError != nil || session.isSubmitting || session.isLoading) {
-                vm.submitReview(session)
-            }
-        }
-        .padding(.horizontal, Metrics.spacing12)
-        .padding(.vertical, Metrics.spacing8)
-    }
-
-    private var cwdTail: String {
-        let expanded = (session.cwd as NSString).expandingTildeInPath
-        let tail = (expanded as NSString).lastPathComponent
-        return tail.isEmpty ? expanded : tail
-    }
-
-    private func beginComment(file: DiffFile, line: DiffLine) {
-        editingTarget = CommentTarget(fileID: file.id, lineID: line.id)
-        draft = session.commentsByLine[.init(fileID: file.id, lineID: line.id)]?.text ?? ""
-    }
-
-    private func saveComment(_ target: CommentTarget) {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        session.comments.removeAll { $0.fileID == target.fileID && $0.lineID == target.lineID }
-        if !text.isEmpty,
-           let file = session.files.first(where: { $0.id == target.fileID }),
-           let line = file.hunks.flatMap(\.lines).first(where: { $0.id == target.lineID }) {
-            session.comments.append(ReviewComment(
-                fileID: file.id,
-                lineID: line.id,
-                filePath: file.displayPath,
-                lineNumber: line.newLine ?? line.oldLine ?? 0,
-                marker: line.kind.reviewMarker,
-                content: line.text,
-                text: text
-            ))
-        }
-        editingTarget = nil
     }
 }
 
-/// One half of the local/pr segmented mode toggle: flat mono text, the
-/// active side filled like a selected row.
-private struct ReviewModeButton: View {
-    let label: String
-    let active: Bool
-    let action: () -> Void
+/// The comment being written, with its own draft: typing re-renders only the editor.
+private struct ReviewCommentEditor: View {
+    @State private var draft: String
+    var focused: FocusState<Bool>.Binding
+    let save: (String) -> Void
+    let cancel: () -> Void
 
-    init(_ label: String, active: Bool, action: @escaping () -> Void) {
-        self.label = label
-        self.active = active
-        self.action = action
+    init(initialText: String, focused: FocusState<Bool>.Binding, save: @escaping (String) -> Void, cancel: @escaping () -> Void) {
+        _draft = State(initialValue: initialText)
+        self.focused = focused
+        self.save = save
+        self.cancel = cancel
     }
 
     var body: some View {
-        Button(label, action: action)
-            .buttonStyle(.plain)
-            .font(Fonts.mono(10.5, active ? .medium : .regular))
-            .foregroundStyle(active ? Tokens.textPrimary : Tokens.textDim)
-            .padding(.horizontal, Metrics.spacing8)
-            .frame(height: Metrics.rowHeight)
-            .background(active ? Tokens.rowSelection : Color.clear)
+        NWCommentEditor(text: $draft, isFocused: focused, onSave: { save(draft) }, onCancel: cancel)
     }
 }
 
-private struct ReviewActionButton: View {
-    let label: String
-    let prominent: Bool
-    let disabled: Bool
-    let action: () -> Void
+/// The reviewer as a comment author: "You", with the account name's initial on the avatar.
+enum ReviewAuthor {
+    static let initial: String = NSFullUserName().first.map { String($0).uppercased() } ?? "Y"
+}
 
-    init(_ label: String, prominent: Bool = false, disabled: Bool = false, action: @escaping () -> Void) {
-        self.label = label
-        self.prominent = prominent
-        self.disabled = disabled
-        self.action = action
-    }
+// MARK: Composer
+
+/// The review composer at the foot of the pane. Reads the summary on its own, so typing never
+/// re-renders the diff.
+private struct ReviewComposerBar: View, Equatable {
+    let model: ReviewPaneModel
+    @Bindable var session: ReviewSession
+    var focused: FocusState<Bool>.Binding
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
-        Button(label, action: action)
-            .buttonStyle(.plain)
-            .font(Fonts.mono(10.5, prominent ? .medium : .regular))
-            .foregroundStyle(prominent ? Tokens.textPrimary : Tokens.textSecondary)
-            .padding(.horizontal, Metrics.spacing8)
-            .frame(height: Metrics.rowHeight)
-            .overlay(Rectangle().stroke(prominent ? Tokens.accentButton : Tokens.paneBorder, lineWidth: 1))
-            .disabled(disabled)
+        let hasReview = !session.comments.isEmpty || !session.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        NWReviewComposer(text: $session.summary, isFocused: focused, inlineCount: session.comments.count,
+                         canCommit: !session.isSubmitting && !session.files.isEmpty && !session.isPRMode,
+                         canRequestChanges: !session.isSubmitting && hasReview,
+                         onCommit: { model.actions.commit() }, onRequestChanges: { model.actions.requestChanges() })
+            .padding(NW.Space.l)
+            .overlay(alignment: .top) { NWHairline() }
     }
 }

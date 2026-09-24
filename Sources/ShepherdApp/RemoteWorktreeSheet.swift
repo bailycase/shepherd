@@ -1,4 +1,5 @@
 import SwiftUI
+import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
@@ -8,12 +9,28 @@ struct RemoteWorktreeSheet: View {
     let finalize: Bool
     @State private var endpointID: UUID?
     @State private var transportID: UUID?
+    /// Set only by previews: the finalize form as a ready host fills it, and no query is sent.
+    private let staged: Staged?
 
-    init(vm: ShepherdViewModel, target: RemoteAgentRef, finalize: Bool) {
-        self.vm = vm; self.target = target; self.finalize = finalize
+    /// The host's worktree and a commit count, so a preview renders the finalize form without a
+    /// host.
+    struct Staged {
+        var info: RemoteWorktreeInfo
+        var includedCommits: Int?
+    }
+
+    init(vm: ShepherdViewModel, target: RemoteAgentRef, finalize: Bool, staged: Staged? = nil) {
+        self.vm = vm; self.target = target; self.finalize = finalize; self.staged = staged
         let connection = vm.remoteHosts.connections.first { $0.id == target.hostID }
         _endpointID = State(initialValue: vm.remoteWorktreeOperationEndpoints[target] ?? connection?.endpointID)
         _transportID = State(initialValue: connection?.transportID)
+        if let staged {
+            _info = State(initialValue: staged.info)
+            _options = State(initialValue: staged.info.defaults)
+            _includedCommits = State(initialValue: staged.includedCommits)
+            _checking = State(initialValue: false)
+            _descriptionPrepared = State(initialValue: true)
+        }
     }
 
     private func query(_ value: RemoteAgentQuery, statusOnly: Bool = false) async throws -> RemoteAgentResult {
@@ -22,7 +39,7 @@ struct RemoteWorktreeSheet: View {
         }
         return try await vm.remoteHosts.agentQuery(target, query: value, endpointID: endpointID, transportID: statusOnly ? nil : transportID)
     }
-    @StateObject private var setup = WorktreeSetupModel(repoPath: "host repository")
+    @State private var setup = WorktreeSetupModel(repoPath: "host repository")
     @State private var showingSetup = false
     @State private var checking = true
     @State private var includedCommits: Int?
@@ -35,119 +52,107 @@ struct RemoteWorktreeSheet: View {
     @State private var submitting = false
     @State private var acknowledgedLoss = false
 
+    private var hostName: String {
+        vm.remoteHosts.connections.first { $0.id == target.hostID }?.config.name ?? "removed"
+    }
+
+    private var operationPending: Bool { vm.remoteWorktreeOperationIDs[target] != nil }
+
+    /// Which part of the sheet shows: the checks, the setup checklist, the form, the running
+    /// operation, the outcome.
+    private var stage: [Bool] {
+        [checking, showingSetup, info != nil, operationPending, operation != nil, operation?.finished == true, options.autoMergePR]
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(finalize ? "Finalize Worktree" : "Delete Worktree Agent")
-                .font(Fonts.mono(13.5, .semibold))
-                .foregroundStyle(Tokens.textPrimary)
-                .padding(20)
-            SheetRow("host") { Text(vm.remoteHosts.connections.first { $0.id == target.hostID }?.config.name ?? "removed") }
-            if finalize && vm.remoteWorktreeOperationIDs[target] == nil {
+        NWDialog(finalize ? "Finalize worktree" : "Delete worktree agent",
+                 message: finalize ? "Runs on \(hostName): commit, push, pull request, optional merge, then cleanup." : nil,
+                 width: AppLayout.remoteWorktreeSheetWidth) {
+            SheetRow("Host") {
+                Text(hostName).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+            }
+            if finalize && !operationPending {
                 if checking {
-                    Text("Checking host prerequisites…").padding(20)
+                    HStack(spacing: NW.Space.s) {
+                        ProgressView().progressViewStyle(.nwSpinner)
+                        Text("Checking host prerequisites…").font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                    }
+                    .padding(.horizontal, NWDialogMetrics.inset)
+                    .padding(.vertical, NW.Space.l)
                 } else if showingSetup {
                     WorktreeSetupChecklist(model: setup, openLoginShell: openLoginShell)
-                    HStack {
-                        Button("Re-run Checks") { Task { await setup.runAll() } }.disabled(setup.running)
-                        Spacer()
-                        Button("Continue") {
-                            Task { await prepareInput() }
-                        }.disabled(setup.running || !setup.allPassed)
-                    }.padding(20)
                 }
             }
             if let info {
-                SheetRow("worktree") { Text(info.path).lineLimit(1).truncationMode(.middle).help(info.path) }
-                SheetRow("branch") { Text(info.branch) }
-                if operation == nil && vm.remoteWorktreeOperationIDs[target] == nil {
+                SheetRow("Worktree") {
+                    Text(info.path).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary)
+                        .lineLimit(1).truncationMode(.middle).help(info.path).textSelection(.enabled)
+                }
+                SheetRow("Branch") {
+                    Text(info.branch).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
+                }
+                if operation == nil && !operationPending {
                     if finalize && !checking && !showingSetup {
-                        SheetRow("base") {
-                            HStack {
-                                TextField("base branch", text: $options.base)
-                                if let count = includedCommits {
-                                    Text("will include \(count) commit\(count == 1 ? "" : "s")")
-                                        .foregroundStyle(count > 20 ? Tokens.statusBlocked : Tokens.textMetadata)
-                                }
-                            }
-                        }
-                        SheetRow("title") { TextField("PR title", text: $options.title) }
-                        SheetRow("description") {
-                            VStack(alignment: .leading) {
-                                TextEditor(text: $options.body).frame(height: 70)
-                                if generatingDescription { Text("generating on host…") }
-                                else if info.generateDescription == true {
-                                    SheetLinkButton(label: descriptionPrepared ? "regenerate…" : "generate…") {
-                                        Task { await generateDescription(force: true) }
-                                    }
-                                }
-                            }
-                        }
-                        SheetRow("setup") { SheetLinkButton(label: "repo setup…") { showingSetup = true } }
-                        SheetRow("commit") { Toggle("Commit remaining work", isOn: $options.autoCommit) }
-                        SheetRow("cleanup") { Toggle("Delete local branch", isOn: $options.deleteLocalBranch) }
-                        SheetRow("merge") { Toggle("Merge PR automatically", isOn: $options.autoMergePR) }
-                        if options.autoMergePR {
-                            SheetRow("method") {
-                                Picker("method", selection: $options.mergeMethod) {
-                                    Text("squash").tag("squash")
-                                    Text("merge").tag("merge")
-                                    Text("rebase").tag("rebase")
-                                }.labelsHidden()
-                            }
-                        }
-                        Text("Runs on the host: commit, push, PR, optional merge, clean check, stop agent, remove checkout. The remote branch is never deleted. Failures stop cleanup.")
-                            .padding(20)
+                        finalizeInput(info)
                     } else if !finalize, let warning = info.warning {
-                        DialogWarning(text: "\(warning) will be lost with the worktree.")
-                        Toggle("I understand this work will be lost", isOn: $acknowledgedLoss).padding(20)
+                        DialogBanner(title: "Unreconciled work", message: "\(warning) will be lost with the worktree.")
+                        Toggle("I understand this work will be lost", isOn: $acknowledgedLoss)
+                            .toggleStyle(.nwCheckbox)
+                            .font(.nw(.ui))
+                            .foregroundStyle(Color.nw.textPrimary)
+                            .padding(.horizontal, NWDialogMetrics.inset)
+                            .padding(.top, NW.Space.l)
                     }
                 }
             }
             if let operation {
-                ForEach(Array(operation.progress.enumerated()), id: \.offset) { _, line in
-                    Text(line).textSelection(.enabled).padding(.horizontal, 20).padding(.vertical, 3)
+                VStack(alignment: .leading, spacing: NW.Space.xs) {
+                    ForEach(Array(operation.progress.enumerated()), id: \.offset) { _, line in
+                        Text(line).font(.nw(.mono)).foregroundStyle(Color.nw.textSecondary).textSelection(.enabled)
+                            .nwTransition(.list)
+                    }
                 }
-                if let error = operation.error { DialogWarning(text: error) }
-                if let url = operation.prURL, let link = URL(string: url) { Link(url, destination: link).textSelection(.enabled).padding(20) }
+                .padding(.horizontal, NWDialogMetrics.inset)
+                .padding(.top, NW.Space.l)
+                if let error = operation.error { DialogBanner(state: .failed, title: "The host stopped the operation", message: error) }
+                if let url = operation.prURL, let link = URL(string: url) {
+                    Link(url, destination: link)
+                        .font(.nw(.mono))
+                        .foregroundStyle(Color.nw.running)
+                        .textSelection(.enabled)
+                        .padding(.horizontal, NWDialogMetrics.inset)
+                        .padding(.top, NW.Space.l)
+                        .nwTransition(.disclosure)
+                }
             }
-            if let errorText { DialogWarning(text: errorText) }
-            HStack {
-                Button("Close") { vm.remoteWorktreeSheet = nil }.keyboardShortcut(.cancelAction)
-                Spacer()
-                if let operation, operation.finished {
-                    Button("Done") {
-                        vm.remoteWorktreeOperationIDs.removeValue(forKey: target)
-                        vm.remoteWorktreeOperationEndpoints.removeValue(forKey: target)
-                        vm.remoteWorktreeSheet = nil
-                    }.keyboardShortcut(.defaultAction)
-                } else if vm.remoteWorktreeOperationIDs[target] != nil {
-                    Text("Operation continues on host. Reconnecting only checks status.")
-                } else {
-                    if !finalize {
-                        Button("Delete Agent, Keep Worktree") {
-                            Task {
-                                do {
-                                    _ = try await query(.deleteKeepingWorktree)
-                                    vm.remoteWorktreeSheet = nil
-                                } catch { errorText = String(describing: error) }
-                            }
-                        }
-                    }
-                    if let info {
-                        Button(finalize ? "Finalize" : "Delete Agent & Worktree", role: finalize ? nil : .destructive) { start(info) }
-                        .disabled(submitting || (finalize && (checking || showingSetup || generatingDescription || !setup.allPassed)) || (!finalize && info.warning != nil && !acknowledgedLoss)
-                                  || (finalize && (options.base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || options.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
-                    }
-                }
-            }.padding(20)
+            if let errorText { DialogBanner(state: .failed, title: "Request failed", message: errorText) }
+        } status: {
+            if operationPending, operation?.finished != true {
+                NWDialogStatus("Operation continues on the host. Reconnecting only checks its status.")
+            } else if finalize && showingSetup && !operationPending {
+                Button("Re-run checks") { Task { await setup.runAll() } }
+                    .buttonStyle(.nw(.secondary, size: .s))
+                    .disabled(setup.running)
+            }
+        } actions: {
+            actions
         }
-        .font(Fonts.mono(11.5))
-        .foregroundStyle(Tokens.textSecondary)
-        .textFieldStyle(.plain)
-        .frame(width: 620)
-        .background(Tokens.workspaceBg)
+        // Checking → setup or the form → the host's progress → done: each stage replaces the
+        // last in place as the sheet eases to its height, and progress lines arrive as rows.
+        .nwAnimation(.disclosure, value: stage)
+        .nwAnimation(.list, value: operation?.progress.count)
+        .nwAnimation(.disclosure, value: errorText)
+        .nwAnimation(.content, value: generatingDescription)
+        .nwAnimation(.content, value: includedCommits)
         .task {
             guard vm.remoteWorktreeOperationIDs[target] == nil else { return }
+            if staged != nil {
+                // Every check passing, answered here instead of by a host.
+                let checks = Dictionary(uniqueKeysWithValues: WorktreeSetupCheck.allCases.map { ($0.rawValue, RemoteWorktreeCheckState.pass("ok")) })
+                setup.remoteAction = { _ in RemoteWorktreeSetup(repoPath: "host repository", checks: checks, repoSettings: [:]) }
+                await setup.runAll()
+                return
+            }
             if finalize {
                 setup.remoteAction = { action in
                     guard case .worktreeSetup(let result) = try await query(.worktreeSetup(action: action)) else {
@@ -162,7 +167,7 @@ struct RemoteWorktreeSheet: View {
             } else { await prepareInput() }
         }
         .task(id: options.base) {
-            guard finalize, info != nil else { return }
+            guard finalize, info != nil, staged == nil else { return }
             let base = options.base
             includedCommits = nil
             do {
@@ -183,6 +188,115 @@ struct RemoteWorktreeSheet: View {
                 } catch { errorText = "Outcome not yet known: \(error). Do not retry the operation." }
                 try? await Task.sleep(for: .seconds(2))
             }
+        }
+    }
+
+    @ViewBuilder
+    private var actions: some View {
+        Button("Close") { vm.remoteWorktreeSheet = nil }
+            .buttonStyle(.nw(.secondary))
+            .keyboardShortcut(.cancelAction)
+        if let operation, operation.finished {
+            Button("Done") {
+                vm.remoteWorktreeOperationIDs.removeValue(forKey: target)
+                vm.remoteWorktreeOperationEndpoints.removeValue(forKey: target)
+                vm.remoteWorktreeSheet = nil
+            }
+            .buttonStyle(.nw(.primary))
+            .keyboardShortcut(.defaultAction)
+        } else if !operationPending {
+            if finalize && showingSetup {
+                Button("Continue") { Task { await prepareInput() } }
+                    .buttonStyle(.nw(.primary))
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(setup.running || !setup.allPassed)
+            } else if !finalize {
+                Button("Delete agent only") {
+                    Task {
+                        do {
+                            _ = try await query(.deleteKeepingWorktree)
+                            vm.remoteWorktreeSheet = nil
+                        } catch { errorText = String(describing: error) }
+                    }
+                }
+                .buttonStyle(.nw(.secondary))
+            }
+            if let info, !(finalize && showingSetup) {
+                Button(finalize ? "Finalize" : "Delete agent and worktree") { start(info) }
+                    .buttonStyle(.nw(finalize ? .primary : .dangerFill))
+                    .keyboardShortcut(finalize ? KeyboardShortcut.defaultAction : nil)
+                    .disabled(submitting || (finalize && (checking || showingSetup || generatingDescription || !setup.allPassed)) || (!finalize && info.warning != nil && !acknowledgedLoss)
+                              || (finalize && (options.base.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || options.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func finalizeInput(_ info: RemoteWorktreeInfo) -> some View {
+        SheetRow("Base") {
+            HStack(spacing: NW.Space.m) {
+                TextField("Base branch", text: $options.base).textFieldStyle(.nw(mono: true))
+                    .frame(maxWidth: AppLayout.baseFieldMaxWidth)
+                if let count = includedCommits {
+                    Text("Will include \(count) commit\(count == 1 ? "" : "s")")
+                        .font(.nw(.caption))
+                        .foregroundStyle(count > 20 ? Color.nw.lanternText : Color.nw.textTertiary)
+                        .nwContentTransition(.numeric())
+                }
+            }
+        }
+        SheetRow("Title") {
+            TextField("Pull request title", text: $options.title,
+                      prompt: Text("PR title").foregroundStyle(Color.nw.textTertiary))
+                .textFieldStyle(.nw)
+        }
+        SheetRow("Description", alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: NW.Space.xs) {
+                TextEditor(text: $options.body)
+                    .nwText(.body)
+                    .foregroundStyle(Color.nw.textPrimary)
+                    .scrollContentBackground(.hidden)
+                    .frame(height: AppLayout.descriptionEditorHeight)
+                    .padding(NW.Space.s)
+                    .background(Color.nw.bgRaised, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                    .nwBorder(Color.nw.lineStrong, radius: NW.Radius.s)
+                    .accessibilityLabel("Pull request description")
+                if generatingDescription {
+                    Text("Generating on the host…").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                } else if info.generateDescription == true {
+                    SheetLinkButton(label: descriptionPrepared ? "Regenerate…" : "Generate…") {
+                        Task { await generateDescription(force: true) }
+                    }
+                }
+            }
+        }
+        SheetRow("Setup") { SheetLinkButton(label: "Repo setup…") { showingSetup = true } }
+        SheetRow("Commit") { captionedSwitch("Commit remaining work", isOn: $options.autoCommit) }
+        SheetRow("Cleanup") { captionedSwitch("Delete local branch", isOn: $options.deleteLocalBranch) }
+        SheetRow("Merge") { captionedSwitch("Merge PR automatically", isOn: $options.autoMergePR) }
+        if options.autoMergePR {
+            SheetRow("Method") {
+                NWSegmentedPicker("Merge method", selection: $options.mergeMethod,
+                                  options: [("squash", "Squash"), ("merge", "Merge"), ("rebase", "Rebase")])
+            }
+            .nwTransition(.disclosure)
+        }
+        Text("Runs on the host: commit, push, PR, optional merge, clean check, stop agent, remove checkout. The remote branch is never deleted. Failures stop cleanup.")
+            .nwText(.caption)
+            .foregroundStyle(Color.nw.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, NWDialogMetrics.inset)
+            .padding(.top, NW.Space.l)
+    }
+
+    /// A switch with what it does beside it: the row label alone ("Cleanup") doesn't say.
+    private func captionedSwitch(_ label: String, isOn: Binding<Bool>) -> some View {
+        HStack(spacing: NW.Space.m) {
+            SettingsSwitch(label: label, isOn: isOn)
+            Text(label)
+                .font(.nw(.caption))
+                .foregroundStyle(Color.nw.textSecondary)
+                .accessibilityHidden(true)
         }
     }
 

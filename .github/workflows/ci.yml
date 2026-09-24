@@ -1,8 +1,10 @@
 name: CI
 
 # Tests gate master (the release branch) and PRs. Nightly pushes skip CI:
-# the Release workflow already builds every nightly, and the timing-sensitive
-# server tests flake on slow shared runners — run `swift test` locally.
+# the Release workflow already builds every nightly. Tests whose verdict
+# depends on the machine's speed (frame sampling, wall-clock budgets) skip
+# here, where GitHub sets CI=true; `swift test` runs them locally (AGENTS.md,
+# Testing).
 on:
   push:
     branches: [master]
@@ -18,8 +20,9 @@ jobs:
   test:
     name: swift test
     runs-on: macos-26
-    # The suite finishes in seconds; anything longer is a hang, not work.
-    timeout-minutes: 15
+    # Building takes about 6 minutes, and a serial test run took 8 to 12 on
+    # a Mac's efficiency cores; the watchdog below ends a stalled run at 30.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +40,11 @@ jobs:
           restore-keys: |
             spm-${{ runner.os }}-${{ steps.swift.outputs.version }}-
 
+      # The release workflow's rules (scripts/release.py): feeds, bundle ids,
+      # and their agreement with the Xcode project and the apps.
+      - name: Release rules
+        run: python3 -m unittest discover -s Tests/Release
+
       - name: Run tests
         run: |
           # SwiftPM copies binary frameworks (Sparkle) to Products/<config>,
@@ -47,15 +55,19 @@ jobs:
             mkdir -p "$d/PackageFrameworks"
             [ -d "$d/Sparkle.framework" ] && ln -sf "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework" || true
           done
-          # --no-parallel: OutputCoalescingTests deliberately blocks the
-          # main queue (backpressure test); concurrent suites on a slow
-          # shared runner deadlock behind it. Serial is still fast.
-          # Watchdog: the suite finishes in seconds; if it stalls for 5
-          # minutes, dump thread stacks of the hung test host, then fail.
+          # Serially: on this shared 3-core runner, tests run in parallel
+          # queued behind one another's main-thread work until their waits
+          # ran out. The tests that block the main queue or change
+          # process-wide state still run as exit tests in their own process.
+          # Every integration suite has a per-test time limit, so a hang
+          # that honors cancellation fails by name. The watchdog is for one
+          # that does not (a blocked thread): a serial run took 8 to 12
+          # minutes on a Mac's efficiency cores, so if it is still going
+          # after 30, dump thread stacks of the hung test host, then fail.
           swift test --no-parallel &
           TEST_PID=$!
           (
-            sleep 300
+            sleep 1800
             if kill -0 "$TEST_PID" 2>/dev/null; then
               echo '::group::watchdog: test run stalled, sampling processes'
               ps auxww | grep -iE 'swift|shepherd' | grep -v grep

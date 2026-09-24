@@ -1,0 +1,165 @@
+import AppKit
+import Foundation
+import ShepherdCore
+@testable import ShepherdUI
+import ShepherdProtocol
+import ShepherdRemote
+import SwiftUI
+import ShepherdTestSupport
+import Testing
+@testable import ShepherdApp
+
+/// Subagent surfaces (Agents board) in light and dark: the cards in every state, the runs
+/// strip at rest and with a segment hovered, the ledger, a live group and a finished one in a
+/// thread, and the inspector on a live and a finished run. See `PreviewTests` for how previews
+/// run.
+@Suite("Agents previews", .serialized, .mainActorExclusive, .enabled(if: Preview.enabled && !Preview.liveModel, "set SHEPHERD_PREVIEW_DIR (without SHEPHERD_LIVE_MODEL) to render previews"))
+@MainActor
+struct AgentsPreviewTests {
+    private let actions = SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }, enabled: true)
+
+    private static var nowMs: Double { Date().timeIntervalSince1970 * 1000 }
+
+    /// The board's four states plus a paused and a queued run; the reviewer asked through
+    /// `shepherd_parent_message` 2m 10s ago.
+    private static var cardRuns: [ChildRun] {
+        var runs = Threads.liveRuns
+        runs[1].lastActivity = ChildActivity(tool: "shepherd_parent_message", at: nowMs - 130_000)
+        var paused = runs[0]
+        paused.runID = "native-docs-paused"
+        paused.label = "docs: rewrite the subagent guide"
+        paused.role = "docs"
+        paused.paused = true
+        var queued = ChildRun(runID: "native-lint", label: "lint", state: "queued", startedAt: nowMs, role: "linter",
+                              model: "anthropic/claude-haiku-4-5", toolCallID: "spawn-lint")
+        queued.context = "async"
+        return runs + [paused, queued]
+    }
+
+    /// Twelve parallel runs: seven done, two running, one queued, one asking, one failed.
+    private static var manyRuns: [ChildRun] {
+        let live = cardRuns
+        return (0..<12).map { index -> ChildRun in
+            var run = live[index < 7 ? 2 : index < 9 ? 0 : index == 9 ? 5 : index == 10 ? 1 : 3]
+            run.runID = "strip-\(index)"
+            run.startedAt = (run.startedAt ?? nowMs) + Double(index)
+            return run
+        }
+    }
+
+    private func renderThread(_ surface: String, _ fixture: ThreadFixture, size: CGSize, inspected: String? = nil) async throws {
+        defer { fixture.store.stop() }
+        try await Preview.render(surface, size: size, ready: { fixture.store.ready }) {
+            fixture.thread(inspected: inspected)
+        }
+    }
+
+    @Test func subagentCardsInEveryState() async throws {
+        let actions = actions
+        let cards = Self.cardRuns
+        try await Preview.render("subagent-cards", size: CGSize(width: 760, height: 1480)) {
+            VStack(alignment: .leading, spacing: NW.Space.xl) {
+                Text("Cards").nwSectionLabel()
+                VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
+                    ForEach(cards, id: \.id) { run in
+                        SubagentCard(run: run, selected: run.runID == "native-worker", enabled: true, inspect: { _ in }, command: { _, _, _, _ in })
+                    }
+                }
+                Text("Many parallel runs").nwSectionLabel()
+                SubagentStack(runs: Self.manyRuns, turnLive: true, actions: actions)
+                Text("Finished group").nwSectionLabel()
+                SubagentStack(runs: Threads.doneRuns, actions: {
+                    var ledger = actions
+                    ledger.inspectedRunID = "native-tests"
+                    return ledger
+                }())
+                // A thread at its narrowest: tags give way before names, totals before the tally.
+                Text("Narrow").nwSectionLabel()
+                VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
+                    ForEach(cards.suffix(2), id: \.id) { run in
+                        SubagentCard(run: run, selected: false, enabled: true, inspect: { _ in }, command: { _, _, _, _ in })
+                    }
+                    SubagentStack(runs: Self.manyRuns.filter { !$0.needsAttention }, turnLive: true, actions: actions)
+                }
+                .frame(width: 368)
+                Spacer(minLength: 0)
+            }
+            .padding(32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    /// Each segment opens its run: at rest the strip is unchanged, and the hovered segment
+    /// thickens.
+    @Test func runsStripSegments() async throws {
+        let summary = SubagentPresentation.strip(Self.manyRuns)
+        let running = try #require(summary.cells.first { $0.state == .running }).id
+        let asking = try #require(summary.cells.first { $0.state == .attention }).id
+        try await Preview.render("runs-strip", size: CGSize(width: 760, height: 300)) {
+            VStack(alignment: .leading, spacing: NW.Space.l) {
+                Text("At rest").nwSectionLabel()
+                NWRunsStrip(summary, isExpanded: .constant(false)) { _ in }
+                Text("Hovering a running segment").nwSectionLabel()
+                NWRunsStrip(summary, isExpanded: .constant(false), hovered: running) { _ in }
+                Text("Hovering the segment that needs you").nwSectionLabel()
+                NWRunsStrip(summary, isExpanded: .constant(true), hovered: asking) { _ in }
+                Spacer(minLength: 0)
+            }
+            .padding(32)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
+    @Test func threadSubagentsLive() async throws {
+        let runs = Array(Self.cardRuns.prefix(3))
+        try await renderThread("thread-subagents-live", ThreadFixture(Threads.subagents(runs, running: true)),
+                               size: CGSize(width: 800, height: 900), inspected: "native-worker")
+    }
+
+    @Test func threadSubagentsLedger() async throws {
+        try await renderThread("thread-subagents-ledger", ThreadFixture(Threads.subagents(Threads.doneRuns, running: false)),
+                               size: CGSize(width: 800, height: 800), inspected: "native-tests")
+    }
+
+    @Test func threadSubagentInspector() async throws {
+        let fixture = ThreadFixture(Threads.subagents(Array(Self.cardRuns.prefix(3)), running: true))
+        fixture.transcripts["native-worker"] = Threads.workerTranscript
+        defer { fixture.store.stop() }
+        let panes = RightPaneState()
+        panes.runByAgent[AgentID(rawValue: "a")] = "native-worker"
+        try await Preview.render("thread-subagent-inspector", size: CGSize(width: 1370, height: 900), ready: { fixture.store.ready }) {
+            RightPaneSplit(state: panes, showPane: true) {
+                fixture.thread(inspected: "native-worker")
+            } pane: {
+                SubagentInspector(store: fixture.store, runID: "native-worker", active: true, close: {}, select: { _ in }, fork: { _ in nil })
+            }
+        }
+    }
+
+    /// The finished tests run with its touched files and inline code in its result.
+    private static var doneRuns: [ChildRun] {
+        var runs = Threads.doneRuns
+        runs[2].summary = "Added 6 tests to `NativePresentationTests`; all 14 pass on **macOS** and iOS."
+        runs[2].files = [ChildFileChange(path: "Tests/ShepherdRemoteUnitTests/NativePresentationTests.swift", added: 96, removed: 3),
+                         ChildFileChange(path: "Tests/ShepherdRemoteUnitTests/Fixtures.swift", added: 22, removed: 1)]
+        return runs
+    }
+
+    @Test func threadSubagentInspectorFinished() async throws {
+        let fixture = ThreadFixture(Threads.subagents(Self.doneRuns, running: false))
+        fixture.transcripts["native-tests"] = Threads.testsTranscript
+        defer { fixture.store.stop() }
+        let panes = RightPaneState()
+        panes.runByAgent[AgentID(rawValue: "a")] = "native-tests"
+        try await Preview.render("thread-subagent-inspector-finished", size: CGSize(width: 1370, height: 900), ready: { fixture.store.ready }) {
+            RightPaneSplit(state: panes, showPane: true) {
+                fixture.thread(inspected: "native-tests")
+            } pane: {
+                SubagentInspector(store: fixture.store, runID: "native-tests", active: true, close: {}, select: { _ in },
+                                  fork: { _ in nil }, review: { _ in })
+            }
+        }
+    }
+}

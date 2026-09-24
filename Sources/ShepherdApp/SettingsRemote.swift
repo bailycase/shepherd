@@ -1,14 +1,14 @@
 import SwiftUI
+import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
 
 // MARK: Remote hosts
 
-/// Settings → Remote: configured remote Shepherd hosts, plus this Mac's own
-/// listener token path for setting up the other side.
+/// Settings ▸ Remote: configured remote Shepherd hosts, and this Mac's own listener.
 struct RemoteSettings: View {
     var vm: ShepherdViewModel
-    @ObservedObject var store: RemoteHostStore
+    var store: RemoteHostStore
 
     @State private var draftName = ""
     @State private var draftHost = ""
@@ -30,143 +30,144 @@ struct RemoteSettings: View {
     }
 
     var body: some View {
-        SettingsGroup(title: "Hosts") {
-            if store.connections.isEmpty {
-                SettingsRow(
-                    title: "No remote hosts",
-                    subtitle: "Add the Mac running Shepherd you want to reach. Its agents appear in the sidebar's REMOTE section.",
-                    isFirst: true
-                ) { EmptyView() }
-            }
-            ForEach(Array(store.connections.enumerated()), id: \.element.id) { index, connection in
-                RemoteHostRow(
-                    connection: connection,
-                    isFirst: index == 0 && store.connections.isEmpty == false
-                ) {
-                    if editingID == connection.id { cancelEdit() }
-                    store.removeHost(id: connection.id)
-                } reconnect: {
-                    store.reconnect(id: connection.id)
-                } edit: {
-                    let config = connection.config
-                    editingID = config.id
-                    draftName = config.name
-                    draftHost = config.host
-                    draftPort = String(config.port)
-                    draftToken = config.token
+        SettingsPage(title: "Remote",
+                     explanation: "Connect to agents on other Macs over your VPN, or let other Macs connect to this one.") {
+            SettingsGroup(title: "Hosts") {
+                if store.connections.isEmpty {
+                    SettingsRow(title: "No remote hosts",
+                                subtitle: "Add a Mac running Shepherd below. Its agents appear in the sidebar under its name.") { EmptyView() }
+                        .nwTransition(.list)
+                }
+                ForEach(store.connections, id: \.id) { connection in
+                    RemoteHostRow(connection: connection) {
+                        if editingID == connection.id { cancelEdit() }
+                        store.removeHost(id: connection.id)
+                    } reconnect: {
+                        store.reconnect(id: connection.id)
+                    } edit: {
+                        let config = connection.config
+                        editingID = config.id
+                        draftName = config.name
+                        draftHost = config.host
+                        draftPort = String(config.port)
+                        draftToken = config.token
+                    }
+                    .nwTransition(.list)
                 }
             }
-        }
 
-        SettingsGroup(title: editingID == nil ? "Add Host" : "Edit Host") {
-            SettingsRow(title: "Name", subtitle: "Sidebar section label.", isFirst: true) {
-                TextField("mac mini", text: $draftName)
-                    .textFieldStyle(.plain)
-                    .font(Fonts.mono(11))
-                    .frame(width: 160)
-            }
-            SettingsRow(title: "Address", subtitle: "VPN-reachable IP or hostname.") {
-                TextField("100.x.y.z", text: $draftHost)
-                    .textFieldStyle(.plain)
-                    .font(Fonts.mono(11))
-                    .frame(width: 160)
-            }
-            SettingsRow(title: "Port") {
-                TextField(String(RemoteSettingsDefaults.port), text: $draftPort)
-                    .textFieldStyle(.plain)
-                    .font(Fonts.mono(11))
-                    .frame(width: 160)
-                    .onChange(of: draftPort) {
-                        // Digits only: a pasted "7,433" must not silently
-                        // become an invalid (or worse, different) port.
-                        let digits = draftPort.filter(\.isNumber)
-                        if digits != draftPort { draftPort = digits }
-                    }
-            }
-            SettingsRow(title: "Token", subtitle: "Contents of the host's remote-token file.") {
-                SecureField("", text: $draftToken)
-                    .textFieldStyle(.plain)
-                    .font(Fonts.mono(11))
-                    .frame(width: 160)
-            }
-            SettingsRow(title: "") {
-                HStack(spacing: 8) {
-                    if editingID != nil {
-                        Button("Cancel") { cancelEdit() }
-                    }
-                    Button(editingID == nil ? "Add Host" : "Save") {
-                        guard let port = UInt16(draftPort.trimmingCharacters(in: .whitespaces)) else { return }
-                        let name = draftName.trimmingCharacters(in: .whitespaces)
-                        let host = draftHost.trimmingCharacters(in: .whitespaces)
-                        let token = draftToken.trimmingCharacters(in: .whitespaces)
-                        if let id = editingID {
-                            store.updateHost(id: id, name: name, host: host, port: port, token: token)
-                        } else {
-                            store.addHost(name: name, host: host, port: port, token: token)
+            SettingsGroup(title: editingID == nil ? "Add host" : "Edit host") {
+                SettingsRow(title: "Name", subtitle: "Shown as the sidebar section label.") {
+                    SettingsTextField(label: "Name", prompt: "mac mini", text: $draftName)
+                }
+                SettingsRow(title: "Address", subtitle: "VPN-reachable IP or hostname.") {
+                    SettingsTextField(label: "Address", prompt: "100.x.y.z", text: $draftHost, mono: true)
+                }
+                SettingsRow(title: "Port") {
+                    SettingsTextField(label: "Port", prompt: String(RemoteSettingsDefaults.port), text: $draftPort, mono: true,
+                                      width: AppLayout.settingsPortFieldWidth)
+                        .onChange(of: draftPort) {
+                            // Digits only: a pasted "7,433" must not silently become another port.
+                            let digits = draftPort.filter(\.isNumber)
+                            if digits != draftPort { draftPort = digits }
                         }
-                        cancelEdit()
+                }
+                SettingsRow(title: "Token", subtitle: "Contents of the host's remote-token file.") {
+                    SettingsTextField(label: "Token", prompt: "paste token", text: $draftToken, mono: true, secure: true)
+                }
+                SettingsActionRow {
+                    if editingID != nil {
+                        Button("Cancel") { cancelEdit() }.buttonStyle(.nw(.ghost, size: .s))
+                            .nwTransition(.content)
                     }
-                    .disabled(!draftValid)
+                    Button(editingID == nil ? "Add host" : "Save") { save() }
+                        .buttonStyle(.nw(.secondary, size: .s))
+                        .disabled(!draftValid)
                 }
             }
-        }
 
-        SettingsGroup(title: "Serve This Mac") {
-            SettingsRow(
-                title: "Listener",
-                subtitle: vm.remoteListenerStatus,
-                isFirst: true
-            ) {
-                Toggle("", isOn: Binding(
-                    get: { vm.remoteListenerEnabled },
-                    set: { vm.setRemoteListenerEnabled($0) }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
+            SettingsGroup(title: "Serve this Mac",
+                          footnote: "Remote sessions run on the host Mac; your VPN is the transport and the token keeps other devices out.") {
+                SettingsRow(title: "Listener", subtitle: vm.remoteListenerStatus, problem: vm.remoteListenerProblem) {
+                    SettingsSwitch(label: "Listener", isOn: Binding(
+                        get: { vm.remoteListenerEnabled },
+                        set: { vm.setRemoteListenerEnabled($0) }
+                    ))
+                }
+                PathRow(title: "Token",
+                        subtitle: "Paste this into the other Mac's Token field. To revoke every client, delete the file and turn the listener off and on.",
+                        url: ShepherdPaths.remoteTokenURL())
             }
-            PathRow(
-                title: "Token",
-                subtitle: "Paste this file's contents into the other Mac's Token field. Delete it to revoke every client.",
-                url: ShepherdPaths.remoteTokenURL()
-            )
         }
-        SettingsNote(text: "remote sessions run on the host Mac · your VPN is the transport; the token keeps other devices on it honest")
+        // Hosts arrive and leave as rows; the form swaps between adding and editing in place;
+        // a bind failure discloses under the listener, and its status fades to the new port.
+        .nwAnimation(.list, value: store.connections.map(\.id))
+        .nwAnimation(.content, value: editingID)
+        .nwAnimation(.disclosure, value: vm.remoteListenerProblem)
+        .nwAnimation(.content, value: vm.remoteListenerStatus)
+    }
+
+    private func save() {
+        guard let port = UInt16(draftPort.trimmingCharacters(in: .whitespaces)) else { return }
+        let name = draftName.trimmingCharacters(in: .whitespaces)
+        let host = draftHost.trimmingCharacters(in: .whitespaces)
+        let token = draftToken.trimmingCharacters(in: .whitespaces)
+        if let id = editingID {
+            store.updateHost(id: id, name: name, host: host, port: port, token: token)
+        } else {
+            store.addHost(name: name, host: host, port: port, token: token)
+        }
+        cancelEdit()
     }
 }
 
 enum RemoteSettingsDefaults {
-    static let port: UInt16 = 7433
+    /// 7433, or 7434 in Shepherd Nightly, so both apps can serve this Mac at once.
+    static let port = ShepherdEdition.current.defaultRemoteListenerPort
 }
 
+/// "horizon" over "horizon.internal:7433 · connected · 5 agents", with Edit, Reconnect, Remove.
 private struct RemoteHostRow: View {
-    @ObservedObject var connection: RemoteHostStore.Connection
-    var isFirst: Bool
+    var connection: RemoteHostStore.Connection
     let remove: () -> Void
     let reconnect: () -> Void
     let edit: () -> Void
 
-    private var statusText: String {
+    private var status: (word: String, state: AgentState) {
         switch connection.phase {
-        case .connected: return "connected · \(connection.state.agents.count) agents"
-        case .connecting: return "connecting…"
-        case .failed(let reason): return "unreachable · \(reason)"
-        case .disconnected: return "disconnected"
+        case .connected: ("connected", .done)
+        case .connecting: ("connecting…", .running)
+        case .failed(let reason): ("unreachable · \(reason)", .failed)
+        case .disconnected: ("disconnected", .idle)
         }
     }
 
     var body: some View {
-        SettingsRow(
-            title: "\(connection.config.name) — \(connection.config.host):\(String(connection.config.port))",
-            subtitle: statusText,
-            isFirst: isFirst
-        ) {
-            HStack(spacing: 8) {
-                Button("Edit", action: edit)
-                Button("Reconnect", action: reconnect)
-                Button(role: .destructive, action: remove) {
-                    Text("Remove").foregroundStyle(Tokens.destructive)
+        let config = connection.config
+        let (word, state) = status
+        let agents = connection.phase == .connected ? " · \(connection.state.agents.count) agents" : ""
+        SettingsActionRow {
+            VStack(alignment: .leading, spacing: NW.Space.xs) {
+                Text(config.name).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                HStack(spacing: NW.Space.s) {
+                    NWStatusDot(state)
+                    Text("\(Text("\(config.host):\(String(config.port)) · ").foregroundStyle(Color.nw.textSecondary))\(Text(word).foregroundStyle(state.textColor))\(Text(agents).foregroundStyle(Color.nw.textSecondary))")
+                        .font(.nw(.mono))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .nwContentTransition(.crossFade)
                 }
+                // Connecting… → connected · 5 agents, or unreachable: the word and dot fade.
+                .nwComponentAnimation(.content, value: state)
             }
+            .accessibilityElement(children: .combine)
+        } actions: {
+            Button("Edit", action: edit).buttonStyle(.nw(.secondary, size: .s))
+                .accessibilityLabel("Edit \(config.name)")
+            Button("Reconnect", action: reconnect).buttonStyle(.nw(.secondary, size: .s))
+                .accessibilityLabel("Reconnect \(config.name)")
+            Button("Remove", action: remove).buttonStyle(.nw(.danger, size: .s))
+                .accessibilityLabel("Remove \(config.name)")
         }
     }
 }

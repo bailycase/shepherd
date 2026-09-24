@@ -2,9 +2,9 @@ import Foundation
 import ShepherdProtocol
 
 /// Installs the per-session pi extension that mirrors pi-subagents child runs
-/// to the extension socket as setAgentChildren messages, so the sidebar can
-/// show live subagent rows under the agent. Inert for agents without
-/// pi-subagents (no events ever fire).
+/// to the extension socket as setAgentChildren messages, so the agent's thread
+/// can show its subagents. Inert for agents without pi-subagents (no events
+/// ever fire).
 enum SubagentsExtension {
     static func installedPath() throws -> String {
         let directory = ShepherdPaths.supportDirectory()
@@ -59,10 +59,14 @@ enum SubagentsExtension {
           if (!agentID || !socketPath) return;
 
           // Only the root interactive session publishes; a headless child runtime
-          // must never fight the pane's agent over sidebar state.
+          // must never fight the pane's agent over its published runs.
           let rootSession = false;
           let sessionGeneration = 0;
           let rpcReady = false;
+          let nativeChildren: unknown[] = [];
+          // The children extension re-emits its list every second; only a changed list is republished.
+          let nativeChildrenKey = "[]";
+          let parentSessionID = "";
           // Event-sourced facts the snapshot lacks: asyncDir per run, and attention.
           const runs = new Map<string, { asyncDir?: string; agents?: string[]; startedAt: number }>();
           const attention = new Map<string, string>();
@@ -144,12 +148,12 @@ enum SubagentsExtension {
                 asyncDir: run.asyncDir ?? derivedAsyncDir(id),
               });
             }
-            return rows.slice(0, MAX_CHILDREN);
+            return rows;
           }
 
           // The RPC status reply carries a bounded, versioned display snapshot
           // (pi-subagents.async-status-snapshot v1). A workflow run flattens one
-          // level so each lane gets its own sidebar row (the run key is the label);
+          // level so each lane gets its own row (the run key is the label);
           // a single-agent run is itself the row. Deeper nesting stays a pi concern.
           function snapshotChildren(snapshot: unknown): unknown[] | undefined {
             if (typeof snapshot !== "object" || snapshot === null) return undefined;
@@ -187,13 +191,10 @@ enum SubagentsExtension {
                 )
                 : [];
               if (n.kind === "workflow" && kids.length > 0) {
-                kids.forEach((kid, index) => {
-                  if (rows.length < MAX_CHILDREN) push(kid, n.id, index);
-                });
-              } else if (rows.length < MAX_CHILDREN) {
+                kids.forEach((kid, index) => push(kid, n.id, index));
+              } else {
                 push(n, n.id);
               }
-              if (rows.length >= MAX_CHILDREN) break;
             }
             return rows;
           }
@@ -249,7 +250,9 @@ enum SubagentsExtension {
               let children: unknown[] | undefined;
               if (rpcReady) children = await rpcStatus();
               if (!rootSession || generation !== sessionGeneration) return;
-              const rows = children ?? eventDerivedChildren();
+              const rows = [...nativeChildren, ...(children ?? eventDerivedChildren())].sort((a: any, b: any) =>
+                Number(b.state === "running" || b.state === "queued") - Number(a.state === "running" || a.state === "queued")
+                || Number(b.needsAttention === true) - Number(a.needsAttention === true)).slice(0, MAX_CHILDREN);
               lastPublishHadRows = rows.length > 0;
               report(rows);
               syncRefreshTimer();
@@ -292,6 +295,15 @@ enum SubagentsExtension {
           // ---- lifecycle events ----------------------------------------------------
 
           try {
+            pi.events.on("shepherd:children:v1", (data: any) => {
+              if (!rootSession || data?.owner !== parentSessionID || !Array.isArray(data.children)) return;
+              const next = data.children.slice(0, MAX_CHILDREN);
+              const key = JSON.stringify(next);
+              if (key === nativeChildrenKey) return;
+              nativeChildrenKey = key;
+              nativeChildren = next;
+              schedulePublish();
+            });
             pi.events.on(RPC_READY_EVENT, () => {
               rpcReady = true;
             });
@@ -341,7 +353,8 @@ enum SubagentsExtension {
             // hasUI distinguishes the interactive parent from a headless child
             // runtime; default to publishing when the field is absent.
             sessionGeneration += 1;
-            rootSession = (ctx as { hasUI?: boolean }).hasUI !== false;
+            rootSession = !process.env.SHEPHERD_CHILD && (ctx as { hasUI?: boolean }).hasUI !== false;
+            parentSessionID = ctx.sessionManager.getSessionId();
           });
 
           // The one reliable trigger for every spawn shape: workflows, singles, and
@@ -355,7 +368,7 @@ enum SubagentsExtension {
           });
 
           // The parent consuming results and moving on is the batch boundary; clear
-          // terminal rows so the sidebar only ever shows current work. Live rows
+          // terminal rows so Shepherd only ever shows current work. Live rows
           // survive (a rolling fanout keeps its running children).
           pi.on("agent_start", () => {
             if (!rootSession) return;
@@ -375,6 +388,9 @@ enum SubagentsExtension {
             const wasRootSession = rootSession;
             sessionGeneration += 1;
             rootSession = false;
+            nativeChildren = [];
+            nativeChildrenKey = "[]";
+            lastPublishHadRows = false;
             runs.clear();
             terminal.clear();
             attention.clear();

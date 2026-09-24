@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The lantern glow behind the crook: the Mark board's radial-gradient(60px 50px at 70% 20%,
+     lantern at 35% → clear by 70%), scaled from its 72pt tile to 1024. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <radialGradient id="glow" gradientUnits="userSpaceOnUse" cx="716.8" cy="204.8" r="853.33"
+                    gradientTransform="translate(716.8 204.8) scale(1 0.8333) translate(-716.8 -204.8)">
+      <stop offset="0" stop-color="#F2A93B" stop-opacity="0.35"/>
+      <stop offset="0.7" stop-color="#F2A93B" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+</svg>

@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ShepherdCore
+import ShepherdUI
 
 /// Memoized sidebar projections, owned by the view model
 /// (`sidebarDerivations`) and refreshed only when their inputs change.
@@ -15,12 +16,17 @@ struct SidebarDerivations {
 
     var forestInput: [Space]?
     var forest: [(space: Space, depth: Int)] = []
+    /// Whether each visible space's folder is a git checkout (its context menu offers
+    /// worktrees); probed once per change of the space list, never per render.
+    var repoBySpace: [SpaceID: Bool] = [:]
 
     var treeInput: TreeInput?
     var tree: [(space: Space, agents: [Agent], depth: Int)] = []
     var ordered: [Agent] = []
     /// ⌘1–9 badge numbers for the first nine ordered agents.
     var badges: [AgentID: Int] = [:]
+    /// Agents in visible spaces, collapsed or not: THIS MAC's count.
+    var visibleAgentCount = 0
 }
 
 extension ShepherdViewModel {
@@ -36,7 +42,6 @@ extension ShepherdViewModel {
     }
 
     var blockedCount: Int {
-        _ = remoteProjectionRevision
         // Child runs needing attention count toward the waiting rollup: a
         // stuck subagent is exactly as attention-worthy as a blocked agent.
         return state.agents.count { $0.status == .blocked } + childRuns.attentionCount
@@ -44,32 +49,6 @@ extension ShepherdViewModel {
                 total + connection.state.agents.count { $0.status == .blocked }
                     + connection.children.values.reduce(0) { $0 + $1.count(where: \.needsAttention) }
             }
-    }
-
-    /// Fleet-wide status counts for the sidebar's dot strip, in a fixed
-    /// scan order (attention first). Absent statuses are omitted.
-    var statusCounts: [(status: AgentStatus, count: Int)] {
-        _ = remoteProjectionRevision
-        return [AgentStatus.blocked, .working, .done, .idle].compactMap { status in
-            let count = state.agents.count { $0.status == status }
-                + remoteHosts.connections.filter { $0.phase == .connected }.reduce(0) { $0 + $1.state.agents.count { $0.status == status } }
-            return count > 0 ? (status, count) : nil
-        }
-    }
-
-    /// Blocked queue position of the selected agent, for the status line's
-    /// `1 of 3 waiting`. Nil when nothing is blocked.
-    var waitingQueue: (position: Int?, total: Int)? {
-        _ = remoteProjectionRevision
-        let blocked: [(host: UUID?, agent: AgentID)] = agentsInForestOrder.filter { $0.status == .blocked }.map { (nil, $0.id) }
-            + remoteHosts.connections.filter { $0.phase == .connected }.flatMap { connection in
-                connection.state.agents.filter { $0.status == .blocked }.map { (connection.id, $0.id) }
-            }
-        guard !blocked.isEmpty else { return nil }
-        let position = blocked.firstIndex {
-            $0.host == selectedRemoteAgent?.hostID && $0.agent == (selectedRemoteAgent?.agentID ?? selectedAgentID)
-        }.map { $0 + 1 }
-        return (position, blocked.count)
     }
 
     /// Every space with its agents, in sidebar (declaration) order. `depth`
@@ -98,8 +77,9 @@ extension ShepherdViewModel {
         )
         if sidebarDerivations.treeInput == input { return sidebarDerivations }
         let visible = Self.visibleSpaceForest(forest: cachedSpaceForest(input.spaces), collapsed: input.collapsed)
+        let bySpace = Self.sidebarAgentsBySpace(input.agents)
         sidebarDerivations.tree = visible.map { entry in
-            (entry.space, Self.sidebarAgents(of: entry.space.id, in: input.agents), entry.depth)
+            (entry.space, bySpace[entry.space.id] ?? [], entry.depth)
         }
         // Same rows minus collapsed spaces' agents — the ⌘1–9 / palette order.
         sidebarDerivations.ordered = sidebarDerivations.tree
@@ -109,6 +89,8 @@ extension ShepherdViewModel {
             uniqueKeysWithValues: sidebarDerivations.ordered.prefix(9).enumerated()
                 .map { ($0.element.id, $0.offset + 1) }
         )
+        let visibleIDs = Set(input.spaces.map(\.id))
+        sidebarDerivations.visibleAgentCount = input.agents.count { visibleIDs.contains($0.spaceID) }
         sidebarDerivations.treeInput = input
         return sidebarDerivations
     }
@@ -117,9 +99,28 @@ extension ShepherdViewModel {
     private func cachedSpaceForest(_ spaces: [Space]) -> [(space: Space, depth: Int)] {
         if sidebarDerivations.forestInput != spaces {
             sidebarDerivations.forest = Self.spaceForest(spaces)
+            sidebarDerivations.repoBySpace = Dictionary(spaces.map { ($0.id, GitWorktree.isRepo($0.path)) }) { first, _ in first }
             sidebarDerivations.forestInput = spaces
         }
         return sidebarDerivations.forest
+    }
+
+    /// The visible spaces' containment forest (memoized).
+    var sidebarForest: [(space: Space, depth: Int)] { cachedSpaceForest(visibleSpaces) }
+
+    /// THIS MAC's agent count (memoized with the tree).
+    var localAgentCount: Int { refreshedSidebarDerivations().visibleAgentCount }
+
+    /// Whether `space` is a git checkout, from the memoized probe.
+    func spaceIsRepo(_ space: Space) -> Bool {
+        spaceRepoFlags[space.id] ?? GitWorktree.isRepo(space.path)
+    }
+
+    /// Whether each visible space is a git checkout, from the memoized probe: one lookup for a
+    /// whole tree, where `spaceIsRepo(_:)` per space would check the memo once per space.
+    var spaceRepoFlags: [SpaceID: Bool] {
+        _ = cachedSpaceForest(visibleSpaces)
+        return sidebarDerivations.repoBySpace
     }
 
     /// A space's agents in sidebar order: worktree agents first — they read
@@ -128,14 +129,25 @@ extension ShepherdViewModel {
     /// order producer (tree, ⌘1–9, palette) must use this so badges and
     /// rows never disagree.
     static func sidebarAgents(of space: SpaceID, in agents: [Agent]) -> [Agent] {
-        let inSpace = agents.filter { $0.spaceID == space }
-        return inSpace.filter { $0.worktreeBranch != nil }
-            + inSpace.filter { $0.worktreeBranch == nil }
+        NWRenderProbe.tick("sidebar.spaceScan")
+        return sidebarOrder(agents.filter { $0.spaceID == space })
+    }
+
+    /// Every space's agents in sidebar order, grouped in one pass: a whole tree built with
+    /// `sidebarAgents(of:in:)` per space scans every agent once per space.
+    static func sidebarAgentsBySpace(_ agents: [Agent]) -> [SpaceID: [Agent]] {
+        Dictionary(grouping: agents, by: \.spaceID).mapValues(sidebarOrder)
+    }
+
+    /// One space's agents, worktree agents first, each group in declaration order.
+    private static func sidebarOrder(_ inSpace: [Agent]) -> [Agent] {
+        inSpace.filter { $0.worktreeBranch != nil } + inSpace.filter { $0.worktreeBranch == nil }
     }
 
     /// Flattened depth-first forest of spaces by path containment: children
     /// directly follow their parent, top-level spaces keep declaration order.
     static func spaceForest(_ spaces: [Space]) -> [(space: Space, depth: Int)] {
+        NWRenderProbe.tick("sidebar.spaceForest")
         func normalized(_ path: String) -> String {
             let expanded = (path as NSString).expandingTildeInPath
             let resolved = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().path
@@ -176,9 +188,8 @@ extension ShepherdViewModel {
     /// Every agent in full forest order, ignoring collapse — the waiting
     /// queue counts blocked agents even inside collapsed spaces.
     private var agentsInForestOrder: [Agent] {
-        cachedSpaceForest(visibleSpaces).flatMap {
-            Self.sidebarAgents(of: $0.space.id, in: state.agents)
-        }
+        let bySpace = Self.sidebarAgentsBySpace(state.agents)
+        return cachedSpaceForest(visibleSpaces).flatMap { bySpace[$0.space.id] ?? [] }
     }
 
     /// Shared traversal for the sidebar tree and its shortcut order. A
@@ -215,9 +226,10 @@ extension ShepherdViewModel {
         in state: ShepherdState,
         collapsed: Set<SpaceID> = []
     ) -> [Agent] {
-        visibleSpaceForest(state.spaces.filter { !$0.hidden }, collapsed: collapsed).flatMap { entry -> [Agent] in
+        let bySpace = sidebarAgentsBySpace(state.agents)
+        return visibleSpaceForest(state.spaces.filter { !$0.hidden }, collapsed: collapsed).flatMap { entry -> [Agent] in
             guard !collapsed.contains(entry.space.id) else { return [] }
-            return sidebarAgents(of: entry.space.id, in: state.agents)
+            return bySpace[entry.space.id] ?? []
         }
     }
 
@@ -245,10 +257,6 @@ extension ShepherdViewModel {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
         guard let agent = state.agents.first(where: { $0.id == id }) else { return }
-        // Ordinary selection returns the workspace to the agent's terminal;
-        // openChildInspector re-raises the inspector after this call.
-        inspectingAgentID = nil
-        selectedShellID = nil
         selectedRemoteAgent = nil
         selectionHistory.removeAll { $0 == id }
         selectionHistory.append(id)
@@ -259,7 +267,7 @@ extension ShepherdViewModel {
     }
 
     /// Reselect the most recently selected agent that still exists, after
-    /// `dying` goes away. Falls back to the space shell when history is empty.
+    /// `dying` goes away. Falls back to no selection (an empty workspace) when history is empty.
     func selectPreviousAgent(after dying: AgentID) {
         selectionHistory.removeAll { $0 == dying }
         while let candidate = selectionHistory.last {
@@ -278,11 +286,15 @@ extension ShepherdViewModel {
         return focusMemory.focus(enteringTab: tabID, layout: layout, fallback: fallback)
     }
 
-    /// A space's `shell` row shows the space's shell workspace.
+    /// Go to a space (palette, Space menu): its most recently selected agent, else its first
+    /// in sidebar order, else the space with no agent (an empty workspace offering New agent).
     func selectSpace(_ id: SpaceID) {
         guard state.spaces.contains(where: { $0.id == id }) else { return }
-        inspectingAgentID = nil
-        selectedShellID = nil
+        let agents = state.agents.filter { $0.spaceID == id }
+        if let recent = selectionHistory.last(where: { recent in agents.contains { $0.id == recent } }) ?? orderedAgents.first(where: { $0.spaceID == id })?.id {
+            selectAgent(recent)
+            return
+        }
         selectedRemoteAgent = nil
         selectedSpaceID = id
         selectedAgentID = nil
@@ -296,7 +308,11 @@ extension ShepherdViewModel {
     /// first. A collapsed ancestor hides the space's row entirely, so these
     /// are exactly the disclosures a selection has to open. Pure, for tests.
     static func ancestorSpaceIDs(of space: SpaceID, in spaces: [Space]) -> [SpaceID] {
-        let forest = spaceForest(spaces)
+        ancestorSpaceIDs(of: space, forest: spaceForest(spaces))
+    }
+
+    /// `ancestorSpaceIDs(of:in:)` over an already built forest.
+    static func ancestorSpaceIDs(of space: SpaceID, forest: [(space: Space, depth: Int)]) -> [SpaceID] {
         guard let index = forest.firstIndex(where: { $0.space.id == space }) else { return [] }
         var depth = forest[index].depth
         var ancestors: [SpaceID] = []
@@ -320,7 +336,9 @@ extension ShepherdViewModel {
         // selected row, even when the selection itself didn't change.
         sidebarRevealRequest += 1
         guard let id else { return }
-        let ancestors = Set(Self.ancestorSpaceIDs(of: id, in: visibleSpaces))
+        // The memoized forest: building it again on every selection costs a path search per
+        // pair of spaces.
+        let ancestors = Set(Self.ancestorSpaceIDs(of: id, forest: sidebarForest))
         if !ancestors.isDisjoint(with: collapsedSpaces) {
             collapsedSpaces.subtract(ancestors)
         }
@@ -329,19 +347,30 @@ extension ShepherdViewModel {
     /// The sidebar row a selection change should scroll into view: the
     /// selected local agent's row, or its space's header row when the space
     /// is collapsed (the agent has no row then). Nil when nothing local is
-    /// on screen to reveal — a shell or remote agent owns the workspace, or
+    /// on screen to reveal — a remote agent owns the workspace, or
     /// the space has no visible row (hidden, or under a collapsed parent).
     /// Pure, separated for tests.
     static func sidebarRevealTarget(
         selectedAgentID: AgentID?,
         selectedSpaceID: SpaceID?,
-        shellSelected: Bool,
         remoteSelected: Bool,
         spaces: [Space],
         collapsed: Set<SpaceID>
     ) -> AnyHashable? {
-        guard !shellSelected, !remoteSelected, let spaceID = selectedSpaceID else { return nil }
-        let visible = visibleSpaceForest(spaces.filter { !$0.hidden }, collapsed: collapsed)
+        sidebarRevealTarget(selectedAgentID: selectedAgentID, selectedSpaceID: selectedSpaceID, remoteSelected: remoteSelected,
+                            forest: spaceForest(spaces.filter { !$0.hidden }), collapsed: collapsed)
+    }
+
+    /// `sidebarRevealTarget(…spaces:…)` over the visible spaces' already built forest.
+    static func sidebarRevealTarget(
+        selectedAgentID: AgentID?,
+        selectedSpaceID: SpaceID?,
+        remoteSelected: Bool,
+        forest: [(space: Space, depth: Int)],
+        collapsed: Set<SpaceID>
+    ) -> AnyHashable? {
+        guard !remoteSelected, let spaceID = selectedSpaceID else { return nil }
+        let visible = visibleSpaceForest(forest: forest, collapsed: collapsed)
         guard visible.contains(where: { $0.space.id == spaceID }) else { return nil }
         if let selectedAgentID, !collapsed.contains(spaceID) { return AnyHashable(selectedAgentID) }
         return AnyHashable(spaceID)
@@ -358,19 +387,16 @@ extension ShepherdViewModel {
         return Self.sidebarRevealTarget(
             selectedAgentID: selectedAgentID,
             selectedSpaceID: selectedSpaceID,
-            shellSelected: selectedShellID != nil,
             remoteSelected: selectedRemoteAgent != nil,
-            spaces: state.spaces,
+            forest: sidebarForest,
             collapsed: collapsedSpaces
         )
     }
 
-    /// A REMOTE row shows that agent's terminal, streamed from its host.
+    /// A REMOTE row shows that agent's thread, served by its host.
     func selectRemoteAgent(hostID: UUID, agentID: AgentID) {
         remoteInspectionRequest = UUID()
         remoteInspectingAgent = nil
-        inspectingAgentID = nil
-        selectedShellID = nil
         selectedRemoteAgent = RemoteAgentRef(hostID: hostID, agentID: agentID)
         lastRemoteAgentByHost[hostID] = agentID
         // Same rule as the local tree: a selected row must not stay hidden
@@ -491,7 +517,6 @@ extension ShepherdViewModel {
     }
 
     var activeMachineAgents: [Agent] {
-        _ = remoteProjectionRevision
         guard let remote = selectedRemoteAgent else { return orderedAgents }
         return remoteOrderedAgents(hostID: remote.hostID)
     }
@@ -499,9 +524,10 @@ extension ShepherdViewModel {
     func remoteOrderedAgents(hostID: UUID) -> [Agent] {
         guard let connection = remoteHosts.connections.first(where: { $0.id == hostID }),
               connection.phase == .connected, !collapsedHosts.contains(hostID) else { return [] }
+        let bySpace = Self.sidebarAgentsBySpace(connection.state.agents)
         return connection.state.spaces.filter {
             !$0.hidden && !isRemoteSpaceCollapsed(hostID: hostID, spaceID: $0.id)
-        }.flatMap { Self.sidebarAgents(of: $0.id, in: connection.state.agents) }
+        }.flatMap { bySpace[$0.id] ?? [] }
     }
 
     func selectAgentDigit(_ digit: Int) {
@@ -513,8 +539,14 @@ extension ShepherdViewModel {
     }
 
     func shortcutBadge(for id: AgentID) -> Int? {
-        guard showAgentShortcutBadges, selectedRemoteAgent == nil else { return nil }
-        return refreshedSidebarDerivations().badges[id]
+        sidebarShortcutBadges[id]
+    }
+
+    /// Every local agent's ⌘-digit badge while ⌘ is held; empty otherwise. One lookup for the
+    /// whole tree, where `shortcutBadge(for:)` per row would check the memo once per row.
+    var sidebarShortcutBadges: [AgentID: Int] {
+        guard showAgentShortcutBadges, selectedRemoteAgent == nil else { return [:] }
+        return refreshedSidebarDerivations().badges
     }
 
     /// ⌘↑/↓: move through agents in visible sidebar order, wrapping at the ends.
@@ -534,7 +566,7 @@ extension ShepherdViewModel {
     func focusAdjacentPane(_ delta: Int) {
         if let remote = selectedRemoteAgent,
            let layout = remoteVisibleTab(remote)?.layout {
-            let leaves = layout.leaves + (remoteInspectingAgent == remote ? [] : remoteReviews[remote].flatMap { $0.hostReviewPane ? nil : [LeafPane(id: $0.paneID, cwd: $0.cwd)] } ?? [])
+            let leaves = layout.leaves
             guard leaves.count > 1 else { return }
             let currentIndex = leaves.firstIndex { $0.id == remoteFocusedPaneID } ?? 0
             remoteFocusedPaneID = leaves[(currentIndex + delta + leaves.count) % leaves.count].id

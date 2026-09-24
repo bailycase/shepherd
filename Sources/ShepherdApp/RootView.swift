@@ -1,374 +1,156 @@
 import SwiftUI
+import Combine
+import AppKit
+import ShepherdUI
 import ShepherdCore
+import ShepherdRemote
 
 struct RootView: View {
     @Bindable var vm: ShepherdViewModel
-    @ObservedObject private var themes = ThemeManager.shared
-    @ObservedObject private var appearance = AppSettings.shared
+    private var themes: ThemeManager { .shared }
+    private var updater: AppUpdater { .shared }
     @Environment(\.colorScheme) private var systemColorScheme
-    @State private var renameDraft = ""
+    @Environment(\.openWindow) private var openWindow
     @State private var liveSidebarWidth: Double?
-    /// Unreconciled-work warning for the Delete Worktree Agent alert,
-    /// computed once when the target is set (a couple of quick git probes).
-    @State private var worktreeDeleteWarning: String?
+    @State private var windowWidth = AppLayout.windowDefaultWidth
+    /// In full screen the window controls are gone, so nothing needs to clear them.
+    @State private var isFullScreen = false
+
+    private var appearance: AppSettings { vm.settings }
+
+    private var sidebar: ShellLayout.Sidebar {
+        ShellLayout.sidebar(windowWidth: windowWidth, preferredWidth: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth),
+                            userHidden: vm.sidebarHidden, overlayShown: vm.sidebarOverlayShown)
+    }
 
     var body: some View {
-        let peerDeleteConfirmation = vm.peerDeleteConfirmation
+        let sidebar = sidebar
+        let docked = sidebar.mode == .docked
         HStack(spacing: 0) {
-            // Left column: flat sidebar surface runs continuously behind the
-            // traffic lights and the tree. No vibrancy material — the design
-            // is flat color everywhere.
-            VStack(spacing: 0) {
-                Color.clear
-                    .frame(height: Metrics.trafficLightHeight)
-                    .contentShape(Rectangle())
-                    .gesture(WindowDragGesture())
-                SidebarView(vm: vm)
+            // The flat base runs continuously behind the window controls and the tree. ⇧⌘S
+            // hides it; a window too narrow to dock it overlays it instead. It keeps its width
+            // while a right pane is open.
+            if docked {
+                HStack(spacing: 0) {
+                    SidebarView(vm: vm)
+                        .frame(width: sidebar.width)
+                        .background(Color.nw.bgBase.ignoresSafeArea())
+                    sidebarResizeHandle(width: sidebar.width)
+                }
+                // Over the main column, which takes its new frame at once as it slides.
+                .zIndex(1)
+                .nwTransition(.pane, edge: .leading)
             }
-            .frame(width: CGFloat(liveSidebarWidth ?? appearance.sidebarWidth))
-            .background(Tokens.sidebarBg.ignoresSafeArea())
-            // Rebuild chrome (not terminal panes) when density/text scale
-            // change; fonts and metrics are read inside row bodies where
-            // SwiftUI's input diffing cannot see them.
-            .id(appearance.appearanceKey)
-
-            sidebarResizeHandle
 
             VStack(spacing: 0) {
-                WorkspaceHeaderView(vm: vm)
+                WorkspaceHeaderView(
+                    vm: vm,
+                    leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
+                    showSidebar: docked ? nil : { vm.toggleSidebar() }
+                )
+                // Once, after an update moved this copy off the retired nightly channel. It
+                // leaves at once: easing the column's height would relay out every mounted
+                // layout on each frame.
+                if updater.nightlyMovedNoticePending {
+                    NightlyMovedNotice(download: { updater.downloadShepherdNightly() },
+                                       dismiss: { updater.dismissNightlyMovedNotice() })
+                }
                 WorkspaceView(vm: vm)
             }
-            .background(Tokens.workspaceBg)
+            .frame(maxWidth: .infinity)
+            .background(Color.nw.bgWindow)
+            // Every mounted layout reflows when the column's width changes; relaid out on each
+            // frame of the slide they drop frames, so the column snaps as the sidebar moves.
+            .animation(nil, value: docked)
         }
-        .coordinateSpace(name: "root-layout")
+        // What the sliding sidebar uncovers reads as its own base.
+        .background(Color.nw.bgBase.ignoresSafeArea())
+        // ⇧⌘S, the toolbar's button, the palette: the docked sidebar slides from the leading
+        // edge. Keyed on the preference alone: a window resize that docks or undocks it is instant.
+        .nwAnimation(.pane, value: vm.sidebarHidden)
+        .coordinateSpace(.named("root-layout"))
+        .overlay(alignment: .leading) {
+            sidebarOverlay(width: sidebar.width, shown: sidebar.mode == .overlay)
+                // A resize that crosses the fit point closes the overlay at once.
+                .animation(nil, value: vm.sidebarAutoHidden)
+                .nwAnimation(.pane, value: vm.sidebarOverlayShown)
+        }
         .overlay {
-            if vm.showSettings {
+            if vm.showComponentGallery {
+                ComponentGallery()
+                    .overlay(alignment: .topTrailing) {
+                        Button("Close") { vm.showComponentGallery = false }
+                            .buttonStyle(NWButtonStyle(.secondary)).padding(NW.Space.xl)
+                    }
+            } else if vm.showSettings {
                 SettingsView(vm: vm)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .zIndex(10)
-            // ⌘K palette floats over everything; the dimmer click-dismisses.
-            } else if vm.showCommandPalette {
-                ZStack(alignment: .top) {
-                    Color.black.opacity(0.25)
-                        .ignoresSafeArea()
-                        .onTapGesture { vm.showCommandPalette = false }
-                    CommandPaletteView(vm: vm)
-                        .padding(.top, 90)
-                }
             }
         }
-        .frame(minWidth: Metrics.windowMinWidth, minHeight: Metrics.windowMinHeight)
+        // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
+        .nwCommandPalette(isPresented: Binding(
+            get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },
+            set: { vm.showCommandPalette = $0 }
+        )) {
+            CommandPaletteView(vm: vm)
+        }
+        .background { MenuStateSync(vm: vm) }
+        .background { MainWindowReader() }
+        .nwDensity(appearance.sidebarRowDensity)
+        .environment(\.threadCommands, vm.threadCommands)
+        .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            windowWidth = width
+            vm.setSidebarAutoHidden(ShellLayout.sidebar(windowWidth: width, preferredWidth: CGFloat(appearance.sidebarWidth),
+                                                        userHidden: vm.sidebarHidden, overlayShown: false).autoHidden)
+        }
         .preferredColorScheme(themes.mode.colorScheme)
         .ignoresSafeArea()
-        .onAppear { vm.systemAppearanceChanged(systemColorScheme) }
+        .onAppear {
+            vm.systemAppearanceChanged(systemColorScheme)
+            MainWindow.open = { [openWindow] in openWindow(id: MainWindow.id) }
+        }
         .onChange(of: systemColorScheme) { vm.systemAppearanceChanged(systemColorScheme) }
-        .sheet(isPresented: $vm.showNewAgentSheet) {
-            NewAgentSheet(vm: vm)
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { vm.worktreeSheetTarget != nil },
-                set: { if !$0 { vm.worktreeSheetTarget = nil } }
-            )
-        ) {
-            if let space = vm.state.spaces.first(where: { $0.id == vm.worktreeSheetTarget }) {
-                NewWorktreeSheet(vm: vm, space: space)
+        // The overlaid sidebar is for picking: it closes once something is picked.
+        .onChange(of: vm.selectedAgentID) { vm.dismissSidebarOverlay() }
+        .onChange(of: vm.selectedRemoteAgent) { vm.dismissSidebarOverlay() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in isFullScreen = true }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in isFullScreen = false }
+        .modifier(AppDialogs(vm: vm))
+    }
+
+    /// The sidebar over the workspace in a window too narrow to dock it; it slides in from the
+    /// leading edge. Clicking outside closes it, as does picking a row.
+    private func sidebarOverlay(width: CGFloat, shown: Bool) -> some View {
+        ZStack(alignment: .leading) {
+            if shown {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { vm.dismissSidebarOverlay() }
+                    .accessibilityHidden(true)
+                SidebarView(vm: vm)
+                    .frame(width: width)
+                    .background(Color.nw.bgBase.ignoresSafeArea())
+                    .overlay(alignment: .trailing) { NWHairline(.vertical) }
+                    .nwFloatShadow()
+                    .nwTransition(.pane, edge: .leading)
             }
-        }
-        .sheet(isPresented: Binding(
-            get: { peerDeleteConfirmation != nil },
-            set: { if !$0, let confirmation = peerDeleteConfirmation {
-                vm.cancelPeerDeletion(requestID: confirmation.requestID)
-            } }
-        )) {
-            if let confirmation = peerDeleteConfirmation {
-                DialogSheet(
-                    title: "Delete Agent",
-                    subtitle: "\(confirmation.senderName) requests deletion of \(confirmation.agent.name) [\(confirmation.agent.id)]. This terminates its pi session and all auxiliary processes. Its worktree and branches will be kept.",
-                    actions: [
-                        DialogAction("Cancel", kind: .cancel) {
-                            vm.cancelPeerDeletion(requestID: confirmation.requestID)
-                        },
-                        DialogAction("Delete Agent", kind: .destructive) {
-                            Task { await vm.confirmPeerDeletion(requestID: confirmation.requestID) }
-                        },
-                    ]
-                )
-            }
-        }
-        .sheet(item: $vm.finalizeRequest) { request in
-            FinalizeWorktreeSheet(vm: vm, agent: request.agent, space: request.space)
-        }
-        .sheet(item: $vm.spacePickerTarget) { target in
-            switch target {
-            case .local:
-                RemoteDirectoryPicker(
-                    hostName: "this mac",
-                    list: { path in try LocalDirectoryLister.list(path: path) },
-                    choose: { path in
-                        vm.spacePickerTarget = nil
-                        Task { await vm.addSpace(at: URL(fileURLWithPath: path)) }
-                    },
-                    cancel: { vm.spacePickerTarget = nil }
-                )
-            case .importWorktree(let target):
-                RemoteDirectoryPicker(
-                    title: "Import Existing Worktree",
-                    actionTitle: "Import",
-                    hostName: "this mac",
-                    startPath: target.startPath,
-                    list: { path in try LocalDirectoryLister.list(path: path) },
-                    choose: { path in
-                        vm.spacePickerTarget = nil
-                        Task {
-                            await vm.importExistingCheckout(
-                                at: URL(fileURLWithPath: path),
-                                into: target.spaceID
-                            )
-                        }
-                    },
-                    cancel: { vm.spacePickerTarget = nil }
-                )
-            case .host(let hostID):
-                if let connection = vm.remoteHosts.connections.first(where: { $0.id == hostID }) {
-                    RemoteDirectoryPicker(
-                        hostName: connection.config.name,
-                        list: { path in
-                            try await vm.remoteHosts.listDir(hostID: hostID, path: path)
-                        },
-                        choose: { path in
-                            vm.spacePickerTarget = nil
-                            Task {
-                                do {
-                                    _ = try await vm.addRemoteSpace(hostID: hostID, path: path)
-                                } catch {
-                                    NSLog("Shepherd: remote space creation failed: \(error)")
-                                    NSSound.beep()
-                                }
-                            }
-                        },
-                        cancel: { vm.spacePickerTarget = nil }
-                    )
-                }
-            }
-        }
-        .onChange(of: vm.remoteRenameTarget) {
-            if let target = vm.remoteRenameTarget { renameDraft = vm.remoteAgent(target)?.name ?? "" }
-        }
-        .sheet(isPresented: Binding(
-            get: { vm.remoteRenameTarget != nil },
-            set: { if !$0 { vm.remoteRenameTarget = nil } }
-        )) {
-            RenameDialog(title: "Rename Agent", text: $renameDraft, onRename: {
-                if let target = vm.remoteRenameTarget {
-                    vm.performRemoteAction(target, action: .rename(name: renameDraft))
-                }
-                vm.remoteRenameTarget = nil
-            }, onCancel: { vm.remoteRenameTarget = nil })
-        }
-        .sheet(isPresented: Binding(
-            get: { vm.remoteWorktreeSheet != nil },
-            set: { if !$0 { vm.remoteWorktreeSheet = nil } }
-        )) {
-            if let target = vm.remoteWorktreeSheet {
-                RemoteWorktreeSheet(vm: vm, target: target, finalize: vm.remoteWorktreeFinalize)
-            }
-        }
-        .alert("Agent action failed", isPresented: Binding(
-            get: { vm.remoteActionError != nil },
-            set: { if !$0 { vm.remoteActionError = nil } }
-        )) {
-            Button("OK") { vm.remoteActionError = nil }
-        } message: { Text(vm.remoteActionError ?? "") }
-        .onChange(of: vm.agentRenameTarget) {
-            if let agent = vm.agent(id: vm.agentRenameTarget) {
-                renameDraft = agent.name
-            }
-        }
-        .onChange(of: vm.spaceRenameTarget) {
-            if let id = vm.spaceRenameTarget,
-               let space = vm.state.spaces.first(where: { $0.id == id }) {
-                renameDraft = space.name
-            }
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { vm.spaceRenameTarget != nil },
-                set: { if !$0 { vm.spaceRenameTarget = nil } }
-            )
-        ) {
-            RenameDialog(
-                title: "Rename Space",
-                caption: "Sidebar label only — the folder on disk is not renamed.",
-                text: $renameDraft,
-                onRename: {
-                    if let id = vm.spaceRenameTarget {
-                        vm.renameSpace(id, to: renameDraft)
-                    }
-                    vm.spaceRenameTarget = nil
-                },
-                onCancel: { vm.spaceRenameTarget = nil }
-            )
-        }
-        .onChange(of: vm.shellRenameTarget) {
-            if let id = vm.shellRenameTarget,
-               let shell = vm.state.tabs.first(where: { $0.id == id }) {
-                renameDraft = ShepherdViewModel.shellLabel(shell)
-            }
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { vm.shellRenameTarget != nil },
-                set: { if !$0 { vm.shellRenameTarget = nil } }
-            )
-        ) {
-            RenameDialog(
-                title: "Rename Shell",
-                text: $renameDraft,
-                onRename: {
-                    if let id = vm.shellRenameTarget {
-                        vm.renameShell(id, to: renameDraft)
-                    }
-                    vm.shellRenameTarget = nil
-                },
-                onCancel: { vm.shellRenameTarget = nil }
-            )
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { vm.agentRenameTarget != nil },
-                set: { if !$0 { vm.agentRenameTarget = nil } }
-            )
-        ) {
-            RenameDialog(
-                title: "Rename Agent",
-                text: $renameDraft,
-                onRename: {
-                    if let id = vm.agentRenameTarget {
-                        vm.renameAgent(id, to: renameDraft)
-                    }
-                    vm.agentRenameTarget = nil
-                },
-                onCancel: { vm.agentRenameTarget = nil }
-            )
-        }
-        .onChange(of: vm.worktreeDeleteTarget) {
-            worktreeDeleteWarning = nil
-            guard let agent = vm.agent(id: vm.worktreeDeleteTarget),
-                  let branch = agent.worktreeBranch,
-                  let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) else { return }
-            worktreeDeleteWarning = GitWorktree.unreconciledWork(
-                worktree: agent.worktreePath ?? GitWorktree.destination(repo: space.path, branch: branch),
-                branch: branch
-            )
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { vm.worktreeDeleteTarget != nil },
-                set: { if !$0 { vm.worktreeDeleteTarget = nil } }
-            )
-        ) {
-            let agent = vm.agent(id: vm.worktreeDeleteTarget)
-            let branch = agent?.worktreeBranch ?? ""
-            let path = agent?.worktreePath ?? vm.state.spaces.first { $0.id == agent?.spaceID }
-                .map { GitWorktree.destination(repo: $0.path, branch: branch) } ?? ""
-            DialogSheet(
-                title: "Delete Worktree Agent",
-                subtitle: "Stops \(agent?.name ?? "the agent"). “Delete Agent & Worktree” also removes its checkout and branch.",
-                width: 520,
-                actions: [
-                    DialogAction("Cancel", kind: .cancel) { vm.worktreeDeleteTarget = nil },
-                    DialogAction("Delete Agent, Keep Worktree") {
-                        confirmWorktreeDelete(removeWorktree: false)
-                    },
-                    DialogAction("Delete Agent & Worktree", kind: .destructive) {
-                        confirmWorktreeDelete(removeWorktree: true)
-                    },
-                ]
-            ) {
-                SheetRow("worktree") {
-                    Text(path)
-                        .font(Fonts.mono(11))
-                        .foregroundStyle(Tokens.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .help(path)
-                }
-                SheetRow("branch") {
-                    Text(branch)
-                        .font(Fonts.mono(11))
-                        .foregroundStyle(Tokens.textSecondary)
-                }
-                if let warning = worktreeDeleteWarning {
-                    DialogWarning(text: "\(warning) will be lost with the worktree.")
-                }
-            }
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { vm.spaceDeleteTarget != nil },
-                set: { if !$0 { vm.spaceDeleteTarget = nil } }
-            )
-        ) {
-            let space = vm.state.spaces.first { $0.id == vm.spaceDeleteTarget }
-            let count = vm.state.agents.count { $0.spaceID == vm.spaceDeleteTarget }
-            DialogSheet(
-                title: "Remove Space",
-                subtitle: "Removes \(space?.name ?? "this space") from the sidebar and stops its "
-                    + "\(count) agent\(count == 1 ? "" : "s"). Conversations stay on disk; the checkout "
-                    + "is untouched. Nested project spaces are separate and survive.",
-                actions: [
-                    DialogAction("Cancel", kind: .cancel) { vm.spaceDeleteTarget = nil },
-                    DialogAction("Remove Space", kind: .destructive) {
-                        let id = vm.spaceDeleteTarget
-                        vm.spaceDeleteTarget = nil
-                        // Deleting a space tears down mounted terminal
-                        // layouts — a huge view-tree change. Let the sheet
-                        // finish dismissing first; mutating its host
-                        // mid-dismissal wedges the modal session.
-                        if let id {
-                            Task { @MainActor in
-                                try? await Task.sleep(for: .milliseconds(300))
-                                vm.deleteSpace(id)
-                            }
-                        }
-                    },
-                ]
-            )
         }
     }
 
-    /// Same dismissal choreography as Remove Space: deleting tears down a
-    /// mounted terminal layout, so let the alert finish dismissing first.
-    private func confirmWorktreeDelete(removeWorktree: Bool) {
-        let id = vm.worktreeDeleteTarget
-        vm.worktreeDeleteTarget = nil
-        guard let id else { return }
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(300))
-            vm.deleteWorktreeAgent(id, removeWorktree: removeWorktree)
-        }
-    }
-
-    private var sidebarResizeHandle: some View {
-        Tokens.separator
-            .frame(width: 1)
+    /// The sidebar's trailing edge, and its drag handle (adjustable with VoiceOver). Resizing
+    /// never narrows the main column below its minimum.
+    private func sidebarResizeHandle(width: CGFloat) -> some View {
+        Color.nw.lineSubtle
+            .frame(width: AppLayout.dividerWidth)
             .overlay {
                 Color.clear
-                    .frame(width: 9)
+                    .frame(width: AppLayout.resizeHandleWidth)
                     .contentShape(Rectangle())
-                    .onHover { inside in
-                        if inside {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
-                        }
-                    }
+                    .pointerStyle(.columnResize)
                     .gesture(
                         DragGesture(minimumDistance: 1, coordinateSpace: .named("root-layout"))
-                            .onChanged { value in
-                                liveSidebarWidth = AppSettings.clampSidebarWidth(Double(value.location.x))
-                            }
+                            .onChanged { liveSidebarWidth = fittedSidebarWidth(Double($0.location.x)) }
                             .onEnded { _ in
                                 if let width = liveSidebarWidth {
                                     appearance.sidebarWidth = width
@@ -378,87 +160,76 @@ struct RootView: View {
                     )
             }
             .zIndex(1)
+            .accessibilityElement()
+            .accessibilityLabel("Sidebar width")
+            .accessibilityValue("\(Int(width)) points")
+            .accessibilityAdjustableAction { direction in
+                let step = Double(direction == .increment ? AppLayout.sidebarAdjustStep
+                                  : direction == .decrement ? -AppLayout.sidebarAdjustStep : 0)
+                appearance.sidebarWidth = fittedSidebarWidth(Double(width) + step)
+            }
+    }
+
+    /// A sidebar width within its range that leaves the main column its minimum.
+    private func fittedSidebarWidth(_ width: Double) -> Double {
+        AppSettings.clampSidebarWidth(min(width, Double(windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth)))
     }
 }
 
 // MARK: Workspace header
 
-/// The 42pt strip above the pane frame: `space / agent` breadcrumb and
-/// trailing `status ⟨age⟩` in the status color. This is the selected agent's
-/// identity line — the window has no other title.
+/// The 44pt toolbar over the workspace: the thread toolbar for the agent on screen (local or
+/// remote), else the space's name. The window has no other title.
 struct WorkspaceHeaderView: View {
     var vm: ShepherdViewModel
-    /// Re-render on density/text-scale changes; never `.id`-keyed — that
-    /// would remount, which is harmless here but banned near terminal panes.
-    @ObservedObject private var appearance = AppSettings.shared
+    /// Clears the window controls while the sidebar is not docked (zero in full screen).
+    var leadingInset: CGFloat = 0
+    /// Shown while the sidebar is not docked.
+    var showSidebar: (() -> Void)?
+
+    private var keys: KeybindingsStore { vm.keybindings }
 
     var body: some View {
-        HStack(spacing: 8) {
+        Group {
             if let remote = vm.selectedRemoteAgent,
-               let connection = vm.remoteHosts.connections.first(where: { $0.id == remote.hostID }) {
-                let agent = connection.state.agents.first { $0.id == remote.agentID }
-                breadcrumb(space: "⌁ \(connection.config.name)", leaf: agent?.name ?? "agent")
-                Spacer(minLength: 0)
-                reviewButton
-            } else if let shellID = vm.selectedShellID,
-               let shell = vm.state.tabs.first(where: { $0.id == shellID }) {
-                breadcrumb(space: "shells", leaf: ShepherdViewModel.shellLabel(shell))
-                Spacer(minLength: 0)
-            } else if let agent = vm.selectedAgent,
-               let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
-                breadcrumb(
-                    space: space.name,
-                    leaf: vm.inspectingAgentID == agent.id ? "\(agent.name) / subagents" : agent.name
-                )
-                Spacer(minLength: 0)
-                reviewButton
-            } else if let space = vm.selectedSpace {
-                breadcrumb(space: space.name, leaf: "shell")
-                Spacer(minLength: 0)
+               let connection = vm.remoteHosts.connections.first(where: { $0.id == remote.hostID }),
+               let agent = connection.state.agents.first(where: { $0.id == remote.agentID }) {
+                if vm.remoteInspectingAgent == remote {
+                    PlainHeader(title: "\(agent.name) · terminal", leadingInset: leadingInset, showSidebar: showSidebar)
+                } else {
+                    threadHeader(store: vm.remoteThreadStores.store(for: remote), project: "⌁ \(connection.config.name)",
+                                 title: agent.name, rename: { vm.remoteRenameTarget = remote })
+                        .id(remote)
+                }
+            } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,
+                      let space = vm.state.spaces.first(where: { $0.id == agent.spaceID }) {
+                threadHeader(store: vm.threadStores.store(for: agent.id), project: space.name, title: agent.name,
+                             rename: { vm.agentRenameTarget = agent.id })
+                    // One toolbar per agent: switching replaces it at once instead of animating
+                    // one agent's status and counters into another's.
+                    .id(agent.id)
             } else {
-                Spacer(minLength: 0)
+                PlainHeader(title: vm.selectedSpace?.name ?? "Shepherd", leadingInset: leadingInset, showSidebar: showSidebar)
             }
         }
-        .padding(.horizontal, 16)
-        .frame(height: Metrics.headerHeight)
-        .frame(maxWidth: .infinity)
-        .background(Tokens.workspaceBg)
         .contentShape(Rectangle())
         .gesture(WindowDragGesture())
+        // Switching agents is a visibility flip: the next agent's toolbar lands at once, even when
+        // the switch rides an animation (the palette closing), and its controls (a pane toggle,
+        // the status pill) don't fade their own state into it.
+        .transaction(value: vm.selectedAgentID, Self.switchAtOnce)
+        .transaction(value: vm.selectedRemoteAgent, Self.switchAtOnce)
     }
 
-    /// Toggles the native diff-review pane for the selected agent.
-    private var reviewButton: some View {
-        let open = vm.selectedRemoteAgent.map { vm.remoteReviews[$0] != nil }
-            ?? (vm.selectedAgentID.map { id in vm.reviewSessions.values.contains { $0.agentID == id } } ?? false)
-        return Button {
-            vm.openUserReview()
-        } label: {
-            Image(systemName: "plus.forwardslash.minus")
-                .font(.system(size: 11))
-                .foregroundStyle(open ? Tokens.focusAccent : Tokens.textSecondary)
-        }
-        .buttonStyle(.plain)
-        .help(open ? "Close the diff review" : "Review the working-tree diff and send comments to this agent")
-        .contextMenu {
-            Button("Review Uncommitted Changes") { vm.openUserReview() }
-            Button("Review PR Changes") { vm.openUserPRReview() }
-        }
+    private static func switchAtOnce(_ transaction: inout Transaction) {
+        transaction.animation = nil
+        transaction.disablesAnimations = true
     }
 
-    private func breadcrumb(space: String, leaf: String) -> some View {
-        HStack(spacing: 5) {
-            Text(space)
-                .font(Fonts.mono(12.5))
-                .foregroundStyle(Tokens.textSecondary)
-            Text("/")
-                .font(Fonts.mono(12.5))
-                .foregroundStyle(Tokens.textDim)
-            Text(leaf)
-                .font(Fonts.mono(12.5, .semibold))
-                .foregroundStyle(Tokens.textPrimary)
-        }
-        .lineLimit(1)
+    private func threadHeader(store: NativeThreadStore, project: String, title: String, rename: @escaping () -> Void) -> ThreadHeader {
+        ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
+                     reviewOpen: vm.isReviewPaneShowing, inspectorOpen: vm.isInspectorShowing,
+                     reviewShortcut: keys.display(.toggleRightPane), inspectShortcut: keys.display(.inspectSubagent),
+                     toggleReview: { vm.toggleReviewPane() }, toggleSubagents: { vm.toggleSubagentPane() }, rename: rename)
     }
-
 }

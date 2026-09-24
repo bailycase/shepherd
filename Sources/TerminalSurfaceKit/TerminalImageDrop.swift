@@ -29,8 +29,8 @@ public enum TerminalImageDrop {
     /// JPEG quality for re-encoded photographic images.
     private static let jpegQuality = 0.9
 
-    /// Where dropped image data is materialized.
-    static var dropDirectory: URL {
+    /// Where dropped image data is materialized unless a caller passes its own directory.
+    public static var dropDirectory: URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("shepherd-drops", isDirectory: true)
     }
@@ -77,13 +77,15 @@ public enum TerminalImageDrop {
 
     /// Resolve every provider to a file path, materializing image data when
     /// there is no file behind it. Order is preserved; unusable items are
-    /// dropped.
-    public static func resolve(_ providers: [NSItemProvider]) async -> [URL] {
-        (try? await resolve(providers, maximumBytes: nil)) ?? []
+    /// dropped. Copies land in `directory`, which is pruned of drops older than a day.
+    public static func resolve(_ providers: [NSItemProvider], directory: URL = dropDirectory) async -> [URL] {
+        (try? await resolve(providers, maximumBytes: nil, directory: directory)) ?? []
     }
 
-    public static func resolve(_ providers: [NSItemProvider], maximumBytes: Int?) async throws -> [URL] {
-        pruneOldDrops()
+    public static func resolve(
+        _ providers: [NSItemProvider], maximumBytes: Int?, directory: URL = dropDirectory
+    ) async throws -> [URL] {
+        pruneOldDrops(in: directory)
         var urls: [URL] = []
         for provider in providers {
             if let url = await fileURL(from: provider) {
@@ -93,8 +95,8 @@ public enum TerminalImageDrop {
                         throw CocoaError(.fileReadTooLarge, userInfo: [NSLocalizedDescriptionKey: "Remote drops require regular files no larger than \(maximumBytes / 1024 / 1024) MiB."])
                     }
                 }
-                urls.append(shrinkIfOversized(url) ?? url)
-            } else if let url = try await materializeImage(from: provider, maximumBytes: maximumBytes) {
+                urls.append(shrinkIfOversized(url, into: directory) ?? url)
+            } else if let url = try await materializeImage(from: provider, maximumBytes: maximumBytes, into: directory) {
                 urls.append(url)
             }
         }
@@ -125,7 +127,7 @@ public enum TerminalImageDrop {
     /// Resize an oversized image file into the drop directory, returning the
     /// replacement path. Returns nil when the file is not an oversized raster
     /// image, so the original is used untouched.
-    private static func shrinkIfOversized(_ url: URL) -> URL? {
+    private static func shrinkIfOversized(_ url: URL, into dropDirectory: URL) -> URL? {
         guard let type = UTType(filenameExtension: url.pathExtension.lowercased()),
               type.conforms(to: .image),
               type != .svg,
@@ -152,7 +154,9 @@ public enum TerminalImageDrop {
 
     // MARK: Raw image data
 
-    private static func materializeImage(from provider: NSItemProvider, maximumBytes: Int?) async throws -> URL? {
+    private static func materializeImage(
+        from provider: NSItemProvider, maximumBytes: Int?, into dropDirectory: URL
+    ) async throws -> URL? {
         guard let type = imageType(of: provider),
               let data = await data(from: provider, type: type) else { return nil }
 
@@ -224,9 +228,11 @@ public enum TerminalImageDrop {
             bitmapDataPlanes: nil,
             pixelsWide: target.width,
             pixelsHigh: target.height,
+            // RGBA for both outputs: a 24-bit RGB bitmap cannot back a graphics context, so
+            // JPEGs were silently never resized. JPEG encoding drops the (opaque) alpha.
             bitsPerSample: 8,
-            samplesPerPixel: isJPEG ? 3 : 4,
-            hasAlpha: !isJPEG,
+            samplesPerPixel: 4,
+            hasAlpha: true,
             isPlanar: false,
             colorSpaceName: .deviceRGB,
             bytesPerRow: 0,
@@ -284,7 +290,7 @@ public enum TerminalImageDrop {
 
     /// Dropped images are ours forever otherwise. Anything older than a day is
     /// well past the turn that referenced it.
-    private static func pruneOldDrops() {
+    private static func pruneOldDrops(in dropDirectory: URL) {
         let fm = FileManager.default
         guard let entries = try? fm.contentsOfDirectory(
             at: dropDirectory,

@@ -3,11 +3,11 @@
 Commit `6391161` on `nightly`. Apple M4 Max, 48 GB, Swift 6.3, release build.
 
 ```bash
-SHEPHERD_BENCH=1 swift test -c release -Xswiftc -enable-testing \
-    --filter TerminalBenchmarkTests 2>&1 | grep BENCH
+SHEPHERD_BENCHMARK=1 swift test -c release -Xswiftc -enable-testing \
+    --filter TerminalBenchmarks 2>&1 | grep BENCH
 ```
 
-`Tests/ShepherdSessionsTests/TerminalBenchmarkTests.swift` prints one line per measurement. Debug builds run SwiftTerm roughly 10x slower; compare release to release only.
+`Tests/ShepherdSessionsIntegrationTests/TerminalBenchmarks.swift` prints one line per measurement. Debug builds run SwiftTerm roughly 10x slower; compare release to release only.
 
 ## Host side (measured)
 

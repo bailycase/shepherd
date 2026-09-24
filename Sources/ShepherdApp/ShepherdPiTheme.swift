@@ -2,9 +2,9 @@ import Foundation
 import ShepherdProtocol
 
 /// Materializes the active Shepherd theme for external tools. Pi watches the
-/// generated JSON, while Neovim watches the adjacent Basalt variant marker.
+/// generated JSON, while Neovim watches the adjacent variant marker.
 enum ShepherdPiTheme {
-    static let name = "basalt"
+    static let name = "night-watch"
     private static let filename = "shepherd-active-theme.json"
     static let variantFilename = "shepherd-active-theme"
 

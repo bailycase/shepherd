@@ -111,7 +111,7 @@ export default function shepherdReview(pi: ExtensionAPI) {
       "Open a native diff review pane in Shepherd showing the git diff. Returns immediately; " +
       "the user's line comments and summary arrive later as a regular message when they submit. " +
       "Use cwd to review another repository or worktree without changing the agent's directory. " +
-      "Reuses the agent's open review pane and focuses it if that workspace is visible. " +
+      "Reuses the agent's open review pane and brings it back in front of an inspected subagent. " +
       "Changing cwd discards the previous review comments and summary. Use before finalizing substantial changes.",
     promptSnippet: "Open a native diff review pane; pass cwd to target another repository or worktree",
     parameters: Type.Object({

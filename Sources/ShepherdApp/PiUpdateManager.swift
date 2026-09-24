@@ -1,28 +1,30 @@
 import Foundation
 import SwiftUI
+import ShepherdUI
 
 /// Checks the installed pi version and optionally updates pi plus its user
 /// extensions. Checks are intentionally independent of the auto-update toggle
 /// so the workspace can still warn when automatic updates are disabled.
 @MainActor
-final class PiUpdateManager: ObservableObject {
+@Observable
+final class PiUpdateManager {
     static let shared = PiUpdateManager()
 
     static let packageName = "@earendil-works/pi-coding-agent"
     static let checkInterval: Duration = .seconds(86_400)
 
-    @Published private(set) var currentVersion: String?
-    @Published private(set) var latestVersion: String?
+    private(set) var currentVersion: String?
+    private(set) var latestVersion: String?
     enum UpdateTarget {
         case pi, extensions, both
     }
 
-    @Published private(set) var isOutdated = false
-    @Published private(set) var isChecking = false
-    @Published private(set) var activeUpdate: UpdateTarget?
-    @Published private(set) var extensionsUpdatedAt: Date?
-    @Published private(set) var lastError: String?
-    @Published private(set) var lastChecked: Date?
+    private(set) var isOutdated = false
+    private(set) var isChecking = false
+    private(set) var activeUpdate: UpdateTarget?
+    private(set) var extensionsUpdatedAt: Date?
+    private(set) var lastError: String?
+    private(set) var lastChecked: Date?
 
     var isUpdating: Bool { activeUpdate != nil }
     var isBusy: Bool { isChecking || isUpdating }
@@ -35,7 +37,7 @@ final class PiUpdateManager: ObservableObject {
         !isBusy && (lastChecked == nil || isOutdated)
     }
 
-    private var timerTask: Task<Void, Never>?
+    @ObservationIgnored private var timerTask: Task<Void, Never>?
 
     init() {}
 

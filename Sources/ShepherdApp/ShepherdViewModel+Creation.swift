@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import SwiftUI
+import ShepherdUI
 import ShepherdCore
 import ShepherdSessions
 
@@ -91,16 +92,14 @@ extension ShepherdViewModel {
         startingCheckoutUsers[reservation] = path
         defer { startingCheckoutUsers.removeValue(forKey: reservation) }
         let space = Space(name: url.lastPathComponent, path: path)
-        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(LeafPane(cwd: path)))
         do {
-            try await server.addSpace(space, withTab: tab)
+            try await server.addSpace(space)
         } catch {
             NSLog("Shepherd: add space failed: \(error)")
             NSSound.beep()
             return nil
         }
-        // The atomic server mutation publishes one canonical snapshot. Adopt
-        // it here too because the callback may arrive after this await.
+        // Adopt the canonical snapshot here too: the callback may arrive after this await.
         let canonical = server.state
         sessions.stateDidChange(canonical)
         adopt(canonical)
@@ -265,11 +264,6 @@ extension ShepherdViewModel {
         return stem.trimmingCharacters(in: .whitespaces) + "…"
     }
 
-    /// Quiet hint under the tree when there are spaces but no agents.
-    var agentsHintText: String? {
-        guard state.agents.isEmpty, !state.spaces.isEmpty else { return nil }
-        return "no agents yet · \(keybindings.display(.newAgent))"
-    }
 
     // MARK: New agent
 
@@ -317,6 +311,7 @@ extension ShepherdViewModel {
             // or was typed into the TUI afterwards (⌘N). With auto-naming off
             // the provisional name is what the agent keeps, so it is final.
             nameIsFinal: !settings.autoNameAgents,
+            piSessionID: config.piSessionID,
             worktreeBranch: config.worktreeBranch,
             worktreeBase: config.worktreeBase,
             worktreePath: config.worktreePath
@@ -341,17 +336,12 @@ extension ShepherdViewModel {
         sessions.stateDidChange(canonical)
         state = canonical
 
-        // Optimistic switch: the agent's pane appears immediately, wearing
-        // the launch overlay, and the spawn continues behind it. Selection
-        // must not wait on the grid wait + spawn + attach below.
-        beginAgentLaunch(agentID)
+        // Optimistic switch: the agent's thread appears immediately in its connecting
+        // state while pi boots behind it.
         if selectAfter {
             selectAgent(agentID)
-            // A new agent is something you immediately talk to, so put the
-            // keyboard in its terminal — input typed during boot lands in
-            // pi's prompt once it draws. Selecting the agent focuses its
-            // pane in our own model; this makes sure the window is actually
-            // key, which it may not be when the New Agent sheet was just
+            // A new agent is something you immediately talk to, so the window must be key
+            // for its composer to take focus; it may not be when the New Agent sheet was just
             // dismissed.
             NSApp.activate(ignoringOtherApps: false)
             window?.makeKeyAndOrderFront(nil)
@@ -360,36 +350,9 @@ extension ShepherdViewModel {
         do {
             try await sessions.createAgentSession(pane: primary, tab: tab, agent: agent, initialPrompt: config.initialPrompt, isAutomation: config.isAutomation)
         } catch {
-            // Lift the overlay so the pane's failure placeholder is visible.
-            endAgentLaunch(agentID)
             throw AgentStartFailure(message: "session failed: \(error)")
         }
         return agentID
-    }
-
-    // MARK: Launch overlay
-
-    /// How long the launch overlay may cover a pane whose pi never reports
-    /// (missing binary, broken shell init, outdated pi): after this the
-    /// terminal's real output must win over a tidy boot.
-    static let launchOverlayTimeout: Duration = .seconds(15)
-
-    /// Cover `id`'s pane with `AgentLaunchOverlay` until pi's status
-    /// extension first reports (`applyAgentStatus`), the spawn fails, or
-    /// `launchOverlayTimeout` expires.
-    func beginAgentLaunch(_ id: AgentID) {
-        launchingAgents.insert(id)
-        launchTimeouts[id]?.cancel()
-        launchTimeouts[id] = Task { [weak self] in
-            try? await Task.sleep(for: Self.launchOverlayTimeout)
-            guard !Task.isCancelled else { return }
-            self?.endAgentLaunch(id)
-        }
-    }
-
-    func endAgentLaunch(_ id: AgentID) {
-        launchTimeouts.removeValue(forKey: id)?.cancel()
-        launchingAgents.remove(id)
     }
 
     /// The app's main window, for focus handling.

@@ -3,11 +3,10 @@ import ShepherdCore
 import ShepherdProtocol
 
 /// One row in the command palette: a destination or an action.
-struct PaletteItem: Identifiable {
-    enum Kind {
+struct PaletteItem: Identifiable, Equatable {
+    enum Kind: Equatable {
         case agent(AgentID)
         case space(SpaceID)
-        case shell(TabID)
         case child(agentID: AgentID, child: ChildRun)
         case remoteAgent(hostID: UUID, agentID: AgentID)
         case remoteSpace(hostID: UUID)
@@ -16,18 +15,49 @@ struct PaletteItem: Identifiable {
         case action(String)
     }
 
-    /// Grouping header in the results list, in display order.
+    /// Grouping header in the results list, in display order (DESIGN.md › Command palette:
+    /// Commands, This thread, Subagents, and Agents when searching).
     enum Section: Int, CaseIterable {
-        case commands, threads, shells, spaces, subagents, fuzzyMatches
+        case commands, thisThread, subagents, agents, spaces, conversations
 
         var title: String {
             switch self {
-            case .commands: return "commands"
-            case .threads: return "threads"
-            case .shells: return "shells"
-            case .spaces: return "spaces"
-            case .subagents: return "subagents"
-            case .fuzzyMatches: return "fuzzy matches"
+            case .commands: "Commands"
+            case .thisThread: "This thread"
+            case .subagents: "Subagents"
+            case .agents: "Agents"
+            case .spaces: "Spaces"
+            case .conversations: "Found in conversations"
+            }
+        }
+
+        /// Destinations stay out of the idle list (it would be the whole sidebar again); they
+        /// appear once there is a query or the Agents scope is chosen.
+        var isDestination: Bool {
+            switch self {
+            case .agents, .spaces, .conversations: true
+            case .commands, .thisThread, .subagents: false
+            }
+        }
+    }
+
+    /// The scope pills beside the search field.
+    enum Scope: CaseIterable {
+        case all, commands, agents
+
+        var title: String {
+            switch self {
+            case .all: "All"
+            case .commands: "Commands"
+            case .agents: "Agents"
+            }
+        }
+
+        func includes(_ section: Section) -> Bool {
+            switch self {
+            case .all: true
+            case .commands: section == .commands || section == .thisThread
+            case .agents: section != .commands && section != .thisThread
             }
         }
     }
@@ -35,14 +65,16 @@ struct PaletteItem: Identifiable {
     let id: String
     let kind: Kind
     let section: Section
-    /// Row text ("new agent in dotfiles/", "rate-limit").
+    /// Row label ("New agent", "Rename", an agent's name).
     let title: String
-    /// Dim trailing context ("agent · MONO", "⌘T").
+    /// Dim trailing context ("in Shepherd/", "working tree", "proj · running").
     var subtitle: String?
-    /// Keycap hint shown trailing, when the item has a chord.
+    /// The real chord, as the keybinding store displays it ("⇧⌘N").
     var shortcut: String?
-    /// Set on thread rows whose *session content* matched the query (title
-    /// may not contain it); shows a dim `…matched text…` snippet.
+    /// SF Symbol for the 15pt row icon.
+    var icon: String = "circle"
+    /// Set on agent rows whose *session content* matched the query (the title may not
+    /// contain it); shows a dim `…matched text…` snippet.
     var contentSnippet: String?
 }
 
@@ -67,14 +99,19 @@ enum PaletteSearch {
         return 3
     }
 
-    /// Title-filtered items, grouped into sections; ranking orders rows
-    /// within a section but sections keep their fixed order.
-    static func filter(_ items: [PaletteItem], query: String) -> [PaletteItem] {
+    /// The rows for `scope` and `query`, grouped into sections; ranking orders rows within a
+    /// section but sections keep their fixed order. An empty query in the All scope lists
+    /// only commands, this thread, and subagents.
+    static func filter(_ items: [PaletteItem], query: String, scope: PaletteItem.Scope = .all) -> [PaletteItem] {
         let trimmed = query.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return items }
+        let scoped = items.filter { scope.includes($0.section) }
+        guard !trimmed.isEmpty else {
+            return scope == .all ? scoped.filter { !$0.section.isDestination } : scoped
+        }
         var ranked: [(item: PaletteItem, rank: Int)] = []
-        for item in items {
-            if let r = rank(query: query, in: item.title) {
+        for item in scoped {
+            let text = [item.title, item.subtitle].compactMap { $0 }.joined(separator: " ")
+            if let r = rank(query: trimmed, in: item.title) ?? rank(query: trimmed, in: text).map({ $0 + 4 }) {
                 ranked.append((item, r))
             }
         }

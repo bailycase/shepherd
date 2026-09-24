@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Shepherd",
-    platforms: [.macOS("26.0")],
+    platforms: [.macOS("26.0"), .iOS("27.0")],
     products: [
         .library(name: "ShepherdCore", targets: ["ShepherdCore"]),
         .library(name: "ShepherdProtocol", targets: ["ShepherdProtocol"]),
@@ -15,6 +15,8 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "Vendor/libghostty-spm"),
+        // Night Watch, the design system: its own package (see Packages/ShepherdUI).
+        .package(path: "Packages/ShepherdUI"),
         .package(url: "https://github.com/migueldeicaza/SwiftTerm", from: "1.18.0"),
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
         .package(url: "https://github.com/tree-sitter/swift-tree-sitter", exact: "0.25.0"),
@@ -39,10 +41,12 @@ let package = Package(
             dependencies: ["ShepherdCore", "ShepherdProtocol"],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        // The pty child side (fork → exec) in C: nothing in Swift may run between fork and exec.
+        .target(name: "ShepherdPTYSpawn"),
         .target(
             name: "ShepherdSessions",
             dependencies: [
-                "ShepherdCore", "ShepherdProtocol", "ShepherdRemote",
+                "ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdPTYSpawn",
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
             ],
             swiftSettings: [.swiftLanguageMode(.v5)]
@@ -59,6 +63,7 @@ let package = Package(
             name: "ShepherdApp",
             dependencies: [
                 "ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "TerminalSurfaceKit",
+                .product(name: "ShepherdUI", package: "ShepherdUI"),
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "SwiftTreeSitter", package: "swift-tree-sitter"),
                 .product(name: "TreeSitterSwift", package: "tree-sitter-swift"),
@@ -78,17 +83,42 @@ let package = Package(
         .executableTarget(
             name: "shepherd-cli",
             dependencies: ["ShepherdCore", "ShepherdProtocol"],
-            swiftSettings: [.swiftLanguageMode(.v5)]
+            swiftSettings: [.swiftLanguageMode(.v5)],
+            // Embedded at Contents/MacOS; Xcode links ShepherdCore/ShepherdProtocol as frameworks
+            // in Contents/Frameworks, which only this rpath reaches in a release build.
+            linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
         ),
-        .testTarget(name: "ShepherdCoreTests", dependencies: ["ShepherdCore"]),
-        .testTarget(name: "ShepherdProtocolTests", dependencies: ["ShepherdProtocol"]),
+        // Tests come in two tiers (see AGENTS.md "Testing"):
+        //   *UnitTests — pure logic: no processes, sockets, windows, or sleeps. `swift test --filter UnitTests`.
+        //   *IntegrationTests and ShepherdPreviewTests — real servers, stub pi, git, AppKit
+        //   windows, rendered previews. `swift test --filter "IntegrationTests|PreviewTests"`.
+        .testTarget(name: "ShepherdCoreUnitTests", dependencies: ["ShepherdCore"]),
+        .testTarget(name: "ShepherdProtocolUnitTests", dependencies: ["ShepherdProtocol"]),
+        .testTarget(name: "ShepherdUIUnitTests", dependencies: [.product(name: "ShepherdUI", package: "ShepherdUI")]),
+        .testTarget(name: "ShepherdRemoteUnitTests", dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote"]),
+        .testTarget(name: "ShepherdSessionsUnitTests", dependencies: ["ShepherdSessions"]),
+        .testTarget(name: "ShepherdAppUnitTests", dependencies: ["ShepherdApp", "ShepherdTestKit"]),
+        .testTarget(name: "ShepherdCLIUnitTests", dependencies: ["shepherd-cli"]),
+        .testTarget(name: "TerminalSurfaceKitUnitTests", dependencies: ["TerminalSurfaceKit", "ShepherdTestKit"]),
+        // Test helpers every tier can use, with no Shepherd dependencies. Loading them isolates
+        // the whole test process (scratch support and pi agent directories, PATH, ZDOTDIR) before
+        // any test runs.
+        .target(name: "ShepherdTestIsolation", path: "Tests/ShepherdTestIsolation"),
+        .target(name: "ShepherdTestKit", dependencies: ["ShepherdTestIsolation"], path: "Tests/ShepherdTestKit"),
+        .target(
+            name: "ShepherdTestSupport",
+            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "ShepherdTestKit"],
+            path: "Tests/ShepherdTestSupport",
+            resources: [.copy("Resources/stub-pi.py")]
+        ),
+        .testTarget(name: "ShepherdSessionsIntegrationTests", dependencies: ["ShepherdSessions", "ShepherdTestSupport"]),
         .testTarget(
-            name: "ShepherdRemoteTests",
-            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote"]
+            name: "ShepherdAppIntegrationTests",
+            dependencies: ["ShepherdApp", "TerminalSurfaceKit", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")]
         ),
-        .testTarget(name: "ShepherdSessionsTests", dependencies: ["ShepherdSessions"]),
-        .testTarget(name: "TerminalSurfaceKitTests", dependencies: ["TerminalSurfaceKit"]),
-        .testTarget(name: "ShepherdAppTests", dependencies: ["ShepherdApp"]),
-        .testTarget(name: "ShepherdCLITests", dependencies: ["shepherd-cli"]),
+        .testTarget(
+            name: "ShepherdPreviewTests",
+            dependencies: ["ShepherdApp", "ShepherdTestSupport", .product(name: "ShepherdUI", package: "ShepherdUI")]
+        ),
     ]
 )

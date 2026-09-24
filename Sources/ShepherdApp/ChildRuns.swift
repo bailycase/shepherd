@@ -2,7 +2,7 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-/// Live pi-subagents child runs per agent — the sidebar's subagent rows.
+/// Child runs per agent, including finished native runs with inspectable transcripts.
 ///
 /// Pure value logic, separated from the view model for tests. Rows are
 /// ephemeral display state: pi-subagents owns the runs; Shepherd only mirrors
@@ -10,7 +10,9 @@ import ShepherdProtocol
 /// stick in the UI:
 ///   - a publish replaces the agent's rows wholesale (the extension always
 ///     sends its full projection),
-///   - terminal rows expire after `terminalTTL` even if no publish follows,
+///   - terminal legacy rows without pending attention expire after `terminalTTL`,
+///   - finished native transcripts stay available until the publisher removes them or the
+///     parent exits, so a finished run stays reachable from the palette,
 ///   - an agent whose extension has gone quiet (`staleAfter` without any
 ///     publish) loses all its rows — a killed pi can't strand "running" rows,
 ///   - `clear(agent:)` serves the hard cases (process exit, agent deletion).
@@ -37,18 +39,18 @@ struct ChildRuns {
         // Track when each row first went terminal, keyed by agent and row id;
         // the TTL runs from that moment, not from the publish that repeats it.
         var seen = Set<ChildKey>()
-        for child in children where child.isTerminal {
+        for child in children where child.isTerminal && !child.needsAttention {
             let key = ChildKey(agentID: agentID, runID: child.id)
             seen.insert(key)
             if terminalSince[key] == nil { terminalSince[key] = now }
         }
         for key in Array(terminalSince.keys) where key.agentID == agentID && !seen.contains(key) {
-            // Row disappeared or came back live (resume): forget the mark.
+            // Row disappeared, resumed, or needs a reply: forget the mark.
             terminalSince.removeValue(forKey: key)
         }
         let kept = children.filter { child in
             let key = ChildKey(agentID: agentID, runID: child.id)
-            guard child.isTerminal, let since = terminalSince[key] else { return true }
+            guard child.isTerminal, child.sessionFile == nil, let since = terminalSince[key] else { return true }
             return now.timeIntervalSince(since) < terminalTTL
         }
         if kept.isEmpty {
@@ -69,7 +71,14 @@ struct ChildRuns {
         let agentIDs = Set(rows.keys).union(publishedAt.keys)
         for agentID in agentIDs {
             if let last = publishedAt[agentID], now.timeIntervalSince(last) > staleAfter {
-                if rows.removeValue(forKey: agentID) != nil { changed = true }
+                // A quiet publisher must not strand live/attention rows, but a finished
+                // transcript remains useful even when no further updates arrive.
+                let retained = (rows[agentID] ?? []).filter {
+                    $0.isTerminal && !$0.needsAttention && $0.sessionFile != nil
+                }
+                if retained != rows[agentID] { changed = true }
+                if retained.isEmpty { rows.removeValue(forKey: agentID) }
+                else { rows[agentID] = retained }
                 publishedAt.removeValue(forKey: agentID)
                 for key in Array(terminalSince.keys) where key.agentID == agentID {
                     terminalSince.removeValue(forKey: key)
@@ -79,7 +88,7 @@ struct ChildRuns {
             guard let children = rows[agentID] else { continue }
             let kept = children.filter { child in
                 let key = ChildKey(agentID: agentID, runID: child.id)
-                guard child.isTerminal, let since = terminalSince[key] else { return true }
+                guard child.isTerminal, child.sessionFile == nil, let since = terminalSince[key] else { return true }
                 return now.timeIntervalSince(since) < terminalTTL
             }
             if kept.count != children.count {
