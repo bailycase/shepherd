@@ -393,7 +393,7 @@ struct PaneLeafView: View, Equatable {
                             }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
                                 do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
                             }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) })
-                            .id(inspecting)
+                            // The inspector keys its run itself, so a run switch nudges in from its side.
                             .nwTransition(.content)
                         } else if let review = model.review {
                             ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
@@ -694,7 +694,7 @@ private struct RemoteAgentThreadPane: View {
                         vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
                     }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
                     review: { vm.openRemoteReview(ref, path: $0) })
-                    .id(inspecting)
+                    // The inspector keys its run itself, so a run switch nudges in from its side.
                     .nwTransition(.content)
                 } else if let review {
                     ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: true), store: store)
