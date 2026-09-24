@@ -636,7 +636,7 @@ final class SidebarDropZone {
     }
 
     /// The list's coordinate space: rows register their frames in it, and drops arrive in it.
-    static let space = "sidebar.list"
+    nonisolated static let space = "sidebar.list"
 
     private(set) var line: Line?
     @ObservationIgnored private var frames: [AnyHashable: CGRect] = [:]
