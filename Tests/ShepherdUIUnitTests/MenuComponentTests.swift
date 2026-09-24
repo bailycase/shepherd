@@ -31,13 +31,13 @@ struct MenuComponentTests {
     /// The picker's list is 360pt tall at most, less when the room above the card is short, and
     /// never shorter than one row.
     @Test(arguments: [(nil, 360), (.infinity, 360), (1000, 360), (406, 360), (200, 154), (40, 28)] as [(CGFloat?, CGFloat)])
-    func thePickersListFitsTheRoomItIsGiven(room: CGFloat?, list: CGFloat) {
+    @MainActor func thePickersListFitsTheRoomItIsGiven(room: CGFloat?, list: CGFloat) {
         #expect(NWModelPicker.listMaxHeight(in: room) == list)
     }
 
     /// The slash menu shows eight rows at most, fewer when the room is short, and always one.
     @Test(arguments: [(nil, 8), (.infinity, 8), (1000, 8), (260, 8), (259, 7), (100, 2), (10, 1)] as [(CGFloat?, Int)])
-    func theSlashMenuShowsTheRowsThatFit(room: CGFloat?, rows: Int) {
+    @MainActor func theSlashMenuShowsTheRowsThatFit(room: CGFloat?, rows: Int) {
         #expect(NWSlashMenu.visibleRows(in: room) == rows)
     }
 }

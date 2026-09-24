@@ -11,7 +11,7 @@ struct ReviewComponentTests {
         (1, .added, "7–7", "+ 1 more added line · 7–7"),
         (6, .context, "", "+ 6 more unchanged lines"),
     ])
-    func foldRowsCountTheirLinesAndRange(count: Int, kind: NWDiffLineKind, range: String, label: String) {
+    @MainActor func foldRowsCountTheirLinesAndRange(count: Int, kind: NWDiffLineKind, range: String, label: String) {
         #expect(NWFoldRow.label(count: count, kind: kind, range: range) == label)
     }
 

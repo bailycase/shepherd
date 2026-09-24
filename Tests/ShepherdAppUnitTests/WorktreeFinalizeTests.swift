@@ -353,9 +353,10 @@ struct WorktreeSetupTests {
 
         """
 
-    /// Real `git ls-remote` stderr: the check shows the line that names the problem, not git's
-    /// boilerplate.
-    @Test(arguments: [
+    /// Real `git ls-remote` stderr and the line the check shows: the one that names the problem,
+    /// not git's boilerplate. Typed up front so the concatenations don't leave the type checker
+    /// inferring every tuple.
+    private nonisolated static let unreachableOrigins: [(String, String)] = [
         ("ssh: Could not resolve hostname github.invalid: nodename nor servname provided, or not known\n" + sshBoilerplate,
          "ssh: Could not resolve hostname github.invalid: nodename nor servname provided, or not known"),
         ("git@github.com: Permission denied (publickey).\n" + sshBoilerplate, "git@github.com: Permission denied (publickey)."),
@@ -370,7 +371,9 @@ struct WorktreeSetupTests {
          "fatal: repository 'https://github.com/o/missing.git/' not found"),
         (sshBoilerplate, "origin remote missing or unreachable"),
         ("", "origin remote missing or unreachable"),
-    ])
+    ]
+
+    @Test(arguments: unreachableOrigins)
     func anUnreachableOriginSaysWhyWithoutGitsBoilerplate(stderr: String, detail: String) async {
         let shell = ScriptedShell { $0.hasPrefix("git ls-remote") ? .fail(128, stderr) : .ok }
         let model = model(shell)
