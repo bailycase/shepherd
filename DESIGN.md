@@ -1200,7 +1200,7 @@ to Shepherd" or Esc returns.
 | **Worktrees** | Base branch (Remote default / Current branch), fetch before creating, and finalize: commit remaining work, generate PR descriptions, delete local branch, merge automatically (+ method) |
 | **Pi** | Bundled extensions (name agents automatically, sync pi theme, panes and agent tools, diff review tool, native subagents, subagent display), native subagent defaults, pi and extension updates |
 | **Remote** | Hosts (edit, reconnect, remove), add or edit a host (name, address, port, token), Serve this Mac (listener, token file) |
-| **Keyboard** | Rebindable shortcuts by group, the fixed chords, and Reset all |
+| **Keyboard** | Rebindable shortcuts by group; While pi is working (the Queue & steer boards' Keyboard card, in its order: ↩ and ⌘↩ named for what they do under the Return setting, the queue's keys, Stop pi); the fixed chords, and Reset all |
 | **Advanced** | Files (workspace state, extension socket), updates and channel (Shepherd: Stable or Beta in a segmented picker; Shepherd Nightly names its one channel, Nightly), reset settings |
 
 ### Dialogs and sheets
@@ -1333,8 +1333,9 @@ Fixed chords:
 - In the composer, ↩ sends (while pi works, it queues or steers per Settings) and ⇧↩ inserts a
   newline. `/` at the start opens the command list, and Esc closes a menu, then the command list,
   then stops pi while it works.
-- The queue's keys (`FixedChord`, listed in Settings ▸ Keyboard): ↑ in an empty composer edits
-  the last queued message; ⌥↑ ⌥↓ move the focused message and ⌫ deletes it.
+- The queue's keys (`FixedChord`, listed with the send keys under Settings ▸ Keyboard ▸ While pi
+  is working, `WhileWorkingKey`): ↑ in an empty composer edits the last queued message; ⌥↑ ⌥↓
+  move the focused message and ⌫ deletes it.
 
 Review-pane and menu keys are listed with their surfaces.
 
