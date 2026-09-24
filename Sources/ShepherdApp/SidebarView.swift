@@ -17,15 +17,18 @@ import UniformTypeIdentifiers
 /// broadcast, a drop, a click, a reveal. Selecting a row changes no row, so it lands at once.
 struct SidebarView: View {
     var vm: ShepherdViewModel
-    @State private var dropZone: SidebarDropZone
+    /// The view model's, built once: the root view builds this struct again on every update it
+    /// takes, and allocating a zone each time cost more than the struct itself.
+    let dropZone: SidebarDropZone
 
     /// `dropZone` lets a test drive a reorder drag as the drop delegate does.
     init(vm: ShepherdViewModel, dropZone: SidebarDropZone? = nil) {
         self.vm = vm
-        _dropZone = State(initialValue: dropZone ?? SidebarDropZone())
+        self.dropZone = dropZone ?? vm.sidebarDropZone
     }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("shell.sidebar")
         let tree = vm.sidebarTree()
         NWSidebar {
             ScrollViewReader { proxy in

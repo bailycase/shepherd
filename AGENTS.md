@@ -662,6 +662,13 @@ silently bring back full-repaint lag:
 - applying `setRenderingActive` fire-and-forget (the model retries; see
   [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md))
 - a layout view reading the view model's state instead of its model
+- the shell (`RootView`, `SidebarView`) reading the raw window width or building an object per
+  update: it watches `ShellLayout.layoutWidth`, which stops changing once the sidebar can't
+
+**During a window live resize** hidden layouts keep the column size they had when it began
+(`WorkspaceView.frozenSize`), so a drag relays out only the visible layout and a hidden shell
+takes one grid (one SIGWINCH) when it ends. Their outer frame is bounded on both sides, so a
+frozen layout wider than the column never widens the shell.
 
 **At launch** only the visible layout mounts in the first frame; the rest wait in
 `pendingMountTabIDs` and mount after it, two per run-loop turn, the visible space first

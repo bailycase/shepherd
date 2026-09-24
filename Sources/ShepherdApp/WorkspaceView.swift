@@ -8,6 +8,12 @@ import ShepherdSessions
 
 struct WorkspaceView: View {
     var vm: ShepherdViewModel
+    /// The column's size and the window, kept current without redrawing anything.
+    @State private var column = LiveResizeColumn()
+    /// The column's size when the window's live resize began, until it ends: hidden layouts
+    /// keep it, so a drag relays out only the visible one and a hidden shell takes one grid
+    /// (one SIGWINCH) when the drag ends instead of one per step.
+    @State private var frozenSize: CGSize?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +51,12 @@ struct WorkspaceView: View {
                         .accessibilityHidden(!isVisible)
                         // Nor draw its spinners and glows where no one sees them.
                         .environment(\.nwMotionPaused, !isVisible)
+                        // Nor follow a live resize frame by frame. The same modifiers either
+                        // way, so a flip never changes a layout's identity. The outer frame,
+                        // bounded on both sides, always takes the column's size, so a frozen
+                        // layout wider than the column never widens the shell around it.
+                        .frame(width: isVisible ? nil : frozenSize?.width, height: isVisible ? nil : frozenSize?.height)
+                        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 }
 
                 if let remote = vm.selectedRemoteAgent {
@@ -65,6 +77,16 @@ struct WorkspaceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.nw.bgWindow)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { column.size = $0 }
+            .background { LiveResizeColumn.WindowReader(column: column) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willStartLiveResizeNotification)) { note in
+            guard let window = column.window, note.object as? NSWindow === window else { return }
+            frozenSize = column.size
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didEndLiveResizeNotification)) { note in
+            guard let window = column.window, note.object as? NSWindow === window else { return }
+            frozenSize = nil
         }
         // Every path that changes the active tab lands here: keep parking bookkeeping current.
         .onChange(of: vm.activeTabID, initial: true) { vm.noteActiveTabVisited() }
@@ -76,6 +98,41 @@ struct WorkspaceView: View {
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
         // layouts (see TerminalDropOverlay.swift).
         .background { AppTerminalDropOverlay() }
+    }
+}
+
+/// The workspace column's size and its window, written as they change and read only when a
+/// live resize begins: a reference, so keeping them current redraws nothing.
+@MainActor
+final class LiveResizeColumn {
+    var size: CGSize?
+    weak var window: NSWindow?
+
+    /// Notes the window the workspace is in.
+    struct WindowReader: NSViewRepresentable {
+        let column: LiveResizeColumn
+
+        func makeNSView(context: Context) -> Reader {
+            let reader = Reader()
+            reader.column = column
+            return reader
+        }
+
+        func updateNSView(_ reader: Reader, context: Context) {
+            reader.column = column
+            column.window = reader.window
+        }
+
+        final class Reader: NSView {
+            weak var column: LiveResizeColumn?
+
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                column?.window = window
+            }
+
+            override func hitTest(_ point: NSPoint) -> NSView? { nil }
+        }
     }
 }
 

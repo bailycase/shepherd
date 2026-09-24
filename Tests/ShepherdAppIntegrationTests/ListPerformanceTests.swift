@@ -308,6 +308,44 @@ struct ListPerformanceTests {
         try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
     }
 
+    /// Dragging the window's edge relays out the visible layout alone: hidden layouts keep
+    /// their size until the drag ends, and the shell around them (the root view, the sidebar,
+    /// the palette's overlay) takes no update while the width changes nothing it lays out.
+    @Test func aResizeFrameRelaysOutOnlyTheVisibleLayout() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(6, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1400, height: 800), dark: true, RootView(vm: vm))
+        defer { window.close() }
+        let visible = vm.threadStores.store(for: agents[0].agent.id)
+        try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        try await Task.sleep(for: .milliseconds(300))
+        ListPerf.settle(window)
+
+        let sidebar = CGRect(x: 0, y: 80, width: 160, height: 320)
+        let before = FrameTimer.capture(window, sidebar)
+        NotificationCenter.default.post(name: NSWindow.willStartLiveResizeNotification, object: window.window)
+        ListPerf.settle(window)
+        let frames = 10
+        let rows = ListPerf.counting {
+            for step in 1...frames {
+                window.window.setContentSize(NSSize(width: 1400 - CGFloat(step) * 8, height: 800))
+                ListPerf.settle(window)
+            }
+        }
+        // The frozen layouts, wider than the column now, must not widen the shell around them.
+        let during = FrameTimer.capture(window, sidebar)
+        NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification, object: window.window)
+        ListPerf.settle(window)
+
+        #expect(during == before, "the sidebar stays put while hidden layouts are frozen")
+        #expect(rows["layout.paneTreeGeo", default: 0] <= frames, "the visible layout alone: \(rows)")
+        for key in ["shell.root", "shell.sidebar", "paletteOverlay"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
+    }
+
     /// A hidden agent reporting its status redraws no mounted layout: the workspace resolves
     /// each layout's values, and only a layout whose values changed runs again.
     @Test func aStatusReportRedrawsNoMountedLayout() async throws {

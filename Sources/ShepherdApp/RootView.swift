@@ -24,6 +24,7 @@ struct RootView: View {
     }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("shell.root")
         let sidebar = sidebar
         let docked = sidebar.mode == .docked
         HStack(spacing: 0) {
@@ -99,7 +100,9 @@ struct RootView: View {
         .nwDensity(appearance.sidebarRowDensity)
         .environment(\.threadCommands, vm.threadCommands)
         .frame(minWidth: AppLayout.windowMinWidth, minHeight: AppLayout.windowMinHeight)
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+        // Only the width the shell's layout can tell apart: past the widest window that still
+        // narrows the sidebar, a resize changes nothing here, so it reruns none of this.
+        .onGeometryChange(for: CGFloat.self) { ShellLayout.layoutWidth($0.size.width) } action: { width in
             windowWidth = width
             vm.setSidebarAutoHidden(ShellLayout.sidebar(windowWidth: width, preferredWidth: CGFloat(appearance.sidebarWidth),
                                                         userHidden: vm.sidebarHidden, overlayShown: false).autoHidden)
@@ -112,8 +115,7 @@ struct RootView: View {
         }
         .onChange(of: systemColorScheme) { vm.systemAppearanceChanged(systemColorScheme) }
         // The overlaid sidebar is for picking: it closes once something is picked.
-        .onChange(of: vm.selectedAgentID) { vm.dismissSidebarOverlay() }
-        .onChange(of: vm.selectedRemoteAgent) { vm.dismissSidebarOverlay() }
+        .modifier(SidebarOverlayDismissal(vm: vm))
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in isFullScreen = true }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in isFullScreen = false }
         .modifier(AppDialogs(vm: vm))
@@ -173,6 +175,18 @@ struct RootView: View {
     /// A sidebar width within its range that leaves the main column its minimum.
     private func fittedSidebarWidth(_ width: Double) -> Double {
         AppSettings.clampSidebarWidth(min(width, Double(windowWidth - AppLayout.dividerWidth - AppLayout.mainColumnMinWidth)))
+    }
+}
+
+/// Closes the overlaid sidebar once something is picked. Its own view, so a selection reruns
+/// this and not the root view around it.
+private struct SidebarOverlayDismissal: ViewModifier {
+    var vm: ShepherdViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: vm.selectedAgentID) { vm.dismissSidebarOverlay() }
+            .onChange(of: vm.selectedRemoteAgent) { vm.dismissSidebarOverlay() }
     }
 }
 

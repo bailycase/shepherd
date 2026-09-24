@@ -291,6 +291,8 @@ final class ShepherdViewModel {
     let threadCommands = ThreadCommandCenter()
     /// The menu bar's narrow view of this model (`MenuStateSync` keeps it current).
     let menuState = MenuState()
+    /// The sidebar's one drop target (`SidebarView`), kept here so no update allocates another.
+    let sidebarDropZone = SidebarDropZone()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = RightPaneState()
     /// System notifications when an unwatched agent finishes or blocks.
