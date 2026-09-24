@@ -7,11 +7,16 @@ public struct WaitTimeout: Error, CustomStringConvertible {
     public var description: String { "timed out waiting for \(what)" }
 }
 
+/// How long a wait gives a condition by default. The happy path returns as soon as it holds;
+/// the bound is for a process started on a loaded 3-core CI runner, where a stub pi took about
+/// ten seconds to answer.
+public let defaultWaitTimeout: Duration = .seconds(30)
+
 /// Wait for `condition` to hold, polling quickly. Integration tests use this only where no
 /// callback exists to await; it never sleeps a fixed amount. Throws `WaitTimeout` naming `what`.
 public func eventually(
     _ what: String,
-    timeout: Duration = .seconds(10),
+    timeout: Duration = defaultWaitTimeout,
     poll: Duration = .milliseconds(10),
     _ condition: () async throws -> Bool
 ) async throws {
@@ -28,7 +33,7 @@ public func eventually(
 @MainActor
 public func eventuallyOnMain(
     _ what: String,
-    timeout: Duration = .seconds(10),
+    timeout: Duration = defaultWaitTimeout,
     poll: Duration = .milliseconds(10),
     _ condition: @MainActor () throws -> Bool
 ) async throws {
