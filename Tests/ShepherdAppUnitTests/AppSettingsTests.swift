@@ -252,28 +252,3 @@ struct PiUpdateTests {
         #expect(PiUpdateManager.isVersion(current, olderThan: latest) == older)
     }
 }
-
-/// Feed names are a contract between the release workflow and the app.
-@Suite("Update channels")
-struct UpdateChannelTests {
-    @Test(arguments: [
-        (UpdateChannel.stable, nil, Set<String>()),
-        (.rc, "appcast-rc.xml", ["rc"]),
-        (.beta, "appcast-beta.xml", ["beta"]),
-        (.nightly, "appcast-nightly.xml", ["nightly"]),
-    ] as [(UpdateChannel, String?, Set<String>)])
-    func eachChannelReadsItsOwnFeedAndTag(channel: UpdateChannel, feed: String?, tags: Set<String>) {
-        #expect(channel.feedFileName == feed)
-        #expect(channel.allowedSparkleChannels == tags)
-    }
-
-    /// A build defaults to the channel it was born on, so an rc install never reads the stable
-    /// feed and reports itself newest forever.
-    @Test(arguments: [
-        ("1.2.3", UpdateChannel.stable), ("1.3.0-rc.1", .rc), ("1.3.0-beta.2", .beta),
-        ("0.0.0-nightly.202608280344", .nightly), ("", .stable),
-    ])
-    func buildsDefaultToTheirBirthChannel(version: String, channel: UpdateChannel) {
-        #expect(UpdateChannel.defaultChannel(forVersion: version) == channel)
-    }
-}

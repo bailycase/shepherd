@@ -42,6 +42,25 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Settings ▸ Advanced ▸ Updates as each app shows it. Sparkle only runs in a bundled app,
+    /// so the Advanced page above renders without this group.
+    @Test func updateChannelRows() async throws {
+        let size = CGSize(width: AppLayout.settingsContentWidth + 2 * AppLayout.settingsGutter, height: 300)
+        try await Preview.render("settings-update-channel", size: size) {
+            VStack(alignment: .leading, spacing: AppLayout.settingsGroupSpacing) {
+                SettingsGroup(title: "Shepherd") {
+                    UpdateChannelRow(edition: .main, channel: .constant(.beta))
+                }
+                SettingsGroup(title: "Shepherd Nightly") {
+                    UpdateChannelRow(edition: .nightly, channel: .constant(.nightly))
+                }
+            }
+            .padding(AppLayout.settingsGutter)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
     // MARK: Creation sheets
 
     @Test func newAgentSheet() async throws {
