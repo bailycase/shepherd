@@ -32,7 +32,8 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// Thinking for one stretch of work (merged between prose), or the live block.
         case thinking(id: String, text: String, seconds: Double?, live: Bool, since: Double?)
         case prose(id: String, text: String, blocks: [NativeMarkdownBlock])
-        case activity(NativeActivityBurst)
+        /// A stretch of tool work: its lines, folded into one summary line once there are two.
+        case work(NativeWorkGroup)
         /// Subagent cards at a spawn position: `callIDs` look up the placement; `all` is a
         /// folded group (every run of the turn in one stack).
         case subagents(id: String, callIDs: [String], all: Bool)
@@ -43,7 +44,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         public var id: String {
             switch self {
             case .thinking(let id, _, _, _, _), .prose(let id, _, _), .subagents(let id, _, _), .note(let id, _), .error(let id, _, _, _): id
-            case .activity(let burst): "burst:" + burst.id
+            case .work(let group): "work:" + group.id
             }
         }
     }
@@ -72,15 +73,15 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         return false
     }
 
-    /// The last item is a running call.
+    /// The last item is work with a running call.
     public var endsInLiveActivity: Bool {
-        if case .activity(let burst)? = items.last { return burst.state == .running }
+        if case .work(let group)? = items.last { return group.isLive }
         return false
     }
 }
 
-/// Builds a turn's presentation. Consecutive calls of one kind merge into activity lines;
-/// prose splits them. Thinking between prose blocks folds into one "Thought for Ns" at the
+/// Builds a turn's presentation. Consecutive calls of one kind merge into activity lines, and a
+/// stretch's lines form one work group; prose and cards split them. Thinking between prose blocks folds into one "Thought for Ns" at the
 /// start of its stretch, so a thinking model's per-call reasoning does not break every line
 /// in two; the block still streaming stays last, live. `call` builds a call from its message
 /// (the store passes a memoised one).
@@ -149,7 +150,7 @@ public func nativeTurnPresentation(
 
     func flushCalls() {
         guard !stretchCalls.isEmpty else { return }
-        stretchItems += nativeActivityBursts(stretchCalls).map { .activity($0) }
+        if let group = nativeWorkGroup(stretchCalls) { stretchItems.append(.work(group)) }
         stretchCalls = []
     }
     func flushStretch() {
@@ -179,13 +180,16 @@ public func nativeTurnPresentation(
             if hasCards, ["shepherd_child_wait", "shepherd_child_result"].contains(message.toolName ?? "") { continue }
             if let id = message.toolCallID, cards.callIDs.contains(id) {
                 toolCalls -= 1
-                flushCalls()
+                // A spawn after the folded stack was placed leaves no mark: the work around it
+                // stays one group.
                 if cards.folds {
                     if !placedFold {
+                        flushCalls()
                         stretchItems.append(.subagents(id: "cards:" + id, callIDs: [], all: true))
                         placedFold = true
                     }
                 } else {
+                    flushCalls()
                     stretchItems.append(.subagents(id: "cards:" + id, callIDs: [id], all: false))
                 }
                 continue

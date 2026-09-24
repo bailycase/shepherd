@@ -136,32 +136,6 @@ struct AgentTurn: View, Equatable {
             && lhs.subagentActions?.inspectedRunID == rhs.subagentActions?.inspectedRunID
     }
 
-    /// Consecutive activity lines sit 6pt apart; everything else 14pt.
-    private enum Part: Identifiable {
-        case item(NativeTurnPresentation.Item)
-        case activity([NativeActivityBurst])
-
-        var id: String {
-            switch self {
-            case .item(let item): item.id
-            case .activity(let bursts): "lines:" + (bursts.first?.id ?? "")
-            }
-        }
-    }
-
-    private var parts: [Part] {
-        var parts: [Part] = []
-        for item in presentation.items {
-            if case .activity(let burst) = item {
-                if case .activity(let bursts)? = parts.last { parts[parts.count - 1] = .activity(bursts + [burst]) }
-                else { parts.append(.activity([burst])) }
-            } else {
-                parts.append(.item(item))
-            }
-        }
-        return parts
-    }
-
     /// Parts that stream in once the turn is on screen (activity lines, prose, cards, notes,
     /// errors) fade in, and the changes card and footer that end it rise into place. Text inside
     /// a part, and the parts a turn opens or scrolls back in with, appear at once.
@@ -169,15 +143,11 @@ struct AgentTurn: View, Equatable {
         let _ = NWRenderProbe.tick("thread.agentTurn")
         let entering = (shown.appeared || arriving) && settled
         VStack(alignment: .leading, spacing: AppLayout.turnItemSpacing) {
-            ForEach(parts) { part in
-                switch part {
-                case .activity(let bursts):
-                    VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
-                        ForEach(bursts) { burst in
-                            ActivityLineView(burst: burst, review: review).equatable().nwArrival(entering)
-                        }
-                    }
-                case .item(let item):
+            ForEach(presentation.items) { item in
+                // A work group's lines make their own entrances as they stream in.
+                if case .work(let group) = item {
+                    WorkGroupView(group: group, review: review, entering: entering).equatable()
+                } else {
                     itemView(item).nwArrival(entering, Self.entrance(item), edge: .bottom)
                 }
             }
@@ -222,8 +192,8 @@ struct AgentTurn: View, Equatable {
                     set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }))
         case .prose(_, _, let blocks):
             Prose(blocks: blocks).equatable()
-        case .activity(let burst):
-            ActivityLineView(burst: burst, review: review).equatable()
+        case .work(let group):
+            WorkGroupView(group: group, review: review).equatable()
         case .subagents(_, let callIDs, let all):
             if let subagentActions {
                 SubagentStack(runs: all ? subagents.all : callIDs.flatMap { subagents.byToolCall[$0] ?? [] },
