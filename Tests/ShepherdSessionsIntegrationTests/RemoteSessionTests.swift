@@ -140,42 +140,44 @@ struct RemoteSessionTests {
     /// blocks the main queue, so it runs in its own process where no other test waits on it.
     @Test func aStalledRemoteUIReceivesMergedCompleteOutput() async {
         await #expect(processExitsWith: .success) {
-            let r = try RemoteHost()
-            defer { r.stop() }
-            let lines = 20_000
-            let info = try await r.host.shell(
-                "stty -echo -opost; IFS= read -r _; awk 'BEGIN{for(i=1;i<=\(lines);i++)print \"line \" i \" -----------------------------------\"}'; printf END; sleep 30",
-                cols: 120, rows: 40)
-            let client = try await r.typed()
-            defer { client.disconnect() }
-            let received = Locked(Data())
-            let deliveries = Locked(0)
-            let release = DispatchSemaphore(value: 0)
-            defer { release.signal() }
-            let stalled = Locked(false)
-            client.onOutput = { id, data in
-                guard id == info.id else { return }
-                received.withValue { $0.append(data) }
-                deliveries.withValue { $0 += 1 }
-                if !stalled.current, String(decoding: data, as: UTF8.self).contains("line 1 ") {
-                    stalled.withValue { $0 = true }
-                    release.wait()
+            await recordingErrors {
+                let r = try RemoteHost()
+                defer { r.stop() }
+                let lines = 20_000
+                let info = try await r.host.shell(
+                    "stty -echo -opost; IFS= read -r _; awk 'BEGIN{for(i=1;i<=\(lines);i++)print \"line \" i \" -----------------------------------\"}'; printf END; sleep 30",
+                    cols: 120, rows: 40)
+                let client = try await r.typed()
+                defer { client.disconnect() }
+                let received = Locked(Data())
+                let deliveries = Locked(0)
+                let release = DispatchSemaphore(value: 0)
+                defer { release.signal() }
+                let stalled = Locked(false)
+                client.onOutput = { id, data in
+                    guard id == info.id else { return }
+                    received.withValue { $0.append(data) }
+                    deliveries.withValue { $0 += 1 }
+                    if !stalled.current, String(decoding: data, as: UTF8.self).contains("line 1 ") {
+                        stalled.withValue { $0 = true }
+                        release.wait()
+                    }
                 }
-            }
-            _ = try await client.attach(sessionID: info.id, cols: 120, rows: 40)
-            client.write(sessionID: info.id, data: Data("go\n".utf8))
-            try await eventually("the UI to stall") { stalled.current }
-            try await r.host.waitForScreen(info.id, toContain: "END", timeout: .seconds(30))
-            release.signal()
+                _ = try await client.attach(sessionID: info.id, cols: 120, rows: 40)
+                client.write(sessionID: info.id, data: Data("go\n".utf8))
+                try await eventually("the UI to stall", timeout: .seconds(20)) { stalled.current }
+                try await r.host.waitForScreen(info.id, toContain: "END", timeout: .seconds(30))
+                release.signal()
 
-            try await eventually("every byte", timeout: .seconds(30)) { received.current.suffix(3) == Data("END".utf8) }
-            let text = String(decoding: received.current, as: UTF8.self)
-            var cursor = text.startIndex
-            for i in stride(from: 1, through: lines, by: 997) {
-                let found = try #require(text.range(of: "line \(i) ", range: cursor..<text.endIndex), "line \(i) missing or out of order")
-                cursor = found.upperBound
+                try await eventually("every byte", timeout: .seconds(30)) { received.current.suffix(3) == Data("END".utf8) }
+                let text = String(decoding: received.current, as: UTF8.self)
+                var cursor = text.startIndex
+                for i in stride(from: 1, through: lines, by: 997) {
+                    let found = try #require(text.range(of: "line \(i) ", range: cursor..<text.endIndex), "line \(i) missing or out of order")
+                    cursor = found.upperBound
+                }
+                #expect(deliveries.current < 20, "\(deliveries.current) deliveries")
             }
-            #expect(deliveries.current < 20, "\(deliveries.current) deliveries")
         }
     }
 

@@ -1,7 +1,7 @@
 import Testing
 
-/// A happy path takes seconds and the longest waits are 30 s, so a test still running after two
-/// minutes is hung: it fails by name instead of stalling the whole run.
+/// A happy path takes seconds and no wait is longer than a minute, so a test still running after
+/// two minutes is hung: it fails by name instead of stalling the whole run.
 private let integrationMinutes = 2
 
 extension Trait where Self == TimeLimitTrait {
