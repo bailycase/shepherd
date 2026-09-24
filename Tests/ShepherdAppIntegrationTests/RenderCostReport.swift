@@ -21,6 +21,10 @@ import Testing
 struct RenderCostReport {
     private let report = PerfReport()
 
+    /// How long a thread just opened is left alone before measuring: what opening sets off
+    /// (the composer reading the model catalog) lands first, instead of in the first change.
+    static let atRest: Duration = .milliseconds(800)
+
     /// Main-thread milliseconds for `change` and the update, layout, and display it causes.
     private func cost(_ window: OffscreenWindow, _ change: () async -> Void) async -> Double {
         await MainThreadCPU.milliseconds {
@@ -39,7 +43,7 @@ struct RenderCostReport {
                                                   stats: NativeThreadStats(contextTokens: 42_000))
             let thread = FakeThread(snapshot, header: true)
             try await thread.waitUntilReady()
-            try await Task.sleep(for: .milliseconds(200))
+            try await Task.sleep(for: Self.atRest)
             var costs: [Double] = []
             for index in 1...10 {
                 var next = thread.snapshot
@@ -63,7 +67,7 @@ struct RenderCostReport {
             let snapshot = ThreadFixture.snapshot(ThreadFixture.history(120), stats: NativeThreadStats(contextTokens: 42_000))
             let thread = FakeThread(snapshot, header: true)
             try await thread.waitUntilReady()
-            try await Task.sleep(for: .milliseconds(200))
+            try await Task.sleep(for: Self.atRest)
             if run == 0 { NWRenderProbe.start() }
             hides.append(await MainThreadCPU.milliseconds { try? await thread.show(false) })
             if run == 0 { hidden = NWRenderProbe.stop(); NWRenderProbe.start() }
@@ -84,7 +88,7 @@ struct RenderCostReport {
             let snapshot = ThreadFixture.snapshot(ThreadFixture.history(120), stats: NativeThreadStats(contextTokens: 42_000))
             let thread = FakeThread(snapshot, header: true)
             try await thread.waitUntilReady()
-            try await Task.sleep(for: .milliseconds(200))
+            try await Task.sleep(for: Self.atRest)
             var costs: [Double] = []
             for index in 1...10 {
                 var next = thread.snapshot
