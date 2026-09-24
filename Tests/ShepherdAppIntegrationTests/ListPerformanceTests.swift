@@ -264,6 +264,26 @@ struct ListPerformanceTests {
         #expect(changed["queue.row", default: 0] >= 1, "\(changed)")
     }
 
+    /// Widening or narrowing the thread redraws its composer only when the Send menu would
+    /// change sides (beside the card, or above it), never for each width a live resize passes.
+    @Test func aWidthThatKeepsTheSendMenusSideRedrawsNoComposer() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(4)), size: CGSize(width: 1800, height: 800))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await Task.sleep(for: .milliseconds(200))
+        ListPerf.settle(thread.window)
+
+        let frames = 10
+        let rows = try await counting(thread.window) {
+            for step in 1...frames {
+                thread.window.window.setContentSize(NSSize(width: 1800 - CGFloat(step) * 8, height: 800))
+                ListPerf.settle(thread.window)
+            }
+        }
+
+        #expect(rows["composer.body", default: 0] == 0, "\(rows)")
+    }
+
     /// Switching is a visibility flip: hiding a thread and showing it again each rebuild it (and
     /// its composer) once, and the rows on screen, whatever its first pull brings back.
     @Test func aSwitchRebuildsEachThreadOnce() async throws {
