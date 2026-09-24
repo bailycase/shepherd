@@ -194,6 +194,17 @@ struct NativeThreadStoreTests {
         #expect(store.pollInterval == .seconds(2))
     }
 
+    /// The host's signal that pi serves pulls the thread at once; its poll never ran here.
+    @Test func wakingAStartingThreadPullsItsFirstSnapshotAtOnce() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        host.starting = false
+        store.wake()
+        await until { store.ready }
+        #expect(host.requests == [.snapshot(), .snapshot()])
+        #expect(!store.starting && store.messages == [hi])
+    }
+
     /// The host answers starting from the thread itself (a result) or before it reaches one (a
     /// refusal); a thread kept from before stays on screen, not running, with no error.
     @Test(arguments: [

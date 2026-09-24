@@ -47,8 +47,9 @@ a zsh login shell, so the user's `PATH` resolves:
   - `SHEPHERD_AUTOMATION=1` for automation runs.
   - `SHEPHERD_MODEL` when a model is passed.
   - `RPCSession` strips terminal variables (`TMUX`, `STY`, …) and sets no `TERM`.
-- **The opening prompt** is the first native `send`, delivered once pi's session is ready. It is
-  not a positional argument, because RPC mode ignores positional messages.
+- **The opening prompt** is the first native `send`, delivered once pi's session is ready (the
+  server's servable signal, below, ends the wait). It is not a positional argument, because RPC
+  mode ignores positional messages.
 
 Quitting the app kills every child. On relaunch each agent respawns in its pi session with its
 history intact. State files from before RPC agents decode unchanged: `Agent` ignores the
@@ -166,6 +167,11 @@ transport differs.
     the previous run's session until its pi respawns, and pi itself takes a moment to answer
     `get_state` and `get_messages`. Clients poll from the moment an agent appears, so this is
     never an error.
+  - **Servable signal:** the moment an agent's pi serves (and its pane is bound to that pi,
+    whichever comes last), `SessionServer.onNativeThreadServable` tells the local app, once per
+    pi, after the state broadcast of the binding. The app wakes that agent's thread store, which
+    pulls at once instead of at its next poll. Remote clients keep polling; the remote protocol
+    has no push for this.
   - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
     its pi exited (with the exit code, also after the app retired the session).
   - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
@@ -188,6 +194,8 @@ output grows.
 - **Polling:** the visible thread's task polls every 200 ms while pi starts, every 500 ms while
   the agent runs, a question is pending, or a subagent is live, and every 2 s otherwise. Each
   poll passes the last revision; older snapshots are ignored. A hidden thread stops polling.
+  `wake()` (the servable signal) pulls a visible thread that is not ready yet at once; the polls
+  are the fallback.
 - **Starting:** `native_starting` sets `starting`, never `loadError`: the thread shows "Starting
   pi…" (under a thread kept from before, as its tail row), and `acceptsSend` offers Send. A
   message sent then waits behind the composer's spinner, still in the field and with nothing

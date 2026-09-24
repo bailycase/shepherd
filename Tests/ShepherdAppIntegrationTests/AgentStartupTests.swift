@@ -122,6 +122,36 @@ struct AgentStartupTests {
         }
     }
 
+    /// A thread on screen comes up the moment the server says its pi serves: this store never
+    /// polls on its own, so only that signal can bring it up.
+    @Test func aThreadComesUpTheMomentItsPiServesWithoutWaitingForAPoll() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        try Self.holdPi(in: app.dir)
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent("worker", in: space, piSession: SessionID())
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let store = NativeThreadStore { _ in
+            let (cancelled, continuation) = AsyncStream<Void>.makeStream()
+            for await _ in cancelled {}
+            continuation.finish()
+            throw CancellationError()
+        }
+        vm.threadStores.install(store, for: agent.agent.id)
+        let server = app.server, id = agent.agent.id
+        let polling = Task { await store.run { try await server.nativeThread(agentID: id, request: $0) } }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to show pi starting") { store.starting }
+        let pane = vm.sessions.session(for: agent.piPane, in: agent.tab)
+        try await eventuallyOnMain("the pane to bind its pi") { pane.phase == .live }
+
+        Self.releasePi(in: app.dir)
+
+        try await eventuallyOnMain("the thread to come up", timeout: .seconds(20)) { store.ready }
+        #expect(!store.starting && store.loadError == nil && !store.messages.isEmpty)
+    }
+
     /// pi not installed, or a broken config: the launch ends in the real error (the pane's
     /// exit, then the agent retired as always), never an endless start.
     @Test func aPiThatExitsWhileStartingEndsInItsErrorNotAnEndlessStart() async throws {

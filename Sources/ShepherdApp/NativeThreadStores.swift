@@ -15,6 +15,12 @@ final class NativeThreadStores<Key: Hashable> {
         return store
     }
 
+    /// The store, only if one exists already.
+    func existingStore(for key: Key) -> NativeThreadStore? { stores[key] }
+
+    /// Gives `key` a store made elsewhere (a test's, which never polls on its own).
+    func install(_ store: NativeThreadStore, for key: Key) { stores[key] = store }
+
     func prune(live: Set<Key>) {
         for key in Set(stores.keys).subtracting(live) { stores.removeValue(forKey: key)?.stop() }
     }

@@ -49,6 +49,38 @@ struct ThreadStartupTests {
         #expect(ready.piSessionID == "stub-session")
     }
 
+    /// The server tells the app the moment an agent's pi serves its thread, once, whether the
+    /// agent's pane was bound to that pi before it served or only after.
+    @Test(arguments: [true, false])
+    func theServerAnnouncesOnceWhenAnAgentsPiServes(boundBeforeServing: Bool) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let announced = Locked<[AgentID]>([])
+        h.server.onNativeThreadServable = { id in announced.withValue { $0.append(id) } }
+        let session = try await h.server.createSession(params: CreateSessionParams(
+            cwd: h.dir.path, command: StubPi.command, env: ["STUB_PI_STARTUP_GATE": Self.gate], runtime: .rpc))
+        let space = Space(name: "rpc", path: h.dir.path)
+        try await h.server.addSpace(space)
+        let pane = LeafPane(sessionID: session.id, cwd: h.dir.path)
+        let tab = Tab(spaceID: space.id, order: 0, layout: .leaf(pane))
+        let agent = Agent(name: "rpc", spaceID: space.id, tabID: tab.id, paneID: pane.id)
+
+        if boundBeforeServing { try await h.server.addAgent(agent, withTab: tab) }
+        FileManager.default.createFile(atPath: h.dir.appendingPathComponent(Self.gate).path, contents: nil)
+        if !boundBeforeServing {
+            try await eventually("the unbound pi to serve") { await h.server.threadServes(sessionID: session.id) }
+            await drainMainQueue()
+            #expect(announced.current.isEmpty, "nothing to announce until an agent is bound to it")
+            try await h.server.addAgent(agent, withTab: tab)
+        }
+
+        try await eventually("the server to announce the agent's thread") { announced.current == [agent.id] }
+        #expect(try await h.server.nativeThread(agentID: agent.id, request: .snapshot()).snapshotValue?.piSessionID == "stub-session")
+        try await h.server.renameAgent(agent.id, to: "renamed")
+        await drainMainQueue()
+        #expect(announced.current == [agent.id], "announced once")
+    }
+
     /// pi answers `get_state` before `get_messages`, and a long history takes a moment to
     /// arrive. A resumed thread served in between would show as a new, empty one.
     @Test func aResumedThreadIsStartingUntilItsHistoryHasArrived() async throws {

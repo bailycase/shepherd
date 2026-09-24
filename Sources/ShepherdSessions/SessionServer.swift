@@ -193,6 +193,11 @@ public final class SessionServer: @unchecked Sendable {
     /// The notify extension's tool asked for a system notification.
     /// Fire-and-forget, delivered on the main actor.
     public var onNotify: ((AgentID, String, String) -> Void)?
+    /// An agent's pi began serving its native thread: a snapshot request now gets its history
+    /// instead of `native_starting`. Once per pi, when it serves and its agent's pane is bound
+    /// to it (whichever comes last), after the state broadcast of that binding. Delivered on
+    /// the main actor, so a local thread need not wait for its next poll.
+    public var onNativeThreadServable: ((AgentID) -> Void)?
     /// A Shepherd agent asked to see, message, or spawn peer threads.
     /// Forwarded to the GUI like pane requests. Delivered on the main actor;
     /// the completion may be called from any thread.
@@ -259,6 +264,9 @@ public final class SessionServer: @unchecked Sendable {
     /// to one ran a pi that is gone, unlike a binding left from the previous run, which the app
     /// is respawning.
     private var retiredRPCSessions: [SessionID: Int32?] = [:]
+    /// RPC sessions whose thread serves but that no agent's pane is bound to yet
+    /// (`onNativeThreadServable` waits for the binding).
+    private var unannouncedServable: Set<SessionID> = []
     private enum NativeOutcome {
         case result(NativeThreadResult)
         case failure(code: String, message: String)
@@ -497,6 +505,7 @@ public final class SessionServer: @unchecked Sendable {
             output.delivery?.cancel()
         }
         sessions.removeAll()
+        unannouncedServable.removeAll()
         attachedSessions.removeAll()
         outputStates.removeAll()
         for client in Array(clients.values) {
@@ -1798,6 +1807,17 @@ public final class SessionServer: @unchecked Sendable {
         let state = store.state
         broadcastRemoteState(state)
         hopToMain { [weak self] in self?.onStateChanged?(state) }
+        announceServableThreads()
+    }
+
+    /// Server queue: tell the app about every serving thread whose agent is now bound to it.
+    private func announceServableThreads() {
+        guard !unannouncedServable.isEmpty else { return }
+        for sessionID in unannouncedServable {
+            guard let agentID = agentID(forSession: sessionID) else { continue }
+            unannouncedServable.remove(sessionID)
+            hopToMain { [weak self] in self?.onNativeThreadServable?(agentID) }
+        }
     }
 
     public func putState(_ newState: ShepherdState) async throws {
@@ -2110,6 +2130,11 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.sessions[sessionID]?.info }
     }
 
+    /// Whether an RPC session's thread serves yet, bound to an agent or not (for tests).
+    func threadServes(sessionID: SessionID) async -> Bool {
+        await enqueueValue { self.sessions[sessionID]?.thread?.isServable == true }
+    }
+
     public func createSession(params: CreateSessionParams) async throws -> SessionInfo {
         try await enqueue {
             try self.makeSessionOnQueue(params: params)
@@ -2135,6 +2160,11 @@ public final class SessionServer: @unchecked Sendable {
                 server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
             }
             session.onEvent = { [weak thread] event in thread?.handle(event) }
+            thread.onServable = { [weak serverWeak] in
+                guard let server = serverWeak, server.sessions[sid] != nil else { return }
+                server.unannouncedServable.insert(sid)
+                server.announceServableThreads()
+            }
             session.onStderr = { line in ShepherdLog.info("rpc session \(sid) stderr: \(line)") }
             session.onExit = { [weak serverWeak] code in
                 serverWeak?.sessionDidExit(sid, code: code)
@@ -2317,6 +2347,7 @@ public final class SessionServer: @unchecked Sendable {
                 return
             }
             if session.thread != nil { self.retiredRPCSessions.updateValue(session.exitCode, forKey: sessionID) }
+            self.unannouncedServable.remove(sessionID)
             self.sessions.removeValue(forKey: sessionID)
             self.attachedSessions.remove(sessionID)
             self.outputStates[sessionID]?.delivery?.cancel()
