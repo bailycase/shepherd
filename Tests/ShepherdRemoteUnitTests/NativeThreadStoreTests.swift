@@ -9,6 +9,8 @@ import ShepherdProtocol
 @MainActor
 final class FakeHost {
     var snapshot: NativeThreadSnapshot
+    /// While true, snapshot requests answer that the agent's pi is still starting.
+    var starting = false
     var next: [Result<NativeThreadResult, Error>] = []
     var action: (NativeThreadRequest) throws -> NativeThreadResult = { _ in .failure(code: "x", message: "unscripted") }
     private(set) var requests: [NativeThreadRequest] = []
@@ -21,6 +23,7 @@ final class FakeHost {
         if !next.isEmpty { return try next.removeFirst().get() }
         guard case .snapshot = request else { return try action(request) }
         defer { onServed?(); onServed = nil }
+        if starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
         return .snapshot(value: snapshot)
     }
 
@@ -42,8 +45,19 @@ final class FakeHost {
     }
 }
 
-/// Starts the store's run loop and returns once the first snapshot has been applied. The loop
-/// then sleeps for its poll interval (2s while idle), far longer than any test here.
+/// Suspends until `condition` holds, woken by the store's observation rather than polling.
+@MainActor
+func until(_ condition: @escaping @MainActor () -> Bool) async {
+    while !condition() {
+        await withCheckedContinuation { (changed: CheckedContinuation<Void, Never>) in
+            withObservationTracking { _ = condition() } onChange: { changed.resume() }
+        }
+    }
+}
+
+/// Starts the store's run loop and returns once the first answer (a snapshot, or pi still
+/// starting) has been applied. The loop then sleeps for its poll interval (2s while idle, 200ms
+/// while starting), far longer than any test here.
 @MainActor
 func start(_ store: NativeThreadStore, _ host: FakeHost) async -> Task<Void, Never> {
     var task: Task<Void, Never>?
@@ -140,6 +154,110 @@ struct NativeThreadStoreTests {
         host.next = [.success(.accepted(operationID: UUID()))]
         await store.refresh()
         #expect(!store.ready && store.loadError == "Unexpected thread response. Refresh to try again.")
+    }
+
+    // MARK: Starting
+
+    private func startedWhileStarting(_ store: NativeThreadStore = NativeThreadStore()) async -> (NativeThreadStore, FakeHost, Task<Void, Never>) {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.starting = true
+        let task = await start(store, host)
+        return (store, host, task)
+    }
+
+    @Test func aPiThatIsStillStartingIsNotAnErrorAndIsPolledQuickly() async {
+        let (store, _, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        #expect(store.starting && !store.ready && store.loadError == nil && store.snapshot == nil)
+        #expect(store.pollInterval == .milliseconds(200))
+        #expect(!store.supports("send") && store.acceptsSend, "a send is offered, and waits for pi")
+    }
+
+    @Test func oncePiAnswersTheThreadIsReadyAndNoLongerStarting() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        host.starting = false
+        await store.refresh()
+        #expect(store.ready && !store.starting && store.loadError == nil && store.messages == [hi])
+        #expect(store.pollInterval == .seconds(2))
+    }
+
+    /// The host answers starting from the thread itself (a result) or before it reaches one (a
+    /// refusal); a thread kept from before stays on screen, not running, with no error.
+    @Test(arguments: [
+        Result<NativeThreadResult, Error>.success(.failure(code: NativeThreadCode.starting, message: "pi is starting.")),
+        .failure(RemoteHostClientError.rejected(code: NativeThreadCode.starting, message: "pi is starting.")),
+    ])
+    func eitherShapeOfStartingKeepsTheLastThreadWithoutAnError(_ answer: Result<NativeThreadResult, Error>) async {
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [hi]))
+        defer { task.cancel() }
+        host.next = [answer]
+        await store.refresh()
+        #expect(store.starting && !store.ready && store.loadError == nil)
+        #expect(store.messages == [hi] && !store.settledRunning)
+    }
+
+    @Test func aSendDuringStartupWaitsForPiAndThenGoes() async throws {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = "do the thing"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+        #expect(host.actions.isEmpty && store.draft == "do the thing" && !store.acceptsSend)
+
+        host.starting = false
+        await store.refresh()
+        await sending.value
+
+        guard case .send(let session, _, _, let text, _, _) = try #require(host.actions.first) else { Issue.record("expected a send"); return }
+        #expect(session == "s" && text == "do the thing" && host.actions.count == 1)
+        #expect(store.draft.isEmpty && store.sentCount == 1 && !store.busy && store.notice == nil)
+    }
+
+    @Test func aThreadThatStopsWhileASendWaitsKeepsTheDraftWithNothingSent() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        store.draft = "do the thing"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+        store.stop()
+        await sending.value
+        #expect(host.actions.isEmpty && store.draft == "do the thing" && store.sentCount == 0)
+        #expect(!store.busy && store.notice == nil, "nothing was dispatched, so the outcome is known")
+    }
+
+    @Test func aFailureWhileASendWaitsKeepsTheDraftAndShowsTheError() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        store.draft = "do the thing"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+        host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent's pi exited (code 127)."))]
+        await store.refresh()
+        await sending.value
+        #expect(host.actions.isEmpty && store.draft == "do the thing" && !store.busy)
+        #expect(!store.starting && store.loadError == "native_unavailable: The agent's pi exited (code 127).")
+    }
+
+    @Test func aPiThatNeverStartsBecomesAnErrorAfterTheLimitAndClearsWhenItAnswers() async {
+        let (store, host, task) = await startedWhileStarting(NativeThreadStore(startingLimit: .zero))
+        defer { task.cancel() }
+        #expect(!store.starting && !store.acceptsSend)
+        #expect(store.loadError?.hasPrefix("The agent's pi has not started after") == true)
+        await store.refresh()
+        #expect(!store.starting && store.loadError != nil, "still over the limit: the error stays")
+        host.starting = false
+        await store.refresh()
+        #expect(store.ready && store.loadError == nil)
+    }
+
+    @Test func aServingThreadWhosePiGoesAwayIsALostConnection() async {
+        let (store, host, task) = await started()
+        defer { task.cancel() }
+        host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent no longer exists."))]
+        await store.refresh()
+        #expect(!store.starting && !store.ready && store.loadError == "native_unavailable: The agent no longer exists.")
     }
 
     // MARK: Sending

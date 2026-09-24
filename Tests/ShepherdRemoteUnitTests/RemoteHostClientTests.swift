@@ -36,6 +36,18 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient().capabilities.isEmpty)
     }
 
+    /// A host from before `native_starting` said `native_unavailable` while an agent's pi
+    /// started; only its answers are read as starting.
+    @Test(arguments: [
+        (NativeThreadCode.unavailable, true, NativeThreadCode.starting),
+        (NativeThreadCode.unavailable, false, NativeThreadCode.unavailable),
+        (NativeThreadCode.starting, false, NativeThreadCode.starting),
+        ("stale_session", true, "stale_session"),
+    ])
+    func olderHostsUnavailableThreadsReadAsStarting(code: String, legacyHost: Bool, read: String) {
+        #expect(RemoteHostClient.availabilityCode(code, legacyHost: legacyHost) == read)
+    }
+
     @Test(arguments: [
         NativeThreadRequest.snapshot(),
         .setModel(expectedSessionID: "s", generation: "g", operationID: UUID(), model: "p/m"),

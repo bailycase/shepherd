@@ -182,9 +182,14 @@ stored values, so a keystroke in the composer re-renders only the composer. A fi
 call is parsed once (`NativeActivityCall`, cached by entry); a running call is re-read as its
 output grows.
 
-- **Polling:** the visible thread's task polls every 500 ms while the agent runs, a question is
-  pending, or a subagent is live, and every 2 s otherwise. Each poll passes the last revision;
-  older snapshots are ignored. A hidden thread stops polling.
+- **Polling:** the visible thread's task polls every 200 ms while pi starts, every 500 ms while
+  the agent runs, a question is pending, or a subagent is live, and every 2 s otherwise. Each
+  poll passes the last revision; older snapshots are ignored. A hidden thread stops polling.
+- **Starting:** `native_starting` sets `starting`, never `loadError`: the thread shows "Starting
+  pi…" (under a thread kept from before, as its tail row), and `acceptsSend` offers Send. A
+  message sent then waits behind the composer's spinner, with nothing dispatched, and goes once
+  the first snapshot lands; the draft stays if the thread stops or fails first. A pi still
+  starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
 - **Message order:** `messages` is the paged history (`loadOlder`). `displayedMessages` is
   history, then optimistic echoes of accepted sends, then pi's provisional entries. This order
   never flips when pi persists a message, so the tail never re-lays out.
@@ -193,8 +198,8 @@ output grows.
 - **Drafts and gating:** `draft` and `delivery` (follow-up or steer) belong to the store.
   `supports(_:)` gates every control on `supportedActions` and on the store being ready and not
   busy.
-- **Errors:** transport failures surface as `loadError` (the toolbar's Error pill and the
-  composer's Reconnect banner), and action failures as `notice`. Actions are never retried
+- **Errors:** transport failures and a pi that is gone surface as `loadError` (the toolbar's
+  Error pill and the composer's Reconnect banner), and action failures as `notice`. Actions are never retried
   automatically; an unknown outcome is reported, not resent. A stale session triggers a fresh
   snapshot.
 
