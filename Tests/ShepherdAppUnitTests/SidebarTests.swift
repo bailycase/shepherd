@@ -74,6 +74,26 @@ struct SidebarAgentOrderTests {
         #expect(ShepherdViewModel.sidebarAgents(of: space.id, in: agents).map(\.name) == ["wt-1", "wt-2", "one", "two"])
     }
 
+    /// The tree groups every space's agents in one pass, in the order each space lists them.
+    @Test func groupingAgentsBySpaceKeepsEachSpacesOrder() {
+        let a = Fixture.space("a")
+        let b = Fixture.space("b")
+        let empty = Fixture.space("empty")
+        let agents = [
+            Fixture.agent("a-one", in: a).agent,
+            Fixture.agent("b-one", in: b).agent,
+            Fixture.agent("a-wt", in: a, worktreeBranch: "worktree/a-wt").agent,
+            Fixture.agent("b-wt", in: b, worktreeBranch: "worktree/b-wt").agent,
+            Fixture.agent("a-two", in: a).agent,
+        ]
+        let grouped = ShepherdViewModel.sidebarAgentsBySpace(agents)
+        for space in [a, b, empty] {
+            #expect((grouped[space.id] ?? []).map(\.name) == ShepherdViewModel.sidebarAgents(of: space.id, in: agents).map(\.name))
+        }
+        #expect(grouped[a.id]?.map(\.name) == ["a-wt", "a-one", "a-two"])
+        #expect(grouped[empty.id] == nil)
+    }
+
     @Test func orderedAgentsFollowTheForestAndSkipCollapsedAndHiddenSpaces() {
         let root = Fixture.space("root", path: "/tmp/root")
         let child = Fixture.space("child", path: "/tmp/root/child")

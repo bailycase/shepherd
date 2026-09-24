@@ -25,8 +25,9 @@ extension ShepherdViewModel {
             return
         }
         let badges = remoteShortcutBadges(hostID: hostID)
+        let bySpace = Self.sidebarAgentsBySpace(connection.state.agents)
         for space in connection.state.spaces where !space.hidden {
-            let agents = Self.sidebarAgents(of: space.id, in: connection.state.agents)
+            let agents = bySpace[space.id] ?? []
             let spaceCollapsed = isRemoteSpaceCollapsed(hostID: hostID, spaceID: space.id)
             tree.append(.space(SidebarSpace(hostID: hostID, id: space.id, name: space.name, collapsed: spaceCollapsed,
                                             count: agents.count, blocked: SidebarAttention.count(agents, children: connection.children))))
