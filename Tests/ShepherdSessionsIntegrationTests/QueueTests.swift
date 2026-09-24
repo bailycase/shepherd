@@ -493,6 +493,49 @@ struct QueueTests {
         #expect(resumed.origin?.parts?.map(\.sentAt) == queued.queue?.items.map(\.sentAt))
         #expect(resumed.blocks.first?.text == "tools:0 one\n\ntwo", "pi's own message is the joined text")
     }
+
+    // MARK: - The data path
+
+    /// A queue change is a new revision like any of pi's, so a thread on screen hears of it
+    /// from the server's push, not only from its next poll. The run waits on its tool call
+    /// throughout: nothing but the queue moves.
+    @Test func eachQueueChangeReachesAWatchedThreadThroughAPush() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pushes = Locked<[AgentID]>([])
+        h.server.onThreadRevision = { agentID in pushes.withValue { $0.append(agentID) } }
+        let pi = try await PiAgent.launch(on: h)
+        let running = try await startRun(pi)
+        let first = UUID(), second = UUID()
+        _ = try await pi.send("tools:0 first", operationID: first, from: running)
+        _ = try await pi.send("tools:0 second", operationID: second, from: running)
+        _ = try await pi.snapshot { $0.queue?.items.count == 2 }
+        h.server.watchThreadRevisions(of: [pi.agent.id])
+        await drainMainQueue()
+
+        func pushed(_ what: String, by change: () async throws -> Void) async throws {
+            let seen = pushes.current.count
+            try await change()
+            try await eventually("\(what) to be pushed") { pushes.current.count > seen }
+            #expect(pushes.current.dropFirst(seen).allSatisfy { $0 == pi.agent.id })
+        }
+        try await pushed("the host's default mode") { h.server.setDefaultQueueMode(.oneAtATime) }
+        try await pushed("a send") { _ = try await pi.send("tools:0 third", from: running) }
+        let actions: [(String, NativeQueueAction)] = [
+            ("an edit", .edit(id: first, text: "tools:0 first, edited")), ("a move", .move(id: second, index: 0)),
+            ("a hold", .hold(id: first, held: true)), ("a release", .hold(id: first, held: false)),
+            ("a mode", .setMode(mode: .all)), ("a delete", .delete(id: second)),
+        ]
+        for (what, action) in actions {
+            try await pushed(what) {
+                let result = try await pi.queue(action, from: running)
+                #expect(result.failureCode == nil, "\(what): \(result)")
+            }
+        }
+        let queued = try await pi.snapshot()
+        #expect(queued.queue?.items.map(\.text) == ["tools:0 first, edited", "tools:0 third"])
+        #expect(queued.queue?.mode == .all)
+    }
 }
 
 /// The reported bug, end to end: a message whose run adds more than a page of history must
