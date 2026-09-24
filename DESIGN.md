@@ -563,6 +563,10 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
 - **Notices** above the thread explain degraded states in caption tertiary: "Last known thread ·
   refreshing before enabling actions", "This host's pi cannot answer questions here · update
   Shepherd on the host", "Some earlier output is clipped".
+- **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
+  quiet, never an error: "Starting pi…" with a spinner, in the empty thread or, under a thread
+  kept from before, as its working row. A pi that has not started after a minute gets the
+  error banner.
 - **Empty thread:** "Starting pi…" with a spinner while connecting. Then a framed
   `NWEmptyState` (a dashed `lineStrong` border, no crook): "New agent in `~/path`" (the path in
   Geist Mono 15 medium within the 17pt title), with "Describe the task. Drop or paste images to
@@ -713,8 +717,11 @@ their menu is open.
 - **Running:** Stop while the field is empty. The field stays editable with "Queue a follow-up —
   sent when the turn ends".
 - **Accepting:** a spinner ("Waiting for pi") takes the button's place.
+- **Starting:** Send is offered. A message sent while pi boots waits behind the spinner, still
+  in the field, and goes once pi answers.
 - **Error:** Send, plus a `failed` banner above the card, "Lost connection to the agent
-  process.", with the error and Reconnect.
+  process.", with the error and Reconnect: only for a pi that was serving and went away, one
+  that failed, or one that never started.
 
 With more than one live subagent, Stop asks first (`StopAllDialog`): Stop only the agent, or
 Stop all. There is no status text, key hint, or working directory in or under the composer.
@@ -1012,6 +1019,7 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 | A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | "n subagents need you" | the card's answers and Reply… |
 | Agent done | `done` | green dot | Idle (outlined) | Send |
 | Agent idle | `idle` | hollow ring | Idle (outlined) | Send |
+| pi starting | `idle` | hollow ring | Idle (outlined) | Send, which waits for pi; "Starting pi…" in the thread |
 | Connection lost | `failed` | — | Error | Send, plus a `failed` banner with Reconnect |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
@@ -1136,8 +1144,8 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
 ## Verifying visuals
 
 - **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
-  - thread states (idle, running, thinking, queued, failed, prose, question, empty, a hovered
-    turn) and the activity-line states
+  - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting,
+    a hovered turn) and the activity-line states
   - the composer and its menus
   - subagent cards, the ledger, and the inspector
   - the review pane

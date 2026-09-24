@@ -72,6 +72,8 @@ final class ThreadFixture {
     let commands = ThreadCommandCenter()
     var snapshot: NativeThreadSnapshot
     var transcripts: [String: NativeSubagentTranscript] = [:]
+    /// True: the agent's pi is still starting, and every snapshot request says so.
+    var starting = false
 
     init(_ snapshot: NativeThreadSnapshot) { self.snapshot = snapshot }
 
@@ -79,6 +81,7 @@ final class ThreadFixture {
         { [weak self] value in
             guard let self else { return .failure(code: "gone", message: "fixture released") }
             if case .subagentTranscript(_, let runID, _) = value, let page = self.transcripts[runID] { return .transcript(value: page) }
+            if self.starting { return .failure(code: NativeThreadCode.starting, message: "pi is starting.") }
             return .snapshot(value: self.snapshot)
         }
     }
