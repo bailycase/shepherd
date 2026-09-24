@@ -360,6 +360,9 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private let revisedThreads = RevisedThreads()
+    /// Tests only: handed to every RPC session this server creates afterwards, to run on the
+    /// decode queue before each record it decodes off the server queue.
+    var beforeOffQueueDecode: (() -> Void)?
     /// Which agent's own pane runs each session, for the store version it was built from.
     private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
 
@@ -2194,6 +2197,7 @@ public final class SessionServer: @unchecked Sendable {
                 throw PTYSession.SpawnError(message: String(describing: error))
             }
             let sid = session.id
+            session.beforeOffQueueDecode = beforeOffQueueDecode
             let thread = RPCThreadState(session: session, queue: sessionQueue)
             // Card actions go to the children extension's control channel, never the parent model.
             thread.dispatchSubagentCommand = { [weak serverWeak] runID, action, text, mode, done in
