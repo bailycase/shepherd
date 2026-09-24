@@ -24,9 +24,13 @@ extension AppLayout {
     static let noteIndent: CGFloat = 10
 
     // Starting
-    /// How long a thread waits for pi before the composer says pi is starting. A normal start
-    /// (a warm pi, a new agent) is done before it, so it never shows.
-    static let startingIndicatorDelay: Duration = .milliseconds(500)
+    /// How long a thread that draws something (a new agent's empty state, history read from
+    /// disk) waits for pi before the composer says pi is starting: well past a normal start (pi
+    /// answers about 0.8 s after ⌘N, and 1 s after a relaunch), so only a slow pi shows it.
+    static let startingIndicatorDelay: Duration = .seconds(2)
+    /// The same wait while the thread has nothing to draw yet (a remote agent's, or one whose
+    /// session file cannot be read): a blank thread is explained sooner.
+    static let blankStartingIndicatorDelay: Duration = .milliseconds(500)
     /// The composer's "Starting pi…": its spinner, and the gap after it.
     static let startingSpinner: CGFloat = 10
     static let startingSpacing: CGFloat = 6
