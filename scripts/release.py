@@ -11,7 +11,8 @@ Release candidates are retired: an rc tag builds nothing. Feed names and bundle 
 contract with the apps (UpdateChannel and ShepherdEdition in Sources/).
 
 usage:
-  release.py plan <ref> <stamp>        the build for a pushed ref, as plan=<json> for $GITHUB_OUTPUT
+  release.py plan <ref> <stamp> [<attempt> [<published-tag>]]
+                                        the build for a pushed ref, as plan=<json> for $GITHUB_OUTPUT
   release.py route                      tags on stdin (newest first) -> "tag asset archive feeds"
   release.py latest <feed>              tags on stdin (newest first) -> the newest tag in <feed>
   release.py feeds                      "dir channel" per feed generate_appcast builds
@@ -95,8 +96,10 @@ STAMP = re.compile(r"^\d{12}$")
 NIGHTLY_BRANCH = "refs/heads/nightly"
 
 
-def plan(ref: str, stamp: str) -> dict:
-    """What a push of `ref` builds. `stamp` (UTC yyyymmddHHMM) names a nightly."""
+def plan(ref: str, stamp: str, attempt: int = 1, published: str = "") -> dict:
+    """What a push of `ref` builds. `stamp` (UTC yyyymmddHHMM) names a nightly. `attempt` is
+    the workflow run's attempt, and `published` the nightly-* tag already on the pushed commit,
+    if any."""
     if ref.startswith("refs/tags/"):
         tag = ref.removeprefix("refs/tags/")
         if STABLE.match(tag):
@@ -110,6 +113,13 @@ def plan(ref: str, stamp: str) -> dict:
     if ref == NIGHTLY_BRANCH:
         if not STAMP.match(stamp):
             raise ValueError(f"bad nightly stamp {stamp!r}; expected yyyymmddHHMM")
+        if attempt > 1 and published:
+            # A re-run keeps the run number, which is the build number, and plans a new stamp.
+            # A second release of one build puts two archives with one CFBundleVersion in
+            # Shepherd Nightly's feed, and generate_appcast refuses the whole step until one
+            # ages out. (A tag's re-run stops at gh release create instead.)
+            return {"build": False, "reason": f"this run already published {published}; a re-run "
+                    "would reuse its build number. Push to nightly to ship a new build"}
         return _build(APPS["nightly"], "nightly", f"0.0.0-nightly.{stamp}", f"nightly-{stamp}", prerelease=True)
     if ref.startswith("refs/heads/"):
         # A manual run on another branch would ship that branch to every Shepherd Nightly.
@@ -265,8 +275,11 @@ def main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 64
     command, args = argv[0], argv[1:]
-    if command == "plan" and len(args) == 2:
-        print("plan=" + json.dumps(plan(*args), sort_keys=True))
+    if command == "plan" and 2 <= len(args) <= 4:
+        ref, stamp = args[:2]
+        attempt = int(args[2]) if len(args) > 2 else 1
+        published = args[3] if len(args) > 3 else ""
+        print("plan=" + json.dumps(plan(ref, stamp, attempt, published), sort_keys=True))
     elif command == "route" and not args:
         for tag in _tags_from_stdin():
             routed = route(tag)
