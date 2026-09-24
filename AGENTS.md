@@ -665,9 +665,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   soon after the split lands.
   - Push that tag once the merge's own nightly run has finished. Two runs that write `gh-pages`
     at once collide: the later push is rejected, and its feeds wait for the next run.
-  - Tag only commits that contain the split. A tag runs the workflow of its own commit, and an
-    older one rebuilds `appcast-rc.xml` and `appcast-nightly.xml` the old way (and cuts an rc)
-    until the next run here rewrites them.
+  - Tag only commits that contain the split. A tag runs the workflow of its own commit: an
+    older one rebuilds `appcast-rc.xml` and `appcast-nightly.xml` the old way until the next run
+    here rewrites them, and an rc tag there still cuts an rc.
 - **Launch migration** (`UpdateChannelStore`, Shepherd only): a stored `rc` becomes Beta, and a
   stored `nightly` (or the pre-picker nightly bool) becomes Beta and arms a one-time notice
   under the toolbar (`NightlyMovedNotice`) linking to Shepherd Nightly. The birth channel reads
