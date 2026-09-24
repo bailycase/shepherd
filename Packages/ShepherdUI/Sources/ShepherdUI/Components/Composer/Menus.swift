@@ -117,7 +117,7 @@ public struct NWSlashMenu: View {
     @Binding var selection: Int
     let maxHeight: CGFloat?
     let onChoose: (NWSlashCommand) -> Void
-    /// The row the pointer highlighted last.
+    /// The row the pointer just highlighted, until the highlight's change is seen.
     @State private var pointed: Int?
 
     public init(commands: [NWSlashCommand], total: Int, query: String, selection: Binding<Int>, maxHeight: CGFloat? = nil,
@@ -139,7 +139,11 @@ public struct NWSlashMenu: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(commands.enumerated()), id: \.element.name) { index, command in
                             NWSlashRow(command: command, typed: typed(command), index: index, highlighted: index == selection, choose: onChoose,
-                                       hover: { pointed = $0; selection = $0 })
+                                       hover: { index in
+                                           guard index != selection else { return }
+                                           pointed = index
+                                           selection = index
+                                       })
                                 .equatable()
                         }
                         if commands.isEmpty {
@@ -151,6 +155,8 @@ public struct NWSlashMenu: View {
                 }
                 .frame(height: rows * NWComposerMetrics.menuRowHeight)
                 .onChange(of: selection) { _, index in
+                    // Each pointer move is seen once, so a later ↑↓ back to that row still shows it.
+                    defer { pointed = nil }
                     guard index != pointed, commands.indices.contains(index) else { return }
                     proxy.scrollTo(commands[index].name)
                 }
