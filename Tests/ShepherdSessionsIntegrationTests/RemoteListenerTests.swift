@@ -146,6 +146,10 @@ struct RemoteListenerTests {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { throw WireError("socket: errno \(errno)") }
         _ = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK)
+        // Before connecting: a connection the listener never took is reset, setsockopt then
+        // fails, and a write would raise SIGPIPE and end the whole test process.
+        var one: Int32 = 1
+        _ = setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
