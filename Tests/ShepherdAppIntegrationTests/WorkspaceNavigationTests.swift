@@ -192,6 +192,29 @@ struct WorkspaceNavigationTests {
         #expect(scrollViews().isSuperset(of: mounted), "it was never mounted again")
     }
 
+    /// The workspace can draw before the restored agents reach it (its first adoption was still
+    /// empty): the layouts that wait to mount still mount after it, so every agent's pane binds
+    /// its pi without being shown.
+    @Test func layoutsThatArriveAfterTheFirstFrameStillMount() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start()
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        // Past the first frame's mounting pass, which found nothing to mount.
+        try await Task.sleep(for: .milliseconds(50))
+        let space = Fixture.space(path: app.dir.path)
+        var agents: [AgentFixture] = []
+        for index in 0..<3 { agents.append(try await app.liveAgent("a\(index)", in: space, order: index)) }
+
+        try await app.server.putState(Fixture.state(spaces: [space], agents: agents))
+        try await eventuallyOnMain("the workspace to adopt its agents") { vm.state.agents.count == agents.count }
+        ListPerf.settle(window)
+
+        try await eventuallyOnMain("every layout to mount", timeout: .seconds(5)) { vm.mountedTabs.count == agents.count }
+    }
+
     /// Switching away from an agent and back is a flip: the older pages read in its thread and
     /// where it was scrolled to are still there (the hidden thread keeps its store and its view;
     /// the first pull after it comes back merges onto the history).
