@@ -17,6 +17,57 @@ import Testing
 @Suite("List performance", .mainActorExclusive)
 @MainActor
 struct ListPerformanceTests {
+    // MARK: Sidebar
+
+    private static let sidebarSize = CGSize(width: AppLayout.sidebarDefaultWidth, height: 800)
+
+    /// How many rows fit the window, with a row's height and spacing.
+    private static var sidebarRowsOnScreen: Int {
+        Int(sidebarSize.height / (NWDensity.standard.rowHeight + AppLayout.sidebarRowSpacing)) + 1
+    }
+
+    @Test func openingTheSidebarOverThreeHundredAgentsBuildsOnlyTheRowsOnScreen() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+        let built = rows["sidebar.row", default: 0] + rows["sidebar.spaceRow", default: 0]
+        #expect(built <= 2 * Self.sidebarRowsOnScreen, "\(rows)")
+    }
+
+    /// A status report or a selection costs about the same with 300 agents as with 30: the
+    /// sidebar lays out and redraws the rows on screen, never the whole fleet. A ratio on the
+    /// same machine, so a slower one doesn't change it.
+    @Test func statusReportsAndSelectionCostTheSameForAFleetAsForAFewAgents() async throws {
+        func cost(agents: Int, spaces: Int) async throws -> Double {
+            let app = try AppHarness()
+            defer { app.stop() }
+            let vm = try await app.start(with: ListFixtures.fleet(in: app.dir, spaces: spaces, agents: agents))
+            let window = OffscreenWindow(size: Self.sidebarSize, dark: true, SidebarView(vm: vm))
+            defer { window.close() }
+            ListPerf.settle(window)
+            var times: [Double] = []
+            for round in 0..<3 {
+                for index in 0..<8 {
+                    var next = vm.state
+                    next.agents[index].status = next.agents[index].status == .working ? .done : .working
+                    times.append(ListPerf.time(window) { vm.adopt(next) })
+                    times.append(ListPerf.time(window) { vm.selectAgent(vm.state.agents[(index + round) % agents].id) })
+                }
+            }
+            // The median: a stray slow frame on a busy machine doesn't decide it.
+            return times.sorted()[times.count / 2]
+        }
+        let few = try await cost(agents: 30, spaces: 4)
+        let fleet = try await cost(agents: 300, spaces: 40)
+        #expect(fleet < few * 2.5, "\(String(format: "300 agents %.2f ms, 30 agents %.2f ms", fleet, few))")
+    }
+
     // MARK: Palette
 
     private func palette(_ items: [PaletteItem], query: String, highlight: PaletteHighlight = PaletteHighlight()) -> OffscreenWindow {
