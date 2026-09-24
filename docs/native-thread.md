@@ -208,6 +208,18 @@ output grows.
   dispatched, and the field's text goes once the first snapshot lands; the draft stays if the
   thread stops or fails first. A pi still
   starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
+- **Preview:** while a local thread has nothing from pi, `run(request:preview:)` reads the
+  agent's pi session file alongside the first pull (`PiSessionFile.previewLoader`, off the main
+  actor) and `preview(_:)` shows it: `previewing`, not `ready`, so nothing acts on it. pi's
+  first snapshot replaces it; its entries carry the same ids, so the rows stay. A preview never
+  replaces anything pi served. `PiSessionPreview` (ShepherdSessions) reads only the end of the
+  file (1 MiB, growing fourfold while the page reaches further back), follows `parentId` from
+  the newest entry as pi does from its leaf, stops at a page or at the start of what pi keeps
+  (the first entry, or a compaction and the entries it kept), applies context edits, skips
+  lines it cannot parse, and pages with the same budget as a snapshot (`fillPage`). The model
+  and thinking level are the newest on the path, else the newest in the file's head. A missing
+  file, or one that is not pi's, is no preview: the thread waits for pi. Remote clients get no
+  preview; the remote protocol is unchanged.
 - **Message order:** `messages` is the paged history (`loadOlder`). `displayedMessages` is
   history, then optimistic echoes of accepted sends, then pi's provisional entries. This order
   never flips when pi persists a message, so the tail never re-lays out.

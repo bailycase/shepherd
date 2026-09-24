@@ -967,7 +967,7 @@ final class TerminalSessionStore {
         !agent.nameIsFinal && autoName
     }
 
-    static func resolvedCwd(_ raw: String) -> String {
+    nonisolated static func resolvedCwd(_ raw: String) -> String {
         let expanded = (raw as NSString).expandingTildeInPath
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue {

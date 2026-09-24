@@ -18,6 +18,8 @@ struct ThreadView: View {
     let active: Bool
     let isFocused: Bool
     let request: NativeThreadStore.Request
+    /// The thread as pi's session file holds it, shown while pi starts (local agents).
+    var preview: NativeThreadStore.Preview? = nil
     /// This thread's key in the command center (see `ThreadCommandCenter`).
     var commandKey: String? = nil
     /// The empty thread's title and the composer placeholder name the agent and its folder.
@@ -179,7 +181,7 @@ struct ThreadView: View {
         }
         .task(id: active) {
             guard active else { store.stop(); return }
-            await store.run(request: request)
+            await store.run(request: request, preview: preview)
         }
         // Let any deferred AppKit focus release finish before claiming the composer.
         .task(id: active && isFocused) {
@@ -325,7 +327,9 @@ struct ThreadView: View {
 
     @ViewBuilder private var notices: some View {
         if let snapshot = store.snapshot {
-            if !store.ready, store.loadError == nil, !store.starting { quiet("Last known thread · refreshing before enabling actions") }
+            if !store.ready, store.loadError == nil, !store.starting, !store.previewing {
+                quiet("Last known thread · refreshing before enabling actions")
+            }
             if !snapshot.dialogsSupported { quiet("This host's pi cannot answer questions here · update Shepherd on the host") }
             if snapshot.clipped { quiet("Some earlier output is clipped") }
         }

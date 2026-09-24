@@ -610,6 +610,11 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   quiet, never an error: "Starting pi…" with a spinner, in the empty thread or, under a thread
   kept from before, as its working row. A pi that has not started after a minute gets the
   error banner.
+- **Resuming:** an agent resuming after a relaunch shows its history at once, read from pi's
+  session file (`PiSessionPreview`): the newest page, the model, and the thinking level, drawn
+  exactly as pi's history is. Nothing in it acts yet (retry, load older, subagent actions)
+  until pi answers, and pi's first snapshot then lands on the same rows, so nothing moves or
+  flashes. An agent whose file cannot be read waits for pi's history as before.
 - **Empty thread:** "Starting pi…" with a spinner while connecting. Then a framed
   `NWEmptyState` (a dashed `lineStrong` border, no crook): "New agent in `~/path`" (the path in
   Geist Mono 15 medium within the 17pt title), with "Describe the task. Drop or paste images to

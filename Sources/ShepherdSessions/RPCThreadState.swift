@@ -710,21 +710,28 @@ final class RPCThreadState {
             value.dialogs.removeLast()
             value.clipped = true
         }
-        var size = Self.bytes(value)
+        Self.fillPage(&value, from: history, end: end)
+        return .snapshot(value: value)
+    }
+
+    /// Fills `value` with the page of `history` that ends before `end`: up to 50 entries, newest
+    /// last, within what is left of the snapshot budget. `olderCursor` marks older history, in
+    /// `history` or, with `moreBefore`, before it.
+    static func fillPage(_ value: inout NativeThreadSnapshot, from history: [NativeThreadMessage], end: Int, moreBefore: Bool = false) {
+        var size = bytes(value)
         var index = end - 1
         while index >= 0 {
             let message = history[index]
-            size += Self.bytes(message) + 1
-            if size > Self.snapshotLimit {
+            size += bytes(message) + 1
+            if size > snapshotLimit {
                 value.clipped = true
                 break
             }
             value.messages.insert(message, at: 0)
             index -= 1
-            if value.messages.count == Self.pageSize { break }
+            if value.messages.count == pageSize { break }
         }
-        if index >= 0, let first = value.messages.first { value.olderCursor = first.entryID }
-        return .snapshot(value: value)
+        if index >= 0 || moreBefore, let first = value.messages.first { value.olderCursor = first.entryID }
     }
 
     private static func bytes<T: Encodable>(_ value: T) -> Int {

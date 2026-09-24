@@ -25,6 +25,8 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
 @Observable
 public final class NativeThreadStore {
     public typealias Request = @MainActor (NativeThreadRequest) async throws -> NativeThreadResult
+    /// History from disk to show until pi answers (`preview(_:)`); nil when there is none.
+    public typealias Preview = @Sendable () async -> NativeThreadSnapshot?
     /// Waits out one poll interval; throws once the run loop's task is cancelled.
     public typealias Pause = @Sendable (Duration) async throws -> Void
 
@@ -37,6 +39,10 @@ public final class NativeThreadStore {
     /// shows "Starting pi…", polls quickly, and a send waits for it (see `acceptsSend`). A pi
     /// that has not started within `startingLimit` becomes a `loadError`.
     public private(set) var starting = false
+    /// The thread shows history read from pi's session file while pi starts (`preview(_:)`),
+    /// not a snapshot pi served: nothing can be done with it yet, and pi's first snapshot
+    /// replaces it in place (its entries carry the ids pi's will).
+    public private(set) var previewing = false
     public private(set) var busy = false
     public private(set) var loadError: String?
     public private(set) var notice: String?
@@ -220,11 +226,18 @@ public final class NativeThreadStore {
     // MARK: Polling
 
     // The view's foreground task owns this loop. Reconnection always starts without a revision.
-    public func run(request: @escaping Request) async {
+    /// `preview` is read alongside the first pull while the thread has nothing to show yet.
+    public func run(request: @escaping Request, preview: Preview? = nil) async {
         guard !Task.isCancelled else { return }
         stop()
         let run = epoch
         self.request = request
+        if let preview, snapshot == nil {
+            Task { [weak self] in
+                guard let value = await preview(), let self, self.epoch == run else { return }
+                self.preview(value)
+            }
+        }
         await withTaskCancellationHandler {
             await refresh(fresh: true, resetHistory: true)
             while !Task.isCancelled && epoch == run {
@@ -239,6 +252,17 @@ public final class NativeThreadStore {
                 self.stop()
             }
         }
+    }
+
+    /// Shows `value`, history read from pi's session file (or a new agent's empty thread), until
+    /// pi answers. Ignored once pi has served this thread anything: disk never overwrites pi.
+    public func preview(_ value: NativeThreadSnapshot) {
+        guard !ready, snapshot == nil || previewing else { return }
+        if value != snapshot { snapshot = value }
+        if value.messages != messages { messages = value.messages }
+        if olderCursor != value.olderCursor { olderCursor = value.olderCursor }
+        if !previewing { previewing = true }
+        derive()
     }
 
     /// The host says pi now serves this thread: pull at once instead of at the next poll. Only
@@ -317,6 +341,7 @@ public final class NativeThreadStore {
                     if loadingOlder { loadingOlder = false }
                 }
                 if value != snapshot { snapshot = value }
+                if previewing { previewing = false }
                 if !ready { ready = true }
                 endStarting()
                 if loadError != nil { loadError = nil }
