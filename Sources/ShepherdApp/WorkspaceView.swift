@@ -91,8 +91,9 @@ struct WorkspaceView: View {
         // Every path that changes the active tab lands here: keep parking bookkeeping current.
         .onChange(of: vm.activeTabID, initial: true) { vm.noteActiveTabVisited() }
         // The first frame holds the visible layout alone; the rest mount after it, a few per
-        // run-loop turn.
-        .task { await vm.drainPendingMounts() }
+        // run-loop turn. Keyed on there being any, so layouts that start waiting after this
+        // view first drew (the restored workspace adopted late) still mount.
+        .task(id: vm.pendingMountTabIDs.isEmpty) { await vm.drainPendingMounts() }
         .background(Color.nw.bgWindow)
         // Window-level file/image drop routing for terminal panes; per-pane
         // SwiftUI .onDrop cannot coexist with permanently mounted hidden
