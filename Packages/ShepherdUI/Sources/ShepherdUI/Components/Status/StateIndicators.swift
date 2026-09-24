@@ -4,7 +4,9 @@ import SwiftUI
 /// tint, radius 4. Queued and idle are outlined. Only attention glows.
 public struct NWStatusPill: View {
     /// A glyph in place of the dot.
-    static let symbolSize: CGFloat = 10
+    static let symbolSize: CGFloat = 11
+    /// The pill's padding after its label, and before a glyph.
+    static let edgePadding: CGFloat = 7
 
     let state: AgentState
     let label: String
@@ -22,7 +24,7 @@ public struct NWStatusPill: View {
         HStack(spacing: NW.Space.s) {
             if let symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: Self.symbolSize, weight: .semibold))
+                    .font(.system(size: Self.symbolSize, weight: .medium))
                     .foregroundStyle(state.textColor)
                     .accessibilityHidden(true)
             } else {
@@ -35,8 +37,8 @@ public struct NWStatusPill: View {
                 .monospacedDigit()
                 .nwContentTransition(.crossFade)
         }
-        .padding(.leading, NW.Space.s)
-        .padding(.trailing, 7)
+        .padding(.leading, symbol == nil ? NW.Space.s : Self.edgePadding)
+        .padding(.trailing, Self.edgePadding)
         .frame(height: 20)
         .background(state.tint ?? .clear, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
         .nwBorder(state.tint == nil ? Color.nw.lineStrong : .clear, radius: NW.Radius.xs)
