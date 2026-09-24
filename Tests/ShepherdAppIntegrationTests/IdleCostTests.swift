@@ -144,7 +144,7 @@ struct IdleCostTests {
                                               provisional: [ThreadFixture.streaming("Working on it.")], running: true)
         snapshot.queue = NativeQueue(items: QueueFixture.messages(["Use the staging database", "Then run the tests"], steering: 1), mode: .all)
         snapshot.supportedActions.append("queue")
-        let thread = FakeThread(snapshot)
+        let thread = FakeThread(snapshot, reduceMotion: false)
         defer { thread.close() }
         try await thread.waitUntilReady()
         ListPerf.settle(thread.window)
