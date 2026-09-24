@@ -289,6 +289,25 @@ struct ListPerformanceTests {
 
     // MARK: Workspace
 
+    /// Launching into a workspace of many agents builds the visible layout first: its first
+    /// frame holds one layout and its thread, and the rest mount after it, a few per turn.
+    @Test func launchBuildsOnlyTheVisibleLayoutFirst() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(12, in: app)
+        var window: OffscreenWindow!
+
+        let first = ListPerf.counting {
+            window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, WorkspaceView(vm: vm))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+
+        #expect(first["layout.agentLayout", default: 0] == 1, "\(first)")
+        #expect(first["thread.view", default: 0] <= 2, "\(first)")
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+    }
+
     /// A hidden agent reporting its status redraws no mounted layout: the workspace resolves
     /// each layout's values, and only a layout whose values changed runs again.
     @Test func aStatusReportRedrawsNoMountedLayout() async throws {

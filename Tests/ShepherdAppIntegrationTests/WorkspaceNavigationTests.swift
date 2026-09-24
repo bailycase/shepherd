@@ -109,15 +109,17 @@ struct WorkspaceNavigationTests {
         #expect(vm.settingsSection == .pi)
     }
 
-    /// Cold parking at the view-model seam: a layout hidden past the delay and outside the
-    /// four most recently shown unmounts; selecting it again remounts it at once. An agent's
-    /// pane is its RPC thread, so its pane session survives parking.
+    /// Cold parking at the view-model seam: a layout holding a terminal pane, hidden past the
+    /// delay and outside the four most recently shown, unmounts; selecting it again remounts it
+    /// at once. An agent's pane is its RPC thread, so its pane session survives parking.
     @Test func hiddenLayoutsParkPastTheDelayAndUnparkWhenSelected() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
-        // The first agent's pi is running, so mounting its pane binds to it rather than spawning.
-        let agents = [try await app.liveAgent("a0", in: space)] + (1..<6).map { Fixture.agent("a\($0)", in: space, order: $0) }
+        // The first agent's pi is running, so mounting its pane binds to it rather than spawning;
+        // a terminal pane beside its thread is what makes its layout worth parking.
+        let agents = [try await app.liveAgent("a0", in: space, auxiliary: 1)]
+            + (1..<6).map { Fixture.agent("a\($0)", in: space, order: $0, auxiliary: 1) }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         for agent in agents {
             vm.selectAgent(agent.agent.id)
@@ -139,6 +141,55 @@ struct WorkspaceNavigationTests {
         vm.noteActiveTabVisited()
         #expect(vm.parkedTabIDs.isEmpty)
         #expect(vm.mountedTabs.contains { $0.id == agents[0].tab.id })
+    }
+
+    /// A layout that is only a thread never parks: it has no surface to release and polls
+    /// nothing while hidden, so returning to it after any time away is a flip.
+    @Test func threadOnlyLayoutsNeverPark() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agents = (0..<6).map { Fixture.agent("a\($0)", in: space, order: $0) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        for agent in agents {
+            vm.selectAgent(agent.agent.id)
+            vm.noteActiveTabVisited()
+        }
+
+        vm.sweepColdPanes(now: Date().addingTimeInterval(3_600))
+
+        #expect(vm.parkedTabIDs.isEmpty)
+        #expect(vm.mountedTabs.count == agents.count)
+    }
+
+    /// At launch the visible layout mounts first and the rest follow; an agent switched to
+    /// before its turn mounts then, once, and switching to it later is a flip.
+    @Test func switchingToAnAgentNotYetMountedMountsItOnce() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(6, in: app)
+        let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, WorkspaceView(vm: vm))
+        defer { window.close() }
+        ListPerf.settle(window)
+        func scrollViews() -> Set<ObjectIdentifier> {
+            func all(_ view: NSView) -> [NSScrollView] { ((view as? NSScrollView).map { [$0] } ?? []) + view.subviews.flatMap(all) }
+            return Set(all(window.host).map(ObjectIdentifier.init))
+        }
+        let late = agents[5]
+        #expect(!vm.mountedTabs.contains { $0.id == late.tab.id }, "its turn to mount has not come")
+        let before = scrollViews()
+
+        vm.selectAgent(late.agent.id)
+        ListPerf.settle(window)
+        let mounted = scrollViews().subtracting(before)
+        #expect(mounted.count == 1, "its thread mounted")
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        for agent in [agents[0], late, agents[2], late] {
+            vm.selectAgent(agent.agent.id)
+            ListPerf.settle(window)
+        }
+
+        #expect(scrollViews().isSuperset(of: mounted), "it was never mounted again")
     }
 
     /// Switching away from an agent and back is a flip: the older pages read in its thread and

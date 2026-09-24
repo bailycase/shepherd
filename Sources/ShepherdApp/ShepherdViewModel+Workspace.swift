@@ -15,8 +15,44 @@ extension ShepherdViewModel {
             selectedSpaceID: selectedSpaceID,
             selectedAgentID: selectedAgentID,
             remoteSelectionActive: selectedRemoteAgent != nil,
-            parkedTabIDs: parkedTabIDs
+            parkedTabIDs: parkedTabIDs,
+            pendingMountTabIDs: pendingMountTabIDs
         )
+    }
+
+    // MARK: Mounting at launch
+
+    /// Layouts mounted per run-loop turn once the first frame is up.
+    static let mountBatch = 2
+
+    /// The first workspace with agents mounts its visible layout first: every other layout
+    /// waits (`pendingMountTabIDs`) for `drainPendingMounts`.
+    func planMounting() {
+        guard !mountingPlanned, !state.agents.isEmpty else { return }
+        mountingPlanned = true
+        let pending = Set(state.tabs.map(\.id)).subtracting([activeTabID].compactMap { $0 })
+        if pending != pendingMountTabIDs { pendingMountTabIDs = pending }
+    }
+
+    /// Mounts the next few pending layouts, the visible space's first. False once none are left.
+    @discardableResult
+    func mountNextPending() -> Bool {
+        let next = workspaceSelection.mountOrder.prefix(Self.mountBatch)
+        guard !next.isEmpty else {
+            if !pendingMountTabIDs.isEmpty { pendingMountTabIDs = [] }
+            return false
+        }
+        pendingMountTabIDs.subtract(next)
+        return !pendingMountTabIDs.isEmpty
+    }
+
+    /// Run by the workspace after its first frame: mounts the pending layouts a few at a time,
+    /// letting the run loop draw between batches, so no turn builds many layouts at once.
+    func drainPendingMounts() async {
+        repeat {
+            // Past the turn that drew the last frame (the first frame, first).
+            try? await Task.sleep(for: .milliseconds(1))
+        } while !Task.isCancelled && mountNextPending()
     }
 
     /// Cold parking bookkeeping, driven from `noteActiveTabVisited` so every
@@ -27,6 +63,8 @@ extension ShepherdViewModel {
         let active = activeTabID
         if let active {
             parkedTabIDs.remove(active)
+            // Shown before its turn to mount: it stays mounted from now on.
+            if pendingMountTabIDs.contains(active) { pendingMountTabIDs.remove(active) }
             tabHiddenSince.removeValue(forKey: active)
         }
         let liveTabIDs = Set(state.tabs.map(\.id))
@@ -39,10 +77,11 @@ extension ShepherdViewModel {
     }
 
     /// Park layouts that have been hidden past the delay. Runs only while
-    /// something is hidden and unparked, so a one-agent workspace pays
-    /// nothing.
+    /// a layout that can park (one holding a terminal pane) is hidden and
+    /// unparked, so a workspace of thread-only agents pays nothing.
     private func syncParkSweepTimer() {
-        let pending = tabHiddenSince.keys.contains { !parkedTabIDs.contains($0) }
+        let terminalTabs = WorkspaceSelection.terminalTabs(in: state)
+        let pending = tabHiddenSince.keys.contains { !parkedTabIDs.contains($0) && terminalTabs.contains($0) }
         guard pending else {
             parkSweepTimer?.invalidate()
             parkSweepTimer = nil
@@ -56,7 +95,7 @@ extension ShepherdViewModel {
 
     func sweepColdPanes(now: Date = Date()) {
         let candidates = WorkspaceSelection.coldParkCandidates(
-            hiddenSince: tabHiddenSince, activeTabID: activeTabID, now: now
+            hiddenSince: tabHiddenSince, activeTabID: activeTabID, terminalTabs: WorkspaceSelection.terminalTabs(in: state), now: now
         ).subtracting(parkedTabIDs)
         guard !candidates.isEmpty else {
             syncParkSweepTimer()

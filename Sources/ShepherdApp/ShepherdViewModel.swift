@@ -321,6 +321,12 @@ final class ShepherdViewModel {
     /// Layouts currently unmounted by cold parking. Observed: parking and
     /// unparking must re-evaluate `mountedTabs`.
     var parkedTabIDs: Set<TabID> = []
+    /// Layouts not mounted yet at launch (`WorkspaceSelection.pendingMountTabIDs`): the
+    /// workspace's first frame builds the visible layout alone, then `drainPendingMounts`
+    /// mounts the rest. Observed, like `parkedTabIDs`.
+    var pendingMountTabIDs: Set<TabID> = []
+    /// The first adopt with agents plans the launch's mounting, once.
+    @ObservationIgnored var mountingPlanned = false
     @ObservationIgnored var parkSweepTimer: Timer?
     /// One-shot launch guard for autoStartAutomations.
     var didAutoStartAutomations = false
@@ -696,6 +702,7 @@ final class ShepherdViewModel {
         } else {
             syncFocus()
         }
+        planMounting()
     }
 
     private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus) {

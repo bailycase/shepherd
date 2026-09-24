@@ -84,7 +84,8 @@ struct IdleCostTests {
         let visible = vm.threadStores.store(for: agents[0].agent.id)
         try await eventuallyOnMain("the visible thread to load", timeout: .seconds(30)) { visible.ready }
         ListPerf.settle(window)
-        #expect(vm.mountedTabs.count == agents.count)
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        ListPerf.settle(window)
 
         let frames = await Self.clockFrames()
 

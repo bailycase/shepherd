@@ -143,6 +143,88 @@ struct RenderCostReport {
         report.add("thread writing a Swift fence (15 chunks, 100 ms apart)", "tree-sitter renders", "\(renders)")
     }
 
+    /// Launching into a workspace of forty agents: the first populated frame (its wall time,
+    /// main-thread CPU, and bodies), then, while the other layouts mount, the longest stretch
+    /// the main thread went without waiting.
+    @Test func launchIntoFortyAgents() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, agents) = try await MountedWorkspace.start(40, in: app)
+        try await Task.sleep(for: Self.atRest)
+        var window: OffscreenWindow!
+        NWRenderProbe.start()
+        let start = ContinuousClock.now
+        let firstCPU = await MainThreadCPU.milliseconds {
+            window = OffscreenWindow(size: CGSize(width: 1200, height: 800), dark: true, WorkspaceView(vm: vm))
+            ListPerf.settle(window)
+        }
+        let firstWall = ListPerf.milliseconds(ContinuousClock.now - start)
+        let first = NWRenderProbe.stop().filter { ["layout.agentLayout", "thread.view", "composer.body"].contains($0.key) }
+        defer { window.close() }
+        let monitor = MainTurnMonitor()
+        monitor.start()
+        let drainStart = ContinuousClock.now
+        try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
+        ListPerf.settle(window)
+        let drained = ListPerf.milliseconds(ContinuousClock.now - drainStart)
+        try await Task.sleep(for: .milliseconds(300))
+        monitor.stop()
+        report.add("workspace launch (40 agents)", "first frame: wall / main-thread CPU", String(format: "%.1f ms / %.1f ms", firstWall, firstCPU))
+        report.add("workspace launch (40 agents)", "first frame: bodies", counts: first)
+        report.add("workspace launch (40 agents)", "the rest mounted after", String(format: "%.0f ms", drained))
+        report.add("workspace launch (40 agents)", "longest main-thread turns while they mount",
+                   monitor.durations.sorted(by: >).prefix(5).map { String(format: "%.1f", $0 * 1000) }.joined(separator: ", ")
+                       + String(format: " ms (%d turns)", monitor.turns))
+    }
+
+    /// A one-shot motion (the review pane sliding in beside the visible thread) with 5 and 40
+    /// layouts mounted behind it: the longest gap between frames while it runs, three times.
+    @Test(arguments: [5, 40]) func oneShotMotionWithLayoutsMounted(count: Int) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(count, in: app)
+        defer { window.close() }
+        try await Task.sleep(for: Self.atRest)
+        var gaps: [Double] = []
+        for _ in 0..<3 {
+            let opened = await FrameTimer.measure(window, region: CGRect(x: 0, y: 400, width: 1200, height: 1)) {
+                withNWAnimation(.pane) { vm.openReview(agentID: agents[0].agent.id, path: nil) }
+            }
+            gaps.append(opened.longestGap * 1000)
+            let review = try #require(vm.reviewSessions.values.first)
+            vm.cancelReview(review)
+            ListPerf.settle(window)
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        report.add("review pane sliding in (\(count) layouts mounted)", "longest frame gap (median of 3)", ms: MainThreadCPU.median(gaps))
+    }
+
+    /// Returning to a thread-only agent hidden past the park delay, after five other visits:
+    /// main-thread CPU for the switch and the bodies it builds.
+    @Test func returnToAThreadOnlyAgentHiddenLong() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let (vm, window, agents) = try await MountedWorkspace.open(7, in: app)
+        defer { window.close() }
+        for agent in agents.dropFirst(2) {
+            vm.selectAgent(agent.agent.id)
+            ListPerf.settle(window)
+        }
+        vm.sweepColdPanes(now: Date().addingTimeInterval(60))
+        ListPerf.settle(window)
+        let parked = vm.parkedTabIDs.contains(agents[0].tab.id)
+        try await Task.sleep(for: Self.atRest)
+        NWRenderProbe.start()
+        let cpu = await MainThreadCPU.milliseconds {
+            vm.selectAgent(agents[0].agent.id)
+            ListPerf.settle(window)
+        }
+        let counts = NWRenderProbe.stop().filter { ["layout.agentLayout", "thread.view", "composer.body", "thread.rowBuilder"].contains($0.key) }
+        report.add("returning to a thread-only agent hidden 60 s", "was parked", "\(parked)")
+        report.add("returning to a thread-only agent hidden 60 s", "switch: main-thread CPU", ms: cpu)
+        report.add("returning to a thread-only agent hidden 60 s", "switch: bodies", counts: counts)
+    }
+
     /// A poll that moves only the context count.
     @Test func statsOnlyPoll() async throws {
         var runs: [Double] = []
