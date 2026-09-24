@@ -57,7 +57,8 @@ public struct NWFileStrip: View {
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal) {
-                HStack(spacing: NW.Space.xs) {
+                // Lazy: a big change touches hundreds of files, and only the chips in view are built.
+                LazyHStack(spacing: NW.Space.xs) {
                     ForEach(items) { item in
                         NWFileChip(item: item, selected: item.id == selection, selectionSpace: reduceMotion ? nil : selectionSpace) {
                             onSelect(item.id)
@@ -74,6 +75,8 @@ public struct NWFileStrip: View {
                 .animation(animatesSelection ? NW.Motion.content.animation(reduceMotion: reduceMotion) : nil, value: selection)
             }
             .scrollIndicators(.hidden)
+            // As tall as its chips: a lazy stack would otherwise take whatever height it's offered.
+            .fixedSize(horizontal: false, vertical: true)
             .onChange(of: selection) { old, id in
                 guard let id else { return }
                 // The first selection lands with the pane: an animation started there would
