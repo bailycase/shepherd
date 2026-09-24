@@ -4,14 +4,16 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundleExecutable</key>
-	<string>Shepherd</string>
+	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Shepherd</string>
+	<string>$(PRODUCT_NAME)</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,7 +31,7 @@
 	<key>SUEnableInstallerLauncherService</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://bailycase.github.io/shepherd/appcast.xml</string>
+	<string>https://bailycase.github.io/shepherd/$(SHEPHERD_APPCAST)</string>
 	<key>SUPublicEDKey</key>
 	<string>MB4Hq3U0TnR9zNlEPz9DN/PjznW2WUP0ad09I1xmntQ=</string>
 </dict>
