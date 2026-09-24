@@ -15,6 +15,7 @@ import unittest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _spec = importlib.util.spec_from_file_location("release", os.path.join(ROOT, "scripts", "release.py"))
+assert _spec is not None and _spec.loader is not None
 release = importlib.util.module_from_spec(_spec)
 # dataclasses look their module up while the class is built.
 sys.modules["release"] = release
