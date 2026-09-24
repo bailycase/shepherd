@@ -66,6 +66,7 @@ swift test --filter UnitTests                # fast tier: seconds
 swift test --filter IntegrationTests         # real server, stub pi, git, off-screen windows
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
 swift test                                   # everything (previews skip without SHEPHERD_PREVIEW_DIR)
+CI=true swift test --no-parallel             # as CI runs it: serially, timing-sensitive tests skipped
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py)
 ```
@@ -88,6 +89,8 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   the preview renders, the live-model run, and the long-list timing report (see Testing).
   **`SHEPHERD_BENCHMARK`** switches on `ComposerMenuBenchmarkTests`, which prints what the
   composer's menus cost over a full model catalog.
+- **`SHEPHERD_TIMING_TESTS=1`** runs the timing-sensitive tests even where `CI=true` skips them
+  (see Testing).
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
   `~/.pi/agent`. Shepherd follows it (`PiConfig.agentDirectory`) when it seeds session headers
   and reads pi's models and settings.
@@ -133,7 +136,7 @@ Tests come in tiers, and the switch is `--filter` on target names.
 - `ExtensionClient`: a raw extension-socket client.
 - `eventually("what", …)` and `eventuallyOnMain`: named 10 ms polls that throw `WaitTimeout`
   saying what never happened. Never sleep a fixed amount; wait on a callback or `eventually`.
-  Keep timeouts generous (10–30 s), but make the happy path fast.
+  Keep timeouts generous (they default to 30 s), but make the happy path fast.
 - Every integration and preview suite is time-limited to two minutes per test, so a hang fails
   the test that hung, by name.
   - Most suites carry `.integrationTimeLimit`.
@@ -164,7 +167,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
   `PiConfig.agentDirectory(environment:)`, `TerminalImageDrop.resolve(_:directory:)`.
 - A test that needs process-wide state anyway (a signal disposition) or blocks the main queue runs
   as an exit test, in its own process: `await #expect(processExitsWith: .success) { … }`.
-  Expectations inside the body are reported as usual.
+  Expectations inside the body are reported as usual. Wrap the body in `recordingErrors { … }`:
+  an error thrown out of it kills the child with SIGTRAP, and the parent reports only the signal.
 - A store that takes `UserDefaults` gets `ScratchDefaults()`, never `UserDefaults(suiteName:)`
   with a name. Its suite is a plist in the scratch root; a named suite leaks into
   `~/Library/Preferences`, because cfprefsd writes a removed domain back after its plist is
@@ -182,6 +186,24 @@ see its work.
 - ShepherdUI's components also have `#Preview`s (`Packages/ShepherdUI/Sources/ShepherdUI/Previews/`)
   for Xcode's canvas; the Debug build's Component Gallery shows the base components live.
 
+**Timing-sensitive tests** check a real rule, but a slow machine can fail them without a
+regression, so they carry `.timingSensitive` and CI skips them. `TimingTests.enabled` is false
+when `CI=true` (GitHub Actions sets it) unless `SHEPHERD_TIMING_TESTS=1`; every local `swift test`
+runs them.
+
+- **Frame sampling:** the motion suites (`*MotionTests`, `MotionProbeTests`, `ThreadHoverTests`)
+  must catch a motion between its two ends. A busy shared runner may not, and CI's VM drew slides
+  as fades.
+- **Wall-clock budgets:** `ComposerMenuPerformanceTests.openingAndClosingTheModelPickerTakeLittleTime`.
+- **Instant rules stay on CI:** a terminal's one PTY resize per slide, switching agents as a
+  visibility flip, streamed text appearing at once. Their motion controls, which prove the check
+  is not vacuous, are separate `.timingSensitive` tests or expectations under
+  `if TimingTests.enabled`. So is a count that only measures speed (`OutputDeliveryTests`'
+  merged deliveries); the rest of such a test runs everywhere.
+- Never mark a test timing-sensitive to hide a short wait: give it a condition to wait on and a
+  timeout that fits what the code does.
+- On a CI machine, `SHEPHERD_TIMING_TESTS=1 swift test` runs them too.
+
 **Live model:** the opt-in use-case run against a real model is gated on `SHEPHERD_LIVE_MODEL`
 (e.g. `cpa/~anthropic/claude-haiku-latest`). It never runs by default.
 
@@ -192,7 +214,8 @@ see its work.
   derivation passes that must not scale with a change (`sidebar.spaceScan`, `sidebar.spaceForest`).
 - `ListPerformanceTests` pins each long list's budget as a count of rows built or redrawn
   (opening, scrolling, a highlight or a selection moving, one row changing, a reply streaming).
-  Counts hold on a slow or busy runner; timing budgets do not, so don't add those.
+  Counts hold on a slow or busy runner; timing budgets do not, so don't add those. Two thread
+  budgets differ on macOS 26 (CI) whatever the speed, so there they run as known issues.
 - `SHEPHERD_PERF_REPORT=1 swift test --filter ListPerformanceReport` prints each list's timings
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
   layout, and display, and scrolls a list a step at a time by moving its clip view.
@@ -249,7 +272,9 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   release rules (every trigger, feed routing, the legacy aliases).
 
 CI (`.github/workflows/ci.yml`) runs the release rules, `swift build --build-tests`, and
-`swift test` (in parallel) on pull requests and pushes to `master`.
+`swift test --no-parallel` on pull requests and pushes to `master`, skipping the timing-sensitive
+tests. It runs the suite serially: on its shared 3-core runner a parallel run queued tests behind
+one another's main-thread work until their waits ran out.
 
 ## Source map
 
@@ -331,7 +356,7 @@ Tests/
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
   ShepherdTestKit/        ScratchDefaults, makeScratchDirectory, Locked, CommandFailure, TestProcess
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
-                          eventually, the time-limit traits
+                          eventually, recordingErrors, the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
   Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
