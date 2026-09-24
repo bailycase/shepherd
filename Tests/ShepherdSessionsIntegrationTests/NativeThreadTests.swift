@@ -397,20 +397,26 @@ struct NativeThreadTests {
     }
 
     /// Revisions pi reached before its pane was bound had no agent to reach: binding pushes one.
+    /// The thread has settled first, so no later revision can stand in for the binding's push.
     @Test func bindingAPaneToAPiPushesItsAgent() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pushes = Locked<[AgentID]>([])
         h.server.onThreadRevision = { agentID in pushes.withValue { $0.append(agentID) } }
-        let session = try await h.server.createSession(params: CreateSessionParams(cwd: h.dir.path, command: StubPi.command, runtime: .rpc))
-        let space = Fixture.space(path: h.dir.path)
-        let worker = Fixture.agent(in: space)
-        try await h.seed(Fixture.workspace([worker], space: space))
-        #expect(pushes.current.isEmpty)
+        let pi = try await PiAgent.launch(on: h)
+        let settled = try await pi.snapshot("the bootstrap to land") { !$0.messages.isEmpty && $0.stats != nil && $0.commands != nil }
+        let paneID = try #require(pi.agent.paneID)
+        try await h.server.updatePaneSession(tabID: pi.agent.tabID, paneID: paneID, sessionID: nil)
+        await drainMainQueue()
+        pushes.withValue { $0.removeAll() }
 
-        let paneID = try #require(worker.agent.paneID)
-        try await h.server.updatePaneSession(tabID: worker.tab.id, paneID: paneID, sessionID: session.id)
-        try await eventually("the binding's push") { pushes.current.contains(worker.agent.id) }
+        try await h.server.updatePaneSession(tabID: pi.agent.tabID, paneID: paneID, sessionID: pi.sessionID)
+        try await eventually("the binding's push") { !pushes.current.isEmpty }
+        #expect(pushes.current == [pi.agent.id])
+        guard case .unchanged = try await pi.request(.snapshot(expectedSessionID: settled.piSessionID, afterRevision: settled.revision)) else {
+            Issue.record("the thread revised after it settled, so the push proves nothing")
+            return
+        }
     }
 
     // MARK: - Subagents
