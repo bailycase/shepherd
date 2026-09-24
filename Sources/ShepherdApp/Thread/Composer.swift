@@ -52,8 +52,10 @@ struct Composer: View {
     @State private var picking = false
     /// The card's top edge in the thread, once laid out: a menu takes at most the room above it.
     @State private var cardTop: CGFloat?
-    /// The thread's room after the card's trailing edge: the Send menu stands there when it fits.
-    @State private var roomBeside: CGFloat = 0
+    /// The thread has room after the card's trailing edge for the Send menu (`sendMenuBeside`).
+    /// Kept as the answer, not the room, so a live resize redraws the composer only when the
+    /// menu would change sides.
+    @State private var sendMenuFitsBeside = false
     @State private var dismissal = ComposerMenuDismissal()
     /// Owned here, not by the thread: claiming the keyboard redraws the composer alone.
     @FocusState private var composing: Bool
@@ -189,12 +191,12 @@ struct Composer: View {
                 .background { ComposerMenuRegion(dismissal: dismissal) }
                 .background { ComposerWindowReader(monitor: keyMonitor) }
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.threadSpace)).minY } action: { cardTop = $0 }
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    (proxy.bounds(of: .named(Self.threadSpace))?.maxX ?? proxy.size.width) - proxy.size.width
-                } action: { roomBeside = $0 }
+                .onGeometryChange(for: Bool.self) { proxy in
+                    Self.sendMenuBeside(room: (proxy.bounds(of: .named(Self.threadSpace))?.maxX ?? proxy.size.width) - proxy.size.width)
+                } action: { sendMenuFitsBeside = $0 }
                 .overlay(alignment: .topLeading) { menus(query: query) }
-                .overlay(alignment: Self.sendMenuBeside(room: roomBeside) ? .bottomTrailing : .topTrailing) {
-                    sendMenu(beside: Self.sendMenuBeside(room: roomBeside))
+                .overlay(alignment: sendMenuFitsBeside ? .bottomTrailing : .topTrailing) {
+                    sendMenu(beside: sendMenuFitsBeside)
                 }
         }
         .nwAnimation(.list, value: accessories)
