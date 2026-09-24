@@ -102,6 +102,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
 - `StubPi.command`: runs `Resources/stub-pi.py`, a scripted `pi --mode rpc` driven by prompt
   keywords (`ask`, `select`, `hang`, `die`, `big`, `slow`, `widgets`, `fill`, `newsession`, …).
   `STUB_PI_LOG` records what it received, and `STUB_PI_HISTORY_BYTES` seeds a long history.
+  `STUB_PI_STARTUP_DELAY`/`_GATE`/`_EXIT` hold or fail its boot (`stub-pi-startup.json` in its
+  cwd does the same for a pi launched the way the app launches it).
   `StubPi.installOnPath()` puts it first on `PATH` as `pi` (answering `--list-models`) for code
   that launches pi the way the app does.
 - `makeScratchRepo()` and `git(_:in:)`: a git repository with one commit. A failing git call
