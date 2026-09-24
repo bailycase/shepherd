@@ -107,6 +107,45 @@ struct GitWorktreeTests {
         #expect(FileManager.default.fileExists(atPath: path + "/late.txt"))
     }
 
+    /// Ignored build output (a SwiftPM dependency checkout is a nested repository) neither
+    /// changes the fingerprint nor blocks it; untracked work and tracked files, even inside an
+    /// ignored directory, still do.
+    @Test func theDeletionFingerprintIgnoresBuildOutputButProtectsWork() throws {
+        let sandbox = try WorktreeSandbox()
+        defer { sandbox.remove() }
+        try ".build/\n".write(to: sandbox.repo.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+        try git(["add", ".gitignore"], in: sandbox.repo)
+        try git(["commit", "-qm", "ignore builds"], in: sandbox.repo)
+        let path = try GitWorktree.add(repo: sandbox.repo.path, branch: "agent/fingerprint")
+        let original = try GitWorktree.deletionFingerprint(worktree: path)
+        let dependency = URL(fileURLWithPath: path + "/.build/checkouts/Dependency")
+        try FileManager.default.createDirectory(at: dependency, withIntermediateDirectories: true)
+        for args in [["init", "-q"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "dependency"]] {
+            try git(args, in: dependency)
+        }
+        #expect(try GitWorktree.deletionFingerprint(worktree: path) == original)
+
+        try "draft".write(toFile: path + "/notes.txt", atomically: true, encoding: .utf8)
+        let draft = try GitWorktree.deletionFingerprint(worktree: path)
+        #expect(draft != original)
+        try "revised".write(toFile: path + "/notes.txt", atomically: true, encoding: .utf8)
+        #expect(try GitWorktree.deletionFingerprint(worktree: path) != draft)
+
+        try "tracked".write(toFile: path + "/.build/keep.txt", atomically: true, encoding: .utf8)
+        try git(["add", "-f", ".build/keep.txt"], in: URL(fileURLWithPath: path))
+        let tracked = try GitWorktree.deletionFingerprint(worktree: path)
+        try "changed".write(toFile: path + "/.build/keep.txt", atomically: true, encoding: .utf8)
+        #expect(try GitWorktree.deletionFingerprint(worktree: path) != tracked)
+
+        // A nested repository outside ignored output still cannot be fingerprinted safely.
+        let confirmed = try GitWorktree.deletionFingerprint(worktree: path)
+        try FileManager.default.moveItem(atPath: dependency.path, toPath: path + "/nested")
+        #expect(throws: GitWorktree.Failure.self) { try GitWorktree.deletionFingerprint(worktree: path) }
+        try FileManager.default.moveItem(atPath: path + "/nested", toPath: dependency.path)
+        try GitWorktree.remove(repo: sandbox.repo.path, branch: "agent/fingerprint", worktree: path, fingerprint: confirmed)
+        #expect(!FileManager.default.fileExists(atPath: path))
+    }
+
     /// The primary checkout wandered onto a feature branch; a worktree based on
     /// `origin/<default>` carries none of that work and does not track the default branch.
     @Test func aWorktreeFromTheRemoteDefaultCarriesNoCheckoutWorkAndTracksNothing() throws {

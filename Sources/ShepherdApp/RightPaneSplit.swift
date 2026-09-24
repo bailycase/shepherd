@@ -24,9 +24,10 @@ final class RightPaneState {
     }
 }
 
-/// The thread on the left, the right pane (inspector or review) beside it (Navigation board:
-/// 480–50%, 600 default, the drag handle on its left edge). In a column too narrow to keep the
-/// thread at 400pt, the pane overlays the thread instead of squeezing it (`ShellLayout`).
+/// The agent's layout (its thread and any terminal panes) on the left, the right pane (inspector
+/// or review) beside it (Navigation board: 480–50%, 600 default, the drag handle on its left
+/// edge). In a column too narrow to keep the layout at 400pt, the pane overlays it from the
+/// trailing edge instead of squeezing it (`ShellLayout`).
 ///
 /// The pane slides in from the trailing edge and back out (`.pane`; a cross-fade under Reduce
 /// Motion) whichever path opens it: ⇧⌘B, ⌘I, the toolbar, a thread link, an agent's

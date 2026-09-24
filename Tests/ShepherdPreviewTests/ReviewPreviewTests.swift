@@ -46,10 +46,12 @@ struct ReviewPreviewTests {
         }
     }
 
-    /// Loading, no changes, and a failed load, side by side.
+    /// Loading, no changes (in a worktree other than the agent's, which the header names), and a
+    /// failed load, side by side.
     @Test func reviewPaneStates() async throws {
         let loading = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp", reference: nil, isLoading: true)
-        let empty = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp", reference: "main..HEAD")
+        let empty = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp/shepherd-worktree", agentCwd: "/tmp/shepherd",
+                                  reference: "main..HEAD")
         let failed = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp", reference: nil,
                                    loadError: "git diff failed: not a git repository")
         try await Preview.render("review-pane-states", size: CGSize(width: 1440, height: 420)) {

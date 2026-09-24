@@ -122,17 +122,17 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Discard one file's changes (the pane confirmed first), then reload the diff in place.
-    func revertReviewFile(_ session: ReviewSession, file: DiffFile) {
+    /// Discard one file's changes (the pane confirmed first) in `cwd`, the directory its diff
+    /// came from, then reload the diff in place. A review retargeted meanwhile is left alone.
+    func revertReviewFile(_ session: ReviewSession, file: DiffFile, in cwd: String) {
         guard reviewSessions[session.paneID] === session, !session.isPRMode else { return }
-        let cwd = session.cwd
         Task {
             do {
                 try await Task.detached { try GitDiff.revert(file, cwd: cwd) }.value
             } catch {
                 remoteActionError = "Could not revert \(file.displayPath): \(error)"
             }
-            guard reviewSessions[session.paneID] === session else { return }
+            guard reviewSessions[session.paneID] === session, session.cwd == cwd else { return }
             session.comments.removeAll { $0.fileID == file.id }
             session.viewed.remove(file.id)
             reloadReview(session, reference: session.reference)
@@ -160,7 +160,7 @@ extension ShepherdViewModel {
             requestChanges: { [weak self] in self?.submitReview(session) },
             commit: { [weak self] in self?.commitReview(session) },
             close: { [weak self] in self?.cancelReview(session) },
-            revert: remote ? nil : { [weak self] file in self?.revertReviewFile(session, file: file) },
+            revert: remote ? nil : { [weak self] file, cwd in self?.revertReviewFile(session, file: file, in: cwd) },
             open: remote ? nil : { [weak self] file in self?.openReviewFile(session, file: file) },
             focusThread: { [weak self] in
                 guard let self else { return }
@@ -278,9 +278,15 @@ extension ShepherdViewModel {
             return
         }
 
+        // Never changes the agent's own directory; no cwd means the agent's, even when the open
+        // review targets another repository.
+        let cwdPath = ((requestedCwd ?? piPane.cwd) as NSString).expandingTildeInPath
+
         // One review per agent, regardless of entry point: an agent re-requesting a review
-        // reloads the open one.
+        // reloads the open one and brings it back in front of an inspected subagent.
         if let existing = reviewSessions.values.first(where: { $0.agentID == agentID }) {
+            if existing.cwd != cwdPath { existing.retarget(cwd: cwdPath) }
+            subagentInspector.runByAgent.removeValue(forKey: agentID)
             reloadReview(existing, reference: reference)
             respond?(.submitted(
                 text: "Review pane already open; reloaded. The user's review will arrive as a message when they submit."
@@ -288,13 +294,13 @@ extension ShepherdViewModel {
             return
         }
 
-        let cwdPath = ((requestedCwd ?? piPane.cwd) as NSString).expandingTildeInPath
         // The review docks in the agent's right pane: a view slot, not a layout leaf, so it
         // never touches the persisted layout.
         let session = ReviewSession(
             agentID: agentID,
             paneID: PaneID(),
             cwd: cwdPath,
+            agentCwd: (piPane.cwd as NSString).expandingTildeInPath,
             reference: reference,
             isLoading: true
         )

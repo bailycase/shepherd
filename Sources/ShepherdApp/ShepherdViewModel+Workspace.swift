@@ -373,12 +373,19 @@ extension ShepherdViewModel {
         }
     }
 
-    func deleteAgent(_ id: AgentID) {
+    /// `completion` hears the outcome once the deletion is persisted (a peer's `agent_delete`
+    /// waits on it).
+    func deleteAgent(_ id: AgentID, completion: (@MainActor (Error?) -> Void)? = nil) {
         enqueuePersistence("agent deletion") { [weak self] _ in
             guard let self else { return }
-            do { try await self.deleteAgentPersisted(id) }
-            catch {
-                await MainActor.run { self.remoteActionError = String(describing: error) }
+            do {
+                try await self.deleteAgentPersisted(id)
+                await MainActor.run { completion?(nil) }
+            } catch {
+                await MainActor.run {
+                    self.remoteActionError = String(describing: error)
+                    completion?(error)
+                }
                 throw error
             }
         }

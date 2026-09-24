@@ -3,13 +3,19 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions
 
-/// Peer threads: agents seeing, messaging, and spawning other top-level
-/// agent threads. Messaging types into the target's pi prompt — exactly what
-/// the user does — so pi queues it naturally when the target is mid-turn.
-/// The sender's name frames every message so transcripts show the source.
+/// Peer threads: agents listing, messaging, spawning, and asking to delete other top-level
+/// agents. Messages go through the target's live panes extension; a deletion waits for the
+/// user's answer in `PeerDeleteDialog` and then follows the normal Delete Agent path.
 @MainActor
 extension ShepherdViewModel {
     func installAgentPeerControl() {
+        server.onAgentPeerCancellation = { [weak self] token in
+            MainActor.assumeIsolated {
+                if self?.peerDeleteConfirmation?.requestID == token {
+                    self?.peerDeleteConfirmation = nil
+                }
+            }
+        }
         server.onAgentPeerRequest = { [weak self] request, respond in
             MainActor.assumeIsolated {
                 guard let self else {
@@ -61,6 +67,22 @@ extension ShepherdViewModel {
             }
             return
 
+        case .delete(_, let targetAgentID, let requestID):
+            guard targetAgentID != sender.id else {
+                respond(.failed(code: "self_control", message: "an agent cannot delete itself"))
+                return
+            }
+            guard let target = state.agents.first(where: { $0.id == targetAgentID }) else {
+                respond(.failed(code: "no_such_agent", message: "target no longer exists"))
+                return
+            }
+            guard peerDeleteConfirmation == nil else {
+                respond(.failed(code: "busy", message: "another deletion is awaiting user confirmation"))
+                return
+            }
+            peerDeleteConfirmation = PeerDeleteConfirmation(requestID: requestID, agent: target,
+                                                          senderName: sender.name, respond: respond)
+
         case .spawn(_, let cwd, let prompt):
             let expanded = (cwd as NSString).expandingTildeInPath
             var isDirectory: ObjCBool = false
@@ -98,6 +120,27 @@ extension ShepherdViewModel {
                     respond(.failed(code: "spawn_failed", message: String(describing: error)))
                 }
             }
+        }
+    }
+
+    func cancelPeerDeletion(requestID: String) {
+        guard let confirmation = peerDeleteConfirmation,
+              confirmation.requestID == requestID else { return }
+        peerDeleteConfirmation = nil
+        confirmation.respond(.failed(code: "cancelled", message: "user cancelled deletion; agent kept"))
+    }
+
+    /// The dialog's destructive button, and nothing else: it dismisses the dialog, claims the
+    /// request (a timed-out or cancelled one can no longer delete), waits `dismissal` so the
+    /// sheet is gone before a layout is torn down, then deletes through Delete Agent.
+    func confirmPeerDeletion(requestID: String, dismissal: Duration = .zero) async {
+        guard let confirmation = peerDeleteConfirmation,
+              confirmation.requestID == requestID else { return }
+        peerDeleteConfirmation = nil
+        guard await server.claimAgentDeletion(confirmation.requestID) else { return }
+        if dismissal > .zero { try? await Task.sleep(for: dismissal) }
+        deleteAgent(confirmation.agent.id) { error in
+            confirmation.respond(error.map { .failed(code: "delete_failed", message: String(describing: $0)) } ?? .ok)
         }
     }
 }

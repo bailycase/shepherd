@@ -471,9 +471,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Toolbar inset.** While the sidebar is not docked, the toolbar's content moves a further 70pt
   in to clear the window controls (none in full screen) and leads with a sidebar button.
 - **Right pane** (review or subagent inspector, `RightPaneSplit`). It docks while the main
-  column is at least 881pt (thread 400 + 1 + pane 480): 600pt by default, at least 480, at most
-  half the column, and the thread always keeps 400. Narrower, the pane overlays the thread from
-  the trailing edge with the popover shadow. Its leading edge is the drag handle (9pt hit area,
+  column is at least 881pt (layout 400 + 1 + pane 480): 600pt by default, at least 480, at most
+  half the column, and the agent's layout (its thread and any terminal panes) always keeps 400.
+  Narrower, the pane overlays the layout from the trailing edge with the popover shadow. Its leading edge is the drag handle (9pt hit area,
   adjustable with VoiceOver in 40pt steps), and the width persists app-wide
   (`shepherd.rightPaneWidth`). No width is ever negative. It slides in from the trailing edge
   (`.pane`), and its content cross-fades when the review and the inspector swap.
@@ -879,8 +879,11 @@ next model request both draw as `queued`).
 
 ### Right pane: subagent inspector and review
 
-One slot beside the thread (`RightPaneSplit`) is shared by the subagent inspector and the review;
-when both exist, the inspector wins. Its sizes and adaptive rule are in "Window and adaptive
+One slot beside the agent's layout (`RightPaneSplit` around the whole layout, in
+`AgentLayoutView`) is shared by the subagent inspector and the review; when both exist, the
+inspector wins. With a terminal pane split beside the thread, the pane still sits at the
+workspace's trailing edge and the dock rule measures the main column, never the thread's own
+pane. Its sizes and adaptive rule are in "Window and adaptive
 layout" above.
 
 - **Toggling:** ⇧⌘B (or the toolbar's review toggle) closes the inspector if it is open,
@@ -915,8 +918,9 @@ layout" above.
 **Review** (`ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
 
 - **Header** (`NWPaneHeader`, 44pt like the toolbar beside it): "Review" in Geist 13 semibold,
-  with "4 files · +67 −58" beneath (led by the reference when an agent asked for one,
-  "loading…" while loading). Then a small `Local | PR` segmented control ("PR · <ref>" once the
+  with "4 files · +67 −58" beneath (led by the reference when an agent asked for one, and
+  before that by the directory's name when an agent's `review_diff` points it outside the
+  agent's own directory; "loading…" while loading). Then a small `Local | PR` segmented control ("PR · <ref>" once the
   PR base is known), an options menu (`NWOptionsMenu`: Expand All Files, Collapse All Files,
   Copy Review as Text), and close.
 - **File strip** (`NWFileStrip`, on `bgBase`): 24pt chips that scroll sideways, each with its
@@ -950,11 +954,14 @@ layout" above.
 - **Keys:** j/k move between hunks, n/p between files, c comments, v marks viewed, ⌘⏎ sends, and
   Esc returns to the thread's composer.
 - **Repository changes:** per-file Revert is the only repository mutation outside the worktree
-  flows (`RevertFileDialog`: "Discard changes"). Tracked files return to HEAD; new files move to
-  the Trash.
+  flows (`RevertFileDialog`: "Discard changes", with a Repository row naming the directory the
+  diff came from). Tracked files return to HEAD; new files move to the Trash. It acts on the
+  directory the confirmed diff came from, even if the review has since moved.
 
 A review an agent opens (`review_diff`) is the host's view state; remote viewers open their own
-with ⇧⌘B.
+with ⇧⌘B. An agent may point its review at another repository or worktree (`cwd`); a new target
+starts the review over (comments, summary, viewed marks, folds), and asking again brings the
+review back in front of an inspected subagent.
 
 ### Terminal panes
 
@@ -1054,6 +1061,12 @@ or `NSAlert` in the app:
 
 - Rename agent and Rename space (`RenameDialog`)
 - Delete Worktree Agent (`WorktreeDeleteDialog`) and Remove Space (`SpaceDeleteDialog`)
+- An agent asking to delete another (`PeerDeleteDialog`, "Delete agent"): rows for the agent,
+  its worktree branch (else its directory, so agents sharing a name can be told apart), its
+  space, and who asked, an attention banner (its pi session and everything it started stop; a
+  worktree agent's worktree and branch are kept), Cancel (⎋) and a destructive Delete agent. Only that button
+  approves. The dialog closes by itself when the request lapses (cancelled, the asking agent
+  gone, or two minutes without an answer).
 - Stop all (`StopAllDialog`), the review's Revert (`RevertFileDialog`), and a failed agent action
   (`ActionErrorDialog`)
 - Reset settings (`ResetSettingsDialog`)

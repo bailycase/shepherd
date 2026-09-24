@@ -53,6 +53,16 @@ extension ShepherdViewModel {
         set { remoteWorktreeSheet = newValue?.target }
     }
 
+    /// A peer's deletion request. The sheet closes only through its buttons or the request
+    /// lapsing; any other dismissal counts as Cancel, so the requesting agent always hears back.
+    var peerDeleteItem: PeerDeleteConfirmation? {
+        get { peerDeleteConfirmation }
+        set {
+            guard newValue == nil, let pending = peerDeleteConfirmation else { return }
+            cancelPeerDeletion(requestID: pending.requestID)
+        }
+    }
+
     var actionErrorItem: SheetItem<String>? {
         get { remoteActionError.map(SheetItem.init) }
         set { remoteActionError = newValue?.value }

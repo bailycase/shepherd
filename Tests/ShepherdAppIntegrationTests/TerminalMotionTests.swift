@@ -90,7 +90,7 @@ struct TerminalMotionTests {
 
 /// The same rule in the real shell: a shell pane split beside an agent's thread, in `RootView`,
 /// while the docked sidebar slides away and back and the right pane slides in beside the
-/// thread.
+/// agent's whole layout.
 @Suite("Terminal motion in the shell", .serialized, .mainActorExclusive)
 @MainActor
 struct ShellTerminalMotionTests {
@@ -100,7 +100,10 @@ struct ShellTerminalMotionTests {
         var grids: [String] = []
     }
 
-    @Test func aShellPaneBesideTheThreadResizesOncePerSidebarSlideAndNeverForTheRightPane() async throws {
+    /// The right pane docks beside the whole layout, measured against the main column (1207pt
+    /// here, so it docks), not inside the thread's half (603pt, where it would overlay the
+    /// thread): the shell narrows with the layout, once.
+    @Test func aShellPaneBesideTheThreadResizesOncePerSidebarSlideAndOnceForTheRightPane() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -139,7 +142,7 @@ struct ShellTerminalMotionTests {
         try await quiet(log)
         #expect(vm.isReviewPaneShowing)
         #expect(!opening.inBetween.isEmpty, "the review slides in")
-        #expect(log.grids.count == before, "the shell beside the thread keeps its grid: \(log.grids[before...])")
+        #expect(log.grids.count - before == 1, "one PTY resize as the docked pane opens: \(log.grids[before...])")
     }
 
     /// Waits until the surface's grid reports have been quiet for a while.

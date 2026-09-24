@@ -247,6 +247,19 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// An agent's `agent_delete`, waiting for the user: an agent in its space's directory, and
+    /// one in a worktree (named by its branch; the banner says the worktree is kept).
+    @Test func peerDeleteDialog() async throws {
+        try await Preview.render("sheet-peer-delete", size: CGSize(width: NWDialogMetrics.width, height: 400)) {
+            PeerDeleteDialog(requester: "Coordinate the release", agent: "Flaky integration tests",
+                             space: "billing-service", directory: "~/Developer/billing-service", delete: {}, cancel: {})
+        }
+        try await Preview.render("sheet-peer-delete-worktree", size: CGSize(width: NWDialogMetrics.width, height: 400)) {
+            PeerDeleteDialog(requester: "Coordinate the release", agent: "Flaky integration tests",
+                             space: "billing-service", branch: "fix/flaky-integration-tests", delete: {}, cancel: {})
+        }
+    }
+
     @Test func stopAllDialog() async throws {
         try await Preview.render("sheet-stop-all", size: CGSize(width: NWDialogMetrics.width, height: 180)) {
             StopAllDialog(runningSubagents: 3, stopAgent: {}, stopAll: {}, cancel: {})
@@ -273,7 +286,8 @@ struct SettingsPreviewTests {
 
     @Test func revertFileDialog() async throws {
         try await Preview.render("sheet-revert-file", size: CGSize(width: NWDialogMetrics.width, height: 200)) {
-            RevertFileDialog(path: "Sources/ShepherdApp/SidebarView.swift", isNew: false, revert: {}, cancel: {})
+            RevertFileDialog(path: "Sources/ShepherdApp/SidebarView.swift", repository: "~/Developer/Shepherd", isNew: false,
+                             revert: {}, cancel: {})
         }
     }
 

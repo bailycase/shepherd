@@ -12,8 +12,9 @@ struct ReviewActions {
     /// Ask the agent to commit what is under review.
     var commit: () -> Void
     var close: () -> Void
-    /// Local reviews only: discard a file's changes (confirmed first), open it in an editor.
-    var revert: ((DiffFile) -> Void)? = nil
+    /// Local reviews only: discard a file's changes (confirmed first) in the directory its diff
+    /// came from, open it in an editor.
+    var revert: ((DiffFile, _ cwd: String) -> Void)? = nil
     var open: ((DiffFile) -> Void)? = nil
     /// Return keyboard focus to the thread's composer (esc).
     var focusThread: () -> Void = {}
@@ -37,8 +38,15 @@ struct ReviewPane: View, Equatable {
     }
 
     var body: some View {
+        // A review retargeted at another repository starts over: folds, the comment being
+        // edited, the current file, and syntax colors all belonged to the old diff.
         ReviewPaneContent(session: session, actions: actions, touchedPaths: touchedPaths)
-            .id(session.id)
+            .id(Identity(session: session.id, cwd: session.cwd))
+    }
+
+    private struct Identity: Hashable {
+        let session: UUID
+        let cwd: String
     }
 }
 
@@ -110,8 +118,8 @@ private struct RevertConfirmation: ViewModifier {
 
     func body(content: Content) -> some View {
         content.sheet(item: $model.reverting) { file in
-            RevertFileDialog(path: file.displayPath, isNew: file.isNew,
-                             revert: { model.actions.revert?(file); model.reverting = nil },
+            RevertFileDialog(path: file.displayPath, repository: (model.cwd as NSString).abbreviatingWithTildeInPath, isNew: file.isNew,
+                             revert: { model.actions.revert?(file, model.cwd); model.reverting = nil },
                              cancel: { model.reverting = nil })
         }
     }
@@ -156,9 +164,11 @@ private struct ReviewHeader: View, Equatable {
         return "PR · \(reference)"
     }
 
-    /// "4 files · +67 −58", led by a reference the agent asked for ("main..HEAD · …").
+    /// "4 files · +67 −58", led by a reference the agent asked for ("main..HEAD · …"), and before
+    /// that by the directory's name when it is not the agent's own ("project-worktree · …").
     private var subtitle: Text {
-        let scope = !session.isPRMode ? session.reference.map { "\($0) · " } ?? "" : ""
+        let directory = session.otherDirectoryName.map { "\($0) · " } ?? ""
+        let scope = directory + (!session.isPRMode ? session.reference.map { "\($0) · " } ?? "" : "")
         if session.isLoading { return Text("\(scope)loading…") }
         let count = session.files.count
         if count == 0 { return Text("\(scope)0 files") }

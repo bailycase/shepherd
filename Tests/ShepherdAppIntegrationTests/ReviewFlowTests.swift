@@ -68,6 +68,92 @@ struct ReviewFlowTests {
         #expect(vm.reviewSessions.count == 1 && vm.reviewSessions.values.first === first)
     }
 
+    /// `review_diff` with `cwd` reviews another repository or worktree in the agent's one
+    /// review; without it, the agent's own directory. Comments belong to the diff they were
+    /// made on, so a new target starts over and the same target keeps them.
+    @Test func anAgentsReviewFollowsTheRequestedRepositoryAndStartsOverWhenItChanges() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let own = try dirtyRepo()
+        let other = try makeScratchRepo(files: ["other.txt": "before\n"])
+        defer { for repo in [own, other] { try? FileManager.default.removeItem(at: repo) } }
+        try "after\n".write(to: other.appendingPathComponent("other.txt"), atomically: true, encoding: .utf8)
+        let space = Fixture.space(path: own.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        _ = try await app.extensionRequest(.requestReview(id: 1, agentID: agent.agent.id, cwd: nil, reference: nil))
+        let session = try #require(vm.reviewSessions.values.first)
+        try await eventuallyOnMain("the agent's diff to load") { !session.isLoading }
+
+        for (id, cwd, files) in [(2, other.path, ["other.txt"]), (3, nil, ["file.txt", "new.txt"])] as [(Int, String?, [String])] {
+            session.comments = [ReviewComment(fileID: "f", lineID: 0, filePath: "f", lineNumber: 1, text: "on the old target")]
+            session.summary = "old summary"
+            session.viewed = ["f"]
+
+            let reply = try await app.extensionRequest(.requestReview(id: id, agentID: agent.agent.id, cwd: cwd, reference: nil))
+
+            guard case .reviewResult(id, let text) = reply else { Issue.record("unexpected reply \(reply)"); return }
+            #expect(text.hasPrefix("Review pane already open; reloaded."))
+            #expect(vm.reviewSessions.count == 1 && vm.reviewSessions.values.first === session)
+            #expect(session.cwd == (cwd ?? agent.piPane.cwd))
+            #expect(session.comments.isEmpty && session.summary.isEmpty && session.viewed.isEmpty)
+            try await eventuallyOnMain("the new target's diff to load") { !session.isLoading }
+            #expect(session.files.map(\.displayPath) == files)
+        }
+        #expect(app.server.state.tabs.map(\.layout) == [agent.tab.layout], "a review never touches the layout")
+
+        session.comments = [try comment(on: session, "same target")]
+        _ = try await app.extensionRequest(.requestReview(id: 4, agentID: agent.agent.id, cwd: own.path, reference: nil))
+        #expect(session.comments.map(\.text) == ["same target"])
+    }
+
+    /// A diff still loading from the old target never lands in the retargeted review, whether
+    /// it finishes last or fails.
+    @Test(arguments: [false, true])
+    func retargetingIgnoresTheOldTargetsPendingDiff(failing: Bool) async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let loads = HeldLoads()
+        vm.reviewDiffLoader = { cwd, _ in try await loads.load(cwd) }
+        vm.openReview(agentID: agent.agent.id, path: nil)
+        let session = try #require(vm.reviewSessions.values.first)
+        try await loads.waitFor(agent.piPane.cwd)
+
+        _ = try await app.extensionRequest(.requestReview(id: 1, agentID: agent.agent.id, cwd: "~/review-target", reference: nil))
+        let target = ("~/review-target" as NSString).expandingTildeInPath
+        try await loads.waitFor(target)
+        #expect(session.cwd == target)
+        await loads.finish(target)
+        try await eventuallyOnMain("the new target's diff to land") { !session.isLoading && session.reference == target }
+        await loads.finish(agent.piPane.cwd, failing: failing)
+        for _ in 0..<5 { await Task.yield() }
+
+        #expect(session.reference == target && session.loadError == nil && !session.isLoading)
+    }
+
+    /// Asking again while a subagent is inspected brings the review back in front of it.
+    @Test func aRepeatedRequestBringsTheReviewBackInFrontOfAnInspectedSubagent() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let repo = try dirtyRepo()
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let space = Fixture.space(path: repo.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        vm.selectAgent(agent.agent.id)
+        _ = try await app.extensionRequest(.requestReview(id: 1, agentID: agent.agent.id, cwd: nil, reference: nil))
+        vm.subagentInspector.runByAgent[agent.agent.id] = "run-1"
+        #expect(vm.rightPaneContent == .inspector(runID: "run-1"))
+
+        _ = try await app.extensionRequest(.requestReview(id: 2, agentID: agent.agent.id, cwd: nil, reference: nil))
+
+        #expect(vm.rightPaneContent == .review)
+        #expect(vm.selectedAgentID == agent.agent.id && vm.focusedPaneID == agent.piPane.id)
+    }
+
     @Test func aReviewFromASubdirectoryShowsRepositoryRelativePaths() async throws {
         let app = try AppHarness()
         defer { app.stop() }
@@ -172,14 +258,44 @@ struct ReviewFlowTests {
         try await eventuallyOnMain("the diff to load") { !session.isLoading }
         session.comments = [try comment(on: session, "dropped with the file")]
 
-        vm.revertReviewFile(session, file: try #require(session.files.first { $0.displayPath == "file.txt" }))
+        vm.revertReviewFile(session, file: try #require(session.files.first { $0.displayPath == "file.txt" }), in: session.cwd)
         try await eventuallyOnMain("the tracked file to drop out of the diff") { !session.isLoading && session.files.map(\.displayPath) == ["new.txt"] }
-        vm.revertReviewFile(session, file: try #require(session.files.first))
+        vm.revertReviewFile(session, file: try #require(session.files.first), in: session.cwd)
         try await eventuallyOnMain("the diff to empty") { !session.isLoading && session.files.isEmpty }
 
         #expect(try String(contentsOf: repo.appendingPathComponent("file.txt"), encoding: .utf8) == "before\n")
         #expect(!FileManager.default.fileExists(atPath: repo.appendingPathComponent("new.txt").path))
         #expect(session.comments.isEmpty)
+    }
+
+    /// A Revert confirmed on one repository's diff acts there, even if an agent retargeted the
+    /// review before it ran: the new repository's file and the new diff's comments are untouched.
+    @Test func aConfirmedRevertActsOnTheRepositoryItsDiffCameFrom() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let own = try dirtyRepo()
+        let other = try dirtyRepo()
+        defer { for repo in [own, other] { try? FileManager.default.removeItem(at: repo) } }
+        let space = Fixture.space(path: own.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        vm.openReview(agentID: agent.agent.id, path: nil)
+        let session = try #require(vm.reviewSessions.values.first)
+        try await eventuallyOnMain("the agent's diff to load") { !session.isLoading }
+        let confirmed = try #require(session.files.first { $0.displayPath == "file.txt" })
+        let confirmedIn = session.cwd
+        _ = try await app.extensionRequest(.requestReview(id: 1, agentID: agent.agent.id, cwd: other.path, reference: nil))
+        try await eventuallyOnMain("the other repository's diff to load") { !session.isLoading && session.cwd == other.path }
+        session.comments = [try comment(on: session, "about the other repository")]
+
+        vm.revertReviewFile(session, file: confirmed, in: confirmedIn)
+
+        try await eventuallyOnMain("the confirmed repository's file to return to HEAD") {
+            (try? String(contentsOf: own.appendingPathComponent("file.txt"), encoding: .utf8)) == "before\n"
+        }
+        #expect(try String(contentsOf: other.appendingPathComponent("file.txt"), encoding: .utf8) == "after\n")
+        #expect(session.cwd == other.path && session.comments.map(\.text) == ["about the other repository"])
+        #expect(session.files.map(\.displayPath) == ["file.txt", "new.txt"])
     }
 
     @Test func openingAReviewAtAPathReplacesTheInspectorAndFocusesTheFile() async throws {

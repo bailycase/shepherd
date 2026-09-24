@@ -47,7 +47,10 @@ final class ReviewSession: Identifiable {
     var hostReviewPane = false
     let agentID: AgentID
     var paneID: PaneID
-    let cwd: String
+    var cwd: String
+    /// The agent's own directory, for a local review. A review of any other directory (an
+    /// agent's `review_diff` with `cwd`) says which one in its header.
+    let agentCwd: String?
     /// Mutable because PR mode resolves the base branch asynchronously after
     /// the pane is already open.
     var reference: String?
@@ -101,6 +104,25 @@ final class ReviewSession: Identifiable {
         removedCount = files.reduce(0) { $0 + $1.removedCount }
     }
 
+    /// The reviewed directory's name while it is not the agent's own, else nil.
+    var otherDirectoryName: String? {
+        guard let agentCwd, (cwd as NSString).standardizingPath != (agentCwd as NSString).standardizingPath else { return nil }
+        return (cwd as NSString).lastPathComponent
+    }
+
+    /// Points the review at another repository or worktree. Comments, the summary, and viewed
+    /// marks belonged to the old diff, so they go with it; the pane starts over (`ReviewPane`
+    /// keys its state on `cwd`).
+    func retarget(cwd: String) {
+        self.cwd = cwd
+        files = []
+        comments = []
+        summary = ""
+        viewed = []
+        loadError = nil
+        focusFile = nil
+    }
+
     /// Replaces (or with nil removes) the comment on a line, in one write.
     func setComment(_ comment: ReviewComment?, fileID: String, lineID: Int) {
         var next = comments.filter { $0.fileID != fileID || $0.lineID != lineID }
@@ -112,6 +134,7 @@ final class ReviewSession: Identifiable {
         agentID: AgentID,
         paneID: PaneID,
         cwd: String,
+        agentCwd: String? = nil,
         reference: String?,
         files: [DiffFile] = [],
         loadError: String? = nil,
@@ -123,6 +146,7 @@ final class ReviewSession: Identifiable {
         self.agentID = agentID
         self.paneID = paneID
         self.cwd = cwd
+        self.agentCwd = agentCwd
         self.reference = reference
         self.files = files
         self.loadError = loadError
@@ -351,6 +375,9 @@ final class ReviewTouchedPaths {
 final class ReviewPaneModel {
     @ObservationIgnored let session: ReviewSession
     @ObservationIgnored let actions: ReviewActions
+    /// The directory this pane's diff came from. The pane starts over when the review is
+    /// retargeted (`ReviewPane`), so a confirmed Revert acts on the diff the user saw.
+    @ObservationIgnored let cwd: String
     /// Files folded by hand (viewed files fold too).
     var collapsed: Set<String> = []
     /// Folds opened, by file.
@@ -392,6 +419,7 @@ final class ReviewPaneModel {
     init(session: ReviewSession, actions: ReviewActions) {
         self.session = session
         self.actions = actions
+        cwd = session.cwd
     }
 
     /// The Local | PR control.

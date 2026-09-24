@@ -22,7 +22,7 @@ struct WorkspaceView: View {
                 let visibleTabID = vm.activeTabID
                 ForEach(mounted) { tab in
                     let isVisible = tab.id == visibleTabID
-                    PaneTreeView(vm: vm, tab: tab, node: tab.layout)
+                    AgentLayoutView(vm: vm, tab: tab)
                         .id(tab.id)
                         // `opacity(0)`, never a conditional `.hidden()`
                         // branch: `if hidden { … } else { … }` is
@@ -118,6 +118,52 @@ struct EmptyWorkspace: View {
 
 private extension String {
     var abbreviatingWithTilde: String { (self as NSString).abbreviatingWithTildeInPath }
+}
+
+// MARK: Agent layout
+
+/// An agent's layout with its right pane (an inspected subagent, else its review) docked beside
+/// the whole layout, never inside the thread's pane: the dock rule measures the main column, so a
+/// terminal split beside the thread neither halves the width it measures nor leaves the pane
+/// covering the thread.
+struct AgentLayoutView: View {
+    var vm: ShepherdViewModel
+    let tab: Tab
+
+    var body: some View {
+        let thread = tab.layout.leaves.lazy.compactMap { pane in
+            primaryAgent(in: tab, pane: pane, agents: vm.state.agents).map { (agentID: $0.id, paneID: pane.id) }
+        }.first
+        let inspecting = thread.flatMap { vm.subagentInspector.runByAgent[$0.agentID] }
+        let review = thread.flatMap { thread in vm.reviewSessions.values.first { $0.agentID == thread.agentID } }
+        // The layout stays the first child whether or not a pane is open, so opening one never
+        // remounts a pane's surface.
+        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
+            PaneTreeView(vm: vm, tab: tab, node: tab.layout)
+        } pane: {
+            if let thread {
+                let agentID = thread.agentID
+                let store = vm.threadStores.store(for: agentID)
+                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? review.map { .review($0.id) }) {
+                    if let inspecting {
+                        SubagentInspector(store: store, runID: inspecting, active: vm.isVisibleTab(tab), close: { [vm] in
+                            vm.subagentInspector.runByAgent.removeValue(forKey: agentID)
+                        }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
+                            do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
+                        }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) })
+                        // The inspector keys its run itself, so a run switch nudges in from its side.
+                        .nwTransition(.content)
+                    } else if let review {
+                        ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
+                            .id(review.id)
+                            .nwTransition(.content)
+                    }
+                }
+                // The pane belongs to the thread: a click in it takes focus from a terminal pane.
+                .simultaneousGesture(TapGesture().onEnded { [vm] in vm.focusedPaneID = thread.paneID })
+            }
+        }
+    }
 }
 
 // MARK: Pane tree
@@ -271,8 +317,7 @@ struct PaneTreeView: View {
             isFocused: visible && vm.focusedPaneID == pane.id,
             agentID: agent?.id,
             agentName: agent?.name ?? "",
-            inspectingRunID: agent.flatMap { vm.subagentInspector.runByAgent[$0.id] },
-            review: agent.flatMap { agent in vm.reviewSessions.values.first { $0.agentID == agent.id } }
+            inspectingRunID: agent.flatMap { vm.subagentInspector.runByAgent[$0.id] }
         )
     }
 }
@@ -342,13 +387,8 @@ struct PaneLeafModel: Equatable {
     /// The agent whose pi runs in this pane; nil for a terminal pane.
     let agentID: AgentID?
     let agentName: String
+    /// The subagent the right pane inspects (`AgentLayoutView`): the thread yields keyboard focus.
     let inspectingRunID: String?
-    let review: ReviewSession?
-
-    static func == (a: PaneLeafModel, b: PaneLeafModel) -> Bool {
-        a.pane == b.pane && a.isVisible == b.isVisible && a.isFocused == b.isFocused && a.agentID == b.agentID
-            && a.agentName == b.agentName && a.inspectingRunID == b.inspectingRunID && a.review === b.review
-    }
 }
 
 struct PaneLeafView: View, Equatable {
@@ -367,41 +407,22 @@ struct PaneLeafView: View, Equatable {
                 PanePlaceholder(text: "review unavailable")
             } else if let agentID = model.agentID {
                 // The thread is the agent's pane; the session binding still goes through the
-                // store so a pi exit closes the pane. The right pane docks beside it: an
-                // inspected subagent, else the agent's review.
-                let store = vm.threadStores.store(for: agentID)
+                // store so a pi exit closes the pane. Its right pane docks beside the whole layout
+                // (`AgentLayoutView`).
                 let inspecting = model.inspectingRunID
-                RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || model.review != nil) {
-                    AgentThreadPane(
-                        session: vm.sessions.session(for: pane, in: tab),
-                        store: store,
-                        active: model.isVisible,
-                        isFocused: model.isFocused && inspecting == nil,
-                        request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
-                        commandKey: ThreadCommandCenter.key(local: agentID),
-                        agentName: model.agentName,
-                        workingDirectory: pane.cwd,
-                        inspectSubagent: { [vm] in vm.toggleSubagentInspector(agentID: agentID, runID: $0.runID) },
-                        inspectedRunID: inspecting,
-                        review: { [vm] path in vm.selectAgent(agentID); vm.openReview(agentID: agentID, path: path) }
-                    )
-                } pane: {
-                    RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? model.review.map { .review($0.id) }) {
-                        if let inspecting {
-                            SubagentInspector(store: store, runID: inspecting, active: model.isVisible, close: { [vm] in
-                                vm.subagentInspector.runByAgent.removeValue(forKey: agentID)
-                            }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
-                                do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
-                            }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) })
-                            // The inspector keys its run itself, so a run switch nudges in from its side.
-                            .nwTransition(.content)
-                        } else if let review = model.review {
-                            ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
-                                .id(review.id)
-                                .nwTransition(.content)
-                        }
-                    }
-                }
+                AgentThreadPane(
+                    session: vm.sessions.session(for: pane, in: tab),
+                    store: vm.threadStores.store(for: agentID),
+                    active: model.isVisible,
+                    isFocused: model.isFocused && inspecting == nil,
+                    request: { [vm] in try await vm.server.nativeThread(agentID: agentID, request: $0) },
+                    commandKey: ThreadCommandCenter.key(local: agentID),
+                    agentName: model.agentName,
+                    workingDirectory: pane.cwd,
+                    inspectSubagent: { [vm] in vm.toggleSubagentInspector(agentID: agentID, runID: $0.runID) },
+                    inspectedRunID: inspecting,
+                    review: { [vm] path in vm.selectAgent(agentID); vm.openReview(agentID: agentID, path: path) }
+                )
             } else {
                 LiveTerminalPane(
                     session: vm.sessions.session(for: pane, in: tab),
@@ -531,12 +552,11 @@ private struct RemoteAgentPaneContent: View {
                        let ref = RemoteAgentRef(hostID: connection.id, agentID: agentID)
                        return $0.id == (vm.remoteInspectingAgent == ref ? vm.remoteInspectorTabs[ref] ?? agent.tabID : agent.tabID)
                    }) {
-                    RemotePaneTreeView(
+                    RemoteAgentLayoutView(
                         vm: vm,
                         connection: connection,
                         ref: RemoteAgentRef(hostID: connection.id, agentID: agentID),
-                        tab: tab,
-                        node: tab.layout
+                        tab: tab
                     )
                     .id(tab.id)
                 } else {
@@ -555,6 +575,44 @@ private struct RemoteAgentPaneContent: View {
             }
         }
         .nwAnimation(.content, value: connection.phase.kind)
+    }
+}
+
+/// A remote agent's layout with its right pane docked beside the whole layout, as
+/// `AgentLayoutView` does locally. The host's inspector tab (a utility terminal) has none.
+private struct RemoteAgentLayoutView: View {
+    var vm: ShepherdViewModel
+    var connection: RemoteHostStore.Connection
+    let ref: RemoteAgentRef
+    let tab: Tab
+
+    var body: some View {
+        let threadPaneID = tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: connection.state.agents) != nil }?.id
+        let inspecting = threadPaneID == nil ? nil : vm.subagentInspector.remoteRuns[ref]
+        // A review a host layout still carries as a leaf (older hosts) renders there instead.
+        let review = threadPaneID == nil ? nil : vm.remoteReviews[ref].flatMap { $0.hostReviewPane ? nil : $0 }
+        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
+            RemotePaneTreeView(vm: vm, connection: connection, ref: ref, tab: tab, node: tab.layout)
+        } pane: {
+            if let threadPaneID {
+                let store = vm.remoteThreadStores.store(for: ref)
+                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? review.map { .review($0.id) }) {
+                    if let inspecting {
+                        SubagentInspector(store: store, runID: inspecting, active: true, close: { [vm, ref] in
+                            vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
+                        }, select: { [vm, ref] in vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
+                        review: { [vm, ref] in vm.openRemoteReview(ref, path: $0) })
+                        // The inspector keys its run itself, so a run switch nudges in from its side.
+                        .nwTransition(.content)
+                    } else if let review {
+                        ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: true), store: store)
+                            .id(review.id)
+                            .nwTransition(.content)
+                    }
+                }
+                .simultaneousGesture(TapGesture().onEnded { [vm] in vm.remoteFocusedPaneID = threadPaneID })
+            }
+        }
     }
 }
 
@@ -653,7 +711,8 @@ private struct RemotePaneLeafView: View {
     }
 }
 
-/// A remote agent's thread. Same view as a local agent's, with requests sent to the host.
+/// A remote agent's thread. Same view as a local agent's, with requests sent to the host; its
+/// right pane docks beside the whole layout (`RemoteAgentLayoutView`).
 private struct RemoteAgentThreadPane: View {
     var vm: ShepherdViewModel
     let ref: RemoteAgentRef
@@ -661,48 +720,28 @@ private struct RemoteAgentThreadPane: View {
     let isFocused: Bool
 
     var body: some View {
-        let store = vm.remoteThreadStores.store(for: ref)
         let inspecting = vm.subagentInspector.remoteRuns[ref]
-        // A review a host layout still carries as a leaf (older hosts) renders there instead.
-        let review = vm.remoteReviews[ref].flatMap { $0.hostReviewPane ? nil : $0 }
-        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
-            ThreadView(
-                store: store,
-                active: true,
-                isFocused: isFocused && inspecting == nil,
-                request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
-                commandKey: ThreadCommandCenter.key(remote: ref),
-                agentName: agentName,
-                inspectSubagent: { run in
-                    if vm.subagentInspector.remoteRuns[ref] == run.runID {
-                        vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
-                    } else {
-                        vm.subagentInspector.remoteRuns[ref] = run.runID
-                    }
-                },
-                inspectedRunID: inspecting,
-                review: { path in vm.openRemoteReview(ref, path: path) },
-                listModels: {
-                    let ids = (try? await vm.remoteHosts.listModels(hostID: ref.hostID).models) ?? []
-                    return ids.map { PiModelCatalog.Entry(id: $0) }
+        ThreadView(
+            store: vm.remoteThreadStores.store(for: ref),
+            active: true,
+            isFocused: isFocused && inspecting == nil,
+            request: { try await vm.remoteHosts.nativeThread(ref, request: $0) },
+            commandKey: ThreadCommandCenter.key(remote: ref),
+            agentName: agentName,
+            inspectSubagent: { run in
+                if vm.subagentInspector.remoteRuns[ref] == run.runID {
+                    vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
+                } else {
+                    vm.subagentInspector.remoteRuns[ref] = run.runID
                 }
-            )
-        } pane: {
-            RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? review.map { .review($0.id) }) {
-                if let inspecting {
-                    SubagentInspector(store: store, runID: inspecting, active: true, close: {
-                        vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
-                    }, select: { vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
-                    review: { vm.openRemoteReview(ref, path: $0) })
-                    // The inspector keys its run itself, so a run switch nudges in from its side.
-                    .nwTransition(.content)
-                } else if let review {
-                    ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: true), store: store)
-                        .id(review.id)
-                        .nwTransition(.content)
-                }
+            },
+            inspectedRunID: inspecting,
+            review: { path in vm.openRemoteReview(ref, path: path) },
+            listModels: {
+                let ids = (try? await vm.remoteHosts.listModels(hostID: ref.hostID).models) ?? []
+                return ids.map { PiModelCatalog.Entry(id: $0) }
             }
-        }
+        )
     }
 }
 
