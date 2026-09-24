@@ -754,16 +754,16 @@ final class RPCThreadState {
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
             runtime: "rpc", stats: stats, commands: commands, subagents: subagents
         )
-        let sizedDialogs = zip(dialogs, dialogSizes().prefix(Self.dialogLimit)).map { Sized(value: $0, bytes: $1) }
-        let (value, bytes) = Self.budget(
+        let sizedDialogs = zip(dialogs, dialogSizes()).map { Sized(value: $0, bytes: $1) }
+        let budgeted = Self.budget(
             base, baseBytes: measured(base), active: activeEntries(), dialogs: sizedDialogs,
             historyEnd: end, history: { self.historyEntry($0) }
         )
         #if DEBUG
         encodesByLastSnapshot = encodesSinceSnapshot
-        bytesOfLastSnapshot = bytes
+        bytesOfLastSnapshot = budgeted.bytes
         #endif
-        return .snapshot(value: value)
+        return .snapshot(value: budgeted.snapshot)
     }
 
     /// Fills `value` with the page of `history` that ends before `end`: up to 50 entries, newest
@@ -888,9 +888,10 @@ final class RPCThreadState {
         return entries
     }
 
+    /// The sizes of the dialogs a snapshot can carry (the first `dialogLimit`).
     private func dialogSizes() -> [Int] {
         if let dialogBytes { return dialogBytes }
-        let sizes = dialogs.map { measured($0) }
+        let sizes = dialogs.prefix(Self.dialogLimit).map { measured($0) }
         dialogBytes = sizes
         return sizes
     }
