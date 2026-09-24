@@ -19,6 +19,15 @@ enum WorktreeMergeMethod: String, CaseIterable {
     case merge, squash, rebase
 }
 
+/// What ↩ does with a message while pi works (Settings ▸ Agents); the alternate send
+/// (`ShortcutAction.alternateSend`, ⌘↩) always does the other one.
+enum ReturnWhileWorking: String, CaseIterable {
+    /// Into the queue, to go when pi settles.
+    case queue
+    /// Steered in, for pi to read once its current tool calls finish.
+    case steer
+}
+
 /// User preferences that are not part of the workspace.
 ///
 /// `state.json` (owned by the session server) is the workspace: spaces,
@@ -52,6 +61,8 @@ final class AppSettings {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let autoNameAgents = "shepherd.agent.autoName"
+        static let returnWhileWorking = "shepherd.agent.returnWhileWorking"
+        static let queueDelivery = "shepherd.agent.queueDelivery"
         static let piThemeExtension = "shepherd.pi.extension.theme"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
@@ -81,7 +92,7 @@ final class AppSettings {
 
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
-            defaultThinking, autoNameAgents, shellPath,
+            defaultThinking, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
             piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
@@ -99,6 +110,8 @@ final class AppSettings {
         static let terminalFontSize: Double = 12.5
         static let thinking: ThinkingLevel = .medium
         static let autoNameAgents = true
+        static let returnWhileWorking: ReturnWhileWorking = .queue
+        static let queueDelivery: NativeQueueMode = .all
         static let autoUpdatePi = false
         static let autoUpdateExtensions = false
         /// The user's login shell when it is a real executable, else zsh.
@@ -132,6 +145,24 @@ final class AppSettings {
     var autoNameAgents: Bool {
         didSet { store.set(autoNameAgents, forKey: Key.autoNameAgents) }
     }
+
+    /// What ↩ does in the composer while pi works: queue the message (the default) or steer it in.
+    var returnWhileWorking: ReturnWhileWorking {
+        didSet { store.set(returnWhileWorking.rawValue, forKey: Key.returnWhileWorking) }
+    }
+
+    /// How a queue goes when pi settles, as this Mac's default for its agents (an agent's own
+    /// choice in the queue's ••• menu wins). The server takes it through
+    /// `onQueueDeliveryChange`.
+    var queueDelivery: NativeQueueMode {
+        didSet {
+            store.set(queueDelivery.rawValue, forKey: Key.queueDelivery)
+            if queueDelivery != oldValue { onQueueDeliveryChange?(queueDelivery) }
+        }
+    }
+
+    /// Hands a new queue delivery default to the server (set by the view model).
+    @ObservationIgnored var onQueueDeliveryChange: ((NativeQueueMode) -> Void)?
 
     var piThemeExtension: Bool {
         didSet { store.set(piThemeExtension, forKey: Key.piThemeExtension) }
@@ -295,6 +326,10 @@ final class AppSettings {
         defaultThinking = store.string(forKey: Key.defaultThinking)
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
+        returnWhileWorking = store.string(forKey: Key.returnWhileWorking)
+            .flatMap(ReturnWhileWorking.init(rawValue:)) ?? Defaults.returnWhileWorking
+        queueDelivery = store.string(forKey: Key.queueDelivery)
+            .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
         piThemeExtension = store.object(forKey: Key.piThemeExtension) as? Bool ?? true
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
@@ -377,6 +412,8 @@ final class AppSettings {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
+        returnWhileWorking = Defaults.returnWhileWorking
+        queueDelivery = Defaults.queueDelivery
         uiDensity = 1
         uiTextScale = 1
         sidebarWidth = Self.defaultSidebarWidth

@@ -31,6 +31,9 @@ struct SettingsSearchTests {
         ("nightly", .advanced, ["Update channel"]),
         ("reasoning", .agents, ["Default thinking level"]),
         ("github", .worktrees, ["Merge PR automatically"]),
+        ("steer", .agents, ["Return while pi is working"]),
+        ("queue", .agents, ["Return while pi is working", "When a turn ends, send the queue"]),
+        ("all at once", .agents, ["When a turn ends, send the queue"]),
     ])
     func rowsMatchByTitleOrKeyword(query: String, section: SettingsSection, rows: [String]) {
         #expect(section.matches(for: query) == rows)

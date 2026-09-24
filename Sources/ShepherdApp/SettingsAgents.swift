@@ -2,6 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdCore
 import ShepherdSessions
+import ShepherdProtocol
 
 // MARK: Agents
 
@@ -30,6 +31,16 @@ struct AgentSettings: View {
                 SettingsRow(title: "Default thinking level", subtitle: "Can be changed per agent from the composer.") {
                     NWSegmentedPicker("Default thinking level", selection: $settings.defaultThinking,
                                       options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
+                }
+            }
+            SettingsGroup(title: "While pi is working") {
+                SettingsRow(title: "Return while pi is working", subtitle: "\(keys.display(.alternateSend)) always does the other one.") {
+                    NWSegmentedPicker("Return while pi is working", selection: $settings.returnWhileWorking,
+                                      options: [(.queue, "Queue"), (.steer, "Steer")])
+                }
+                SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in order.") {
+                    NWSegmentedPicker("When a turn ends, send the queue", selection: $settings.queueDelivery,
+                                      options: [(NativeQueueMode.oneAtATime, "One per turn"), (.all, "All at once")])
                 }
             }
         }
