@@ -173,7 +173,8 @@ final class AppUpdater {
 
     /// Sparkle refuses to run without a feed + signing key; a dev build
     /// (bare `swift build`, missing plist keys) gets a disabled updater
-    /// instead of a crash.
+    /// instead of a crash. Debug builds (the Dev scheme) never update: every release would look
+    /// newer than build 1, and none can install over the Dev bundle id.
     let available: Bool
     let edition: ShepherdEdition
 
@@ -181,29 +182,21 @@ final class AppUpdater {
     /// Shepherd moved this install off the retired nightly channel and hasn't said so yet.
     private(set) var nightlyMovedNoticePending: Bool
 
-    /// Debug builds (the Dev scheme) carry Shepherd's bundle id and so share the everyday app's
-    /// preferences: they read its stored channel but never migrate it or arm its notice, which
-    /// would move an installed copy off its channel before its own update does.
-    #if DEBUG
-    private static let migratesStoredChannel = false
-    #else
-    private static let migratesStoredChannel = true
-    #endif
-
     private init() {
         let info = Bundle.main.infoDictionary
+        #if DEBUG
+        available = false
+        #else
         available = info?["SUFeedURL"] != nil && info?["SUPublicEDKey"] != nil
+        #endif
         edition = .current
         store = UpdateChannelStore(defaults: .standard, edition: edition)
         let version = info?["CFBundleShortVersionString"] as? String ?? ""
-        if !available {
-            channel = UpdateChannel.choices(for: edition)[0]
-            nightlyMovedNoticePending = false
-        } else if Self.migratesStoredChannel {
+        if available {
             channel = store.resolveAtLaunch(version: version)
             nightlyMovedNoticePending = store.nightlyMovedNoticePending
         } else {
-            channel = store.resolveWithoutMigrating(version: version)
+            channel = UpdateChannel.choices(for: edition)[0]
             nightlyMovedNoticePending = false
         }
         controller = SPUStandardUpdaterController(
@@ -254,8 +247,8 @@ final class AppUpdater {
 private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
     static let shared = ChannelDelegate()
 
-    /// What the app resolved at launch, read again without writing: after a release build's
-    /// migration that is the stored channel; a Dev build reads through the retired values.
+    /// What the app resolved at launch, read again without writing: after the launch migration
+    /// that is the stored channel.
     private var channel: UpdateChannel {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         return UpdateChannelStore(defaults: .standard, edition: .current).resolveWithoutMigrating(version: version)

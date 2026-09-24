@@ -338,6 +338,13 @@ class ContractTests(unittest.TestCase):
                 self.assertEqual(self.setting(block, "PRODUCT_NAME"), app.name)
                 self.assertEqual(self.setting(block, "SHEPHERD_APPCAST"), app.appcast)
 
+    def test_the_dev_build_shares_no_shipped_apps_identity(self):
+        # Preferences, notifications and Sparkle's installer are keyed by bundle id, so a Dev
+        # build on a shipped id would reach into the installed app beside it.
+        dev = self.setting(self.target_configuration("Debug"), "PRODUCT_BUNDLE_IDENTIFIER")
+        self.assertEqual(dev, "com.bailycase.shepherd.dev")
+        self.assertNotIn(dev, [app.bundle_id for app in release.APPS.values()])
+
     def test_each_app_has_its_scheme(self):
         for app in release.APPS.values():
             with self.subTest(app=app.key):
