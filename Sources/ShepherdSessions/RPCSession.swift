@@ -59,6 +59,8 @@ final class RPCSession: @unchecked Sendable {
     /// which targets the server queue: decoding one held every other session, terminal, and
     /// request behind it for hundreds of milliseconds.
     static let offQueueDecodeBytes = 256 * 1024
+    /// Stdout one queue turn reads before yielding to other work.
+    static let readBudgetPerTurn = 1024 * 1024
     /// Concurrent, so the histories of agents resuming together decode side by side.
     private static let decodeQueue = DispatchQueue(label: "shepherd.rpc.decode", qos: .utility, attributes: .concurrent)
 
@@ -369,7 +371,7 @@ final class RPCSession: @unchecked Sendable {
         ps.activate()
         procSource = ps
 
-        drainStdout()
+        drainStdout(budget: .max)
         drainStderr()
         _ = reap()
         // The process source covers exits after registration; the timer is a
@@ -379,13 +381,19 @@ final class RPCSession: @unchecked Sendable {
         }
     }
 
-    private func drainStdout() {
+    /// Reads what pi has written, `budget` bytes at most in this queue turn: the read source fires
+    /// again while the pipe holds more, so a long record arriving never holds the server queue
+    /// for its whole length.
+    private func drainStdout(budget: Int = RPCSession.readBudgetPerTurn) {
         guard !stdoutClosed else { return }
         var buf = [UInt8](repeating: 0, count: 64 * 1024)
+        var read = 0
         while true {
-            let n = read(stdoutFD, &buf, buf.count)
+            let n = Darwin.read(stdoutFD, &buf, buf.count)
             if n > 0 {
                 feedStdout(Data(bytes: buf, count: n))
+                read += n
+                if read >= budget { return }
                 continue
             }
             if n == 0 {
@@ -404,30 +412,44 @@ final class RPCSession: @unchecked Sendable {
     /// never stops.
     private func feedStdout(_ chunk: Data) {
         // Only the new bytes can hold the next LF: rescanning a multi-megabyte partial record
-        // on every chunk made large replies quadratic.
-        let searchFrom = stdoutBuffer.count
+        // on every chunk made large replies quadratic. Each line is copied out once and the
+        // consumed prefix dropped once per chunk.
+        var searchFrom = stdoutBuffer.count
         stdoutBuffer.append(chunk)
-        var from = stdoutBuffer.startIndex + searchFrom
-        while let lf = stdoutBuffer[from...].firstIndex(of: 0x0A) {
-            var line = stdoutBuffer[stdoutBuffer.startIndex..<lf]
-            stdoutBuffer.removeSubrange(stdoutBuffer.startIndex...lf)
-            from = stdoutBuffer.startIndex
+        var consumed = 0
+        while let lf = Self.newline(in: stdoutBuffer, from: searchFrom) {
+            let start = consumed
+            consumed = lf + 1
+            searchFrom = consumed
             if discardingRecord {
                 discardingRecord = false
                 continue
             }
-            if line.last == 0x0D { line = line.dropLast() }
-            if line.count > Self.maxRecordBytes {
-                ShepherdLog.warning("rpc session \(id) dropped a \(line.count)-byte record (limit \(Self.maxRecordBytes))")
+            let base = stdoutBuffer.startIndex
+            let end = lf > start && stdoutBuffer[base + lf - 1] == 0x0D ? lf - 1 : lf
+            if end - start > Self.maxRecordBytes {
+                ShepherdLog.warning("rpc session \(id) dropped a \(end - start)-byte record (limit \(Self.maxRecordBytes))")
                 continue
             }
-            if line.isEmpty { continue }
-            receiveRecord(Data(line))
+            if end == start { continue }
+            receiveRecord(stdoutBuffer.subdata(in: (base + start)..<(base + end)))
+        }
+        if consumed > 0 {
+            stdoutBuffer.removeSubrange(stdoutBuffer.startIndex..<(stdoutBuffer.startIndex + consumed))
         }
         if stdoutBuffer.count > Self.maxRecordBytes {
             ShepherdLog.warning("rpc session \(id) dropping an unterminated record over \(Self.maxRecordBytes) bytes")
             stdoutBuffer.removeAll(keepingCapacity: false)
             discardingRecord = true
+        }
+    }
+
+    /// The offset of the first LF at or after `offset`.
+    private static func newline(in data: Data, from offset: Int) -> Int? {
+        data.withUnsafeBytes { raw -> Int? in
+            guard offset < raw.count, let base = raw.baseAddress,
+                  let hit = memchr(base + offset, 0x0A, raw.count - offset) else { return nil }
+            return base.distance(to: UnsafeRawPointer(hit))
         }
     }
 
@@ -556,7 +578,8 @@ final class RPCSession: @unchecked Sendable {
     }
 
     private func handleChildExited() {
-        drainStdout()
+        // Everything pi wrote is read before it is reaped: an answer in it beats the failure.
+        drainStdout(budget: .max)
         drainStderr()
         _ = reap()
     }
