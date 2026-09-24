@@ -252,6 +252,58 @@ enum MainThreadCPU {
     }
 }
 
+/// When a store adopted each snapshot it pulled: the changes a reader sees land on screen.
+@MainActor
+final class Adoptions {
+    private(set) var times: [ContinuousClock.Instant] = []
+    private let store: NativeThreadStore
+    private var watching = true
+
+    init(_ store: NativeThreadStore) {
+        self.store = store
+        watch()
+    }
+
+    var count: Int { times.count }
+
+    /// The median time between two adoptions, in milliseconds.
+    var medianGap: Double {
+        MainThreadCPU.median(zip(times.dropFirst(), times).map { ListPerf.milliseconds($0 - $1) })
+    }
+
+    func stop() { watching = false }
+
+    private func watch() {
+        guard watching else { return }
+        // The store adopts on the main actor, so the change handler runs there, as it lands.
+        withObservationTracking { _ = store.snapshot } onChange: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.watching else { return }
+                self.times.append(.now)
+                Task { @MainActor in self.watch() }
+            }
+        }
+    }
+}
+
+extension FakeThread {
+    /// Moves the host's revision every 20 ms for `duration`, a few words more of the streaming
+    /// reply each time, as a local pi streams, and pushes each one to the store when `push`.
+    func stream(for duration: Duration, push: Bool) async throws {
+        let end = ContinuousClock.now + duration
+        var words = 0
+        while ContinuousClock.now < end {
+            words += 3
+            var next = snapshot
+            next.revision += 1
+            next.provisional = [ThreadFixture.streaming("Streaming" + String(repeating: " word", count: words))]
+            snapshot = next
+            if push { store.revisionAvailable() }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+}
+
 /// The whole process's CPU time, every thread (`getrusage`): what work moved off the main thread
 /// still costs.
 enum ProcessCPU {
