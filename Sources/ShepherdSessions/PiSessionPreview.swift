@@ -26,9 +26,13 @@ public enum PiSessionPreview {
     /// How much of the head it reads for a model or thinking level the tail does not have (pi
     /// writes them as a session's first entries).
     static let headBytes = 64 * 1024
+    /// The session format this reads (pi's `CURRENT_SESSION_VERSION`). An older file (entries
+    /// without ids before 2, "hookMessage" roles before 3) is no preview: pi migrates and
+    /// rewrites it when it loads it.
+    static let formatVersion = 3
 
-    /// The newest page of the thread in pi's session `file`; nil when the file is missing or is
-    /// not a pi session.
+    /// The newest page of the thread in pi's session `file`; nil when the file is missing, is
+    /// not a pi session, or is in an older format.
     public static func snapshot(file: URL, sessionID: String) -> NativeThreadSnapshot? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
@@ -37,7 +41,8 @@ public enum PiSessionPreview {
         let head = (try? handle.read(upToCount: headBytes)) ?? Data()
         let headLines = head.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
         guard let first = headLines.first,
-              let header = try? decoder.decode(Entry.self, from: first), header.type == "session" else { return nil }
+              let header = try? decoder.decode(Header.self, from: first), header.type == "session",
+              header.version ?? 1 >= formatVersion else { return nil }
 
         var window = min(Int(size), initialWindow)
         while true {
@@ -74,6 +79,12 @@ public enum PiSessionPreview {
     // MARK: - Reading
 
     private static let decoder = JSONDecoder()
+
+    /// A session file's first line.
+    struct Header: Decodable {
+        let type: String?
+        let version: Int?
+    }
 
     /// One session entry: only what the thread needs.
     struct Entry: Decodable {

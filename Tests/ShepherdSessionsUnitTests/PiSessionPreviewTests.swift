@@ -196,6 +196,22 @@ struct PiSessionPreviewTests {
         #expect(PiSessionPreview.snapshot(file: dir.appendingPathComponent("missing.jsonl"), sessionID: "s") == nil)
     }
 
+    /// A file in an older format (entries without ids, "hookMessage" roles) is no preview:
+    /// pi rewrites it when it loads it, and the thread waits for pi until then.
+    @Test(arguments: [
+        #"{"type":"session","id":"s","timestamp":"2026-09-24T00:00:00.000Z","cwd":"/w"}"#,
+        #"{"type":"session","version":2,"id":"s","timestamp":"2026-09-24T00:00:00.000Z","cwd":"/w"}"#,
+    ])
+    func aSessionInAnOlderFormatIsNoPreview(header: String) throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("old.jsonl")
+        let message = #"{"type":"message","timestamp":"2026-09-24T00:00:00.000Z","message":{"role":"user","content":"hi","timestamp":1}}"#
+        try Data((header + "\n" + message + "\n").utf8).write(to: url)
+
+        #expect(PiSessionPreview.snapshot(file: url, sessionID: "s") == nil)
+    }
+
     /// One tool result bigger than the first window: the reader looks further back.
     @Test func aPageThatReachesPastTheWindowIsReadFurtherBack() throws {
         let huge = String(repeating: "x", count: PiSessionPreview.initialWindow * 3 / 2)
