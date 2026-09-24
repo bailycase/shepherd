@@ -21,6 +21,10 @@ final class NativeThreadStores<Key: Hashable> {
     /// Gives `key` a store made elsewhere (a test's, which never polls on its own).
     func install(_ store: NativeThreadStore, for key: Key) { stores[key] = store }
 
+    /// The agent's store if its thread has been shown, without making one: a pushed revision
+    /// for a thread never shown has nothing to wake.
+    func existing(for key: Key) -> NativeThreadStore? { stores[key] }
+
     func prune(live: Set<Key>) {
         for key in Set(stores.keys).subtracting(live) { stores.removeValue(forKey: key)?.stop() }
     }

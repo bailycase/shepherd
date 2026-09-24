@@ -704,6 +704,86 @@ struct NativeThreadStoreTests {
         #expect(store.catchUp == nil)
     }
 
+    // MARK: Pushed revisions
+
+    /// A store whose poll interval never ends but whose short waits (the spacing between pushed
+    /// pulls) end at once: only a push makes it pull. `pauses` counts the intervals it began.
+    private func pushedStore(_ pauses: Pauses) -> NativeThreadStore {
+        NativeThreadStore { duration in
+            guard duration > NativeThreadStore.pushedPullSpacing else { return }
+            await pauses.began()
+            let (cancelled, continuation) = AsyncStream<Void>.makeStream()
+            for await _ in cancelled {}
+            continuation.finish()
+            throw CancellationError()
+        }
+    }
+
+    @Test func aPushedRevisionIsPulledWithoutWaitingTheInterval() async {
+        let pauses = Pauses()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(pauses)
+        let task = await start(store, host)
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("more", id: "b")])
+        store.revisionAvailable()
+        await until { store.snapshot?.revision == 2 }
+        await until { pauses.count == 2 }
+
+        #expect(host.requests == [.snapshot(), .snapshot(expectedSessionID: "s", afterRevision: 1)])
+    }
+
+    /// However many revisions are pushed while a pull is in flight, the loop pulls once more
+    /// after it, then waits out its interval again.
+    @Test func pushesDuringAPullCauseOneFollowUp() async {
+        let pauses = Pauses()
+        let gate = Gate()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(pauses)
+        let task = Task {
+            await store.run { request in
+                if gate.holding { await gate.hold() }
+                return try host.handle(request)
+            }
+        }
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+
+        gate.holding = true
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("more", id: "b")])
+        store.revisionAvailable()
+        await until { gate.held }
+        for _ in 0..<5 { store.revisionAvailable() }
+        gate.release()
+        await until { pauses.count == 2 }
+
+        #expect(host.requests.count == 3, "the first pull, the pushed one, and one follow-up")
+        #expect(store.snapshot?.revision == 2)
+    }
+
+    /// A thread off screen has no poll loop: a push neither pulls nor leaves a pull owed for
+    /// when it is shown again.
+    @Test func aSuspendedStoreIgnoresPushes() async {
+        let pauses = Pauses()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(pauses)
+        let task = await start(store, host)
+        await until { pauses.count == 1 }
+
+        store.suspend()
+        for _ in 0..<3 { store.revisionAvailable() }
+        task.cancel()
+        await task.value
+        #expect(host.requests.count == 1)
+
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+        await until { pauses.count == 2 }
+        #expect(host.requests.count == 2, "shown again, it pulls once and waits")
+    }
+
     @Test func thereIsNoOlderPageWithoutACursor() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
@@ -925,4 +1005,30 @@ private final class Flag: @unchecked Sendable {
     private var raised = false
     var value: Bool { lock.withLock { raised } }
     func set() { lock.withLock { raised = true } }
+}
+
+/// The poll intervals a store's run loop began waiting out.
+@MainActor @Observable
+private final class Pauses {
+    private(set) var count = 0
+    func began() { count += 1 }
+}
+
+/// Holds snapshot requests while `holding`: a pull in flight, for as long as a test needs.
+@MainActor @Observable
+private final class Gate {
+    var holding = false
+    private(set) var held = false
+    @ObservationIgnored private var waiter: CheckedContinuation<Void, Never>?
+
+    func hold() async {
+        await withCheckedContinuation { waiter = $0; held = true }
+    }
+
+    func release() {
+        holding = false
+        held = false
+        waiter?.resume()
+        waiter = nil
+    }
 }

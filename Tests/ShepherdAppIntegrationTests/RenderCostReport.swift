@@ -143,6 +143,35 @@ struct RenderCostReport {
         report.add("thread writing a Swift fence (15 chunks, 100 ms apart)", "tree-sitter renders", "\(renders)")
     }
 
+    /// A host whose revision moves every 20 ms for 4 s, prose streaming into a thread of 50 or
+    /// 540 messages, pulled by the poll alone or pushed as a local pi's are: the changes that
+    /// reach the screen, the median gap between them, and main-thread CPU per second of
+    /// streaming (medians of 3 interleaved runs).
+    @Test(arguments: [50, 540]) func streamingPolledOrPushed(messages: Int) async throws {
+        var changes: [Bool: [Double]] = [:], gaps: [Bool: [Double]] = [:], cpu: [Bool: [Double]] = [:]
+        for _ in 0..<3 {
+            for push in [false, true] {
+                let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(messages) + [ThreadFixture.user("u", "Go on")],
+                                                               provisional: [ThreadFixture.streaming("Streaming")], running: true))
+                try await thread.waitUntilReady()
+                try await Task.sleep(for: Self.atRest)
+                let adoptions = Adoptions(thread.store)
+                let ms = try await MainThreadCPU.milliseconds { try await thread.stream(for: .seconds(4), push: push) }
+                adoptions.stop()
+                changes[push, default: []].append(Double(adoptions.count))
+                gaps[push, default: []].append(adoptions.medianGap)
+                cpu[push, default: []].append(ms / 4)
+                thread.close()
+            }
+        }
+        for push in [false, true] {
+            let list = "streaming, a revision every 20 ms (\(messages) messages, \(push ? "pushed" : "polled"))"
+            report.add(list, "on-screen changes in 4 s", String(format: "%.0f", MainThreadCPU.median(changes[push] ?? [])))
+            report.add(list, "median gap between changes", ms: MainThreadCPU.median(gaps[push] ?? []))
+            report.add(list, "main-thread CPU per second of streaming", ms: MainThreadCPU.median(cpu[push] ?? []))
+        }
+    }
+
     /// Launching into a workspace of forty agents: the first populated frame (its wall time,
     /// main-thread CPU, and bodies), then, while the other layouts mount, the longest stretch
     /// the main thread went without waiting.

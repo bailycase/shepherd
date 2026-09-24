@@ -223,6 +223,13 @@ output grows.
   poll passes the last revision; older snapshots are ignored.
   `wake()` (the servable signal) pulls a visible thread that is not ready yet at once; the polls
   are the fallback.
+- **Pushed revisions:** `revisionAvailable()` says the host has a newer revision. The running
+  poll loop then pulls at once instead of waiting out its pause, pulls once more after a pull
+  in flight however many pushes arrive during it, and pulls at most every
+  `pushedPullSpacing` (33 ms), so a streaming reply lands at about 30 Hz instead of in
+  half-second jumps. A hidden thread has no loop and ignores pushes. The poll interval stays as
+  the fallback, and remote threads keep polling. `NativeThreadStores.existing(for:)` finds an
+  agent's store for a push without making one for a thread never shown.
 - **Switching:** a hidden thread stops polling (`suspend`) and keeps everything it shows: it
   stays ready and running, with the same rows and pages of history, so showing it again is a
   flip that rebuilds the thread and its composer once. The first pull after (`run`) merges the

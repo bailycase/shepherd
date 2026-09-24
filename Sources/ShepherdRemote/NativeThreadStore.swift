@@ -158,6 +158,12 @@ public final class NativeThreadStore {
     /// themselves.
     private let pause: Pause
 
+    /// A pushed revision (`revisionAvailable`) ends the poll loop's pause early, but the loop
+    /// pulls at most this often, so a streaming turn lands at about 30 Hz.
+    nonisolated public static let pushedPullSpacing: Duration = .milliseconds(33)
+    @ObservationIgnored private let pollWake = PollWake()
+    @ObservationIgnored private var lastPull: ContinuousClock.Instant?
+
     public init(startingLimit: Duration = .seconds(60), pause: @escaping Pause = { try await Task.sleep(for: $0) }) {
         self.startingLimit = startingLimit
         self.pause = pause
@@ -370,11 +376,11 @@ public final class NativeThreadStore {
             // The newest page merges onto the history already loaded, as a poll's does: a thread
             // shown again keeps the older pages read in it. Another session or generation, or no
             // overlap, starts over from that page.
-            await refresh(fresh: true)
+            await pull(fresh: true)
             while !Task.isCancelled && epoch == run {
-                do { try await pause(pollInterval) } catch { break }
+                do { try await pauseUntilNextPull() } catch { break }
                 guard epoch == run else { break }
-                await refresh()
+                await pull()
             }
             if epoch == run { suspend() }
         } onCancel: {
@@ -401,6 +407,44 @@ public final class NativeThreadStore {
     public func wake() {
         guard !ready, request != nil else { return }
         Task { await refresh() }
+    }
+
+    /// The host has a newer revision to pull (the local server pushes each one a local agent's
+    /// pi reaches): the poll loop pulls now instead of when its pause ends, or once more right
+    /// after the pull in flight however many arrive meanwhile, and at most every
+    /// `pushedPullSpacing`. A thread off screen has no loop and ignores it; its first pull when
+    /// shown again catches it up. The interval's poll stays as the fallback.
+    public func revisionAvailable() {
+        guard request != nil else { return }
+        pollWake.signal()
+    }
+
+    /// One pull of the run loop. It takes every push that arrived before it; one that arrives
+    /// while it is in flight ends the next pause at once.
+    private func pull(fresh: Bool = false) async {
+        pollWake.pending = false
+        lastPull = .now
+        await refresh(fresh: fresh)
+    }
+
+    /// Waits out one poll interval, or less once a revision is pushed, but never less than
+    /// `pushedPullSpacing` since the last pull began. Throws once the loop's task is cancelled.
+    private func pauseUntilNextPull() async throws {
+        let pause = self.pause
+        if !pollWake.pending {
+            let interval = pollInterval
+            let wake = pollWake
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask { try await pause(interval) }
+                group.addTask { await wake.wait() }
+                try await group.next()
+                group.cancelAll()
+            }
+        }
+        if let lastPull {
+            let rest = Self.pushedPullSpacing - (ContinuousClock.now - lastPull)
+            if rest > .zero { try await pause(rest) }
+        }
     }
 
     /// The thread went off screen (its agent is hidden): the poll loop ends, and everything the
@@ -758,5 +802,32 @@ public final class NativeThreadStore {
         busy = false
         ready = false
         await refresh(fresh: true)
+    }
+}
+
+/// Ends the poll loop's pause when the host pushes a revision.
+@MainActor
+private final class PollWake {
+    /// A revision was pushed since the last pull began.
+    var pending = false
+    private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
+
+    func signal() {
+        pending = true
+        let resumed = waiters
+        waiters = [:]
+        for waiter in resumed.values { waiter.resume() }
+    }
+
+    /// Returns once a revision is pushed, or when the waiting task is cancelled.
+    func wait() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                if pending || Task.isCancelled { continuation.resume() } else { waiters[id] = continuation }
+            }
+        } onCancel: {
+            Task { @MainActor in self.waiters.removeValue(forKey: id)?.resume() }
+        }
     }
 }
