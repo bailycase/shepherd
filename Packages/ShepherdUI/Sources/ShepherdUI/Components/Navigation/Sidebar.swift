@@ -1,49 +1,23 @@
 import SwiftUI
 
 /// The sidebar column (Navigation board): a 44pt top bar that leaves room for the window
-/// controls and holds the compose button, the "Jump to…" field, the scrolling tree, and a
-/// footer behind a 1px rule. On `bgBase`; the caller draws the trailing edge.
+/// controls and drags the window, the scrolling tree, and a footer behind a 1px rule. On
+/// `bgBase`; the caller draws the trailing edge.
 public struct NWSidebar<Content: View, Footer: View>: View {
-    let compose: (() -> Void)?
-    let composeLabel: String
-    let composeShortcut: String?
-    let jump: (() -> Void)?
-    let jumpShortcut: String?
     @ViewBuilder let content: () -> Content
     @ViewBuilder let footer: () -> Footer
 
-    public init(compose: (() -> Void)? = nil, composeLabel: String = "New agent", composeShortcut: String? = nil,
-                jump: (() -> Void)? = nil, jumpShortcut: String? = nil,
-                @ViewBuilder content: @escaping () -> Content,
-                @ViewBuilder footer: @escaping () -> Footer) {
-        self.compose = compose
-        self.composeLabel = composeLabel
-        self.composeShortcut = composeShortcut
-        self.jump = jump
-        self.jumpShortcut = jumpShortcut
+    public init(@ViewBuilder content: @escaping () -> Content, @ViewBuilder footer: @escaping () -> Footer) {
         self.content = content
         self.footer = footer
     }
 
     public var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                Color.clear.contentShape(Rectangle()).nwWindowDrag()
-                if let compose {
-                    Button(action: compose) { Image(systemName: "square.and.pencil") }
-                        .buttonStyle(.nwIcon(size: 26))
-                        .nwHelp(composeLabel, shortcut: composeShortcut)
-                        .accessibilityLabel(composeLabel)
-                }
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, NW.Space.m)
-            .frame(height: NWSidebarMetrics.topBarHeight)
-            if let jump {
-                NWSidebarJumpButton(shortcut: jumpShortcut, action: jump)
-                    .padding(.horizontal, NW.Space.m)
-                    .padding(.bottom, NW.Space.xs)
-            }
+            Color.clear
+                .contentShape(Rectangle())
+                .nwWindowDrag()
+                .frame(height: NWSidebarMetrics.topBarHeight)
             content()
                 .frame(maxHeight: .infinity, alignment: .top)
             footer()
@@ -53,17 +27,15 @@ public struct NWSidebar<Content: View, Footer: View>: View {
 }
 
 extension NWSidebar where Footer == EmptyView {
-    public init(compose: (() -> Void)? = nil, composeLabel: String = "New agent", composeShortcut: String? = nil,
-                jump: (() -> Void)? = nil, jumpShortcut: String? = nil,
-                @ViewBuilder content: @escaping () -> Content) {
-        self.init(compose: compose, composeLabel: composeLabel, composeShortcut: composeShortcut, jump: jump,
-                  jumpShortcut: jumpShortcut, content: content, footer: { EmptyView() })
+    public init(@ViewBuilder content: @escaping () -> Content) {
+        self.init(content: content, footer: { EmptyView() })
     }
 }
 
 /// The sidebar's fixed measures (Navigation board).
 public enum NWSidebarMetrics {
-    /// The top bar: window controls and compose, unified with the title bar.
+    /// The top bar: room for the window controls, unified with the title bar (the toolbar
+    /// beside it is as tall).
     public static let topBarHeight: CGFloat = 44
     /// Horizontal inset of the tree inside the column.
     public static let treeInset: CGFloat = 6
@@ -74,47 +46,6 @@ public enum NWSidebarMetrics {
     public static let indentStep: CGFloat = 14
     /// Gap between a row's dot and its title.
     public static let rowGap: CGFloat = 9
-}
-
-/// "Jump to…" under the window controls: a quiet search-shaped button that opens the command
-/// palette, with the palette's real shortcut.
-public struct NWSidebarJumpButton: View {
-    let title: String
-    let shortcut: String?
-    let action: () -> Void
-    @State private var hovering = false
-
-    public init(_ title: String = "Jump to…", shortcut: String?, action: @escaping () -> Void) {
-        self.title = title
-        self.shortcut = shortcut
-        self.action = action
-    }
-
-    public var body: some View {
-        Button(action: action) {
-            HStack(spacing: NW.Space.m) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.nw.textTertiary)
-                Text(title)
-                    .font(.nwSans(12))
-                    .foregroundStyle(.nw.textTertiary)
-                    .lineLimit(1)
-                Spacer(minLength: NW.Space.xs)
-                if let shortcut { NWKeycap(shortcut) }
-            }
-            .padding(.horizontal, NW.Space.m)
-            .frame(minHeight: 26)
-            .nwRowBackground(selected: false, hovering: hovering)
-            .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
-            .nwBorder(.nw.lineSubtle, radius: NW.Radius.s)
-        }
-        .buttonStyle(NWPlainPressStyle())
-        .onHover { hovering = $0 }
-        .nwAnimation(.hover, value: hovering)
-        .accessibilityLabel(title)
-        .accessibilityHint(shortcut.map { "Opens the command palette, \($0)" } ?? "Opens the command palette")
-    }
 }
 
 /// What a sidebar section header shows after its label.

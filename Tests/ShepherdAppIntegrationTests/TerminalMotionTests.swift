@@ -122,8 +122,8 @@ struct ShellTerminalMotionTests {
         try await eventuallyOnMain("the thread to load", timeout: .seconds(20)) { store.ready }
         try await eventuallyOnMain("the shell to go live", timeout: .seconds(30)) { shell.phase == .live }
         try await quiet(log)
-        // Through the sidebar's "Jump to…" and the workspace beside it.
-        let row = CGRect(x: 0, y: 57, width: size.width, height: 1)
+        // Through the sidebar's first section header and the workspace beside it.
+        let row = CGRect(x: 0, y: 62, width: size.width, height: 1)
 
         for hidden in [true, false] {
             let before = log.grids.count
