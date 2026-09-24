@@ -133,4 +133,51 @@ struct CodeHighlightTests {
         #expect(CodeHighlight.highlightLines([], path: "main.go", style: style).isEmpty)
         #expect(CodeHighlight.highlightLines(["a", "", "b"], path: "main.go", style: style).map { String($0.characters) } == ["a", "", "b"])
     }
+
+    // MARK: A block a reply is writing
+
+    private typealias Throttle = CodeHighlightThrottle
+    private static let start = ContinuousClock.now
+
+    /// The policy for a fence a streaming reply is writing, and for a finished one.
+    @Test(arguments: [
+        // Its first complete line colors at once.
+        ("a\nb", true, nil, 0, Throttle.Decision.render(lines: 1)),
+        // Text added within the last line waits for the line to end, however long ago.
+        ("a\nb and more", true, 1, 5_000, .keep),
+        // A line boundary past the interval colors every complete line.
+        ("a\nb\nc\nd", true, 1, 300, .render(lines: 3)),
+        // A line boundary inside the interval waits out the rest of it.
+        ("a\nb\nc", true, 1, 100, .wait(.milliseconds(150))),
+        // A finished block (the fence closed, or the reply done) colors all of it, now.
+        ("a\nb\nc", false, 2, 10, .render(lines: nil)),
+        ("a", false, nil, 0, .render(lines: nil)),
+    ] as [(String, Bool, Int?, Int, CodeHighlightThrottle.Decision)])
+    func aBlockBeingWrittenIsColoredAtLineBoundariesAndAtMostEvery250ms(code: String, writing: Bool, lastLines: Int?, sinceMS: Int,
+                                                                         expected: CodeHighlightThrottle.Decision) {
+        let last = lastLines.map { Throttle.Render(at: Self.start, lines: $0) }
+        let decision = Throttle.decide(code: code, writing: writing, last: last, now: Self.start + .milliseconds(sinceMS))
+        #expect(decision == expected)
+    }
+
+    /// The colors drawn between renders: the last render's for the lines it colored, the new
+    /// text plain after them.
+    @Test func aBlockKeepsItsLastColorsWithTheNewTextPlainAfterThem() throws {
+        let full = CodeHighlightCache.Key(code: "var a = 1\nvar b = 2\nvar c", language: "go")
+        let prefix = full.prefix(lines: 2)
+        #expect(prefix.code == "var a = 1\nvar b = 2")
+        let colored = try #require(CodeHighlightCache.render(prefix, style: style))
+
+        let drawn = try #require(CodeHighlightCache.colors(for: full, last: CodeHighlightCache.Rendered(key: prefix, value: colored), cached: nil))
+
+        #expect(String(drawn.characters) == full.code)
+        #expect(drawn.runs.contains { $0.foregroundColor == style.keyword })
+    }
+
+    /// A render a newer one superseded is dropped: cancelled, it colors nothing.
+    @Test func aCancelledRenderReturnsNothing() {
+        let key = CodeHighlightCache.Key(code: "var a = 1\nvar b = 2", language: "go")
+        #expect(CodeHighlightCache.render(key, style: style, isCancelled: { true }) == nil)
+        #expect(CodeHighlightCache.render(key, style: style, isCancelled: { false }) != nil)
+    }
 }

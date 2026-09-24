@@ -582,6 +582,13 @@ public struct NativeMarkdownListItem: Equatable, Sendable {
 /// fenced code, rules, paragraphs. Inline Markdown stays inside each block's text for the
 /// renderer. Fences keep their contents literal and an unclosed fence runs to the end.
 public func nativeMarkdownBlocks(_ text: String) -> [NativeMarkdownBlock] {
+    nativeMarkdownParse(text).blocks
+}
+
+/// `nativeMarkdownBlocks`, and whether the text ends inside a fence still open: the fenced
+/// block a streaming reply is writing, the last one, whose code is still growing.
+public func nativeMarkdownParse(_ text: String) -> (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool) {
+    var endsInOpenFence = false
     var blocks: [NativeMarkdownBlock] = []
     var paragraph: [String] = []
     var quote: [String] = []
@@ -652,6 +659,7 @@ public func nativeMarkdownBlocks(_ text: String) -> [NativeMarkdownBlock] {
                 blocks.append(code)
             }
             index = closed ? next + 1 : next
+            endsInOpenFence = !closed
             continue
         }
         index += 1
@@ -707,7 +715,7 @@ public func nativeMarkdownBlocks(_ text: String) -> [NativeMarkdownBlock] {
         paragraph.append(line)
     }
     flushAll()
-    return blocks
+    return (blocks, endsInOpenFence)
 }
 
 /// "- item", "* item", "+ item", "3. item", "3) item" → marker kind, number, and text.

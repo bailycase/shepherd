@@ -189,8 +189,9 @@ struct AgentTurn: View, Equatable {
                 : NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
                     get: { openThinking.contains(id) },
                     set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }))
-        case .prose(_, _, let blocks):
-            Prose(blocks: blocks).equatable()
+        case .prose(_, _, let blocks, let openFence):
+            // The fence a streaming reply is writing is colored as it grows, not on every chunk.
+            Prose(blocks: blocks, writingFence: live && openFence).equatable()
         case .work(let group):
             WorkGroupView(group: group, review: review).equatable()
         case .subagents(_, let callIDs, let all):

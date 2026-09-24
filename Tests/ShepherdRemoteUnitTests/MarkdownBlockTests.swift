@@ -51,6 +51,21 @@ struct MarkdownBlockTests {
         ])
     }
 
+    /// Whether the text ends inside a fence still open: the block a streaming reply is writing.
+    @Test(arguments: [
+        ("```swift\nlet a = 1", true),
+        ("Here:\n\n```swift\nlet a = 1\n", true),
+        ("- item\n  ```sh\n  ls", true),
+        ("```swift\nlet a = 1\n```", false),
+        ("```\nx\n```\n\nafter", false),
+        ("```\nx\n```\n```\ny", true),
+        ("no code at all", false),
+    ])
+    func aTextEndsInAnOpenFenceOnlyWhileTheFenceRunsToTheEnd(text: String, open: Bool) {
+        #expect(nativeMarkdownParse(text).endsInOpenFence == open)
+        #expect(nativeMarkdownParse(text).blocks == nativeMarkdownBlocks(text))
+    }
+
     @Test(arguments: [
         ("", [NativeMarkdownBlock]()),
         ("3) c\n4) d", [.list(ordered: true, start: 3, items: [Item(text: "c"), Item(text: "d")])]),

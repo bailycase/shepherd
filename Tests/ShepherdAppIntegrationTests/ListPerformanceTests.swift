@@ -244,6 +244,49 @@ struct ListPerformanceTests {
         #expect(show["thread.rowBuilder", default: 0] <= 40, "\(show)")
     }
 
+    // MARK: Code blocks
+
+    /// A reply streaming `lines` lines of a Swift fence (still open).
+    static func codeReply(_ lines: Int) -> String {
+        let body = (0..<lines).map { "    let value\($0) = compute(\($0), from: source[\($0)]) // step \($0)" }
+        return "Here it is:\n\n```swift\nfunc build() {\n" + body.joined(separator: "\n") + "\n"
+    }
+
+    /// Fifteen chunks of a growing fenced block, delivered in one burst, color it at most twice
+    /// (the first complete lines at once, then at most every 250 ms, at line boundaries); the
+    /// finished reply colors it once more, in full.
+    @Test func aBurstOfCodeChunksColorsTheBlockAtMostTwice() async throws {
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it")]
+        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(Self.codeReply(2))], running: true))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await Task.sleep(for: .milliseconds(500))
+        ListPerf.settle(thread.window)
+
+        let burst = try await counting(thread.window) {
+            for chunk in 1...15 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.streaming(Self.codeReply(2 + chunk * 6) + "    let partial")]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+            try await Task.sleep(for: .milliseconds(600))
+        }
+        let finished = try await counting(thread.window) {
+            var next = thread.snapshot
+            next.revision += 1
+            next.running = false
+            next.messages = turn + [ThreadFixture.assistant("done", Self.codeReply(2 + 15 * 6) + "    let partial\n}\n```\n")]
+            next.provisional = []
+            await thread.serve(next)
+            try await Task.sleep(for: .milliseconds(600))
+        }
+
+        #expect((1...2).contains(burst["highlight.render", default: 0]), "\(burst)")
+        #expect(finished["highlight.render", default: 0] == 1, "\(finished)")
+    }
+
     // MARK: Workspace
 
     /// A hidden agent reporting its status redraws no mounted layout: the workspace resolves

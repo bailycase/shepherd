@@ -31,7 +31,8 @@ public struct NativeTurnPresentation: Equatable, Sendable {
     public enum Item: Equatable, Sendable, Identifiable {
         /// Thinking for one stretch of work (merged between prose), or the live block.
         case thinking(id: String, text: String, seconds: Double?, live: Bool, since: Double?)
-        case prose(id: String, text: String, blocks: [NativeMarkdownBlock])
+        /// `openFence`: the text ends inside a fence still open (the block a reply is writing).
+        case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
         /// A stretch of tool work: its lines, folded into one summary line once there are two.
         case work(NativeWorkGroup)
         /// Subagent cards at a spawn position: `callIDs` look up the placement; `all` is a
@@ -43,7 +44,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 
         public var id: String {
             switch self {
-            case .thinking(let id, _, _, _, _), .prose(let id, _, _), .subagents(let id, _, _), .note(let id, _), .error(let id, _, _, _): id
+            case .thinking(let id, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _, _), .note(let id, _), .error(let id, _, _, _): id
             case .work(let group): "work:" + group.id
             }
         }
@@ -199,7 +200,8 @@ public func nativeTurnPresentation(
             calls.append(value)
         case .prose(let text):
             flushStretch()
-            items.append(.prose(id: nextID("prose"), text: text, blocks: nativeMarkdownBlocks(text)))
+            let parsed = nativeMarkdownParse(text)
+            items.append(.prose(id: nextID("prose"), text: text, blocks: parsed.blocks, openFence: parsed.endsInOpenFence))
             copy.append(text)
         case .note(let text):
             flushStretch()
