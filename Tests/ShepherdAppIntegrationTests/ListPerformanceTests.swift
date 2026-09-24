@@ -255,7 +255,7 @@ struct ListPerformanceTests {
     /// Fifteen chunks of a growing fenced block, delivered in one burst, color it at most twice
     /// (the first complete lines at once, then at most every 250 ms, at line boundaries); the
     /// finished reply colors it once more, in full.
-    @Test func aBurstOfCodeChunksColorsTheBlockAtMostTwice() async throws {
+    @Test(.timingSensitive) func aBurstOfCodeChunksColorsTheBlockAtMostTwice() async throws {
         let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "Write it")]
         let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(Self.codeReply(2))], running: true))
         defer { thread.close() }
