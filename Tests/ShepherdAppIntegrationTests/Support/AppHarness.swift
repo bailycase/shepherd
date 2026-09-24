@@ -29,7 +29,9 @@ final class AppHarness {
         settings = AppSettings(store: defaults)
         keybindings = KeybindingsStore(store: defaults)
         themeManager = ThemeManager(store: defaults, environmentTheme: nil, systemColorScheme: .dark)
-        remoteHosts = RemoteHostStore(defaults: defaults)
+        // A client polls its hosts' subagents every 3 s; tests that wait on a change would sit
+        // through two polls each.
+        remoteHosts = RemoteHostStore(defaults: defaults, childRefreshInterval: .milliseconds(200))
     }
 
     /// Seeds `state` (if any), then builds the view model and waits until it has adopted the
