@@ -119,6 +119,32 @@ struct ComposerMenuPerformanceTests {
         #expect(fought.isEmpty, "the highlight moved the list \(fought.count) times")
     }
 
+    /// A highlight moving in the slash menu (the pointer, ↑↓) redraws the two rows it moves
+    /// between; ↑↓ past the visible rows still scroll the highlight into view.
+    @Test func movingTheSlashMenusHighlightRedrawsTwoRows() async throws {
+        let model = HighlightModel()
+        let commands = ModelCatalogFixture.commands.map { NWSlashCommand(name: $0.name, description: $0.description, tag: $0.source) }
+        let window = OffscreenWindow(size: CGSize(width: 520, height: 360), dark: false, SlashHost(model: model, commands: commands))
+        defer { window.close() }
+        try await eventuallyOnMain("the menu to load") { window.layout(); return Self.menuScroll(in: window) != nil }
+        let clip = try #require(Self.menuScroll(in: window)).contentView
+
+        var drawn: [Int] = []
+        for index in 1...6 {
+            NWMenuDiagnostics.rowBodies = 0
+            model.selection = index
+            window.layout()
+            drawn.append(NWMenuDiagnostics.rowBodies)
+        }
+        #expect(drawn.allSatisfy { $0 <= 2 }, "rows drawn per move: \(drawn)")
+
+        model.selection = 40
+        try await eventuallyOnMain("↑↓ to scroll the highlight into view") {
+            window.layout()
+            return clip.bounds.origin.y >= 40 * NWComposerMetrics.menuRowHeight - clip.bounds.height
+        }
+    }
+
     // MARK: Fixtures
 
     /// The catalog as the picker lists it: one section per provider.
@@ -170,5 +196,15 @@ private struct PickerHost: View {
     var body: some View {
         NWModelPicker(query: $model.query, sections: sections, selection: $model.selection, onChoose: { _ in }, onClose: {})
             .frame(width: Self.size.width, height: Self.size.height)
+    }
+}
+
+private struct SlashHost: View {
+    @Bindable var model: HighlightModel
+    let commands: [NWSlashCommand]
+
+    var body: some View {
+        NWSlashMenu(commands: commands, total: commands.count, query: "", selection: $model.selection) { _ in }
+            .frame(width: 520, height: 360)
     }
 }
