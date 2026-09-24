@@ -137,6 +137,27 @@ struct RPCSessionTests {
             + ["message_end", "tool_execution_start", "tool_execution_end", "turn_end", "unknown:compaction_start", "agent_end", "agent_settled"])
     }
 
+    /// An answer that arrived before its deadline wins, even while it is still decoding off the
+    /// queue when the deadline passes.
+    @Test func anAnswerDecodingAtItsDeadlineStillAnswersTheRequest() async throws {
+        let h = try Harness(env: ["STUB_PI_HISTORY_BYTES": String(2 * 1024 * 1024)])
+        defer { h.stop() }
+        let release = DispatchSemaphore(value: 0)
+        defer { release.signal() }
+        let answer = Locked<Result<RPCResponse, RPCError>?>(nil)
+        #expect(try await h.request(.getState).get().success, "pi is up, so its answer arrives well within the deadline")
+        await h.onQueue {
+            h.session.beforeOffQueueDecode = { release.wait() }
+            h.session.request(.getMessages, timeout: 2) { result in answer.withValue { $0 = result } }
+        }
+        try await eventually("the deadline to pass with the answer decoding") { await h.onQueue { h.session.expiringRequestCount } == 1 }
+        #expect(answer.current == nil)
+
+        release.signal()
+        try await eventually("the request to be answered") { answer.current != nil }
+        #expect((try? answer.current?.get())?.messages?.count == 12)
+    }
+
     @Test func overlappingRequestsAreCorrelatedByID() async throws {
         let h = try Harness()
         defer { h.stop() }
