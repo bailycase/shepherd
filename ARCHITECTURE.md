@@ -127,14 +127,16 @@ pi --mode rpc  (/bin/zsh -l -c, --session-id, -e extensions)
                       requests → RPC commands; each new revision of a thread on screen pushed
                       as onThreadRevision, at most once per frame
   → SessionServer.nativeThread (local, direct)  |  RemoteRequest.nativeThread (TCP)
-  → NativeThreadStore (poll, or pull on a push; page, echo, settle; derive rows, activity lines,
-                      placements)
+  → NativeThreadStore (poll, or pull on a push; page, queue, echo, settle; derive rows, activity
+                      lines, placements)
   → ThreadView · Composer · Subagents · SubagentInspector
 ```
 
-- **Requests:** send, answer, abort, model and thinking changes, and subagent commands. Each
-  carries an operation ID plus the expected session and generation, so a stale action can never
-  land in a new pi session.
+- **Requests:** send, answer, abort, model and thinking changes, subagent commands, and queue
+  changes. Each carries an operation ID plus the expected session and generation, so a stale
+  action can never land in a new pi session.
+- **The queue:** messages sent while pi works wait in a queue the host holds (every client sees
+  and edits the same one) and go when pi settles, or are steered in.
 - **One path for every client:** the local GUI and remote clients use the same request path;
   only the transport differs.
 - **Detail:** [docs/native-thread.md](docs/native-thread.md) walks the pipeline, and
