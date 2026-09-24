@@ -135,6 +135,12 @@ events come out on stdout, one record per LF.
     from an old session can be acted on.
   - History pages hold 50 entries, walked with `olderCursor`. A stale cursor gets
     `stale_cursor`.
+  - A history entry's id names its message, not its place in pi's list
+    (`RPCThreadState.historyEntryID`): a tool result is its call (`t:<call id>`), anything else
+    `<role>:<ms>` from pi's timestamp, with `#<n>` on a repeat. So a message keeps its id across
+    refreshes and compactions, and history read from pi's session file before pi answers lands
+    on the same rows. Only a message without a timestamp, which pi never sends, falls back to
+    its position (`m:<index>`).
 - **Requests** (`NativeThreadRequest`): `snapshot`, `send` (follow-up or steer delivery, optional
   images), `abort`, `answer`, `setModel`, `setThinking`, `subagentCommand` (message, cancel,
   resume, pause, continue; routed to the children extension's control connection, never the

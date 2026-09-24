@@ -100,6 +100,31 @@ struct ThreadProjectionTests {
         #expect(row.truncated)
     }
 
+    // MARK: - projectHistory
+
+    private static let history = #"""
+    [{"role":"user","content":"Fix it","timestamp":1000},
+     {"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}],"timestamp":2000},
+     {"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[{"type":"text","text":"a"}],"timestamp":2500},
+     {"role":"custom","customType":"memo","content":"model only","timestamp":2600},
+     {"role":"custom","customType":"shepherd-child","display":true,"content":"Child done","timestamp":2700},
+     {"role":"user","content":"again","timestamp":3000},
+     {"role":"user","content":"same millisecond","timestamp":3000},
+     {"role":"assistant","content":[{"type":"text","text":"no time"}]}]
+    """#
+
+    /// Ids name the message, not its place, so a page read from pi's session file (which starts
+    /// wherever the file's tail does) lands on the same rows as pi's own answer.
+    @Test func historyIDsNameEachMessageWhereverTheListStarts() throws {
+        let messages: [RPCMessage] = try decode(Self.history)
+        let rows = RPCThreadState.projectHistory(messages)
+        #expect(rows.map(\.entryID) == ["user:1000", "assistant:2000", "t:c1", "user:3000", "user:3000#1", "m:7"])
+        #expect(rows[2].startedAt == 2000 && rows[2].argumentsText == #"{"command":"ls"}"#, "a result carries its call's start and arguments")
+
+        let tail = RPCThreadState.projectHistory(Array(messages[2...]))
+        #expect(tail.prefix(3).map(\.entryID) == ["t:c1", "user:3000", "user:3000#1"])
+    }
+
     // MARK: - apply(_:to:) — rebuilding a streamed assistant message
 
     private func stream(_ deltas: [String], into message: RPCMessage = RPCMessage(role: "assistant", content: [])) throws -> RPCMessage {

@@ -89,7 +89,7 @@ struct ThreadEventTests {
         #expect(!s.running)
         #expect(s.runtime == "rpc" && s.dialogsSupported)
         #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents"])
-        #expect(s.messages.map(\.entryID) == ["m:0", "m:1"])
+        #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
         #expect(s.messages.first?.blocks == [NativeThreadBlock(kind: .text, text: "Hello!")])
         #expect(s.stats == NativeThreadStats(contextTokens: 60000, contextWindow: 200000, contextPercent: 30, totalTokens: 105000, cost: 0.45))
         #expect(s.commands?.map(\.name) == ["session-name", "fix-tests"])
