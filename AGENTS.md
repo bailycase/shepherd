@@ -307,10 +307,13 @@ Sources/
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
-                       the changes card), ShepherdLog. Shared with the iOS client.
+                       the changes card), NativeQueueRules (the queue's rules, host and client),
+                       ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
-                       RPCSession, RPCThreadState, PTYSession, SessionScreen (SwiftTerm), StateStore,
+                       RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
+                       works), ThreadOriginStore (where delivered messages came from, kept per pi
+                       session), PTYSession, SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
@@ -409,7 +412,10 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 
 `RPCThreadState` projects pi's events into the `NativeThreadSnapshot` that
 `SessionServer.nativeThread` serves locally and, over TCP, remotely
-([docs/native-thread.md](docs/native-thread.md)).
+([docs/native-thread.md](docs/native-thread.md)). Messages sent while pi works wait in a queue
+the host holds (never pi's own, whose modes write the user's pi settings) and go when pi
+settles, or are steered in; a user message joins the thread only when pi starts it
+(docs/native-thread.md › The queue).
 
 **Status reporting.** The status extension reports `setAgentStatus` fire-and-forget:
 
