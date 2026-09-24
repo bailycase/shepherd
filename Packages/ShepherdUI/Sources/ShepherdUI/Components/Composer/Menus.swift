@@ -82,6 +82,37 @@ private struct NWMenuSurface: ViewModifier {
     }
 }
 
+/// A menu's list starts at its top. While a composer menu grows from its bottom corner, the scale
+/// moves its hosted scroll view's frame, and AppKit drifts the list a few points down (9pt for
+/// eight rows); so for as long as the menu is growing, and until the reader or ↑↓ scroll it,
+/// the list is held at its top.
+private struct NWMenuListStartsAtTop: ViewModifier {
+    /// The list's first row. (Not a zero-height marker: a lazy stack that starts with one
+    /// misplaces every row a scroll aims at.)
+    let top: String?
+    let proxy: ScrollViewProxy
+    let list: NWMenuListMotion
+
+    /// Past the overlay motion's settle (about 1.7× its 180ms anchor), with room to spare.
+    private static let growing = Duration.seconds(NW.Motion.overlay.duration * 3)
+
+    func body(content: Content) -> some View {
+        content
+            .onScrollPhaseChange { _, phase in if phase != .idle { list.moved = true } }
+            .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y } action: { _, offset in
+                guard let top, !list.moved, offset != 0, ContinuousClock.now - list.appeared < Self.growing else { return }
+                proxy.scrollTo(top, anchor: .top)
+            }
+    }
+}
+
+/// When a menu's list appeared and whether it has been scrolled since: bookkeeping, read and
+/// written as the list moves (never while drawing), so a plain reference.
+final class NWMenuListMotion {
+    let appeared = ContinuousClock.now
+    var moved = false
+}
+
 // MARK: Slash menu
 
 /// A command the slash menu offers: pi's registry, never hard-coded.
@@ -119,6 +150,7 @@ public struct NWSlashMenu: View {
     let onChoose: (NWSlashCommand) -> Void
     /// The row the pointer just highlighted, until the highlight's change is seen.
     @State private var pointed: Int?
+    @State private var listMotion = NWMenuListMotion()
 
     public init(commands: [NWSlashCommand], total: Int, query: String, selection: Binding<Int>, maxHeight: CGFloat? = nil,
                 onChoose: @escaping (NWSlashCommand) -> Void) {
@@ -153,11 +185,13 @@ public struct NWSlashMenu: View {
                         }
                     }
                 }
+                .modifier(NWMenuListStartsAtTop(top: commands.first?.name, proxy: proxy, list: listMotion))
                 .frame(height: rows * NWComposerMetrics.menuRowHeight)
                 .onChange(of: selection) { _, index in
                     // Each pointer move is seen once, so a later ↑↓ back to that row still shows it.
                     defer { pointed = nil }
                     guard index != pointed, commands.indices.contains(index) else { return }
+                    listMotion.moved = true
                     proxy.scrollTo(commands[index].name)
                 }
             }
@@ -306,9 +340,10 @@ public struct NWModelList: Equatable, Sendable {
 /// The list is at most 360pt tall, and the whole picker at most `maxHeight`. The search field
 /// takes focus and drives the selection.
 ///
-/// A catalog runs to hundreds of models, so the list is lazy: only the rows on screen exist, a
-/// row redraws only when its model or its highlight changes, and the pointer passing over rows
-/// (or the list scrolling under it) moves the highlight without scrolling the list.
+/// A catalog runs to hundreds of models, so the list is lazy: only the rows on screen exist, and
+/// a row redraws only when its model or its highlight changes. ↑↓ scroll the highlight into view;
+/// the pointer passing over rows (or the list scrolling under it) moves the highlight without
+/// scrolling the list.
 public struct NWModelPicker: View {
     @Binding var query: String
     let list: NWModelList
@@ -318,6 +353,9 @@ public struct NWModelPicker: View {
     let onChoose: (NWModelOption) -> Void
     let onClose: () -> Void
     @FocusState private var searching: Bool
+    /// The model the pointer just highlighted, until the highlight's change is seen.
+    @State private var pointed: Int?
+    @State private var listMotion = NWMenuListMotion()
 
     public init(query: Binding<String>, list: NWModelList, loading: Bool = false, selection: Binding<Int>,
                 maxHeight: CGFloat? = nil, onChoose: @escaping (NWModelOption) -> Void, onClose: @escaping () -> Void) {
@@ -342,7 +380,7 @@ public struct NWModelPicker: View {
         return max(NWComposerMetrics.menuRowHeight, min(NWComposerMetrics.modelPickerMaxHeight, (height ?? .infinity) - chrome))
     }
 
-    private static let top = "top"
+    private static let loadingRow = "loading"
 
     public var body: some View {
         let nw = Color.nw
@@ -356,8 +394,8 @@ public struct NWModelPicker: View {
                         .textFieldStyle(.plain)
                         .font(.nw(.ui, weight: .regular))
                         .focused($searching)
-                        .onKeyPress(.downArrow) { move(to: selection + 1, proxy); return .handled }
-                        .onKeyPress(.upArrow) { move(to: selection - 1, proxy); return .handled }
+                        .onKeyPress(.downArrow) { move(to: selection + 1); return .handled }
+                        .onKeyPress(.upArrow) { move(to: selection - 1); return .handled }
                         .onKeyPress(.return) {
                             if list.options.indices.contains(selection) { onChoose(list.options[selection]) }
                             return .handled
@@ -371,7 +409,6 @@ public struct NWModelPicker: View {
                 .padding(.bottom, NW.Space.xs)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        Color.clear.frame(height: 0).id(Self.top)
                         if loading {
                             HStack(spacing: NW.Space.m) {
                                 ProgressView().progressViewStyle(.nwSpinner(size: 12))
@@ -379,21 +416,34 @@ public struct NWModelPicker: View {
                             }
                             .padding(.horizontal, NW.Space.m)
                             .frame(height: NWComposerMetrics.menuRowHeight)
+                            .id(Self.loadingRow)
                             .nwTransition(.content)
                         }
                         ForEach(list.rows) { row in
-                            NWModelListRow(row: row, highlighted: row.position == selection, choose: onChoose, hover: { selection = $0 })
-                                .equatable()
+                            NWModelListRow(row: row, highlighted: row.position == selection, choose: onChoose, hover: { position in
+                                guard position != selection else { return }
+                                pointed = position
+                                selection = position
+                            })
+                            .equatable()
                         }
                     }
                     // The catalog arriving replaces "Loading models…"; filtering stays instant.
                     .nwAnimation(.content, value: loading)
                 }
+                .modifier(NWMenuListStartsAtTop(top: top, proxy: proxy, list: listMotion))
                 .frame(height: height)
+                .onChange(of: selection) { _, position in
+                    // Each pointer move is seen once, so a later ↑↓ back to that row still shows it.
+                    defer { pointed = nil }
+                    guard position != pointed, let row = list.rowID(ofOption: position) else { return }
+                    listMotion.moved = true
+                    proxy.scrollTo(row)
+                }
                 // A new query starts over at the top of its results.
                 .onChange(of: query) { _, _ in
                     selection = 0
-                    proxy.scrollTo(Self.top, anchor: .top)
+                    if let top { proxy.scrollTo(top, anchor: .top) }
                 }
             }
         }
@@ -404,10 +454,12 @@ public struct NWModelPicker: View {
         .accessibilityLabel("Choose a model")
     }
 
-    /// ↑↓: the highlight moves, and the list scrolls just enough to show it.
-    private func move(to position: Int, _ proxy: ScrollViewProxy) {
+    /// The list's first row: "Loading models…" while the catalog loads.
+    private var top: String? { loading ? Self.loadingRow : list.rows.first?.id }
+
+    /// ↑↓: the highlight moves (and the list scrolls just enough to show it).
+    private func move(to position: Int) {
         selection = min(max(0, list.options.count - 1), max(0, position))
-        if let row = list.rowID(ofOption: selection) { proxy.scrollTo(row) }
     }
 }
 
