@@ -62,8 +62,11 @@ The iOS client ships through TestFlight, following the Mac's channels:
   never runs for pull requests, tags, or other branches.
 - **Expiry:** Apple processes each build (usually minutes). The Nightly group's testers get it
   automatically, and it stays installable for 90 days.
-- **Re-runs:** re-running the whole workflow uploads nothing, because the run number would
-  repeat. Use "Re-run failed jobs" to retry a failed upload, or push again.
+- **Re-runs:** a re-run keeps the run number, so it keeps the build number. Once the Mac
+  nightly has published, re-running the whole workflow skips both builds. To retry only the
+  upload, use "Re-run failed jobs". If only the Mac job failed, also use "Re-run failed jobs":
+  re-running everything would upload the same build number again, which App Store Connect
+  refuses. Or push again.
 
 **One-time setup, in order:**
 
@@ -71,8 +74,8 @@ The iOS client ships through TestFlight, following the Mac's channels:
    needs no paid-apps agreement.
 2. Register the App ID `com.bailycase.shepherd.ios` under Certificates, Identifiers & Profiles:
    Identifiers ▸ + ▸ App IDs ▸ App, Explicit, with no capabilities. Skip this step if Xcode
-   already registered it for a device run. Automatic signing at export does not register App
-   IDs.
+   already registered it for a device run. App Store Connect's New App form only lists bundle
+   IDs that are already registered.
 3. In App Store Connect, go to Apps ▸ + ▸ New App:
    - Platform iOS, a name, a language, bundle ID `com.bailycase.shepherd.ios`, and a SKU (for
      example `shepherd-ios`).
