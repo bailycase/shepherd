@@ -80,7 +80,8 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
   - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`.
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_PREVIEW_DIR`** and **`SHEPHERD_LIVE_MODEL`** switch on the preview renders and the
-  live-model run (see Testing).
+  live-model run (see Testing). **`SHEPHERD_BENCHMARK`** switches on `ComposerMenuBenchmarkTests`,
+  which prints what the composer's menus cost over a full model catalog.
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
   `~/.pi/agent`. Shepherd follows it (`PiConfig.agentDirectory`) when it seeds session headers
   and reads pi's models and settings.
