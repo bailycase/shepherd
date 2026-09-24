@@ -302,7 +302,9 @@ struct IdleCostTests {
         let difference = Self.mismatch(shape, layer, ink: Color.nw.running, dark: dark)
 
         #expect(difference.ink > 500, "the arc drew: \(difference)")
-        #expect(Double(difference.mismatched) < Double(difference.ink) * 0.15, "\(difference)")
+        // Edge pixels vary with the renderer (CI's VM antialiases differently: 18% there, under
+        // 15% on a Mac); the geometry checks below stay exact.
+        #expect(Double(difference.mismatched) < Double(difference.ink) * 0.25, "\(difference)")
         // On the ring: open at half past one, drawn at half past four (a mirror swaps the two).
         let background = shape.colorAt(x: 0, y: 0)!
         for bitmap in [shape, layer] {
