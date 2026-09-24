@@ -72,7 +72,8 @@ enum UpdateChannel: String, CaseIterable, Identifiable {
 /// Shipped Shepherd builds stored `stable`, `rc`, `beta` or `nightly` (or, before the channel
 /// picker, a nightly bool). At launch Shepherd moves `rc` to Beta and `nightly` to Beta, and
 /// flags the nightly move so the app can say, once, where nightly builds went. Shepherd Nightly
-/// rides nightly and stores nothing.
+/// rides nightly and stores nothing. Every read resolves through the same rules, so nothing
+/// ever rides a channel its app doesn't offer.
 struct UpdateChannelStore {
     /// An `UpdateChannel` rawValue. Written at every launch, so the delegate reads the same.
     static let channelKey = "updateChannel"
@@ -112,13 +113,7 @@ struct UpdateChannelStore {
     /// a move off nightly arms the notice.
     @discardableResult
     func resolveAtLaunch(version: String) -> UpdateChannel {
-        let resolution = Self.resolve(
-            edition: edition,
-            stored: defaults.string(forKey: Self.channelKey),
-            legacyNightly: defaults.object(forKey: Self.legacyNightlyKey) != nil
-                ? defaults.bool(forKey: Self.legacyNightlyKey) : nil,
-            version: version
-        )
+        let resolution = storedResolution(version: version)
         guard edition == .main else { return resolution.channel }
         defaults.set(resolution.channel.rawValue, forKey: Self.channelKey)
         if resolution.movedFromNightly {
@@ -127,12 +122,20 @@ struct UpdateChannelStore {
         return resolution.channel
     }
 
-    /// The channel Sparkle reads, clamped to what this edition offers.
-    var channel: UpdateChannel {
-        let choices = UpdateChannel.choices(for: edition)
-        return defaults.string(forKey: Self.channelKey)
-            .flatMap(UpdateChannel.init(rawValue:))
-            .flatMap { choices.contains($0) ? $0 : nil } ?? choices[0]
+    /// The channel this launch rides, resolved without writing anything: the migration is left
+    /// to the installed app that owns these preferences.
+    func resolveWithoutMigrating(version: String) -> UpdateChannel {
+        storedResolution(version: version).channel
+    }
+
+    private func storedResolution(version: String) -> Resolution {
+        Self.resolve(
+            edition: edition,
+            stored: defaults.string(forKey: Self.channelKey),
+            legacyNightly: defaults.object(forKey: Self.legacyNightlyKey) != nil
+                ? defaults.bool(forKey: Self.legacyNightlyKey) : nil,
+            version: version
+        )
     }
 
     /// Stores `channel` if this edition offers it. Returns whether it did.
@@ -178,16 +181,29 @@ final class AppUpdater {
     /// Shepherd moved this install off the retired nightly channel and hasn't said so yet.
     private(set) var nightlyMovedNoticePending: Bool
 
+    /// Debug builds (the Dev scheme) carry Shepherd's bundle id and so share the everyday app's
+    /// preferences: they read its stored channel but never migrate it or arm its notice, which
+    /// would move an installed copy off its channel before its own update does.
+    #if DEBUG
+    private static let migratesStoredChannel = false
+    #else
+    private static let migratesStoredChannel = true
+    #endif
+
     private init() {
         let info = Bundle.main.infoDictionary
         available = info?["SUFeedURL"] != nil && info?["SUPublicEDKey"] != nil
         edition = .current
         store = UpdateChannelStore(defaults: .standard, edition: edition)
-        if available {
-            channel = store.resolveAtLaunch(version: info?["CFBundleShortVersionString"] as? String ?? "")
+        let version = info?["CFBundleShortVersionString"] as? String ?? ""
+        if !available {
+            channel = UpdateChannel.choices(for: edition)[0]
+            nightlyMovedNoticePending = false
+        } else if Self.migratesStoredChannel {
+            channel = store.resolveAtLaunch(version: version)
             nightlyMovedNoticePending = store.nightlyMovedNoticePending
         } else {
-            channel = UpdateChannel.choices(for: edition)[0]
+            channel = store.resolveWithoutMigrating(version: version)
             nightlyMovedNoticePending = false
         }
         controller = SPUStandardUpdaterController(
@@ -196,8 +212,6 @@ final class AppUpdater {
             userDriverDelegate: nil
         )
     }
-
-    var channelChoices: [UpdateChannel] { UpdateChannel.choices(for: edition) }
 
     /// Switches channel; a channel this app doesn't offer is ignored.
     func select(_ channel: UpdateChannel) {
@@ -240,8 +254,11 @@ final class AppUpdater {
 private final class ChannelDelegate: NSObject, SPUUpdaterDelegate {
     static let shared = ChannelDelegate()
 
+    /// What the app resolved at launch, read again without writing: after a release build's
+    /// migration that is the stored channel; a Dev build reads through the retired values.
     private var channel: UpdateChannel {
-        UpdateChannelStore(defaults: .standard, edition: .current).channel
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        return UpdateChannelStore(defaults: .standard, edition: .current).resolveWithoutMigrating(version: version)
     }
 
     func feedURLString(for updater: SPUUpdater) -> String? {

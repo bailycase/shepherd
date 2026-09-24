@@ -157,15 +157,27 @@ struct UpdateChannelMigrationTests {
         store.resolveAtLaunch(version: "1.2.3")
 
         #expect(!store.select(.nightly))
-        #expect(store.channel == .stable)
+        #expect(defaults.string(forKey: Store.channelKey) == "stable")
         #expect(store.select(.beta))
-        #expect(store.channel == .beta)
+        #expect(store.resolveWithoutMigrating(version: "1.2.3") == .beta)
 
         // Whatever an older build or a hand edit left behind, Sparkle reads Stable or Beta.
-        for raw in ["nightly", "rc", "octopus"] {
+        for (raw, channel) in [("nightly", UpdateChannel.beta), ("rc", .beta), ("octopus", .stable)] {
             defaults.set(raw, forKey: Store.channelKey)
-            #expect(store.channel == .stable, "stored \(raw)")
+            #expect(store.resolveWithoutMigrating(version: "1.2.3") == channel, "stored \(raw)")
         }
+    }
+
+    /// The Dev build shares the everyday app's preferences domain: it rides what the migration
+    /// would pick but leaves the stored channel and the notice to the installed app.
+    @Test func aReadWithoutMigratingWritesNothing() {
+        let defaults = Fixture.defaults()
+        defaults.set("nightly", forKey: Store.channelKey)
+        let store = Store(defaults: defaults, edition: .main)
+
+        #expect(store.resolveWithoutMigrating(version: "0.1.0") == .beta)
+        #expect(defaults.string(forKey: Store.channelKey) == "nightly")
+        #expect(!store.nightlyMovedNoticePending)
     }
 
     @Test func shepherdNightlyReadsNightlyAndStoresNothing() {
@@ -174,7 +186,7 @@ struct UpdateChannelMigrationTests {
         let store = Store(defaults: defaults, edition: .nightly)
 
         #expect(store.resolveAtLaunch(version: "0.0.0-nightly.202609232100") == .nightly)
-        #expect(store.channel == .nightly)
+        #expect(store.resolveWithoutMigrating(version: "0.0.0-nightly.202609232100") == .nightly)
         #expect(!store.select(.stable) && !store.select(.beta))
         #expect(defaults.string(forKey: Store.channelKey) == "stable", "untouched")
         #expect(!store.nightlyMovedNoticePending)
