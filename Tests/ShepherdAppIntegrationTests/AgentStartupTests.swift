@@ -106,7 +106,9 @@ struct AgentStartupTests {
 
         try await eventuallyOnMain("the pane to show pi's exit", timeout: .seconds(20)) { pane.phase == .exited(127) }
         try await eventuallyOnMain("the agent to be retired") { server.state.agents.isEmpty && vm.state.agents.isEmpty }
-        #expect(!store.starting, "a retired agent's thread is not left starting")
+        // The retirement reaches the thread with the server's broadcast (its store is pruned) or
+        // the next poll, whichever lands first.
+        try await eventuallyOnMain("the retired agent's thread to stop starting") { !store.starting }
         let error = await #expect(throws: RemoteHostClientError.self) { _ = try await server.nativeThread(agentID: id, request: .snapshot()) }
         guard case .rejected(NativeThreadCode.unavailable, _)? = error else { Issue.record("got \(String(describing: error))"); return }
     }
