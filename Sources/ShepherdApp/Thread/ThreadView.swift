@@ -73,8 +73,8 @@ struct ThreadView: View {
         let settled = arrivals.armed
         let arrived = arrivals.update(rows.map(\.id), session: store.snapshot.map { $0.piSessionID + ":" + $0.generation },
                                       active: active, ready: store.ready)
-        ZStack(alignment: .bottom) {
-            ScrollViewReader { proxy in
+        ScrollViewReader { proxy in
+            ZStack(alignment: .bottom) {
                 ScrollView {
                     // Never animated as a whole (rows, their text, and the tail anchor change on
                     // every streamed chunk): turns that arrive make their own entrance.
@@ -155,13 +155,16 @@ struct ThreadView: View {
                 .modifier(ThreadCommandHandler(key: commandKey, active: active) { command in
                     handle(command, proxy: proxy)
                 })
-                .overlay(alignment: .bottom) {
-                    jumpToLatest(showing: follower.showsJump(running: running), proxy: proxy)
-                }
+                // The composer draws "Jump to latest" over the fade it lays on the thread and under
+                // its card and menus, so the pill reads clearly and never covers an open menu.
+                Composer(store: store, active: active, agentName: agentName, hasTurns: !rows.isEmpty, gutter: gutter,
+                         composing: $composing, listModels: listModels, menuRequest: menuRequest,
+                         jumpToLatest: follower.showsJump(running: running) ? {
+                             follower.jumpToLatest()
+                             proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                         } : nil)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
             }
-            Composer(store: store, active: active, agentName: agentName, hasTurns: !rows.isEmpty, gutter: gutter,
-                     composing: $composing, listModels: listModels, menuRequest: menuRequest)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
         }
         // The composer's menus float over the thread and fit the room above the card in it.
         .coordinateSpace(.named(Composer.threadSpace))
@@ -209,30 +212,6 @@ struct ThreadView: View {
                       settled: settled)
                 .equatable()
         }
-    }
-
-    /// "↓ Jump to latest" grows in from above the composer while detached. Its motion is its
-    /// own: the rows beside it never animate with it.
-    @ViewBuilder private func jumpToLatest(showing: Bool, proxy: ScrollViewProxy) -> some View {
-        ZStack {
-            if showing {
-                Button {
-                    follower.jumpToLatest()
-                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                } label: {
-                    Label("Jump to latest", systemImage: "arrow.down")
-                        .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                        .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
-                        .background(Color.nw.bgRaised, in: Capsule())
-                        .nwBorder(Color.nw.lineStrong, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .nwTransition(.overlay, anchor: .bottom)
-                .accessibilityLabel("Jump to latest")
-            }
-        }
-        .nwAnimation(.overlay, value: showing)
-        .padding(.bottom, composerHeight + NW.Space.m)
     }
 
     private static let bottomID = "thread-bottom"
@@ -432,5 +411,30 @@ private struct ThreadCommandHandler: ViewModifier {
             guard let request, request.thread == key, active else { return }
             handle(request.command)
         }
+    }
+}
+
+/// "↓ Jump to latest": grows in from above the composer while the thread is detached from its
+/// tail. The composer draws it over the fade it lays on the thread and under its card and menus.
+/// Its motion is its own: the rows behind it never animate with it.
+struct JumpToLatestPill: View {
+    let action: (() -> Void)?
+
+    var body: some View {
+        ZStack {
+            if let action {
+                Button(action: action) {
+                    Label("Jump to latest", systemImage: "arrow.down")
+                        .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
+                        .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
+                        .background(Color.nw.bgRaised, in: Capsule())
+                        .nwBorder(Color.nw.lineStrong, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .nwTransition(.overlay, anchor: .bottom)
+                .accessibilityLabel("Jump to latest")
+            }
+        }
+        .nwAnimation(.overlay, value: action != nil)
     }
 }
