@@ -41,6 +41,8 @@ final class RPCThreadState {
     private let session: RPCSession
     private let queue: DispatchQueue
     private(set) var piSessionID: String?
+    /// How many times the bootstrap has asked pi for its state (more than once: a slow start).
+    private(set) var bootstrapAttempts = 0
     private(set) var generation = UUID().uuidString
     private(set) var revision: UInt64 = 0
     private var signature = 0
@@ -79,12 +81,19 @@ final class RPCThreadState {
         self.queue = queue
     }
 
-    /// Populate from a freshly spawned (or resumed) pi.
-    func bootstrap() {
-        refreshState()
-        refreshMessages()
-        refreshStats()
-        session.request(.getCommands) { [weak self] result in
+    /// Populate from a freshly spawned (or resumed) pi. Until `get_state` answers, requests are
+    /// answered `native_starting`. pi reads its stdin only once it has started, so a pi slower
+    /// than `timeout` answers requests that already timed out (and are dropped): ask again.
+    func bootstrap(timeout: TimeInterval = 10) {
+        bootstrapAttempts += 1
+        refreshState(timeout: timeout) { [weak self] result in
+            guard let self, self.piSessionID == nil, case .failure(.timeout) = result, self.session.isAlive else { return }
+            ShepherdLog.info("rpc session \(self.session.id) has not started within \(timeout)s; asking again")
+            self.bootstrap(timeout: timeout)
+        }
+        refreshMessages(timeout: timeout)
+        refreshStats(timeout: timeout)
+        session.request(.getCommands, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success else { return }
             self.commands = Self.projectCommands(response.data?["commands"])
             self.commit()
@@ -156,7 +165,7 @@ final class RPCThreadState {
 
     func handle(_ request: NativeThreadRequest, completion: @escaping (NativeThreadResult) -> Void) {
         guard let piSessionID else {
-            completion(.failure(code: "native_unavailable", message: "Session is not ready."))
+            completion(.failure(code: NativeThreadCode.starting, message: "pi is starting."))
             return
         }
         commit()
@@ -362,8 +371,9 @@ final class RPCThreadState {
 
     // MARK: - Refresh
 
-    private func refreshState() {
-        session.request(.getState) { [weak self] result in
+    private func refreshState(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+        session.request(.getState, timeout: timeout) { [weak self] result in
+            defer { done?(result) }
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
             if let id = data["sessionId"]?.stringValue, id != self.piSessionID {
                 if self.piSessionID != nil { self.resetForNewSession() }
@@ -380,8 +390,8 @@ final class RPCThreadState {
         }
     }
 
-    private func refreshMessages() {
-        session.request(.getMessages) { [weak self] result in
+    private func refreshMessages(timeout: TimeInterval = 10) {
+        session.request(.getMessages, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success,
                   let messages = try? response.data?["messages"]?.decode([RPCMessage].self) else { return }
             // Same filter as the terminal extension: custom messages are model-only unless the
@@ -417,8 +427,8 @@ final class RPCThreadState {
         }
     }
 
-    private func refreshStats() {
-        session.request(.getSessionStats) { [weak self] result in
+    private func refreshStats(timeout: TimeInterval = 10) {
+        session.request(.getSessionStats, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
             let usage = data["contextUsage"]
             self.stats = NativeThreadStats(

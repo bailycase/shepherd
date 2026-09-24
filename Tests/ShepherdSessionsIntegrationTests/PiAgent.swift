@@ -14,10 +14,11 @@ struct PiAgent {
 
     var server: SessionServer { host.server }
 
-    static func launch(on host: ScratchServer) async throws -> PiAgent {
+    /// `env` adds to the stub's environment (its `STUB_PI_STARTUP_*` options, for one).
+    static func launch(on host: ScratchServer, env: [String: String] = [:]) async throws -> PiAgent {
         let log = host.dir.appendingPathComponent("stdin-\(UUID().uuidString.prefix(6)).log")
         let session = try await host.server.createSession(params: CreateSessionParams(
-            cwd: host.dir.path, command: StubPi.command, env: ["STUB_PI_LOG": log.path], runtime: .rpc))
+            cwd: host.dir.path, command: StubPi.command, env: env.merging(["STUB_PI_LOG": log.path]) { $1 }, runtime: .rpc))
         let existing = host.server.state.spaces.first { $0.path == host.dir.path }
         let space = existing ?? Space(name: "rpc", path: host.dir.path)
         if existing == nil { try await host.server.addSpace(space) }

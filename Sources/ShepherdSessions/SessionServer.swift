@@ -244,6 +244,10 @@ public final class SessionServer: @unchecked Sendable {
     private var localViewports: [SessionID: (cols: Int, rows: Int)] = [:]
     private var clients: [Int32: ExtensionConnection] = [:]
     private var nextChildCommandID = 0
+    /// RPC sessions retired this run, with their exit codes (nil: a signal). A pane still bound
+    /// to one ran a pi that is gone, unlike a binding left from the previous run, which the app
+    /// is respawning.
+    private var retiredRPCSessions: [SessionID: Int32?] = [:]
     private enum NativeOutcome {
         case result(NativeThreadResult)
         case failure(code: String, message: String)
@@ -273,6 +277,14 @@ public final class SessionServer: @unchecked Sendable {
             switch self {
             case .pty(let s): return s.isAlive
             case .rpc(let s, _): return s.isAlive
+            }
+        }
+
+        /// nil while alive or after a signal.
+        var exitCode: Int32? {
+            switch self {
+            case .pty(let s): return s.exitCode
+            case .rpc(let s, _): return s.exitCode
             }
         }
 
@@ -516,17 +528,40 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Queue-owned dispatch shared by local and authenticated TCP callers. The thread state
     /// checks pi's current session/generation; persisted agent session IDs may lag /resume.
+    ///
+    /// An agent whose pane has no pi yet is starting, not gone: the app binds a freshly spawned
+    /// pi only after the agent is in state (and respawns a restored agent's pi when its pane
+    /// mounts), and clients poll from the moment the agent appears.
     private func dispatchNativeThread(
         agentID: AgentID,
         request: NativeThreadRequest,
         requestBytes: Int,
         completion: @escaping (NativeOutcome) -> Void
     ) {
-        guard let agent = store.state.agents.first(where: { $0.id == agentID }),
-              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
-              let paneID = agent.paneID, let sessionID = tab.layout.leaf(withID: paneID)?.sessionID,
-              let session = sessions[sessionID], session.isAlive, let thread = session.thread else {
-            completion(.failure(code: "native_unavailable", message: "The agent's pi process is not running. Restart it from the sidebar."))
+        let unavailable = { (message: String) in completion(.failure(code: NativeThreadCode.unavailable, message: message)) }
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+            unavailable("The agent no longer exists.")
+            return
+        }
+        guard let tab = store.state.tabs.first(where: { $0.id == agent.tabID }),
+              let paneID = agent.paneID, let leaf = tab.layout.leaf(withID: paneID) else {
+            unavailable("The agent has no thread pane.")
+            return
+        }
+        guard let sessionID = leaf.sessionID, let session = sessions[sessionID] else {
+            if let sessionID = leaf.sessionID, let code = retiredRPCSessions[sessionID] {
+                unavailable(Self.exitMessage(code))
+            } else {
+                completion(.failure(code: NativeThreadCode.starting, message: "pi is starting."))
+            }
+            return
+        }
+        guard let thread = session.thread else {
+            unavailable("The agent's pane is not running pi.")
+            return
+        }
+        guard session.isAlive else {
+            unavailable(Self.exitMessage(session.exitCode))
             return
         }
         // Image sends (v2) carry base64 payloads; text requests keep the tight bound.
@@ -536,6 +571,10 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         thread.handle(request) { completion(.result($0)) }
+    }
+
+    private static func exitMessage(_ code: Int32?) -> String {
+        "The agent's pi exited (\(code.map { "code \($0)" } ?? "signal"))."
     }
 
     /// Server queue. Writes a childCommand to the agent's children-extension connection and
@@ -2159,6 +2198,7 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("session \(sessionID) retirement ignored while it is still alive")
                 return
             }
+            if session.thread != nil { self.retiredRPCSessions.updateValue(session.exitCode, forKey: sessionID) }
             self.sessions.removeValue(forKey: sessionID)
             self.attachedSessions.remove(sessionID)
             self.outputStates[sessionID]?.delivery?.cancel()
