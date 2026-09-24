@@ -36,8 +36,9 @@ public final class NativeThreadStore {
     public private(set) var loadingOlder = false
     public private(set) var ready = false
     /// The agent's pi is starting (`native_starting`): not ready, and not an error. The thread
-    /// shows "Starting pi…", polls quickly, and a send waits for it (see `acceptsSend`). A pi
-    /// that has not started within `startingLimit` becomes a `loadError`.
+    /// polls quickly, a send waits for it (see `acceptsSend`), and a slow start is said in the
+    /// composer (`awaitingPi`). A pi that has not started within `startingLimit` becomes a
+    /// `loadError`.
     public private(set) var starting = false
     /// The thread shows history read from pi's session file while pi starts (`preview(_:)`),
     /// not a snapshot pi served: nothing can be done with it yet, and pi's first snapshot
@@ -149,6 +150,12 @@ public final class NativeThreadStore {
 
     public func supports(_ action: String) -> Bool {
         ready && !busy && snapshot?.supportedActions.contains(action) == true
+    }
+
+    /// The thread is waiting for its pi: starting, shown from disk, or its first pull still on
+    /// its way. Not an error, and not a thread kept from before that is refreshing.
+    public var awaitingPi: Bool {
+        !ready && loadError == nil && (starting || previewing || snapshot == nil)
     }
 
     /// Send is offered: the thread supports it now, or it is not ready yet (pi starting, the

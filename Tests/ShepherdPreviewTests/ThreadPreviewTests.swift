@@ -3,6 +3,7 @@ import Foundation
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
+import ShepherdSessions
 import SwiftUI
 import ShepherdTestSupport
 import Testing
@@ -93,17 +94,32 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// A new agent whose pi is still booting: "Starting pi…" in the empty thread, no banner, and
-    /// Send offered for a typed draft.
+    /// A new agent from its first frame, while its pi boots: the framed empty state and a complete
+    /// composer, with nothing said about pi yet (a normal start is over before it would be).
+    @Test func threadStartingQuiet() async throws {
+        let fixture = ThreadFixture(Threads.empty)
+        fixture.starting = true
+        defer { fixture.store.stop() }
+        fixture.store.preview(PiSessionPreview.empty(sessionID: "fixture", model: "anthropic/claude-opus-4-5", thinking: "high"))
+        try await Preview.render("thread-starting-quiet", size: CGSize(width: 1180, height: 700), ready: {
+            fixture.store.starting
+        }) {
+            fixture.thread(title: "New agent").environment(\.threadStartingDelay, .seconds(3600))
+        }
+    }
+
+    /// The same agent once its pi has kept it waiting past the delay: "Starting pi…" beside Send,
+    /// no banner, and Send offered for a typed draft.
     @Test func threadStarting() async throws {
         let fixture = ThreadFixture(Threads.empty)
         fixture.starting = true
         defer { fixture.store.stop() }
+        fixture.store.preview(PiSessionPreview.empty(sessionID: "fixture", model: "anthropic/claude-opus-4-5", thinking: "high"))
         fixture.store.draft = "Fix the login redirect"
         try await Preview.render("thread-starting", size: CGSize(width: 1180, height: 700), ready: {
             fixture.store.starting
         }) {
-            fixture.thread(title: "New agent")
+            fixture.thread(title: "New agent").environment(\.threadStartingDelay, .zero)
         }
     }
 
@@ -112,6 +128,7 @@ struct ThreadPreviewTests {
         let fixture = ThreadFixture(Threads.empty)
         fixture.starting = true
         defer { fixture.store.stop() }
+        fixture.store.preview(PiSessionPreview.empty(sessionID: "fixture", model: "anthropic/claude-opus-4-5", thinking: "high"))
         let store = fixture.store
         final class Once { var sent = false }
         let once = Once()
@@ -126,12 +143,30 @@ struct ThreadPreviewTests {
         }) {
             // Each appearance renders in a new window, with the send waiting in each.
             let _ = once.sent = false
-            fixture.thread(title: "New agent")
+            fixture.thread(title: "New agent").environment(\.threadStartingDelay, .zero)
+        }
+    }
+
+    /// A relaunched agent's thread read from pi's session file while its pi boots: the history
+    /// as pi will show it, and "Starting pi…" beside Send once pi keeps it waiting.
+    @Test func threadRestoring() async throws {
+        let fixture = ThreadFixture(ActivityThreads.idle)
+        fixture.starting = true
+        defer { fixture.store.stop() }
+        var fromDisk = ActivityThreads.idle
+        fromDisk.generation = PiSessionPreview.generation
+        fromDisk.stats = nil
+        fromDisk.commands = nil
+        fixture.store.preview(fromDisk)
+        try await Preview.render("thread-restoring", size: CGSize(width: 1180, height: 900), ready: {
+            fixture.store.starting && fixture.store.previewing && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread().environment(\.threadStartingDelay, .zero)
         }
     }
 
     /// A thread kept from before (a host that relaunched) while its pi starts again: the
-    /// transcript stays, and the tail says pi is starting.
+    /// transcript stays, and the composer says pi is starting.
     @Test func threadStartingAgain() async throws {
         let fixture = ThreadFixture(Threads.idle)
         defer { fixture.store.stop() }
@@ -144,7 +179,7 @@ struct ThreadPreviewTests {
             return store.starting
         }) {
             let _ = fixture.starting = false
-            fixture.thread()
+            fixture.thread().environment(\.threadStartingDelay, .zero)
         }
     }
 

@@ -23,11 +23,15 @@ extension AppLayout {
     /// A note's text sits this far past its rule (`NWThreadMetrics.ruleWidth`).
     static let noteIndent: CGFloat = 10
 
+    // Starting
+    /// How long a thread waits for pi before the composer says pi is starting. A normal start
+    /// (a warm pi, a new agent) is done before it, so it never shows.
+    static let startingIndicatorDelay: Duration = .milliseconds(500)
+    /// The composer's "Starting pi…": its spinner, and the gap after it.
+    static let startingSpinner: CGFloat = 10
+    static let startingSpacing: CGFloat = 6
+
     // Empty thread
-    /// "Starting pi…" while connecting: its spinner, the gap after it, and how far down it sits.
-    static let startingSpinner: CGFloat = 14
-    static let startingSpacing: CGFloat = 10
-    static let startingTop: CGFloat = 120
     /// A fresh agent's framed empty state sits this far down, with its path in Geist Mono at
     /// this size ("New agent in ~/path").
     static let emptyThreadTop: CGFloat = 80

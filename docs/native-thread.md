@@ -202,8 +202,10 @@ output grows.
   poll passes the last revision; older snapshots are ignored. A hidden thread stops polling.
   `wake()` (the servable signal) pulls a visible thread that is not ready yet at once; the polls
   are the fallback.
-- **Starting:** `native_starting` sets `starting`, never `loadError`: the thread shows "Starting
-  pi…" (under a thread kept from before, as its tail row). `acceptsSend` offers Send whenever
+- **Starting:** `native_starting` sets `starting`, never `loadError`. `awaitingPi` (starting,
+  previewing, or no snapshot yet, without an error) is what the composer watches: only after it
+  has held for `AppLayout.startingIndicatorDelay` (half a second) does the control row say
+  "Starting pi…", so a normal start never shows it. `acceptsSend` offers Send whenever
   the thread is not ready yet and has no error: pi starting, the first pull on its way, or a
   preview. A message sent then waits behind the composer's spinner, still in the field and with
   nothing dispatched, and the field's text goes once the first snapshot lands; the draft stays

@@ -50,6 +50,9 @@ struct Composer: View {
     /// pull (a widget, a waiting question, the model) is simply there, whether the thread just
     /// opened or an agent switched back to is catching up.
     @State private var loaded = false
+    /// pi has kept the thread waiting past `threadStartingDelay`: the control row says so.
+    @State private var startingShown = false
+    @Environment(\.threadStartingDelay) private var startingDelay
 
     private enum Menu: Equatable { case models, thinking }
 
@@ -149,6 +152,15 @@ struct Composer: View {
         .onDisappear { dismissal.watch(false) }
         .task(id: [active, store.ready]) {
             if !active { loaded = false } else if store.ready { loaded = true }
+        }
+        // A normal start is over before the delay: only a slow pi is ever said to be starting.
+        .task(id: active && store.awaitingPi) {
+            guard active && store.awaitingPi else {
+                startingShown = false
+                return
+            }
+            try? await Task.sleep(for: startingDelay)
+            if !Task.isCancelled { startingShown = true }
         }
         .frame(maxWidth: AppLayout.threadMaxWidth)
         .padding(.horizontal, gutter)
@@ -355,8 +367,10 @@ struct Composer: View {
     /// their words ("/", the thinking level alone) instead of truncating mid-word.
     private var actionRow: some View {
         ViewThatFits(in: .horizontal) {
-            actionChips(compact: false)
-            actionChips(compact: true)
+            actionChips(compact: false, startingLabel: true)
+            // "Starting pi…" gives up its words before the chips do.
+            actionChips(compact: false, startingLabel: false)
+            actionChips(compact: true, startingLabel: false)
         }
         // A new model or level cross-fades, and the delivery chip fades in as a draft starts
         // while the agent runs. Only these: typing and width changes stay instant.
@@ -366,7 +380,7 @@ struct Composer: View {
 
     private var showsDelivery: Bool { running && !store.draft.isEmpty }
 
-    private func actionChips(compact: Bool) -> some View {
+    private func actionChips(compact: Bool, startingLabel: Bool) -> some View {
         HStack(spacing: NW.Space.xxs) {
             if canAttach {
                 Button { picking = true } label: { Image(systemName: "paperclip") }
@@ -395,8 +409,25 @@ struct Composer: View {
             thinkingChip(compact: compact)
             if showsDelivery { deliveryChip.nwTransition(.list, edge: .leading) }
             Spacer(minLength: NW.Space.m)
+            if startingShown { startingIndicator(label: startingLabel).nwTransition(.content) }
             primary
         }
+        .nwAnimation(.content, value: startingShown)
+    }
+
+    /// "Starting pi…" beside the action, quiet and in the row it never resizes. Its spinner
+    /// gives way to Send's own while a message waits for pi.
+    private func startingIndicator(label: Bool) -> some View {
+        HStack(spacing: AppLayout.startingSpacing) {
+            if !store.busy {
+                ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner, color: Color.nw.textTertiary))
+            }
+            if label { Text("Starting pi…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+        }
+        .padding(.trailing, NW.Space.s)
+        .help("pi is starting. A message sent now goes once it is ready.")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Starting pi")
     }
 
     /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi

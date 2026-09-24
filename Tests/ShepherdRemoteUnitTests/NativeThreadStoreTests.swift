@@ -273,6 +273,33 @@ struct NativeThreadStoreTests {
         #expect(host.actions.count == 1 && store.sentCount == 1 && store.draft.isEmpty && store.ready)
     }
 
+    /// What the composer's "Starting pi…" watches: a thread waiting for its pi, never one that
+    /// is ready, in trouble, or a thread kept from before that is only refreshing.
+    @Test func aThreadAwaitsPiOnlyWhileItsPiHasNotAnswered() async {
+        let fresh = manualStore()
+        #expect(fresh.awaitingPi, "nothing from pi yet")
+
+        let (starting, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        #expect(starting.awaitingPi)
+        host.starting = false
+        await starting.refresh()
+        #expect(!starting.awaitingPi, "ready")
+
+        starting.stop()
+        #expect(!starting.awaitingPi, "a thread kept from before, refreshing")
+
+        let (failed, failing, failedTask) = await startedWhileStarting()
+        defer { failedTask.cancel() }
+        failing.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "gone"))]
+        await failed.refresh()
+        #expect(!failed.awaitingPi, "an error")
+
+        let previewed = manualStore()
+        previewed.preview(F.snapshot(generation: "preview", messages: [hi]))
+        #expect(previewed.awaitingPi, "shown from disk")
+    }
+
     /// The host's signal that pi serves pulls the thread at once; its poll never ran here.
     @Test func wakingAStartingThreadPullsItsFirstSnapshotAtOnce() async {
         let (store, host, task) = await startedWhileStarting()
