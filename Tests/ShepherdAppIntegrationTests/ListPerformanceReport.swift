@@ -136,12 +136,33 @@ struct ListPerformanceReport {
         report.add(name, "scroll down and up: rows", counts: scrolling)
     }
 
-    @Test func reviewManyFiles() throws {
+    @Test func reviewManyFiles() async throws {
         let name = "review (300 files)"
         let files = (0..<300).map { ListFixtures.diffFile("Sources/Module\($0)/File\($0).swift", lines: 12) }
         let model = ListFixtures.reviewModel(files)
         let window = open(name, size: CGSize(width: 600, height: 800)) { ReviewPaneContent(model: model) }
         defer { window.close() }
+
+        // Every file's colors land while the pane is open, one file at a time.
+        let start = ContinuousClock.now
+        var landings = 0
+        let highlighting = try await countingAsync {
+            var landed = model.highlights.count
+            try await eventuallyOnMain("every file to be highlighted", timeout: .seconds(60)) {
+                if model.highlights.count != landed {
+                    landed = model.highlights.count
+                    landings += 1
+                    ListPerf.settle(window)
+                }
+                return landed == files.count
+            }
+        }
+        report.add(name, "highlight every file: wall", ms: ListPerf.milliseconds(ContinuousClock.now - start))
+        report.add(name, "highlight every file: rows", counts: highlighting)
+        // One file's colors landing: the list's update, measured by folding a file off screen.
+        var folds: [Double] = []
+        for index in 0..<5 { folds.append(ListPerf.time(window) { model.toggleFolded(files[290 - index].id) }) }
+        report.add(name, "an off-screen file changes ×5: mean", ms: folds.reduce(0, +) / Double(folds.count))
 
         var selects: [Double] = []
         let selecting = ListPerf.counting {
