@@ -75,21 +75,37 @@ struct IdleCostTests {
     }
 
     /// Layouts the workspace keeps mounted behind the visible one draw no clock frames, and
-    /// nothing in them turns: their threads (never shown, so never loaded) say nothing about pi
-    /// starting, which only a thread on screen does.
+    /// nothing in them turns. Each hidden thread has a turn running (stub pi `slow`, held at its
+    /// first pause), so it keeps a working row whose spinner must rest while its layout is hidden.
     @Test func hiddenLayoutsDrawNoClockFrames() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []
         for index in 0..<4 { agents.append(try await app.liveAgent("a\(index)", in: space, order: index)) }
+        // Every stub pi runs in this directory, so these release every held turn at the end.
+        defer {
+            for name in ["continue-1", "continue-2"] {
+                FileManager.default.createFile(atPath: app.dir.appendingPathComponent(name).path, contents: nil)
+            }
+        }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         vm.selectAgent(agents[0].agent.id)
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true, WorkspaceView(vm: vm))
         defer { window.close() }
         let visible = vm.threadStores.store(for: agents[0].agent.id)
         try await eventuallyOnMain("the visible thread to load", timeout: .seconds(30)) { visible.ready }
-        ListPerf.settle(window)
+        for agent in agents.dropFirst() {
+            vm.selectAgent(agent.agent.id)
+            let store = vm.threadStores.store(for: agent.agent.id)
+            try await eventuallyOnMain("\(agent.agent.name)'s thread to load", timeout: .seconds(30)) { store.ready }
+            await store.send(text: "slow")
+            try await eventuallyOnMain("\(agent.agent.name)'s turn to hold at its first pause", timeout: .seconds(30)) {
+                ListPerf.settle(window)
+                return store.running && Self.spinners(in: window.host).turning >= 1
+            }
+        }
+        vm.selectAgent(agents[0].agent.id)
         try await eventuallyOnMain("every layout to mount") { vm.mountedTabs.count == agents.count }
         ListPerf.settle(window)
 
@@ -97,7 +113,7 @@ struct IdleCostTests {
 
         #expect(frames == 0, "\(frames) clock frames")
         let spinners = Self.spinners(in: window.host)
-        #expect(spinners.turning == 0, "\(spinners)")
+        #expect(spinners.all >= agents.count - 1 && spinners.turning == 0, "\(spinners)")
     }
 
     /// A paused spinner resumes as its layout comes back on screen.
