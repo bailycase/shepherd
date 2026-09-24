@@ -594,6 +594,8 @@ public final class SessionServer: @unchecked Sendable {
             listenFD = -1
         }
         stopRemoteListenerOnQueue()
+        // Where delivered messages came from is written off the queue; a relaunch reads it.
+        originStore.flush()
     }
 
     // MARK: - Native thread
