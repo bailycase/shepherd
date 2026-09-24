@@ -143,7 +143,7 @@ struct Composer: View {
         .nwAnimation(.list, value: attachments.map(\.id))
         .nwAnimation(.disclosure, value: loaded ? questionKey : nil)
         .onChange(of: openMenu, initial: true) { _, open in
-            dismissal.dismiss = { closeMenu() }
+            dismissal.dismiss = closeMenu(open)
             dismissal.watch(open != .none)
         }
         .onDisappear { dismissal.watch(false) }
@@ -246,9 +246,14 @@ struct Composer: View {
         .nwAnimation(.overlay, value: loaded ? openMenu : nil)
     }
 
-    /// A click outside the menu and the card closes it, as Esc does (without taking focus).
-    private func closeMenu() {
-        if menu != nil { menu = nil } else { dismissCommands() }
+    /// What a click outside the open menu and the card does: it closes the menu, as Esc does
+    /// (without taking focus). It holds the menu's state, never the composer: the composer holds
+    /// the watcher that keeps it.
+    private func closeMenu(_ open: OpenMenu) -> () -> Void {
+        let (menu, dismissedQuery, store) = ($menu, $dismissedQuery, store)
+        return {
+            if open == .slash { dismissedQuery.wrappedValue = store.draft } else { menu.wrappedValue = nil }
+        }
     }
 
     // MARK: Card
