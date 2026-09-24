@@ -78,7 +78,7 @@ struct PaletteCard: View {
         }
         // Rows arrive, leave, and reorder as the query or scope changes, and the card follows
         // their height; moving the highlight (↑↓, hover) changes no row, so it lands at once.
-        .nwAnimation(.list, value: results.entries.map(\.id))
+        .nwAnimation(.list, value: results.layout)
         .onAppear {
             query = initialQuery
             fieldFocused = true
@@ -93,7 +93,8 @@ struct PaletteCard: View {
             refreshResults()
         }
         .onChange(of: contentRows) { refreshResults() }
-        .onChange(of: items, initial: true) { refreshResults() }
+        // The initializer built the first results from these items.
+        .onChange(of: items) { refreshResults() }
         .onKeyPress(.upArrow) {
             highlight.move(to: max(0, highlight.index - 1))
             return .handled
@@ -120,19 +121,16 @@ struct PaletteCard: View {
     private var resultsList: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
-                // Eager: the card hugs its results up to the cap, which needs their real height
-                // (a lazy stack reports only what it has realized). The list stays short.
-                VStack(alignment: .leading, spacing: 0) {
+                // Lazy: a query can match every agent and subagent, and only the rows on screen
+                // are built. The card still hugs a short list: the stack's height is exact once
+                // every row is realized, and past the cap the list scrolls.
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    let highlighted = highlight.index
                     ForEach(results.entries) { entry in
-                        switch entry {
-                        case .header(let section):
-                            NWPaletteSectionHeader(section.title)
-                                .nwTransition(.list)
-                        case .row(let index, let item, let snippet):
-                            PaletteRow(item: item, selected: index == highlight.index, snippet: snippet) { run(item) }
-                                .onHover { if $0 { highlight.move(to: index) } }
-                                .nwTransition(.list)
-                        }
+                        PaletteEntryRow(entry: entry, highlighted: entry.index == highlighted, run: run,
+                                        hover: { highlight.move(to: $0) })
+                            .equatable()
+                            .nwTransition(.list)
                     }
                     if results.rows.isEmpty {
                         Text(query.isEmpty ? "Nothing here yet" : "No matches")
@@ -153,7 +151,7 @@ struct PaletteCard: View {
     }
 
     private func refreshResults() {
-        results = PaletteResults(items: items, query: query, scope: scope, contentRows: contentRows)
+        results = PaletteResults(items: items, query: query, scope: scope, contentRows: contentRows).following(results)
     }
 
     private func runSelected() {
@@ -185,12 +183,23 @@ struct PaletteCard: View {
 struct PaletteResults {
     var rows: [PaletteItem] = []
     var entries: [PaletteEntry] = []
+    /// Counts the changes to which rows the list shows and in what order: the key the list's
+    /// motion watches, so a render never compares every row's id.
+    private(set) var layout = 0
 
     init() {}
 
     init(items: [PaletteItem], query: String, scope: PaletteItem.Scope, contentRows: [PaletteItem]) {
         rows = PaletteSearch.filter(items, query: query, scope: scope) + (scope == .commands ? [] : contentRows)
         entries = PaletteEntry.entries(rows, highlighting: query)
+    }
+
+    /// These results replacing `previous`: the same layout count while the same rows show.
+    func following(_ previous: PaletteResults) -> PaletteResults {
+        var next = self
+        let same = entries.count == previous.entries.count && entries.map(\.id) == previous.entries.map(\.id)
+        next.layout = same ? previous.layout : previous.layout + 1
+        return next
     }
 }
 
@@ -229,7 +238,7 @@ struct PaletteSnippet: Equatable {
 
 /// One line of the results list: a section header or a result, each a single lazy-stack view
 /// with a stable id (a result's own id, so `scrollTo` finds it).
-enum PaletteEntry: Identifiable {
+enum PaletteEntry: Identifiable, Equatable {
     case header(PaletteItem.Section)
     case row(index: Int, item: PaletteItem, snippet: PaletteSnippet?)
 
@@ -238,6 +247,12 @@ enum PaletteEntry: Identifiable {
         case .header(let section): "section.\(section.rawValue)"
         case .row(_, let item, _): item.id
         }
+    }
+
+    /// A result's place in the rows (what the highlight points at); nil for a header.
+    var index: Int? {
+        if case .row(let index, _, _) = self { return index }
+        return nil
     }
 
     /// Headers go before the first row of each section; `index` is the row's place in `rows`.
@@ -249,6 +264,32 @@ enum PaletteEntry: Identifiable {
             entries.append(.row(index: index, item: item, snippet: item.contentSnippet.map { PaletteSnippet($0, term: query) }))
         }
         return entries
+    }
+}
+
+/// One line of the results, always a single view (a lazy stack's fast path: rows off screen are
+/// never built). Equal while its entry and highlight are, so moving the highlight redraws the
+/// two rows it leaves and lands on.
+private struct PaletteEntryRow: View, Equatable {
+    let entry: PaletteEntry
+    let highlighted: Bool
+    let run: (PaletteItem) -> Void
+    let hover: (Int) -> Void
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.entry == rhs.entry && lhs.highlighted == rhs.highlighted
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            switch entry {
+            case .header(let section):
+                NWPaletteSectionHeader(section.title)
+            case .row(let index, let item, let snippet):
+                PaletteRow(item: item, selected: highlighted, snippet: snippet) { run(item) }
+                    .onHover { if $0 { hover(index) } }
+            }
+        }
     }
 }
 
