@@ -95,12 +95,10 @@ connecting. [VALIDATION.md](VALIDATION.md) covers the scripted checks.
 - **Notifications:** none. The app disconnects in the background.
 - **Design system:** ShepherdUI (Night Watch, [DESIGN.md](../../DESIGN.md)) is not adopted,
   though the package already builds for iOS 27: its fonts follow Dynamic Type through
-  `relativeTo:`, and icon buttons grow to the 44pt `NW.Height.touch`. The earlier handoff's iOS
-  boards ([handoff §8](../design-spec/handoff.md), `docs/design-spec/boards/ios/`, superseded)
-  show attach, timestamps, "Thought for Ns", a context count, and Shells/Settings tabs. The app
-  has none of these.
+  `relativeTo:`, and icon buttons grow to the 44pt `NW.Height.touch`.
 - **Approval wording:** confirm questions are labeled "Allow once / Deny" and blocked agents
-  "needs approval". The handoff says there is no approval UI, only questions.
+  "needs approval". [DESIGN.md](../../DESIGN.md#principles) says there is no approval UI, only
+  questions.
 
 ## Stale code to clean up when iOS resumes
 

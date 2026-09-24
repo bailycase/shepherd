@@ -13,9 +13,6 @@ Every value lives in code, and this document names the code so you can check it:
 - **The Mac app's own surface dimensions:** `AppLayout`, split by domain into
   `Sources/ShepherdApp/AppLayout+<Domain>.swift`.
 
-The older design handoff in [`docs/design-spec/`](docs/design-spec/handoff.md) is superseded by
-this document and kept only as history.
-
 ## Mental model: agents, not chats
 
 Shepherd organizes work around **agents**, not chats: live workers you supervise. An agent is a
