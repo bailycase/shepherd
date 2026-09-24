@@ -15,12 +15,15 @@ public enum ShepherdPaths {
     ///
     ///     SHEPHERD_SUPPORT_DIR=~/Library/Application\ Support/Shepherd-dev
     ///
-    /// A relative path or `~` is resolved; an empty value is ignored.
+    /// A relative path or `~` is resolved; an empty value is ignored. Shepherd
+    /// Nightly needs no override: its edition has its own folder.
     public static let supportDirectoryEnvKey = "SHEPHERD_SUPPORT_DIR"
 
-    /// `environment` is the process environment unless a caller (a test) passes its own.
+    /// `environment` is the process environment and `edition` the running app's, unless a
+    /// caller (a test) passes its own. The override wins over the edition's folder.
     public static func supportDirectory(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        edition: ShepherdEdition = .current
     ) -> URL {
         if let override = environment[supportDirectoryEnvKey],
            !override.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -29,7 +32,7 @@ public enum ShepherdPaths {
         }
         return FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Shepherd", isDirectory: true)
+            .appendingPathComponent(edition.supportDirectoryName, isDirectory: true)
     }
 
     public static func socketURL(
