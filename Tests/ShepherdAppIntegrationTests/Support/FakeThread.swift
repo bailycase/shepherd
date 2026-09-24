@@ -127,6 +127,29 @@ final class FakeThread {
     }
 }
 
+/// A restored workspace of agents, each on a running stub pi, in an off-screen window with the
+/// first one on screen and its thread loaded: every layout mounted. A review loads a fixed
+/// one-file diff.
+@MainActor
+enum MountedWorkspace {
+    static func open(_ count: Int, in app: AppHarness, size: CGSize = CGSize(width: 1200, height: 800))
+        async throws -> (ShepherdViewModel, OffscreenWindow, [AgentFixture]) {
+        let space = Fixture.space(path: app.dir.path)
+        var agents: [AgentFixture] = []
+        for index in 0..<count { agents.append(try await app.liveAgent("agent \(index)", in: space, order: index)) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
+        let files = [ListFixtures.diffFile("Sources/A.swift", lines: 12)]
+        vm.reviewDiffLoader = { _, _ in (files, nil) }
+        vm.selectAgent(agents[0].agent.id)
+        let window = OffscreenWindow(size: size, dark: true, WorkspaceView(vm: vm))
+        let visible = vm.threadStores.store(for: agents[0].agent.id)
+        try await eventuallyOnMain("the visible thread to load", timeout: .seconds(60)) { visible.ready }
+        try await Task.sleep(for: .milliseconds(300))
+        ListPerf.settle(window)
+        return (vm, window, agents)
+    }
+}
+
 /// An off-screen window (as `OffscreenWindow`: borderless, far off every screen, ordered back)
 /// whose hosting view counts its layout passes: a view that animates through SwiftUI lays the
 /// host out on every frame, one the render server animates never does.
