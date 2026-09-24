@@ -255,6 +255,43 @@ struct ThreadMotionTests {
         #expect(!onScreen.inBetween.isEmpty)
     }
 
+    /// A paused queue of one above the composer, and the same queue with two more messages.
+    private static let queued = QueueFixture.messages(["Then run the tests"])
+    private static func queueSnapshot(_ items: [NativeQueuedMessage], revision: UInt64) -> NativeThreadSnapshot {
+        var snapshot = Fixtures.snapshot(Self.asked + [Fixtures.assistant("a2", "Stopped before the build.")], revision: revision)
+        snapshot.queue = NativeQueue(items: items, mode: .all, paused: true)
+        snapshot.supportedActions.append("queue")
+        return snapshot
+    }
+    private static let grownQueue = queueSnapshot(queued + QueueFixture.messages(["And lint it", "Then open the PR"]), revision: 2)
+
+    /// Messages another client queued while the agent was hidden are simply there when its
+    /// thread catches up, like everything else in the composer: the queue alone changed.
+    @Test func aQueueThatChangedWhileHiddenIsThereAtOnce() async throws {
+        let thread = MotionThread(Self.queueSnapshot(Self.queued, revision: 1))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        thread.visibility.active = false
+        try await eventuallyOnMain("the hidden thread to stop polling") { thread.store.catchUp == nil }
+        try await thread.settle(whole: true)
+        thread.stage(Self.grownQueue)
+
+        let recording = await MotionProbe.record(thread.window) { thread.visibility.active = true }
+
+        #expect(thread.store.queue.count == 3)
+        #expect(recording.settled.firstRow(differingFrom: recording.before) != nil, "the queue caught up")
+        #expect(recording.inBetween.isEmpty, "\(recording.inBetween.count) frames between the stale queue and the caught-up one")
+    }
+
+    /// The control: on screen, the same messages join the stack over frames.
+    @Test(.timingSensitive) func theSameQueueChangeOnScreenAnimates() async throws {
+        let shown = MotionThread(Self.queueSnapshot(Self.queued, revision: 1))
+        defer { shown.close() }
+        try await shown.waitUntilReady()
+        let onScreen = await MotionProbe.record(shown.window) { shown.serve(Self.grownQueue) }
+        #expect(!onScreen.inBetween.isEmpty)
+    }
+
     /// Detaching from the tail brings "Jump to latest" in over frames (growing from above the
     /// composer, or under Reduce Motion fading), whatever the rows beside it do.
     @Test(.timingSensitive, arguments: [false, true]) func theJumpPillComesInAsTheThreadDetaches(reduceMotion: Bool) async throws {

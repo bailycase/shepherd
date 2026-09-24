@@ -70,14 +70,15 @@ public final class NativeThreadStore {
     public private(set) var pending: [NativeThreadMessage] = []
     /// The host's queue as this client shows it: the last snapshot's, with this client's own
     /// changes applied at once until the host's next snapshot confirms them. Empty from a host
-    /// without a queue (`supportsQueue`).
-    public private(set) var queue: [NativeQueuedMessage] = []
+    /// without a queue (`supportsQueue`). The composer draws it, so it counts as chrome
+    /// (`chromeVersion`): what changed while the thread was away lands without motion.
+    public private(set) var queue: [NativeQueuedMessage] = [] { didSet { chromeVersion &+= 1 } }
     /// How the queue goes when pi settles, as the host reports it (or as this client just set).
-    public private(set) var queueMode: NativeQueueMode?
+    public private(set) var queueMode: NativeQueueMode? { didSet { chromeVersion &+= 1 } }
     /// The queue waits for the user (pi was stopped, or a turn or delivery failed).
-    public private(set) var queuePaused = false
+    public private(set) var queuePaused = false { didSet { chromeVersion &+= 1 } }
     /// Why the host paused the queue on its own.
-    public private(set) var queueNotice: String?
+    public private(set) var queueNotice: String? { didSet { chromeVersion &+= 1 } }
     /// `snapshot.running` held true for 400 ms after it drops, so tool boundaries never flicker
     /// the tail indicator or the Stop button.
     public private(set) var settledRunning = false

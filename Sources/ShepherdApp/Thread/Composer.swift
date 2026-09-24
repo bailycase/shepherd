@@ -209,7 +209,14 @@ struct Composer: View {
             dismissal.dismiss = closeMenu(open)
             dismissal.watch(open != .none)
         }
-        .onChange(of: store.queue, initial: true) { _, queue in queueStack.update(queue, images: store.queuedImages) }
+        .onChange(of: store.queue, initial: true) { _, queue in
+            // The stack takes the queue a render later, outside the catch-up's transaction: a
+            // queue that changed while the thread was away lands without motion all the same.
+            guard catchingUp else { return queueStack.update(queue, images: store.queuedImages) }
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { queueStack.update(queue, images: store.queuedImages) }
+        }
         // ⌘↩ is watched only while this composer (or one of its queued messages) has focus.
         .onChange(of: composing || focusedRow != nil, initial: true) { _, focused in
             // Only a press it can use: a focused message, or a draft ready to send. Anything

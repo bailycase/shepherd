@@ -44,6 +44,30 @@ struct NativeThreadStoreQueueTests {
         return { seen }
     }
 
+    // MARK: Catching up
+
+    /// The composer draws the queue, so it counts as chrome: a queue that changed while the
+    /// thread was away moves `chromeVersion`, and the catch-up lands it without motion. A queue
+    /// change leaves the thread's rows (`threadVersion`) alone.
+    @Test func aQueueChangeMovesTheChromeVersionAndNotTheThreads() async {
+        let (store, host, task) = await started(items: [Self.a])
+        defer { task.cancel() }
+        let chrome = store.chromeVersion, thread = store.threadVersion
+
+        host.snapshot = snapshot(revision: 2, items: [Self.a, Self.b])
+        await store.refresh()
+        #expect(store.queue.map(\.id) == [Self.a.id, Self.b.id])
+        #expect(store.chromeVersion > chrome)
+        #expect(store.threadVersion == thread)
+
+        let before = store.chromeVersion
+        host.snapshot = F.snapshot(revision: 3, running: true, actions: Self.actions, messages: [hi],
+                                   queue: NativeQueue(items: [Self.a, Self.b], mode: .oneAtATime, paused: true, notice: "Refused."))
+        await store.refresh()
+        #expect(store.queueMode == .oneAtATime && store.queuePaused && store.queueNotice == "Refused.")
+        #expect(store.chromeVersion > before)
+    }
+
     // MARK: Sending
 
     /// The reported bug: a follow-up sent while pi works was a thread row ("queued" at the tail,
