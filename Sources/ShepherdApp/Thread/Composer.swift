@@ -6,10 +6,21 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
 
+/// A menu the command center asks the composer to open (⇧⌘M's model picker).
+struct ComposerMenuRequest: Equatable {
+    enum Menu: Equatable { case models, thinking }
+    let menu: Menu
+    let id = UUID()
+}
+
 /// The composer (NWComposer board): pinned under the thread in the same 820pt column, a fade
 /// above it, the `NWComposer` card with the field (or a pending question) and one row of
-/// controls: attach · / commands · model · thinking · Send or Stop. Menus open above the card.
+/// controls: attach · / commands · model · thinking · Send or Stop. Menus float over the thread
+/// above the card, so opening one never moves the thread or changes the composer's height.
 struct Composer: View {
+    /// The thread's coordinate space: the menus measure the room above the card in it.
+    static let threadSpace = "composer.thread"
+
     @Bindable var store: NativeThreadStore
     let active: Bool
     let agentName: String?
@@ -17,8 +28,8 @@ struct Composer: View {
     let gutter: CGFloat
     var composing: FocusState<Bool>.Binding
     var listModels: (() async -> [PiModelCatalog.Entry])?
-    /// Bumped by the model-picker shortcut: open the model picker.
-    var modelPickerRequest = 0
+    /// Set by the command center: open that menu.
+    var menuRequest: ComposerMenuRequest?
     @State private var attachments: [ImageAttachment] = []
     @State private var attachmentError: String?
     @State private var dropTargeted = false
@@ -29,6 +40,9 @@ struct Composer: View {
     @State private var models: [PiModelCatalog.Entry] = []
     @State private var confirmingStopAll = false
     @State private var picking = false
+    /// The card's top edge in the thread: a menu takes at most the room above it.
+    @State private var cardTop = CGFloat.infinity
+    @State private var dismissal = ComposerMenuDismissal()
     /// Motion starts once the thread has loaded since it came on screen: what arrives with that
     /// pull (a widget, a waiting question, the model) is simply there, whether the thread just
     /// opened or an agent switched back to is catching up.
@@ -88,10 +102,10 @@ struct Composer: View {
     }
 
     /// Everything here is anchored to the bottom of the thread: what opens above the card grows
-    /// up from it while the card stays put. Menus grow from their corner over the card; a
-    /// question replaces the field and the card eases to its height; banners, widgets, and
-    /// attachments nudge in. Each is keyed on its own state, so typing and filtering stay
-    /// instant.
+    /// up from it while the card stays put. Menus float over the thread from the card's corner
+    /// and take no room in the composer; a question replaces the field and the card eases to its
+    /// height; banners, widgets, and attachments nudge in. Each is keyed on its own state, so
+    /// typing and filtering stay instant.
     var body: some View {
         let widgets = (store.snapshot?.widgets ?? []).filter { $0.kind != .unknown }
         let query = commandQuery
@@ -117,37 +131,19 @@ struct Composer: View {
                     .padding(.horizontal, NW.Space.xs)
                     .nwTransition(.list, edge: .bottom)
             }
-            if let query {
-                let matches = commandMatches
-                NWSlashMenu(commands: matches.map(Self.slashCommand), total: commands.count, query: query,
-                            selection: $commandIndex) { command in
-                    if let match = matches.first(where: { $0.name == command.name }) { choose(match) }
-                }
-                .nwTransition(.overlay, anchor: .bottomLeading)
-            }
-            if menu == .models {
-                ModelPicker(current: store.snapshot?.model, models: models) { model in
-                    menu = nil
-                    composing.wrappedValue = true
-                    RecentModels.record(model, thread: agentName)
-                    Task { await store.setModel(model) }
-                } close: { menu = nil; composing.wrappedValue = true }
-                .nwTransition(.overlay, anchor: .bottomLeading)
-            }
-            if menu == .thinking, let thinking = store.snapshot?.thinking {
-                NWThinkingMenu(options: Self.thinkingLevels, current: thinking) { level in
-                    menu = nil
-                    composing.wrappedValue = true
-                    Task { await store.setThinking(level.id) }
-                } onClose: { menu = nil; composing.wrappedValue = true }
-                .nwTransition(.overlay, anchor: .bottomLeading)
-            }
             card
+                .background { ComposerMenuRegion(dismissal: dismissal) }
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.threadSpace)).minY } action: { cardTop = $0 }
+                .overlay(alignment: .topLeading) { menus(query: query) }
         }
         .nwAnimation(.list, value: loaded ? accessories : nil)
         .nwAnimation(.list, value: attachments.map(\.id))
         .nwAnimation(.disclosure, value: loaded ? questionKey : nil)
-        .nwAnimation(.overlay, value: loaded ? openMenu : nil)
+        .onChange(of: openMenu, initial: true) { _, open in
+            dismissal.dismiss = { closeMenu() }
+            dismissal.watch(open != .none)
+        }
+        .onDisappear { dismissal.watch(false) }
         .task(id: [active, store.ready]) {
             if !active { loaded = false } else if store.ready { loaded = true }
         }
@@ -164,7 +160,13 @@ struct Composer: View {
         .onChange(of: query) { _, _ in commandIndex = 0 }
         // The catalog decides whether the thinking chip applies; it is cached per process.
         .task { if models.isEmpty { await loadModels() } }
-        .onChange(of: modelPickerRequest) { _, _ in openModels() }
+        .onChange(of: menuRequest) { _, request in
+            switch request?.menu {
+            case .models: openModels()
+            case .thinking: toggleThinking()
+            case nil: break
+            }
+        }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
             attachmentError = nil
@@ -193,6 +195,54 @@ struct Composer: View {
         NWThinkingOption(id: "medium", title: "Medium", note: "default"),
         NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
     ]
+
+    // MARK: Menus
+
+    /// The open menu, over the thread: its bottom-leading corner 8pt above the card's top-leading
+    /// one, growing from there, and never taller than the room above the card (a long list
+    /// scrolls inside). It is an overlay, so the card, the composer's height, and the thread's
+    /// inset never change with it.
+    private func menus(query: String?) -> some View {
+        // Read only while a menu is open: the card moving as the draft grows re-renders nothing.
+        let room = openMenu == .none ? 0 : max(0, cardTop - AppLayout.menuGap - AppLayout.menuMargin)
+        return ZStack(alignment: .bottomLeading) {
+            if let query {
+                let matches = commandMatches
+                NWSlashMenu(commands: matches.map(Self.slashCommand), total: commands.count, query: query,
+                            selection: $commandIndex, maxHeight: room) { command in
+                    if let match = matches.first(where: { $0.name == command.name }) { choose(match) }
+                }
+                .nwTransition(.overlay, anchor: .bottomLeading)
+            }
+            if menu == .models {
+                ModelPicker(current: store.snapshot?.model, models: models, maxHeight: room) { model in
+                    menu = nil
+                    composing.wrappedValue = true
+                    RecentModels.record(model, thread: agentName)
+                    Task { await store.setModel(model) }
+                } close: { menu = nil; composing.wrappedValue = true }
+                .nwTransition(.overlay, anchor: .bottomLeading)
+            }
+            if menu == .thinking, let thinking = store.snapshot?.thinking {
+                NWThinkingMenu(options: Self.thinkingLevels, current: thinking) { level in
+                    menu = nil
+                    composing.wrappedValue = true
+                    Task { await store.setThinking(level.id) }
+                } onClose: { menu = nil; composing.wrappedValue = true }
+                .nwTransition(.overlay, anchor: .bottomLeading)
+            }
+        }
+        // Its own height, not the card's, which the overlay proposes.
+        .fixedSize(horizontal: false, vertical: true)
+        .background { ComposerMenuRegion(dismissal: dismissal) }
+        .alignmentGuide(.top) { $0[.bottom] + AppLayout.menuGap }
+        .nwAnimation(.overlay, value: loaded ? openMenu : nil)
+    }
+
+    /// A click outside the menu and the card closes it, as Esc does (without taking focus).
+    private func closeMenu() {
+        if menu != nil { menu = nil } else if commandQuery != nil { dismissedQuery = store.draft }
+    }
 
     // MARK: Card
 
@@ -386,10 +436,9 @@ struct Composer: View {
     /// Off / Low / Medium / High, independent of the model; hidden when the model takes no
     /// thinking level.
     @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
-        if let thinking = store.snapshot?.thinking, store.snapshot?.supportedActions.contains("setThinking") == true,
-           reasoningAvailable {
+        if thinkingAvailable, let thinking = store.snapshot?.thinking {
             Button {
-                menu = menu == .thinking ? nil : .thinking
+                toggleThinking()
             } label: {
                 HStack(spacing: NW.Space.s) {
                     Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
@@ -403,6 +452,10 @@ struct Composer: View {
             .disabled(!store.supports("setThinking"))
             .accessibilityLabel("Thinking level: \(thinking)")
         }
+    }
+
+    private var thinkingAvailable: Bool {
+        store.snapshot?.thinking != nil && store.snapshot?.supportedActions.contains("setThinking") == true && reasoningAvailable
     }
 
     /// Unknown models (a catalog that did not load) keep the chip.
@@ -438,6 +491,11 @@ struct Composer: View {
         menu = menu == .models ? nil : .models
         guard menu == .models, models.isEmpty else { return }
         Task { await loadModels() }
+    }
+
+    private func toggleThinking() {
+        guard thinkingAvailable, store.supports("setThinking") else { NSSound.beep(); return }
+        menu = menu == .thinking ? nil : .thinking
     }
 
     private func loadModels() async {
@@ -503,6 +561,7 @@ struct Composer: View {
 struct ModelPicker: View {
     let current: String?
     let models: [PiModelCatalog.Entry]
+    var maxHeight: CGFloat?
     let choose: (String) -> Void
     let close: () -> Void
     @State private var query = ""
@@ -510,7 +569,7 @@ struct ModelPicker: View {
     @State private var recent: [RecentModels.Item] = []
 
     var body: some View {
-        NWModelPicker(query: $query, sections: sections, loading: models.isEmpty, selection: $selection,
+        NWModelPicker(query: $query, sections: sections, loading: models.isEmpty, selection: $selection, maxHeight: maxHeight,
                       onChoose: { choose($0.id) }, onClose: close)
             .onAppear { recent = RecentModels.load() }
     }
@@ -691,6 +750,63 @@ struct QuestionPanel: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Question: \(dialog.title)")
+    }
+}
+
+// MARK: Menu dismissal
+
+/// Closes the composer's open menu on a click anywhere in its window outside the menu and the
+/// card it grows from, the way a transient popover closes; the click still lands where it was
+/// aimed. A click in the card is the card's own: a chip toggles its menu, and the field keeps
+/// the slash menu its draft opened.
+@MainActor
+final class ComposerMenuDismissal {
+    var dismiss: () -> Void = {}
+    private let regions = NSHashTable<NSView>.weakObjects()
+    private var monitor: Any?
+
+    /// Watches the window's clicks while a menu is open, and only then.
+    func watch(_ open: Bool) {
+        if open, monitor == nil {
+            monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+                MainActor.assumeIsolated { self?.handle(event) }
+                return event
+            }
+        } else if !open, let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+
+    /// Dismisses for a click in the regions' window that lands in none of them.
+    func handle(_ event: NSEvent) {
+        let regions = regions.allObjects.filter { $0.window != nil && $0.window === event.window }
+        guard !regions.isEmpty, !regions.contains(where: { $0.bounds.contains($0.convert(event.locationInWindow, from: nil)) }) else { return }
+        dismiss()
+    }
+
+    fileprivate func add(_ region: NSView) { regions.add(region) }
+}
+
+/// Marks the view it sits behind as part of the open menu for `ComposerMenuDismissal`. It is
+/// never hit, so it takes no click from the view above it.
+struct ComposerMenuRegion: NSViewRepresentable {
+    let dismissal: ComposerMenuDismissal
+
+    final class Region: NSView {
+        weak var dismissal: ComposerMenuDismissal?
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+
+    func makeNSView(context: Context) -> Region {
+        let region = Region()
+        updateNSView(region, context: context)
+        return region
+    }
+
+    func updateNSView(_ region: Region, context: Context) {
+        region.dismissal = dismissal
+        dismissal.add(region)
     }
 }
 

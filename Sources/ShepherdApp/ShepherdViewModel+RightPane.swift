@@ -41,7 +41,9 @@ extension ShepherdViewModel {
 /// visible thread view observes `request` and acts when the key is its own.
 @MainActor @Observable
 final class ThreadCommandCenter {
-    enum Command: Equatable { case modelPicker, previousTurn, nextTurn, inspectSubagent }
+    /// `thinkingMenu` has no chord of its own; it opens the composer's thinking menu the way ⇧⌘M
+    /// opens the model picker.
+    enum Command: Equatable { case modelPicker, thinkingMenu, previousTurn, nextTurn, inspectSubagent }
 
     struct Request: Equatable {
         let command: Command

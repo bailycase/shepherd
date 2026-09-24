@@ -40,8 +40,9 @@ extension AppLayout {
     /// Space under the composer card, and the fade above it.
     static let composerBottom: CGFloat = 16
     static let composerFade: CGFloat = 48
-    /// A menu opens this far above the card.
+    /// A menu opens this far above the card, and keeps this far from the thread's top edge.
     static let menuGap: CGFloat = 8
+    static let menuMargin: CGFloat = 8
     /// The thinking chip's lightbulb.
     static let chipSymbol: CGFloat = 11
     // The question panel, in the composer card: between its title, message, and answers; its
