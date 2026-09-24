@@ -261,6 +261,28 @@ struct ThreadEventTests {
         #expect(bytes > 0 && bytes <= "Hello world".utf8.count)
     }
 
+    /// A snapshot beside an unchanged queue reuses the queue's size: the delta's snapshot
+    /// encodes its fixed part and the message it grew, never the queue's text again.
+    @Test func aSnapshotAfterADeltaBesideAQueueNeverEncodesTheQueueAgain() async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        try await t.feed(Self.start)
+        let texts = (0..<3).map { "queued \($0) " + String(repeating: "and more words ", count: 256) }
+        _ = try await queue(texts, on: t, from: s)
+        try await t.feed(Self.messageStart, Self.textStart, Self.textDelta("Hello"))
+        #expect(try await t.snapshot().queue?.items.count == 3)
+
+        try await t.feed(Self.textDelta(" world"))
+        let snapshot = try await t.snapshot()
+        let encoded = await withCheckedContinuation { continuation in
+            t.queue.async { continuation.resume(returning: t.state.bytesEncodedByLastSnapshot) }
+        }
+        let queued = texts.reduce(0) { $0 + $1.utf8.count }
+        #expect(encoded > 0 && encoded < queued / 3, "\(encoded) bytes encoded beside \(queued) queued")
+        #expect(await lastSnapshotBytes(t) == (try JSONEncoder().encode(snapshot).count))
+    }
+
     static let queueChanges = ["queueing a message", "an edit", "a move", "a delete", "a hold", "a mode", "a clear"]
 
     /// Every change to the queue is a new revision, and the snapshot that shows it is sized to

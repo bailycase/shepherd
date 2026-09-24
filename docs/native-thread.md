@@ -160,8 +160,9 @@ events come out on stdout, one record per LF.
     from an old session can be acted on. Anything a snapshot shows moves it, the queue and
     where a message came from included, so a queue change is pushed like one of pi's events.
     Each part is hashed once per change (a live row when it changes, the queue when it differs
-    from the one last hashed), and each row is sized once, so a streamed delta beside a full
-    queue rehashes and measures only the message it grew.
+    from the one last hashed), and each row and the queue are sized once, so a streamed delta
+    beside a full queue rehashes and measures only the message it grew (and the snapshot's small
+    fixed part).
   - History pages hold 50 entries, walked with `olderCursor`. A stale cursor gets
     `stale_cursor`.
   - A history entry's id names its message, not its place in pi's list
