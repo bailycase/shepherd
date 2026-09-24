@@ -96,10 +96,12 @@ events come out on stdout, one record per LF.
 
 - **Bootstrap** runs on spawn or resume. It sends `get_state` (session ID, model, thinking
   level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost), and
-  `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` answers,
-  requests fail with `native_starting` ("pi is starting."). pi reads stdin only once it has
-  started, so a pi slower than the 10 s request deadline answers requests already given up on;
-  when `get_state` times out, the bootstrap asks again.
+  `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` and
+  `get_messages` have answered, requests fail with `native_starting` ("pi is starting."): pi
+  answers `get_state` first, and a thread served before a long history arrives would show a
+  resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
+  than the 10 s request deadline answers requests already given up on; when `get_state` times
+  out, the bootstrap asks again.
 - **Events** update the projection in place:
   - `message_start`, `message_update`, and `message_end` stream the current assistant message
     as a provisional entry.
@@ -162,7 +164,8 @@ transport differs.
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
     agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
     the previous run's session until its pi respawns, and pi itself takes a moment to answer
-    `get_state`. Clients poll from the moment an agent appears, so this is never an error.
+    `get_state` and `get_messages`. Clients poll from the moment an agent appears, so this is
+    never an error.
   - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
     its pi exited (with the exit code, also after the app retired the session).
   - Hosts advertise `native.thread.starting.v1`. `RemoteHostClient` reads `native_unavailable`
