@@ -65,11 +65,11 @@ struct ThreadArrivalsTests {
     /// Switching back to an agent: the pull that brings what it did while hidden is a load.
     @Test func aThreadBackOnScreenCatchesUpAtOnce() {
         let arrivals = loaded(["u1", "u1/reply"])
-        #expect(arrivals.show(["u1", "u1/reply"], active: false, ready: false).isEmpty)
+        #expect(arrivals.show(["u1", "u1/reply"], active: false).isEmpty)
         #expect(!arrivals.armed)
         // On screen again, still showing the last snapshot until the fresh pull lands.
-        #expect(arrivals.show(["u1", "u1/reply"], active: true, ready: false).isEmpty)
-        #expect(arrivals.show(["u1", "u1/reply", "u2", "u2/reply"], active: true, ready: true).isEmpty)
+        #expect(arrivals.show(["u1", "u1/reply"], active: true, catchingUp: true).isEmpty)
+        #expect(arrivals.show(["u1", "u1/reply", "u2", "u2/reply"], active: true, catchingUp: true).isEmpty)
         #expect(arrivals.show(["u1", "u1/reply", "u2", "u2/reply", "u3"]) == ["u3"])
     }
 
@@ -77,15 +77,15 @@ struct ThreadArrivalsTests {
     /// the reply that pull brings still arrives.
     @Test func aRefreshOnScreenKeepsArrivalsOn() {
         let arrivals = loaded(["u1", "u1/reply"])
-        #expect(arrivals.show(["u1", "u1/reply", "pending:op"], ready: false) == ["pending:op"])
+        #expect(arrivals.show(["u1", "u1/reply", "pending:op"]) == ["pending:op"])
         #expect(arrivals.show(["u1", "u1/reply", "pending:op", "pending:op/reply"]) == ["pending:op/reply"])
     }
 
-    /// "Starting pi…": nothing arrives until the thread has loaded once, and the empty state
-    /// that replaces the spinner knows it.
+    /// History not known yet: nothing arrives until the thread has loaded once, and the empty state
+    /// that then shows knows it.
     @Test func turnsBeforeTheFirstSnapshotDoNotArrive() {
         let arrivals = ThreadArrivals()
-        #expect(arrivals.show([], session: nil, ready: false).isEmpty)
+        #expect(arrivals.show([], session: nil, catchingUp: true).isEmpty)
         #expect(!arrivals.armed)
         #expect(arrivals.startedLoading)
         #expect(arrivals.show(["u1", "u1/reply"]).isEmpty)
@@ -95,11 +95,49 @@ struct ThreadArrivalsTests {
     @Test func aThreadOpenedLoadedDidNotStartLoading() {
         #expect(!loaded(["u1"]).startedLoading)
     }
+
+    /// Back on screen with nothing new, the first turn after (a message sent at once) arrives.
+    @Test func aThreadBackOnScreenUnchangedLetsTheNextTurnArrive() {
+        let arrivals = loaded(["u1", "u1/reply"])
+        #expect(arrivals.show(["u1", "u1/reply"], active: false).isEmpty)
+        #expect(arrivals.show(["u1", "u1/reply"], catchingUp: true).isEmpty)
+        #expect(arrivals.show(["u1", "u1/reply", "pending:op"]) == ["pending:op"])
+    }
+
+    // MARK: The catch-up gate
+
+    /// Until the store has caught up, every render is the catch-up.
+    @Test func aThreadThatHasNotCaughtUpIsCatchingUp() {
+        let gate = CatchUpGate()
+        #expect(gate.catchingUp(caughtUpAt: nil, version: 0))
+        #expect(gate.catchingUp(caughtUpAt: nil, version: 3))
+    }
+
+    /// The render that draws what the catch-up changed is the catch-up; later ones are not.
+    @Test func theRenderShowingTheCatchUpIsTheOnlyOne() {
+        let gate = CatchUpGate()
+        #expect(gate.catchingUp(caughtUpAt: nil, version: 4), "the flip, before the pull")
+        #expect(gate.catchingUp(caughtUpAt: 7, version: 7), "the pull brought versions 5 to 7")
+        #expect(!gate.catchingUp(caughtUpAt: 7, version: 8), "what came after")
+        #expect(!gate.catchingUp(caughtUpAt: 7, version: 8), "a render for the view's own reasons")
+    }
+
+    /// A catch-up that changed nothing leaves nothing to land at once.
+    @Test func aCatchUpThatChangedNothingIsDoneAtOnce() {
+        let gate = CatchUpGate()
+        #expect(gate.catchingUp(caughtUpAt: nil, version: 4))
+        #expect(!gate.catchingUp(caughtUpAt: 4, version: 5))
+    }
+
+    /// A view created after the thread caught up (remounted) draws its first render at once.
+    @Test func aViewsFirstRenderIsACatchUp() {
+        #expect(CatchUpGate().catchingUp(caughtUpAt: 2, version: 9))
+    }
 }
 
 extension ThreadArrivals {
     /// A thread on screen whose latest pull has landed, in session "s", unless told otherwise.
-    fileprivate func show(_ ids: [String], session: String? = "s", active: Bool = true, ready: Bool = true) -> Set<String> {
-        update(ids, session: session, active: active, ready: ready)
+    fileprivate func show(_ ids: [String], session: String? = "s", active: Bool = true, catchingUp: Bool = false) -> Set<String> {
+        update(ids, session: session, active: active, catchingUp: catchingUp)
     }
 }

@@ -15,7 +15,8 @@ struct ExtensionSocketTests {
 
     // MARK: - Status
 
-    @Test func aStatusReportIsPersistedBroadcastAndForwarded() async throws {
+    /// A status is live state: broadcast and forwarded, but not written (StateMutationTests).
+    @Test func aStatusReportIsBroadcastAndForwarded() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let callbacks = Callbacks(h.server)
@@ -28,7 +29,6 @@ struct ExtensionSocketTests {
         try await eventually("the status callback") { callbacks.statuses.current.contains { $0 == (worker.agent.id, .working) } }
         await drainMainQueue()
         #expect(h.server.state.agents.first?.status == .working)
-        #expect(try h.persisted().agents.first?.status == .working)
         #expect(h.broadcasts.current.map { $0.agents.first?.status } == [.working])
     }
 
@@ -95,6 +95,32 @@ struct ExtensionSocketTests {
         try client.sendRaw(Data("not json\n{\"type\":\"noSuchMessage\"}\n".utf8))
         try client.send(.setAgentStatus(agentID: worker.agent.id, status: .working))
         try await eventually("a valid report after garbage") { h.server.state.agents.first?.status == .working }
+    }
+
+    /// At launch every pi's extensions connect while the queue may be busy: the backlog holds
+    /// them until the queue accepts, rather than refusing them. A backlog of 16 held 25; the
+    /// count stays well under a 256-descriptor limit, since both ends are in this process.
+    @Test func extensionsConnectingWhileTheQueueIsBusyAreAllAccepted() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let connections = 64
+        let release = DispatchSemaphore(value: 0)
+        await h.server.holdQueue(until: release)
+        var clients: [ExtensionClient] = []
+        var refused = 0
+        for _ in 0..<connections {
+            do { clients.append(try ExtensionClient(path: h.socketPath)) } catch { refused += 1 }
+        }
+        release.signal()
+        #expect(refused == 0)
+
+        // Each connection is served: an incomplete request gets its correlated error.
+        var answered = 0
+        for (index, client) in clients.enumerated() {
+            try client.send(.sendToAgent(id: index, agentID: AgentID(rawValue: "a"), targetAgentID: AgentID(rawValue: "b"), text: " "))
+            if case .error(index, "invalid", _) = try await client.reply() { answered += 1 }
+        }
+        #expect(answered == connections)
     }
 
     @Test func anOversizedFrameDisconnectsTheClient() async throws {

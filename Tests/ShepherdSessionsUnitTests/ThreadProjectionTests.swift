@@ -100,6 +100,179 @@ struct ThreadProjectionTests {
         #expect(row.truncated)
     }
 
+    // MARK: - projectHistory
+
+    private static let history = #"""
+    [{"role":"user","content":"Fix it","timestamp":1000},
+     {"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"ls"}}],"timestamp":2000},
+     {"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[{"type":"text","text":"a"}],"timestamp":2500},
+     {"role":"custom","customType":"memo","content":"model only","timestamp":2600},
+     {"role":"custom","customType":"shepherd-child","display":true,"content":"Child done","timestamp":2700},
+     {"role":"user","content":"again","timestamp":3000},
+     {"role":"user","content":"same millisecond","timestamp":3000},
+     {"role":"assistant","content":[{"type":"text","text":"no time"}]}]
+    """#
+
+    /// Ids name the message, not its place, so a page read from pi's session file (which starts
+    /// wherever the file's tail does) lands on the same rows as pi's own answer.
+    @Test func historyIDsNameEachMessageWhereverTheListStarts() throws {
+        let messages: [RPCMessage] = try decode(Self.history)
+        let rows = RPCThreadState.projectHistory(messages)
+        #expect(rows.map(\.entryID) == ["user:1000", "assistant:2000", "t:c1", "user:3000", "user:3000#1", "m:7"])
+        #expect(rows[2].startedAt == 2000 && rows[2].argumentsText == #"{"command":"ls"}"#, "a result carries its call's start and arguments")
+
+        let tail = RPCThreadState.projectHistory(Array(messages[2...]))
+        #expect(tail.prefix(3).map(\.entryID) == ["t:c1", "user:3000", "user:3000#1"])
+    }
+
+    /// The history decoded straight into messages projects row for row as the history decoded
+    /// through a JSONValue tree did.
+    @Test func aTypedHistoryProjectsExactlyAsTheLenientOneDid() throws {
+        let line = Data(#"""
+        {"type":"response","id":"r","command":"get_messages","success":true,"data":{"messages":[
+         {"role":"user","content":"Fix the build","timestamp":1733234567890},
+         {"role":"assistant","content":[{"type":"thinking","thinking":"check"},{"type":"text","text":"Running it."},
+          {"type":"toolCall","id":"c1","name":"bash","arguments":{"command":"make","timeout":120,"env":{"CI":true},"args":["-j",8,null]}}],
+          "stopReason":"toolUse","timestamp":1733234567891.25},
+         {"role":"toolResult","toolCallId":"c1","toolName":"bash","content":[{"type":"text","text":"ok \u2028 done"}],"isError":false},
+         {"role":"user","content":[{"type":"image","data":"iVBORw0KGgo=","mimeType":"image/png"}]},
+         {"role":"custom","customType":"note","display":true,"content":"shown"},
+         {"role":"assistant","content":[],"stopReason":"error","errorMessage":"529 overloaded"}
+        ]}}
+        """#.utf8)
+        guard case .response(let response) = try NDJSON.decode(RPCIncoming.self, from: line),
+              case .messages(let typed) = response.payload else {
+            Issue.record("expected a typed history"); return
+        }
+        struct Lenient: Decodable { let data: JSONValue }
+        let lenient = try JSONDecoder().decode(Lenient.self, from: line).data["messages"]?.decode([RPCMessage].self)
+
+        func rows(_ messages: [RPCMessage]) -> [NativeThreadMessage] {
+            var arguments: [String: JSONValue] = [:]
+            for message in messages {
+                for case .toolCall(let id, _, let args?) in message.content { arguments[id] = args }
+            }
+            return messages.enumerated().map { index, message in
+                RPCThreadState.project(entryID: "m:\(index)", message: message,
+                                       args: message.toolCallId.flatMap { arguments[$0] })
+            }
+        }
+        #expect(rows(typed) == rows(try #require(lenient)))
+        #expect(rows(typed)[2].argumentsText == #"{"args":["-j",8,null],"command":"make","env":{"CI":true},"timeout":120}"#)
+    }
+
+    // MARK: - Snapshot budgets
+
+    /// A snapshot's parts before the budgets apply.
+    struct SnapshotFixture: Sendable, CustomTestStringConvertible {
+        let name: String
+        var clipped = false
+        var widgets: [NativeThreadWidget] = []
+        var active: [NativeThreadMessage] = []
+        var dialogs: [NativeThreadDialog] = []
+        var history: [NativeThreadMessage] = []
+        var testDescription: String { name }
+
+        func base() -> NativeThreadSnapshot {
+            NativeThreadSnapshot(
+                piSessionID: "s-1", generation: "g-1", revision: 42, running: !active.isEmpty, model: "anthropic/claude",
+                thinking: "medium", supportedActions: RPCThreadState.supportedActions, dialogsSupported: true, dialogs: [],
+                widgets: widgets, messages: [], provisional: [], clipped: clipped, runtime: "rpc",
+                stats: NativeThreadStats(contextTokens: 1, contextWindow: 2, contextPercent: 3, totalTokens: 4, cost: 0.5),
+                commands: [NativeCommand(name: "fix", description: "Fix it", source: "prompt")], subagents: [])
+        }
+    }
+
+    private static func row(_ index: Int, _ role: String = "assistant", text: String) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: "m:\(index)", role: role, blocks: [NativeThreadBlock(kind: .text, text: text)],
+                            status: role == "assistant" ? "stop" : nil, timestamp: 1_733_234_567_890 + Double(index))
+    }
+
+    static let snapshotFixtures: [SnapshotFixture] = [
+        SnapshotFixture(name: "empty"),
+        SnapshotFixture(name: "50 small and more",
+                        active: [NativeThreadMessage(entryID: "provisional:assistant:1", role: "assistant",
+                                                     blocks: [NativeThreadBlock(kind: .text, text: "streaming")], status: "streaming")],
+                        history: (0..<80).map { row($0, $0 % 2 == 0 ? "user" : "assistant", text: "message \($0)") }),
+        SnapshotFixture(name: "oversize tool output",
+                        active: (0..<12).map { NativeThreadMessage(entryID: "provisional:tool:c\($0)", role: "toolResult",
+                                                                    blocks: [NativeThreadBlock(kind: .text, text: String(repeating: "x", count: 15 * 1024))],
+                                                                    toolName: "bash", toolCallID: "c\($0)", argumentsText: #"{"command":"make"}"#, status: "running") },
+                        history: (0..<30).map { row($0, text: String(repeating: "y", count: 8 * 1024)) }),
+        SnapshotFixture(name: "dialogs over budget", clipped: true,
+                        dialogs: (0..<8).map { NativeThreadDialog(id: "d\($0)", kind: .editor, title: "Edit \($0)",
+                                                                  prefill: String(repeating: "z", count: 20 * 1024)) },
+                        history: (0..<5).map { row($0, text: "short") }),
+        SnapshotFixture(name: "widgets",
+                        widgets: (0..<3).map { NativeThreadWidget(namespace: "pi", key: "w\($0)", kind: .text, text: String(repeating: "w", count: 4000)) },
+                        history: (0..<60).map { row($0, text: String(repeating: "h", count: 3000)) }),
+        SnapshotFixture(name: "unicode",
+                        active: [NativeThreadMessage(entryID: "provisional:tool:ü/\"1", role: "toolResult",
+                                                     blocks: [NativeThreadBlock(kind: .text, text: "café \u{2028} 👩‍💻 \"q\" a/b \\ \u{01}\t\n")],
+                                                     toolName: "edit", argumentsText: #"{"path":"é/ü.swift"}"#)],
+                        history: (0..<60).map {
+                            NativeThreadMessage(entryID: "m:\($0)/ü\"\u{07}", role: "user",
+                                                blocks: [NativeThreadBlock(kind: .text, text: String(repeating: "日本語 \u{2029}/\\\"", count: 400))])
+                        }),
+    ]
+
+    /// Today's budget, applied by encoding the growing snapshot: the reference the arithmetic
+    /// must match decision for decision.
+    private static func encodingBudget(_ fixture: SnapshotFixture) -> NativeThreadSnapshot {
+        func bytes<T: Encodable>(_ value: T) -> Int { (try? JSONEncoder().encode(value).count) ?? Int.max }
+        var value = fixture.base()
+        value.provisional = fixture.active
+        value.dialogs = fixture.dialogs
+        while bytes(value) > RPCThreadState.activeLimit, !value.provisional.isEmpty {
+            value.provisional.removeFirst()
+            value.clipped = true
+        }
+        while bytes(value) > RPCThreadState.activeLimit, !value.dialogs.isEmpty {
+            value.dialogs.removeLast()
+            value.clipped = true
+        }
+        var size = bytes(value)
+        var index = fixture.history.count - 1
+        while index >= 0 {
+            size += bytes(fixture.history[index]) + 1
+            if size > RPCThreadState.snapshotLimit {
+                value.clipped = true
+                break
+            }
+            value.messages.insert(fixture.history[index], at: 0)
+            index -= 1
+            if value.messages.count == RPCThreadState.pageSize { break }
+        }
+        if index >= 0, let first = value.messages.first { value.olderCursor = first.entryID }
+        return value
+    }
+
+    /// Sized from each element's own encoding, the budget keeps and clips exactly what encoding
+    /// the whole snapshot did, and its arithmetic is the snapshot's encoded size to the byte.
+    @Test(arguments: snapshotFixtures)
+    func theBudgetByArithmeticMatchesEncodingTheSnapshot(_ fixture: SnapshotFixture) throws {
+        func sized<T: Encodable>(_ value: T) throws -> RPCThreadState.Sized<T> {
+            RPCThreadState.Sized(value: value, bytes: try JSONEncoder().encode(value).count)
+        }
+        let base = fixture.base()
+        let history = try fixture.history.map(sized)
+        let (snapshot, bytes) = RPCThreadState.budget(
+            base, baseBytes: try JSONEncoder().encode(base).count,
+            active: try fixture.active.map(sized), dialogs: try fixture.dialogs.map(sized),
+            historyEnd: history.count, history: { history[$0] })
+
+        #expect(snapshot == Self.encodingBudget(fixture))
+        let encoded = try JSONEncoder().encode(snapshot).count
+        #expect(bytes == encoded)
+        #expect(bytes <= RPCThreadState.snapshotLimit)
+    }
+
+    @Test(arguments: ["m:12", "", "ü/\"\\ \u{01}\u{1F}\t\n\r\u{08}\u{0C} \u{2028} 👩‍💻"])
+    func aStringIsSizedAsJSONEncoderWritesIt(text: String) throws {
+        let encoded = try JSONEncoder().encode(text).count
+        #expect(RPCThreadState.jsonStringBytes(text) == encoded)
+    }
+
     // MARK: - apply(_:to:) — rebuilding a streamed assistant message
 
     private func stream(_ deltas: [String], into message: RPCMessage = RPCMessage(role: "assistant", content: [])) throws -> RPCMessage {

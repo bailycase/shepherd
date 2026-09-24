@@ -30,6 +30,10 @@ final class RPCThreadState {
         var raw: RPCMessage
         var value: NativeThreadMessage
         var ended: Bool
+        /// `value`'s hash, taken when it was assigned.
+        var hash: Int
+        /// `value`'s encoded size, taken by the first snapshot that shows it.
+        var bytes: Int? = nil
     }
 
     private struct Operation {
@@ -47,32 +51,63 @@ final class RPCThreadState {
     /// long history takes a moment to arrive: served meanwhile, a resumed thread would show
     /// as a new, empty one.
     private var historyPending = true
+    /// Installed by SessionServer: called once, on the session queue, when the thread first
+    /// serves (pi has answered `get_state` and `get_messages`).
+    var onServable: (() -> Void)?
+    private var announcedServable = false
+    /// Requests get a snapshot rather than `native_starting`.
+    var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString
     private(set) var revision: UInt64 = 0
+    /// Called on the session queue each time `revision` moves.
+    var onRevision: (() -> Void)?
     private var signature = 0
     private(set) var running = false
     private(set) var model: String?
     private(set) var thinking: String?
     private(set) var stats: NativeThreadStats?
-    private(set) var commands: [NativeCommand]?
+    // A commit combines hashes taken when each part was assigned (the lists here, each
+    // provisional and tool entry), so a streamed delta rehashes only the message it grew.
+    private(set) var commands: [NativeCommand]? { didSet { commandsHash = commands.hashValue } }
     /// Native child runs as last published by the children extension over the socket.
-    private(set) var subagents: [NativeSubagent] = []
+    private(set) var subagents: [NativeSubagent] = [] { didSet { subagentsHash = subagents.hashValue } }
+    private var commandsHash = Optional<[NativeCommand]>.none.hashValue
+    private var subagentsHash = [NativeSubagent]().hashValue
+    private var dialogsHash = [NativeThreadDialog]().hashValue
+    private var widgetsHash = [NativeThreadWidget]().hashValue
+    #if DEBUG
+    /// Tests: text bytes of the entries rehashed since the last commit, and by the last commit.
+    private var bytesHashedSinceCommit = 0
+    private(set) var bytesHashedByLastCommit = 0
+    /// Tests: JSON encodes the last snapshot made, and its size by arithmetic.
+    private var encodesSinceSnapshot = 0
+    private(set) var encodesByLastSnapshot = 0
+    private(set) var bytesOfLastSnapshot = 0
+    #endif
     /// Installed by SessionServer: writes a childCommand to the children extension and answers
     /// with its error text (nil on success). Runs on the server queue.
     var dispatchSubagentCommand: ((String, NativeSubagentAction, String?, NativeThreadDelivery?, @escaping (String?) -> Void) -> Void)?
-    private var history: [NativeThreadMessage] = []
+    private var history: [NativeThreadMessage] = [] { didSet { historyBytes = Array(repeating: -1, count: history.count) } }
+    /// Each history row's encoded size, taken by the first snapshot that shows it (-1 until then).
+    private var historyBytes: [Int] = []
     private var provisional: [Provisional] = []
     private var sequence = 0
     private var currentAssistant: Int?
-    private var tools: [(id: String, value: NativeThreadMessage)] = []
+    private var tools: [(id: String, value: NativeThreadMessage, hash: Int, bytes: Int?)] = []
     /// When each tool execution was first seen (ms), for durations of live calls.
     private var toolStarts: [String: Double] = [:]
     /// Live thinking spans per provisional assistant message (ms), and the finished ones keyed
     /// by the message's pi timestamp so history projected later keeps "Thought for Ns".
     private var thinkingSpans: [Int: (start: Double, end: Double?)] = [:]
     private var thinkingByTimestamp: [Double: Double] = [:]
-    private var dialogs: [NativeThreadDialog] = []
-    private var widgets: [(id: String, value: NativeThreadWidget)] = []
+    private var dialogs: [NativeThreadDialog] = [] {
+        didSet {
+            dialogsHash = dialogs.hashValue
+            dialogBytes = nil
+        }
+    }
+    private var dialogBytes: [Int]?
+    private var widgets: [(id: String, value: NativeThreadWidget)] = [] { didSet { widgetsHash = widgets.map(\.value).hashValue } }
     private var operations: [(id: String, operation: Operation)] = []
     private var projectionClipped = false
     private static let encoder = JSONEncoder()
@@ -102,6 +137,7 @@ final class RPCThreadState {
             // an attempt the bootstrap has since repeated waits for the repeat.
             guard let self, attempt == self.bootstrapAttempts else { return }
             self.historyPending = false
+            self.announceIfServable()
         }
         refreshStats(timeout: timeout)
         session.request(.getCommands, timeout: timeout) { [weak self] result in
@@ -129,7 +165,7 @@ final class RPCThreadState {
             sequence += 1
             currentAssistant = sequence
             upsertAssistant(message, ended: false)
-        case .messageUpdate(let delta, _):
+        case .messageUpdate(let delta):
             guard let key = currentAssistant, let index = provisional.firstIndex(where: { $0.key == key }) else {
                 // message_start was missed (spawned mid-turn); start accumulating now.
                 sequence += 1
@@ -236,7 +272,7 @@ final class RPCThreadState {
                 self.operations[index].operation.result = result
                 let waiters = self.operations[index].operation.waiters
                 self.operations[index].operation.waiters = []
-                self.revision += 1
+                self.bumpRevision()
                 completion(result)
                 waiters.forEach { $0(result) }
             }
@@ -398,39 +434,26 @@ final class RPCThreadState {
             self.thinking = data["thinkingLevel"]?.stringValue
             if let streaming = data["isStreaming"]?.boolValue { self.running = streaming }
             self.commit()
+            self.announceIfServable()
         }
+    }
+
+    private func announceIfServable() {
+        guard isServable, !announcedServable else { return }
+        announcedServable = true
+        onServable?()
     }
 
     private func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
         session.request(.getMessages, timeout: timeout) { [weak self] result in
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success,
-                  let messages = try? response.data?["messages"]?.decode([RPCMessage].self) else { return }
-            // Same filter as the terminal extension: custom messages are model-only unless the
-            // extension marked them display (pi-subagents' task-completed JSON is the usual case).
-            // Indices stay positional so `m:<i>` cursors remain stable across refreshes.
-            // pi keeps a call's arguments on the assistant's toolCall block; the toolResult row
-            // is what we show, so hand the arguments across by call id.
-            var arguments: [String: JSONValue] = [:]
-            var callTimes: [String: Double] = [:]
-            for message in messages where message.role == "assistant" {
-                for case .toolCall(let id, _, let args) in message.content {
-                    if let args { arguments[id] = args }
-                    if let time = message.timestamp { callTimes[id] = time }
-                }
-            }
-            self.history = messages.enumerated().compactMap { index, message in
-                if message.role == "custom" && message.display != true { return nil }
-                // Child reports ("Child native-… (worker): complete … Session: …") restate the card and
-                // ledger, which own that information in the RPC thread; the TUI still shows them.
-                if message.role == "custom" && message.customType == "shepherd-child" { return nil }
-                let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
-                var value = Self.project(entryID: "m:\(index)", message: message, args: args)
-                if let id = message.toolCallId, message.role == "toolResult" {
-                    value.startedAt = self.toolStarts[id] ?? callTimes[id]
+                  let messages = response.messages else { return }
+            self.history = Self.projectHistory(messages) { value, message in
+                if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
+                    value.startedAt = started
                 }
                 if message.role == "assistant", let time = message.timestamp { value.thinkingSeconds = self.thinkingByTimestamp[time] }
-                return value
             }
             // message_end precedes persistence; a refresh means everything ended is now history.
             self.provisional.removeAll { $0.ended }
@@ -485,7 +508,7 @@ final class RPCThreadState {
         currentAssistant = nil
         projectionClipped = false
         signature = 0
-        revision += 1
+        bumpRevision()
     }
 
     // MARK: - Provisional items
@@ -514,10 +537,11 @@ final class RPCThreadState {
             value.thinkingSeconds = seconds
             if ended, let time = raw.timestamp { thinkingByTimestamp[time] = seconds }
         }
+        let entry = Provisional(key: key, raw: raw, value: value, ended: ended, hash: entryHash(value))
         if let index = provisional.firstIndex(where: { $0.key == key }) {
-            provisional[index] = Provisional(key: key, raw: raw, value: value, ended: ended)
+            provisional[index] = entry
         } else {
-            provisional.append(Provisional(key: key, raw: raw, value: value, ended: ended))
+            provisional.append(entry)
         }
         if provisional.count > Self.pageSize {
             provisional.removeFirst()
@@ -538,9 +562,9 @@ final class RPCThreadState {
         value.startedAt = toolStarts[id]
         if status == "complete", value.timestamp == nil { value.timestamp = Date().timeIntervalSince1970 * 1000 }
         if let index = tools.firstIndex(where: { $0.id == id }) {
-            tools[index].value = value
+            tools[index] = (id, value, entryHash(value), nil)
         } else {
-            tools.append((id, value))
+            tools.append((id, value, entryHash(value), nil))
         }
         if tools.count > Self.pageSize {
             tools.removeFirst()
@@ -668,77 +692,281 @@ final class RPCThreadState {
 
     // MARK: - Snapshot
 
+    /// Everything a snapshot shows, as one signature: a change anywhere moves the revision, and
+    /// nothing else does. The parts' hashes were taken when they were assigned.
     private func commit() {
+        #if DEBUG
+        bytesHashedByLastCommit = bytesHashedSinceCommit
+        bytesHashedSinceCommit = 0
+        #endif
         var hasher = Hasher()
         hasher.combine(history.count)
-        hasher.combine(provisional.map(\.value))
-        hasher.combine(tools.map(\.value))
-        hasher.combine(dialogs)
-        hasher.combine(widgets.map(\.value))
+        hasher.combine(history.last?.entryID)
+        hasher.combine(provisional.count)
+        for entry in provisional { hasher.combine(entry.hash) }
+        hasher.combine(tools.count)
+        for tool in tools { hasher.combine(tool.hash) }
+        hasher.combine(dialogsHash)
+        hasher.combine(widgetsHash)
         hasher.combine(running)
         hasher.combine(model)
         hasher.combine(thinking)
         hasher.combine(piSessionID)
         hasher.combine(stats)
-        hasher.combine(commands)
-        hasher.combine(subagents)
+        hasher.combine(commandsHash)
+        hasher.combine(subagentsHash)
         let next = hasher.finalize()
         if next != signature {
             signature = next
-            revision += 1
+            bumpRevision()
         }
+    }
+
+    private func bumpRevision() {
+        revision += 1
+        onRevision?()
+    }
+
+    private func entryHash(_ value: NativeThreadMessage) -> Int {
+        #if DEBUG
+        bytesHashedSinceCommit += value.blocks.reduce(0) { $0 + $1.text.utf8.count } + (value.argumentsText?.utf8.count ?? 0)
+        #endif
+        return value.hashValue
     }
 
     private func snapshot(beforeEntryID: String?) -> NativeThreadResult {
         var end = history.count
         if let beforeEntryID {
-            // Entry ids are positional in pi's message list, but history skips model-only
-            // customs, so resolve the cursor by id rather than by array index.
+            // Entry ids name messages (`historyEntryID`), so resolve the cursor by id.
             guard let index = history.firstIndex(where: { $0.entryID == beforeEntryID }) else {
                 return .failure(code: "stale_cursor", message: "History changed. Refresh the recent page.")
             }
             end = index
         }
+        #if DEBUG
+        encodesSinceSnapshot = 0
+        #endif
         let dialogs = Array(self.dialogs.prefix(Self.dialogLimit))
-        var value = NativeThreadSnapshot(
+        let base = NativeThreadSnapshot(
             piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
             model: model, thinking: thinking, supportedActions: Self.supportedActions, dialogsSupported: true,
-            dialogs: dialogs, widgets: widgets.map(\.value), messages: [],
-            provisional: provisional.map(\.value) + tools.map(\.value),
+            dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
             runtime: "rpc", stats: stats, commands: commands, subagents: subagents
         )
-        // Keep active output bounded before filling the remaining budget with history.
-        while Self.bytes(value) > Self.activeLimit, !value.provisional.isEmpty {
-            value.provisional.removeFirst()
-            value.clipped = true
-        }
-        while Self.bytes(value) > Self.activeLimit, !value.dialogs.isEmpty {
-            value.dialogs.removeLast()
-            value.clipped = true
-        }
-        var size = Self.bytes(value)
+        let sizedDialogs = zip(dialogs, dialogSizes()).map { Sized(value: $0, bytes: $1) }
+        let budgeted = Self.budget(
+            base, baseBytes: measured(base), active: activeEntries(), dialogs: sizedDialogs,
+            historyEnd: end, history: { self.historyEntry($0) }
+        )
+        #if DEBUG
+        encodesByLastSnapshot = encodesSinceSnapshot
+        bytesOfLastSnapshot = budgeted.bytes
+        #endif
+        return .snapshot(value: budgeted.snapshot)
+    }
+
+    /// Fills `value` with the page of `history` that ends before `end`: up to 50 entries, newest
+    /// last, within what is left of the snapshot budget. `olderCursor` marks older history, in
+    /// `history` or, with `moreBefore`, before it.
+    static func fillPage(_ value: inout NativeThreadSnapshot, from history: [NativeThreadMessage], end: Int, moreBefore: Bool = false) {
+        var size = bytes(value)
         var index = end - 1
         while index >= 0 {
             let message = history[index]
-            size += Self.bytes(message) + 1
-            if size > Self.snapshotLimit {
+            size += bytes(message) + 1
+            if size > snapshotLimit {
                 value.clipped = true
                 break
             }
             value.messages.insert(message, at: 0)
             index -= 1
-            if value.messages.count == Self.pageSize { break }
+            if value.messages.count == pageSize { break }
         }
-        if index >= 0, let first = value.messages.first { value.olderCursor = first.entryID }
-        return .snapshot(value: value)
+        if index >= 0 || moreBefore, let first = value.messages.first { value.olderCursor = first.entryID }
     }
 
+    /// An element of a snapshot list and its encoded size.
+    struct Sized<Value> {
+        let value: Value
+        let bytes: Int
+    }
+
+    /// Applies the snapshot budgets to `base`, whose dialogs, messages and provisional lists are
+    /// empty and which encodes to `baseBytes`, by arithmetic over each element's encoded size: a
+    /// list adds its elements and the commas between them, and `clipped` turning true saves a
+    /// byte. Active output is trimmed to `activeLimit` first (oldest provisional rows, then the
+    /// newest dialogs), then history fills the rest of `snapshotLimit` from `historyEnd` back, a
+    /// page at most. The decisions are the ones encoding the growing snapshot made; returns the
+    /// snapshot and its exact encoded size.
+    static func budget(
+        _ base: NativeThreadSnapshot,
+        baseBytes: Int,
+        active: [Sized<NativeThreadMessage>],
+        dialogs: [Sized<NativeThreadDialog>],
+        historyEnd: Int,
+        history: (Int) -> Sized<NativeThreadMessage>
+    ) -> (snapshot: NativeThreadSnapshot, bytes: Int) {
+        func list(_ count: Int, _ sum: Int) -> Int { count == 0 ? 0 : sum + count - 1 }
+        var clipped = base.clipped
+        func flag() -> Int { clipped == base.clipped ? 0 : clipped ? -1 : 1 }
+        var activeFrom = 0
+        var activeSum = active.reduce(0) { $0 + $1.bytes }
+        var dialogCount = dialogs.count
+        var dialogSum = dialogs.reduce(0) { $0 + $1.bytes }
+        func size() -> Int {
+            baseBytes + flag() + list(active.count - activeFrom, activeSum) + list(dialogCount, dialogSum)
+        }
+        while size() > activeLimit, activeFrom < active.count {
+            activeSum -= active[activeFrom].bytes
+            activeFrom += 1
+            clipped = true
+        }
+        while size() > activeLimit, dialogCount > 0 {
+            dialogCount -= 1
+            dialogSum -= dialogs[dialogCount].bytes
+            clipped = true
+        }
+        // Each message is counted with a comma, as when the growing snapshot was encoded.
+        var budgeted = size()
+        var page: [Sized<NativeThreadMessage>] = []
+        var index = historyEnd - 1
+        while index >= 0 {
+            let entry = history(index)
+            budgeted += entry.bytes + 1
+            if budgeted > snapshotLimit {
+                clipped = true
+                break
+            }
+            page.append(entry)
+            index -= 1
+            if page.count == pageSize { break }
+        }
+        page.reverse()
+        var value = base
+        value.provisional = active[activeFrom...].map(\.value)
+        value.dialogs = dialogs[..<dialogCount].map(\.value)
+        value.messages = page.map(\.value)
+        value.clipped = clipped
+        var bytes = size() + list(page.count, page.reduce(0) { $0 + $1.bytes })
+        if index >= 0, let first = page.first {
+            value.olderCursor = first.value.entryID
+            // ,"olderCursor":"…"
+            bytes += 15 + jsonStringBytes(first.value.entryID)
+        }
+        return (value, bytes)
+    }
+
+    /// The length of `text` as JSONEncoder writes it: quoted, with `"`, `\`, `/` and control
+    /// characters escaped.
+    static func jsonStringBytes(_ text: String) -> Int {
+        var bytes = 2
+        for byte in text.utf8 {
+            switch byte {
+            case UInt8(ascii: "\""), UInt8(ascii: "\\"), UInt8(ascii: "/"), 0x08, 0x09, 0x0A, 0x0C, 0x0D: bytes += 2
+            case ..<0x20: bytes += 6
+            default: bytes += 1
+            }
+        }
+        return bytes
+    }
+
+    /// Provisional rows then tool rows, each sized once for as long as it stays unchanged.
+    private func activeEntries() -> [Sized<NativeThreadMessage>] {
+        var entries: [Sized<NativeThreadMessage>] = []
+        entries.reserveCapacity(provisional.count + tools.count)
+        for index in provisional.indices {
+            let bytes = provisional[index].bytes ?? measured(provisional[index].value)
+            provisional[index].bytes = bytes
+            entries.append(Sized(value: provisional[index].value, bytes: bytes))
+        }
+        for index in tools.indices {
+            let bytes = tools[index].bytes ?? measured(tools[index].value)
+            tools[index].bytes = bytes
+            entries.append(Sized(value: tools[index].value, bytes: bytes))
+        }
+        return entries
+    }
+
+    /// The sizes of the dialogs a snapshot can carry (the first `dialogLimit`).
+    private func dialogSizes() -> [Int] {
+        if let dialogBytes { return dialogBytes }
+        let sizes = dialogs.prefix(Self.dialogLimit).map { measured($0) }
+        dialogBytes = sizes
+        return sizes
+    }
+
+    /// History rows are immutable until the next refresh replaces them, so each is sized once.
+    private func historyEntry(_ index: Int) -> Sized<NativeThreadMessage> {
+        if historyBytes[index] < 0 { historyBytes[index] = measured(history[index]) }
+        return Sized(value: history[index], bytes: historyBytes[index])
+    }
+
+    private func measured<T: Encodable>(_ value: T) -> Int {
+        #if DEBUG
+        encodesSinceSnapshot += 1
+        #endif
+        return Self.bytes(value)
+    }
+
+    /// A value that cannot be encoded counts as over every budget, without overflowing a sum.
     private static func bytes<T: Encodable>(_ value: T) -> Int {
-        (try? encoder.encode(value).count) ?? Int.max
+        (try? encoder.encode(value).count) ?? Int(Int32.max)
     }
 
     // MARK: - Projection
+
+    /// pi's message list as thread history, with the same rules wherever it comes from (pi's
+    /// `get_messages`, or its session file read from disk): custom messages are model-only
+    /// unless their extension marked them display (pi-subagents' task-completed JSON is the
+    /// usual case), and child reports ("Child native-… (worker): complete … Session: …") restate
+    /// the card and ledger, which own that information here (the TUI still shows them). pi keeps
+    /// a call's arguments and start on the assistant's toolCall block; the toolResult row is
+    /// what the thread shows, so both are handed across by call id. `adjust` sees each row with
+    /// its message last.
+    static func projectHistory(
+        _ messages: [RPCMessage],
+        adjust: (inout NativeThreadMessage, RPCMessage) -> Void = { _, _ in }
+    ) -> [NativeThreadMessage] {
+        var arguments: [String: JSONValue] = [:]
+        var callTimes: [String: Double] = [:]
+        for message in messages where message.role == "assistant" {
+            for case .toolCall(let id, _, let args) in message.content {
+                if let args { arguments[id] = args }
+                if let time = message.timestamp { callTimes[id] = time }
+            }
+        }
+        var seen: [String: Int] = [:]
+        return messages.enumerated().compactMap { index, message in
+            if message.role == "custom" && message.display != true { return nil }
+            if message.role == "custom" && message.customType == "shepherd-child" { return nil }
+            let args = message.role == "toolResult" ? message.toolCallId.flatMap { arguments[$0] } : nil
+            var value = project(entryID: historyEntryID(message, index: index, seen: &seen), message: message, args: args)
+            if let id = message.toolCallId, message.role == "toolResult" { value.startedAt = callTimes[id] }
+            adjust(&value, message)
+            return value
+        }
+    }
+
+    /// A history entry's id names the message, never its place in pi's list, so a message keeps
+    /// its id across refreshes and when it is read from pi's session file before pi answers
+    /// (history pages start at different places). A tool result is its call ("t:<call id>");
+    /// anything else with pi's millisecond timestamp is "<role>:<ms>", a repeat of that within
+    /// the list becoming "#<n>"; a message without a timestamp (never from pi itself) keeps its
+    /// position ("m:<index>").
+    static func historyEntryID(_ message: RPCMessage, index: Int, seen: inout [String: Int]) -> String {
+        let key: String
+        if message.role == "toolResult", let call = message.toolCallId, !call.isEmpty {
+            key = "t:\(call)"
+        } else if let time = message.timestamp, time.isFinite {
+            key = "\(message.role.isEmpty ? "custom" : message.role):\(Int64(time))"
+        } else {
+            return "m:\(index)"
+        }
+        let repeats = seen[key, default: 0]
+        seen[key] = repeats + 1
+        return repeats == 0 ? key : "\(key)#\(repeats)"
+    }
 
     static func project(entryID: String, message: RPCMessage, args: JSONValue? = nil) -> NativeThreadMessage {
         var remaining = textLimit

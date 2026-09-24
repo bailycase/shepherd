@@ -70,10 +70,23 @@ public enum PiConfig {
 
     /// defaultModel from ~/.pi/agent/settings.json, if readable.
     public static func defaultModel() -> String? {
-        guard let data = try? Data(contentsOf: agentDirectory.appendingPathComponent("settings.json")),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let object = settings(),
               let model = object["defaultModel"] as? String,
               !model.isEmpty else { return nil }
         return model
+    }
+
+    /// The model pi starts a new session with when none is passed, as "provider/id" (settings.json's
+    /// defaultProvider and defaultModel), if both are set.
+    public static func defaultModelReference(in directory: URL = agentDirectory()) -> String? {
+        guard let object = settings(in: directory),
+              let provider = object["defaultProvider"] as? String, !provider.isEmpty,
+              let model = object["defaultModel"] as? String, !model.isEmpty else { return nil }
+        return "\(provider)/\(model)"
+    }
+
+    private static func settings(in directory: URL = agentDirectory) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("settings.json")) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }
 }

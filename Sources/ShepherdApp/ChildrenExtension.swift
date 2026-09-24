@@ -177,7 +177,8 @@ enum ChildrenExtension {
         const textSchema = Type.String({ minLength: 1, maxLength: MAX_TEXT });
         const idSchema = Type.String({ minLength: 1, maxLength: 80 });
 
-        export default function shepherdChildren(pi) {
+        // `timers` lets tests observe the control tick; pi passes only `pi`.
+        export default function shepherdChildren(pi, timers = { setInterval, clearInterval }) {
           if (process.env.SHEPHERD_CHILD === "1") {
             // Cooperative pause at the next model-request boundary. In-flight tools finish normally;
             // the RPC reader remains available for continue/cancel while the context hook waits.
@@ -220,6 +221,8 @@ enum ChildrenExtension {
           const defaults = childDefaults();
           let missions;
           let owner, active = false, timer, sessionContext;
+          // Inspector requests to settled runs, while no tick runs: run id -> watcher of its control dir.
+          const controlWatchers = new Map();
           const root = path.join(path.dirname(process.env.SHEPHERD_SOCKET), "children");
           const bridge = process.env.SHEPHERD_EXT_CHILDREN;
           let supported = false;
@@ -270,6 +273,35 @@ enum ChildrenExtension {
             pi.events.emit(EVENT, { owner, children: [...runs.values()].sort((a, b) =>
               Number(b.state === "running" || b.state === "queued") - Number(a.state === "running" || a.state === "queued")
               || Number(b.needsReply === true) - Number(a.needsReply === true) || b.startedAt - a.startedAt).slice(0, 20).map(card) });
+            syncTick();
+          }
+          // The one-second tick (inspector controls, then a publish) runs only while a run is live, so
+          // an idle parent never wakes. Settled runs keep taking inspector requests through a watch on
+          // their control directory, which costs nothing until a request is written.
+          function syncTick() {
+            const live = active && [...runs.values()].some((run) => run.state === "running" || run.state === "queued");
+            if (live && !timer) {
+              timer = timers.setInterval(() => { for (const run of runs.values()) void controls(run); publish(); }, 1000);
+              timer.unref?.();
+            } else if (!live && timer) {
+              timers.clearInterval(timer); timer = undefined;
+            }
+            if (live || !active) {
+              for (const watcher of controlWatchers.values()) watcher?.close();
+              controlWatchers.clear();
+              return;
+            }
+            for (const run of runs.values()) {
+              if (controlWatchers.has(run.id)) continue;
+              let watcher = null;
+              try {
+                watcher = fs.watch(path.join(run.dir, "control"), { recursive: true, persistent: false }, () => void controls(run));
+                watcher.on("error", () => { watcher.close(); controlWatchers.set(run.id, null); });
+              } catch { /* A run without a control directory takes no inspector requests. */ }
+              controlWatchers.set(run.id, watcher);
+              // A request written since the last tick raises no watch event.
+              void controls(run);
+            }
           }
           function save(run) {
             try {
@@ -608,12 +640,11 @@ enum ChildrenExtension {
                 }
               } catch { /* Missing artifacts cannot be resumed. */ }
             }
-            timer = setInterval(() => { for (const run of runs.values()) void controls(run); publish(); }, 1000);
-            timer.unref(); publish();
+            publish();
             registerCommands();
           });
           pi.on("session_shutdown", async () => {
-            active = false; clearInterval(timer); clearTimeout(controlRetry);
+            active = false; syncTick(); clearTimeout(controlRetry);
             const socket = control; control = undefined; socket?.destroy();
             for (const workflow of workflows.values()) workflow.controller.abort();
             await Promise.all([...workflows.values()].map((w) => w.done));

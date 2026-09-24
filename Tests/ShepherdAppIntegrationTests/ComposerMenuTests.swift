@@ -84,6 +84,26 @@ struct ComposerMenuTests {
         #expect(abs(solid.maxY - (thread.cardTop - AppLayout.menuGap)) <= 2, "ends 8pt above the card: \(solid)")
     }
 
+    /// The composer takes the keyboard while its thread is the focused pane (the window is never
+    /// key, so this never takes the user's focus), gives it up while its agent is hidden, and
+    /// takes it again when the agent is switched back to.
+    @Test func theComposerTakesTheKeyboardAgainWhenItsThreadComesBack() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(2)), focused: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let window = thread.window.window
+        func typing() -> Bool { (window.firstResponder as? NSTextView)?.isFieldEditor == true }
+        try await eventuallyOnMain("the composer to take the keyboard") { typing() }
+
+        thread.visibility.focused = false
+        try await thread.show(false)
+        #expect(!typing())
+
+        thread.visibility.focused = true
+        try await thread.show(true)
+        try await eventuallyOnMain("the composer to take the keyboard again") { typing() }
+    }
+
     /// The menu is the topmost thing where it floats: a point in it hits the menu, never the
     /// thread's scroll view beneath.
     @Test func theOpenMenuTakesThePointerOverTheThread() async throws {

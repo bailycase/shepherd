@@ -87,8 +87,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
   the preview renders, the live-model run, and the long-list timing report (see Testing).
-  **`SHEPHERD_BENCHMARK`** switches on `ComposerMenuBenchmarkTests`, which prints what the
-  composer's menus cost over a full model catalog.
+  **`SHEPHERD_BENCHMARK`** switches on the benchmarks that print timings: `ComposerMenuBenchmarkTests`
+  (the composer's menus over a full model catalog), `DataPathBenchmarks` (the server's data path),
+  and `PiSessionFileTests`' runtime-state check.
 - **`SHEPHERD_TIMING_TESTS=1`** runs the timing-sensitive tests even where `CI=true` skips them
   (see Testing).
 - **`PI_CODING_AGENT_DIR`** is pi's own: it moves pi's config and sessions away from
@@ -221,6 +222,16 @@ runs them.
   against large fixtures (`Support/ListFixtures.swift`). `ListPerf` times a change's update,
   layout, and display, and scrolls a list a step at a time by moving its clip view.
 
+**The server's data path** is pinned by counts too: the server queue held by a test hook
+(`SessionServer.holdQueue`, `beforeOffQueueDecode`) while reads, connects, and other agents are
+served; revisions pushed per change; and, in debug builds, the bytes a commit rehashes and the
+JSON encodes a snapshot makes (`RPCThreadState.bytesHashedByLastCommit`,
+`encodesByLastSnapshot`). Timings are opt-in: build with `swift build -c release -Xswiftc
+-enable-testing --build-tests`, then `SHEPHERD_BENCHMARK=1 swift test -c release --skip-build
+--filter DataPathBenchmarks` prints a history's decode, projection and release, a delta's cost
+beside many tool results, snapshot round trips, a status report's CPU, the server queue's
+latency while a long history reloads, and a relaunch of agents with long histories.
+
 **Extension tests** (`Tests/Extensions/*.test.mjs`, Node's test runner) need `PI_PACKAGE_DIR`
 pointing at the installed pi package. They isolate `HOME` and use a local fake provider.
 `native-children.smoke.mjs` is an opt-in real-model smoke (`PI_SMOKE_MODEL`).
@@ -301,7 +312,7 @@ Sources/
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState, PTYSession, SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
-                       PiModelCatalog, PiConfig.
+                       PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
@@ -314,7 +325,8 @@ Sources/
       +RemoteInspection, +RemoteWorktrees)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, Subagents, SubagentPresentation, SubagentInspector
-    TerminalSessions (TerminalSessionStore), TerminalHost (the only TerminalSurfaceKit import),
+    TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
+      TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
     DiffReview (ReviewSession), DiffReviewView (ReviewPane), GitDiff, CodeHighlight (tree-sitter)
     GitWorktree, WorktreeFinalize, ChecklistStatus, NewWorktreeSheet, FinalizeWorktreeSheet,
@@ -386,6 +398,14 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 - `--model`/`--thinking` go only to a fresh session.
 - Extensions follow Settings ▸ Pi ▸ Bundled extensions.
 - The opening prompt is the first native `send`, not a positional argument.
+- A new agent's pi spawns with its creation. At launch every restored agent's pi starts from
+  the first adoption of the workspace, not when its layout mounts, in `AgentStartQueue`'s
+  order: the agent on screen first (and any agent selected while it waits), then the rest a
+  few at a time. Every agent still starts. Test harnesses that seed agents only to draw them
+  opt out (`restoresAgentsAtLaunch: false`); their pi starts when a pane's session is asked for.
+- Starting is quiet: a thread draws what it knows at once (a new agent's empty state, a
+  resuming agent's history read from pi's session file), accepts a send that waits for pi, and
+  says "Starting pi…" only when pi is slow (DESIGN.md › Thread, Composer).
 
 `RPCThreadState` projects pi's events into the `NativeThreadSnapshot` that
 `SessionServer.nativeThread` serves locally and, over TCP, remotely
@@ -403,6 +423,11 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 
 It also reports `setAgentSession` with the live pi session ID, so `/new` or `/resume` survives a
 relaunch.
+
+A status is live state (`StateStore.updateLive`): broadcast and readable at once, but neither
+validated nor written to `state.json` on its own, since every turn reports twice and `start()`
+resets statuses anyway. The next structural mutation writes it along with its own change. Keep
+anything that must survive a relaunch out of that path.
 
 **Terminal panes** run the shell from Settings ▸ Terminal as a login shell. Startup files in the
 support directory's `shell-integration/` wrap `pi` so pi run by hand picks up Shepherd's theme.
@@ -554,9 +579,20 @@ Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a vie
 therefore mutually exclusive without locks.
 
 - Never `.sync` between these queues; it deadlocks.
+- The main thread never waits on the server queue to read state: a busy queue (a history
+  decoding at launch) would stall every frame. `SessionServer.state` reads the copy
+  `StateStore` publishes under a lock each time it commits; a mutation the caller awaited is
+  always in it. Code on the queue reads `store.state`. (Only `start()`, `stop()`, the remote
+  listener's start and stop, and `pushMessage` still run synchronously on the queue.)
+- Nothing slow runs on the queue. An RPC record of 256 KiB or more (a long history's
+  `get_messages`) decodes on a concurrent queue while its session holds every later record, in
+  order, until the decoded one is handled back on the queue; exit and unanswered-request
+  failures (and a deadline that passes meanwhile) wait for them too. Stdout is read at most
+  1 MiB per queue turn. Only the projection runs on the server queue.
 - Attach stays atomic: snapshot, attachment registration, and output watermark in one queue turn.
 - Callbacks (`onOutput`, `onStateChanged`, …) hop to the main queue in FIFO order. Never call them
-  from the server queue directly.
+  from the server queue directly. `onThreadRevision` alone is paced instead (at most one delivery
+  per display frame, only for watched agents): it says "pull now" and carries no state.
 
 **PTY children.** `PTYSession` resets every child signal disposition to `SIG_DFL` and clears the
 signal mask before exec, using async-signal-safe calls only. Without that, children inherit
@@ -614,20 +650,39 @@ waiting on you marks its parent's row. Child runs are display state and never pe
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps every
 mounted agent layout in the view tree, and selection only changes which one is visible (opacity,
-hit-testing, and `isRendering`, where Ghostty occlusion stops hidden panes' render loops). Three
-things silently bring back full-repaint lag:
+hit-testing, `nwMotionPaused`, and `isRendering`, where Ghostty occlusion stops hidden panes'
+render loops). A hidden thread suspends its store (`NativeThreadStore.suspend`) and keeps what it
+shows, so showing it again rebuilds the thread and its composer once, and its first pull catches
+it up without motion (docs/native-thread.md). The workspace hands each layout an Equatable
+`AgentLayoutModel` and nothing observable, so a status report reruns none of them. Things that
+silently bring back full-repaint lag:
 
 - reordering `mountedTabs` (ForEach identity)
 - using a conditional branch or `.hidden()` instead of `opacity(0)` (ConditionalContent destroys
   the subtree)
 - applying `setRenderingActive` fire-and-forget (the model retries; see
   [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md))
+- a layout view reading the view model's state instead of its model
+- the shell (`RootView`, `SidebarView`) reading the raw window width or building an object per
+  update: it watches `ShellLayout.layoutWidth`, which stops changing once the sidebar can't
 
-The one deliberate unmount is **cold parking**. A layout hidden for 30 s and outside the four
-most recently shown (`WorkspaceSelection.coldParkCandidates`) drops its terminal panes' surfaces
-via `TerminalSessionStore.parkPane`. Its processes and host-side screens keep running, and
-reselecting it remounts from the server snapshot. A thread pane has no surface; its
-`NativeThreadStore` keeps the draft and history. Measurements are in
+**During a window live resize** hidden layouts keep the column size they had when it began
+(`WorkspaceView.frozenSize`), so a drag relays out only the visible layout and a hidden shell
+takes one grid (one SIGWINCH) when it ends. Their outer frame is bounded on both sides, so a
+frozen layout wider than the column never widens the shell.
+
+**At launch** only the visible layout mounts in the first frame; the rest wait in
+`pendingMountTabIDs` and mount after it, two per run-loop turn, the visible space first
+(`drainPendingMounts`). An agent selected before its turn mounts at once. With forty agents the
+first frame built forty layouts and eighty thread bodies (about 400 ms) until it did.
+
+The one deliberate unmount is **cold parking**, and only for a layout holding a terminal pane. A
+layout hidden for 30 s and outside the four most recently shown
+(`WorkspaceSelection.coldParkCandidates`) drops its terminal panes' surfaces via
+`TerminalSessionStore.parkPane`. Its processes and host-side screens keep running, and
+reselecting it remounts from the server snapshot. A thread-only layout never parks: it has no
+surface, its hidden store polls nothing, and its `NativeThreadStore` keeps the draft and
+history, so returning to it is always a flip. Measurements are in
 [docs/benchmarks](docs/benchmarks/2026-09-03-terminal-baseline.md).
 
 **Sessions and views are separate.** Closing a pane detaches views only. A process that exits on

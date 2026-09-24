@@ -55,6 +55,14 @@ func until(_ condition: @escaping @MainActor () -> Bool) async {
     }
 }
 
+/// Holds a thread's first snapshot request until the test opens it.
+@MainActor
+@Observable
+final class FirstPullGate {
+    var asked = false
+    var held = true
+}
+
 /// A store whose run loop never polls on its own: its pause ends only when the loop is
 /// cancelled. Every refresh is the test's, so no poll lands between a test's steps however
 /// slowly the machine runs it.
@@ -192,6 +200,116 @@ struct NativeThreadStoreTests {
         await store.refresh()
         #expect(store.ready && !store.starting && store.loadError == nil && store.messages == [hi])
         #expect(store.pollInterval == .seconds(2))
+    }
+
+    /// History read from disk shows while pi starts, with nothing enabled, and pi's snapshot
+    /// replaces it.
+    @Test func aPreviewShowsUntilPisFirstSnapshotReplacesIt() async {
+        let (store, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        let fromDisk = F.assistant("from disk", id: "a")
+        store.preview(F.snapshot(generation: "preview", messages: [fromDisk]))
+        #expect(store.previewing && store.messages == [fromDisk] && store.rows.count == 1)
+        #expect(!store.ready && !store.supports("send") && store.starting)
+
+        host.starting = false
+        await store.refresh()
+        #expect(store.ready && !store.previewing && store.messages == [hi] && store.snapshot?.generation == "g")
+    }
+
+    /// Disk never overwrites what pi served, even once the thread has stopped.
+    @Test func aPreviewNeverReplacesPisThread() async {
+        let (store, _, task) = await started()
+        defer { task.cancel() }
+        store.preview(F.snapshot(generation: "preview", messages: []))
+        #expect(!store.previewing && store.messages == [hi])
+        store.stop()
+        store.preview(F.snapshot(generation: "preview", messages: []))
+        #expect(!store.previewing && store.messages == [hi])
+    }
+
+    /// The run loop reads the preview alongside its first pull, while pi has nothing to show.
+    @Test func runningAThreadLoadsItsPreviewWhilePiStarts() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.starting = true
+        let store = manualStore()
+        let fromDisk = F.assistant("from disk", id: "a")
+        let task = Task { await store.run(request: { try host.handle($0) }, preview: { F.snapshot(generation: "preview", messages: [fromDisk]) }) }
+        defer { task.cancel() }
+        await until { store.previewing }
+        #expect(store.messages == [fromDisk] && !store.ready)
+    }
+
+    /// Before the thread's first answer (a new agent's empty thread, drawn at once) Send is
+    /// offered, and a send waits for the thread to be ready.
+    @Test func aSendBeforeTheFirstAnswerWaitsForIt() async throws {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        host.acceptAll()
+        let gate = FirstPullGate()
+        let (opened, open) = AsyncStream<Void>.makeStream()
+        let store = manualStore()
+        store.preview(F.snapshot(generation: "preview", messages: []))
+        #expect(store.acceptsSend && store.previewing && !store.starting)
+        let task = Task {
+            await store.run { request in
+                if gate.held, case .snapshot = request {
+                    gate.held = false
+                    gate.asked = true
+                    for await _ in opened { break }
+                }
+                return try host.handle(request)
+            }
+        }
+        defer { task.cancel() }
+        await until { gate.asked }
+        store.draft = "start with this"
+        let sending = Task { await store.send() }
+        await until { store.busy }
+        #expect(host.actions.isEmpty && store.draft == "start with this")
+
+        open.yield()
+        await sending.value
+
+        #expect(host.actions.count == 1 && store.sentCount == 1 && store.draft.isEmpty && store.ready)
+    }
+
+    /// What the composer's "Starting pi…" watches: a thread waiting for its pi, never one that
+    /// is ready, in trouble, or a thread kept from before that is only refreshing.
+    @Test func aThreadAwaitsPiOnlyWhileItsPiHasNotAnswered() async {
+        let fresh = manualStore()
+        #expect(fresh.awaitingPi, "nothing from pi yet")
+
+        let (starting, host, task) = await startedWhileStarting()
+        defer { task.cancel() }
+        #expect(starting.awaitingPi)
+        host.starting = false
+        await starting.refresh()
+        #expect(!starting.awaitingPi, "ready")
+
+        starting.stop()
+        #expect(!starting.awaitingPi, "a thread kept from before, refreshing")
+
+        let (failed, failing, failedTask) = await startedWhileStarting()
+        defer { failedTask.cancel() }
+        failing.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "gone"))]
+        await failed.refresh()
+        #expect(!failed.awaitingPi, "an error")
+
+        let previewed = manualStore()
+        previewed.preview(F.snapshot(generation: "preview", messages: [hi]))
+        #expect(previewed.awaitingPi, "shown from disk")
+    }
+
+    /// The host's signal that pi serves (pushed as a revision) pulls the thread at once; its poll
+    /// never ran here.
+    @Test func wakingAStartingThreadPullsItsFirstSnapshotAtOnce() async {
+        let (store, host, task) = await startedWhileStarting(pushedStore(Pauses()))
+        defer { task.cancel() }
+        host.starting = false
+        store.revisionAvailable()
+        await until { store.ready }
+        #expect(host.requests == [.snapshot(), .snapshot()])
+        #expect(!store.starting && store.messages == [hi])
     }
 
     /// The host answers starting from the thread itself (a result) or before it reaches one (a
@@ -513,6 +631,180 @@ struct NativeThreadStoreTests {
         #expect(store.messages.map(\.entryID) == ["f"] && store.olderCursor == nil)
     }
 
+    // MARK: Switching away and back
+
+    /// Hiding an agent suspends its thread: polling stops, and everything the thread shows stays
+    /// as it was (ready, still running, the same rows), so showing it again is a flip.
+    @Test func suspendingKeepsTheThreadAsItIs() async {
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [F.user("go", id: "u"), hi]))
+        defer { task.cancel() }
+        let rows = store.rows
+        #expect(store.ready && store.settledRunning && store.running)
+
+        store.suspend()
+        await store.refresh()
+
+        #expect(host.requests.count == 1, "a suspended thread stops pulling")
+        #expect(store.ready && store.settledRunning && store.running && store.rows == rows)
+        #expect(store.catchUp == nil, "it is no longer caught up")
+    }
+
+    /// Four older pages loaded, the agent hidden and shown again: the newest page merges onto
+    /// them as a poll's does, instead of the thread starting over from one page.
+    @Test func aResumedRunOfTheSameSessionKeepsOlderPages() async {
+        let m2 = F.assistant("two", id: "m2"), m3 = F.assistant("three", id: "m3")
+        let (store, host, task) = await started(F.snapshot(messages: [m2, m3], olderCursor: "m2"))
+        let m0 = F.user("zero", id: "m0"), m1 = F.assistant("one", id: "m1")
+        host.next = [.success(.snapshot(value: F.snapshot(messages: [m0, m1, m2], olderCursor: "m0")))]
+        await store.loadOlder()
+        store.suspend()
+        task.cancel()
+
+        host.snapshot = F.snapshot(revision: 2, messages: [m3, F.assistant("four", id: "m4")], olderCursor: "m3")
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+
+        #expect(host.requests.last == .snapshot())
+        #expect(store.messages.map(\.entryID) == ["m0", "m1", "m2", "m3", "m4"] && store.olderCursor == "m0")
+        #expect(store.catchUp != nil)
+    }
+
+    /// A new generation of the session (or another session) is another thread: it starts over.
+    @Test func aResumedRunOfAnotherGenerationStartsOver() async {
+        let m2 = F.assistant("two", id: "m2"), m3 = F.assistant("three", id: "m3")
+        let (store, host, task) = await started(F.snapshot(messages: [m2, m3], olderCursor: "m2"))
+        host.next = [.success(.snapshot(value: F.snapshot(messages: [F.user("zero", id: "m0"), m2], olderCursor: nil)))]
+        await store.loadOlder()
+        store.suspend()
+        task.cancel()
+
+        host.snapshot = F.snapshot(generation: "g2", messages: [m3], olderCursor: "m3")
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+
+        #expect(store.messages.map(\.entryID) == ["m3"] && store.olderCursor == "m3")
+    }
+
+    /// The catch-up latch: set, with the versions of what the thread and the chrome showed then,
+    /// by the first pull after a run starts, and cleared when the run ends.
+    @Test func theFirstPullOfARunCatchesTheThreadUp() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = manualStore()
+        #expect(store.catchUp == nil)
+        let task = await start(store, host)
+        let first = try? #require(store.catchUp)
+        #expect(first?.thread == store.threadVersion && first?.chrome == store.chromeVersion)
+
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.user("more", id: "u")])
+        await store.refresh()
+        #expect(store.catchUp == first, "later pulls leave it")
+        #expect(store.threadVersion > first?.thread ?? .max, "the thread changed since")
+
+        store.suspend()
+        task.cancel()
+        #expect(store.catchUp == nil)
+    }
+
+    // MARK: Pushed revisions
+
+    /// A store whose poll interval never ends but whose short waits (the spacing between pushed
+    /// pulls) end at once: only a push makes it pull. `pauses` counts the intervals it began.
+    private func pushedStore(_ pauses: Pauses) -> NativeThreadStore {
+        NativeThreadStore { duration in
+            guard duration > NativeThreadStore.pushedPullSpacing else { return }
+            await pauses.began()
+            let (cancelled, continuation) = AsyncStream<Void>.makeStream()
+            for await _ in cancelled {}
+            continuation.finish()
+            throw CancellationError()
+        }
+    }
+
+    @Test func aPushedRevisionIsPulledWithoutWaitingTheInterval() async {
+        let pauses = Pauses()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(pauses)
+        let task = await start(store, host)
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("more", id: "b")])
+        store.revisionAvailable()
+        await until { store.snapshot?.revision == 2 }
+        await until { pauses.count == 2 }
+
+        #expect(host.requests == [.snapshot(), .snapshot(expectedSessionID: "s", afterRevision: 1)])
+    }
+
+    /// However many revisions are pushed while a pull is in flight, the loop pulls once more
+    /// after it, then waits out its interval again.
+    @Test func pushesDuringAPullCauseOneFollowUp() async {
+        let pauses = Pauses()
+        let gate = Gate()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(pauses)
+        let task = Task {
+            await store.run { request in
+                if gate.holding { await gate.hold() }
+                return try host.handle(request)
+            }
+        }
+        defer { task.cancel() }
+        await until { pauses.count == 1 }
+
+        gate.holding = true
+        host.snapshot = F.snapshot(revision: 2, messages: [hi, F.assistant("more", id: "b")])
+        store.revisionAvailable()
+        await until { gate.held }
+        for _ in 0..<5 { store.revisionAvailable() }
+        gate.release()
+        await until { pauses.count == 2 }
+
+        #expect(host.requests.count == 3, "the first pull, the pushed one, and one follow-up")
+        #expect(store.snapshot?.revision == 2)
+    }
+
+    /// The store says when its poll loop starts and ends, so the host pushes revisions only for
+    /// threads on screen.
+    @Test func aStoreSaysWhileItsThreadIsOnScreen() async {
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(Pauses())
+        var changes: [Bool] = []
+        store.onLiveChange = { changes.append($0) }
+        let task = await start(store, host)
+        #expect(store.isLive && changes == [true])
+
+        store.suspend()
+        #expect(!store.isLive && changes == [true, false])
+        task.cancel()
+        await task.value
+        let shownAgain = await start(store, host)
+        store.stop()
+        #expect(changes == [true, false, true, false])
+        shownAgain.cancel()
+    }
+
+    /// A thread off screen has no poll loop: a push neither pulls nor leaves a pull owed for
+    /// when it is shown again.
+    @Test func aSuspendedStoreIgnoresPushes() async {
+        let pauses = Pauses()
+        let host = FakeHost(F.snapshot(messages: [hi]))
+        let store = pushedStore(pauses)
+        let task = await start(store, host)
+        await until { pauses.count == 1 }
+
+        store.suspend()
+        for _ in 0..<3 { store.revisionAvailable() }
+        task.cancel()
+        await task.value
+        #expect(host.requests.count == 1)
+
+        let resumed = await start(store, host)
+        defer { resumed.cancel() }
+        await until { pauses.count == 2 }
+        #expect(host.requests.count == 2, "shown again, it pulls once and waits")
+    }
+
     @Test func thereIsNoOlderPageWithoutACursor() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
@@ -584,7 +876,7 @@ struct NativeThreadStoreTests {
         defer { task.cancel() }
         host.snapshot = F.snapshot(revision: 2, running: true, messages: [F.user(id: "u")], provisional: [running("step 2")])
         await store.refresh()
-        guard case .activity(let burst)? = store.rows.last?.presentation?.items.last else {
+        guard case .work(let group)? = store.rows.last?.presentation?.items.last, let burst = group.running.first else {
             Issue.record("no live line")
             return
         }
@@ -649,6 +941,68 @@ struct NativeThreadStoreTests {
         #expect(!invalidated.value)
     }
 
+    // MARK: What the chrome reads
+
+    /// The chrome's properties (see `NativeThreadStore.session`) and how to read each.
+    private static let chrome: [(String, @MainActor (NativeThreadStore) -> Void)] = [
+        ("session", { _ = $0.session }), ("dialogs", { _ = $0.dialogs }), ("dialogsSupported", { _ = $0.dialogsSupported }),
+        ("widgets", { _ = $0.widgets }), ("commands", { _ = $0.commands }), ("model", { _ = $0.model }),
+        ("thinking", { _ = $0.thinking }), ("stats", { _ = $0.stats }), ("supportedActions", { _ = $0.supportedActions }),
+        ("clipped", { _ = $0.clipped }), ("running", { _ = $0.running }), ("hostRunning", { _ = $0.hostRunning }),
+        ("workingLabel", { _ = $0.workingLabel }), ("userTurnCount", { _ = $0.userTurnCount }),
+        ("hasSubagents", { _ = $0.hasSubagents }),
+    ]
+
+    /// Which chrome properties announced a change while `change` ran.
+    private func changed(_ store: NativeThreadStore, _ change: () async -> Void) async -> Set<String> {
+        let fired = Names()
+        for (name, read) in Self.chrome {
+            withObservationTracking { read(store) } onChange: { fired.insert(name) }
+        }
+        await change()
+        return fired.value
+    }
+
+    /// A streamed chunk moves the rows and nothing the composer or the toolbar reads;
+    /// a poll that moves only the context count moves only `stats`; and each other change moves
+    /// what it shows.
+    @Test func eachChromePropertyChangesOnlyWithWhatItShows() async {
+        var snapshot = F.snapshot(running: true, messages: [F.user("go", id: "u")],
+                                  provisional: [F.assistant("Str", status: "streaming", id: "p")], model: "a/one")
+        snapshot.stats = NativeThreadStats(contextTokens: 1_000)
+        let (store, host, task) = await started(snapshot)
+        defer { task.cancel() }
+        #expect(store.running && store.workingLabel == "Working…" && store.userTurnCount == 1)
+
+        func serve(_ edit: (inout NativeThreadSnapshot) -> Void) async -> Set<String> {
+            await changed(store) {
+                edit(&snapshot)
+                snapshot.revision += 1
+                host.snapshot = snapshot
+                await store.refresh()
+            }
+        }
+
+        let steps: [(Set<String>, (inout NativeThreadSnapshot) -> Void)] = [
+            ([], { $0.provisional = [F.assistant("Streaming more", status: "streaming", id: "p")] }),
+            (["stats"], { $0.stats = NativeThreadStats(contextTokens: 2_000) }),
+            (["model"], { $0.model = "a/two" }),
+            (["thinking"], { $0.thinking = "high" }),
+            (["supportedActions"], { $0.supportedActions.append("sendImages") }),
+            (["widgets"], { $0.widgets = [NativeThreadWidget(namespace: "x", key: "k", kind: .status, text: "on")] }),
+            (["commands"], { $0.commands = [NativeCommand(name: "review")] }),
+            (["clipped"], { $0.clipped = true }),
+            (["hasSubagents"], { $0.subagents = [F.run("r")] }),
+            (["userTurnCount"], { $0.messages += [F.assistant("Done.", id: "a"), F.user("next", id: "u2")] }),
+            (["dialogs", "workingLabel"], { $0.dialogs = [NativeThreadDialog(id: "d", kind: .confirm, title: "Go?")] }),
+            (["session"], { $0.generation = "g2" }),
+        ]
+        for (index, (expected, edit)) in steps.enumerated() {
+            let fired = await serve(edit)
+            #expect(fired == expected, "step \(index)")
+        }
+    }
+
     @Test func stopDetachesTheStoreFromItsHost() async {
         let (store, host, task) = await started()
         defer { task.cancel() }
@@ -658,10 +1012,44 @@ struct NativeThreadStoreTests {
     }
 }
 
+/// Names collected from observations' change handlers.
+private final class Names: @unchecked Sendable {
+    private let lock = NSLock()
+    private var names: Set<String> = []
+    var value: Set<String> { lock.withLock { names } }
+    func insert(_ name: String) { _ = lock.withLock { names.insert(name) } }
+}
+
 /// Set once from an observation's change handler.
 private final class Flag: @unchecked Sendable {
     private let lock = NSLock()
     private var raised = false
     var value: Bool { lock.withLock { raised } }
     func set() { lock.withLock { raised = true } }
+}
+
+/// The poll intervals a store's run loop began waiting out.
+@MainActor @Observable
+private final class Pauses {
+    private(set) var count = 0
+    func began() { count += 1 }
+}
+
+/// Holds snapshot requests while `holding`: a pull in flight, for as long as a test needs.
+@MainActor @Observable
+private final class Gate {
+    var holding = false
+    private(set) var held = false
+    @ObservationIgnored private var waiter: CheckedContinuation<Void, Never>?
+
+    func hold() async {
+        await withCheckedContinuation { waiter = $0; held = true }
+    }
+
+    func release() {
+        holding = false
+        held = false
+        waiter?.resume()
+        waiter = nil
+    }
 }

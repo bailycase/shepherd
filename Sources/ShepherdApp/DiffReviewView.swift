@@ -59,7 +59,7 @@ struct ReviewPaneHost: View {
 
     var body: some View {
         ReviewPane(session: session, actions: actions,
-                   touchedPaths: touched.paths(store.messages, running: store.snapshot?.running ?? false))
+                   touchedPaths: touched.paths(store.messages, running: store.hostRunning))
     }
 }
 

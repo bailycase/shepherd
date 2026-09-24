@@ -9,6 +9,7 @@
   "stderr" writes a line to stderr
   "slow"   a streaming turn that pauses twice (mid-deltas, mid-tool) until the
            files `continue-1` / `continue-2` appear in the cwd
+  "stream" a reply of 40 text deltas 2 ms apart, as a model streams one
   "widgets"      emits setStatus/setWidget/notify/setTitle (with ANSI colour)
   "widgets-clear" clears the status and widget from "widgets"
   "select" emits a select extension_ui_request (no timeout) and waits
@@ -162,6 +163,27 @@ def streaming_turn(prompt, slow=False):
     emit({"type": "agent_settled"}, terminator=b"\r\n")
 
 
+def paced_turn(prompt, deltas=40, interval=0.002):
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
+    update({"type": "text_start", "contentIndex": 0})
+    text = ""
+    for i in range(deltas):
+        piece = f" word{i}"
+        text += piece
+        update({"type": "text_delta", "contentIndex": 0, "delta": piece})
+        time.sleep(interval)
+    update({"type": "text_end", "contentIndex": 0, "content": text})
+    final = {"role": "assistant", "content": [{"type": "text", "text": text}], "stopReason": "stop"}
+    emit({"type": "message_end", "message": final})
+    emit({"type": "turn_end", "message": final, "toolResults": []})
+    MESSAGES.extend([{"role": "user", "content": prompt}, final])
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "agent_end", "messages": [final], "willRetry": False})
+    emit({"type": "agent_settled"})
+
+
 def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
@@ -267,6 +289,9 @@ for raw in sys.stdin.buffer:
         elif message == "slow":
             # Real pi keeps reading stdin during a turn; the paused turn must too.
             turn_thread = threading.Thread(target=streaming_turn, args=(message, True), daemon=True)
+            turn_thread.start()
+        elif message == "stream":
+            turn_thread = threading.Thread(target=paced_turn, args=(message,), daemon=True)
             turn_thread.start()
         elif message == "widgets":
             ui("setStatus", statusKey="build", statusText="\x1b[32mgreen\x1b[0m ok")

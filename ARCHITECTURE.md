@@ -40,7 +40,7 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote
 | `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card), and `ShepherdLog` | Core, Protocol |
 | `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs). SwiftUI only; no app state | nothing |
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
-| `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
+| `ShepherdSessions` | `SessionServer`, the authoritative state store and every session. Agents run as `RPCSession` + `RPCThreadState`, panes as `PTYSession` + `SessionScreen`. Also `StateStore`, the extension socket, the remote listener, `PiSessionPreview` (a thread read from pi's session file while pi starts), and `PiModelCatalog`/`PiConfig` | Core, Protocol, Remote, ShepherdPTYSpawn, SwiftTerm |
 | `TerminalSurfaceKit` | The libghostty adapter for terminal panes (see its [NOTES.md](Sources/TerminalSurfaceKit/NOTES.md)). Knows nothing about agents or workspaces | GhosttyTerminal |
 | `ShepherdApp` | Everything on screen: view model, selection, thread views, review, palette, settings, sheets, appearance, keybindings, embedded extensions, the pane-to-session bridge, and the remote host store | all of the above, Sparkle, tree-sitter |
 | `shepherd-cli` | `shepherd --import herdr`: writes herdr workspaces into `state.json` while Shepherd is not running | Core, Protocol |
@@ -63,7 +63,12 @@ The iOS target compiles `App/iOS` against Core, Protocol, and Remote only.
 (spaces, per-agent layout tabs, agents, automations) and every live session. One serial queue
 owns all server state. Each session's internal queue targets that queue, so session callbacks,
 extension handlers, and remote connections are mutually exclusive without locks. Callbacks
-(`onStateChanged`, `onOutput`, …) hop to the main queue in FIFO order.
+(`onStateChanged`, `onOutput`, …) hop to the main queue in FIFO order. `onThreadRevision` is the
+exception: a hint to pull, delivered at most once per display frame and only for the agents the
+app watches (its threads on screen).
+Nothing waits on the queue from outside: `SessionServer.state` returns the copy `StateStore`
+publishes under a lock as it commits, and an RPC record of 256 KiB or more (a long history)
+decodes on a concurrent queue while its session holds its later records in order.
 
 **`ShepherdViewModel`** (split across `ShepherdViewModel+*.swift`) holds only presentation state:
 
@@ -86,7 +91,8 @@ change only when a menu's own value does.
 **`TerminalSessionStore`** (`TerminalSessions.swift`) owns the pane-to-session lifecycle:
 
 - It creates or adopts sessions: RPC for an agent's primary pane, a PTY running the configured
-  shell for the others.
+  shell for the others. Restored agents' pi start in `AgentStartQueue`'s order at launch (the
+  agent on screen first), and the server's servable signal wakes the agent's thread store.
 - It attaches terminal surfaces, handles early exits and rebuild races, and retires dead
   sessions once their final snapshot is no longer needed.
 - An agent's thread pane has no surface. `NativeThreadStores` keeps one `NativeThreadStore` per
@@ -116,10 +122,13 @@ beside the thread never narrows what the dock rule measures.
 
 ```text
 pi --mode rpc  (/bin/zsh -l -c, --session-id, -e extensions)
-  → RPCSession        stdin/stdout JSONL; stdout records up to 256 MiB
-  → RPCThreadState    events → bounded, revisioned NativeThreadSnapshot; requests → RPC commands
+  → RPCSession        stdin/stdout JSONL; stdout records up to 256 MiB, long ones decoded off the queue
+  → RPCThreadState    events → bounded, revisioned NativeThreadSnapshot (rows hashed and sized once);
+                      requests → RPC commands; each new revision of a thread on screen pushed
+                      as onThreadRevision, at most once per frame
   → SessionServer.nativeThread (local, direct)  |  RemoteRequest.nativeThread (TCP)
-  → NativeThreadStore (poll, page, echo, settle; derive rows, activity lines, placements)
+  → NativeThreadStore (poll, or pull on a push; page, echo, settle; derive rows, activity lines,
+                      placements)
   → ThreadView · Composer · Subagents · SubagentInspector
 ```
 
@@ -248,7 +257,8 @@ the bundle id, so Shepherd Nightly (`com.bailycase.shepherd.nightly`) uses
 
 - **Validation:** state is validated (`ShepherdState.validate()`) before every write. `StateStore`
   encodes the candidate and writes it atomically before replacing in-memory state or publishing
-  callbacks.
+  callbacks. Agent statuses are the exception (`updateLive`): published at once, written only
+  with the next structural mutation, since `start()` resets them anyway.
 - **Corrupt files:** a state file that is corrupt or invalid at startup is moved aside as
   `state.json.corrupt-<uuid>`. If the move fails, further writes are refused rather than
   overwriting the evidence.

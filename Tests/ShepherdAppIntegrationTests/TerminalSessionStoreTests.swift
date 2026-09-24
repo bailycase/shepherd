@@ -199,6 +199,26 @@ struct TerminalSessionStoreTests {
         #expect(session.phase == .exited(3))
     }
 
+    /// A watched agent's revisions reach the store's callback.
+    @Test func anAgentsThreadRevisionsAreForwardedByTheStore() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = try await app.liveAgent(in: space)
+        try await app.server.putState(Fixture.state(spaces: [space], agents: [agent]))
+        let store = TerminalSessionStore(server: app.server)
+        var revised: [AgentID] = []
+        store.onThreadRevision = { revised.append($0) }
+        let snapshot = try await app.readyThread(agent.agent.id)
+        revised.removeAll()
+        store.watchThreadRevisions(of: [agent.agent.id])
+
+        _ = try await app.server.nativeThread(agentID: agent.agent.id, request: .send(
+            expectedSessionID: snapshot.piSessionID, generation: snapshot.generation, operationID: UUID(), text: "hello", delivery: .followUp))
+        try await eventuallyOnMain("the turn's revisions to reach the store") { revised.contains(agent.agent.id) }
+        #expect(Set(revised) == [agent.agent.id])
+    }
+
     @Test func aProcessThatExitsDuringASurfaceRebuildIsRetired() async throws {
         let scratch = try ScratchServer()
         defer { scratch.stop() }

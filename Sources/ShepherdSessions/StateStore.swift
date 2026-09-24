@@ -15,17 +15,28 @@ enum StateStoreError: Error, CustomStringConvertible, Sendable {
 }
 
 /// Persists ShepherdState as JSON with atomic writes. Callers serialize access
-/// (the in-process server confines all use to its serial queue).
+/// (the in-process server confines all use to its serial queue), except `committed`, which any
+/// thread may read.
 final class StateStore: @unchecked Sendable {
     let url: URL
     private(set) var state: ShepherdState
+    /// Moves with every committed state, so derived lookups know when to rebuild.
+    private(set) var version: UInt64 = 0
     private var recoveryError: StateStoreError?
+    private let committedLock = NSLock()
+    private var committedState = ShepherdState()
 
     init(url: URL) {
         self.url = url
         self.state = ShepherdState()
         self.recoveryError = nil
         load()
+    }
+
+    /// The last committed state, readable from any thread without waiting for the queue. It is
+    /// published before the mutation that committed it returns.
+    var committed: ShepherdState {
+        committedLock.withLock { committedState }
     }
 
     func update(_ mutate: (inout ShepherdState) -> Void) throws {
@@ -37,7 +48,22 @@ final class StateStore: @unchecked Sendable {
         mutate(&candidate)
         try candidate.validate()
         try persist(candidate)
-        state = candidate
+        commit(candidate)
+    }
+
+    /// Commits a change that no invariant depends on and no relaunch needs (an agent's status,
+    /// which `start()` resets to idle anyway): published at once, but neither validated nor
+    /// written. The next `update` writes it along with its own change.
+    func updateLive(_ mutate: (inout ShepherdState) -> Void) {
+        var next = state
+        mutate(&next)
+        commit(next)
+    }
+
+    private func commit(_ next: ShepherdState) {
+        state = next
+        version &+= 1
+        committedLock.withLock { committedState = next }
     }
 
     private func load() {
@@ -49,7 +75,7 @@ final class StateStore: @unchecked Sendable {
             do {
                 let loaded = try JSONDecoder().decode(ShepherdState.self, from: data)
                 try loaded.validate()
-                state = loaded
+                commit(loaded)
             } catch {
                 quarantine(cause: error)
             }

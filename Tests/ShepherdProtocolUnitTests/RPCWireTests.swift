@@ -98,7 +98,7 @@ struct RPCWireTests {
     // MARK: Messages
 
     @Test func messagesDecodeLeniently() throws {
-        let data = try Self.response("""
+        let response = try Self.response("""
         {"type":"response","command":"get_messages","success":true,"data":{"messages":[
           {"role":"user","content":"Hello!","timestamp":1733234567890,"attachments":[]},
           {"role":"assistant","content":[{"type":"text","text":"Hi"},{"type":"thinking","thinking":"greeting"},{"type":"toolCall","id":"call_1","name":"bash","arguments":{"command":"ls"}}],"stopReason":"stop","usage":{"input":1}},
@@ -108,8 +108,8 @@ struct RPCWireTests {
           {"role":"assistant","content":[],"stopReason":"error","errorMessage":"529 overloaded"},
           {"role":"custom","customType":"note","display":false,"content":"model only"}
         ]}}
-        """).data
-        let messages = try #require(data?["messages"]).decode([RPCMessage].self)
+        """)
+        let messages = try #require(response.messages)
         #expect(messages.map(\.role) == ["user", "assistant", "toolResult", "bashExecution", "user", "assistant", "custom"])
         #expect(messages[0].content == [.text("Hello!")], "string content is one text block")
         #expect(messages[0].timestamp == 1733234567890)
@@ -122,6 +122,54 @@ struct RPCWireTests {
         #expect(messages[4].content == [.text("look"), .image(mimeType: "image/png", data: "AAAA"), .unknown(type: "sticker")])
         #expect(messages[5].errorMessage == "529 overloaded" && messages[1].errorMessage == nil)
         #expect(messages[6].customType == "note" && messages[6].display == false)
+    }
+
+    /// get_messages records, by what they hold after `"success":true` (nil: no `data` at all).
+    static let historyRecords: [(String, String?)] = [
+        ("normal", #"{"messages":[{"role":"user","content":"Hello!","timestamp":1733234567890},{"role":"assistant","content":[{"type":"text","text":"Hi"},{"type":"thinking","thinking":"hm"}],"stopReason":"stop","timestamp":1733234567891.5}]}"#),
+        ("unknown fields", #"{"count":2,"messages":[{"role":"user","content":"a","attachments":[],"mood":{"x":1}},{"role":"bashExecution","command":"ls","exitCode":0,"output":"x"}],"next":null}"#),
+        ("no data", nil),
+        ("null data", "null"),
+        ("messages not an array", #"{"messages":{"role":"user","content":"a"}}"#),
+        ("a malformed element", #"{"messages":[{"role":"user","content":"a"},42]}"#),
+        ("images", #"{"messages":[{"role":"user","content":[{"type":"text","text":"look"},{"type":"image","data":"iVBORw0KGgo=","mimeType":"image/png"},{"type":"sticker"}]}]}"#),
+        ("tool call arguments", #"{"messages":[{"role":"assistant","content":[{"type":"toolCall","id":"c1","name":"edit","arguments":{"path":"a/b.swift","n":3,"f":0.25,"big":12345678901234,"on":true,"off":false,"none":null,"list":[1,"two",[false]],"text":"café   \"q\""}}],"stopReason":"toolUse"},{"role":"toolResult","toolCallId":"c1","toolName":"edit","content":[{"type":"text","text":"ok"}],"isError":false}]}"#),
+    ]
+
+    private static func historyLine(_ data: String?) -> Data {
+        Data((#"{"type":"response","id":"r1","command":"get_messages","success":true"# + (data.map { #","data":\#($0)"# } ?? "") + "}").utf8)
+    }
+
+    /// The typed payload decodes exactly the messages the lenient JSONValue path did, and a
+    /// record it does not fit falls back to that path.
+    @Test(arguments: historyRecords)
+    func historyDecodesTypedExactlyAsTheLenientPathDid(name: String, data: String?) throws {
+        let line = Self.historyLine(data)
+        guard case .response(let response) = try NDJSON.decode(RPCIncoming.self, from: line) else {
+            Issue.record("\(name): not a response"); return
+        }
+        struct Lenient: Decodable { let data: JSONValue? }
+        let lenient = try JSONDecoder().decode(Lenient.self, from: line).data
+        let expected = try? lenient?["messages"]?.decode([RPCMessage].self)
+        #expect(response.messages == expected, "\(name)")
+        #expect(response.id == "r1" && response.success)
+    }
+
+    @Test func aHistoryResponseCarriesTheTypedPayloadNotJSON() throws {
+        let response = try Self.response(String(decoding: Self.historyLine(Self.historyRecords[0].1), as: UTF8.self))
+        guard case .messages(let messages) = response.payload else {
+            Issue.record("expected the typed payload, got \(String(describing: response.payload))"); return
+        }
+        #expect(messages.map(\.role) == ["user", "assistant"])
+        #expect(response.data == nil)
+    }
+
+    /// Only get_messages is typed, and only when its data fits.
+    @Test func otherResponsesAndMisfitHistoriesKeepTheirJSON() throws {
+        let state = try Self.response(#"{"type":"response","command":"get_state","success":true,"data":{"messages":[]}}"#)
+        #expect(state.payload == .json(.object(["messages": .array([])])))
+        let misfit = try Self.response(String(decoding: Self.historyLine(#"{"messages":[{"role":"user"},42]}"#), as: UTF8.self))
+        #expect(misfit.payload == .json(.object(["messages": .array([.object(["role": .string("user")]), .number(42)])])))
     }
 
     @Test(arguments: [
@@ -182,31 +230,31 @@ struct RPCWireTests {
         #expect(result?.content == [] && isError)
     }
 
+    /// pi's `usage` rides every delta and is not read, whatever shape it has.
     @Test func assistantDeltasDecode() throws {
-        guard case .messageUpdate(let text, let usage) = try Self.event(
-            #"{"type":"message_update","usage":{"totalTokens":101},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Hello "}}"#
+        guard case .messageUpdate(let text) = try Self.event(
+            #"{"type":"message_update","usage":{"totalTokens":101,"cost":{"total":[1,true]}},"assistantMessageEvent":{"type":"text_delta","contentIndex":0,"delta":"Hello "}}"#
         ) else { Issue.record("text_delta"); return }
         #expect(text.type == "text_delta" && text.contentIndex == 0 && text.delta == "Hello ")
-        #expect(usage?["totalTokens"]?.doubleValue == 101)
 
-        guard case .messageUpdate(let start, nil) = try Self.event(
+        guard case .messageUpdate(let start) = try Self.event(
             #"{"type":"message_update","assistantMessageEvent":{"type":"toolcall_start","contentIndex":1,"id":"call_1","toolName":"write"}}"#
         ) else { Issue.record("toolcall_start"); return }
         #expect(start.id == "call_1" && start.toolName == "write")
 
-        guard case .messageUpdate(let end, _) = try Self.event(
+        guard case .messageUpdate(let end) = try Self.event(
             #"{"type":"message_update","assistantMessageEvent":{"type":"toolcall_end","toolCall":{"type":"toolCall","id":"call_1","name":"write","arguments":{"path":"a.txt"}}}}"#
         ) else { Issue.record("toolcall_end"); return }
         #expect(end.toolCall == .toolCall(id: "call_1", name: "write", arguments: .object(["path": .string("a.txt")])))
 
-        guard case .messageUpdate(let textEnd, _) = try Self.event(
+        guard case .messageUpdate(let textEnd) = try Self.event(
             #"{"type":"message_update","assistantMessageEvent":{"type":"text_end","content":"Hello world"}}"#
         ) else { Issue.record("text_end"); return }
         #expect(textEnd.content == "Hello world")
     }
 
     @Test func aLineSeparatorInsideAStringIsData() throws {
-        guard case .messageUpdate(let delta, _) = try Self.event(
+        guard case .messageUpdate(let delta) = try Self.event(
             "{\"type\":\"message_update\",\"assistantMessageEvent\":{\"type\":\"thinking_delta\",\"delta\":\"a\u{2028}b\"}}"
         ) else { Issue.record("thinking_delta"); return }
         #expect(delta.delta == "a\u{2028}b")
@@ -266,9 +314,16 @@ struct JSONValueTests {
         #expect(try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(value)) == value)
     }
 
-    @Test func booleansAreNotReadAsNumbers() throws {
-        #expect(try JSONDecoder().decode(JSONValue.self, from: Data("false".utf8)) == .bool(false))
-        #expect(try JSONDecoder().decode(JSONValue.self, from: Data("0".utf8)) == .number(0))
+    /// Strings and objects are tried first; booleans must still never read as numbers, nor
+    /// numbers as booleans or strings.
+    @Test(arguments: [
+        ("false", JSONValue.bool(false)), ("true", .bool(true)), ("0", .number(0)), ("1", .number(1)),
+        ("1.0", .number(1)), ("-2.5e3", .number(-2500)), (#""1""#, .string("1")), (#""true""#, .string("true")),
+        ("[true,1,\"x\",null,{}]", .array([.bool(true), .number(1), .string("x"), .null, .object([:])])),
+        (#"{"b":false,"n":0,"s":"","a":[]}"#, .object(["b": .bool(false), "n": .number(0), "s": .string(""), "a": .array([])])),
+    ])
+    func eachKindDecodesAsItself(json: String, expected: JSONValue) throws {
+        #expect(try JSONDecoder().decode(JSONValue.self, from: Data(json.utf8)) == expected)
     }
 
     @Test func accessorsReturnNilForTheWrongKind() {

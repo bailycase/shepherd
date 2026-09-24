@@ -55,6 +55,17 @@ final class RPCSession: @unchecked Sendable {
     static let maxStderrLineBytes = 64 * 1024
     /// `kill()` waits this long for SIGTERM before SIGKILL.
     static let killGrace: DispatchTimeInterval = .seconds(2)
+    /// Records at least this long (a long history's `get_messages`) decode off the session queue,
+    /// which targets the server queue: decoding one held every other session, terminal, and
+    /// request behind it for hundreds of milliseconds.
+    static let offQueueDecodeBytes = 256 * 1024
+    /// Stdout one queue turn reads before yielding to other work.
+    static let readBudgetPerTurn = 1024 * 1024
+    /// Concurrent, so the histories of agents resuming together decode side by side.
+    private static let decodeQueue = DispatchQueue(label: "shepherd.rpc.decode", qos: .utility, attributes: .concurrent)
+
+    /// Tests only: runs on the decode queue before each off-queue decode.
+    var beforeOffQueueDecode: (() -> Void)?
 
     private let queue: DispatchQueue
     private let childPID: pid_t
@@ -79,6 +90,18 @@ final class RPCSession: @unchecked Sendable {
     private var stdoutClosed = false
     private var stderrClosed = false
     private var stdinClosed = false
+    private var isShutDown = false
+    /// A record is decoding off the queue: every later record waits in `deferredRecords`, in
+    /// arrival order, so the session handles its records in exactly the order pi wrote them.
+    private var decodingOffQueue = false
+    private var deferredRecords: [Data] = []
+    private var recordsInFlight: Bool { decodingOffQueue || !deferredRecords.isEmpty }
+    /// Requests whose deadline passed while records were in flight.
+    private var expiring: [(id: String, type: String, timeout: TimeInterval)] = []
+    /// Tests: requests whose deadline waits on records in flight.
+    var expiringRequestCount: Int { expiring.count }
+    /// Tests: records waiting behind an off-queue decode.
+    var deferredRecordCount: Int { deferredRecords.count }
 
     var info: SessionInfo {
         SessionInfo(id: id, cwd: cwd, command: command, cols: 0, rows: 0, isAlive: isAlive)
@@ -235,10 +258,21 @@ final class RPCSession: @unchecked Sendable {
         pendingRequests[requestID] = completion
         send(command, id: requestID)
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in
-            guard let self, let pending = self.pendingRequests.removeValue(forKey: requestID) else { return }
-            ShepherdLog.warning("rpc session \(self.id) \(command.type) timed out after \(timeout)s")
-            pending(.failure(.timeout))
+            self?.expire(requestID, type: command.type, timeout: timeout)
         }
+    }
+
+    /// A request's deadline passed. An answer that arrived in time may still be decoding off the
+    /// queue, so the verdict waits for the records already read.
+    private func expire(_ requestID: String, type: String, timeout: TimeInterval) {
+        guard pendingRequests[requestID] != nil else { return }
+        if recordsInFlight {
+            expiring.append((requestID, type, timeout))
+            return
+        }
+        guard let pending = pendingRequests.removeValue(forKey: requestID) else { return }
+        ShepherdLog.warning("rpc session \(id) \(type) timed out after \(timeout)s")
+        pending(.failure(.timeout))
     }
 
     /// Graceful stop: SIGTERM the process group, SIGKILL after `killGrace`.
@@ -264,6 +298,8 @@ final class RPCSession: @unchecked Sendable {
         }
         isAlive = false
         exitDelivered = true
+        isShutDown = true
+        deferredRecords.removeAll()
         onEvent = nil
         onStderr = nil
         onExit = nil
@@ -335,7 +371,7 @@ final class RPCSession: @unchecked Sendable {
         ps.activate()
         procSource = ps
 
-        drainStdout()
+        drainStdout(budget: .max)
         drainStderr()
         _ = reap()
         // The process source covers exits after registration; the timer is a
@@ -345,13 +381,19 @@ final class RPCSession: @unchecked Sendable {
         }
     }
 
-    private func drainStdout() {
+    /// Reads what pi has written, `budget` bytes at most in this queue turn: the read source fires
+    /// again while the pipe holds more, so a long record arriving never holds the server queue
+    /// for its whole length.
+    private func drainStdout(budget: Int = RPCSession.readBudgetPerTurn) {
         guard !stdoutClosed else { return }
         var buf = [UInt8](repeating: 0, count: 64 * 1024)
+        var read = 0
         while true {
-            let n = read(stdoutFD, &buf, buf.count)
+            let n = Darwin.read(stdoutFD, &buf, buf.count)
             if n > 0 {
                 feedStdout(Data(bytes: buf, count: n))
+                read += n
+                if read >= budget { return }
                 continue
             }
             if n == 0 {
@@ -370,31 +412,91 @@ final class RPCSession: @unchecked Sendable {
     /// never stops.
     private func feedStdout(_ chunk: Data) {
         // Only the new bytes can hold the next LF: rescanning a multi-megabyte partial record
-        // on every chunk made large replies quadratic.
-        let searchFrom = stdoutBuffer.count
+        // on every chunk made large replies quadratic. Each line is copied out once and the
+        // consumed prefix dropped once per chunk.
+        var searchFrom = stdoutBuffer.count
         stdoutBuffer.append(chunk)
-        var from = stdoutBuffer.startIndex + searchFrom
-        while let lf = stdoutBuffer[from...].firstIndex(of: 0x0A) {
-            var line = stdoutBuffer[stdoutBuffer.startIndex..<lf]
-            stdoutBuffer.removeSubrange(stdoutBuffer.startIndex...lf)
-            from = stdoutBuffer.startIndex
+        var consumed = 0
+        while let lf = Self.newline(in: stdoutBuffer, from: searchFrom) {
+            let start = consumed
+            consumed = lf + 1
+            searchFrom = consumed
             if discardingRecord {
                 discardingRecord = false
                 continue
             }
-            if line.last == 0x0D { line = line.dropLast() }
-            if line.count > Self.maxRecordBytes {
-                ShepherdLog.warning("rpc session \(id) dropped a \(line.count)-byte record (limit \(Self.maxRecordBytes))")
+            let base = stdoutBuffer.startIndex
+            let end = lf > start && stdoutBuffer[base + lf - 1] == 0x0D ? lf - 1 : lf
+            if end - start > Self.maxRecordBytes {
+                ShepherdLog.warning("rpc session \(id) dropped a \(end - start)-byte record (limit \(Self.maxRecordBytes))")
                 continue
             }
-            if line.isEmpty { continue }
-            handleRecord(Data(line))
+            if end == start { continue }
+            receiveRecord(stdoutBuffer.subdata(in: (base + start)..<(base + end)))
+        }
+        if consumed > 0 {
+            stdoutBuffer.removeSubrange(stdoutBuffer.startIndex..<(stdoutBuffer.startIndex + consumed))
         }
         if stdoutBuffer.count > Self.maxRecordBytes {
             ShepherdLog.warning("rpc session \(id) dropping an unterminated record over \(Self.maxRecordBytes) bytes")
             stdoutBuffer.removeAll(keepingCapacity: false)
             discardingRecord = true
         }
+    }
+
+    /// The offset of the first LF at or after `offset`.
+    private static func newline(in data: Data, from offset: Int) -> Int? {
+        data.withUnsafeBytes { raw -> Int? in
+            guard offset < raw.count, let base = raw.baseAddress,
+                  let hit = memchr(base + offset, 0x0A, raw.count - offset) else { return nil }
+            return base.distance(to: UnsafeRawPointer(hit))
+        }
+    }
+
+    private func receiveRecord(_ line: Data) {
+        if decodingOffQueue {
+            deferredRecords.append(line)
+        } else if line.count >= Self.offQueueDecodeBytes {
+            decodeOffQueue(line)
+        } else {
+            handleRecord(line)
+        }
+    }
+
+    private func decodeOffQueue(_ line: Data) {
+        decodingOffQueue = true
+        let hook = beforeOffQueueDecode
+        Self.decodeQueue.async { [weak self] in
+            hook?()
+            let decoded = Result { try NDJSON.decode(RPCIncoming.self, from: line) }
+            guard let self else { return }
+            self.queue.async { self.finishOffQueueDecode(decoded) }
+        }
+    }
+
+    /// Back on the session queue: handle the record, then the ones that arrived behind it, until
+    /// they run out or another long one goes off the queue.
+    private func finishOffQueueDecode(_ decoded: Result<RPCIncoming, Error>) {
+        decodingOffQueue = false
+        guard !isShutDown else { return }
+        switch decoded {
+        case .success(let incoming): dispatch(incoming)
+        case .failure(let error): ShepherdLog.warning("rpc session \(id) dropped a malformed record: \(error)")
+        }
+        var waiting = deferredRecords[...]
+        deferredRecords.removeAll()
+        while let line = waiting.popFirst() {
+            receiveRecord(line)
+            if decodingOffQueue {
+                deferredRecords = Array(waiting)
+                return
+            }
+        }
+        let expired = expiring
+        expiring.removeAll()
+        for request in expired { expire(request.id, type: request.type, timeout: request.timeout) }
+        failRequestsAfterExit()
+        deliverExitIfReady()
     }
 
     private func handleRecord(_ line: Data) {
@@ -405,6 +507,10 @@ final class RPCSession: @unchecked Sendable {
             ShepherdLog.warning("rpc session \(id) dropped a malformed record: \(error)")
             return
         }
+        dispatch(incoming)
+    }
+
+    private func dispatch(_ incoming: RPCIncoming) {
         switch incoming {
         case .event(let event):
             if case .unknown(let type) = event {
@@ -472,7 +578,8 @@ final class RPCSession: @unchecked Sendable {
     }
 
     private func handleChildExited() {
-        drainStdout()
+        // Everything pi wrote is read before it is reaped: an answer in it beats the failure.
+        drainStdout(budget: .max)
         drainStderr()
         _ = reap()
     }
@@ -495,17 +602,24 @@ final class RPCSession: @unchecked Sendable {
         signalProcessGroup(SIGKILL)
         cancelProcessSources()
         closeStdin()
-        let outstanding = pendingRequests
-        pendingRequests.removeAll()
-        for (_, completion) in outstanding {
-            completion(.failure(.exited(code: code)))
-        }
+        failRequestsAfterExit()
         deliverExitIfReady()
         return true
     }
 
+    /// Requests pi never answered fail once it is gone, but only after every record it wrote
+    /// has been handled: an answer may still be decoding.
+    private func failRequestsAfterExit() {
+        guard reaped, !recordsInFlight else { return }
+        let outstanding = pendingRequests
+        pendingRequests.removeAll()
+        for (_, completion) in outstanding {
+            completion(.failure(.exited(code: exitCode)))
+        }
+    }
+
     private func deliverExitIfReady() {
-        guard reaped, stdoutClosed, !exitDelivered else { return }
+        guard reaped, stdoutClosed, !exitDelivered, !recordsInFlight else { return }
         exitDelivered = true
         onExit?(exitCode)
     }

@@ -38,23 +38,75 @@ final class PiUpdateManager {
     }
 
     @ObservationIgnored private var timerTask: Task<Void, Never>?
+    @ObservationIgnored private let defaults: UserDefaults
+    /// When a check last succeeded, across launches: the automatic check runs once a day.
+    @ObservationIgnored private var lastSucceeded: Date?
 
-    init() {}
+    /// A launch's first automatic check waits this long, so it never competes with the
+    /// relaunched agents' pi processes.
+    static let launchDelay: Duration = .seconds(60)
+    private enum Key {
+        static let checked = "shepherd.piUpdates.lastChecked"
+        static let current = "shepherd.piUpdates.currentVersion"
+        static let latest = "shepherd.piUpdates.latestVersion"
+    }
+
+    /// Restores the last successful check's result, so Settings shows it before the next one.
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        lastSucceeded = defaults.object(forKey: Key.checked) as? Date
+        if let lastSucceeded, let current = defaults.string(forKey: Key.current), let latest = defaults.string(forKey: Key.latest) {
+            currentVersion = current
+            latestVersion = latest
+            isOutdated = Self.isVersion(current, olderThan: latest)
+            lastChecked = lastSucceeded
+        }
+    }
 
     deinit {
         timerTask?.cancel()
     }
 
+    /// Checks a minute after launch, or once a day since the last successful check when that
+    /// is later, then every `checkInterval`.
     func start() {
         guard timerTask == nil else { return }
-        checkNow(applyAutomaticUpdates: true)
+        let first = Self.firstCheckDelay(now: Date(), lastChecked: lastSucceeded)
         timerTask = Task { [weak self] in
+            var delay = first
             while !Task.isCancelled {
-                try? await Task.sleep(for: Self.checkInterval)
+                try? await Task.sleep(for: delay)
                 guard !Task.isCancelled else { return }
                 self?.checkNow(applyAutomaticUpdates: true)
+                delay = Self.checkInterval
             }
         }
+    }
+
+    /// Whether a check that succeeded at `lastChecked` is a day old at `now`.
+    static func isCheckDue(now: Date, lastChecked: Date?) -> Bool {
+        guard let lastChecked else { return true }
+        return now.timeIntervalSince(lastChecked) >= Double(checkInterval.components.seconds)
+    }
+
+    /// How long a launch at `now` waits for its first automatic check.
+    static func firstCheckDelay(now: Date, lastChecked: Date?) -> Duration {
+        guard let lastChecked, !isCheckDue(now: now, lastChecked: lastChecked) else { return launchDelay }
+        let due = lastChecked.addingTimeInterval(Double(checkInterval.components.seconds)).timeIntervalSince(now)
+        return max(launchDelay, .milliseconds(Int64((due * 1000).rounded(.up))))
+    }
+
+    /// Records a successful check, here and for the next launch.
+    func recordCheck(current: String, latest: String, at date: Date) {
+        currentVersion = current
+        latestVersion = latest
+        isOutdated = Self.isVersion(current, olderThan: latest)
+        lastChecked = date
+        lastError = nil
+        lastSucceeded = date
+        defaults.set(date, forKey: Key.checked)
+        defaults.set(current, forKey: Key.current)
+        defaults.set(latest, forKey: Key.latest)
     }
 
     /// Called after either Settings toggle changes. Checks continue while
@@ -72,11 +124,7 @@ final class PiUpdateManager {
             guard let self else { return }
             do {
                 let result = try await Self.checkVersions()
-                currentVersion = result.current
-                latestVersion = result.latest
-                isOutdated = Self.isVersion(result.current, olderThan: result.latest)
-                lastChecked = Date()
-                lastError = nil
+                recordCheck(current: result.current, latest: result.latest, at: Date())
                 let settings = AppSettings.shared
                 let arguments = Self.automaticUpdateArguments(
                     updatePi: settings.autoUpdatePi,
@@ -137,10 +185,7 @@ final class PiUpdateManager {
                     }
                 }
                 let result = try await Self.checkVersions()
-                currentVersion = result.current
-                latestVersion = result.latest
-                isOutdated = Self.isVersion(result.current, olderThan: result.latest)
-                lastChecked = Date()
+                recordCheck(current: result.current, latest: result.latest, at: Date())
             } catch {
                 lastError = error.localizedDescription
             }
