@@ -8,6 +8,7 @@ import ShepherdRemote
 struct RootView: View {
     @Bindable var vm: ShepherdViewModel
     private var themes: ThemeManager { .shared }
+    private var updater: AppUpdater { .shared }
     @Environment(\.colorScheme) private var systemColorScheme
     @Environment(\.openWindow) private var openWindow
     @State private var liveSidebarWidth: Double?
@@ -47,6 +48,13 @@ struct RootView: View {
                     leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
                     showSidebar: docked ? nil : { vm.toggleSidebar() }
                 )
+                // Once, after an update moved this copy off the retired nightly channel. It
+                // leaves at once: easing the column's height would relay out every mounted
+                // layout on each frame.
+                if updater.nightlyMovedNoticePending {
+                    NightlyMovedNotice(download: { updater.downloadShepherdNightly() },
+                                       dismiss: { updater.dismissNightlyMovedNotice() })
+                }
                 WorkspaceView(vm: vm)
             }
             .frame(maxWidth: .infinity)
