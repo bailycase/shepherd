@@ -213,7 +213,7 @@ public func nativeDurationText(_ seconds: Double, live: Bool = false) -> String 
     return String(format: "%dh %02dm", whole / 3600, (whole % 3600) / 60)
 }
 
-/// The header pill and sidebar dot share this state; see DESIGN.md › Status language.
+/// The iOS client's header pill; the Mac toolbar shows no pill (DESIGN.md › Status language).
 public enum NativeAgentPill: Equatable, Sendable {
     case idle, running, needsApproval, error, stopped
 

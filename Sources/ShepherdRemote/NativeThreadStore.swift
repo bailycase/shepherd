@@ -53,7 +53,7 @@ public final class NativeThreadStore {
     /// a user message with the same text, or when the session changes.
     public private(set) var pending: [NativeThreadMessage] = []
     /// `snapshot.running` held true for 400 ms after it drops, so tool boundaries never flicker
-    /// the pill, the tail indicator, or the Stop button.
+    /// the tail indicator or the Stop button.
     public private(set) var settledRunning = false
     public var draft = ""
     public var delivery: NativeThreadDelivery = .followUp
@@ -68,8 +68,8 @@ public final class NativeThreadStore {
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:]
     public private(set) var subagents: [NativeSubagent] = []
-    /// When the prompt that opened the current turn was sent (ms): the running pill's start. A
-    /// queued follow-up has not opened a turn yet; nil while the newest prompt is an echo.
+    /// When the prompt that opened the current turn was sent (ms). A queued follow-up has not
+    /// opened a turn yet; nil while the newest prompt is an echo.
     public private(set) var lastPromptAt: Double?
 
     /// How long `starting` may last before it is reported as an error. Polling continues, so

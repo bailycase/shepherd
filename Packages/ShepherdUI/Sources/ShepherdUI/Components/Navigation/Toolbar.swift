@@ -27,10 +27,11 @@ public struct NWPaneToggle: Equatable, Sendable {
     }
 }
 
-/// The thread toolbar (Navigation board, `NWThreadToolbar`): 44pt, title, status, then counters
-/// in mono and the pane toggles and options menu at the trailing end. A sidebar button leads
+/// The thread toolbar (Navigation board, `NWThreadToolbar`): 44pt, the title, then counters in
+/// mono and the pane toggles and options menu at the trailing end. Nothing sits beside the title:
+/// the thread and the sidebar already say what an agent is doing. A sidebar button leads
 /// while the sidebar is not docked; `leadingInset` clears the window controls.
-public struct NWThreadToolbar<Status: View, Options: View>: View {
+public struct NWThreadToolbar<Options: View>: View {
     let title: String
     let titleHelp: String?
     let counters: String?
@@ -39,13 +40,11 @@ public struct NWThreadToolbar<Status: View, Options: View>: View {
     let sidebar: (() -> Void)?
     let sidebarLabel: String
     let toggles: [(toggle: NWPaneToggle, action: () -> Void)]
-    @ViewBuilder let status: () -> Status
     @ViewBuilder let options: () -> Options
 
     public init(_ title: String, titleHelp: String? = nil, counters: String? = nil, countersHelp: String? = nil,
                 leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar",
                 toggles: [(NWPaneToggle, () -> Void)] = [],
-                @ViewBuilder status: @escaping () -> Status,
                 @ViewBuilder options: @escaping () -> Options) {
         self.title = title
         self.titleHelp = titleHelp
@@ -55,7 +54,6 @@ public struct NWThreadToolbar<Status: View, Options: View>: View {
         self.sidebar = sidebar
         self.sidebarLabel = sidebarLabel
         self.toggles = toggles.map { (toggle: $0.0, action: $0.1) }
-        self.status = status
         self.options = options
     }
 
@@ -77,8 +75,6 @@ public struct NWThreadToolbar<Status: View, Options: View>: View {
                 // A rename or a settled name cross-fades.
                 .nwContentTransition(.crossFade)
                 .nwAnimation(.content, value: title)
-            status()
-                .layoutPriority(1)
             Spacer(minLength: NW.Space.l)
             HStack(spacing: NW.Space.xxs) {
                 if let counters {
@@ -118,11 +114,11 @@ public struct NWThreadToolbar<Status: View, Options: View>: View {
     }
 }
 
-extension NWThreadToolbar where Status == EmptyView, Options == EmptyView {
+extension NWThreadToolbar where Options == EmptyView {
     /// A toolbar with only a title (no thread on screen).
     public init(_ title: String, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil, sidebarLabel: String = "Show sidebar") {
         self.init(title, leadingInset: leadingInset, sidebar: sidebar, sidebarLabel: sidebarLabel,
-                  status: { EmptyView() }, options: { EmptyView() })
+                  options: { EmptyView() })
     }
 }
 

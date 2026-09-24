@@ -39,14 +39,10 @@ private let started = Date().addingTimeInterval(-41 * 60)
             NWThreadToolbar("Investigate SwiftUI live preview", counters: "17 turns · 42k ctx",
                             toggles: [(NWPaneToggle(systemImage: "arrow.triangle.branch", label: "Subagents", isOn: false), {}),
                                       (NWPaneToggle(systemImage: "plus.forwardslash.minus", label: "Review", shortcut: "⇧⌘B", isOn: false), {})]) {
-                NWStatusPill(.running, label: "Running · 0:31")
-            } options: {
                 NWOptionsMenu { Button("Rename…") {} }
             }
             NWThreadToolbar("Dock review pane", sidebar: {},
                             toggles: [(NWPaneToggle(systemImage: "plus.forwardslash.minus", label: "Review", isOn: true), {})]) {
-                NWStatusPill(.attention)
-            } options: {
                 NWOptionsMenu { Button("Rename…") {} }
             }
             NWPaneHeader("Review", close: {}) {
