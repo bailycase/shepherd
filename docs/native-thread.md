@@ -243,8 +243,9 @@ output grows.
   is the newest on the path, else the newest in the file's head. The thinking level is the
   newest on the path, else the newest `thinking_level_change` before the page, found by
   searching the file backwards for that type and decoding only the lines that hold it (a level
-  set long before the page is still the one pi resumes with). A missing file, or one that is
-  not pi's, is no preview: the thread waits for pi. Remote clients get no preview; the remote
+  set long before the page is still the one pi resumes with). A missing file, one that is not
+  pi's, or one in an older format (which pi rewrites when it loads it) is no preview: the thread
+  waits for pi. Remote clients get no preview; the remote
   protocol is unchanged.
 - **Message order:** `messages` is the paged history (`loadOlder`). `displayedMessages` is
   history, then optimistic echoes of accepted sends, then pi's provisional entries. This order
