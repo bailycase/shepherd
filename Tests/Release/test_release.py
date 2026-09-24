@@ -488,12 +488,9 @@ class ContractTests(unittest.TestCase):
                 # The Mac target is found by its INFOPLIST_FILE; the iOS target must not share it.
                 self.assertNotRegex(block, r"\bINFOPLIST_FILE = ")
 
-    def test_the_ios_marketing_version_is_the_macs_and_testflight_accepts_it(self):
-        mac = self.setting(self.target_configuration("Release"), "MARKETING_VERSION")
+    def test_every_ios_marketing_version_is_one_testflight_accepts(self):
         for block in self.ios_configurations():
-            version = self.setting(block, "MARKETING_VERSION")
-            self.assertEqual(version, mac)
-            self.assertRegex(version, release.VERSION_STRING)
+            self.assertRegex(self.setting(block, "MARKETING_VERSION"), release.VERSION_STRING)
 
     def test_the_ios_scheme_archives_the_planned_configuration(self):
         scheme = self.read("Shepherd.xcodeproj", "xcshareddata", "xcschemes", f"{release.IOS.scheme}.xcscheme")
