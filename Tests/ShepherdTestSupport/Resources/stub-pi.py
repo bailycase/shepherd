@@ -21,6 +21,13 @@ A prompt carrying images also logs {"type": "stub-images", "count": N}.
 
 $STUB_PI_HISTORY_BYTES seeds that many bytes of prior history (see below).
 
+Startup, like a pi that takes a while to boot (or fails to), before stdin is read:
+  $STUB_PI_STARTUP_DELAY  seconds to wait
+  $STUB_PI_STARTUP_GATE   a file in the cwd to wait for (up to 60 s)
+  $STUB_PI_STARTUP_EXIT   exit with this code instead of serving
+A pi launched the way the app launches it gets no test env, so `stub-pi-startup.json` in the
+cwd ({"delay": 1.5, "gate": "release-pi", "exit": 127}) sets the same.
+
 Every stdin line is appended to $STUB_PI_LOG when set, so tests can assert
 on what the client actually wrote.
 """
@@ -158,6 +165,27 @@ def streaming_turn(prompt, slow=False):
 def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
+
+def startup():
+    try:
+        with open("stub-pi-startup.json") as f:
+            config = json.load(f)
+    except (OSError, ValueError):
+        config = {}
+    delay = os.environ.get("STUB_PI_STARTUP_DELAY") or config.get("delay")
+    gate = os.environ.get("STUB_PI_STARTUP_GATE") or config.get("gate")
+    code = os.environ.get("STUB_PI_STARTUP_EXIT") or config.get("exit")
+    if delay:
+        time.sleep(float(delay))
+    if gate:
+        wait_for_file(gate, timeout=60.0)
+    if code is not None:
+        sys.stderr.write("stub-pi: failed to start\n")
+        sys.stderr.flush()
+        sys.exit(int(code))
+
+
+startup()
 
 pending_ui = None
 turn_thread = None
