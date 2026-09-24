@@ -159,6 +159,39 @@ struct AgentStartupTests {
         try await eventuallyAsync("every restored agent to start", timeout: .seconds(30)) { await started().count == agents.count }
     }
 
+    /// The agent on screen at launch whose pi exits while it boots stops holding the queue at
+    /// once: the others start then, not when its hold (`AgentStartQueue.aheadHold`) runs out.
+    @Test func anAgentOnScreenWhosePiExitsAtLaunchLetsTheOthersStartAtOnce() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let broken = app.dir.appendingPathComponent("broken")
+        try FileManager.default.createDirectory(at: broken, withIntermediateDirectories: true)
+        try JSONSerialization.data(withJSONObject: ["exit": 1]).write(to: broken.appendingPathComponent("stub-pi-startup.json"))
+        let space = Fixture.space(path: app.dir.path)
+        let agents = [Fixture.agent("broken", in: space, order: 0, cwd: broken.path, piSession: SessionID())]
+            + (1..<4).map { Fixture.agent("worker \($0)", in: space, order: $0, piSession: SessionID()) }
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents), restoringAgents: true)
+        let onScreen = try #require(vm.selectedAgentID)
+        #expect(onScreen == agents[0].agent.id)
+        let server = app.server
+        let others = Set(agents.dropFirst().map(\.agent.id))
+
+        try await eventuallyOnMain("the broken agent's pi to exit and retire it") { !vm.state.agents.contains { $0.id == onScreen } }
+        let exited = ContinuousClock.now
+        try await eventuallyAsync("the others to start") {
+            let alive = Set(await server.listSessions().filter(\.isAlive).map(\.id))
+            let state = server.state
+            return others.allSatisfy { id in
+                guard let agent = state.agents.first(where: { $0.id == id }), let paneID = agent.paneID,
+                      let tab = state.tabs.first(where: { $0.id == agent.tabID }),
+                      let session = tab.layout.leaf(withID: paneID)?.sessionID else { return false }
+                return alive.contains(session)
+            }
+        }
+        #expect(ContinuousClock.now - exited < AgentStartQueue.aheadHold / 2, "the queue waited on a pi that had exited")
+    }
+
     /// Only an agent's first start waits in the launch queue: a pane session made again once it
     /// has started (a view detached and remounted) binds at once.
     @Test func aPaneSessionMadeAgainAfterItsAgentStartedBindsAtOnce() async throws {

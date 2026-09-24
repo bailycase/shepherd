@@ -443,11 +443,15 @@ final class TerminalSessionStore {
             return
         }
         handledExits.insert(sessionID)
+        // Read before the view model retires the agent: a pi that exits while it boots frees its
+        // place in the launch queue now, not when its hold runs out.
+        let agentID = serverState?.agents.first { $0.paneID == paneID }?.id
         sessions[paneID]?.phase = .exited(exitCode)
         onPaneSessionExited?(paneID)
         sessions.removeValue(forKey: paneID)
         paneBySession.removeValue(forKey: sessionID)
         detachedSessionIDs.remove(sessionID)
+        if let agentID { startFinished(agentID) }
         Task { [weak self] in
             await self?.server.retireSession(sessionID: sessionID)
         }
