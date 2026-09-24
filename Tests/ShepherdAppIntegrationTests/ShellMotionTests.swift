@@ -149,8 +149,15 @@ struct ShellMotionTests {
             let thread = CGRect(x: column, y: NWToolbarMetrics.height, width: threadEnd - column, height: size.height - NWToolbarMetrics.height)
             let switching = await MotionProbe.record(window) { vm.selectAgent(agent.agent.id) }
             #expect(!switching.settled.matches(switching.before), "the window changed")
-            let caught = switching.inBetween.filter { frame in
-                differs(frame, from: switching.before, outside: thread) && differs(frame, from: switching.settled, outside: thread)
+            // The switch is the frames up to where the window first holds still. On a busy machine
+            // a recording runs for seconds, and a change after that (caught 1.9s in, once) is a
+            // second step, not the switch easing.
+            let frames = switching.frames
+            let same = { (a: Int, b: Int) in !differs(frames[a], from: frames[b], outside: thread) }
+            let first = frames.indices.dropFirst().first { !same($0, 0) } ?? frames.count - 1
+            let rest = (first..<frames.count).first { $0 + 2 >= frames.count || (same($0, $0 + 1) && same($0, $0 + 2)) } ?? frames.count - 1
+            let caught = frames[1..<rest].filter { frame in
+                differs(frame, from: switching.before, outside: thread) && differs(frame, from: frames[rest], outside: thread)
             }
             #expect(caught.isEmpty, "\(agent.agent.name) appears at once, but \(caught.count) frames were caught between")
         }
