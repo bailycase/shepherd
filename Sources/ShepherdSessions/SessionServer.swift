@@ -106,6 +106,8 @@ public final class SessionServer: @unchecked Sendable {
         var childrenAgentID: AgentID?
         /// What a remote client said it understands in its `hello`.
         var clientCapabilities: Set<String> = []
+        /// A client from before minimal, xhigh and max: it decodes only `ThinkingLevel.legacy`.
+        var knowsLegacyThinkingOnly: Bool { !clientCapabilities.contains(RemoteProtocol.thinkingLevelsCapability) }
         var lineBuffer = LineBuffer()
         var readSource: DispatchSourceRead?
         var writeSource: DispatchSourceWrite?
@@ -953,7 +955,9 @@ public final class SessionServer: @unchecked Sendable {
                     self.queue.async {
                         guard self.clients[client.fd] === client else { return }
                         switch result {
-                        case .success(let options): self.send(.creationOptions(id: id, options: options), to: client)
+                        case .success(var options):
+                            if client.knowsLegacyThinkingOnly { options.thinking = options.thinking.clamped(to: ThinkingLevel.legacy) }
+                            self.send(.creationOptions(id: id, options: options), to: client)
                         case .failure(let error): self.send(.error(id: id, code: "options_failed", message: error.message), to: client)
                         }
                     }
@@ -1014,7 +1018,8 @@ public final class SessionServer: @unchecked Sendable {
         case .automation(let id, let automationID, let request):
             remoteAutomation(id: id, automationID: automationID, request: request, client: client)
         case .stateFetch(let id):
-            send(.state(id: id, state: store.state), to: client)
+            let state = store.state
+            send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
             remoteAttach(
                 id: id,
@@ -1410,14 +1415,28 @@ public final class SessionServer: @unchecked Sendable {
     private func broadcastRemoteState(_ state: ShepherdState) {
         let remotes = clients.values.filter { $0.isRemote && $0.authenticated }
         guard !remotes.isEmpty else { return }
+        guard let payload = Self.stateChangedPayload(state) else { return }
+        // Encoded a second time only while an older client is connected and an agent has a level
+        // it cannot decode.
+        let legacyOnly = state.usesOnlyLegacyThinkingLevels
+        var legacyPayload: Data??
+        for client in remotes {
+            guard client.knowsLegacyThinkingOnly, !legacyOnly else {
+                enqueuePayload(payload, to: client)
+                continue
+            }
+            if legacyPayload == nil { legacyPayload = .some(Self.stateChangedPayload(state.legacyThinkingLevels())) }
+            if let data = legacyPayload ?? nil { enqueuePayload(data, to: client) }
+        }
+    }
+
+    private static func stateChangedPayload(_ state: ShepherdState) -> Data? {
         guard let payload = try? NDJSON.encode(RemoteReply.stateChanged(state: state)),
               payload.count - 1 <= NDJSON.maxPayloadBytes else {
             ShepherdLog.error("state broadcast exceeds the payload limit; skipped")
-            return
+            return nil
         }
-        for client in remotes {
-            enqueuePayload(payload, to: client)
-        }
+        return payload
     }
 
     // MARK: - Extension socket (server queue)

@@ -256,3 +256,21 @@ public struct ShepherdState: Codable, Hashable, Sendable {
         // Shepherd has no separate entity to track.
     }
 }
+
+extension ShepherdState {
+    /// Whether every agent's level is one a client from before minimal, xhigh and max decodes.
+    public var usesOnlyLegacyThinkingLevels: Bool {
+        agents.allSatisfy { $0.thinkingLevel.map(ThinkingLevel.legacy.contains) ?? true }
+    }
+
+    /// The state as such a client can decode it: each agent's level clamped to
+    /// `ThinkingLevel.legacy` (only a fresh session starts with it, and pi clamps it anyway).
+    public func legacyThinkingLevels() -> ShepherdState {
+        guard !usesOnlyLegacyThinkingLevels else { return self }
+        var state = self
+        for index in state.agents.indices {
+            state.agents[index].thinkingLevel = state.agents[index].thinkingLevel?.clamped(to: ThinkingLevel.legacy)
+        }
+        return state
+    }
+}
