@@ -50,6 +50,11 @@ struct SettingsSearchTests {
         #expect(hits == [.appearance])
     }
 
+    @Test func piThemeSyncIsNotASetting() {
+        #expect(SettingsSection.pi.matches(for: "theme").isEmpty)
+        #expect(!SettingsSection.pi.items.contains("Sync pi theme"))
+    }
+
     @Test(arguments: ["", "   ", "zzzz-no-such-setting"])
     func emptyOrUnmatchedQueriesListNothing(query: String) {
         for section in SettingsSection.allCases {

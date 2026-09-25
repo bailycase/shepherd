@@ -225,8 +225,7 @@ ThemeVariant    { colors:   ThemeColors     // the Night Watch roles below (#RRG
                   syntax:   SyntaxColors    // code blocks and diffs
                   terminal: TerminalColors  // Ghostty: background, foreground, cursor,
                                             // selection, 16-color ANSI
-                  pi:       PiColors }      // pi's TUI theme schema, for pi run by hand in a
-                                            // terminal pane
+                }
 ```
 
 - **`ThemeStore.shared`** (`@Observable`) holds the selected theme, the text scale, and the
@@ -238,16 +237,16 @@ ThemeVariant    { colors:   ThemeColors     // the Night Watch roles below (#RRG
 - **Views never branch on `colorScheme` for a color** (NWSwift): light and dark come from the
   token layer. Read `colorScheme` only to force the appearance (`preferredColorScheme`) and to
   hand resolved colors to what SwiftUI doesn't draw: the Core Animation spinner and glow layers,
-  the iOS terminal's UIKit view, and, through `ThemeManager`, Ghostty and the pi theme file.
+  the iOS terminal's UIKit view, and, through `ThemeManager`, Ghostty and the external editor variant marker.
 - **`ThemeManager`** (app) owns only the appearance mode: System (the default; "System follows
   your Mac and switches with it."), Light, or Dark, set in Settings ▸ Appearance ▸ Mode or the
   Appearance menu. The board's rule: follow the system, and let Settings force either (NWSwift).
   `SHEPHERD_THEME=night-watch-dark` or `night-watch-light` forces one at launch (the older
   `shepherd-dark` still means dark), and Reset returns to it.
 - **What `ThemeManager` pushes:** the resolved variant goes to what cannot follow appearance on
-  its own. That is Ghostty surfaces (a live `setTheme`, never a remount or replay) and the pi
-  theme file plus the `shepherd-active-theme` variant marker (`night-watch-dark|light`), which pi
-  and editors run in a terminal pane watch. The marker's spelling is an external contract.
+  its own. That is Ghostty surfaces (a live `setTheme`, never a remount or replay) and the
+  `shepherd-active-theme` variant marker (`night-watch-dark|light`), which external editors such
+  as Neovim watch. The marker's spelling is an external contract. pi keeps its own theme.
 - **Fonts:** Geist and Geist Mono (SIL OFL, `Resources/Fonts/OFL.txt`) ship in the package
   bundle: Geist Regular, Medium, SemiBold, and Bold, each with its italic, and Geist Mono
   Regular, Medium, SemiBold, and Bold. They are registered for the process at launch on the Mac
@@ -304,12 +303,12 @@ board's, plus where the app also uses the role.
 - `textOnFailed`: white, for labels on a `failed` fill
 - `knobOn`, `knobOff`, `knobShadow`: the switch and slider knobs
 
-**The terminal and pi palettes are derived from the roles.** Terminal panes sit on `bgWindow` with
+**The terminal palette is derived from the roles.** Terminal panes sit on `bgWindow` with
 `textPrimary` text, a `textPrimary` block cursor, and a selection on `running` at 13%
 (TerminalSplit, TerminalPane; the app draws a lantern cursor and a running selection at 18% dark,
 28% light, see Known gaps); each variant carries its own 16-color ANSI palette (the light one
-darkened to stay readable). pi uses the same brand, state, and syntax colors, with translucent tints
-flattened onto `bgWindow`, because Ghostty and pi want opaque colors.
+darkened to stay readable). Translucent selection colors are flattened onto `bgWindow`, because
+Ghostty wants opaque colors.
 
 ### One status enum
 
@@ -354,10 +353,10 @@ surface they sit on):
 ### Adding a theme or a role
 
 - **A theme:** write a `ThemeDefinition` that fills every field of `ThemeColors`,
-  `SyntaxColors`, `TerminalColors`, and `PiColors` for both variants (the memberwise
+  `SyntaxColors`, and `TerminalColors` for both variants (the memberwise
   initializers make the compiler enforce completeness). Add it to the list the ShepherdUI unit
   tests iterate and fix values until they pass. Then teach `ThemeManager` and the app's
-  `ShepherdTheme` to resolve it for Ghostty and the pi theme file; today they resolve Night Watch
+  `ShepherdTheme` to resolve it for Ghostty and the editor variant marker; today they resolve Night Watch
   only. Keep the variant marker's `<theme>-dark|light` spelling.
 - **A role:** add a field to `ThemeColors`, a value in every theme's light and dark variant, a
   property on `NWPalette`, and a contrast rule if it carries text.
@@ -2986,9 +2985,6 @@ automated step of the worktree flows can be turned off here.
   tracking are always on."), switches, all on by default:
   - Name agents automatically, "Titles each new agent from its first prompt using the cheapest
     authed model. A rename you type is always final."
-  - Sync pi theme, "Use Shepherd's palette in pi and follow theme changes." (the theme extension
-    reaches only pi run by hand in a terminal pane; the app says so: "…when you run pi by hand in a
-    shell…")
   - Panes and agent tools, "Let agents control panes, message or spawn agents, manage automations
     and send notifications."
   - Diff review tool, "Let agents open the review pane with `review_diff`."
@@ -3830,7 +3826,7 @@ below collects the rest, and the places those sentences point here.
   inline code or emphasized option names; the listener's problem without its `xmark` and showing the
   raw bind error; the remote host line all in mono; Keyboard's Reset all as a danger button in a
   Fixed row, "Confirm or cancel in sheets" with ⎋, and the Reset link 8pt from its keycaps; pi's
-  Update now split in two; and copy that differs (Sync pi theme, Remote's Token, Advanced's Reset
+  Update now split in two; and copy that differs (Remote's Token, Advanced's Reset
   settings). Instructions and Experiments are not built.
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalToggle against the
   app):
