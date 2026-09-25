@@ -11,6 +11,11 @@ struct TerminalPanelTests {
         .split(axis: axis, ratio: 0.5, first: first, second: second)
     }
 
+    @Test(arguments: [(1, 0, true), (3, 0, true), (0, 0, false), (2, 1, false), (0, 1, false)])
+    func thePanelClosesWithItsLastTerminal(before: Int, after: Int, closes: Bool) {
+        #expect(TerminalPanel.closesWithLastTerminal(before: before, after: after) == closes)
+    }
+
     /// Picking a tab whose news equals the last tab's still marks it seen: the mark names the tab
     /// and its sessions, not just how far their news has got.
     @Test func theSeenMarkChangesWithTheTabEvenWhenItsNewsMatches() {

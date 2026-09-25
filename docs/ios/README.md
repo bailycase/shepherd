@@ -242,8 +242,8 @@ keep the version for real breaks.
   terminal while it has the keyboard, and a hardware keyboard types directly. Tabs name what
   runs in them and show a spinner or a dot for new output where the host answers
   `RemoteAgentQuery.terminals` (`terminal.activity.v1`); the dot follows the row's `news`, which
-  leaves out a redraw after a resize on hosts that send `newsSequence`. Closing a tab asks,
-  then asks the host
+  leaves out a redraw after a resize on hosts that send `newsSequence`. The iPad panel closes
+  with its last terminal. Closing a tab asks, then asks the host
   to close its panes; the host keeps the Mac's rules (never the agent's own pane, never the last
   pane). A host without pane control (`pane.control.v1`) shows its terminals but offers no +,
   split or close. A terminal's screen is in one iPad window at a time: another window showing the
