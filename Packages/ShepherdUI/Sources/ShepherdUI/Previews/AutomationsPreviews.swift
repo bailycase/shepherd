@@ -29,6 +29,9 @@ import SwiftUI
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.l) {
             VStack(spacing: 0) {
+                NWFactRow("On") {
+                    NWAutomationSwitch("Starts with Shepherd", isOn: true, caption: "Runs when Shepherd starts on build-01") { _ in }
+                }
                 NWFactRow("When", value: "When Shepherd starts")
                 NWFactRow("Runs on", value: "build-01 · a new thread each run", mono: true)
                 NWFactRow("Folder", value: "/Users/dev/orders-svc", mono: true)

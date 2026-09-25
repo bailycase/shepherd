@@ -54,13 +54,10 @@ struct AutomationDetailContent: View {
                 }
                 VStack(spacing: 0) {
                     NWFactRow("On") {
-                        Toggle(isOn: Binding(get: { store.isOn(row) }, set: { store.setEnabled(key, $0) })) {
-                            Text(store.isOn(row) ? "Runs when Shepherd starts on \(row.hostName)" : "Runs only when you run it")
-                                .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
-                        }
-                        .toggleStyle(.nwSwitch)
-                        .disabled(!row.abilities.toggle || busy)
-                        .accessibilityLabel("Starts with Shepherd")
+                        let on = store.isOn(row)
+                        NWAutomationSwitch("Starts with Shepherd", isOn: on,
+                                           caption: on ? "Runs when Shepherd starts on \(row.hostName)" : "Runs only when you run it",
+                                           toggle: row.abilities.toggle && !busy ? { store.setEnabled(key, $0) } : nil)
                     }
                     NWFactRow("Status") {
                         NWFactText(row.status)

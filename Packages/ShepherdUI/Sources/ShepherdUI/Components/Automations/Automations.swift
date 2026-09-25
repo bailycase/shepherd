@@ -82,20 +82,8 @@ public struct NWAutomationRow: View, Equatable {
                 content.opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
             }
             if let isOn {
-                let binding = Binding(get: { isOn }, set: { toggle?($0) })
-                // One button over the drawn switch, so the whole touch target flips it once.
-                Button { toggle?(!isOn) } label: {
-                    Toggle(title, isOn: binding)
-                        .toggleStyle(.nwSwitch)
-                        .labelsHidden()
-                        .allowsHitTesting(false)
-                        .nwTouchTarget(height: NWAutomationMetrics.switchSize.height, width: NWAutomationMetrics.switchSize.width)
-                }
-                .buttonStyle(.plain)
-                .disabled(!switchEnabled || toggle == nil)
-                .accessibilityRepresentation { Toggle(title, isOn: binding) }
-                .accessibilityHint("Starts a run when Shepherd starts")
-                .padding(.trailing, NW.Space.l)
+                NWAutomationSwitch(title, isOn: isOn, toggle: switchEnabled ? toggle : nil)
+                    .padding(.trailing, NW.Space.l)
             }
         }
         // The whole row, switch included, is the selection.
@@ -166,6 +154,48 @@ public struct NWAutomationRow: View, Equatable {
                 .foregroundStyle(tone?.color ?? Color.nw.textSecondary)
                 .accessibilityHidden(true)
         }
+    }
+}
+
+/// An automation's on/off switch, with an optional caption beside it. One button covers the
+/// drawn switch and the caption, so its whole touch target (44pt on iOS) flips it once;
+/// VoiceOver sees a toggle. A nil `toggle` draws it disabled.
+public struct NWAutomationSwitch: View {
+    let title: String
+    let isOn: Bool
+    let caption: String?
+    let toggle: ((Bool) -> Void)?
+
+    public init(_ title: String, isOn: Bool, caption: String? = nil, toggle: ((Bool) -> Void)?) {
+        self.title = title
+        self.isOn = isOn
+        self.caption = caption
+        self.toggle = toggle
+    }
+
+    public var body: some View {
+        let binding = Binding(get: { isOn }, set: { toggle?($0) })
+        Button { toggle?(!isOn) } label: {
+            HStack(spacing: NW.Space.m) {
+                Toggle(title, isOn: binding)
+                    .toggleStyle(.nwSwitch)
+                    .labelsHidden()
+                    .allowsHitTesting(false)
+                if let caption {
+                    Text(caption)
+                        .font(.nw(.caption))
+                        .foregroundStyle(Color.nw.textTertiary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .nwTouchTarget(height: NWAutomationMetrics.switchSize.height,
+                           width: caption == nil ? NWAutomationMetrics.switchSize.width : nil)
+        }
+        .buttonStyle(.plain)
+        .disabled(toggle == nil)
+        .accessibilityRepresentation { Toggle(title, isOn: binding) }
+        .accessibilityHint("Starts a run when Shepherd starts")
     }
 }
 
