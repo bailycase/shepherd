@@ -76,16 +76,26 @@ struct ThreadComposer: View {
         .onChange(of: store.queue, initial: true) { _, queue in state.update(queue: queue) }
         .onChange(of: store.draft, initial: true) { _, draft in state.update(draft: draft, commands: store.commands) }
         .onChange(of: store.commands) { _, commands in state.update(draft: store.draft, commands: commands) }
+        // Whether the thread's model takes a thinking level: the host's catalog, once per connection.
+        .task(id: ModelsAsk(session: host?.session, thinking: store.thinking != nil && store.supportedActions.contains("setThinking"))) {
+            if store.thinking != nil && store.supportedActions.contains("setThinking") { await state.loadModels(host: host) }
+        }
         .sheet(isPresented: Binding(get: { state.choosingModel }, set: { state.choosingModel = $0 })) {
             ModelPickerSheet(host: host, current: store.model) { model in Task { await store.setModel(model) } }
         }
+    }
+
+    /// Asks the catalog again for a new connection, or once the thread reports a thinking level.
+    private struct ModelsAsk: Hashable {
+        var session: UUID?
+        var thinking: Bool
     }
 
     // MARK: Phone
 
     @ViewBuilder private func phone(store: NativeThreadStore, state: ComposerState, host: MobileHost?, live: Bool) -> some View {
         let inUse = focused || !store.draft.isEmpty || !state.attachments.isEmpty
-        if inUse, hasChips(store) {
+        if inUse, hasChips(store, state: state) {
             ScrollView(.horizontal) {
                 HStack(spacing: NW.Space.xxs) { chips(store: store, state: state, live: live) }
                     .buttonStyle(.nw(.ghost, size: .m))
@@ -159,14 +169,16 @@ struct ThreadComposer: View {
         if store.model != nil || store.supportedActions.contains("setModel") {
             ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel")) { state.choosingModel = true }
         }
-        if store.thinking != nil, store.supportedActions.contains("setThinking") {
+        if NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
+                                       listing: state.models) {
             ThinkingChip(level: store.thinking, enabled: live) { level in Task { await store.setThinking(level) } }
         }
     }
 
-    private func hasChips(_ store: NativeThreadStore) -> Bool {
+    private func hasChips(_ store: NativeThreadStore, state: ComposerState) -> Bool {
         !store.commands.isEmpty || store.model != nil || store.supportedActions.contains("setModel")
-            || (store.thinking != nil && store.supportedActions.contains("setThinking"))
+            || NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
+                                           listing: state.models)
     }
 
     private func acceptsImages(_ store: NativeThreadStore) -> Bool {
