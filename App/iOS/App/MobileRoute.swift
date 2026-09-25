@@ -14,6 +14,7 @@ enum MobileRoute: Hashable, Codable {
     case review(ReviewRoute)
     case search(SearchRoute)
     case settings(SettingsRoute)
+    case terminal(TerminalRoute)
 
     @MainActor @ViewBuilder
     var destination: some View {
@@ -25,6 +26,7 @@ enum MobileRoute: Hashable, Codable {
         case .review(let route): ReviewDestination(route: route)
         case .search(let route): SearchDestination(route: route)
         case .settings(let route): SettingsDestination(route: route)
+        case .terminal(let route): TerminalDestination(route: route)
         }
     }
 
@@ -34,6 +36,7 @@ enum MobileRoute: Hashable, Codable {
         case .thread(let ref): ref.host
         case .subagents(let route): route.thread.host
         case .review(let route): route.thread.host
+        case .terminal(let route): route.thread.host
         case .home, .newThread, .search, .settings: nil
         }
     }
