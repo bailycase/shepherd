@@ -9,6 +9,7 @@ struct HostEditorScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.mobileApp) private var app
     @Environment(\.dismiss) private var dismiss
+    @Environment(MobileNavigator.self) private var navigator
     @State private var name = ""
     @State private var address = ""
     @State private var port = String(RemoteHostRecord.defaultPort)
@@ -59,6 +60,7 @@ struct HostEditorScreen: View {
                 }
             }
         }
+        .listRowBackground(Color.nw.bgRaised)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .font(.nw(.ui))
@@ -67,6 +69,12 @@ struct HostEditorScreen: View {
         .navigationTitle(hostID == nil ? "Add host" : "Host")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Presented from Home or More, the form is a sheet's root and needs its own way out.
+            if navigator.presented?.route == .settings(.host(hostID)) {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save", action: save)
             }
