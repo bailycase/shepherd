@@ -10,6 +10,7 @@ struct PadSubagentsScreen: View {
     let route: SubagentsRoute
     @State private var shown = true
     @Environment(\.dismiss) private var dismiss
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let ref = route.thread
@@ -22,12 +23,12 @@ struct PadSubagentsScreen: View {
             .navigationBarBackButtonHidden(true)
             .onAppear {
                 let runID: String? = if case .run(_, let id) = route { id } else { nil }
-                SubagentInspection.shared.show(ref, runID: runID)
+                SubagentInspection.of(navigator).show(ref, runID: runID)
             }
-            .onDisappear { SubagentInspection.shared.close(ref) }
+            .onDisappear { SubagentInspection.of(navigator).close(ref) }
             .onChange(of: shown) { _, shown in
                 guard !shown else { return }
-                SubagentInspection.shared.close(ref)
+                SubagentInspection.of(navigator).close(ref)
                 var transaction = Transaction()
                 transaction.disablesAnimations = true
                 withTransaction(transaction) { dismiss() }
@@ -43,10 +44,11 @@ struct PadSubagentInspector: View {
     let ref: AgentRef
     let close: () -> Void
     @Environment(ThreadStores.self) private var threads
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         let store = threads.store(for: ref)
-        let inspection = SubagentInspection.shared
+        let inspection = SubagentInspection.of(navigator)
         let runID = inspection.selected(in: ref)
         VStack(spacing: 0) {
             if let runID {
@@ -85,9 +87,10 @@ private struct PadRunHeader: View {
     let runID: String
     let close: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicType
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let inspection = SubagentInspection.shared
+        let inspection = SubagentInspection.of(navigator)
         let siblings = nativeSubagentSiblings(of: runID, in: store.subagents, turns: store.rows.map(\.turn))
         let position = siblings.firstIndex { $0.runID == runID }
         let run = store.subagents.first { $0.runID == runID }
@@ -138,7 +141,7 @@ private struct PadRunHeader: View {
     }
 
     private var allRuns: some View {
-        Button { SubagentInspection.shared.show(ref, runID: nil) } label: { Image(systemName: "list.bullet") }
+        Button { SubagentInspection.of(navigator).show(ref, runID: nil) } label: { Image(systemName: "list.bullet") }
             .buttonStyle(.nwIcon)
             .accessibilityLabel("All subagents")
     }

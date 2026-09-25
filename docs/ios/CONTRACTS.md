@@ -173,6 +173,9 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
   loop already running over the same connection instead of restarting it (a restart would
   report the other window's send in flight as unknown), a window on a newer connection takes
   it over, and another takes it over when the driving one leaves.
+- **Per window:** the navigator and the subagent inspector's selection
+  (`SubagentInspection.of(navigator)`), so an inspector opened in one window leaves another's
+  alone.
 - **Reaching another window:** `OpenInNewWindowButton` brings forward the window already showing
   the thread, or opens one on it. "Send to…" (a turn's context menu) lists the threads other
   windows show and adds the text to that thread's composer, then brings its window forward. A

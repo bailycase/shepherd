@@ -6,11 +6,20 @@ import ShepherdRemote
 
 /// The iPad inspector beside a thread (iPadSteer, iPadSubagents boards): which thread it serves
 /// and which run it shows (nil: the thread's list of runs). A card tapped in that thread switches
-/// the run in place instead of opening another screen.
+/// the run in place instead of opening another screen. Each window has its own
+/// (`of(navigator)`), so an inspector opened in one iPad window leaves another's alone.
 @MainActor
 @Observable
 final class SubagentInspection {
-    static let shared = SubagentInspection()
+    private static let windows = NSMapTable<MobileNavigator, SubagentInspection>.weakToStrongObjects()
+
+    /// The inspection of the window `navigator` belongs to.
+    static func of(_ navigator: MobileNavigator) -> SubagentInspection {
+        if let inspection = windows.object(forKey: navigator) { return inspection }
+        let inspection = SubagentInspection()
+        windows.setObject(inspection, forKey: navigator)
+        return inspection
+    }
 
     private(set) var thread: AgentRef?
     private(set) var runID: String?
@@ -39,8 +48,9 @@ enum SubagentOpening {
     static func open(_ route: SubagentsRoute, navigator: MobileNavigator) {
         let thread = route.thread
         let runID: String? = if case .run(_, let id) = route { id } else { nil }
-        if navigator.layout == .pad, SubagentInspection.shared.thread == thread {
-            SubagentInspection.shared.show(thread, runID: runID)
+        let inspection = SubagentInspection.of(navigator)
+        if navigator.layout == .pad, inspection.thread == thread {
+            inspection.show(thread, runID: runID)
             return
         }
         if navigator.layout == .pad {
