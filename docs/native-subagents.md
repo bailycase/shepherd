@@ -132,7 +132,9 @@ settings produce diagnostics and are not imported. This is not full pi-subagents
 
 **Questions.** Children use `shepherd_parent_message` for progress or questions. For a question
 the child sets `needsReply`, finishes its turn, and waits for an explicit continuation. Completion
-and messages wake the parent. Delivery is not durable, and not exactly-once across a crash.
+and messages wake the parent, except a completion a `shepherd_child_wait` returns: the parent
+already has that result, so it gets no second turn on it (a wait cancelled before it answers
+hands the completion back). Delivery is not durable, and not exactly-once across a crash.
 
 **Context.** Fresh context is the default unless a profile or setting chooses fork. Fork copies
 the selected branch up to the last complete tool batch, using a separate `SessionManager`. It
