@@ -179,14 +179,14 @@ struct ModelPickerSheet: View {
     private func load() async {
         guard let host else { failure = "This host was forgotten."; return }
         if let cached = ComposerStates.shared.models(host: host.id, session: host.session) {
-            models = cached
+            models = cached.models
             derive()
             return
         }
         guard let client = host.connectedClient else { failure = "\(host.name) is offline."; return }
         do {
             let listing = try await client.listModels()
-            ComposerStates.shared.setModels(listing.models, host: host.id, session: host.session)
+            ComposerStates.shared.setModels(listing, host: host.id, session: host.session)
             models = listing.models
             derive()
         } catch {
