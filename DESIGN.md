@@ -562,9 +562,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **A remote host's automation rows** (`RemoteSidebarSection.swift`) nest one level under its
   Automations disclosure with the same dots and words, plus "off" for one that does not start
   with Shepherd. Clicking a row opens its run's thread, or its details while it has none. The
-  context menu has Stop while its run is live, else Run Now, a Starts with Shepherd check, Details and Runs…, and Delete
-  Automation; on a host from before automations over the remote protocol the menu says why it
-  is read-only and disables them. Details and Runs… is a sheet (`RemoteAutomationSheet`,
+  context menu has Stop while its run is live, else Run Now, a Starts with Shepherd check,
+  Details and Runs…, and Delete Automation; on a host from before automations over the remote
+  protocol the menu says why it is read-only and disables them. Details and Runs… is a sheet (`RemoteAutomationSheet`,
   NavAutomations' detail pane): the On switch with what it means, Status, Host and Folder rows
   (`NWFactRow`), the prompt (`NWAutomationPrompt`), the latest fourteen runs as bars as tall as
   each took (`NWRunBars`: done green, asked lantern, interrupted failed, stopped tertiary), and
