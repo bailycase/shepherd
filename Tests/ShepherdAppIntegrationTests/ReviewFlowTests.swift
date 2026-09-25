@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdRemote
 import ShepherdCore
 import ShepherdProtocol
 import ShepherdSessions

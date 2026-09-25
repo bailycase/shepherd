@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import ShepherdUI
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdRemote
 
 /// What the review pane can ask of its host (local agents and remote agents differ).

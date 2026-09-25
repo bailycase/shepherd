@@ -1,7 +1,9 @@
 import Foundation
 import AppKit
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdSessions
+import ShepherdRemote
 
 @MainActor
 extension ShepherdViewModel {
@@ -89,9 +91,7 @@ extension ShepherdViewModel {
 
     /// Commit: the agent commits what is under review (the review's comments ride along).
     func commitReview(_ session: ReviewSession) {
-        let hasNotes = !session.comments.isEmpty || !session.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let review = hasNotes ? "\n\n" + formatReview(files: session.files, comments: session.comments, summary: session.summary, reference: session.reference) : ""
-        finishReview(session, sending: "Commit these changes." + (hasNotes ? " Address the review below first." : "") + review)
+        finishReview(session, sending: formatCommitRequest(files: session.files, comments: session.comments, summary: session.summary, reference: session.reference))
     }
 
     /// Send `text` as the agent's next turn and close the review.
