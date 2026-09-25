@@ -1731,8 +1731,13 @@ what pi found, and the question holds only the question, its answers, and yours.
 composer card, and the control row stays under it with Send disabled ("Answer the question
 first"):
 
-- the attention glyph (13pt) and the title in `ui`, then "1 / N" in micro tertiary when several
-  wait
+- the head (`NWQuestionHead`, QuestionAsk), shared with a subagent's question dock: 26pt tall,
+  its parts 7pt apart: a 13pt `questionmark.circle` and "Agent is asking" in Geist 12 semibold
+  (`.nwSans(12, .semibold)`), both `lanternText`; "1 / N" in micro tertiary when several wait;
+  and, trailing, Hide the question, a 26pt round `.nwIcon` (transparent, a 14pt `chevron.down` in
+  `textSecondary`). VoiceOver reads the head as one header, "Agent is asking", and the button as
+  "Hide the question"
+- the question's title in `ui`
 - the message in mono on `bgSunken` (radius 8, a `lineSubtle` line, scrolling past 140pt)
 - a select's options as buttons that answer on click (the first primary), a confirm's Yes
   (primary) and No (y/n while the panel has focus), or an input's or editor's field (mono and
@@ -1742,6 +1747,13 @@ first"):
   show here" when it cannot be answered here
 - 10pt between its parts (`AppLayout.questionSpacing`); the card eases to the panel's height
   (`disclosure`), and the panel fades in (`content`)
+- **Hidden** (QuestionStates › hidden): Hide the question shrinks the panel to one line in the
+  card (`NWQuestionHiddenLine`), so you can read the thread. It still holds the composer's place,
+  because pi is still waiting: a 14pt glyph in `lanternText`, the title in `headline` (13.5
+  semibold, truncating), a small secondary **Answer** (24pt) and a 26pt Show the question
+  (`chevron.up`), 10pt apart; either button brings the panel back. Only that question stays
+  hidden: the next one pi asks arrives open (`QuestionHiding`). Esc does not hide it yet (see
+  Keyboard)
 - once answered, the panel goes and the field returns; nothing in the thread records the
   question (QuestionAnswered's record is not built), except the asking tool's own activity line
   when a tool asked. A select, confirm, input or editor dialog from an extension leaves no trace
@@ -1767,7 +1779,8 @@ composer card, not just its field. Its rules (QuestionStates › Rules):
 - **The dock** (`QuestionDock(question:options:recommended:)` on the board): `bgRaised`, radius
   12, a 1px `lantern` line inside a 3pt `lanternTint` ring, 12pt above and below and 14pt at the
   sides, 12pt between its parts, as wide as the composer card:
-  - a 26pt header: a 13pt question-mark glyph and "Agent is asking" in Geist 12 semibold, both
+  - a 26pt header (built: `NWQuestionHead`, on today's panel and a subagent's dock): a 13pt
+    question-mark glyph and "Agent is asking" in Geist 12 semibold, both
     `lanternText`, 7pt apart; trailing, a 26pt icon button, Hide the question (a 14pt chevron,
     `textSecondary`)
   - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.nwSans(16, .semibold)`; the
@@ -2138,9 +2151,9 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
 - **Answer → the question dock** (SubagentTray › Answer → question dock;
   `NWSubagentQuestionDock`): the run's question takes over the composer area, the tray and Up
   next with it, until it is answered or hidden. `bgRaised`, radius 12, a 1px `lantern` line and a
-  3pt `lanternTint` ring, padding 10×12, 12pt gaps: a 26pt header (a 13pt `lanternText` branch
-  glyph, "reviewer is asking" in `.nwSans(12, .semibold)` `lanternText`, and Hide the question, a
-  26pt `chevron.down`), the question in Geist 13.5 semibold (inline Markdown), then its answers as
+  3pt `lanternTint` ring, padding 10×12, 12pt gaps: the shared 26pt head (`NWQuestionHead`, as on
+  pi's own question, with a 13pt `lanternText` branch glyph and "reviewer is asking"; Hide the
+  question closes the dock), the question in Geist 13.5 semibold (inline Markdown), then its answers as
   numbered cards 6pt apart (padding 8×10, radius 8, `bgWindow` with a `lineSubtle` line; a 20pt
   number box at radius 5 in `lineStrong`, `.nwMono(11)`; the title in `ui` semibold and the lines
   after it in `caption` `textSecondary`; "Recommended" on `lanternTint` in Geist 11 semibold when
