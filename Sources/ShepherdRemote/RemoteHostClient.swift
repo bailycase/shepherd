@@ -528,6 +528,29 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Reads or changes the host's agent skills (Settings ▸ Skills), and answers with its skills
+    /// as they are afterwards, or with a repository's skills for `lookUp`. Looking up, installing
+    /// and checking for updates fetch from git on the host, so they wait longer. A host without
+    /// `skillsCapability` has none: this throws `update_required` before sending anything.
+    @discardableResult
+    public func skills(_ request: RemoteSkillsRequest = .fetch) async throws -> RemoteSkillsResult {
+        guard capabilities.contains(RemoteProtocol.skillsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to manage its skills from here."
+            )
+        }
+        let timeout: TimeInterval = switch request {
+        case .lookUp, .install, .checkUpdates: 180
+        default: RemoteHostClient.requestTimeout
+        }
+        let reply = try await self.request(timeout: timeout) { .skills(id: $0, request: request) }
+        switch reply {
+        case .skills(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected skills reply")
+        }
+    }
+
     public func detach(sessionID: SessionID) {
         queue.async { self.sendRequest(.detach(sessionID: sessionID)) }
     }
@@ -786,7 +809,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _), .hostSettings(let id, _):
+             .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)

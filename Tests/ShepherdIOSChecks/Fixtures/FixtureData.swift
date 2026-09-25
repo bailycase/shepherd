@@ -43,6 +43,9 @@ struct FixtureHostData {
     var hostSettings: HostSettings? = FixtureData.hostSettings()
     var instructions: InstructionsSnapshot? = FixtureData.instructions()
     var suggestions: SuggestionsSnapshot? = SuggestionsSnapshot()
+    /// Settings ▸ Skills: the host's skills, and what looking up a repository finds there.
+    var skills: SkillsSnapshot? = FixtureData.skills()
+    var repoSkills: RepoSkills? = nil
 }
 
 /// Fixed ids and builders every track's fixtures share, so screens agree with each other.

@@ -21,7 +21,8 @@ public final class ScratchServer: @unchecked Sendable {
         self.dir = try dir ?? makeScratchDirectory("srv")
         server = SessionServer(socketPath: self.dir.appendingPathComponent("s.sock").path,
                                stateURL: self.dir.appendingPathComponent("state.json"),
-                               modelCatalog: modelCatalog)
+                               modelCatalog: modelCatalog,
+                               skillsDirectory: self.dir.appendingPathComponent("agent-skills", isDirectory: true))
         let broadcasts = broadcasts
         server.onStateChanged = { state in broadcasts.withValue { $0.append(state) } }
         try server.start()
