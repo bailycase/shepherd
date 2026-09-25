@@ -80,6 +80,7 @@ public struct NWFileHeader: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("review.fileHeader")
         let nw = Color.nw
         let (directory, name) = Self.split(path)
         HStack(spacing: NW.Space.m) {

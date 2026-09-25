@@ -47,11 +47,16 @@ enum ListPerf {
     }
 
     /// The list under test: the scroll view with the tallest frame in the window.
-    static func scrollView(in window: OffscreenWindow) -> NSScrollView? {
+    /// With `trailing`, the tallest of those that end furthest right (a pane docked beside a
+    /// thread).
+    static func scrollView(in window: OffscreenWindow, trailing: Bool = false) -> NSScrollView? {
         func all(_ view: NSView) -> [NSScrollView] {
             (view as? NSScrollView).map { [$0] + $0.subviews.flatMap(all) } ?? view.subviews.flatMap(all)
         }
-        return all(window.host).max { $0.frame.height < $1.frame.height }
+        let views = all(window.host)
+        guard trailing else { return views.max { $0.frame.height < $1.frame.height } }
+        func right(_ view: NSScrollView) -> CGFloat { view.convert(view.bounds, to: nil).maxX }
+        return views.max { (right($0), $0.frame.height) < (right($1), $1.frame.height) }
     }
 
     /// One pass of scrolling: each step's milliseconds.

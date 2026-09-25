@@ -202,6 +202,7 @@ public struct NWHunkHeader: View {
     public init(_ header: String) { self.header = header }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("diff.hunk")
         Text(header)
             .font(.nw(.mono))
             .foregroundStyle(.nw.textTertiary)
@@ -241,6 +242,7 @@ public struct NWFoldRow: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("diff.fold")
         Button {
             #if os(macOS)
             if let expandFile, NSEvent.modifierFlags.contains(.option) { return expandFile() }
@@ -339,6 +341,7 @@ private struct NWDiffRowView<Annotation: View>: View {
     let annotation: (NWDiffLineContent) -> Annotation
 
     var body: some View {
+        let _ = NWRenderProbe.tick("diff.row")
         VStack(alignment: .leading, spacing: 0) {
             switch row {
             case .hunk(_, let header):
