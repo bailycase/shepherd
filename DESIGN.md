@@ -558,19 +558,20 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   its space's and host's needs-you counts, so the row to click is always marked. Live and
   finished subagents leave the agent's row as it is.
 - **Automation rows:** the automation's name, and its run's state: "running", "ASK", "done", or
-  "stopped" (a hollow dot, not selectable). The context menu has Run Now or Stop, and Delete
-  Automation.
+  "stopped" (a hollow dot, not selectable). The context menu has Stop while the run is running or
+  asks, else Run Now (a done run's thread is replaced by the new run's), and Delete Automation.
 - **A remote host's automation rows** (`RemoteSidebarSection.swift`) nest one level under its
   Automations disclosure with the same dots and words, plus "off" for one that does not start
   with Shepherd. Clicking a row opens its run's thread, or its details while it has none. The
-  context menu has Run Now or Stop, a Starts with Shepherd check, Details and Runs…, and Delete
-  Automation; on a host from before automations over the remote protocol the menu says why it
-  is read-only and disables them. Details and Runs… is a sheet (`RemoteAutomationSheet`,
+  context menu has Stop while its run is live, else Run Now, a Starts with Shepherd check,
+  Details and Runs…, and Delete Automation; on a host from before automations over the remote
+  protocol the menu says why it is read-only and disables them. Details and Runs… is a sheet (`RemoteAutomationSheet`,
   NavAutomations' detail pane): the On switch with what it means, Status, Host and Folder rows
   (`NWFactRow`), the prompt (`NWAutomationPrompt`), the latest fourteen runs as bars as tall as
   each took (`NWRunBars`: done green, asked lantern, interrupted failed, stopped tertiary), and
   every run the host kept (`NWRunRow`), a run opening its thread while that thread exists.
-  Its footer is Close and Run Now, or Open Run and Stop while one runs.
+  Its footer is Close and Run Now, with Open Run while the last run's thread is there, or Open
+  Run and Stop while a run is live.
 - **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
   with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
   below 720 and keeps its width while a right pane is open.
@@ -1591,7 +1592,9 @@ or the iPad sidebar's.
 - **Detail:** the On switch with what it means, Status, Runs on ("build-01 · a new thread each
   run"), Folder, the prompt, the latest fourteen runs as bars (bar height = duration), the last
   run, and every run the host kept (`NWRunRow`), each opening its thread while it exists. The
-  footer is Edit and Run now, or Stop (confirmed: it deletes the run's thread) and Open run.
+  footer is Edit and Run now (with Open run while the finished run's thread is there; running
+  again replaces it), or, while a run works or asks you, Stop (confirmed: it deletes the run's
+  thread) and Open run.
   The ••• menu has Open Run, Edit and Delete Automation (confirmed).
 - **Form:** Name, Prompt, Where it runs (Host when adding and more than one can take it, then
   Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new

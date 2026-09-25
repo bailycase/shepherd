@@ -232,14 +232,16 @@ struct SidebarRowTests {
         #expect(AutomationRow.state(agent, turnFailed: true) == state)
     }
 
+    /// Its menu offers Stop only while the run reads running or needs you; a run that reads done
+    /// runs again (replacing it), like one that is stopped.
     @Test(arguments: [
-        (AgentStatus?.none, "stopped", AgentState.idle),
-        (.working, "running", .running),
-        (.blocked, "needs you", .attention),
-        (.idle, "done", .done),
-        (.done, "done", .done),
+        (AgentStatus?.none, "stopped", AgentState.idle, false),
+        (.working, "running", .running, true),
+        (.blocked, "needs you", .attention, true),
+        (.idle, "done", .done, false),
+        (.done, "done", .done, false),
     ])
-    func anAutomationRowReadsItsRunsStatus(status: AgentStatus?, word: String, state: AgentState) {
+    func anAutomationRowReadsItsRunsStatus(status: AgentStatus?, word: String, state: AgentState, live: Bool) {
         let agent = status.map { status in
             var agent = Fixture.agent("Nightly run", in: Fixture.space("s")).agent
             agent.status = status
@@ -247,5 +249,6 @@ struct SidebarRowTests {
         }
         #expect(AutomationRow.stateWord(agent, turnFailed: false) == word)
         #expect(AutomationRow.state(agent, turnFailed: false) == state)
+        #expect(AutomationRow.isLive(agent) == live)
     }
 }

@@ -5,8 +5,8 @@ import ShepherdRemote
 
 /// A remote automation's details and runs (NavAutomations' detail pane, as a sheet): whether it
 /// starts with Shepherd, when and where it runs, its prompt, the chart of its latest runs, and
-/// each run, opening as its thread while that thread still exists. Run Now or Stop act on the
-/// host.
+/// each run, opening as its thread while that thread still exists. Run Now (replacing a settled
+/// run) or Stop (a live one) act on the host.
 struct RemoteAutomationSheet: View {
     var vm: ShepherdViewModel
     let key: AutomationKey
@@ -27,17 +27,19 @@ struct RemoteAutomationSheet: View {
         let abilities = row.abilities
         let pending = vm.remoteAutomationsPending.contains(key)
         var actions = [DialogAction("Close", kind: .cancel) { vm.remoteAutomationSheet = nil }]
-        if row.run == nil {
-            actions.append(DialogAction("Run Now", kind: .prominent, isEnabled: abilities.run && !pending) {
-                vm.performRemoteAutomation(key, .run)
-            })
-        } else {
+        if let run = row.run {
             actions.append(DialogAction("Open Run", kind: .normal) {
                 vm.remoteAutomationSheet = nil
-                if let run = row.run { vm.selectRemoteAgent(hostID: run.host, agentID: run.agent) }
+                vm.selectRemoteAgent(hostID: run.host, agentID: run.agent)
             })
+        }
+        if row.live {
             actions.append(DialogAction("Stop", kind: .normal, isEnabled: abilities.stop && !pending) {
                 vm.performRemoteAutomation(key, .stop)
+            })
+        } else {
+            actions.append(DialogAction("Run Now", kind: .prominent, isEnabled: abilities.run && !pending) {
+                vm.performRemoteAutomation(key, .run)
             })
         }
         return DialogSheet(title: row.name, subtitle: "Starts a thread on \(row.hostName) each run.",

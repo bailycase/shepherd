@@ -4,9 +4,10 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Automations track's screens: the list with runs (iPhone; the iPad's list beside a detail),
-// one automation with its chart and runs, one whose run is going, the form, and a host from
-// before automations over the remote protocol (read-only). Hosts answer `runs` from here; the
-// fixture host refuses every change.
+// one automation with its chart and runs, one whose run is going, one whose run finished with
+// its thread still there (Run now again, Open run to read it), one whose run was cut short by
+// the host quitting, the form, and a host from before automations over the remote protocol
+// (read-only). Hosts answer `runs` from here; the fixture host refuses every change.
 extension FixtureCatalog {
     static var automations: [FixtureScreen] {
         let fleet = AutomationsFixtureData.fleet()
@@ -28,6 +29,12 @@ extension FixtureCatalog {
             FixtureScreen(name: "automation-detail-running", hosts: fleet,
                           routes: [.home(.automations), .automations(.detail(host: FixtureData.studio, automation: AutomationsFixtureData.merge))],
                           prepare: settle),
+            FixtureScreen(name: "automation-detail-finished", hosts: AutomationsFixtureData.fleet(bumpLatest: .finished),
+                          routes: [.home(.automations), .automations(.detail(host: FixtureData.buildBox, automation: AutomationsFixtureData.bump))],
+                          prepare: settle),
+            FixtureScreen(name: "automation-detail-interrupted", hosts: AutomationsFixtureData.fleet(bumpLatest: .interrupted),
+                          routes: [.home(.automations), .automations(.detail(host: FixtureData.buildBox, automation: AutomationsFixtureData.bump))],
+                          prepare: settle),
             FixtureScreen(name: "automation-edit", hosts: fleet, routes: [.home(.automations)],
                           presented: .automations(.edit(host: FixtureData.buildBox, automation: AutomationsFixtureData.bump)), prepare: settle),
             FixtureScreen(name: "automation-new", hosts: fleet, routes: [.home(.automations)],
@@ -44,12 +51,30 @@ enum AutomationsFixtureData {
     static let cleanup = AutomationID(rawValue: "auto-cleanup")
     static let triage = AutomationID(rawValue: "auto-triage")
     static let bump = AutomationID(rawValue: "auto-bump")
+    static let bumpRun = AgentID(rawValue: "agent-bump")
 
     /// `olderStudio`: Studio answers `hello` as a host from before automations.v1.
-    static func fleet(olderStudio: Bool = false) -> [FixtureHostData] {
-        let runs = runs(now: Date().timeIntervalSince1970)
+    /// `bumpLatest`: the weekly bump ran again a few minutes ago. A finished run's thread is still
+    /// open; a stopped or interrupted one has gone.
+    static func fleet(olderStudio: Bool = false, bumpLatest: AutomationRunResult? = nil) -> [FixtureHostData] {
+        let now = Date().timeIntervalSince1970
+        var kept = runs(now: now)
+        let bumpFinished = bumpLatest == .finished
+        if let bumpLatest {
+            let id = UUID(uuidString: "A0000000-0000-4000-8000-000000000099")!
+            kept[bump, default: []].append(bumpFinished
+                ? AutomationRun(id: id, startedAt: now - 340, settledAt: now - 60, result: .finished, agentID: bumpRun)
+                : AutomationRun(id: id, startedAt: now - 340, endedAt: now - 60, result: bumpLatest))
+        }
+        let runs = kept
         return HomeFixtureData.fleet().map { host in
             var host = host
+            if bumpFinished, host.id == FixtureData.buildBox {
+                host.state.agents.append(FixtureData.agent(bumpRun, "Weekly dependency bump", .done, space: HomeFixtureData.hiddenSpace))
+                if let index = host.state.automations.firstIndex(where: { $0.id == bump }) {
+                    host.state.automations[index].agentID = bumpRun
+                }
+            }
             let older = olderStudio && host.id == FixtureData.studio
             host.reply = { request in
                 switch request {

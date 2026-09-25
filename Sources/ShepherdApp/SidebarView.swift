@@ -567,10 +567,12 @@ private struct AutomationsFooter: View {
                             if let agent { vm.selectAgent(agent.id) }
                         }
                         .contextMenu {
-                            if automation.agentID == nil {
-                                Button("Run Now") { Task { @MainActor in try? await vm.startAutomation(automation.id) } }
-                            } else {
+                            // A settled run reads done and runs again, replacing it; only a
+                            // live one stops.
+                            if AutomationRow.isLive(agent) {
                                 Button("Stop") { vm.stopAutomation(automation.id) }
+                            } else {
+                                Button("Run Now") { Task { @MainActor in try? await vm.startAutomation(automation.id) } }
                             }
                             Divider()
                             Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation.id) }
@@ -606,6 +608,11 @@ struct AutomationRow: View {
         case .blocked: "needs you"
         case .idle, .done: turnFailed && agent.status == .done ? "failed" : "done"
         }
+    }
+
+    /// Its run reads running or needs you: the menu offers Stop rather than Run Now.
+    static func isLive(_ agent: Agent?) -> Bool {
+        agent?.status == .working || agent?.status == .blocked
     }
 
     static func state(_ agent: Agent?, turnFailed: Bool) -> AgentState {
