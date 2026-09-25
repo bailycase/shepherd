@@ -51,6 +51,9 @@ struct RemoteAutomationsTests {
         }
         #expect(!NewThreadState.hosts(vm).contains { $0.id == connection.id && $0.spaces.contains { $0.id == hidden.id } })
 
+        vm.openDestination(.automations)
+        vm.openThread(FleetRef(host: connection.id, agent: runAgent))
+        #expect(vm.selectedRemoteAgent == ref && vm.shownDestination == nil, "the page's run opens its thread")
         vm.selectSidebarRow(.remote(ref))
         #expect(vm.selectedRemoteAgent == ref)
         #expect(vm.presentedSidebarLists.recents.first { $0.id == .remote(ref) }?.selected == true)
@@ -60,15 +63,17 @@ struct RemoteAutomationsTests {
             host.state.agents.isEmpty && Self.row(key, in: vm)?.run == nil && !vm.remoteAutomationsPending.contains(key)
         }
 
-        vm.showRemoteAutomation(key)
-        try await eventuallyOnMain("the host's runs to arrive") { vm.remoteAutomationRuns[key]?.count == 1 }
-        let detail = try #require(vm.remoteAutomationDetail(key))
-        #expect(detail.runs.map(\.word) == ["stopped"] && detail.runs.first?.agent == nil)
+        await vm.loadRemoteAutomationRuns(key)
+        #expect(vm.remoteAutomationRuns[key]?.count == 1)
+        vm.automationsPageSelection = key
+        let detail = try #require(vm.automationsPageModel().detail)
+        #expect(detail.key == key && detail.runs.map(\.word) == ["stopped"] && detail.runs.first?.thread == nil)
 
-        vm.performRemoteAutomation(key, .delete)
+        vm.deleteAutomation(key)
         try await eventuallyOnMain("the automation to go") {
-            host.state.automations.isEmpty && vm.remoteAutomationSheet == nil && Self.row(key, in: vm) == nil
+            host.state.automations.isEmpty && Self.row(key, in: vm) == nil && vm.remoteAutomationRuns[key] == nil
         }
+        #expect(vm.automationsPageSelection == nil)
         #expect(vm.remoteActionError == nil)
         #expect(local.server.state.automations.isEmpty, "nothing touched this Mac")
     }
@@ -122,8 +127,7 @@ struct RemoteAutomationsTests {
         try await eventuallyOnMain("the client to see the new run") { Self.row(key, in: vm)?.run == second }
         #expect(Self.row(key, in: vm)?.live == true, "Open Run opens the new run, which reads running")
 
-        vm.showRemoteAutomation(key)
-        try await eventuallyOnMain("the host's runs to arrive") { vm.remoteAutomationRuns[key]?.count == 2 }
+        await vm.loadRemoteAutomationRuns(key)
         let runs = try #require(vm.remoteAutomationRuns[key])
         #expect(runs.map(\.result) == [.finished, .running])
         #expect(runs.map(\.agentID) == [nil, second])

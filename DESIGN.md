@@ -3193,7 +3193,7 @@ off until you turn it on." Its one experiment today is Suggested instructions.
 ### Dialogs and sheets
 
 Creation sheets (New Agent, New Worktree, Finalize Worktree, the directory picker, the remote
-worktree sheet, a remote automation's Details and Runs, the review's Commit…) and every
+worktree sheet, the automation editor, the review's Commit…) and every
 confirmation share one anatomy, `NWDialog` (`NWDialogMetrics`), flat on `bgWindow`, built from
 the Controls and Status & feedback parts (no board draws a Mac dialog). The creation sheets and
 Delete Worktree Agent take `.dialogSheetFrame()`: the window is `bgWindow` from the first frame,
@@ -3380,7 +3380,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Agents | `NWSubagentCard` (`NWSubagentRun`, `NWSubagentQuestion`), `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (`NWRunCard`, `NWRunGroupCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer`, `NWDiffMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, …) | `DiffReviewView.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
-| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`, `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
+| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
 | Pages | `NWPageHeader`, `NWPageFilterField`, `NWTableColumns` and `NWTableHead`, `.nwPageCard()`, `NWPageFact`, `NWPageSectionLabel`, `NWPageQuote`, `NWPageMetrics`; `NWHostPageCard` and `NWHostFact` (`NWHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
 | Design tool (not built yet; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField`, and `NWActivityLine`'s `.drew` and `.checked` kinds (see Design tool) | nothing yet |
 | Missions map (not built yet; `Components/MissionMap/`) | `NWMissionMap`, `NWStation`, `NWTerminus`, `NWFlowWire`, `NWDataWire`, `NWForkBar`, `NWJoinBar`, `NWOutcomeChip`, `NWPinRow`, `NWLane`, `NWFog`, `NWFrontierChip` (see Missions: the map) | nothing yet |

@@ -167,8 +167,6 @@ final class ShepherdViewModel {
     /// Pre-selection for the New Agent sheet (a remote space header's `+`);
     /// consumed by the sheet's onAppear.
     var newAgentPreselect: (hostID: UUID, spaceID: SpaceID)?
-    /// The remote automation whose details and runs the sheet shows.
-    var remoteAutomationSheet: AutomationKey?
     /// Each remote automation's runs as its host last sent them, oldest first (read for the sheet).
     var remoteAutomationRuns: [AutomationKey: [AutomationRun]] = [:]
     /// Remote automation changes on their way, so their controls wait.
