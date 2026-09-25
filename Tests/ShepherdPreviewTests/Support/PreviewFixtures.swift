@@ -34,6 +34,8 @@ final class PreviewWorkspace {
             // Only the agents a preview mounts get a pi, and those get the stub.
             restoresAgentsAtLaunch: false
         )
+        // The boards' footer, never this machine's user and name.
+        vm.sidebarFooterIdentity = ("Baily", SidebarDerivation.footerDetail(computerName: "build-01"))
     }
 
     /// Replaces the server's workspace and waits for the view model to adopt it.
