@@ -129,19 +129,12 @@ struct ClientSettingsTests {
         let host = Self.host("build-01", client)
         let model = ClientHostSettings()
         await model.refresh(host)
-        model.post(.updatePiDaily(true), on: host)
+        let sent = model.post(.updatePiDaily(true), on: host)
         // Before the host answers.
         #expect(model.settings(of: host)?.updatePiDaily == true)
-        await Self.settle { client.requests.count == 2 }
+        await sent?.value
         #expect(client.requests.count == 2)
         #expect(model.settings(of: host)?.updatePiDaily == true)
-    }
-
-    /// Lets work a control posted run: yields until `done`, or for a generous number of turns.
-    static func settle(_ done: () -> Bool) async {
-        for _ in 0..<1_000 where !done() {
-            await Task.yield()
-        }
     }
 
     // MARK: Instructions
@@ -290,11 +283,11 @@ struct ClientSettingsTests {
         let hosts = [Self.host("build-01", client)]
         let model = ClientSuggestions()
         await model.refresh(hosts)
-        model.post(hosts) { $0.enabled = false }
+        let sent = model.post(hosts) { $0.enabled = false }
         // Off drops what waits, before the host answers.
         #expect(!model.isOn(hosts))
         #expect(model.waiting(hosts).isEmpty)
-        await Self.settle { client.requests.contains("suggestions.configure") }
+        await sent.value
         #expect(client.requests.contains("suggestions.configure"))
         #expect(!model.isOn(hosts))
     }
