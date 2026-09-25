@@ -25,7 +25,7 @@ struct PadReviewScreen: View {
                     HStack(spacing: 0) {
                         ThreadScreen(ref: ref)
                             .frame(maxWidth: .infinity)
-                        Rectangle().fill(Color.nw.lineStrong).frame(width: 1)
+                        NWHairline(.vertical, color: Color.nw.lineStrong)
                         PadReviewPane(store: store, finalize: finalize, close: { dismiss() })
                             .frame(width: min(MobileLayout.reviewDockWidth, proxy.size.width * MobileLayout.reviewDockShare))
                     }
@@ -62,7 +62,7 @@ private struct PadReviewPane: View {
         VStack(spacing: 0) {
             PadReviewHeader(store: store, finalize: finalize, close: close)
             if !store.files.isEmpty {
-                NWTouchFileStrip(store.summaries.map(PadReviewPane.chip), selection: store.currentFile) { id in
+                NWTouchFileStrip(store.chips, selection: store.currentFile) { id in
                     store.clearSelection()
                     store.currentFile = id
                 }
@@ -83,11 +83,6 @@ private struct PadReviewPane: View {
         .background(Color.nw.bgWindow)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Review")
-    }
-
-    static func chip(_ summary: ReviewFileSummary) -> NWFileStrip.Item {
-        NWFileStrip.Item(id: summary.id, path: summary.path, status: NWFileStatus(summary.status), added: summary.added,
-                         removed: summary.removed, isViewed: summary.viewed)
     }
 }
 
@@ -240,7 +235,7 @@ private struct PadFullReview: View {
         HStack(spacing: 0) {
             PadFileList(store: store, summaryFocused: $summaryFocused)
                 .frame(width: MobileLayout.reviewFileListWidth)
-            Rectangle().fill(Color.nw.lineSubtle).frame(width: 1)
+            NWHairline(.vertical)
             VStack(spacing: 0) {
                 if let error = store.actionError {
                     NWBanner(.failed, title: "Couldn't send the review", message: error) {
@@ -365,7 +360,7 @@ private struct PadSplitColumns: View {
             Text(pullRequest ? "BASE" : "HEAD")
                 .padding(.leading, leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            Rectangle().fill(Color.nw.lineSubtle).frame(width: 1)
+            NWHairline(.vertical)
             Text(pullRequest ? "BRANCH" : "WORKING TREE")
                 .padding(.leading, leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
