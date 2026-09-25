@@ -41,7 +41,7 @@ struct ThreadStartupTests {
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_STARTUP_GATE": Self.gate])
 
-        #expect(try await pi.request(.snapshot()) == .failure(code: NativeThreadCode.starting, message: "pi is starting."))
+        #expect(try await pi.request(.snapshot()) == .failure(code: NativeThreadCode.starting, message: "The agent is starting."))
         #expect(try await pi.request(.snapshot()).failureCode == NativeThreadCode.starting, "still starting, not failed")
 
         FileManager.default.createFile(atPath: h.dir.appendingPathComponent(Self.gate).path, contents: nil)

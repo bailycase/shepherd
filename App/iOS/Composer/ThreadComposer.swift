@@ -4,8 +4,9 @@ import ShepherdProtocol
 import ShepherdRemote
 
 /// The composer slot at the bottom of `ThreadScreen` (thread track): a question in the field's
-/// place while pi asks one; otherwise Up next (the host's queue), the slash-command list while
-/// the draft is "/…", and the field.
+/// place while pi asks one (or a subagent's, once its row's Answer is tapped); otherwise the
+/// subagents and Up next in one card (`SubagentTraySection`, the host's queue), the
+/// slash-command list while the draft is "/…", and the field.
 ///
 /// - **iPhone** (MobileThread, MobileQueue boards): the paperclip beside a capsule field with
 ///   Send inside it. While the field is in use, the commands, model and thinking chips sit above.
@@ -51,8 +52,32 @@ struct ThreadComposer: View {
                 .padding(.horizontal, wide ? 0 : -MobileLayout.gutter)
                 .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
                 .nwTransition(.content)
+            } else if let run = answering(store, state: state), let dialog = nativeSubagentQuestionDialog(run) {
+                // A subagent's question, from its row's Answer: Hide returns to the tray.
+                QuestionPanel(dialog: dialog, enabled: live && store.takesSubagentCommands, docked: !wide,
+                              title: "\(nativeRunNames(run).name) is asking", dismissTitle: "Hide") { answer in
+                    let commands = SubagentCommands(store: store, enabled: live && store.takesSubagentCommands)
+                    switch answer {
+                    case .select(let value), .input(let value), .editor(let value): commands.send(run.runID, .answer(value))
+                    case .confirm, .cancel: break
+                    }
+                    withNWAnimation(.content) { state.answeringRun = nil }
+                }
+                .id("subagent:" + run.id)
+                .padding(.horizontal, wide ? 0 : -MobileLayout.gutter)
+                .padding(.bottom, wide ? 0 : -MobileLayout.composerBottom)
+                .nwTransition(.content)
             } else {
-                QueueSection(store: store, state: state, enabled: live)
+                if let tray = store.tray {
+                    NWDockStack(size: wide ? .pad : .phone, showsTray: true, showsQueue: !state.rows.isEmpty) {
+                        SubagentTraySection(ref: ref, tray: tray, store: store, state: state, size: wide ? .pad : .phone, enabled: live)
+                    } queue: {
+                        QueueSection(store: store, state: state, enabled: live, framed: false)
+                    }
+                    .nwTransition(.list)
+                } else {
+                    QueueSection(store: store, state: state, enabled: live)
+                }
                 if let matches = state.matches {
                     NWTouchCommandList(commands: matches.commands.map(Self.command), total: matches.total, query: matches.query,
                                        wide: wide) { chosen in
@@ -73,6 +98,7 @@ struct ThreadComposer: View {
         .padding(.bottom, MobileLayout.composerBottom)
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: store.dialogs.isEmpty)
+        .nwAnimation(.list, value: store.tray == nil)
         .onChange(of: store.sentCount) { _, _ in focused = false }
         .onChange(of: focused) { _, focused in
             if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }
@@ -94,6 +120,12 @@ struct ThreadComposer: View {
                 Task { await store.setModel(model) }
             }
         }
+    }
+
+    /// The run whose question is open from its row's Answer, while it still asks.
+    private func answering(_ store: NativeThreadStore, state: ComposerState) -> NativeSubagent? {
+        guard let id = state.answeringRun else { return nil }
+        return store.subagents.first { $0.runID == id && nativeRunPhase($0) == .needsYou }
     }
 
     /// Asks the catalog again for a new connection, or once the thread reports a thinking level.
@@ -211,7 +243,7 @@ struct ThreadComposer: View {
                 }
             }
             .accessibilityLabel(running ? "Queue message" : "Send")
-            .accessibilityHint(running ? "Goes when pi finishes this turn" : "")
+            .accessibilityHint(running ? "Goes when the agent finishes this turn" : "")
             .accessibilityActions {
                 if running, enabled {
                     Button("Steer now") { send(.steer, store: store, state: state) }

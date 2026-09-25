@@ -93,7 +93,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// last working in rather than the original conversation.
     public var piSessionID: String?
     /// Set when the agent was created on a git worktree Shepherd made for it
-    /// (the branch name, e.g. "worktree/calm-stone-3831"). Display-only
+    /// (the branch name, e.g. "agent/calm-stone-3831"). Display-only
     /// identity — the sidebar renders such agents as worktrees of their
     /// space. Decodes nil from older state files.
     public var worktreeBranch: String?

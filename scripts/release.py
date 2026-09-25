@@ -7,16 +7,18 @@ Shepherd ships as two Mac apps from one workflow:
   Shepherd          tag vX.Y.Z (stable) or vX.Y.Z-beta.N (beta)
   Shepherd Nightly  every push to the nightly branch: its own bundle id, name, feed and DMG
 
-The same push to nightly also uploads the iOS client (Shepherd iOS) to TestFlight for internal
-testing, when an App Store Connect key is configured. No other trigger uploads it yet.
+The iOS client (Shepherd iOS) goes to TestFlight internal testing only from a manual run on
+nightly with testflight=true, which builds no Mac app. Apple caps uploads per day (ITMS-90382),
+so no push uploads it.
 
 Release candidates are retired: an rc tag builds nothing. Feed names and bundle ids are a
 contract with the apps (UpdateChannel and ShepherdEdition in Sources/).
 
 usage:
-  release.py plan <ref> <stamp> [<attempt> [<published-tag>]] [--asc-key]
+  release.py plan <ref> <stamp> [<attempt> [<published-tag>]] [--asc-key] [--testflight]
                                         the build for a pushed ref, as plan=<json> for $GITHUB_OUTPUT;
-                                        --asc-key says the App Store Connect key is configured
+                                        --asc-key says the App Store Connect key is configured;
+                                        --testflight plans a manual TestFlight run (iOS only)
   release.py route                      tags on stdin (newest first) -> "tag asset archive feeds"
   release.py latest <feed>              tags on stdin (newest first) -> the newest tag in <feed>
   release.py feeds                      "dir channel" per feed generate_appcast builds
@@ -118,7 +120,7 @@ class IOSApp:
         return f"{self.name}.app"
 
 
-# The nightly lane only. Beta tags (external testing) and stable tags (the App Store) come later.
+# Manual TestFlight runs only. Beta tags (external testing) and stable tags (the App Store) come later.
 IOS = IOSApp("Shepherd iOS", "com.bailycase.shepherd.ios", "Shepherd iOS", "Release",
              "App/iOS/ExportOptions.plist", "internal")
 IOS_SECRETS = ("APP_STORE_CONNECT_KEY_ID", "APP_STORE_CONNECT_ISSUER_ID", "APP_STORE_CONNECT_KEY_P8")
@@ -129,27 +131,37 @@ RC = re.compile(r"^v\d+\.\d+\.\d+-rc\.\d+$")
 NIGHTLY = re.compile(r"^nightly-\d{12}$")
 STAMP = re.compile(r"^\d{12}$")
 NIGHTLY_BRANCH = "refs/heads/nightly"
+TESTFLIGHT_RUN = "gh workflow run release.yml --ref nightly -f testflight=true"
 
 
-def plan(ref: str, stamp: str, attempt: int = 1, published: str = "", asc_key: bool = False) -> dict:
+def plan(ref: str, stamp: str, attempt: int = 1, published: str = "", asc_key: bool = False,
+         testflight: bool = False) -> dict:
     """What a push of `ref` builds. `stamp` (UTC yyyymmddHHMM) names a nightly. `attempt` is
     the workflow run's attempt, and `published` the nightly-* tag already on the pushed commit,
-    if any. `asc_key` says the App Store Connect key the iOS upload signs with is configured."""
-    mac = _plan_mac(ref, stamp, attempt, published)
-    return {**mac, **_plan_ios(ref, mac, asc_key)}
+    if any. `asc_key` says the App Store Connect key the iOS upload signs with is configured.
+    `testflight` is a manual run asking for a TestFlight upload, which builds no Mac app."""
+    if testflight:
+        return {"build": False, "reason": "a TestFlight run builds only the iOS client",
+                **_plan_ios(ref, attempt, asc_key)}
+    return {**_plan_mac(ref, stamp, attempt, published),
+            "ios": False, "ios_reason": "TestFlight uploads only on a manual run: " + TESTFLIGHT_RUN}
 
 
-def _plan_ios(ref: str, mac: dict, asc_key: bool) -> dict:
-    """The iOS client rides the nightly lane: whenever Shepherd Nightly builds, it goes to
-    TestFlight internal testing too. It never gates the Mac build, and is skipped (with a
-    reason the workflow prints) when the key is missing."""
+def _plan_ios(ref: str, attempt: int, asc_key: bool) -> dict:
+    """A manual TestFlight run uploads the iOS client to internal testing. Apple caps uploads
+    per day (ITMS-90382), so no push does. It is refused (with a reason the workflow prints)
+    off nightly, without the key, or on a re-run."""
     if ref != NIGHTLY_BRANCH:
-        return {"ios": False, "ios_reason": "only a push to nightly uploads the iOS client to TestFlight"}
-    if not mac["build"]:
-        return {"ios": False, "ios_reason": mac["reason"]}
+        return {"ios": False, "ios_reason": f"{ref}: a TestFlight run uploads only from the nightly branch: "
+                + TESTFLIGHT_RUN}
+    if attempt > 1:
+        # A re-run keeps the run number, which is the build number, and App Store Connect
+        # refuses a build number it already has.
+        return {"ios": False, "ios_reason": "a re-run would upload this run's build number again; "
+                "start a new run: " + TESTFLIGHT_RUN}
     if not asc_key:
         return {"ios": False, "ios_reason": "TestFlight upload skipped: " + ", ".join(IOS_SECRETS)
-                + " are not all set. The Mac release is unaffected"}
+                + " are not all set"}
     return {
         "ios": True,
         "ios_name": IOS.name,
@@ -363,7 +375,7 @@ def verify_ios(path: str, build: str) -> list[str]:
         problems.append(f"CFBundleExecutable {executable!r} is not in the bundle")
     return problems
 
-# TestFlight retirement. Every nightly uploads a build and nothing else expires the old ones, so
+# TestFlight retirement. Every TestFlight run uploads a build and nothing else expires the old ones, so
 # testers could install any build from the last 90 days. release.yml's retire-testflight job
 # runs this after each upload: it keeps the newest processed build and expires the
 # older ones through the App Store Connect API.
@@ -705,18 +717,21 @@ def _tags_from_stdin() -> list[str]:
     return [line.strip() for line in sys.stdin if line.strip()]
 
 
+PLAN_FLAGS = ("--asc-key", "--testflight")
+
+
 def main(argv: list[str]) -> int:
     if not argv:
         print(__doc__, file=sys.stderr)
         return 64
     command, args = argv[0], argv[1:]
-    if command == "plan" and 2 <= len([a for a in args if a != "--asc-key"]) <= 4:
-        asc_key = "--asc-key" in args
-        args = [a for a in args if a != "--asc-key"]
+    if command == "plan" and 2 <= len([a for a in args if a not in PLAN_FLAGS]) <= 4:
+        asc_key, testflight = "--asc-key" in args, "--testflight" in args
+        args = [a for a in args if a not in PLAN_FLAGS]
         ref, stamp = args[:2]
         attempt = int(args[2]) if len(args) > 2 else 1
         published = args[3] if len(args) > 3 else ""
-        print("plan=" + json.dumps(plan(ref, stamp, attempt, published, asc_key), sort_keys=True))
+        print("plan=" + json.dumps(plan(ref, stamp, attempt, published, asc_key, testflight), sort_keys=True))
     elif command == "route" and not args:
         for tag in _tags_from_stdin():
             routed = route(tag)

@@ -138,9 +138,8 @@ extension ShepherdViewModel {
 
     private func applyAppearance(_ theme: ShepherdTheme, update: () -> Void) {
         do {
-            // Write first: running pi processes watch this file and repaint in
-            // the same switch that recolors app chrome and terminal surfaces.
-            try installPiTheme(theme)
+            // Keep external editors in step with app chrome and terminal surfaces.
+            try installThemeMarker(theme)
         } catch {
             NSLog("Shepherd: theme update failed: \(error)")
             NSSound.beep()
@@ -160,16 +159,12 @@ extension ShepherdViewModel {
     }
 
     /// Reset all user-facing preferences in one place. Workspace state is
-    /// intentionally untouched. The generated pi theme is written before the
-    /// fresh terminal surfaces are built so running pi processes see the same
-    /// palette as Shepherd's chrome.
+    /// intentionally untouched. Update the external editor marker before changing preferences.
     func resetSettings() {
         let theme = themeManager.resetTarget
         do {
-            // The pi file is the external side effect. Write it first so a
-            // failed install leaves every in-memory and persisted preference
-            // untouched.
-            try installPiTheme(theme)
+            // Write first so a failed marker update leaves preferences untouched.
+            try installThemeMarker(theme)
         } catch {
             NSLog("Shepherd: default theme update failed: \(error)")
             NSSound.beep()

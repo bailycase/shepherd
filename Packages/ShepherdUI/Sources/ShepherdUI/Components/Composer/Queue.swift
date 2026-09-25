@@ -15,10 +15,10 @@ public enum NWQueueMetrics {
     public static let rowHeight: CGFloat = 40
     /// "Show N more".
     public static let moreRowHeight: CGFloat = 32
-    /// A queued row's number; a steering row has its bare spinner in its place, so its text
-    /// starts a little further left.
+    /// A queued row's number; a steering row has its still steer glyph in its place (LiveText:
+    /// waiting isn't working), so its text starts a little further left.
     public static let numberSize: CGFloat = 18
-    public static let spinnerSize: CGFloat = 14
+    public static let steerGlyph: CGFloat = 14
     /// The grip's slot, and its six dots.
     public static let gripSize = CGSize(width: 8, height: 14)
     public static let gripDot: CGFloat = 2.2
@@ -156,8 +156,11 @@ public struct NWQueueNumber: View {
 /// then one row per message with a hairline between. A collapsed stack is its header alone.
 /// Past `expandedMaxRows` rows it scrolls inside, so it never takes the thread's room. Rows keep
 /// to the card's rounded corners, but a lifted row floats over the card and past its edges.
+/// Unframed, it draws no card of its own: it is Up next's section of the dock (`NWDockStack`),
+/// under the subagents.
 public struct NWQueueStack<Rows: View, Options: View>: View {
     let count: Int
+    let framed: Bool
     let paused: String?
     let collapsed: Bool
     let scrolls: Bool
@@ -171,9 +174,10 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
     /// scrolls them, keeping the last row ("Show fewer") below.
     /// `drop` draws a drag's lantern drop line at the top of that row's slot, under the lifted
     /// row.
-    public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil,
+    public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil, framed: Bool = true,
                 onToggle: @escaping () -> Void, @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
         self.count = count
+        self.framed = framed
         self.paused = paused
         self.collapsed = collapsed
         self.scrolls = scrolls
@@ -208,8 +212,8 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
                 .nwTransition(.disclosure)
             }
         }
-        .background(nw.bgRaised, in: shape)
-        .nwBorder(nw.lineStrong, radius: NW.Radius.m)
+        .background(framed ? nw.bgRaised : .clear, in: shape)
+        .nwBorder(framed ? nw.lineStrong : .clear, radius: NW.Radius.m)
         .accessibilityElement(children: .contain)
     }
 
@@ -353,7 +357,7 @@ public struct NWQueueDrag {
 /// - **Queued:** the grip (while hovered or focused; the only drag handle), its number, the
 ///   text on one line (a click edits it), its attachments, then a slot that always keeps room
 ///   for Steer now, Edit and Delete, built only while the row is hovered or focused.
-/// - **Steering:** on `runningTint`, a spinner in the number's place, the "Steering" pill and
+/// - **Steering:** on `runningTint`, the still steer glyph in the number's place, the "Steering" pill and
 ///   Back to the queue.
 ///
 /// Hovered it is `bgHover`; with keyboard focus `bgSelected` and the focus ring drawn inside it,
@@ -400,11 +404,15 @@ public struct NWQueueRow: View {
                 case .queued(let number):
                     NWQueueNumber(number).nwTransition(.content)
                 case .steering:
-                    ProgressView().progressViewStyle(.nwSpinner(size: NWQueueMetrics.spinnerSize, color: nw.running))
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(nw.running)
+                        .frame(width: NWQueueMetrics.steerGlyph, height: NWQueueMetrics.steerGlyph)
+                        .accessibilityHidden(true)
                         .nwTransition(.content)
                 }
             }
-            .frame(width: steering ? NWQueueMetrics.spinnerSize : NWQueueMetrics.numberSize, height: NWQueueMetrics.numberSize)
+            .frame(width: steering ? NWQueueMetrics.steerGlyph : NWQueueMetrics.numberSize, height: NWQueueMetrics.numberSize)
             label
             if !attachments.isEmpty {
                 HStack(spacing: NW.Space.xs) {

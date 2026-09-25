@@ -13,6 +13,8 @@ struct QueueSection: View {
     let store: NativeThreadStore
     let state: ComposerState
     let enabled: Bool
+    /// Its own card; false under the subagents in the dock's card.
+    var framed = true
     @ScaledMetric(relativeTo: .body) private var rowsMaxHeight = MobileLayout.queueRowsMaxHeight
     @Environment(\.composerMaxHeight) private var composerMaxHeight
 
@@ -25,7 +27,8 @@ struct QueueSection: View {
             // it on each row's hover and its reason in a tooltip, neither of which touch has.
             NWTouchQueueCard(count: store.queue.count,
                              paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
-                             resume: !running && enabled && !queued.isEmpty ? { Task { await store.sendQueuedNow(queued) } } : nil) {
+                             resume: !running && enabled && !queued.isEmpty ? { Task { await store.sendQueuedNow(queued) } } : nil,
+                             framed: framed) {
                 VStack(spacing: 0) {
                     ForEach(rows) { row in
                         QueueRowView(row: row, first: row.id == rows.first?.id, steerLabel: NativeQueueStack.steerLabel(running: running),

@@ -6,12 +6,12 @@ import AppKit
 import UIKit
 #endif
 
-// The spinner and the attention glow run on the render server: a Core Animation animation on
-// a layer, installed once, so one on screen costs the app no frames (a SwiftUI timeline redrew
-// its window on every display frame, most of a core in a debug build off screen). Both keep
-// their clock phase (`NWPhase`), so every spinner turns in step and every dot pulses together.
-// Under Reduce Motion, or while `nwMotionPaused`, the animation is removed and the arc or the
-// dot rests as it draws statically.
+// The spinner, the attention glow and live text's shimmer run on the render server: a Core
+// Animation animation on a layer, installed once, so one on screen costs the app no frames (a
+// SwiftUI timeline redrew its window on every display frame, most of a core in a debug build off
+// screen). All keep their clock phase (`NWPhase`), so every spinner turns in step, every dot
+// pulses together, and every live line's highlight moves as one. Under Reduce Motion, or while
+// `nwMotionPaused`, the animation is removed and the layer rests as it draws statically.
 
 /// The running spinner's 3/4 arc.
 struct NWLayerSpinner: View {
@@ -57,10 +57,66 @@ extension NWPhase {
     }
 }
 
+/// Live text's moving highlight: a `textTertiary` → `textPrimary` → `textTertiary` band that
+/// Core Animation slides across the view (`NW.Motion.shimmer`). Masked by the text it lights.
+struct NWLayerShimmer: View {
+    @Environment(\.nwMotionPaused) private var motionPaused
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        NWShimmerLayerRepresentable(base: .nw.textTertiary, highlight: .nw.textPrimary, animates: !motionPaused,
+                                    colorScheme: colorScheme)
+    }
+}
+
+extension NWPhase {
+    /// The band's ends in unit coordinates of the text when its highlight is at `center` (in
+    /// widths of the text).
+    static func shimmerPoints(center: Double) -> (start: CGPoint, end: CGPoint) {
+        (CGPoint(x: center - shimmerReach, y: 0.5), CGPoint(x: center + shimmerReach, y: 0.5))
+    }
+
+    /// Where a band that is not moving rests (a paused layout, a render for a preview): its
+    /// highlight on the text's first half, as the boards draw it.
+    static let shimmerRest = 0.35
+}
+
 /// The layer animations, shared by both platforms' views.
 enum NWLayerMotion {
     static let spinKey = "nw.spin"
     static let glowKey = "nw.glow"
+    static let shimmerKey = "nw.shimmer"
+
+    /// The shimmer's band sliding once across its text per `NW.Motion.shimmer.duration`, linear,
+    /// from where the clock's phase puts it now.
+    static func shimmer(now: Date = Date()) -> CAAnimationGroup {
+        let from = NWPhase.shimmerPoints(center: NWPhase.shimmerStart)
+        let to = NWPhase.shimmerPoints(center: NWPhase.shimmerEnd)
+        let start = CABasicAnimation(keyPath: "startPoint")
+        start.fromValue = from.start
+        start.toValue = to.start
+        let end = CABasicAnimation(keyPath: "endPoint")
+        end.fromValue = from.end
+        end.toValue = to.end
+        let group = CAAnimationGroup()
+        group.animations = [start, end]
+        group.duration = NW.Motion.shimmer.duration
+        group.repeatCount = .infinity
+        group.timingFunction = CAMediaTimingFunction(name: .linear)
+        group.timeOffset = NWPhase.fraction(now, .shimmer) * NW.Motion.shimmer.duration
+        group.isRemovedOnCompletion = false
+        return group
+    }
+
+    /// A band layer at rest: its stops and resting points, with no implicit animation.
+    static func configure(_ band: CAGradientLayer) {
+        band.actions = noActions.merging(["colors": NSNull(), "startPoint": NSNull(), "endPoint": NSNull()]) { $1 }
+        band.type = .axial
+        band.locations = [0, 0.5, 1]
+        let rest = NWPhase.shimmerPoints(center: NWPhase.shimmerRest)
+        band.startPoint = rest.start
+        band.endPoint = rest.end
+    }
 
     /// Layers that animate nothing implicitly: every change lands as the view model sets it.
     static let noActions: [String: CAAction] = [
@@ -234,6 +290,59 @@ struct NWGlowLayerRepresentable: NSViewRepresentable {
     }
 }
 
+
+/// Live text's highlight band (`NWLayerShimmer`).
+final class NWShimmerLayerView: NSView {
+    let band = CAGradientLayer()
+    private var animates = false
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        NWLayerMotion.configure(band)
+        layer?.addSublayer(band)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func update(base: CGColor, highlight: CGColor, animates: Bool) {
+        band.colors = [base, highlight, base]
+        self.animates = animates
+        syncAnimation()
+    }
+
+    override func layout() {
+        super.layout()
+        band.frame = bounds
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncAnimation()
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    private func syncAnimation() {
+        NWLayerMotion.sync(band, key: NWLayerMotion.shimmerKey, animates: animates && window != nil) { NWLayerMotion.shimmer() }
+    }
+}
+
+struct NWShimmerLayerRepresentable: NSViewRepresentable {
+    let base: Color
+    let highlight: Color
+    let animates: Bool
+    /// Read so that an appearance change updates the view, which resolves the colors again.
+    let colorScheme: ColorScheme
+
+    func makeNSView(context: Context) -> NWShimmerLayerView { NWShimmerLayerView() }
+
+    func updateNSView(_ view: NWShimmerLayerView, context: Context) {
+        view.update(base: base.resolve(in: context.environment).cgColor, highlight: highlight.resolve(in: context.environment).cgColor,
+                    animates: animates)
+    }
+}
+
 #elseif canImport(UIKit)
 
 /// UIKit layers are y-down: the same arc and turn with the opposite signs.
@@ -354,6 +463,55 @@ struct NWGlowLayerRepresentable: UIViewRepresentable {
 
     func updateUIView(_ view: NWGlowLayerView, context: Context) {
         view.update(color: color.resolve(in: context.environment).cgColor, animates: animates)
+    }
+}
+
+/// Live text's highlight band (`NWLayerShimmer`).
+final class NWShimmerLayerView: UIView {
+    let band = CAGradientLayer()
+    private var animates = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        NWLayerMotion.configure(band)
+        layer.addSublayer(band)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    func update(base: CGColor, highlight: CGColor, animates: Bool) {
+        band.colors = [base, highlight, base]
+        self.animates = animates
+        syncAnimation()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        band.frame = bounds
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        syncAnimation()
+    }
+
+    private func syncAnimation() {
+        NWLayerMotion.sync(band, key: NWLayerMotion.shimmerKey, animates: animates && window != nil) { NWLayerMotion.shimmer() }
+    }
+}
+
+struct NWShimmerLayerRepresentable: UIViewRepresentable {
+    let base: Color
+    let highlight: Color
+    let animates: Bool
+    let colorScheme: ColorScheme
+
+    func makeUIView(context: Context) -> NWShimmerLayerView { NWShimmerLayerView() }
+
+    func updateUIView(_ view: NWShimmerLayerView, context: Context) {
+        view.update(base: base.resolve(in: context.environment).cgColor, highlight: highlight.resolve(in: context.environment).cgColor,
+                    animates: animates)
     }
 }
 
