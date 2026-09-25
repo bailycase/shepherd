@@ -102,6 +102,15 @@ when none is. Landscape shows both columns; in portrait the thread keeps the wid
 sidebar slides over it, and choosing a row hides it again. With no thread chosen, the sidebar
 is out in portrait too.
 
+Portrait means the window is taller than it is wide (`PadSplitLayout.sidebarOverlays`, so a
+narrow Split View or Stage Manager window counts too), measured with the keyboard's safe area
+ignored (`.ignoresSafeArea(.keyboard)` around the reader; each column still keeps its content
+above the keyboard). The keyboard only shortens what content has left: a portrait iPad minus the
+keyboard reads wider than tall, and switching the split view's style as the composer took focus
+dropped the focus again, so no keyboard ever stayed up in portrait. Never key a layout mode (a
+style, which columns show) off a size the keyboard shrinks; sizing within a mode (the composer's
+share of the thread, the terminal panel's clamp) should follow what is left.
+
 ## App state
 
 `MobileApp` (App/) makes the stores once and puts them in the environment. Every window shares
