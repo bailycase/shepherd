@@ -97,4 +97,39 @@ extension PreviewTests {
                       actions: HostsPageActions(retry: { _ in }, remove: { _ in }, addHost: {}))
         }
     }
+
+    // The whole window as the boards draw it: the sidebar with its destination selected and the
+    // page beside it, reached the way the sidebar reaches it.
+
+    @Test func appWindowAutomations() async throws {
+        let (workspace, host, connection) = try await automationsWorkspace()
+        defer { workspace.stop(); host.server.stop() }
+        let vm = workspace.vm
+        vm.openDestination(.automations)
+        vm.automationsPageSelection = AutomationKey(host: connection.id, automation: host.nightly.id)
+        await vm.loadAutomationPageRuns()
+        #expect(vm.shownDestination == .automations)
+        try await Preview.render("app-window-automations", size: CGSize(width: 1440, height: 900),
+                                 ready: { vm.automationsPageModel().detail?.runsNote == nil }) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// More ▸ Hosts with a host that dropped: the badge in the sidebar and its card on the page agree.
+    @Test func appWindowHosts() async throws {
+        let (workspace, host, _) = try await automationsWorkspace()
+        let horizon = try await AutomationHostFixture()
+        defer { workspace.stop(); host.server.stop(); horizon.server.stop() }
+        let vm = workspace.vm
+        let dropped = try await horizon.connect(workspace, name: "horizon")
+        horizon.server.stop()
+        try await eventuallyOnMain("horizon to drop", timeout: .seconds(30)) {
+            if case .failed = dropped.phase { dropped.lastSeen != nil } else { false }
+        }
+        vm.openDestination(.hosts)
+        #expect(vm.offlineHostCount == 1 && vm.hostsPageModel(agentVersion: nil).offlineCount == 1)
+        try await Preview.render("app-window-hosts", size: CGSize(width: 1440, height: 900)) {
+            RootView(vm: vm)
+        }
+    }
 }
