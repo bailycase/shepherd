@@ -76,11 +76,7 @@ private struct NWStyledButton: View {
             .onHover { hovering = $0 }
             .nwAnimation(.hover, value: hovering)
             .nwFocusRing(radius: NW.Radius.s)
-            #if os(iOS)
-            // The control keeps its drawn size and focus ring; its hit area grows to the touch minimum.
-            .padding(.vertical, max(0, (NW.Height.touch - height) / 2))
-            .contentShape(Rectangle())
-            #endif
+            .nwTouchTarget(height: height)
     }
 
     private var active: Bool { enabled && (hovering || configuration.isPressed) }
