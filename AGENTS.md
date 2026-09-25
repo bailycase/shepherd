@@ -375,7 +375,8 @@ Sources/
       RemoteAutomationSheet
     Pages/             the sidebar destinations' pages: AutomationsPage and HostsPage (views over
                        AutomationsPageModel and HostsPageModel, derived per change), their
-                       destinations (PageDestinations: runs read, sheets), AutomationEditorSheet
+                       destinations (PageDestinations: runs read, sheets), AutomationEditorSheet,
+                       PageHeader (every page's header, New thread's too)
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,

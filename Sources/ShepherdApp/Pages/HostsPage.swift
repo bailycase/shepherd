@@ -23,7 +23,7 @@ struct HostsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NWPageHeader("Hosts", subtitle: model.subtitle, leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar) {
+            DestinationPageHeader(title: "Hosts", subtitle: model.subtitle, chrome: chrome) {
                 Button("Add host", systemImage: "plus", action: actions.addHost)
                     .buttonStyle(.nw(.primary))
             }
