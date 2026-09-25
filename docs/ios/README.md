@@ -166,8 +166,8 @@ keep the version for real breaks.
   "Needs you · ⌂ your checkout" when pi works in the space's own checkout; on iPad the branch chip
   with its changed files, and the host when there are several, then a status pill with the running
   turn's clock), Stop while the agent
-  runs, user bubbles with their times, thinking, prose, work groups folded into one line with
-  their calls, the running call's live output, notes, errors with Retry, the changes card
+  runs, user bubbles with their times, thinking, prose, activity lines (one per burst of work) with
+  their calls, the running call's live line and output ("Thinking…" between tools), notes, errors with Retry, the changes card
   (Review opens all of the turn's changes), and the turn footer (time, duration, tool calls,
   Copy, Retry). It polls its host only while on screen and the app is active (500 ms while the
   agent runs). It follows its tail as the Mac's thread does (`NativeScrollFollower`): only a
@@ -184,9 +184,9 @@ keep the version for real breaks.
   Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). A
   paused queue (after Stop, or a failed turn) shows Send now in its header, with its reason as
   the VoiceOver hint, where the Mac shows it on a row's hover and in a tooltip. The
-  model picker lists the host's catalog; images come from Photos, resized to the protocol's
-  limits; "/…" lists the snapshot's commands. A question from the agent takes the composer's
-  place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
+  model picker lists the host's catalog, each model's thinking levels under its name; images
+  come from Photos, resized to the protocol's limits; "/…" lists the snapshot's commands. A
+  question from the agent takes the composer's place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one).
 - **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking (only
