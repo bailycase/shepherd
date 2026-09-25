@@ -18,6 +18,8 @@ public enum NWListMetrics {
     public static let dot: CGFloat = 7
     /// A symbol in a row's leading column.
     public static let symbol: CGFloat = 15
+    /// A row whose host is offline, or an automation switched off.
+    public static let dimmedOpacity: Double = 0.55
 }
 
 /// A time beside a row's status line: counting up while something runs, or how long ago it moved.
@@ -173,7 +175,7 @@ public struct NWListRow: View, Equatable {
                minHeight: subtitle != nil || clock != nil ? NWListMetrics.twoLineRowHeight : NWListMetrics.rowHeight,
                alignment: .leading)
         .background(selected ? nw.bgSelected : .clear)
-        .opacity(dimmed ? 0.55 : 1)
+        .opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(selected ? .isSelected : [])
