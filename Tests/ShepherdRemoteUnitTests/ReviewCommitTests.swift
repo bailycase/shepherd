@@ -300,6 +300,37 @@ struct ReviewCommitStoreTests {
         #expect(store.stage == .form && store.operationID == nil && store.error == "README.md changed since the sheet opened.")
     }
 
+    @Test func aRefusalBecauseTheAgentStartedWorkingOffersTheConfirmation() async {
+        let fake = host(commit: .failure(.rejected(code: "query_failed", message: "busy is working. Confirm to commit anyway.")))
+        let store = fake.store()
+        await store.begin()
+        fake.answer = { query in
+            switch query {
+            case .commitInfo: return .commitInfo(info(working: true))
+            default: throw RemoteHostClientError.rejected(code: "query_failed", message: "busy is working. Confirm to commit anyway.")
+            }
+        }
+
+        await store.commit()
+
+        #expect(store.stage == .form && store.info?.agentWorking == true && store.info?.head == "abc")
+        #expect(store.problem == "Confirm committing while the agent works." && !store.canCommit)
+        store.confirmedWhileWorking = true
+        #expect(store.canCommit && store.title == "Show host cards", "the typed form stays")
+    }
+
+    @Test func closingAfterAnUnknownOutcomeStartsOverWhileARunningCommitKeepsItsProgress() async {
+        let store = host(commit: .failure(.timeout)).store()
+        await store.begin()
+        await store.commit()
+
+        #expect(store.closed())
+        #expect(store.operationID == nil && store.stage == .loading)
+
+        store.adopt(RemoteWorktreeOperation(id: UUID(), progress: ["check the checkout: working…"]))
+        #expect(!store.closed() && store.operationID != nil, "a running commit keeps its progress")
+    }
+
     @Test func anUnknownOutcomeKeepsPollingRatherThanCommittingAgain() async {
         let store = host(commit: .failure(.timeout)).store()
         await store.begin()

@@ -178,8 +178,10 @@ public final class ReviewCommitStore {
             adopt(status)
         } catch RemoteHostClientError.rejected(_, let message) {
             refused(message)
+            await refreshChecks()
         } catch let error as ReviewCommitRefusal {
             refused(error.message)
+            await refreshChecks()
         } catch {
             self.error = "Outcome not yet known: \(Self.text(error)). Don't commit again; its status is checked again."
         }
@@ -190,6 +192,30 @@ public final class ReviewCommitStore {
         operationID = nil
         stage = .form
         error = message
+    }
+
+    /// After a refusal, reads again whether the agent is working and whether the checkout is
+    /// blocked, so the form offers what the refusal asks for (an agent that started working after
+    /// the sheet opened needs the confirmation). The files, HEAD and fingerprints stay as the
+    /// sheet showed them: a changed file or a moved HEAD still needs Commit… again.
+    private func refreshChecks() async {
+        guard let query, let shown = info else { return }
+        guard case .commitInfo(let fresh)? = try? await query(.commitInfo), info == shown, stage == .form, operationID == nil else { return }
+        var next = shown
+        next.agentWorking = fresh.agentWorking
+        next.blocked = fresh.blocked
+        if next != shown { info = next }
+    }
+
+    /// The sheet closed. A finished commit, or one whose outcome never came back, is done with:
+    /// the next Commit… reads the checkout again, where the host's HEAD check keeps a commit that
+    /// landed from landing twice. One still running keeps its progress. True when the review
+    /// should reload.
+    @discardableResult
+    public func closed() -> Bool {
+        guard operationID != nil, operation?.finished != false else { return false }
+        reset()
+        return true
     }
 
     /// Asks the host once how the commit stands; true once it finished.
