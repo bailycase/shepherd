@@ -72,7 +72,8 @@ extension FixtureCatalog {
             FixtureScreen(name: "composer-focus", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FollowFixture.focusAndCheck),
             // The same with the keyboard already up in landscape and the iPad turned to portrait:
-            // the sidebar goes back to being an overlay, and the field keeps the focus.
+            // the sidebar goes back to being an overlay, and the field keeps the focus through
+            // the turn with no second tap.
             FixtureScreen(name: "composer-focus-rotate", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FollowFixture.focusRotateAndCheck),
             // The model picker, from the host's catalog.
@@ -335,6 +336,27 @@ enum FollowFixture {
         let keyboard = KeyboardFrame()
         focusComposer()
         try? await Task.sleep(for: .seconds(2))
+        checkFocus(app, keyboard: keyboard)
+    }
+
+    /// Focuses the composer in landscape, then turns the iPad to portrait with the keyboard up:
+    /// the field keeps the focus through the turn, with no second tap, and the checks of
+    /// `focusAndCheck` hold. On iPhone, only `focusAndCheck`.
+    @MainActor static func focusRotateAndCheck(_ app: MobileApp) async {
+        guard UIDevice.current.userInterfaceIdiom == .pad,
+              let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+            return await focusAndCheck(app)
+        }
+        let keyboard = KeyboardFrame()
+        await turn(scene, to: .landscapeRight)
+        focusComposer()
+        try? await Task.sleep(for: .seconds(2))
+        await turn(scene, to: .portrait)
+        try? await Task.sleep(for: .seconds(1))
+        checkFocus(app, keyboard: keyboard)
+    }
+
+    @MainActor private static func checkFocus(_ app: MobileApp, keyboard: KeyboardFrame) {
         let field = composerField()
         let focused = field?.isFirstResponder == true
         print("FIXTURE CHECK \(focused ? "ok" : "FAILED"): the composer keeps focus")
@@ -348,20 +370,6 @@ enum FollowFixture {
         }
     }
 
-    /// Focuses the composer in landscape, then turns the iPad back to portrait and checks as
-    /// `focusAndCheck` does. On iPhone, only the check.
-    @MainActor static func focusRotateAndCheck(_ app: MobileApp) async {
-        guard UIDevice.current.userInterfaceIdiom == .pad,
-              let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
-            return await focusAndCheck(app)
-        }
-        await turn(scene, to: .landscapeRight)
-        focusComposer()
-        try? await Task.sleep(for: .seconds(2))
-        await turn(scene, to: .portrait)
-        await focusAndCheck(app)
-    }
-
     @MainActor private static func turn(_ scene: UIWindowScene, to orientation: UIInterfaceOrientationMask) async {
         scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { error in
             print("FIXTURE ORIENTATION \(error.localizedDescription)")
@@ -373,7 +381,9 @@ enum FollowFixture {
         try? await Task.sleep(for: .seconds(1))
     }
 
-    /// The top of the keyboard's last frame, in the window's coordinates (full screen here).
+    /// The top of the keyboard's last frame on screen, in the window's coordinates (full screen
+    /// here). A turn with the keyboard up also reports it going below the screen, or with no
+    /// height, as the composer mounts again (`PadShell`); those frames are passed over.
     @MainActor private final class KeyboardFrame {
         private(set) var top: CGFloat?
         private var observer: NSObjectProtocol?
@@ -382,7 +392,11 @@ enum FollowFixture {
             observer = NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil,
                                                               queue: .main) { [weak self] note in
                 let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
-                MainActor.assumeIsolated { self?.top = frame?.minY }
+                MainActor.assumeIsolated {
+                    let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow
+                    guard let frame, frame.height > 0, let window, frame.minY < window.bounds.maxY else { return }
+                    self?.top = frame.minY
+                }
             }
         }
 

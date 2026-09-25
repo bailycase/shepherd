@@ -34,10 +34,19 @@ struct PadShell: View {
                 }
             }
             // Side by side in landscape; in portrait the thread keeps the width and the sidebar
-            // slides over it. One split view either way, so rotating never remounts the thread.
+            // slides over it. One split view either way, so rotating keeps the selection and the
+            // pushed screens, but a change of style builds the columns anew (hence the composer's
+            // refocus below).
             .navigationSplitViewStyle(PadSplitStyle(portrait: portrait))
             .onChange(of: portrait, initial: true) { _, portrait in
                 navigator.padSidebarOverlays = portrait
+                // The new style builds the columns anew: the composer that had the focus takes
+                // it back as it mounts, and only then.
+                navigator.refocusComposer = navigator.focusedComposer
+                Task { @MainActor in
+                    try? await Task.sleep(for: Self.settleTime)
+                    navigator.refocusComposer = nil
+                }
                 // While the split view takes its new style, or lays out for the first time (a new
                 // window opened on a thread), it writes its own idea of the columns back through
                 // the binding, before or after this: set them now, again once it has changed,
