@@ -14,14 +14,14 @@ private enum TerminalSamples {
         NWTerminalKeycap(id: "tab", label: "tab", spokenLabel: "Tab"),
         NWTerminalKeycap(id: "ctrl", label: "ctrl", spokenLabel: "Control", isLatched: true),
         NWTerminalKeycap(id: "opt", label: "⌥", spokenLabel: "Option"),
-        NWTerminalKeycap(id: "up", label: "↑", spokenLabel: "Up arrow"),
-        NWTerminalKeycap(id: "down", label: "↓", spokenLabel: "Down arrow"),
-        NWTerminalKeycap(id: "left", label: "←", spokenLabel: "Left arrow"),
-        NWTerminalKeycap(id: "right", label: "→", spokenLabel: "Right arrow"),
         NWTerminalKeycap(id: "pipe", label: "|", spokenLabel: "Vertical bar"),
         NWTerminalKeycap(id: "tilde", label: "~", spokenLabel: "Tilde"),
         NWTerminalKeycap(id: "slash", label: "/", spokenLabel: "Slash"),
         NWTerminalKeycap(id: "dash", label: "-", spokenLabel: "Hyphen"),
+        NWTerminalKeycap(id: "up", label: "↑", spokenLabel: "Up arrow"),
+        NWTerminalKeycap(id: "down", label: "↓", spokenLabel: "Down arrow"),
+        NWTerminalKeycap(id: "left", label: "←", spokenLabel: "Left arrow"),
+        NWTerminalKeycap(id: "right", label: "→", spokenLabel: "Right arrow"),
     ]
 }
 
@@ -46,6 +46,8 @@ private enum TerminalSamples {
         VStack(spacing: 0) {
             NWTerminalNotice("attaching…").frame(height: 60)
             NWTerminalKeyRow(TerminalSamples.keys) { _ in }
+            // A phone in portrait: two rows.
+            NWTerminalKeyRow(TerminalSamples.keys) { _ in }.frame(width: 375)
         }
         .frame(width: 720)
     }

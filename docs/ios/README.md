@@ -239,15 +239,19 @@ keep the version for real breaks.
   at a third, half and two-thirds; on iPhone the thread's options open them full screen. Each
   pane is SwiftTerm's view on Night Watch's terminal palette, attached (`attach`) while it is on
   screen, the app is active and the host connected, and detached a second after it leaves; the
-  host replays its screen on every attach and sizes the PTY to its smallest viewer. Keys go to
-  the host as `input`; a key row (esc, tab, ctrl, ⌥, arrows, `|`, `~`, `/`, `-`) sits under the
-  terminal while it has the keyboard, and a hardware keyboard types directly. Tabs name what
+  host replays its screen on every attach and sizes the PTY to its smallest viewer. A refused
+  attach is retried with backoff (1 s doubling to 30 s) while the pane stays on screen, and a
+  pane the host gives a new session (every pane respawns its shell when the host relaunches)
+  gets a new view that attaches to it. Keys go to the host as `input`; a key row (esc, tab,
+  ctrl, ⌥, `|`, `~`, `/`, `-`, arrows; two rows on a phone in portrait) sits under the terminal
+  while it has the keyboard, and a hardware keyboard types directly. Tabs name what
   runs in them and show a spinner or a dot for new output where the host answers
   `RemoteAgentQuery.terminals` (`terminal.activity.v1`); the dot follows the row's `news`, which
   leaves out a redraw after a resize on hosts that send `newsSequence`. The iPad panel closes
-  with its last terminal. Closing a tab asks, then asks the host
-  to close its panes; the host keeps the Mac's rules (never the agent's own pane, never the last
-  pane). A host without pane control (`pane.control.v1`) shows its terminals but offers no +,
+  with its last terminal. Closing a tab asks (naming how many shells stop, and the tab's place
+  when another tab has its title), then asks the host to close its panes; the host keeps the
+  Mac's rules (never the agent's own pane, never the last pane). A host without pane control
+  (`pane.control.v1`) shows its terminals but offers no +,
   split or close. A terminal's screen is in one iPad window at a time: another window showing the
   same thread says "open in another window" until the first lets it go.
 
