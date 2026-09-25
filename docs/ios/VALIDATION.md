@@ -111,8 +111,12 @@ stays a hidden overlay; `composer-focus-rotate` focuses in landscape, turns the 
 and checks the same with no second tap (the field keeps the focus through the turn) (run both in portrait; `-r landscape` shots draw the keyboard
 sideways). Attaching changes a host's PTY size, so the terminal screens
 (`terminal`, `terminal-keys`, `terminal-split`, `terminal-maximized`, `terminal-empty`,
-`terminal-phone`, `terminal-phone-keys`) never attach: their sessions draw canned screens
-(`MobileTerminals.cannedScreens`), and the host answers only the read `terminals` query.
+`terminal-phone`, `terminal-phone-keys`, and the ones below) never attach: their sessions draw
+canned screens (`MobileTerminals.cannedScreens`), and the host answers only the read `terminals`
+query. `terminal-close` and `terminal-phone-close` open the split tab's close confirmation
+(`MobileTerminals.cannedClose`). `terminal-relaunched` and `terminal-phone-relaunched` have the
+host push the layout it has after a relaunch (the shell pane under a new session) and check that
+the pane draws the new session's own screen.
 
 **Windows.** Without `-w` the fixture app is single-window, as the screens of the other tracks
 expect. With it, a screen can open more windows (CONTRACTS.md › Fixture screens): `windows-split`

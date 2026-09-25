@@ -27,6 +27,16 @@ extension FixtureCatalog {
                           prepare: { _ in await TerminalFixture.show(ref) }),
             FixtureScreen(name: "terminal-phone-keys", hosts: TerminalFixture.hosts(), routes: [thread, .terminal(.panes(ref))],
                           prepare: { _ in await TerminalFixture.show(ref, focus: true) }),
+            // Closing the split tab: its title and how many shells stop.
+            FixtureScreen(name: "terminal-close", hosts: TerminalFixture.hosts(split: true), routes: [thread],
+                          prepare: { _ in await TerminalFixture.show(ref, closing: true) }),
+            FixtureScreen(name: "terminal-phone-close", hosts: TerminalFixture.hosts(split: true), routes: [thread, .terminal(.panes(ref))],
+                          prepare: { _ in await TerminalFixture.show(ref, closing: true) }),
+            // The host relaunched: the pane on screen has a new shell, which must get its own view.
+            FixtureScreen(name: "terminal-relaunched", hosts: TerminalFixture.hosts(), routes: [thread],
+                          prepare: { _ in await TerminalFixture.relaunch(ref) }),
+            FixtureScreen(name: "terminal-phone-relaunched", hosts: TerminalFixture.hosts(), routes: [thread, .terminal(.panes(ref))],
+                          prepare: { _ in await TerminalFixture.relaunch(ref) }),
         ]
     }
 }
@@ -39,6 +49,8 @@ enum TerminalFixture {
     static let shellSession = SessionID(rawValue: "session-zsh")
     static let besideSession = SessionID(rawValue: "session-logs")
     static let psqlSession = SessionID(rawValue: "session-psql")
+    /// The shell pane's session after the host relaunched (`terminal-relaunched`).
+    static let relaunchedSession = SessionID(rawValue: "session-zsh-relaunched")
 
     /// Studio's hosts, with the preview agent's layout holding its thread and, unless
     /// `terminals` is false, two terminal tabs (the first split in two with `split`).
@@ -79,16 +91,22 @@ enum TerminalFixture {
     }
 
     /// Opens the panel on the first tab with canned screens, optionally focused (the key row
-    /// shows) or maximized.
-    @MainActor static func show(_ ref: AgentRef, focus: Bool = false, maximized: Bool = false) async {
+    /// shows), maximized, or asking to close that tab.
+    @MainActor static func show(_ ref: AgentRef, focus: Bool = false, maximized: Bool = false, closing: Bool = false) async {
         let terminals = MobileTerminals.shared
-        terminals.cannedScreens = [shellSession: shellScreen, besideSession: logsScreen, psqlSession: psqlScreen]
+        terminals.cannedScreens = [shellSession: shellScreen, besideSession: logsScreen, psqlSession: psqlScreen,
+                                   relaunchedSession: relaunchedScreen]
         terminals.update(ref) {
             $0.shown = true
             $0.maximized = maximized
             $0.chosenTab = shell
             $0.chosenPanes = [shell, beside]
             $0.focusedPane = shell
+        }
+        if closing {
+            // As a person taps × on a tab whose title shows: once the host said what runs in it.
+            await wait { terminals.activity[ref]?.isEmpty == false }
+            terminals.cannedClose = shell
         }
         guard focus else { return }
         let session = terminals.session(host: ref.host, id: shellSession)
@@ -97,6 +115,38 @@ enum TerminalFixture {
         // As with a hardware keyboard: the key row without the software keyboard over the shot.
         session.surface?.inputView = UIView(frame: .zero)
         _ = session.surface?.becomeFirstResponder()
+    }
+
+    /// Shows the shell's screen, then has the host push the layout it has after a relaunch: the
+    /// same pane with a new session. The pane must drop the old screen for the new session's own
+    /// (checked, and printed as a FIXTURE CHECK).
+    @MainActor static func relaunch(_ ref: AgentRef) async {
+        await show(ref)
+        let terminals = MobileTerminals.shared
+        let old = terminals.session(host: ref.host, id: shellSession)
+        await wait { old.surface?.window != nil }
+        guard let host = FixtureHost.running(ref.host) else {
+            print("FIXTURE CHECK FAILED: no running host for \(ref.host)")
+            return
+        }
+        var state = host.data.state
+        for index in state.tabs.indices {
+            state.tabs[index].layout = state.tabs[index].layout.updatingLeaf(shell) { $0.sessionID = relaunchedSession }
+        }
+        host.push(state)
+        await wait { terminals.existingSession(host: ref.host, id: relaunchedSession)?.surface?.window != nil }
+        let new = terminals.existingSession(host: ref.host, id: relaunchedSession)
+        if new?.surface?.window != nil, old.surface?.window == nil {
+            print("FIXTURE CHECK ok: the relaunched shell has its own screen")
+        } else {
+            print("FIXTURE CHECK FAILED: the pane kept the old shell's screen (new on screen: \(new?.surface?.window != nil), old on screen: \(old.surface?.window != nil))")
+        }
+        fflush(stdout)
+    }
+
+    @MainActor private static func wait(until condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(5)
+        while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(50)) }
     }
 
     private static let esc = "\u{1B}"
@@ -114,6 +164,12 @@ enum TerminalFixture {
         prompt("git status --short") +
         "\(esc)[31m M\(esc)[0m App/iOS/Terminal/TerminalPanelView.swift\r\n" +
         "\(esc)[32m??\(esc)[0m Tests/ShepherdIOSChecks/Fixtures/TerminalFixtures.swift\r\n" +
+        "\(esc)[32mdev@studio\(esc)[0m \(esc)[34m~/Shepherd\(esc)[0m \(esc)[33m(terminal-panes)\(esc)[0m \(esc)[90m$\(esc)[0m "
+    ).utf8)
+
+    static let relaunchedScreen = Data((
+        "\(esc)]0;zsh\u{07}" +
+        "\(esc)[90mLast login: Fri Sep 25 12:47:43 on ttys004\(esc)[0m\r\n" +
         "\(esc)[32mdev@studio\(esc)[0m \(esc)[34m~/Shepherd\(esc)[0m \(esc)[33m(terminal-panes)\(esc)[0m \(esc)[90m$\(esc)[0m "
     ).utf8)
 

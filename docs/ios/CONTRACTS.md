@@ -262,6 +262,8 @@ extension FixtureCatalog {
 - The fixture host refuses every request that would change a host, before a `reply` closure
   sees it, and the harness fails a screen that sends one. Screenshots must never depend on a
   mutation.
+- A screen that shows a host changing (a relaunch's new layout) pushes the new state from
+  `prepare`: `FixtureHost.running(hostID)?.push(state)`, as a host pushes `stateChanged`.
 - Screen names are unique across tracks: prefix yours when in doubt (`review-empty`).
 - A screen with more windows opens them in `prepare`: `FixtureWindows.shared.openBeside(route)`
   draws a second window beside the first, as Split View does (the simulator can't be put in

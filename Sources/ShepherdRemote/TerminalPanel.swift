@@ -114,6 +114,32 @@ public struct TerminalSeenMark: Equatable, Sendable {
     }
 }
 
+/// What closing a tab asks first on iOS (iPad panel, iPhone screen): which tab, and how many
+/// shells stop on the host. A title another tab shares ("zsh" in every tab at its prompt) adds
+/// the tab's place, and a split tab counts every shell it closes.
+public struct TerminalCloseConfirmation: Equatable, Sendable {
+    public let title: String
+    public let message: String
+
+    /// `titles` are the tabs' titles in the strip's order, one per tab of `tabs`.
+    public init(_ tab: TerminalPanelTab, in tabs: [TerminalPanelTab], titles: [String], thread: PaneID?, host: String) {
+        let index = tabs.firstIndex { $0.id == tab.id }
+        let name = index.flatMap { titles.indices.contains($0) ? titles[$0] : nil } ?? "terminal"
+        if let index, titles.filter({ $0 == name }).count > 1 {
+            title = "Close \(name) (tab \(index + 1))?"
+        } else {
+            title = "Close \(name)?"
+        }
+        let closing = Set(TerminalPanel.panesToClose(tab, thread: thread))
+        let shells = tab.panes.filter { closing.contains($0.id) && $0.isReview != true }.count
+        message = switch shells {
+        case 0: "It closes on \(host)."
+        case 1: "Its shell on \(host) stops."
+        default: "Its \(shells) shells on \(host) stop."
+        }
+    }
+}
+
 /// How tall the terminal panel is. It snaps to a third, half and two-thirds of the column while
 /// dragged, keeps the thread above it at least `threadMinimum`, and resets to its default.
 public enum TerminalPanelHeight {
@@ -144,7 +170,9 @@ public enum TerminalPanelHeight {
 /// The touch key row over the software keyboard (iPadTerminal board): the keys a shell needs
 /// that the keyboard lacks. Ctrl and ⌥ latch for the next key.
 public enum TerminalKey: String, CaseIterable, Sendable, Identifiable {
-    case escape, tab, control, option, up, down, left, right, pipe, tilde, slash, dash
+    /// In the row's order: the symbols before the arrows, so a row that wraps in two keeps the
+    /// arrows together.
+    case escape, tab, control, option, pipe, tilde, slash, dash, up, down, left, right
 
     public var id: String { rawValue }
 
@@ -272,6 +300,8 @@ public struct RemoteTerminalLink: Equatable, Sendable {
     private var wanted = false
     /// The grid the host last had from this viewer.
     private var sent: Grid?
+    /// How long a refused attach waits before it is tried again, while the link is wanted.
+    private var retries = RemoteReconnectBackoff()
 
     public init() {}
 
@@ -313,14 +343,28 @@ public struct RemoteTerminalLink: Equatable, Sendable {
 
     /// The host accepted attach number `attempt`.
     public mutating func attached(attempt: Int) {
-        if phase == .attaching, attempt == self.attempt { phase = .live }
+        guard phase == .attaching, attempt == self.attempt else { return }
+        phase = .live
+        retries.reset()
     }
 
-    /// The host refused attach number `attempt`, or its request failed.
-    public mutating func attachFailed(_ reason: String, attempt: Int) {
-        guard phase == .attaching, attempt == self.attempt else { return }
+    /// The host refused attach number `attempt`, or its request failed. While the link is still
+    /// wanted, returns how long to wait before `retry(attempt:)`: a host that just relaunched may
+    /// not serve the session yet, and nothing else would ask again while the view stays up.
+    @discardableResult
+    public mutating func attachFailed(_ reason: String, attempt: Int) -> Duration? {
+        guard phase == .attaching, attempt == self.attempt else { return nil }
         phase = .failed(reason)
         sent = nil
+        return wanted ? retries.next() : nil
+    }
+
+    /// Tries a refused attach again, unless something has happened since (a newer attach, the
+    /// view left, the session exited).
+    public mutating func retry(attempt: Int) -> [Command] {
+        guard case .failed = phase, wanted, attempt == self.attempt else { return [] }
+        phase = .detached
+        return attachIfReady()
     }
 
     /// The session's process exited; its last screen stays.

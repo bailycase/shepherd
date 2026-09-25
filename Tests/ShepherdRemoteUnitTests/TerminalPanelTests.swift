@@ -107,6 +107,25 @@ struct TerminalPanelTests {
         #expect(TerminalPanel.focusedPane(in: tab, focused: nil) == a)
     }
 
+    @Test func closingATabSaysWhichTabAndHowManyShellsStop() {
+        let thread = PaneID(), a = PaneID(), b = PaneID(), c = PaneID(), d = PaneID()
+        let layout = Self.split(Self.split(Self.split(Self.leaf(thread), Self.leaf(a)),
+                                           Self.split(Self.leaf(b), Self.split(Self.leaf(c), Self.leaf(d), .vertical), .vertical)),
+                                .leaf(LeafPane(id: PaneID(), cwd: "~", isReview: true)))
+        let tabs = TerminalPanel.tabs(in: layout, thread: thread)
+        #expect(tabs.count == 3)
+        let titles = ["review", "zsh", "zsh"]
+        func confirmation(_ index: Int) -> [String] {
+            let asked = TerminalCloseConfirmation(tabs[index], in: tabs, titles: titles, thread: thread, host: "QA Mac")
+            return [asked.title, asked.message]
+        }
+        #expect(confirmation(0) == ["Close review?", "It closes on QA Mac."])
+        #expect(confirmation(1) == ["Close zsh (tab 2)?", "Its 3 shells on QA Mac stop."])
+        #expect(confirmation(2) == ["Close zsh (tab 3)?", "Its shell on QA Mac stops."])
+        #expect(TerminalCloseConfirmation(tabs[2], in: tabs, titles: ["review", "make", "zsh"], thread: thread, host: "QA Mac").title
+            == "Close zsh?")
+    }
+
     @Test func closingATabNeverClosesTheThread() {
         let thread = PaneID(), a = PaneID(), b = PaneID()
         let tab = TerminalPanelTab(node: Self.split(Self.leaf(a), Self.split(Self.leaf(thread), Self.leaf(b))))
@@ -178,6 +197,12 @@ struct TerminalKeyTests {
         #expect(TerminalKey.controlCode(character) == code)
     }
 
+    @Test func theArrowsComeLastSoARowWrappedInTwoKeepsThemTogether() {
+        let keys = TerminalKey.allCases
+        #expect(keys.count == 12)
+        #expect(Array(keys.dropFirst(keys.count / 2)) == [.slash, .dash, .up, .down, .left, .right])
+    }
+
     @Test func everyKeyHasALabelAndASpokenLabel() {
         for key in TerminalKey.allCases {
             #expect(!key.label.isEmpty)
@@ -247,6 +272,39 @@ struct RemoteTerminalLinkTests {
         #expect(link.noteGrid(cols: 90, rows: 24).isEmpty)
         #expect(link.want(false).isEmpty)
         #expect(link.want(true) == [.attach(cols: 90, rows: 24)])
+    }
+
+    @Test func aRefusedAttachIsRetriedWithBackoffWhileItIsWanted() {
+        var link = RemoteTerminalLink()
+        _ = link.want(true)
+        _ = link.noteGrid(cols: 80, rows: 24)
+        #expect(link.attachFailed("not running on the host", attempt: link.attempt) == .seconds(1))
+        #expect(link.retry(attempt: link.attempt) == [.attach(cols: 80, rows: 24)])
+        #expect(link.phase == .attaching)
+        #expect(link.attachFailed("not running on the host", attempt: link.attempt) == .seconds(2))
+        #expect(link.retry(attempt: link.attempt) == [.attach(cols: 80, rows: 24)])
+        link.attached(attempt: link.attempt)
+        #expect(link.phase == .live)
+        // Attached again, the next refusal starts from the shortest wait.
+        #expect(link.want(false) == [.detach])
+        _ = link.want(true)
+        #expect(link.attachFailed("not running on the host", attempt: link.attempt) == .seconds(1))
+    }
+
+    @Test func aRetryIsDroppedOnceTheViewLeftOrANewerAttachWent() {
+        var link = RemoteTerminalLink()
+        _ = link.want(true)
+        _ = link.noteGrid(cols: 80, rows: 24)
+        let refused = link.attempt
+        _ = link.attachFailed("not running on the host", attempt: refused)
+        #expect(link.want(false).isEmpty)
+        #expect(link.retry(attempt: refused).isEmpty)
+        #expect(link.want(true) == [.attach(cols: 80, rows: 24)])
+        #expect(link.retry(attempt: refused).isEmpty)
+        #expect(link.phase == .attaching)
+        link.disconnected()
+        _ = link.want(false)
+        #expect(link.attachFailed("gone", attempt: link.attempt) == nil)
     }
 
     @Test func aLateAnswerToAnEarlierAttachNeverSettlesTheCurrentOne() {

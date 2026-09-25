@@ -78,6 +78,12 @@ struct TerminalModel: Equatable {
     }
 
     func tab(for id: String) -> TerminalPanelTab? { tabs.first { $0.id.rawValue == id } }
+
+    /// What closing `tab` asks: which tab (its place when another has its title) and how many
+    /// shells stop.
+    func closeConfirmation(_ tab: TerminalPanelTab) -> TerminalCloseConfirmation {
+        TerminalCloseConfirmation(tab, in: tabs, titles: items.map(\.title), thread: thread, host: hostName)
+    }
 }
 
 /// One tab's panes with the host's splits: 1pt dividers, each side its share.
@@ -154,7 +160,8 @@ struct TerminalPaneView: View {
                     } else if session.viewer != nil {
                         NWTerminalNotice("open in another window")
                     }
-                    if shown, let notice = Self.notice(session.phase, canned: session.isCanned, connected: key.connection != nil) {
+                    if shown, let notice = Self.notice(session.phase, canned: session.isCanned, connected: key.connection != nil,
+                                                       held: key.active) {
                         NWTerminalNotice(notice)
                             .background(Color.nw.bgWindow.opacity(session.phase == .attaching ? 0 : 0.9))
                             .allowsHitTesting(false)
@@ -170,6 +177,10 @@ struct TerminalPaneView: View {
                 .onDisappear { session.letGo(viewer) }
                 // The window that had it let go: this one takes it if it is on screen.
                 .onChange(of: session.viewer) { if session.viewer == nil, visible { session.claim(viewer) } }
+                // One view per host session. The host gives a pane a new session when it relaunches
+                // (every pane respawns its shell): the new one must claim the screen, make its own
+                // surface and report its grid, or it never attaches and the old screen stays up.
+                .id(id)
             } else {
                 NWTerminalNotice("starting session…")
             }
@@ -187,14 +198,15 @@ struct TerminalPaneView: View {
         .onDisappear { visible = false }
     }
 
-    private static func notice(_ phase: RemoteTerminalLink.Phase, canned: Bool, connected: Bool) -> String? {
+    /// `held`: the pane is attached while it shows, so a refused attach is being retried.
+    private static func notice(_ phase: RemoteTerminalLink.Phase, canned: Bool, connected: Bool, held: Bool) -> String? {
         if canned { return nil }
         switch phase {
         case .detached: return connected ? "attaching…" : "host offline · reattaches when it is back"
         case .attaching: return "attaching…"
         case .live: return nil
         case .exited(let code): return code.map { "session exited (\($0))" } ?? "session exited"
-        case .failed(let reason): return "session unavailable · \(reason)"
+        case .failed(let reason): return "session unavailable · \(reason)" + (held ? " · retrying" : "")
         }
     }
 }
