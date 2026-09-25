@@ -231,6 +231,13 @@ public struct RPCResponse: Decodable, Hashable, Sendable {
         }
     }
 
+    /// `get_available_thinking_levels`' levels, in pi's order; nil when it failed (a pi without
+    /// the command) or named none.
+    public var thinkingLevels: [String]? {
+        guard success, let levels = data?["levels"]?.arrayValue?.compactMap(\.stringValue), !levels.isEmpty else { return nil }
+        return levels
+    }
+
     enum CodingKeys: String, CodingKey { case id, command, success, data, error }
 
     private struct MessagesData: Decodable {

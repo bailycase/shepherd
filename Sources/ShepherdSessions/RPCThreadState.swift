@@ -600,8 +600,7 @@ final class RPCThreadState {
         // The levels follow the model, so they are asked with the state. pi answers stdin in
         // order, so they land just before it and ride its commit: no revision of their own.
         session.request(.getAvailableThinkingLevels, timeout: timeout) { [weak self] result in
-            guard let self, case .success(let response) = result, response.success,
-                  let levels = response.data?["levels"]?.arrayValue?.compactMap(\.stringValue), !levels.isEmpty,
+            guard let self, case .success(let response) = result, let levels = response.thinkingLevels,
                   levels != self.thinkingLevels else { return }
             self.thinkingLevels = levels
         }

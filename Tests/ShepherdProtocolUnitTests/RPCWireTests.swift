@@ -97,6 +97,21 @@ struct RPCWireTests {
         #expect(commands.data?["commands"]?.arrayValue?.map { $0["name"]?.stringValue } == ["session-name", "skill:brave"])
     }
 
+    /// pi 0.87.1's own replies (a scratch models.json: a model mapping xhigh and max with minimal
+    /// null, one reasoning model without a map, and one without reasoning), then a pi without the
+    /// command.
+    @Test(arguments: [
+        (#"{"id":"1","type":"response","command":"get_available_thinking_levels","success":true,"data":{"levels":["off","low","medium","high","xhigh","max"]}}"#,
+         ["off", "low", "medium", "high", "xhigh", "max"]),
+        (#"{"id":"1","type":"response","command":"get_available_thinking_levels","success":true,"data":{"levels":["off","minimal","low","medium","high"]}}"#,
+         ["off", "minimal", "low", "medium", "high"]),
+        (#"{"id":"1","type":"response","command":"get_available_thinking_levels","success":true,"data":{"levels":["off"]}}"#, ["off"]),
+        (#"{"id":"1","type":"response","command":"get_available_thinking_levels","success":false,"error":"Unknown command: get_available_thinking_levels"}"#, nil),
+    ] as [(String, [String]?)])
+    func availableThinkingLevelsDecodeFromPisReply(json: String, levels: [String]?) throws {
+        #expect(try Self.response(json).thinkingLevels == levels)
+    }
+
     // MARK: Messages
 
     @Test func messagesDecodeLeniently() throws {
