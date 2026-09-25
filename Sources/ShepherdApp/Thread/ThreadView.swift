@@ -31,7 +31,9 @@ struct ThreadView: View {
     var workingDirectory: String? = nil
     /// Opens a subagent in the inspector.
     var inspectSubagent: ((ChildRun) -> Void)? = nil
-    /// The run open in the inspector; its card and ledger row are highlighted.
+    /// Opens a subagent in the inspector with its Steer field focused (the tray's Steer).
+    var steerSubagent: ((ChildRun) -> Void)? = nil
+    /// The run open in the inspector; its tray row wears the selection.
     var inspectedRunID: String? = nil
     /// Opens the review pane at a file (a changed file, the changes card, an edit call).
     var review: ((String) -> Void)? = nil
@@ -102,9 +104,6 @@ struct ThreadView: View {
                     .frame(maxWidth: AppLayout.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
-                    // The subagent cards' controls: it changes only when the thread is switched
-                    // to or away from (and when the host's support does), and redraws the cards.
-                    .environment(\.threadActionsEnabled, active && store.supports("subagents"))
                     // A local agent's images draw from its folder; a remote agent's files are not here.
                     .environment(\.nwProseFileRoot, workingDirectory.map {
                         URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
@@ -163,7 +162,8 @@ struct ThreadView: View {
                          jumpToLatest: follower.showsJump(running: running) ? {
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                         } : nil, queueState: queueState)
+                         } : nil, queueState: queueState,
+                         inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
             }
         }
@@ -176,6 +176,9 @@ struct ThreadView: View {
         .transaction(value: CatchUpGate.Key(version: store.threadVersion, active: active)) {
             if catchingUp { $0.disablesAnimations = true }
         }
+        // The tray's controls: it changes only when the thread is switched to or away from (and
+        // when the host's support does), and redraws the tray's rows.
+        .environment(\.threadActionsEnabled, active && store.supports("subagents"))
         .foregroundStyle(Color.nw.textPrimary)
         .tint(Color.nw.running)
         .background(Color.nw.bgWindow)
@@ -202,7 +205,7 @@ struct ThreadView: View {
                 .equatable()
                 .nwArrival(arriving, .list, edge: .bottom)
         } else if let presentation = row.presentation {
-            AgentTurn(presentation: presentation, live: row.live, subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
+            AgentTurn(presentation: presentation, live: row.live, subagents: TurnSubagents(store.placements[row.id]),
                       subagentActions: subagentActions, startedAt: row.startedAt,
                       retry: retryAction(row, running: running), review: review, thinking: thinking, arriving: arriving,
                       settled: settled)
@@ -216,6 +219,7 @@ struct ThreadView: View {
         SubagentActions(
             inspect: { run in inspectSubagent?(run) },
             command: { run, action, text, mode in Task { await store.subagentCommand(runID: run.runID, action: action, text: text, mode: mode) } },
+            steer: steerSubagent,
             inspectedRunID: inspectedRunID)
     }
 

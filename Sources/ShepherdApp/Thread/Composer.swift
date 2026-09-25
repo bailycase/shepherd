@@ -18,7 +18,9 @@ struct ComposerMenuRequest: Equatable {
 /// controls: attach · / commands · model · thinking · Send or Stop. Menus float over the thread
 /// above the card, so opening one never moves the thread or changes the composer's height.
 /// Messages sent while pi works wait in "Up next" above the card (`QueueStackView`); ↩ queues
-/// or steers per Settings, ⌘↩ does the other, and the Send menu offers both.
+/// or steers per Settings, ⌘↩ does the other, and the Send menu offers both. Running subagents
+/// share that card, above Up next (`ComposerDock`), and a subagent's question answered from its
+/// row takes the composer's place until it is answered or hidden.
 struct Composer: View {
     /// The thread's coordinate space: the menus measure the room above the card in it.
     static let threadSpace = "composer.thread"
@@ -38,6 +40,14 @@ struct Composer: View {
     var jumpToLatest: (() -> Void)? = nil
     /// The "Up next" stack's state, from a test or preview that drives it; else the composer's own.
     var queueState: QueueStackState? = nil
+    /// Opens a subagent in the inspector; nil hides the tray (a thread with no inspector). The
+    /// composer takes the thread's own closures, never ones built per render, so a revision the
+    /// thread adopts leaves the composer alone.
+    var inspectSubagent: ((ChildRun) -> Void)? = nil
+    /// Opens a subagent with its Steer field focused (the tray's Steer).
+    var steerSubagent: ((ChildRun) -> Void)? = nil
+    /// The run open in the inspector: its tray row wears the selection.
+    var inspectedRunID: String? = nil
     @State private var attachments: [ImageAttachment] = []
     @State private var attachmentError: String?
     @State private var dropTargeted = false
@@ -63,6 +73,10 @@ struct Composer: View {
     /// "Up next": what the stack shows of the store's queue, and its own view state.
     @State private var ownQueueStack = QueueStackState()
     private var queueStack: QueueStackState { queueState ?? ownQueueStack }
+    /// The subagent tray's collapse and "Show N more".
+    @State private var trayState = SubagentTrayState()
+    /// The run whose question is open in the composer's place (from its row's Answer).
+    @State private var answering: String?
     /// The queued message with keyboard focus, if one has it.
     @FocusState private var focusedRow: String?
     /// ⌘↩ reaches the composer before any key equivalent in its window.
@@ -140,6 +154,27 @@ struct Composer: View {
     private var accessories: [String] {
         let banner = store.loadError != nil ? "lost" : attachmentError != nil ? "attachment" : store.notice != nil ? "notice" : nil
         return [banner].compactMap { $0 } + store.widgets.map(\.id) + (queueStack.isVisible ? ["queue"] : [])
+            + (showsTray ? ["tray"] : []) + (answeringRun != nil ? ["answering"] : [])
+    }
+
+    private var showsTray: Bool { subagents != nil && store.tray != nil }
+
+    /// What the tray's rows do.
+    private var subagents: SubagentActions? {
+        guard let inspectSubagent else { return nil }
+        return SubagentActions(
+            inspect: inspectSubagent,
+            command: { [store] run, action, text, mode in
+                Task { await store.subagentCommand(runID: run.runID, action: action, text: text, mode: mode) }
+            },
+            steer: steerSubagent,
+            inspectedRunID: inspectedRunID)
+    }
+
+    /// The run whose question is open, while it still asks.
+    private var answeringRun: ChildRun? {
+        guard let answering, subagents != nil else { return nil }
+        return store.subagents.first { $0.runID == answering && nativeRunPhase($0) == .needsYou }
     }
 
     /// The question in place of the field, by the identity its panel takes.
@@ -180,15 +215,33 @@ struct Composer: View {
                     .padding(.horizontal, NW.Space.xs)
                     .nwTransition(.list, edge: .bottom)
             }
-            // "Up next" grows upward from the card, which never moves.
-            if queueStack.isVisible {
-                QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, focusedRow: $focusedRow,
-                               focusComposer: { composing = true })
-                    // A lifted row floats over the card too.
-                    .zIndex(queueStack.dragging == nil ? 0 : 1)
-                    .nwTransition(.list, edge: .bottom)
+            // The subagents and "Up next" grow upward from the card, which never moves.
+            if answeringRun == nil, showsTray || queueStack.isVisible {
+                ComposerDock(tray: store.tray, trayState: trayState, runs: store.subagents, actions: subagents,
+                             answer: { answering = $0.runID }, showsQueue: queueStack.isVisible) {
+                    if queueStack.isVisible {
+                        QueueStackView(state: queueStack, store: store, running: running, animated: !catchingUp, framed: !showsTray,
+                                       focusedRow: $focusedRow, focusComposer: { composing = true })
+                    }
+                }
+                // A lifted row floats over the card too.
+                .zIndex(queueStack.dragging == nil ? 0 : 1)
+                .nwTransition(.list, edge: .bottom)
             }
-            card
+            // A subagent's question answered from its row takes the card's place until it is
+            // answered or hidden.
+            Group {
+                if let run = answeringRun, let subagents {
+                    SubagentQuestion(run: run, enabled: active && store.supports("subagents"), actions: subagents) {
+                        answering = nil
+                        composing = true
+                    }
+                    .id(run.runID)
+                    .nwTransition(.content)
+                } else {
+                    card
+                }
+            }
                 .background { ComposerMenuRegion(dismissal: dismissal) }
                 .background { ComposerWindowReader(monitor: keyMonitor) }
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.threadSpace)).minY } action: { cardTop = $0 }

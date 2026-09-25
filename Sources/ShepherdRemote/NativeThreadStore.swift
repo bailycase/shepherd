@@ -99,6 +99,8 @@ public final class NativeThreadStore {
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
     public private(set) var subagents: [NativeSubagent] = [] { didSet { chromeVersion &+= 1 } }
+    /// The subagent tray above the composer, while it shows (`nativeTrayRuns`).
+    public private(set) var tray: NativeSubagentTray? { didSet { chromeVersion &+= 1 } }
     /// When the prompt that opened the current turn was sent (ms). A queued follow-up has not
     /// opened a turn yet; nil while the newest prompt is an echo.
     public private(set) var lastPromptAt: Double?
@@ -354,6 +356,9 @@ public final class NativeThreadStore {
         if runs != subagents { subagents = runs }
         let placements = nativeSubagentPlacements(runs, turns: turns)
         if placements != self.placements { self.placements = placements }
+        let trayRuns = nativeTrayRuns(runs, placements: placements, turnOrder: turns.map(\.id), lastUserMessageAt: promptAt)
+        let tray = trayRuns.map(NativeSubagentTray.init)
+        if tray != self.tray { self.tray = tray }
 
         // The streaming reply is the last one, with only queued follow-ups below it.
         let running = loadError == nil && settledRunning
