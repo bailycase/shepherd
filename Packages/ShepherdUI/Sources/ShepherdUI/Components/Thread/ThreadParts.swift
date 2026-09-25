@@ -25,8 +25,12 @@ public enum NWThreadMetrics {
     public static let tailLineSpacing: CGFloat = 4
     /// Mono 11 lines in an expanded call's output.
     public static let outputMaxLines = 12
-    public static let changesHeaderHeight: CGFloat = touchable(32)
-    public static let changesRowHeight: CGFloat = touchable(28)
+    /// The changes card (ChangesCard): rows 30pt, a 30pt tile, radius 10.
+    public static let changesRowHeight: CGFloat = touchable(30)
+    public static let changesTile: CGFloat = 30
+    public static let changesRadius: CGFloat = 10
+    /// Files the card lists before "N more".
+    public static let changesShownFiles = 3
     public static let codeHeaderHeight: CGFloat = touchable(28)
     /// The copy and retry buttons under a turn, and the code block's copy.
     public static let footerButton: CGFloat = 24

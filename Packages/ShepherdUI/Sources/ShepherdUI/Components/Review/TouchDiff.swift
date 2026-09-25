@@ -149,6 +149,12 @@ public struct NWTouchFoldRow: View {
         self.action = action
     }
 
+    /// "+ 13 more removed lines · 18–32" (the range is left off when empty).
+    public static func label(count: Int, kind: NWDiffLineKind, range: String) -> String {
+        let lines = "\(count) more \(kind.word) line\(count == 1 ? "" : "s")"
+        return range.isEmpty ? "+ \(lines)" : "+ \(lines) · \(range)"
+    }
+
     public var body: some View {
         let nw = Color.nw
         Button(action: action) {
@@ -156,7 +162,7 @@ public struct NWTouchFoldRow: View {
                 Image(systemName: "chevron.up.chevron.down")
                     .imageScale(.small)
                     .accessibilityHidden(true)
-                Text(NWFoldRow.label(count: count, kind: kind, range: range))
+                Text(Self.label(count: count, kind: kind, range: range))
                     .lineLimit(1)
             }
             .font(.nw(.micro, weight: .regular))

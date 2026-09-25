@@ -223,7 +223,7 @@ struct ListPerformanceReport {
         report.add(name, "highlight every file: rows", counts: highlighting)
 
         var expand = 0.0
-        let expanding = ListPerf.counting { expand = ListPerf.time(window) { model.expandFile(files[5].id) } }
+        let expanding = ListPerf.counting { expand = ListPerf.time(window) { model.revealWholeFile(files[5].id) } }
         report.add(name, "open the 3k-line file whole", ms: expand)
         report.add(name, "open the 3k-line file whole: rows", counts: expanding)
 

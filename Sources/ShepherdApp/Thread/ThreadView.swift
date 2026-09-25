@@ -35,6 +35,8 @@ struct ThreadView: View {
     var inspectedRunID: String? = nil
     /// Opens the review pane at a file (a changed file, the changes card, an edit call).
     var review: ((String) -> Void)? = nil
+    /// The changes cards' Review, Undo and Redo, where the host records turns.
+    var turnActions: TurnChangesActions? = nil
     /// The models the host offers, for the composer's model picker.
     var listModels: (() async -> ModelCatalog)? = nil
     /// The composer's "Up next" state, when a test or preview drives it.
@@ -204,7 +206,8 @@ struct ThreadView: View {
         } else if let presentation = row.presentation {
             AgentTurn(presentation: presentation, live: row.live, subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
                       subagentActions: subagentActions, startedAt: row.startedAt,
-                      retry: retryAction(row, running: running), review: review, working: working, arriving: arriving,
+                      retry: retryAction(row, running: running), review: review, recordedTurn: row.recordedTurn,
+                      turnActions: turnActions, working: working, arriving: arriving,
                       settled: settled)
                 .equatable()
         }
