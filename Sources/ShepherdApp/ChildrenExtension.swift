@@ -325,6 +325,9 @@ enum ChildrenExtension {
             try { pi.sendMessage({ customType: "shepherd-child", content: `Child ${run.id} (${run.role}): ${clip(message)}`, display: true },
               { triggerTurn: true, deliverAs: "followUp" }); } catch { /* Result remains retrievable by id. */ }
           }
+          // Run id -> the shepherd_child_wait calls watching it. A completion inside a wait is that
+          // wait's result: a notice as well would wake the parent for a second turn on it.
+          const waiters = new Map();
           function command(run, type, fields = {}, timeout = 10_000) {
             if (!run.proc || run.exited) return Promise.reject(new Error("Child is not running"));
             if (run.pending.size >= 20) return Promise.reject(new Error("Child command queue is full"));
@@ -379,7 +382,8 @@ enum ChildrenExtension {
             } catch {}
             run.proc = undefined;
             save(run); run.resolveClosed();
-            notify(run, `${run.state}\n${run.error || run.output || "No text result"}\nSession: ${run.sessionFile}`);
+            const notice = `${run.state}\n${run.error || run.output || "No text result"}\nSession: ${run.sessionFile}`;
+            if (waiters.get(run.id)) run.heldNotice = notice; else notify(run, notice);
           }
           function receive(run, event) {
             if (run.exited) return;
@@ -722,7 +726,7 @@ enum ChildrenExtension {
           pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads user files and trusted project files without changing them.",
             parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
           pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-            description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Completion wakes the parent. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
+            description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Completion wakes the parent unless shepherd_child_wait returns it. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
             async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
           pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end.",
             parameters: Type.Object({ id: idSchema, message: textSchema, mode: Type.Optional(StringEnum(["steer", "followUp"])) }),
@@ -733,14 +737,28 @@ enum ChildrenExtension {
           pi.registerTool({ name: "shepherd_child_wait", label: "wait for children", description: "Wait for any or all selected children to exit, up to 60 seconds. Timeout or cancelling this wait does not stop the children. Returns bounded results for up to 16 ids.",
             parameters: Type.Object({ ids: Type.Array(idSchema, { minItems: 1, maxItems: 16 }), all: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 60 })) }),
             async execute(_id, p, signal) {
-              const selected = p.ids.map(get), deadline = Date.now() + (p.timeoutSeconds ?? 30) * 1000;
-              while (Date.now() < deadline) {
-                signal?.throwIfAborted();
-                const done = selected.map((r) => !["running", "queued"].includes(r.state));
-                if (p.all ? done.every(Boolean) : done.some(Boolean)) break;
-                await new Promise((r) => setTimeout(r, 100));
+              const selected = p.ids.map(get), watched = [...new Set(selected)], deadline = Date.now() + (p.timeoutSeconds ?? 30) * 1000;
+              for (const r of watched) waiters.set(r.id, (waiters.get(r.id) ?? 0) + 1);
+              let answered = false;
+              try {
+                while (Date.now() < deadline) {
+                  signal?.throwIfAborted();
+                  const done = selected.map((r) => !["running", "queued"].includes(r.state));
+                  if (p.all ? done.every(Boolean) : done.some(Boolean)) break;
+                  await new Promise((r) => setTimeout(r, 100));
+                }
+                const value = result(selected.map((r) => ({ ...summary(r), output: clip(r.output, 4096) })));
+                answered = true;
+                return value;
+              } finally {
+                for (const r of watched) {
+                  const left = waiters.get(r.id) - 1;
+                  if (left > 0) waiters.set(r.id, left); else waiters.delete(r.id);
+                  // This wait's result carries a completion it saw; a cancelled wait hands it back.
+                  if (answered) r.heldNotice = undefined;
+                  else if (left <= 0 && r.heldNotice) { const notice = r.heldNotice; r.heldNotice = undefined; notify(r, notice); }
+                }
               }
-              return result(selected.map((r) => ({ ...summary(r), output: clip(r.output, 4096) })));
             } });
           pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
             parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); return result(summary(run)); } });
