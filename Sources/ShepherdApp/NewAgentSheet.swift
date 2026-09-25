@@ -144,7 +144,9 @@ struct NewAgentSheet: View {
     @State private var spaceID: SpaceID?
     @State private var workingDirectory = ""
     @State private var defaults = NewAgentTargetDefaults()
-    @State private var modelOptions: [String] = []
+    /// The target's catalog: the Model field's options, and whether the chosen model takes a
+    /// thinking level. nil until it loads, and then Thinking stays offered.
+    @State private var models: ModelListing?
     @State private var initialPrompt = ""
     @State private var worktree = false
     @State private var worktreeBranch = ""
@@ -203,8 +205,12 @@ struct NewAgentSheet: View {
     /// The rows the sheet shows beyond the fixed ones: the Machine row, the Worktree row, and
     /// the worktree's Base and Fetch rows.
     private var disclosureState: [Bool] {
-        [!connectedHosts.isEmpty, targetHostID != nil || isRepo, worktree]
+        [!connectedHosts.isEmpty, targetHostID != nil || isRepo, worktree, offersThinking]
     }
+
+    /// Thinking is offered only for a model that takes a level (DESIGN › Composer); an unknown
+    /// model, or a catalog still loading, keeps it.
+    private var offersThinking: Bool { models?.takesThinking(defaults.model) != false }
 
     /// Captions that settle after the sheet is up. Typing into a field changes none of them.
     private var captionState: [String?] {
@@ -312,12 +318,15 @@ struct NewAgentSheet: View {
             }
 
             SheetRow("Model") {
-                ModelField(model: Binding(get: { defaults.model }, set: { defaults.model = $0; defaults.modelEdited = true }), options: modelOptions)
+                ModelField(model: Binding(get: { defaults.model }, set: { defaults.model = $0; defaults.modelEdited = true }), options: models?.models ?? [])
             }
 
-            SheetRow("Thinking") {
-                NWSegmentedPicker("Thinking", selection: Binding(get: { defaults.thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
-                                  options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
+            if offersThinking {
+                SheetRow("Thinking") {
+                    NWSegmentedPicker("Thinking", selection: Binding(get: { defaults.thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
+                                      options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
+                }
+                .nwTransition(.disclosure)
             }
 
             // Prompt: full-width editor under its label, no row chrome — this is the field
@@ -468,7 +477,7 @@ struct NewAgentSheet: View {
         let requestID = defaults.begin(hostID: hostID,
                                        model: hostID == nil ? vm.settings.agentDefaults.model ?? PiConfig.defaultModel() ?? "" : "",
                                        thinking: hostID == nil ? vm.settings.defaultThinking : .medium)
-        modelOptions = []
+        models = nil
         errorText = nil
         if hostID != nil && remoteConnection?.supportsWorktreeCreation != true { worktree = false }
         if let hostID {
@@ -481,7 +490,7 @@ struct NewAgentSheet: View {
                     defaults.apply(requestID: requestID, model: result.model ?? "", thinking: result.thinking)
                     // A catalog failure leaves the editable defaults usable.
                     if let listing = try? await vm.remoteHosts.listModels(hostID: hostID), defaults.requestID == requestID {
-                        modelOptions = listing.models
+                        models = listing
                     }
                 } catch {
                     guard defaults.requestID == requestID else { return }
@@ -492,9 +501,10 @@ struct NewAgentSheet: View {
             return
         }
         Task {
-            let ids = await Task.detached(priority: .userInitiated) { PiModelCatalog.modelIDs() }.value
+            let server = vm.server
+            let listing = await Task.detached(priority: .userInitiated) { server.modelListing() }.value
             guard defaults.requestID == requestID else { return }
-            modelOptions = ids
+            models = listing
         }
     }
 

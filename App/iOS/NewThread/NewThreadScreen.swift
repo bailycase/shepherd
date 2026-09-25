@@ -171,8 +171,12 @@ private struct NewThreadForm: View {
                             .frame(height: MobileLayout.newThreadPopoverHeight)
                     }
                 }
-            thinkingChip
+            if model.offersThinking {
+                thinkingChip
+                    .nwTransition(.content)
+            }
         }
+        .nwAnimation(.content, value: model.offersThinking)
         .buttonStyle(.nwPressable(height: NWSelectorChipMetrics.height))
         .disabled(model.starting)
     }

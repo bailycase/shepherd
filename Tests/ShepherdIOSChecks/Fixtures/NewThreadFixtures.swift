@@ -12,6 +12,15 @@ extension FixtureCatalog {
             FixtureScreen(name: "newthread", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
                           prepare: { _ in await NewThreadFixtures.form() }),
+            // The host's default model takes no thinking level: no Thinking chip.
+            FixtureScreen(name: "newthread-plain-model", hosts: ThreadFixtures.plainModel(NewThreadFixtures.hosts()),
+                          routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
+                          prepare: { _ in
+                              await NewThreadFixtures.form()
+                              for _ in 0..<100 where NewThreadModel.active?.models == nil {
+                                  try? await Task.sleep(for: .milliseconds(50))
+                              }
+                          }),
             FixtureScreen(name: "newthread-where", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
                           prepare: { app in await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .host : .workspace } }),

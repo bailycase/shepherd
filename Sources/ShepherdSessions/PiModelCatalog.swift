@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdProtocol
 
 /// The live model catalog, asked from pi itself (`pi --list-models`) — models
 /// are dynamic (catalog updates, auth state), so no config file is the truth.
@@ -28,6 +29,12 @@ public enum PiModelCatalog {
     /// `provider/model` ids in catalog order; empty when pi is missing or
     /// errors. Blocking — call off the main thread and off the server queue.
     public static func modelIDs() -> [String] { entries().map(\.id) }
+
+    /// pi's catalog, or models.json's models when pi cannot be asked. Blocking, like `entries()`.
+    public static func entriesOrConfigured() -> [Entry] {
+        let asked = entries()
+        return asked.isEmpty ? PiConfig.modelEntries() : asked
+    }
 
     /// Blocking, like `modelIDs()`.
     public static func entries() -> [Entry] {
@@ -84,5 +91,20 @@ public enum PiModelCatalog {
             entries.append(Entry(id: id, context: column("context"), reasoning: column("thinking").map { $0 != "no" } ?? true))
         }
         return entries
+    }
+}
+
+extension ModelListing {
+    /// A catalog as a listing: its ids, `defaultModel`, and the models that take no thinking level.
+    public init(entries: [PiModelCatalog.Entry], defaultModel: String?) {
+        self.init(models: entries.map(\.id), defaultModel: defaultModel,
+                  withoutThinking: entries.filter { !$0.reasoning }.map(\.id))
+    }
+
+    /// The listing as catalog rows, for a picker and the thinking chip. A model the listing does
+    /// not say takes no thinking level reasons (`takesThinking`).
+    public var entries: [PiModelCatalog.Entry] {
+        let plain = Set(withoutThinking ?? [])
+        return models.map { PiModelCatalog.Entry(id: $0, reasoning: !plain.contains($0)) }
     }
 }
