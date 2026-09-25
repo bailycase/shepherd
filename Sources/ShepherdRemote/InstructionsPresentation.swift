@@ -202,6 +202,31 @@ public enum InstructionsPresentation {
         return String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
     }
 
+    /// What a file is for, as its tab says it: "how you work", "rules that win".
+    public static func role(_ file: InstructionFile) -> String {
+        switch file {
+        case .agents: "how you work"
+        case .appendSystem: "rules that win"
+        }
+    }
+
+    /// A file's note under its name: what it is for and its size ("how you work · ~640 tokens").
+    /// `sentence` starts it with a capital, as a row on the phone does.
+    public static func fileNote(_ file: InstructionFile, text: String, sentence: Bool = false) -> String {
+        let role = role(file)
+        return "\(sentence ? role.prefix(1).uppercased() + role.dropFirst() : role) · \(InstructionsText.sizeNote(text))"
+    }
+
+    /// Same on every host's state in one line, under the iPad's scope control: "Studio, build-01
+    /// synced · build-02 differs · horizon when it's back". nil with nothing to say.
+    public static func syncLine(synced: [String], differing: [String], waiting: [String]) -> String? {
+        var parts: [String] = []
+        if !synced.isEmpty { parts.append("\(synced.joined(separator: ", ")) synced") }
+        if !differing.isEmpty { parts.append("\(differing.joined(separator: ", ")) \(differing.count == 1 ? "differs" : "differ")") }
+        if !waiting.isEmpty { parts.append("\(waiting.joined(separator: ", ")) when \(waiting.count == 1 ? "it's" : "they're") back") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     /// Which files a host holds: "AGENTS · APPEND", "AGENTS", "APPEND", or "no files".
     public static func filesHeld(_ snapshot: InstructionsSnapshot) -> String {
         let held = [(InstructionFile.agents, "AGENTS"), (.appendSystem, "APPEND")]

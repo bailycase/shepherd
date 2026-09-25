@@ -97,20 +97,36 @@ public final class ClientHostSettings {
 
     /// Shows `change` at once, then sends it to the host.
     public func change(_ change: HostSettingChange, on host: SettingsHost) async {
-        guard let client = host.client, case .loaded(var settings)? = loaded[host.id] else { return }
+        guard let client = host.client, show(change, on: host) else { return }
+        await send(change, through: client, to: host)
+    }
+
+    /// Shows `change` at once and sends it without waiting for the host: a control's setter, so
+    /// a switch never springs back while the host answers.
+    public func post(_ change: HostSettingChange, on host: SettingsHost) {
+        guard let client = host.client, show(change, on: host) else { return }
+        Task { await send(change, through: client, to: host) }
+    }
+
+    public func dismissProblem() {
+        problem = nil
+    }
+
+    private func show(_ change: HostSettingChange, on host: SettingsHost) -> Bool {
+        guard case .loaded(var settings)? = loaded[host.id] else { return false }
         settings.apply(change)
         loaded[host.id] = .loaded(settings)
         problem = nil
+        return true
+    }
+
+    private func send(_ change: HostSettingChange, through client: any SettingsClient, to host: SettingsHost) async {
         do {
             loaded[host.id] = .loaded(try await client.hostSettings(.change(change)))
         } catch {
             problem = settingsProblem(error)
             await refresh(host)
         }
-    }
-
-    public func dismissProblem() {
-        problem = nil
     }
 }
 
@@ -232,6 +248,43 @@ public final class ClientInstructions {
         return edited(in: hosts).map { "Save to \($0.name)" } ?? "Save"
     }
 
+    /// Where a save goes, under the editor's file name: "every host", or the host edited.
+    public func scope(in hosts: [SettingsHost]) -> String {
+        sameEverywhere ? "every host" : edited(in: hosts)?.name ?? "no host"
+    }
+
+    /// With Same on every host on, the connected hosts whose files differ from the reference's.
+    public func differing(in hosts: [SettingsHost]) -> [SettingsHost] {
+        guard sameEverywhere, let reference = reference(in: hosts), let snapshot = files(of: reference).snapshot else { return [] }
+        return hosts.filter { host in
+            guard let other = files(of: host).snapshot else { return false }
+            return InstructionFile.allCases.contains { other[$0] != snapshot[$0] }
+        }
+    }
+
+    /// With Same on every host on, each host's state in one line ("Studio, build-01 synced ·
+    /// horizon when it's back"); per host, nil.
+    public func syncLine(in hosts: [SettingsHost]) -> String? {
+        guard sameEverywhere, let reference = reference(in: hosts), let snapshot = files(of: reference).snapshot else { return nil }
+        var synced: [String] = [], differing: [String] = [], waiting: [String] = []
+        for host in hosts {
+            switch files(of: host) {
+            case .loaded(let other):
+                if InstructionFile.allCases.allSatisfy({ other[$0] == snapshot[$0] }) { synced.append(host.name) } else { differing.append(host.name) }
+            case .offline where pending.contains(host.id):
+                waiting.append(host.name)
+            default:
+                break
+            }
+        }
+        return InstructionsPresentation.syncLine(synced: synced, differing: differing, waiting: waiting)
+    }
+
+    /// The edited host's saved versions of `file`, newest first.
+    public func history(_ file: InstructionFile, in hosts: [SettingsHost]) -> [InstructionHistoryEntry] {
+        edited(in: hosts).flatMap { files(of: $0).snapshot?.history.filter { $0.file == file } } ?? []
+    }
+
     // MARK: Saving
 
     /// Saves the draft of `file`: with Same on every host on, to every host (one offline is owed
@@ -245,12 +298,38 @@ public final class ClientInstructions {
         do {
             try await save(file, content: text, to: edited, sync: false)
             drafts[key] = nil
-            guard sameEverywhere, let snapshot = files(of: edited).snapshot else { return }
-            for host in hosts where host.id != edited.id {
-                await write(snapshot, to: host)
-            }
+            await spread(from: edited, in: hosts)
         } catch {
             problem = settingsProblem(error)
+        }
+    }
+
+    /// Puts a saved version back on the edited host, dropping the file's draft; with Same on every
+    /// host on, every other host then takes the files too.
+    public func restore(_ entry: InstructionHistoryEntry, in hosts: [SettingsHost]) async {
+        guard let edited = edited(in: hosts), !busy else { return }
+        let key = draftKey(entry.file, in: hosts)
+        busy = true
+        problem = nil
+        defer { busy = false }
+        do {
+            guard let client = edited.client else { throw RemoteHostClientError.disconnected }
+            files[edited.id] = .loaded(try await client.instructions(.restore(revisionID: entry.id, origin: origin)))
+            drafts[key] = nil
+            await spread(from: edited, in: hosts)
+        } catch {
+            problem = settingsProblem(error)
+        }
+    }
+
+    /// With Same on every host on, gives every host whose files differ the reference's.
+    public func syncNow(in hosts: [SettingsHost]) async {
+        guard let reference = reference(in: hosts), let snapshot = files(of: reference).snapshot, !busy else { return }
+        busy = true
+        problem = nil
+        defer { busy = false }
+        for host in differing(in: hosts) where host.id != reference.id {
+            await write(snapshot, to: host)
         }
     }
 
@@ -271,6 +350,14 @@ public final class ClientInstructions {
             files[host.id] = .loaded(try await client.instructions(.fetch))
         } catch {
             files[host.id] = .failed(settingsProblem(error))
+        }
+    }
+
+    /// With Same on every host on, writes `edited`'s files to every other host.
+    private func spread(from edited: SettingsHost, in hosts: [SettingsHost]) async {
+        guard sameEverywhere, let snapshot = files(of: edited).snapshot else { return }
+        for host in hosts where host.id != edited.id {
+            await write(snapshot, to: host)
         }
     }
 
@@ -361,14 +448,16 @@ public final class ClientSuggestions {
         waiting(hosts).first { $0.id == id }
     }
 
-    /// Changes the experiment on every host that serves it.
+    /// Changes the experiment on every host that serves it, showing it at once.
     public func configure(_ hosts: [SettingsHost], _ change: (inout SuggestedInstructionsSettings) -> Void) async {
-        let targets = self.hosts(hosts).compactMap { host -> (SettingsHost, SuggestedInstructionsSettings)? in
-            guard var settings = snapshots[host.id]?.settings else { return nil }
-            change(&settings)
-            return (host, settings)
-        }
-        await run(targets.map { host, settings in (host, RemoteSuggestionsRequest.configure(settings)) })
+        await run(show(hosts, change))
+    }
+
+    /// Changes the experiment on every host that serves it, showing it at once and sending it
+    /// without waiting: a control's setter.
+    public func post(_ hosts: [SettingsHost], _ change: (inout SuggestedInstructionsSettings) -> Void) {
+        let requests = show(hosts, change)
+        Task { await run(requests) }
     }
 
     /// Adds a waiting line to its file on its host (`line` edited first, `file` retargeted).
@@ -394,6 +483,19 @@ public final class ClientSuggestions {
 
     public func dismissProblem() {
         problem = nil
+    }
+
+    /// Shows a change on every host that serves the experiment (off drops what waits), and
+    /// returns the requests that make it.
+    private func show(_ hosts: [SettingsHost], _ change: (inout SuggestedInstructionsSettings) -> Void)
+        -> [(SettingsHost, RemoteSuggestionsRequest)] {
+        self.hosts(hosts).compactMap { host -> (SettingsHost, RemoteSuggestionsRequest)? in
+            guard var snapshot = snapshots[host.id] else { return nil }
+            change(&snapshot.settings)
+            if !snapshot.settings.enabled { snapshot.waiting = [] }
+            snapshots[host.id] = snapshot
+            return (host, .configure(snapshot.settings))
+        }
     }
 
     private func run(_ requests: [(SettingsHost, RemoteSuggestionsRequest)]) async {
