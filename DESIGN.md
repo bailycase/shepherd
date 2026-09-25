@@ -173,6 +173,12 @@ And the rules that follow from them:
 | SettingsInstructions: "new threads, mission stations and automations get this one" | "new agents and automations get this one" | Missions aren't built |
 | SettingsInstructionsHosts: the diff shows the lines around the differences | The whole file as a diff, scrolled to its first difference | Instruction files are short, and nothing hides behind a fold |
 | SettingsInstructionsHosts: every History row offers Restore | The newest row reads "current" | Restoring the file as it is would change nothing (honest affordances) |
+| SettingsSkills, SettingsSkillsBrowse, SettingsSkillsSearch: "every thread, mission and automation on every host gets the same set" | "every thread and automation on every host gets the same set" | Missions aren't built |
+| SkillsStates: "Hosts report their copies through the daemon" | Each host's Shepherd serves its skills over `skills.v1`, and the page asks every host | There is no daemon (AGENTS.md) |
+| SettingsSkillsBrowse: Trending, All time, Hot and Official with no key | Each needs a skills.sh API key: without one the list says so, with a field for the key; search and install need none | skills.sh's ranked lists (`/api/v1`) refuse a request without a key |
+| SettingsSkillsBrowse, SkillsStates: a ranked row's 24-hour change ("+8.1K") and a description beside each result; "· updated Sep 19" in the preview | Installs only in the list, the description in the preview (from its SKILL.md), and no date | skills.sh's lists report neither a change nor a description, nor when a skill last changed |
+| SkillsStates: "Topics narrow any tab" | A topic is a search of skills.sh, most installed first, whatever tab is chosen | skills.sh's lists take no topic |
+| SettingsSkillsBrowse: "Pick from all 16…" | "Pick from the whole repo…" | A repository's size is known only once a host looks it up |
 | SettingsExperiments: Learn from Missions, Threads, Automations | Threads and Automations | Missions aren't built |
 | SettingsExperiments: Hosts as a 190pt popup, "Follow Instructions"; a suggestion names "which hosts it applies to" and its chip retargets hosts | A note naming where lines go now, with Open Instructions; the chip retargets the file and reports the hosts; How it works says "for a root file, with the reason." | A line goes where Settings › Instructions sends This Mac's files, so a popup with one option would pick nothing (honest affordances) |
 | MobileInstructions, iPadSettingsInstructions: pi's root files, "Save once, written to each host's ~/.pi/agent/", the editor's path `~/.pi/agent/APPEND_SYSTEM.md`, "The agent reads these at the start of every session", a read order from "root AGENTS.md" | Shepherd's own copies: "Save once, written to every host", the host's instructions folder in the path, "The agent reads these at the start of every session Shepherd starts", the order's links named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md" | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
@@ -1874,7 +1880,8 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   the field and sends it when it can; ⇥ completes "/name " to keep typing. Esc closes it for the
   draft as typed; typing more reopens it. The list is pi's command registry, never hard-coded, so
   pi's interactive built-ins, which the boards draw (/resume, /reload), appear only if pi's
-  `get_commands` starts returning them. Its rows are lazy, a highlight moving redraws only the two
+  `get_commands` starts returning them. Settings ▸ Skills ▸ Skills in the / menu, off, leaves the
+  skills out (on the Mac). Its rows are lazy, a highlight moving redraws only the two
   rows it moves between, and only ↑↓ scroll the highlight into view (the pointer's is already under
   the pointer).
 - **Not built yet:** argument hints after the name in `textTertiary` ("/resume [session]",
@@ -3124,14 +3131,14 @@ automated step of the worktree flows can be turned off here.
   spaces, agents and pane layouts are not affected.", Cancel and a destructive Reset). Remote's
   hosts and its listener stay as they are (`AppSettings.Key.resettable`).
 
-#### Wide pages: Instructions and Experiments
+#### Wide pages: Instructions, Skills and Experiments
 
-These two pages are wider than the 720pt column (`SettingsSection.isWide`): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
+These three pages are wider than the 720pt column (`SettingsSection.isWide`): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
 the bottom, with its blocks 20pt apart (`AppLayout.settingsWide*`). It doesn't scroll as a whole:
 its editor and its side column scroll inside themselves, and the strip at its top still drags the
 window. Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column
-that takes the room and a fixed side column of reference and history (330pt on Instructions, 320pt
-on Experiments), 28pt and 32pt apart. Their section labels sit `NW.Space.xxs` in and `NW.Space.m`
+that takes the room and a fixed side column of reference and history (330pt on Instructions, 280pt
+on Skills, 320pt on Experiments), 28pt apart (32pt on Experiments). Their section labels sit `NW.Space.xxs` in and `NW.Space.m`
 above what they label, and a label may carry a trailing text action ("Add all"). Lists in the side
 column (files, history, steps, what was added) are bare rows separated by `lineSubtle` hairlines,
 not cards; only Instructions' reading order uses small cards.
@@ -3267,6 +3274,136 @@ switch's row "Off: each host keeps its own files. Pick a host to edit it."
     the time for a save today, "14:02"), what changed in 12 `textSecondary` ("Added “Never
     force-push.”", "Synced from This Mac", "Restored the Sep 02 version"), and Restore as a
     trailing `running` text action; the newest reads "current".
+
+#### Skills (SettingsSkills, SkillsStates)
+
+The page (`SettingsSkills.swift`, `ClientSkills`) manages the agent skills pi reads from each
+host's `~/.agents/skills` (docs/skills.md): folders of instructions and scripts the agent picks up
+when a task calls for them. Skills are global: with Same skills on every host on, every install,
+update, switch and removal goes to every host, and a host that is offline catches up when it's
+back. The page sits between Instructions and Remote in the nav, with `graduationcap`.
+
+- **Header:** "Skills", then "Instructions and scripts the agent picks up when a task calls for
+  them. Skills are global: every thread and automation on every host gets the same set." (capped at
+  700pt), and trailing, bottom-aligned: Add from repo… (secondary, `plus`) and Browse skills.sh
+  (primary, a glass). Both open sheets (below). The blocks are 18pt apart, the list and the 280pt
+  rail 28pt apart.
+- **Toolbar:** a 240pt `NWSearchField` ("Filter installed skills", names and descriptions), then
+  All · On · Updates with their counts ("All 8", "On 7", "Updates 2", an `NWSegmentedPicker`), a
+  spacer, "Checked 2h ago" in 12 `textTertiary` (when the first host last looked for updates:
+  "Checked just now", "Not checked yet"; it ages by the minute), and Update N (small secondary,
+  `arrow.down.to.line`) while any skill has a newer commit.
+- **The list** (a card at radius 10, `bgWindow`, a `lineSubtle` line): a 30pt header row on
+  `bgSunken` with section labels (Skill, Source, Use, Updated) over rows at least 54pt, with 16pt
+  column gaps and sides, hairlines between (`SkillsListRow`, Equatable, lazy):
+  - the switch (a 30pt column): on or off on every host. Off moves the skill out of the folder pi
+    reads, without deleting it.
+  - the name in mono 13/600 (`textSecondary` while off) over its description in 12.5
+    `textSecondary`, one line each; both come from SKILL.md's frontmatter.
+  - Source (176pt): the repository in mono 11.5 `textSecondary`, truncating in the middle, or
+    Local with a folder glyph (`textTertiary`) for a folder copied in by hand ("It never
+    updates.").
+  - Use (84pt): "Auto" in a bordered 20pt tag, or "/skill only" in mono on `bgSelected`.
+  - Updated (60pt): the day it last changed ("Sep 18", mono 11.5 `textTertiary`); the Update pill
+    (`NWUpdatePill`, 22pt, `lanternText` on `lanternTint`) while a newer commit waits, which
+    installs it; "Updating" shimmering while it goes (nothing spins).
+  - a chevron: a click anywhere on the row opens its detail in place, below it, one row at a time
+    (`bgHover` while open or hovered).
+  - Empty: "No skills yet. Browse skills.sh, or add them from a repo.", "No skill matches “…”.",
+    "No skill is on.", "Every skill is up to date.", or "Reading skills…".
+- **The detail** (`SkillDetail`, on `bgSunken` under a hairline, 62pt in, 14pt apart): three
+  columns 28pt apart under section labels:
+  - **Use it:** two radio options (`NWRadioOption`): Automatically, "The agent reads it when a
+    task calls for it. Its description sits in every prompt, about 90 tokens." (the estimate is
+    the skill's own), and "Only when I type /skill:pdf", "Stays out of the agent’s prompt until
+    you call it." A choice rewrites the skill's SKILL.md (`disable-model-invocation`) on every
+    host; updates keep it.
+  - **Version:** the repository and folder ("anthropics/skills › skills/pdf", mono 12),
+    "Installed 3f2a91c · Aug 30", and while a newer commit waits "New 8c04e1d · Sep 22 · 3 files
+    changed" in `lanternText` with Update (small primary) and What changed (small ghost, GitHub's
+    comparison). A Local skill says "Copied into the skills folder by hand. It never updates."
+  - **Hosts:** a row per host (`NWHostStateRow`: a check, a filled dot while it changes there, a
+    hollow one while it's away; the name in a 70pt mono column; the state): "installed",
+    "updating", "not installed", "offline · updates later", "needs a newer Shepherd".
+  - Under a hairline: the top of the skill's folder as chips (`NWSkillFileChip`: "SKILL.md",
+    "reference.md", "scripts/ 8" with a code glyph for scripts, a folder glyph for other folders),
+    then Open SKILL.md (small secondary) and Show folder (small ghost), which act on This Mac's copy
+    and disable when This Mac hasn't got one, and Remove (small danger): it takes the skill off every
+    host, with Undo in the toast ("Removed pdf from every host").
+- **The rail** (280pt, sections 22pt apart):
+  - **How the agent uses them:** "The agent sees the name and description of every automatic
+    skill. When a task matches one, it reads that skill’s files and follows them. Type /skill:name
+    to use one on purpose." (12.5/1.55, the command in mono `textPrimary`), then the In every prompt
+    card (radius 10, `bgWindow`): "In every prompt" with "~610 tokens" (mono), a 6pt bar
+    (`NWBudgetBar`) with a segment per skill that is on (`running` for an automatic one, a rule for a
+    /skill one), and "6 automatic skills. Full files load only when used." Its tooltip: "The context
+    meter counts this as part of the system prompt."
+  - **Options**, rows between hairlines, each a title (13/500) over a note (12/1.45) and its
+    switch: Skills in the / menu ("List every skill as /skill:name in the composer’s slash menu.";
+    off, the slash menu leaves skills out), Same skills on every host ("Installs, updates and
+    removals go to all hosts. Offline hosts catch up."; kept per Mac), and Update automatically
+    ("Off: new versions wait here with an Update badge."; each host's own, set on every host).
+  - **Hosts** with the skills folder trailing its label ("~/.agents/skills", mono), then a row per
+    host: "up to date", "2 updates", "offline", "offline · catches up" while it's owed changes,
+    "checking", "needs a newer Shepherd", "couldn't read"; then "Skills you copy into that folder
+    by hand show up as Local."
+- **States:** a change shows at once; one a host refuses springs back, its reason inline over the
+  list with Dismiss. Each host checks its skills for newer commits once a day.
+- **Not built yet:** project skills (`.agents/skills` inside a repository) and per-agent skill sets
+  (SkillsStates' Not yet).
+
+#### Browse skills.sh and Add from repo (SettingsSkillsBrowse, SettingsSkillsSearch, SettingsSkillsRepo)
+
+Two sheets (`SkillsSheets.swift`, 1060 × 812, at least 860 × 600, `bgWindow`): a 17/600 title over
+a 12.5 `textSecondary` line, the header's trailing action and a 28pt round close button (Esc);
+then a list (560pt) beside the selected item's preview, a hairline between.
+
+- **Browse skills.sh:** "The open directory of agent skills. Anything you install goes to all your
+  hosts.", with Open skills.sh (small ghost).
+  - A 38pt search field ("Search skills, repos and owners", a glass, 14pt text, a clear button; a
+    `lantern` line while focused), focused when the sheet opens.
+  - Without a search: Trending · All time · Hot · Official (`NWSegmentedPicker`), a rule, then
+    topics as 26pt capsules (All, React, Next.js, Design & UI, Databases, Testing, Docs & files,
+    Agent workflows; the chosen one on `bgSelected`). With one: "9 skills for “postgres”" and
+    Sort: Installs or Name.
+  - The list: a 30pt header ("Trending", "Hot · last hour", "React · Trending"; Installs) over
+    rows at least 58pt (`SkillResultRow`): the place in a ranked list (mono 11.5), the name in mono
+    13/600 with the search's matches in `lanternText` and skills.sh's Official seal
+    (`NWOfficialSeal`), the repository in mono 11.5 `textTertiary`, and a 96pt column with the
+    installs ("3.6M", mono 12) over Install (small secondary), "1 of 3 hosts" with a 64 × 3 meter
+    (a segment per host: `done`, `running`, a rule) while it installs, "Installed" with a check in
+    `done`, or the Update pill. The selected row is on `bgSelected`.
+  - The preview: the name in mono 18/600, its repository, the seal and "131K installs"; Install
+    (primary) with "Use: Automatically" (a menu: Automatically, Only with /skill), or Installed,
+    or Update; View on skills.sh. While it installs, a card on `bgSunken`: "Installing · 1 of 3
+    hosts" shimmering, Cancel, and each host's step ("installed · ready in new threads", "copying
+    files", "offline · installs when it's back"). Then the description, the SKILL.md (a card: a
+    34pt header with "SKILL.md" and "~1,900 tokens when used", its lines numbered in a 34pt column,
+    mono 13 on 20pt lines with the instructions editor's highlighting, fading out at the bottom;
+    240pt tall, 280pt in a search), Files as chips with what its scripts are ("3 scripts the agent
+    can run: init_skill.py, package_skill.py, quick_validate.py", "No scripts. Instructions and
+    references only."), and More in anthropics/skills: the list's other skills from it as capsules
+    (✓ when installed) and Pick from the whole repo…, which opens Add from repo on it.
+  - Loading says "Loading skills.sh…"; no match, "No skills match."; a ranked list without a key
+    says "skills.sh’s rankings need an API key. Search and install work without one." with a field
+    for the key (Save), and Get a key.
+- **Add skills from a repo:** "A GitHub owner/repo or URL, or a folder on this Mac. Shepherd copies
+  the skills you pick into ~/.agents/skills on every host."
+  - A 38pt field on `bgRaised` (a branch glyph, or a folder's for a path; mono 13.5) with Look up
+    (large secondary, Return), and once found "16 skills · main @ 8c04e1d" in it.
+  - The picker: a 34pt bar on `bgSunken` with a checkbox for all the new ones, "3 of 13 new skills"
+    and Select all new, over rows 34pt tall (`SkillPickRow`): a checkbox, the name in mono 12.5/600
+    (168pt), the description, and for one already installed "Installed" (dimmed, ticked, fixed) or
+    "Installed · update" (`lanternText`). A click selects a row for the preview beside: the name,
+    "anthropics/skills › skills/docx", the description, its SKILL.md (340pt) and files.
+  - A 60pt footer on `bgSunken`: "Use them" with Automatically · Only with /skill, where they go
+    ("This Mac, build-01 now · horizon when it’s back") or the install's line while it runs, then
+    Cancel and "Install 3 skills" (primary). The sheet closes once every host that could take them
+    has them. A repository with one new skill installs it at once; a URL that points into a skill's
+    folder ticks that skill.
+  - A folder on this Mac is read here and copied to each host as its files (up to 640 KB), Local
+    there. Look-up failures say why under the field ("acme/skills has no skills: no folder in it
+    holds a SKILL.md.").
 
 #### Experiments (SettingsExperiments)
 
@@ -4549,7 +4686,7 @@ keyboard is up while the query is empty.
 - **First card** (no head): Appearance (a palette glyph; "System", "Light" or "Dark"), then
   Notifications (a bell; "Needs you").
 - **Agents:** Defaults (a sparkle; the default model, "claude-opus"), Instructions (a page;
-  "AGENTS.md, APPEND"), Extensions (a puzzle; "6").
+  "AGENTS.md, APPEND"), Skills (a graduation cap; "8 · 2 updates"), Extensions (a puzzle; "6").
 - **Machines:** Hosts (a display; "1 offline", or the count), then Worktrees (a branch).
 - **A card of its own:** Experiments (a flask; "1 on").
 - **About:** a 24pt Shepherd icon (the crook in `lantern` on `textOnLantern`'s dark, 6pt corners),
@@ -4634,6 +4771,65 @@ host keeps Shepherd's own copies in its support folder and serves them over `ins
   `` ` `` and `**` wrap a selection, and Tab indents two spaces. Save reads "Save" whatever the scope
   (VoiceOver hears "Save to 3 hosts"), and a spinner takes its place while it writes; a failed save
   shows its reason in a banner over the file.
+
+### iPhone: Skills (MobileSkills)
+
+Settings ▸ Skills on the phone and the iPad (`Settings/SkillsScreens.swift`; the Mac's page is
+SettingsSkills): every host's agent skills, the same on every host, over `skills.v1`.
+`ClientSkills` (ShepherdRemote) holds every rule, as on the Mac.
+
+- **The page** (MobileSkills): "‹ Settings", the large title "Skills" and a 36pt round + (Add from
+  repo) in the bar, on `bgBase` with 14pt sides, 10pt apart. "Global: every host gets the same
+  skills. Tap one for how it’s used, its files and hosts." (13.5/1.5 `textSecondary`), a 40pt search
+  field on a filled track at radius 10 ("Search skills.sh", 15), then "Installed · 8" (13/600
+  `textSecondary`) with "Update 2" (13.5/500 `running`) trailing, over a card of rows at least 58pt
+  (8pt × 14pt padding, 10pt gaps): the name in mono 14/600 over its description at 12.5
+  `textTertiary` ("/skill only · House style for table-driven Go tests." for one only /skill
+  loads), the Update pill (22pt, 12/600) while a newer commit waits, and its switch (off: the
+  track in `lineStrong`). Under the card: "horizon is offline. It gets changes when it’s back."
+  (12.5/1.5 `textTertiary`).
+- **In the app** the page is `bgWindow` with 16pt sides; the field is the touch search field
+  (`NWTouchSearchField`); Installed · 8 and Update 2 are the lists' header and link; "Updating"
+  shimmers in a row while its update goes; and several hosts away read "horizon, build-02 are
+  offline. They get changes when they’re back." A tap on a row opens the skill, its switch turns it
+  on or off on every host, and Update N installs every newer commit. Removing a skill (from its
+  detail) comes back to the list with "Removed pdf from every host" and Undo in a banner. Without a
+  host, or with none online, too old or unreadable, the page says so in place of the list, and
+  reads every host again on pull to refresh.
+- **Search:** typing asks skills.sh (a quarter second after the last key): "9 skills for
+  “postgres”" over a card of results, the name in mono 14/600 with the search's matches in
+  `lanternText` and the Official seal, "supabase/agent-skills · 71K installs" under it, and a 96pt
+  end with Install (small secondary), "1 of 3 hosts" shimmering while it installs, "Installed"
+  with a check in `done`, or the Update pill. Clearing the field shows the installed skills again.
+- **A result** (no board draws it) opens its preview: the name in mono 17/600 with the seal, the
+  line under it, and the description; Use it (Automatically or Only with /skill, a menu row, with
+  what it means), Install (large primary) and where it goes ("Studio, build-01 now · MacBook Air
+  when it's back"), or Installed with Open, or Update; while it installs, "Installing · 1 of 3
+  hosts" with Cancel over a card of each host's step. Then SKILL.md (a card: the file and "~1,400
+  tokens when used" in a 36pt header on `bgSunken`, its first 60 lines numbered in a 28pt column,
+  mono 12 on 19pt lines with the instructions editor's highlighting, and "40 more lines"), Files as
+  chips with what its scripts are, Pick from all of anthropics/skills (Add from repo on it) and View
+  on skills.sh.
+- **A skill** (no board draws it) opens its detail: the name in mono 17/600 and its description;
+  On (a switch: "Agents can use it." or "No agent sees it until it's back on."); Use it, the Mac's
+  two radio options in a card; Version (the repository and folder, "Installed 3f2a91c · Aug 30",
+  and "New 8c04e1d · Sep 22 · 3 files changed" in `lanternText` with Update and What changed; or
+  Local); Hosts (a display glyph, the host in mono, its state trailing: "installed" in `done`,
+  "updating" in `running`, "offline · updates later" in `textTertiary`); Files as chips; and
+  "Remove from every host" (large danger).
+- **Add from repo** (no board draws it): "A GitHub owner/repo or URL. Shepherd copies the skills
+  you pick into ~/.agents/skills on every host.", a 44pt mono field on `bgRaised` with Look up,
+  then "3 of 13 new skills" with Select all new over a card of the repository's skills (a tick
+  circle, the name in mono 14/600, "Installed" or "Installed · update" for one already here,
+  dimmed and fixed, and the description), "16 skills · main @ 8c04e1d", Use them (a menu row),
+  where they go, and "Install 3 skills" (large primary). While it installs, each host's step shows
+  in place; the screen closes once every host that could take them has them. A repository with one
+  new skill ticks it; a URL into a skill's folder ticks that one. The phone has no folders to add.
+- **On iPad** the page shows beside the Settings list (Skills after Instructions), and a skill, a
+  result or Add from repo opens over the detail.
+- **Not built yet:** Same skills on every host as a switch on the phone and the iPad, which follow
+  it on (the Mac's option is kept per Mac); skills.sh's ranked lists, which need a key the Mac
+  keeps.
 
 ### iPhone: Experiments (MobileExperiments)
 
@@ -5250,11 +5446,11 @@ design agent's note floating over it; Design tool › On iPad specifies it.
 Settings is a list beside the page: a 300pt column (a 1px `lineSubtle` trailing edge) headed
 "Settings"; rows at least 48pt, 12pt inset and gap, radius 10: a 17pt `textSecondary` glyph and
 the label at 15/500; the open page's row on `bgSelected`, its glyph `textPrimary` and label
-semibold. Pages: Appearance, Agents, Worktrees, Pi, Instructions, Notifications, Hosts, Keyboard,
-Experiments. Agents, Worktrees, Pi and Keyboard are the host's settings, as the Mac shows them.
+semibold. Pages: Appearance, Agents, Worktrees, Pi, Instructions, Skills, Notifications, Hosts,
+Keyboard, Experiments. Agents, Worktrees, Pi and Keyboard are the host's settings, as the Mac shows them.
 
 - **In the app** (`SettingsScreen` at regular width; a compact window gets the phone's list): the
-  list is Appearance, Agents, Worktrees, Pi, Instructions, Hosts and Experiments, 10pt in from its
+  list is Appearance, Agents, Worktrees, Pi, Instructions, Skills, Hosts and Experiments, 10pt in from its
   edges with rows 2pt apart, and "Shepherd 0.1.0 · agent 0.87.1" under them ("pi 0.87.1" while
   the Pi page is open, as on the Mac). Beside it is the phone's own page (Agents is Defaults, Pi is
   Extensions) with its title in the bar, which says no
@@ -7311,7 +7507,7 @@ board as specified here, give or take what Known gaps and the departures table l
 **Partial** means some of it is built and the rest is marked **Not built yet** where it is
 specified; **Not built yet** means none of its surface exists. A board is judged on its own
 subject: the destinations sidebar that most macOS boards draw around it is NWNavigation's and
-NavNewThread's, the Settings nav's Instructions and Experiments rows are those boards', and a
+NavNewThread's, the Settings nav's Instructions, Skills and Experiments rows are those boards', and a
 full-window board's larger sizes and second lines give way to the component boards (Composer,
 questions, and menus), except SlashMenu's and ModelPicker's, which specify their menus.
 
@@ -7338,6 +7534,11 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | SettingsAdvanced | Settings › Advanced | Built |
 | SettingsInstructions | Settings › Wide pages, Instructions | Built |
 | SettingsInstructionsHosts | Settings › Instructions per host | Built |
+| SettingsSkills | Settings › Wide pages, Skills | Built |
+| SettingsSkillsBrowse | Settings › Browse skills.sh and Add from repo | Built |
+| SettingsSkillsSearch | Settings › Browse skills.sh and Add from repo | Built |
+| SettingsSkillsRepo | Settings › Browse skills.sh and Add from repo | Built |
+| SkillsStates | Settings › Skills; Browse skills.sh and Add from repo | Built |
 | SettingsExperiments | Settings › Experiments | Built |
 | NavNewThread | Sidebar destinations, Needs you, and Recents; New thread page | Partial |
 | NavMissions | Missions page; Missions | Not built yet |
@@ -7396,6 +7597,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | MobileSettings | iPhone: Settings | Partial |
 | MobileInstructions | iPhone: Instructions | Built |
 | MobileInstructionsEdit | iPhone: Instructions | Built |
+| MobileSkills | iPhone: Skills | Built |
 | MobileExperiments | iPhone: Experiments | Built |
 
 **iPadOS**

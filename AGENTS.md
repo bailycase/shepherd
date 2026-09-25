@@ -81,8 +81,11 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
   extensions, `remote-token`, `automation-runs.json`, Settings ▸ Instructions' files
-  (`instructions/`), and subagent artifacts. It wins over the edition's own folder
+  (`instructions/`), Settings ▸ Skills' state and git caches (`skills/`), and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
+- **`SHEPHERD_SKILLS_DIR`** moves the skills folder Settings ▸ Skills manages (default
+  `~/.agents/skills`, the folder pi reads skills from; docs/skills.md). Tests point it at a scratch
+  folder; pi itself always reads `~/.agents/skills`.
 - **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
   returns to it.
@@ -165,8 +168,8 @@ Tests come in tiers, and the switch is `--filter` on target names.
 `signal`, `chdir`, or `umask`, or change any other global that a concurrent test could observe.
 
 - When a test bundle loads, before any test runs, `Tests/ShepherdTestIsolation` (linked through
-  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `PI_CODING_AGENT_DIR`, and `ZDOTDIR` at a
-  scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
+  `ShepherdTestKit`) points `SHEPHERD_SUPPORT_DIR`, `SHEPHERD_SKILLS_DIR`, `PI_CODING_AGENT_DIR`,
+  and `ZDOTDIR` at a scratch root for that process, and clears the agent-only `SHEPHERD_*` variables a run started
   from a Shepherd agent inherits. It also puts a `bin/` first on `PATH`, holding stand-ins for
   `gh` and `pi` that refuse to run, and the scratch `ZDOTDIR`'s `.zshenv` and `.zlogin` keep it
   first in every zsh a test starts. Without them, a login shell from a minimal environment
@@ -262,7 +265,7 @@ drifts from the script fails before a release builds.
   (`orderBack`).
 - Never call `makeKey` or `orderFront`, and never post synthetic mouse or keyboard events.
 - Nothing touches the user's support directory, preferences, pi configuration or sessions,
-  `$TMPDIR/shepherd-drops`, or a running Shepherd.
+  `~/.agents/skills`, `$TMPDIR/shepherd-drops`, or a running Shepherd.
 
 **Which tier a change needs:**
 
@@ -350,6 +353,7 @@ Sources/
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
                        Instructions (Settings ▸ Instructions' files, history and requests),
                        Suggestions (Settings ▸ Experiments ▸ Suggested instructions),
+                       Skills (Settings ▸ Skills: installed skills, repositories, requests),
                        HostSettings (a host's settings as a client sees and changes them).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
@@ -363,8 +367,10 @@ Sources/
                        InstructionsPresentation (its host chips and rows), SuggestionsPresentation
                        (Experiments' words), ClientSettings (the iOS client's Settings models: a
                        host's settings, its instructions and suggestions over the remote
-                       protocol), HostSettingsPresentation, ShepherdLog. Shared with the iOS
-                       client.
+                       protocol), HostSettingsPresentation, ClientSkills (Settings ▸ Skills'
+                       model on every platform), SkillsText (SKILL.md's frontmatter, prompt
+                       tokens, repository references), SkillsPresentation (its words),
+                       SkillsDirectory (skills.sh), ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -374,7 +380,9 @@ Sources/
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file),
                        InstructionsStore (Settings ▸ Instructions' files and their history),
-                       SuggestionsStore (Suggested instructions: settings, waiting, added).
+                       SuggestionsStore (Suggested instructions: settings, waiting, added),
+                       SkillsStore (a host's skills in ~/.agents/skills; docs/skills.md),
+                       SkillsGit (the partial clones skills install from).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
@@ -384,7 +392,8 @@ Sources/
       +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
-      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings),
+      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings,
+      +Skills),
       RemoteAutomationSheet
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
@@ -401,9 +410,10 @@ Sources/
       QuitConfirmation (QuitDialog)
     CommandPalette, CommandPaletteView, PaletteContentSearch, Keybindings (KeybindingsStore)
     SettingsView, SettingsWindow, SettingsComponents, Settings{Appearance, Terminal, Agents,
-      Worktrees, Pi, Instructions, Remote, Keyboard, Advanced, Experiments}, AppSettings,
+      Worktrees, Pi, Instructions, Skills, Remote, Keyboard, Advanced, Experiments}, AppSettings,
       InstructionsModel (the Instructions page's files, drafts and sync), InstructionsEditor (its
-      NSTextView), SuggestionsModel (the Experiments page's suggestions)
+      NSTextView), SuggestionsModel (the Experiments page's suggestions), SkillsSheets (Browse
+      skills.sh, Add from repo)
     Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
       AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
@@ -421,7 +431,7 @@ Packages/
                                      AgentState, HexColor
                        Resources/Fonts  Geist and Geist Mono (SIL OFL)
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
-                                     Agents, Review, Dialogs, Automations
+                                     Agents, Review, Dialogs, Automations, Skills
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
@@ -580,6 +590,11 @@ variables are blanked.
   - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
     the pi packages its pi loads, and its Shepherd and pi versions; one change per request
     (`HostSettingChange`), applied as the Mac's own Settings would
+  - `skills` (`skills.v1`): Settings ▸ Skills on the host (fetch, look up a repository, install
+    from one or from files, on or off, how it's used, remove and restore, check for updates,
+    Update automatically), answered with the host's skills or the repository's. The server runs
+    them on its own queue (they fetch with git) and tells the host's page about each change
+    (docs/skills.md)
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
@@ -992,6 +1007,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   2000 lines of styled scrollback, the alt screen, cursor, and modes), not raw bytes. Cosmetic
   artifacts are acceptable; lost bytes are not. The watermark protocol prevents duplication and
   loss.
+- **Skills live in `~/.agents/skills`,** the folder pi reads skills from, not `~/.pi/agent`.
+  Settings ▸ Skills is the only thing that writes there; everything else it keeps (skills that
+  are off, just removed, git caches, records) is in the support directory's `skills/`.
 - **pi's trust prompt:** interactive pi asks to trust project `.pi/` directories, but `-e` loads
   our extensions without one. Never install anything into `~/.pi/agent/`. `PiSessionFile` writes
   only session files, which pi treats as data. Settings ▸ Instructions keeps its root files in
