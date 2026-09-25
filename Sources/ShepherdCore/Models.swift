@@ -104,6 +104,11 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The actual checkout path. Shepherd-created worktrees can derive it
     /// from repo + branch; imported worktrees may use any directory name.
     public var worktreePath: String?
+    /// The branch the agent's checkout is on and how many files differ from its HEAD, as the host
+    /// last read them (`git status`). Live state: refreshed by the host after the agent's tool
+    /// calls, turns, commits and focus, and broadcast so remote clients draw the same header.
+    /// Nil until the host has read it, when the directory is no repository, and from older hosts.
+    public var checkout: AgentCheckout?
 
     public init(
         id: AgentID = AgentID(),
@@ -118,7 +123,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         piSessionID: String? = nil,
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
-        worktreePath: String? = nil
+        worktreePath: String? = nil,
+        checkout: AgentCheckout? = nil
     ) {
         self.id = id
         self.name = name
@@ -133,6 +139,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.worktreeBranch = worktreeBranch
         self.worktreeBase = worktreeBase
         self.worktreePath = worktreePath
+        self.checkout = checkout
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -143,7 +150,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath, runtime
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, checkout, runtime
     }
 
     public init(from decoder: Decoder) throws {
@@ -166,6 +173,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
         worktreePath = try c.decodeIfPresent(String.self, forKey: .worktreePath)
+        // Absent before the header's branch chip, and from hosts that don't read it.
+        checkout = try c.decodeIfPresent(AgentCheckout.self, forKey: .checkout)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -185,9 +194,23 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(worktreeBranch, forKey: .worktreeBranch)
         try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
         try c.encodeIfPresent(worktreePath, forKey: .worktreePath)
+        try c.encodeIfPresent(checkout, forKey: .checkout)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
+    }
+}
+
+/// An agent's checkout as its host last read it: the branch (a short commit when detached) and
+/// the number of files that differ from HEAD, untracked ones included, so it matches the review's
+/// file count for the working tree.
+public struct AgentCheckout: Codable, Hashable, Sendable {
+    public var branch: String
+    public var changedFiles: Int
+
+    public init(branch: String, changedFiles: Int) {
+        self.branch = branch
+        self.changedFiles = changedFiles
     }
 }
 
