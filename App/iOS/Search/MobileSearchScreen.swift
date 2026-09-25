@@ -36,7 +36,8 @@ struct MobileSearchScreen: View {
         .task {
             if store.query.isEmpty, !initialQuery.isEmpty { store.query = initialQuery }
             store.attach(hosts)
-            focused = initialQuery.isEmpty
+            // Back from a thread it opened keeps the keyboard down over the results.
+            focused = store.query.isEmpty
         }
         .onDisappear { store.detach() }
     }
