@@ -39,6 +39,9 @@ struct SidebarListRow: Identifiable, Equatable {
     let leading: NWSidebarRow.Leading
     var accessory: NWSidebarRow.Accessory
     var selected = false
+    /// A remote thread whose host is not connected: its last known state, dimmed, and its menu
+    /// has nothing to offer until the host is back.
+    var offline = false
     /// The title, and the worktree's branch.
     let help: String
     /// "Fix the login, worktree, running, on horizon".
@@ -85,6 +88,8 @@ struct SidebarSource: Equatable {
         var name: String
         var state: ShepherdState
         var children: [AgentID: [ChildRun]]
+        /// Not connected: `state` is what it last sent this launch.
+        var offline = false
     }
 
     var local: ShepherdState
@@ -95,7 +100,7 @@ struct SidebarSource: Equatable {
     var statusSince: [AgentID: Date] = [:]
     /// Each automation's open run (`AutomationRun.isLive`).
     var openRuns: [AutomationID: AutomationRun] = [:]
-    /// Connected hosts, in configured order.
+    /// Every configured host, in configured order; one that is offline lists what it last sent.
     var hosts: [Host] = []
 }
 
@@ -119,8 +124,9 @@ enum SidebarDerivation {
         for (hostIndex, host) in source.hosts.enumerated() {
             let runs = Set(host.state.automations.compactMap(\.agentID))
             for (index, agent) in host.state.agents.enumerated() {
-                let children = host.children[agent.id] ?? []
-                let needsYou = agent.status == .blocked || children.contains(where: \.needsAttention)
+                let children = host.offline ? [] : host.children[agent.id] ?? []
+                // Nothing on an offline host can be answered, so none of it waits on you here.
+                let needsYou = !host.offline && (agent.status == .blocked || children.contains(where: \.needsAttention))
                 let row = remoteRow(agent, host: host, automation: runs.contains(agent.id), children: children, needsYou: needsYou)
                 entries.append((row, needsYou, agent.lastActiveAt ?? -1, hostIndex + 1, index))
             }
@@ -213,10 +219,12 @@ enum SidebarDerivation {
             accessory = .tag(host.name)
             word = AgentRow.statusWord(agent.status)
         }
+        let help = agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name
         return SidebarListRow(
             id: .remote(RemoteAgentRef(hostID: host.id, agentID: agent.id)), title: agent.name, leading: leading,
-            accessory: accessory, help: agent.worktreeBranch.map { "\(agent.name) · worktree \($0)" } ?? agent.name,
-            accessibilityLabel: label(agent, word: word, automation: automation, host: host.name),
+            accessory: accessory, offline: host.offline, help: host.offline ? "\(help) · \(host.name) is offline" : help,
+            accessibilityLabel: label(agent, word: word, automation: automation, host: host.name)
+                + (host.offline ? ", host offline" : ""),
             worktree: agent.worktreeBranch != nil, automation: nil, automationLive: false)
     }
 

@@ -89,6 +89,22 @@ struct SidebarRecentsTests {
         #expect(rows["remote"]?.accessibilityLabel == "remote, running, on horizon")
     }
 
+    /// A host that dropped keeps its threads in Recents as it last sent them, dimmed and tagged
+    /// (NavHosts' horizon rows); nothing there can be answered, so none of it needs you.
+    @Test func anOfflineHostsThreadsStayInRecentsDimmed() {
+        let asking = agent("asks", status: .blocked, at: 3, waiting: "Ship it?")
+        let lists = SidebarDerivation.lists(SidebarSource(
+            local: ShepherdState(spaces: [space], agents: [agent("here", at: 1)]),
+            hosts: [SidebarSource.Host(id: host, name: "horizon",
+                                       state: ShepherdState(spaces: [space], agents: [asking, agent("idle", at: 2)]),
+                                       children: [asking.id: [Fixture.child("r", state: "blocked", attention: true)]], offline: true)]))
+        #expect(lists.needsYou.isEmpty)
+        #expect(lists.recents.map(\.title) == ["asks", "idle", "here"])
+        #expect(lists.recents.map(\.offline) == [true, true, false])
+        #expect(lists.recents.first?.accessory == .tag("horizon"))
+        #expect(lists.recents.first?.accessibilityLabel == "asks, needs you, on horizon, host offline")
+    }
+
     /// An automation's run is in Recents with the bolt, and "done" once it settles.
     @Test func automationRunsAreRecentsWithTheirBolt() {
         let run = agent("Nightly", status: .done, at: 1)
