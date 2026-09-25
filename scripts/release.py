@@ -537,9 +537,18 @@ class AppStoreConnectError(Exception):
         self.transient = transient
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    # urllib carries the Authorization header across a redirect, even to another host.
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _urlopen(request: urllib.request.Request) -> tuple[int, bytes]:
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with _OPENER.open(request, timeout=60) as response:
             return response.status, response.read()
     except urllib.error.HTTPError as error:
         return error.code, error.read()
