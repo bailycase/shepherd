@@ -1543,8 +1543,8 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   VoiceOver reads the whole id
 - the thinking chip: a 13pt `lightbulb` in `textSecondary`, "Thinking", then the level
   ("Medium") in `textPrimary` medium, and the chevron. It is hidden when the model has no
-  reasoning control, as this Mac's catalog or the host's `listModels` says; an unknown model
-  keeps it.
+  reasoning control, as pi's levels for it (only Off), this Mac's catalog, or the host's
+  `listModels` says; an unknown model keeps it.
 - a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
   then the action, a 28pt circle: **Send** (a 14pt `arrow.up` in `textOnLantern` on `lantern`,
   at 35% until there is something to send) or **Stop** (a small rounded `stop.fill` square in

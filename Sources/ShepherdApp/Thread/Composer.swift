@@ -634,6 +634,7 @@ struct Composer: View {
 
     private var thinkingAvailable: Bool {
         store.thinking != nil && store.supportedActions.contains("setThinking") && reasoningAvailable
+            && NativeThinkingLevel.reasons(store.thinkingLevels)
     }
 
     /// Unknown models (a catalog that did not load) keep the chip.
