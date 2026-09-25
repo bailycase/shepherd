@@ -952,6 +952,13 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
+        case .agentQuery(let id, let agentID, .terminals):
+            // The server owns the sessions: answered here, without the GUI.
+            guard let terminals = terminalActivity(of: agentID) else {
+                send(.error(id: id, code: "no_such_agent", message: "Agent no longer exists on the host."), to: client)
+                return
+            }
+            send(.agentResult(id: id, result: .terminals(terminals)), to: client)
         case .agentQuery(let id, let agentID, let query):
             guard let handler = onRemoteAgentQuery else {
                 send(.error(id: id, code: "unavailable", message: "Agent inspection is unavailable on the host."), to: client)
@@ -2499,6 +2506,28 @@ public final class SessionServer: @unchecked Sendable {
     /// shell restore. Nil at a bare prompt.
     public func foregroundCommandLine(sessionID: SessionID) async -> String? {
         await enqueueValue { self.sessions[sessionID]?.pty?.foregroundCommandLine }
+    }
+
+    /// What each terminal pane of an agent's layout runs now, and how far its output has got
+    /// (the terminal panel's tab states, locally and over `RemoteAgentQuery.terminals`). The
+    /// agent's own pi pane is never among them. Empty for an unknown agent.
+    public func terminalActivity(agentID: AgentID) async -> [RemoteTerminalActivity] {
+        await enqueueValue { self.terminalActivity(of: agentID) ?? [] }
+    }
+
+    /// Server queue. Nil when the agent or its layout is gone.
+    private func terminalActivity(of agentID: AgentID) -> [RemoteTerminalActivity]? {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }),
+              let tab = store.state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }
+        return tab.layout.leaves.compactMap { leaf in
+            guard leaf.id != agent.paneID, leaf.agentID == nil, let sessionID = leaf.sessionID,
+                  let pty = sessions[sessionID]?.pty else { return nil }
+            // A login shell's argv[0] is "-zsh": the program is "zsh".
+            let process = pty.foregroundProcessName.map { $0.hasPrefix("-") ? String($0.dropFirst()) : $0 }
+            return RemoteTerminalActivity(paneID: leaf.id, sessionID: sessionID, process: process,
+                                          command: pty.runningCommandLine,
+                                          outputSequence: outputStates[sessionID]?.outputSequence ?? 0)
+        }
     }
 
     public func screenText(sessionID: SessionID) async -> [String]? {

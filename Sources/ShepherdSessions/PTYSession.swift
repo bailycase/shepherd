@@ -111,6 +111,15 @@ final class PTYSession: @unchecked Sendable {
         return parts.joined(separator: " ")
     }
 
+    /// The running command line while a command (not the shell itself) has the terminal: the
+    /// foreground process group is not the shell's. Nil at a prompt or on any failure.
+    var runningCommandLine: String? {
+        guard isAlive else { return nil }
+        let pgid = tcgetpgrp(masterFD)
+        guard pgid > 0, pgid != childPID else { return nil }
+        return foregroundCommandLine
+    }
+
     private static func argv0(pid: pid_t) -> String? {
         argv(pid: pid)?.first
     }

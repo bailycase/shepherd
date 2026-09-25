@@ -18,12 +18,16 @@ public struct NWPaneToggle: Equatable, Sendable {
     public let label: String
     public let shortcut: String?
     public let isOn: Bool
+    /// A running-blue dot on the button: something behind the closed pane changed (a terminal
+    /// printed while its panel was hidden).
+    public let badge: Bool
 
-    public init(systemImage: String, label: String, shortcut: String? = nil, isOn: Bool) {
+    public init(systemImage: String, label: String, shortcut: String? = nil, isOn: Bool, badge: Bool = false) {
         self.systemImage = systemImage
         self.label = label
         self.shortcut = shortcut
         self.isOn = isOn
+        self.badge = badge
     }
 }
 
@@ -94,9 +98,11 @@ public struct NWThreadToolbar<Options: View>: View {
                 ForEach(toggles, id: \.toggle.systemImage) { item in
                     Button(action: item.action) { Image(systemName: item.toggle.systemImage) }
                         .buttonStyle(.nwIcon(isOn: item.toggle.isOn))
+                        .overlay(alignment: .topTrailing) { NWToggleBadge(visible: item.toggle.badge) }
                         .nwAnimation(.hover, value: item.toggle.isOn)
                         .nwHelp(item.toggle.label, shortcut: item.toggle.shortcut)
                         .accessibilityLabel(item.toggle.label)
+                        .accessibilityValue(item.toggle.badge ? "New output" : "")
                         .accessibilityAddTraits(item.toggle.isOn ? .isSelected : [])
                         .nwTransition(.list, edge: .trailing)
                 }
@@ -112,6 +118,27 @@ public struct NWThreadToolbar<Options: View>: View {
         .frame(maxWidth: .infinity)
         .background(Color.nw.bgWindow)
         .overlay(alignment: .bottom) { NWHairline() }
+    }
+}
+
+/// The dot on a pane toggle (`NWPaneToggle.badge`), ringed in the toolbar's surface so it reads
+/// over the button's edge (TerminalToggle · hidden board).
+public struct NWToggleBadge: View {
+    let visible: Bool
+
+    public init(visible: Bool) { self.visible = visible }
+
+    public var body: some View {
+        if visible {
+            Circle()
+                .fill(Color.nw.running)
+                .frame(width: 8, height: 8)
+                .padding(NW.Space.xxs)
+                .background(Color.nw.bgWindow, in: Circle())
+                .offset(x: NW.Space.xxs, y: -NW.Space.xxs)
+                .allowsHitTesting(false)
+                .nwTransition(.content)
+        }
     }
 }
 

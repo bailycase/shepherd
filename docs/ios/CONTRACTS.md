@@ -31,6 +31,7 @@ Never commit a `project.pbxproj` change for a new file.
 | G. Commit | `Commit/`, `Fixtures/CommitFixtures.swift`, and the Commit… entry points in `Review/` | commit from review: the iPhone sheet, the iPad popover |
 | H. Automations | `Automations/`, `Fixtures/AutomationsFixtures.swift` | the Automations list (Home's `.automations` destination), the iPad list and detail, one automation with its runs, the form |
 | I. Windows | `Windows/`, `Fixtures/WindowsFixtures.swift` | several iPad windows: the scene, each window's navigator and restoration, Open in new window, Send to…, text dropped on a composer |
+| J. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminal panes: the iPad panel under a thread, the iPhone's full-screen panes, the key row |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
 track and are also the Mac's. A track may add to them (a component under
@@ -53,14 +54,15 @@ enum MobileRoute: Hashable, Codable {
     case search(SearchRoute)              // Search/SearchRoute.swift
     case settings(SettingsRoute)          // Settings/SettingsRoute.swift
     case automations(AutomationsRoute)    // Automations/AutomationsRoute.swift
+    case terminal(TerminalRoute)          // Terminal/TerminalRoute.swift
 }
 ```
 
 Each track owns its route enum and its destination view (`HomeDestination`,
 `NewThreadDestination`, `SubagentsDestination`, `ReviewDestination`, `SearchDestination`,
-`SettingsDestination`, `AutomationsDestination`) in its folder. **To add a screen, add a case to your own enum and handle
+`SettingsDestination`, `AutomationsDestination`, `TerminalDestination`) in its folder. **To add a screen, add a case to your own enum and handle
 it in your own destination.** The shell never changes. Keep your enum `Hashable` and `Codable`
-(fixtures name routes), and keep `thread` on `SubagentsRoute` and `ReviewRoute`: forgetting a
+(fixtures name routes), and keep `thread` on `SubagentsRoute`, `ReviewRoute` and `TerminalRoute`: forgetting a
 host closes the screens of its threads through it.
 
 Routes today:
@@ -81,6 +83,7 @@ Routes today:
 | `.settings(.root / .hosts / .host(UUID?) / .appearance)` | Settings, hosts, a host's form (nil adds one), appearance |
 | `.automations(.detail(host:automation:))` | one automation, its runs, Run now and Stop (iPhone, pushed; the iPad shows it beside the list) |
 | `.automations(.edit(host:automation:))` | the form: a new automation (both nil, or a host), or an existing one's fields (presented) |
+| `.terminal(.panes(AgentRef))` | a thread's terminal panes full screen (iPhone; iPad shows them in the panel) |
 
 Screens reach each other only through `MobileNavigator` (in the environment):
 
@@ -115,6 +118,8 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 
 `@Environment(\.mobileWindow)` is the window a view is in (its `MobileWindowSeed`).
 
+- The terminal track (`MobileTerminals`) owns every client's `onOutput` and `onSessionExited`,
+  wiring each new connection's client on its first attach: nothing else sets them.
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
   tied to one connection on `host.session`: it changes with every new connection.
 - Check capabilities with `host.supports(RemoteProtocol.…Capability)` before offering a feature.
@@ -149,6 +154,9 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | Open in new window | `Windows/WindowHooks.swift` (I) | the thread's options menu, the iPad sidebar's rows, the palette's rows and preview | `OpenInNewWindowButton(thread: AgentRef, prominent: Bool = false, before: (() -> Void)? = nil)` |
 | Send to… and drag | `Windows/WindowHooks.swift` (I) | each turn in `ThreadScreen` | `.turnTransfer(_ row: NativeThreadRow, thread: AgentRef)`, `SendToMenu(text:source:)` |
 | Text dropped on a composer | `Windows/WindowHooks.swift` (I) | `ThreadScreen`, on `ThreadComposer` | `.composerTextDrop(_ thread: AgentRef)` |
+| Terminal panel | `Terminal/TerminalPanelView.swift` (J) | `ThreadScreen`, on its content (the transcript with the composer) | `.threadTerminal(_ ref: AgentRef)`; adds nothing in compact width |
+| Terminal toggle | `Terminal/TerminalRoute.swift` (J) | `ThreadScreen`'s toolbar, iPad only | `TerminalToolbarButton(thread: AgentRef)` |
+| Terminal menu item | `Terminal/TerminalRoute.swift` (J) | the thread's options menu (menu items only) | `TerminalMenuItems(thread: AgentRef)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
 the owning track replaces the body. Keep the signature. A hook drawn inside a turn

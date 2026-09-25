@@ -19,7 +19,8 @@ struct KeyboardSettings: View {
         ("Agents", [.newAgent, .newAgentOptions, .newSpace, .renameAgent, .nextAgent, .previousAgent, .deleteAgent, .commandPalette]),
         ("Thread", [.stopAgent, .modelPicker, .previousTurn, .nextTurn, .inspectSubagent]),
         ("Window", [.toggleSidebar, .toggleRightPane]),
-        ("Panes", [.splitVertical, .splitHorizontal, .closePane, .focusNextPane, .focusPreviousPane]),
+        ("Panes", [.splitVertical, .splitHorizontal, .closePane, .focusNextPane, .focusPreviousPane,
+                   .toggleTerminal, .maximizeTerminal]),
     ]
 
     var body: some View {

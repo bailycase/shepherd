@@ -404,6 +404,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .worktreeSetup, .worktreeCommitCount, .worktreeDescription: RemoteProtocol.worktreeSetupCapability
         case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: RemoteProtocol.worktreeActionsCapability
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
+        case .terminals: RemoteProtocol.terminalActivityCapability
         default: RemoteProtocol.agentInspectionCapability
         }
     }
