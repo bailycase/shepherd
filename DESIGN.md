@@ -1104,8 +1104,8 @@ layout" above.
   delivered before its next turn", "to: <name> · not the parent", and a primary Steer button.
   A failed send keeps the draft.
 - **A finished run is read-only:** messages from the parent are captioned "from parent" ("10:58 ·
-  from parent" while hovered; your own steers are not), and `NWRunActions` (Re-run · Fork · Copy transcript) replaces the
-  composer. Remote agents have no Fork.
+  from parent" while hovered; your own steers are not), and `NWRunActions` (Re-run · Fork · Copy
+  transcript) replaces the composer. Remote agents have no Fork.
 
 **Review** (`ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
 
