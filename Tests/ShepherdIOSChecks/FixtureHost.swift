@@ -156,6 +156,10 @@ final class FixtureHost: @unchecked Sendable {
         case .detach, .input, .resize:
             mutation(Self.kind(request))
             return []
+        case .agentQuery(let id, _, .commit):
+            // Commit from review changes the host's repository.
+            mutation("agentQuery.commit")
+            return [.error(id: id, code: "fixture", message: refused)]
         case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
             return nil
         }

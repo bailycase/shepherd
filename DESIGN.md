@@ -1122,7 +1122,35 @@ layout" above.
 - **Review composer** (`NWReviewComposer`, at the foot): "Overall comment", "n inline",
   **Commit** (asks the agent to commit; not in PR mode) and **Request changes** (primary, ⌘⏎;
   sends the overall and inline comments as the agent's next turn, queued if it is mid-turn). The
-  review closes only once the send succeeds.
+  review closes only once the send succeeds. Where the host commits from review (a local review,
+  or a remote host with `review.commit.v1`), Commit becomes **Ask agent to commit** (ghost) beside
+  **Commit…** (secondary), which opens the commit sheet.
+- **Commit… sheet** (`ReviewCommitSheet`, 520pt, derived from the iPadCommit board; parts in
+  `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
+  - The message card (`NWCommitMessageEditor`, a raised card with a strong line): the summary in
+    semibold over the description, both editable, and a note: "Drafted from the diff · edit
+    anything" (a sparkle), "Written from the file list · edit anything", or a spinner with
+    "Drafting from the diff…". The plain message shows at once; the drafted one replaces it only
+    if nothing was typed meanwhile. Drafting follows Settings ▸ Worktrees ▸ Generate PR
+    descriptions and its model.
+  - "Files" with "n of m" and Select All/None, then a card of `NWCommitFileRow`s (a row-high
+    checkbox row: lantern checkbox, the name in mono, its directory in tertiary, the diff stat;
+    the whole row toggles). Every file starts ticked; the list scrolls past 232pt.
+  - A card of two `NWCommitOptionRow`s: **Push after commit** over the upstream in mono
+    ("origin/main", or "origin/feat · sets upstream"), and **Open a pull request instead** over
+    what it does ("pushes feat, opens a PR into main", or "creates shepherd/<slug>, opens a PR
+    into main" on the default branch). The PR option turns the push on and disables its switch;
+    an option with nowhere to go is disabled.
+  - An agent still working puts an attention banner above the message and a "Commit while it
+    works" checkbox that Commit waits for. A checkout the host refuses (detached HEAD, a merge or
+    rebase in progress, unmerged paths) is a failed banner over the disabled form; a refused
+    commit comes back as a failed "Nothing was committed" banner.
+  - Footer: why Commit waits (caption), then Ask Agent to Commit (ghost), Cancel (⎋), and the
+    primary: **Commit**, **Commit & push** or **Commit & open PR** (⏎).
+  - Running, the body becomes the host's steps as `NWChecklistRow`s (check the checkout, create
+    branch, commit n files, push to …, open a pull request into …) with each one's detail, a
+    failed "Stopped" banner saying what was kept, then Open Pull Request and Done. Close while it
+    runs leaves it running; Commit… shows it again. A finished commit reloads the review.
 - **Empty and error states:** "Loading the diff…"; "No changes" with "The working tree matches
   HEAD." (or "This branch matches its PR base."); a `failed` banner for an error.
 - **Keys:** j/k move between hunks, n/p between files, c comments, v marks viewed, ⌘⏎ sends, and
@@ -1278,7 +1306,8 @@ or `NSAlert` in the app:
   worktree agent's worktree and branch are kept), Cancel (⎋) and a destructive Delete agent. Only that button
   approves. The dialog closes by itself when the request lapses (cancelled, the asking agent
   gone, or two minutes without an answer).
-- Stop all (`StopAllDialog`), the review's Revert (`RevertFileDialog`), and a failed agent action
+- Stop all (`StopAllDialog`), the review's Revert (`RevertFileDialog`) and Commit…
+  (`ReviewCommitSheet`, described with the review pane), and a failed agent action
   (`ActionErrorDialog`)
 - Reset settings (`ResetSettingsDialog`)
 - Quitting while agents are working or waiting on you (`QuitDialog`), because quitting stops
@@ -1451,6 +1480,14 @@ components first), with these differences for touch:
   key row. The terminal is SwiftTerm's view on Night Watch's terminal palette in Geist Mono at
   the code size, following Dynamic Type to 20pt; the strip and key row stop growing at
   xxxLarge. Closing a tab asks first ("Its shell on <host> stops.").
+- **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
+  iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
+  (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &
+  push, with Ask agent to commit as a link under it and in the review's ••• menu). File rows are
+  44pt and show the name alone. On iPad, Commit… (the docked composer's, or the full-screen
+  toolbar's) opens a 400pt popover: the title, the message card on `bgWindow`, the files, the
+  options between hairlines, and Ask agent, Cancel and Commit & push. A host without
+  `review.commit.v1` keeps the single Commit that asks the agent.
 
 ## Verifying visuals
 
@@ -1464,7 +1501,7 @@ components first), with these differences for touch:
     a Deleted row and the Send menu, every row and stack state, and "From the queue" and
     "Steered" in the thread
   - subagent cards, the ledger, and the inspector
-  - the review pane
+  - the review pane, and its Commit… sheet in every state
   - the palette, the toolbar, the sidebar at each row density, and the window at its minimum
   - the terminal panel: two tabs under the thread, the first split, and maximized
   - every Settings page, sheet, and dialog

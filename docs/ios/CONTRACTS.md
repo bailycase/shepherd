@@ -28,7 +28,8 @@ Never commit a `project.pbxproj` change for a new file.
 | D. Subagents | `Subagents/`, `Fixtures/SubagentsFixtures.swift` | the cards in a thread, the list, one run's transcript and steer |
 | E. Review | `Review/`, `Fixtures/ReviewFixtures.swift`, the `DiffFile` move into a shared module | changes, the diff reader, comments, Request changes, Commit as a turn, Finalize, review docked on iPad |
 | F. Search & actions | `Search/`, `Fixtures/SearchFixtures.swift` | search across agents, rename and delete, the iPad ⌘K palette |
-| G. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminal panes: the iPad panel under a thread, the iPhone's full-screen panes, the key row |
+| G. Commit | `Commit/`, `Fixtures/CommitFixtures.swift`, and the Commit… entry points in `Review/` | commit from review: the iPhone sheet, the iPad popover |
+| H. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminal panes: the iPad panel under a thread, the iPhone's full-screen panes, the key row |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
 track and are also the Mac's. A track may add to them (a component under
@@ -71,6 +72,7 @@ Routes today:
 | `.subagents(.list(AgentRef) / .run(AgentRef, runID:))` | a thread's runs, one run |
 | `.review(.changes(AgentRef, file: String?) / .diff(AgentRef, path:))` | changes, one file's diff |
 | `.review(.finalize(AgentRef))` | Finalize a worktree agent (presented) |
+| `.review(.commit(AgentRef))` | Commit from review (presented on iPhone; iPad uses the popover) |
 | `.search(.search(query:))` | search (iPhone, pushed) |
 | `.search(.palette(query:))` | the ⌘K palette (iPad, presented) |
 | `.search(.rename(AgentRef) / .delete(AgentRef))` | rename, delete or Delete Worktree Agent (presented) |
@@ -125,14 +127,15 @@ is out in portrait too.
 | Subagent routes | `Subagents/SubagentsRoute.swift` (D) | the turn footer's "N subagents", the thread's options menu | `SubagentHooks.list(thread:) -> MobileRoute`, `SubagentHooks.run(thread:runID:) -> MobileRoute` |
 | Open review | `Review/ReviewRoute.swift` (E) | the changes card's Review and files, an edit line | `ReviewHooks.open(thread: AgentRef, file: String?, navigator: MobileNavigator)` |
 | Agent actions | `Search/AgentActionsMenu.swift` (F) | the thread's options menu (menu items only) | `AgentActionsMenu(thread: AgentRef)` |
+| Commit from review | `Commit/CommitHooks.swift` (G) | the changes' bar and ••• menu, the iPad composer and full-screen toolbar | `CommitHooks.available(host:) -> Bool`, `CommitHooks.open(thread:navigator:sizeClass:)`, `.commitPopover(ref:arrowEdge:)` on the iPad's Commit… |
 | Open search | `Search/SearchRoute.swift` (F) | Home, the iPad sidebar (the palette on iPad, search on iPhone) | `SearchHooks.open(query: String = "", navigator:)` |
 | ⌘K | `Search/SearchRoute.swift` (F) | `ShepherdIOSApp`'s scene | `.commands { SearchCommands(navigator:) }` |
 | Start a thread | `NewThread/NewThreadRoute.swift` (C) | Home, the iPad sidebar and overview | `NewThreadHooks.open(host: UUID? = nil, navigator:)` |
 | Home roots | `Home/` (A) | `PhoneShell`, `PadShell` | `HomeScreen()`, `PadSidebar()`, `PadOverview()` |
 | Settings root | `Settings/SettingsScreen.swift` (A) | `PhoneShell` | `SettingsScreen()` |
-| Terminal panel | `Terminal/TerminalPanelView.swift` (G) | `ThreadScreen`, on its content (the transcript with the composer) | `.threadTerminal(_ ref: AgentRef)`; adds nothing in compact width |
-| Terminal toggle | `Terminal/TerminalRoute.swift` (G) | `ThreadScreen`'s toolbar, iPad only | `TerminalToolbarButton(thread: AgentRef)` |
-| Terminal menu item | `Terminal/TerminalRoute.swift` (G) | the thread's options menu (menu items only) | `TerminalMenuItems(thread: AgentRef)` |
+| Terminal panel | `Terminal/TerminalPanelView.swift` (H) | `ThreadScreen`, on its content (the transcript with the composer) | `.threadTerminal(_ ref: AgentRef)`; adds nothing in compact width |
+| Terminal toggle | `Terminal/TerminalRoute.swift` (H) | `ThreadScreen`'s toolbar, iPad only | `TerminalToolbarButton(thread: AgentRef)` |
+| Terminal menu item | `Terminal/TerminalRoute.swift` (H) | the thread's options menu (menu items only) | `TerminalMenuItems(thread: AgentRef)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
 the owning track replaces the body. Keep the signature. A hook drawn inside a turn

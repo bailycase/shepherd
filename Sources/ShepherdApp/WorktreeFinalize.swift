@@ -457,21 +457,24 @@ struct WorktreePRDescriptionGenerator {
 
             \(context.stdout.prefix(32_000))
             """
-        let model = ProcessInfo.processInfo.environment["SHEPHERD_PR_DESCRIPTION_MODEL"]
-            .flatMap { $0.split(separator: ",").first.map(String.init) }
-            ?? Self.defaultModels[0]
-        let output = await runner(
-            "exec pi --print --no-session --no-tools --no-extensions --no-skills "
-                + "--no-prompt-templates --no-themes --no-context-files --no-approve --thinking low "
-                + "--model \(shellQuoted(model)) -- \(shellQuoted(prompt))",
-            worktree,
-            30
-        )
+        let output = await runner(Self.draftCommand(prompt: prompt), worktree, 30)
         let body = output.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         guard output.status == 0, !body.isEmpty else {
             return Result(body: fallbackBody, generated: false)
         }
         return Result(body: String(body.prefix(12_000)), generated: true)
+    }
+
+    /// `pi --print` with the prompt alone, on the drafting model (`SHEPHERD_PR_DESCRIPTION_MODEL`,
+    /// else the first default): no session, tools, extensions or context files. PR descriptions
+    /// and commit messages from review are drafted this way.
+    static func draftCommand(prompt: String) -> String {
+        let model = ProcessInfo.processInfo.environment["SHEPHERD_PR_DESCRIPTION_MODEL"]
+            .flatMap { $0.split(separator: ",").first.map(String.init) }
+            ?? defaultModels[0]
+        return "exec pi --print --no-session --no-tools --no-extensions --no-skills "
+            + "--no-prompt-templates --no-themes --no-context-files --no-approve --thinking low "
+            + "--model \(shellQuoted(model)) -- \(shellQuoted(prompt))"
     }
 
     static func applying(_ generated: String, replacing original: String, current: String) -> String {

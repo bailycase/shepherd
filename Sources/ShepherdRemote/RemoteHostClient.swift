@@ -398,18 +398,29 @@ public final class RemoteHostClient: @unchecked Sendable {
         legacyHost && code == NativeThreadCode.unavailable ? NativeThreadCode.starting : code
     }
 
-    public func agentQuery(agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
-        let capability: String
+    /// The capability a host must advertise before `query` is sent to it.
+    public static func capability(for query: RemoteAgentQuery) -> String {
         switch query {
-        case .worktreeSetup, .worktreeCommitCount, .worktreeDescription: capability = RemoteProtocol.worktreeSetupCapability
-        case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: capability = RemoteProtocol.worktreeActionsCapability
-        case .terminals: capability = RemoteProtocol.terminalActivityCapability
-        default: capability = RemoteProtocol.agentInspectionCapability
+        case .worktreeSetup, .worktreeCommitCount, .worktreeDescription: RemoteProtocol.worktreeSetupCapability
+        case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: RemoteProtocol.worktreeActionsCapability
+        case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
+        case .terminals: RemoteProtocol.terminalActivityCapability
+        default: RemoteProtocol.agentInspectionCapability
         }
+    }
+
+    public func agentQuery(agentID: AgentID, query: RemoteAgentQuery) async throws -> RemoteAgentResult {
+        let capability = Self.capability(for: query)
         guard capabilities.contains(capability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to inspect remote agents.")
         }
-        let reply = try await request(timeout: capability == RemoteProtocol.worktreeSetupCapability ? 150 : 30) { .agentQuery(id: $0, agentID: agentID, query: query) }
+        // The host's setup probes and a drafted commit message run a model or the network.
+        let slow: Bool
+        switch query {
+        case .worktreeSetup, .worktreeCommitCount, .worktreeDescription, .commitMessage: slow = true
+        default: slow = false
+        }
+        let reply = try await request(timeout: slow ? 150 : 30) { .agentQuery(id: $0, agentID: agentID, query: query) }
         if case .agentResult(_, let result) = reply { return result }
         if case .error(_, let code, let message) = reply {
             throw RemoteHostClientError.rejected(code: code, message: message)
