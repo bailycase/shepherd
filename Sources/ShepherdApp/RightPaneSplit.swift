@@ -2,13 +2,20 @@ import SwiftUI
 import ShepherdCore
 import ShepherdUI
 
-/// Which subagent each agent's right pane is inspecting, and the pane's width. Device-local
-/// view state: the width persists, the selection does not.
+/// Each thread's side pane (DESIGN.md › Side pane): whether it is open, its tab, what pi opened
+/// in it that you have not looked at, which subagent it inspects, and the pane's width.
+/// Device-local view state: the width persists, the rest does not.
 @MainActor @Observable
 final class RightPaneState {
     static let widthKey = "shepherd.rightPaneWidth"
     var runByAgent: [AgentID: String] = [:]
     var remoteRuns: [RemoteAgentRef: String] = [:]
+    /// Threads whose pane shows its tabs (an inspected run may cover them).
+    var open: Set<SidePaneOwner> = []
+    /// Each pane's tab, while it is not the first.
+    var tabs: [SidePaneOwner: SidePaneTab] = [:]
+    /// Tabs pi opened something in since you last showed them.
+    var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
     /// Zero until the user resizes: the pane then takes the 600pt default.
     var width: CGFloat {
         didSet { UserDefaults.standard.set(Double(width), forKey: Self.widthKey) }
@@ -22,16 +29,42 @@ final class RightPaneState {
     func toggle(agentID: AgentID, runID: String) {
         if runByAgent[agentID] == runID { runByAgent.removeValue(forKey: agentID) } else { runByAgent[agentID] = runID }
     }
+
+    func tab(for owner: SidePaneOwner) -> SidePaneTab { tabs[owner] ?? SidePaneTab.allCases[0] }
+
+    func run(for owner: SidePaneOwner) -> String? {
+        switch owner {
+        case .local(let id): runByAgent[id]
+        case .remote(let ref): remoteRuns[ref]
+        }
+    }
+
+    /// pi opened something in `tab`.
+    func addNews(_ owner: SidePaneOwner, _ tab: SidePaneTab) {
+        if news[owner]?.contains(tab) != true { news[owner, default: []].insert(tab) }
+    }
+
+    func clearNews(_ owner: SidePaneOwner, _ tab: SidePaneTab) {
+        guard news[owner]?.contains(tab) == true else { return }
+        news[owner]?.remove(tab)
+        if news[owner]?.isEmpty == true { news.removeValue(forKey: owner) }
+    }
+
+    /// The thread is gone: its pane with it.
+    func forget(_ owner: SidePaneOwner) {
+        if open.contains(owner) { open.remove(owner) }
+        if tabs[owner] != nil { tabs.removeValue(forKey: owner) }
+        if news[owner] != nil { news.removeValue(forKey: owner) }
+    }
 }
 
-/// The agent's layout (its thread and any terminal panes) on the left, the right pane (inspector
-/// or review) beside it (Navigation board: 480–50%, 600 default, the drag handle on its left
-/// edge). In a column too narrow to keep the layout at 400pt, the pane overlays it from the
+/// The agent's layout (its thread and any terminal panes) on the left, the side pane (its tabs, or
+/// an inspected subagent) beside it (PaneStates: 380pt at least, 600 default, at most half the
+/// column, the drag handle on its left edge). In a column too narrow to keep the layout at 400pt, the pane overlays it from the
 /// trailing edge instead of squeezing it (`ShellLayout`).
 ///
 /// The pane slides in from the trailing edge and back out (`.pane`; a cross-fade under Reduce
-/// Motion) whichever path opens it: ⇧⌘B, ⌘I, the toolbar, a thread link, an agent's
-/// `review_diff`, a finished review. Beside a docked pane the thread takes its new width at
+/// Motion) whichever path opens it: ⇧⌘B, ⌃1, ⌘I, the header's button, a thread link. Beside a docked pane the thread takes its new width at
 /// once, as the slide starts: a long thread relaid out on every frame of the slide drops frames.
 /// Docked or overlaid, nothing in the thread rides the slide.
 /// Resizing (the handle, a window resize, a docked ⇄ overlaid flip) never animates.
@@ -103,13 +136,15 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
     }
 }
 
-/// What the right pane shows: a run of the subagent inspector, or one review session.
+/// What the side pane shows: a run of the subagent inspector, or a tab (Changes with its review
+/// session).
 enum RightPaneShowing: Hashable {
     case inspector(runID: String)
-    case review(UUID)
+    /// A tab, keyed by what it shows (the Changes tab's review).
+    case tab(SidePaneTab, UUID?)
 }
 
-/// The right pane's content. The inspector and the review share the slot: when one replaces the
+/// The side pane's content. The inspector and the tabs share the slot: when one replaces the
 /// other, the inspector steps to another run, or a new review replaces one, the content
 /// cross-fades (`.content`) while the pane itself stays put. Give each child
 /// `.nwTransition(.content)` and an identity that follows `showing`.
