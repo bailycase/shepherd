@@ -159,6 +159,9 @@ struct TerminalPanelView: View {
         } message: {
             Text(closeConfirmation?.message ?? "")
         }
+        .onChange(of: terminals.cannedClose, initial: true) { _, pane in
+            if let pane, let tab = model.tab(for: pane.rawValue) { closing = tab }
+        }
     }
 
     /// No tabs yet: the agent's layout has only its thread.

@@ -51,6 +51,9 @@ final class MobileTerminals {
     /// Fixtures only: sessions show these screens and never attach, so a screenshot neither
     /// resizes nor types into a host's terminal.
     @ObservationIgnored var cannedScreens: [SessionID: Data]?
+    /// Fixtures only: the tab whose close confirmation shows, as if its × was tapped. Nothing
+    /// else sets it, so it never changes in the app.
+    var cannedClose: PaneID?
 
     @ObservationIgnored private var sessions: [SessionKey: MobileTerminalSession] = [:]
     @ObservationIgnored private var wired: [UUID: ObjectIdentifier] = [:]
