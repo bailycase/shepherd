@@ -53,6 +53,10 @@ struct AgentTurnActions {
     var reviewChanges: (() -> Void)?
     /// Open the turn's first subagent (the footer's "3 subagents").
     var subagents: (() -> Void)?
+    /// The changes card of a turn the host recorded: Review scoped to it, Undo and Redo.
+    var reviewTurn: ((UUID) -> Void)?
+    var undo: ((UUID) -> Void)?
+    var redo: ((UUID) -> Void)?
 }
 
 /// One agent turn (MobileThread board): thinking, prose, work groups, subagent cards where their
@@ -67,12 +71,18 @@ struct AgentTurnView: View, Equatable {
     var startedAt: Double?
     /// The streaming turn's tail row ("Working…").
     var working: String?
+    /// The "Edited N files" card, once the turn is over.
+    var changes: NativeChangesCard?
+    /// Its Undo or Redo is on its way to the host.
+    var changesBusy = false
     var actions = AgentTurnActions()
     @State private var openThinking: Set<String> = []
 
     static func == (lhs: AgentTurnView, rhs: AgentTurnView) -> Bool {
         lhs.thread == rhs.thread && lhs.presentation == rhs.presentation && lhs.live == rhs.live
             && lhs.subagents == rhs.subagents && lhs.startedAt == rhs.startedAt && lhs.working == rhs.working
+            && lhs.changes == rhs.changes && lhs.changesBusy == rhs.changesBusy
+            && (lhs.actions.undo == nil) == (rhs.actions.undo == nil)
             && (lhs.actions.retry == nil) == (rhs.actions.retry == nil)
             && (lhs.actions.review == nil) == (rhs.actions.review == nil)
             && (lhs.actions.reviewChanges == nil) == (rhs.actions.reviewChanges == nil)
@@ -92,7 +102,7 @@ struct AgentTurnView: View, Equatable {
             }
             if let working { NWWorkingRow(working) }
             if !live, !presentation.items.isEmpty {
-                if let changes = presentation.changes { changesCard(changes) }
+                if let changes { changesCard(changes) }
                 footer
             }
         }
@@ -131,15 +141,24 @@ struct AgentTurnView: View, Equatable {
         }
     }
 
-    private func changesCard(_ changes: NativeTurnChanges) -> some View {
-        NWAdaptiveChangesCard(
-            title: changes.title, added: changes.added, removed: changes.removed,
-            files: changes.files.map {
-                NWChangedFile(path: $0.path, directory: $0.directory, name: $0.name,
-                              status: NWChangedFile.Status(rawValue: $0.status.rawValue) ?? .modified, added: $0.added, removed: $0.removed)
+    /// The "Edited N files" card (ChangesStates › ChangesCard): Undo while the host can put the
+    /// turn's edits back, Redo once undone, Review scoped to the turn, a row opening its file.
+    private func changesCard(_ card: NativeChangesCard) -> some View {
+        let turnID = card.turnID
+        let undo = turnID.flatMap { id in actions.undo.map { undo in { undo(id) } } }
+        let redo = turnID.flatMap { id in actions.redo.map { redo in { redo(id) } } }
+        let review = turnID.flatMap { id in actions.reviewTurn.map { review in { review(id) } } } ?? actions.reviewChanges
+        return NWTurnChangesCard(
+            title: card.title, added: card.added, removed: card.removed,
+            files: card.rows.map {
+                NWTurnChangesCard.File(path: $0.path, directory: $0.directory, name: $0.name, isNew: $0.isNew, added: $0.added, removed: $0.removed)
             },
-            onReview: actions.reviewChanges,
+            more: card.moreText, undone: card.state == .undone, busy: changesBusy,
+            onUndo: card.state == .ready && card.canUndo ? undo : nil,
+            onRedo: card.state == .undone && card.canRedo ? redo : nil,
+            onReview: review,
             onOpen: actions.review)
+        .equatable()
     }
 
     /// Copy and Retry, then "2:44 PM · 3m 12s · 6 tool calls", and "3 subagents" as a link.
