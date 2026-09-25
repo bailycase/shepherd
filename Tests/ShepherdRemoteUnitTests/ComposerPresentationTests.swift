@@ -149,6 +149,23 @@ struct ComposerPresentationTests {
         #expect(NativeThinkingLevel.title(level) == title)
     }
 
+    /// The thinking chip goes with a level pi can set, unless the host says the thread's model
+    /// takes none; before the catalog arrives, or from an older host, it stays.
+    @Test(arguments: [
+        ("off", ["setThinking"], "qa/plain", true, false),
+        ("medium", ["setThinking"], "qa/deep", true, true),
+        ("medium", ["setThinking"], "qa/plain", false, true),
+        ("medium", ["setThinking"], nil, true, true),
+        (nil, ["setThinking"], "qa/deep", true, false),
+        ("medium", [], "qa/deep", true, false),
+    ] as [(String?, Set<String>, String?, Bool, Bool)])
+    func theThinkingChipGoesOnlyWithAModelThatTakesALevel(thinking: String?, actions: Set<String>, model: String?,
+                                                          catalogLoaded: Bool, offered: Bool) {
+        let listing = ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"])
+        #expect(NativeThinkingLevel.offered(thinking: thinking, supportedActions: actions, model: model,
+                                            listing: catalogLoaded ? listing : nil) == offered)
+    }
+
     // MARK: Questions
 
     @Test func optionsAreNumberedAndKeepTheValueAsOffered() {

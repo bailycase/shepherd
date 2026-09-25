@@ -86,12 +86,53 @@ struct TurnOutcomeTests {
             s.running && s.provisional.contains { $0.toolCallID != nil && $0.status == "running" }
         }
         _ = try await pi.request(.abort(expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID()))
-        _ = try await pi.snapshot("the run to end in an error reply") { s in
-            !s.running && s.messages.last { $0.role == "assistant" }?.status == "error"
+        _ = try await pi.snapshot("the run to end in its reply to the stop") { s in
+            !s.running && s.messages.last { $0.role == "assistant" }?.status == "aborted"
         }
 
         try agent.report(.done)
         try await eventually("done") { !agent.dones().isEmpty }
         #expect(agent.dones() == [nil])
+    }
+
+    /// The thread says the same: the call the Stop interrupted and pi's error reply to it read as
+    /// stopped (`aborted`), live and once they are history, and the reply carries no error text.
+    @Test func aStoppedTurnReadsAsStoppedInTheThread() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let agent = try await launch(h)
+        defer { agent.status.closeConnection() }
+        let pi = agent.pi
+        _ = try await pi.send("tools:1 build", from: try await pi.snapshot())
+        let running = try await pi.snapshot("the tool call to run") { s in
+            s.running && s.provisional.contains { $0.toolCallID != nil && $0.status == "running" }
+        }
+        let callID = try #require(running.provisional.first { $0.toolCallID != nil }?.toolCallID)
+        _ = try await pi.request(.abort(expectedSessionID: running.piSessionID, generation: running.generation, operationID: UUID()))
+        let settled = try await pi.snapshot("the stopped run to settle into history") { s in
+            !s.running && s.provisional.isEmpty && s.messages.contains { $0.toolCallID == callID }
+        }
+        let call = try #require(settled.messages.first { $0.toolCallID == callID })
+        #expect(call.status == "aborted" && call.isError == true)
+        let reply = try #require(settled.messages.last { $0.role == "assistant" })
+        #expect(reply.status == "aborted")
+        #expect(reply.blocks.allSatisfy { !$0.text.contains("aborted") })
+        #expect(!settled.messages.contains { $0.status == "error" })
+    }
+
+    /// A provider error in a turn nobody stopped is still an error.
+    @Test func anUnstoppedFailureStaysAnError() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let agent = try await launch(h)
+        defer { agent.status.closeConnection() }
+        let pi = agent.pi
+        _ = try await pi.send("provider-error", from: try await pi.snapshot())
+        _ = try await pi.snapshot("the failing turn to start") { $0.running }
+        FileManager.default.createFile(atPath: h.dir.appendingPathComponent("fail-turn").path, contents: nil)
+        let settled = try await pi.snapshot("the failed turn to settle") { s in
+            !s.running && s.messages.last { $0.role == "assistant" }?.status == "error"
+        }
+        #expect(settled.messages.last { $0.role == "assistant" }?.blocks.map(\.text) == ["529 overloaded"])
     }
 }

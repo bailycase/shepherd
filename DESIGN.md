@@ -602,8 +602,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
     remote agent's space reads "⌁ host")
   - a spacer
   - counters in micro tertiary: "18 turns · 46k ctx · 3 subagents · 1.6m tok". The turn count
-    appears once the whole history is loaded, and the tooltip has the context window, session
-    tokens, and cost.
+    appears once the whole history is loaded, and the context once pi has measured it (never
+    "0 ctx": a first turn has none until pi's first reply). The tooltip has the context window,
+    session tokens, and cost.
   - the pane toggles, lantern-tinted while their pane is open: subagents
     (`arrow.triangle.branch`, ⌘I, only when the thread has subagents) and review
     (`plus.forwardslash.minus`, ⇧⌘B)
@@ -654,7 +655,10 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   Shepherd on the host", "Some earlier output is clipped".
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
   ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
-  state, a resuming agent's history), and a message sent meanwhile waits for pi. Nothing says
+  state, or its opening prompt as a message pi has not read yet, at 70%; a resuming agent's
+  history), and a message sent meanwhile waits for pi. The opening prompt is the row pi's first
+  snapshot carries, so it stays put when pi answers and when pi starts the turn; the device that
+  created the agent draws it, and every other viewer sees it in that first snapshot. Nothing says
   pi is starting unless pi is slow: past two seconds (`AppLayout.startingIndicatorDelay`), well
   beyond a normal start (pi answers about 0.8 s after ⌘N, about 1 s after a relaunch), or past
   half a second (`AppLayout.blankStartingIndicatorDelay`) while the thread has nothing to show
@@ -726,6 +730,10 @@ the turn has finished, the changes card and the footer end it. A running turn ha
 - **Errors** (`NWTurnError`): a failed provider request, on `failedTint` with radius 6: a
   triangle, the message ("Model overloaded — the turn stopped after 6 tool calls."), "×n" when
   repeated, and Retry when it ended the turn. Tool failures stay in their activity lines.
+- **Stopped:** a turn the user stopped is not an error. It ends in the note "Stopped", and the
+  call Stop interrupted keeps its line's usual colors with "stopped" in its meta ("Ran a
+  command · sleep 40 · stopped · 7.5s"), standing alone like a failure, so the word stays
+  visible.
 - **Working row** (`NWWorkingRow`): while the agent runs, the thread ends in one row with a
   spinner and what it is doing in italic 12: "Working…" under a live activity line, "Running
   <tool>…", or "Thinking…". Live thinking carries its own spinner instead, and a pending
@@ -749,7 +757,8 @@ row) shows them.
   details reads it (an agent turn's footer; a user turn, which is just its bubbles), so the
   pointer crossing a thread never re-renders an agent turn's parts, other turns, or the thread.
 - The subagent inspector's transcript follows the same rule; there "from parent" always shows
-  under a message from the parent, and its time fades in beside it.
+  under a message from the parent (never under your own steers and answers), and its time fades
+  in beside it.
 
 **Work groups** (`WorkGroupView` in `Thread/ThreadTools.swift`, `nativeWorkGroup`). A stretch's
 activity lines (between prose, notes, errors and subagent cards) form one group, so a long turn
@@ -832,7 +841,7 @@ other tools merge only with the same tool.
 - "/ commands" (only when pi reports commands)
 - the model chip (the model in mono 12, with a chevron when it can change)
 - the thinking chip (`lightbulb`, "Thinking", the level; hidden when the model has no reasoning
-  control)
+  control, as this Mac's catalog or the host's `listModels` says; an unknown model keeps it)
 - a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
   then the action, a 28pt circle: **Send** (an arrow on `lantern`, at 35% until there is
   something to send) or **Stop** (a square on `failed`). While pi works with a draft, Stop steps
@@ -1033,8 +1042,9 @@ next model request both draw as `queued`).
     the name, a mono model tag, and the state pill. In a narrow thread the tags give way (the
     model first) before the name truncates.
   - **One mono 11 `textSecondary` line**, then per state:
-    - **Running:** the last call ("edit ThreadView.swift"), and a 4pt bar with its percent for
-      the context window used. The card never grows while it runs.
+    - **Running:** the call in flight, else the last one ("edit ThreadView.swift", "bash swift
+      test"), and a 4pt bar with its percent for the context window used. The card never grows
+      while it runs.
     - **Queued / Paused:** an outlined pill ("Queued" or "Paused") and "waiting to start" or
       "paused before its next model request".
     - **Needs you:** "waiting on your answer · 2m" (the wait counts from the child's
@@ -1095,15 +1105,17 @@ layout" above.
   files as `running` links (with their diff stat) that open the review pane at the file, then
   "n more files".
 - **The run's own transcript**, drawn with the thread's components one step smaller
-  (`nwProseSize` `.small`), times and footers on hover as in the thread. It follows live, with
-  "n earlier turns · Show all" and "Following live" (or "Reading earlier output") beneath.
-  Scrolling up stops following.
+  (`nwProseSize` `.small`), times and footers on hover as in the thread. A live one ends in a
+  working row: the call in flight ("Running bash swift build…"; its session file holds only
+  finished calls), "Pause requested", or "Thinking…". It follows live, with "n earlier turns ·
+  Show all" and "Following live" (or "Reading earlier output") beneath. Scrolling up stops
+  following.
 - **A Steer composer** while the run is live: the composer card's anatomy, "Steer <name> —
   delivered before its next turn", "to: <name> · not the parent", and a primary Steer button.
   A failed send keeps the draft.
 - **A finished run is read-only:** messages from the parent are captioned "from parent" ("10:58 ·
-  from parent" while hovered), and `NWRunActions` (Re-run · Fork · Copy transcript) replaces the
-  composer. Remote agents have no Fork.
+  from parent" while hovered; your own steers are not), and `NWRunActions` (Re-run · Fork · Copy
+  transcript) replaces the composer. Remote agents have no Fork.
 
 **Review** (`ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):
 
@@ -1136,19 +1148,20 @@ layout" above.
   (`NWInlineComment`) is a raised card with a 16pt lantern avatar, "You", "line 33 · just now",
   and Edit / Delete on hover.
 - **Review composer** (`NWReviewComposer`, at the foot): "Overall comment", "n inline",
-  **Commit** (asks the agent to commit; not in PR mode) and **Request changes** (primary, ⌘⏎;
-  sends the overall and inline comments as the agent's next turn, queued if it is mid-turn). The
-  review closes only once the send succeeds. Where the host commits from review (a local review,
-  or a remote host with `review.commit.v1`), Commit becomes **Ask agent to commit** (ghost) beside
-  **Commit…** (secondary), which opens the commit sheet.
+  **Commit** (asks the agent to commit, naming every file under review; not in PR mode) and
+  **Request changes** (primary, ⌘⏎; sends the overall and inline comments as the agent's next
+  turn, queued if it is mid-turn). The review closes only once the send succeeds. Where the
+  host commits from review (a local review, or a remote host with `review.commit.v1`), Commit
+  becomes **Ask agent to commit** (ghost) beside **Commit…** (secondary), which opens the commit
+  sheet.
 - **Commit… sheet** (`ReviewCommitSheet`, 520pt, derived from the iPadCommit board; parts in
   `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
   - The message card (`NWCommitMessageEditor`, a raised card with a strong line): the summary in
     semibold over the description, both editable, and a note: "Drafted from the diff · edit
     anything" (a sparkle), "Written from the file list · edit anything", or a spinner with
-    "Drafting from the diff…". The plain message shows at once; the drafted one replaces it only
-    if nothing was typed meanwhile. Drafting follows Settings ▸ Worktrees ▸ Generate PR
-    descriptions and its model.
+    "Drafting from the diff…". The plain message shows at once and follows the ticked files
+    until someone edits it; the drafted one replaces it only if nothing was typed meanwhile.
+    Drafting follows Settings ▸ Worktrees ▸ Generate PR descriptions and its model.
   - "Files" with "n of m" and Select All/None, then a card of `NWCommitFileRow`s (a row-high
     checkbox row: lantern checkbox, the name in mono, its directory in tertiary, the diff stat;
     the whole row toggles). Every file starts ticked; the list scrolls past 232pt.
@@ -1239,7 +1252,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
 - **Sections** (mono caps headers): Commands, This thread, Subagents, and, once there is a query
   (or in the Agents scope), Agents, Spaces, and Found in conversations. Conversation search
   needs at least 3 characters, runs off the main actor after a short pause, and reads the last
-  512 KB of each agent's pi session; its rows show a snippet with the match in bold.
+  512 KB of each agent's pi session. It matches only what was said, the user's and the
+  assistant's text, never pi's system prompt, tool definitions, thinking, tool calls or results;
+  its rows show a snippet of that text with the match in bold. A host answers a remote client's
+  conversation search the same way.
 - **Rows** (`NWPaletteRow`, the sidebar's row height): a stroke icon, the label, dim context, and
   the real shortcut as keycaps. The highlight is `runningTint` with a running icon. Subagent rows
   wear their run's state color.
@@ -1306,6 +1322,11 @@ worktree sheet) and every confirmation share one anatomy, `NWDialog` (460pt by d
   `dangerFill` button and never the default: destroying things takes a click.
 - anything a destructive action would destroy is called out in an attention banner
   (`DialogBanner`); an error is a `failed` banner. Never a system alert.
+
+New Agent's Model row takes "provider/id" (pi's default, or Settings' default, prefilled in that
+form), and its Thinking row follows the composer's thinking chip: it shows only while the chosen
+model (blank: the target's default) takes a thinking level, as the target's catalog says. A model
+the catalog does not know, or a catalog still loading, keeps it.
 
 `DialogSheet` and `DialogAction` (`DialogSheet.swift`) build a confirmation from that anatomy.
 `AppDialogs` (`AppDialogs.swift`) presents the view model's sheets (creation, rename, delete,

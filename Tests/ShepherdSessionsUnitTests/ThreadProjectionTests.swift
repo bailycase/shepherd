@@ -70,6 +70,14 @@ struct ThreadProjectionTests {
         #expect(row.status == "error")
     }
 
+    /// A stopped run's "Request was aborted" is no reply: its `aborted` status says it all.
+    @Test func aStoppedReplyCarriesNoErrorText() throws {
+        let message: RPCMessage = try decode(#"{"role":"assistant","content":[{"type":"text","text":"Half"}],"stopReason":"aborted","errorMessage":"Request was aborted"}"#)
+        let row = RPCThreadState.project(entryID: "m:0", message: message)
+        #expect(row.blocks == [NativeThreadBlock(kind: .text, text: "Half")])
+        #expect(row.status == "aborted")
+    }
+
     @Test func aMissingRoleProjectsAsCustom() throws {
         let message: RPCMessage = try decode(#"{"content":"note"}"#)
         #expect(RPCThreadState.project(entryID: "m:0", message: message).role == "custom")
@@ -390,6 +398,27 @@ struct ThreadProjectionTests {
     @Test(arguments: [nil, JSONValue.string("not a list"), .array([.object(["name": .string("")]), .number(3)])])
     func malformedCommandListsProjectToNothing(value: JSONValue?) {
         #expect(RPCThreadState.projectCommands(value).isEmpty)
+    }
+
+    // MARK: - projectStats
+
+    @Test func statsCarryTheContextTheTokensAndTheCost() throws {
+        let data: JSONValue = try decode(#"""
+        {"contextUsage":{"tokens":8123,"contextWindow":1000000,"percent":0.81},"tokens":{"total":20400},"cost":0.012}
+        """#)
+        #expect(RPCThreadState.projectStats(data) == NativeThreadStats(
+            contextTokens: 8123, contextWindow: 1_000_000, contextPercent: 0.81, totalTokens: 20400, cost: 0.012))
+    }
+
+    /// pi estimates the context from the thread's messages: before its first reply that is 0,
+    /// which is no figure at all.
+    @Test(arguments: [#"{"tokens":0,"contextWindow":200000,"percent":0}"#, #"{"tokens":null,"contextWindow":200000,"percent":null}"#])
+    func aContextPiHasNotMeasuredIsUnknown(usage: String) throws {
+        let data: JSONValue = try decode(#"{"contextUsage":\#(usage),"tokens":{"total":0}}"#)
+        let stats = RPCThreadState.projectStats(data)
+        #expect(stats.contextTokens == nil)
+        #expect(stats.contextPercent == nil)
+        #expect(stats.contextWindow == 200_000)
     }
 
     // MARK: - Widgets

@@ -29,6 +29,8 @@ final class ComposerState {
     var editText = ""
     /// The model picker sheet is open.
     var choosingModel = false
+    /// The host's model catalog, once asked: whether the thread's model takes a thinking level.
+    private(set) var models: ModelListing?
     /// The commands a "/…" draft matches.
     private(set) var matches: NativeSlashMatches?
     @ObservationIgnored private var undo: [NativeQueueUndo] = []
@@ -138,6 +140,14 @@ final class ComposerState {
         NativeQueueRules.queuedIndex(of: id, in: queue)
     }
 
+    // MARK: Models
+
+    /// Asks the host's catalog (once per connection, `ComposerStates`) for the thinking chip.
+    func loadModels(host: MobileHost?) async {
+        guard let host, let listing = await ComposerStates.shared.listing(for: host) else { return }
+        if listing != models { models = listing }
+    }
+
     // MARK: Slash commands
 
     func update(draft: String, commands: [NativeCommand]) {
@@ -152,7 +162,7 @@ final class ComposerStates {
     static let shared = ComposerStates()
     private var states: [AgentRef: ComposerState] = [:]
     /// Each host's model catalog (`listModels`), asked once per connection.
-    private var models: [UUID: (session: UUID?, ids: [String])] = [:]
+    private var models: [UUID: (session: UUID?, listing: ModelListing)] = [:]
 
     func state(for ref: AgentRef) -> ComposerState {
         if let state = states[ref] { return state }
@@ -161,12 +171,22 @@ final class ComposerStates {
         return state
     }
 
-    func models(host: UUID, session: UUID?) -> [String]? {
+    func models(host: UUID, session: UUID?) -> ModelListing? {
         guard let cached = models[host], cached.session == session else { return nil }
-        return cached.ids
+        return cached.listing
     }
 
-    func setModels(_ ids: [String], host: UUID, session: UUID?) {
-        models[host] = (session, ids)
+    func setModels(_ listing: ModelListing, host: UUID, session: UUID?) {
+        models[host] = (session, listing)
+    }
+
+    /// The host's catalog for this connection, asked when not yet known; nil while the host is
+    /// offline or when it cannot answer.
+    func listing(for host: MobileHost) async -> ModelListing? {
+        if let cached = models(host: host.id, session: host.session) { return cached }
+        let session = host.session
+        guard let client = host.connectedClient, let listing = try? await client.listModels() else { return nil }
+        setModels(listing, host: host.id, session: session)
+        return listing
     }
 }

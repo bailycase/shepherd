@@ -267,7 +267,8 @@ struct RemoteReplyTests {
         .output(sessionID: S.session, data: Data("screen bytes \u{1B}[31m".utf8)),
         .sessionExited(sessionID: S.session, code: 0),
         .dirListing(id: 8, path: "/Users/demo", parent: "/Users", dirs: ["Developer", "Documents"]),
-        .models(id: 10, models: ["anthropic/claude-4", "openai/gpt-5"], defaultModel: "anthropic/claude-4"),
+        .models(id: 10, models: ["anthropic/claude-4", "openai/gpt-5"], defaultModel: "anthropic/claude-4",
+                withoutThinking: ["openai/gpt-5"]),
         .spaceAdded(id: 6, spaceID: S.space),
         .agentCreated(id: 7, agentID: S.agent),
         .automationResult(id: 22, result: .runs(S.runs)),
@@ -340,6 +341,28 @@ struct RemoteReplyTests {
     @Test func aHelloOkWithoutCapabilitiesMeansNone() throws {
         #expect(try Wire.decode(RemoteReply.self, #"{"type":"helloOk","id":1,"protocolVersion":1}"#)
             == .helloOk(id: 1, protocolVersion: 1, capabilities: []))
+    }
+
+    /// A host from before `withoutThinking` does not say which models take no thinking level.
+    @Test func aModelListingFromAnOlderHostSaysNothingAboutThinking() throws {
+        #expect(try Wire.decode(RemoteReply.self, #"{"type":"models","id":4,"models":["a/b"],"defaultModel":"a/b"}"#)
+            == .models(id: 4, models: ["a/b"], defaultModel: "a/b", withoutThinking: nil))
+    }
+
+    /// The thinking control goes only with a model that takes a level; a blank model is the
+    /// default, and a model the listing says nothing about (or an older host's) keeps it.
+    @Test(arguments: [
+        (ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]), "qa/plain" as String?, false),
+        (ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]), " qa/plain ", false),
+        (ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]), "qa/deep", true),
+        (ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]), nil, false),
+        (ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]), "", false),
+        (ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]), "typed/other", true),
+        (ModelListing(models: ["qa/plain"], defaultModel: nil, withoutThinking: ["qa/plain"]), nil, true),
+        (ModelListing(models: ["qa/plain"], defaultModel: "qa/plain", withoutThinking: nil), "qa/plain", true),
+    ])
+    func onlyAModelThatTakesAThinkingLevelOffersIt(_ listing: ModelListing, _ model: String?, _ expected: Bool) {
+        #expect(listing.takesThinking(model) == expected)
     }
 
     /// Older hosts replied with a bare session id; the attachment's grid is then unknown (0).

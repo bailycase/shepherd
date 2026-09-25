@@ -196,6 +196,17 @@ public func nativeRunActivity(_ run: ChildRun) -> String {
     return run.currentTool ?? "working"
 }
 
+/// A live run's last line in its transcript: "Pause requested", the call in flight with its
+/// command or file ("Running bash swift test…"), else "Thinking…".
+public func nativeRunWorking(_ run: ChildRun) -> String {
+    if run.paused == true { return "Pause requested" }
+    guard let tool = run.currentTool else { return "Thinking…" }
+    guard let call = run.lastActivity, call.isRunning, call.tool == tool, let preview = call.preview, !preview.isEmpty else {
+        return "Running \(tool)…"
+    }
+    return "Running \(tool) \(nativeRunFileName(preview))…"
+}
+
 /// A native child asks through `shepherd_parent_message`, so that call's time is when it began
 /// waiting; anything else gives no honest start.
 public func nativeRunAskedAt(_ run: ChildRun) -> Double? {
@@ -404,6 +415,13 @@ public func nativeTranscriptSplice(_ current: [NativeThreadMessage], newest page
         return (Array(current[..<overlap]) + page.messages, false)
     }
     return (page.messages, true)
+}
+
+/// A transcript's user turn that the user wrote (steers and answers sent from the card or the
+/// inspector) rather than the parent, so it is not captioned "from parent". The host marks each
+/// such message; an older host marks none.
+public func nativeTranscriptTurnIsTheUsers(_ messages: [NativeThreadMessage]) -> Bool {
+    !messages.isEmpty && messages.allSatisfy { $0.origin == .user }
 }
 
 /// An older page in front of what is loaded, without entries already shown.

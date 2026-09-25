@@ -46,7 +46,7 @@ struct AgentSettings: View {
         }
         .task {
             let (ids, fallback) = await Task.detached(priority: .userInitiated) {
-                (PiConfig.modelIDs(), PiConfig.defaultModel())
+                (PiModelCatalog.entriesOrConfigured().map(\.id), PiConfig.defaultModel())
             }.value
             modelOptions = ids
             if let fallback { piDefaultModel = fallback }

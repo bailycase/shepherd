@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ShepherdUI
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
@@ -96,6 +97,22 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// A new agent created with a prompt, while its pi boots: the prompt shows at once as the
+    /// pending row the host's first snapshot will carry, not the empty state.
+    @Test func threadStartingWithItsPrompt() async throws {
+        let fixture = ThreadFixture(Threads.empty)
+        fixture.starting = true
+        defer { fixture.store.stop() }
+        let prompt = try #require(OpeningPrompt("Do these steps in order. 1) Read tally.py and its tests. 2) Fix mean([]) so it returns 0. 3) Reply with what you changed.",
+                                                agentID: AgentID()))
+        fixture.store.preview(prompt.preview(PiSessionPreview.empty(sessionID: "fixture", model: "anthropic/claude-opus-4-5", thinking: "high")))
+        try await Preview.render("thread-starting-prompt", size: CGSize(width: 1180, height: 700), ready: {
+            fixture.store.starting && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread(title: "Do these steps in order…").environment(\.threadStartingDelay, .seconds(3600))
+        }
+    }
+
     /// The same agent once its pi has kept it waiting past the delay: "Starting pi…" beside Send,
     /// no banner, and Send offered for a typed draft.
     @Test func threadStarting() async throws {
@@ -174,6 +191,12 @@ struct ThreadPreviewTests {
     /// Failed test runs stay red; a turn that failed as a whole ends in NWTurnError with Retry.
     @Test func threadActivityFailed() async throws {
         try await render("thread-activity-failed", ActivityThreads.failed)
+    }
+
+    /// A turn the user stopped mid-command: the call reads "stopped" in its usual colors, and the
+    /// turn ends in a quiet "Stopped" note, not an error with Retry.
+    @Test func threadActivityStopped() async throws {
+        try await render("thread-activity-stopped", ActivityThreads.stopped, size: CGSize(width: 1180, height: 600))
     }
 
     /// Prose, lists, inline code, a link, and a highlighted code block.
@@ -519,6 +542,18 @@ enum ActivityThreads {
                                 status: "error", timestamp: t0 + 40_000),
         ]
         return snapshot(messages)
+    }
+
+    /// The user stopped a long command: pi failed the call and ended the run with an error reply,
+    /// which the host projects as `aborted`.
+    static var stopped: NativeThreadSnapshot {
+        let t0 = now - 60_000
+        return snapshot([
+            user("u1", "Use the bash tool to run `sleep 40`, then reply with exactly: slept", at: t0),
+            tool("s1", "bash", ["command": "sleep 40"], output: "Command aborted", error: true, start: t0 + 2_000, end: t0 + 9_500,
+                 status: "aborted"),
+            NativeThreadMessage(entryID: "stop", role: "assistant", blocks: [], status: "aborted", timestamp: t0 + 9_600),
+        ])
     }
 
     /// The NWThread board's prose sample.
