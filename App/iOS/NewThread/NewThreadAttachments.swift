@@ -7,7 +7,7 @@ import ShepherdProtocol
 
 /// An image waiting to go with a new thread's first send: the bytes pi receives, and a
 /// thumbnail decoded once.
-struct NewThreadAttachment: Identifiable, Equatable {
+struct NewThreadAttachment: Identifiable, Equatable, Sendable {
     let id = UUID()
     let name: String
     let image: NativeImage
@@ -86,8 +86,10 @@ struct NewThreadAttachButton: View {
 
     private func load(_ items: [PhotosPickerItem]) async {
         for (index, item) in items.enumerated() {
+            let name = "image-\(model.attachments.count + index + 1)"
+            // Decoding and re-encoding a full-size photo is too slow for the main thread.
             guard let data = try? await item.loadTransferable(type: Data.self),
-                  let attachment = NewThreadImages.prepare(data, name: "image-\(model.attachments.count + index + 1)") else {
+                  let attachment = await Task.detached(priority: .userInitiated, operation: { NewThreadImages.prepare(data, name: name) }).value else {
                 model.errorText = "That image couldn't be read or is too large to send."
                 continue
             }
