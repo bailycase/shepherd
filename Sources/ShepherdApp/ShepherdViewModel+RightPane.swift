@@ -99,8 +99,15 @@ extension ShepherdViewModel {
         }
     }
 
+    /// The pane over the whole layout (ChangesWide), or back beside the thread.
+    func toggleSidePaneMaximized(_ owner: SidePaneOwner) {
+        let panes = subagentInspector
+        if panes.maximized.contains(owner) { panes.maximized.remove(owner) } else { panes.maximized.insert(owner) }
+    }
+
     /// Hides `owner`'s pane: the inspector closes, and the review is discarded like a cancel.
     func hideSidePane(_ owner: SidePaneOwner) {
+        if subagentInspector.maximized.contains(owner) { subagentInspector.maximized.remove(owner) }
         closeInspector(owner)
         guard subagentInspector.open.contains(owner) else { return }
         subagentInspector.open.remove(owner)

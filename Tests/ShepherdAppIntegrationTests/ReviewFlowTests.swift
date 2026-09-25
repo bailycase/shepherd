@@ -132,8 +132,8 @@ struct ReviewFlowTests {
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        let loads = HeldLoads()
-        vm.reviewDiffLoader = { cwd, _ in try await loads.load(cwd) }
+        let loads = HeldLists()
+        vm.changesEngineOverride = { _, cwd in loads.engine(key: { _ in cwd }) }
         vm.openReview(agentID: agent.agent.id, path: nil)
         let session = try #require(vm.reviewSessions.values.first)
         try await loads.waitFor(agent.piPane.cwd)
@@ -143,11 +143,11 @@ struct ReviewFlowTests {
         try await loads.waitFor(target)
         #expect(session.cwd == target)
         await loads.finish(target)
-        try await eventuallyOnMain("the new target's diff to land") { !session.isLoading && session.reference == target }
+        try await eventuallyOnMain("the new target's diff to land") { !session.isLoading && session.list?.comparison.head == target }
         await loads.finish(agent.piPane.cwd, failing: failing)
         for _ in 0..<5 { await Task.yield() }
 
-        #expect(session.reference == target && session.loadError == nil && !session.isLoading)
+        #expect(session.list?.comparison.head == target && session.loadError == nil && !session.isLoading)
     }
 
     /// While a subagent is inspected over the pane, an agent's request leaves it there: the
@@ -186,7 +186,7 @@ struct ReviewFlowTests {
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        vm.reviewDiffLoader = { _, reference in ([], reference) }
+        vm.changesEngineOverride = { _, _ in ChangesEngine.fixed([]) }
         vm.selectAgent(agent.agent.id)
         let owner = SidePaneOwner.local(agent.agent.id)
         #expect(vm.sidePaneButton(for: owner) == (false, nil))
@@ -226,7 +226,9 @@ struct ReviewFlowTests {
         #expect(Set(session.files.map(\.displayPath)) == ["sub/tracked.txt", "sub/fresh.txt"])
     }
 
-    @Test func requestingChangesSendsTheReviewAsTheAgentsNextPromptAndCloses() async throws {
+    /// Send to agent: the comments go as the agent's next message under the scope they were
+    /// written against; the pane stays, its comments cleared.
+    @Test func sendingTheReviewMakesItTheAgentsNextPromptAndClearsItsComments() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let repo = try dirtyRepo()
@@ -239,20 +241,19 @@ struct ReviewFlowTests {
         let session = try #require(vm.reviewSessions.values.first)
         try await eventuallyOnMain("the diff to load") { !session.isLoading }
         session.comments = [try comment(on: session, "name this constant")]
-        session.summary = "otherwise fine"
         _ = try await app.readyThread(agent.agent.id)
 
         vm.submitReview(session)
 
-        try await eventuallyOnMain("the review to close once sent") { vm.reviewSessions.isEmpty }
-        #expect(vm.subagentInspector.open.isEmpty, "the side pane closes with it")
+        try await eventuallyOnMain("the comments to clear once sent") { session.comments.isEmpty && !session.isSubmitting }
+        #expect(vm.reviewSessions.values.first === session && vm.subagentInspector.open.contains(.local(agent.agent.id)),
+                "the Changes tab stays")
+        #expect(session.sentAt != nil, "the agent's reply turns the pane to Last turn")
         #expect(AppHarness.prompts(in: log) == ["""
-        Diff review (working tree vs HEAD):
+        Diff review (Uncommitted):
 
         file.txt:1 [+ after]
           name this constant
-
-        Overall: otherwise fine
         """])
     }
 
@@ -273,13 +274,13 @@ struct ReviewFlowTests {
 
         vm.commitReview(session)
 
-        try await eventuallyOnMain("the review to close once sent") { vm.reviewSessions.isEmpty }
+        try await eventuallyOnMain("the comments to clear once sent") { session.comments.isEmpty && !session.isSubmitting }
         let prompt = try #require(AppHarness.prompts(in: log).first)
         // The files under review are named, an untracked one too, so the agent can't decide
         // nothing is left to commit.
         let (files, review) = try #require(prompt.firstRange(of: "\n\n").map { (prompt[..<$0.lowerBound], prompt[$0.upperBound...]) })
         #expect(Set(files.components(separatedBy: "\n")) == ["Commit these changes:", "- file.txt", "- new.txt (new)"])
-        #expect(review.hasPrefix("Before committing, address the review below.\n\nDiff review (working tree vs HEAD):"))
+        #expect(review.hasPrefix("Before committing, address the review below.\n\nDiff review (Uncommitted):"))
         #expect(prompt.contains("tidy first"))
     }
 
@@ -389,7 +390,7 @@ struct ReviewFlowTests {
         #expect(vm.reviewSessions.isEmpty && vm.subagentInspector.open.isEmpty)
     }
 
-    /// Switching modes quickly starts overlapping loads; only the newest may land, whether an
+    /// Switching scopes quickly starts overlapping loads; only the newest may land, whether an
     /// older one finishes first or last, and whether it succeeds or fails.
     @Test func aStaleDiffLoadNeverReplacesTheNewestOne() async throws {
         let app = try AppHarness()
@@ -397,53 +398,64 @@ struct ReviewFlowTests {
         let space = Fixture.space(path: app.dir.path)
         let agent = Fixture.agent(in: space)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
-        let loads = HeldLoads()
-        vm.reviewDiffLoader = { _, reference in try await loads.load(reference) }
+        let loads = HeldLists()
+        vm.changesEngineOverride = { _, _ in loads.engine(key: { $0.label }) }
         vm.openReview(agentID: agent.agent.id, path: nil)
         let session = try #require(vm.reviewSessions.values.first)
-        try await loads.waitFor("local")
+        try await loads.waitFor("Uncommitted")
 
-        vm.reloadReview(session, reference: "old")
-        try await loads.waitFor("old")
-        vm.reloadReview(session, reference: "new")
-        try await loads.waitFor("new")
-        await loads.finish("old", failing: true)
-        await loads.finish("local")
+        vm.setChangesScope(session, .staged)
+        try await loads.waitFor("Staged")
+        vm.setChangesScope(session, .unstaged)
+        try await loads.waitFor("Unstaged")
+        await loads.finish("Staged", failing: true)
+        await loads.finish("Uncommitted")
         #expect(session.isLoading && session.loadError == nil)
-        await loads.finish("new")
-        try await eventuallyOnMain("the newest load to land") { !session.isLoading && session.reference == "new" }
+        await loads.finish("Unstaged")
+        try await eventuallyOnMain("the newest load to land") { !session.isLoading && session.list?.comparison.head == "Unstaged" }
 
-        vm.reloadReview(session, reference: "slow")
-        try await loads.waitFor("slow")
-        vm.reloadReview(session, reference: "latest")
-        try await loads.waitFor("latest")
-        await loads.finish("latest")
-        try await eventuallyOnMain("the latest load to land") { !session.isLoading && session.reference == "latest" }
-        await loads.finish("slow")
+        vm.setChangesScope(session, .pullRequest)
+        try await loads.waitFor("Pull request")
+        vm.setChangesScope(session, .lastTurn)
+        try await loads.waitFor("Last turn")
+        await loads.finish("Last turn")
+        try await eventuallyOnMain("the latest load to land") { !session.isLoading && session.list?.comparison.head == "Last turn" }
+        await loads.finish("Pull request")
         for _ in 0..<5 { await Task.yield() }
-        #expect(session.reference == "latest" && session.loadError == nil)
+        #expect(session.list?.comparison.head == "Last turn" && session.loadError == nil)
     }
 }
 
-/// Diff loads the test releases one at a time.
-private actor HeldLoads {
-    private var pending: [String: CheckedContinuation<(files: [DiffFile], reference: String?), any Error>] = [:]
+/// Changes lists the test releases one at a time, keyed by what `key` makes of the scope; each
+/// names its key as the compare row's head.
+@MainActor
+private final class HeldLists {
+    private var pending: [String: (ChangesScope, CheckedContinuation<ChangesList, any Error>)] = [:]
 
-    func load(_ reference: String?) async throws -> (files: [DiffFile], reference: String?) {
-        try await withCheckedThrowingContinuation { pending[reference ?? "local"] = $0 }
+    func engine(key: @escaping (ChangesScope) -> String) -> ChangesEngine {
+        var engine = ChangesEngine.fixed([])
+        engine.list = { [self] scope, _ in
+            try await withCheckedThrowingContinuation { self.pending[key(scope)] = (scope, $0) }
+        }
+        engine.overview = { throw ChangesError(ChangesError.unavailable, "no overview here") }
+        return engine
     }
 
-    func waitFor(_ reference: String) async throws {
+    func waitFor(_ key: String) async throws {
         let deadline = ContinuousClock.now + .seconds(10)
-        while pending[reference] == nil {
-            guard ContinuousClock.now < deadline else { throw TimedOut(what: "a diff load for \(reference)") }
+        while pending[key] == nil {
+            guard ContinuousClock.now < deadline else { throw TimedOut(what: "a diff load for \(key)") }
             try await Task.sleep(for: .milliseconds(5))
         }
     }
 
-    func finish(_ reference: String, failing: Bool = false) {
-        guard let continuation = pending.removeValue(forKey: reference) else { return }
-        if failing { continuation.resume(throwing: GitWorktree.Failure(message: "stale load failed")) }
-        else { continuation.resume(returning: ([], reference)) }
+    func finish(_ key: String, failing: Bool = false) {
+        guard let (scope, continuation) = pending.removeValue(forKey: key) else { return }
+        if failing { continuation.resume(throwing: ChangesError(ChangesError.gitFailed, "stale load failed")) }
+        else {
+            continuation.resume(returning: ChangesList(scope: scope, revision: ChangesRevision(old: "aaaa", new: "bbbb"),
+                                                       comparison: ChangesComparison(head: key, base: "HEAD"), files: []))
+        }
     }
 }
+

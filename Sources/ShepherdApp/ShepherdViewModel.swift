@@ -124,6 +124,12 @@ final class ShepherdViewModel {
         }.value
     }
     var remoteReviews: [RemoteAgentRef: ReviewSession] = [:]
+    /// Where a local review reads its changes from; tests put a fixed engine here. Nil: this Mac's
+    /// `server.changes`.
+    @ObservationIgnored var changesEngineOverride: ((AgentID, String) -> ChangesEngine)?
+    /// When each thread's review was last sent (ms): a review opened after the agent replied
+    /// opens on Last turn.
+    @ObservationIgnored var reviewSentAt: [SidePaneOwner: Double] = [:]
     /// Host-side utility terminals (a remote `gh auth login`) opened for a remote agent,
     /// shown in place of the agent's own layout while `remoteInspectingAgent` is set.
     var hostRemoteInspectors: [String: TabID] = [:]

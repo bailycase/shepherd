@@ -11,8 +11,13 @@ struct ReviewComponentTests {
         (1, .added, "7–7", "+ 1 more added line · 7–7"),
         (6, .context, "", "+ 6 more unchanged lines"),
     ])
-    @MainActor func foldRowsCountTheirLinesAndRange(count: Int, kind: NWDiffLineKind, range: String, label: String) {
-        #expect(NWFoldRow.label(count: count, kind: kind, range: range) == label)
+    @MainActor func touchFoldRowsCountTheirLinesAndRange(count: Int, kind: NWDiffLineKind, range: String, label: String) {
+        #expect(NWTouchFoldRow.label(count: count, kind: kind, range: range) == label)
+    }
+
+    @Test(arguments: [(1, "1 unmodified line"), (28, "28 unmodified lines")])
+    func foldsCountTheirUnmodifiedLines(count: Int, label: String) {
+        #expect(NWDiffFold(id: "f", count: count).label == label)
     }
 
     @Test(arguments: [(NWDiffLineKind.context, ""), (.added, "+"), (.removed, "\u{2212}")])
@@ -47,9 +52,9 @@ struct ReviewComponentTests {
         #expect(split.directory == directory && split.name == name)
     }
 
-    @Test(arguments: [(NWFileStatus.modified, true), (.renamed, true), (.added, false), (.deleted, false)])
-    func onlyChangedFilesShowTheirStatInTheStrip(status: NWFileStatus, shows: Bool) {
-        #expect(NWFileStrip.Item(id: "a", path: "a", status: status, added: 1, removed: 1).showsStat == shows)
+    @Test(arguments: NWFileStatus.allCases)
+    func everyFileShowsItsStatInTheStrip(status: NWFileStatus) {
+        #expect(NWFileStrip.Item(id: "a", path: "a", status: status, added: 1, removed: 1).showsStat)
     }
 
     @Test func aChipReadsItsNameStatusAndCounts() {
@@ -61,5 +66,9 @@ struct ReviewComponentTests {
         let line = NWDiffLineContent(id: "line", key: 1, kind: .added, oldNumber: nil, newNumber: 1, text: "", source: "")
         let rows: [NWDiffRow] = [.hunk(id: "hunk", header: "@@"), .line(line), .fold(id: "fold", count: 2, kind: .context, range: "")]
         #expect(rows.map(\.id) == ["hunk", "line", "fold"])
+        let changes: [NWChangesRow] = [.line(line), .pair(id: "pair", old: nil, new: line), .fold(NWDiffFold(id: "fold", count: 3)),
+                                       .notice(id: "notice", text: "Binary file")]
+        #expect(changes.map(\.id) == ["line", "pair", "fold", "notice"])
+        #expect(changes.map(\.lines.count) == [1, 1, 0, 0])
     }
 }

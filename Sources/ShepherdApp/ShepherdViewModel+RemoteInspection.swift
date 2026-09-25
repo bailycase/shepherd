@@ -152,7 +152,22 @@ extension ShepherdViewModel {
         let connection = remoteHosts.connections.first { $0.id == target.hostID }
         let agent = remoteAgent(target)
         let cwd = connection?.state.tabs.first { $0.id == agent?.tabID }?.layout.firstLeaf.cwd ?? "remote"
+        if remoteReviews[target] == nil, connection?.supportsChanges == true {
+            // A host with the Changes engine: its scopes, lists and files over `changes*`.
+            let session = ReviewSession(agentID: target.agentID, paneID: PaneID(), cwd: cwd, reference: nil, isLoading: true)
+            session.engine = remoteChangesEngine(target)
+            let replied = repliedSinceReview(.remote(target), latest: remoteThreadStores.store(for: target).snapshot?.turnChanges?.last)
+            session.scope = pullRequest ? .pullRequest : replied ? .lastTurn : agent?.worktreeBase != nil ? .branch(base: nil) : .uncommitted
+            session.scopeChosen = pullRequest || replied
+            remoteReviews[target] = session
+            loadChanges(session)
+            return
+        }
         let session = remoteReviews[target] ?? ReviewSession(agentID: target.agentID, paneID: PaneID(), cwd: cwd, reference: nil)
+        if session.engine != nil {
+            setChangesScope(session, pullRequest ? .pullRequest : session.scope)
+            return
+        }
         session.isPRMode = pullRequest
         remoteReviews[target] = session
         loadRemoteReview(target, session: session, pullRequest: pullRequest, hostModeOverride: session.hostReviewPane ? pullRequest : nil)

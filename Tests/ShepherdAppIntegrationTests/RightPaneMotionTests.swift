@@ -182,7 +182,7 @@ struct RightPaneMotionTests {
         let first = try await app.liveAgent("first", in: space, order: 0)
         let second = try await app.liveAgent("second", in: space, order: 1)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [first, second]))
-        vm.reviewDiffLoader = { _, reference in ([], reference) }
+        vm.changesEngineOverride = { _, _ in .fixed([]) }
         let size = CGSize(width: 1200, height: 600)
         let window = OffscreenWindow(size: size, dark: false, WorkspaceView(vm: vm).environment(\.threadCommands, vm.threadCommands))
         defer { window.close() }
