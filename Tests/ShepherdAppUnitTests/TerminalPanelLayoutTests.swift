@@ -112,6 +112,20 @@ struct TerminalPanelsTests {
         #expect(panels.reconcile(key, layout: grown, thread: thread.id) == nil)
     }
 
+    /// However the last terminal goes (its tab closed, the agent closed its pane, its shell
+    /// exited), the panel goes with it; ⌘J on no terminals still shows the empty state.
+    @Test func thePanelClosesWithItsLastTerminal() {
+        let panels = TerminalPanels(defaults: ScratchDefaults())
+        let layout = PaneNode.split(axis: .vertical, ratio: 0.5, first: .leaf(thread), second: .leaf(shell))
+        panels.reconcile(key, layout: layout, thread: thread.id)
+        panels.update(key) { $0.maximized = true }
+        panels.reconcile(key, layout: .leaf(thread), thread: thread.id)
+        #expect(!panels.panel(key).shown && !panels.panel(key).maximized)
+        panels.update(key) { $0.shown = true }
+        panels.reconcile(key, layout: .leaf(thread), thread: thread.id)
+        #expect(panels.panel(key).shown)
+    }
+
     /// A tab's dot follows the host's news, not every read of output: a resize's redraw moves
     /// only the output sequence.
     @Test func aRedrawThatIsNotNewsLeavesNoDot() throws {

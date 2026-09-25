@@ -1234,7 +1234,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
 - **Show and hide:** ⌘J or the toolbar's terminal toggle (`NWPaneToggle`, lantern while open).
   Hidden, a running-blue dot on the toggle (`NWToggleBadge`) says a tab printed. Showing gives the
   keyboard to the selected tab; hiding gives it back to the thread. A layout seen for the first
-  time with terminals shows its panel.
+  time with terminals shows its panel. The panel closes with its last terminal, however it goes
+  (its tab closed, the agent's `pane_close`, its shell exiting), and the thread takes the layout
+  again; ⌘J with no terminals shows the empty state ("No terminals in this thread yet." and New
+  Terminal).
 - **Height:** 330pt by default, persisted app-wide (`shepherd.terminalPanelHeight`). Drag the
   panel's top edge (9pt hit area, row-resize pointer): it snaps at a third, half and two-thirds
   of the layout within 12pt, keeps the panel at least 120pt and the thread at least 160pt;
@@ -1566,9 +1569,10 @@ components first), with these differences for touch:
   `bgRaised`. On iPhone the thread's options open the panes full screen with the same strip and
   key row. The terminal is SwiftTerm's view on Night Watch's terminal palette in Geist Mono at
   the code size, following Dynamic Type to 20pt; the strip and key row stop growing at
-  xxxLarge. Closing a tab asks first ("Its shell on <host> stops."). As on the Mac, tab dots
-  follow the host's news, so a tab leaving the screen (its viewer detaching, the PTY taking the
-  Mac's size again) leaves no dot.
+  xxxLarge. Closing a tab asks first ("Its shell on <host> stops."). As on the Mac, the iPad
+  panel closes with its last terminal while the host is connected, and tab dots follow the
+  host's news, so a tab leaving the screen (its viewer detaching, the PTY taking the Mac's size
+  again) leaves no dot.
 - **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
   iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
   (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &

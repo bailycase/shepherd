@@ -81,6 +81,13 @@ public enum TerminalPanel {
         tab.panes.map(\.id).filter { $0 != thread }
     }
 
+    /// The panel closes with its last terminal, however it went (its tab closed, the agent
+    /// closed its pane, its shell exited): true when a layout that had tabs has none left. A
+    /// panel shown with no terminals (⌘J, the toggle) keeps its empty state.
+    public static func closesWithLastTerminal(before: Int, after: Int) -> Bool {
+        before > 0 && after == 0
+    }
+
     /// What is on screen to be marked seen: nothing while the panel is off screen, else the
     /// selected tab, its sessions, and how far each has news (`RemoteTerminalActivity.news`).
     public static func seenMark(selected: TerminalPanelTab?, onScreen: Bool,
