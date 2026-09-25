@@ -210,7 +210,7 @@ extension ShepherdViewModel {
         focusedPaneID = pane.id
         Task {
             guard let session = await sessions.awaitSession(forPane: pane.id, timeout: .seconds(10)) else { return }
-            server.write(sessionID: session, data: Data((command + "\n").utf8))
+            server.typeCommand(command, sessionID: session)
         }
     }
 

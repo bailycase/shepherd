@@ -188,7 +188,7 @@ extension ShepherdViewModel {
         Task {
             let sessionID = await self.sessions.awaitSession(forPane: newPane.id, timeout: .seconds(5))
             if let sessionID, let command, !command.isEmpty {
-                self.server.write(sessionID: sessionID, data: Data((command + "\n").utf8))
+                self.server.typeCommand(command, sessionID: sessionID)
             }
             respond(.opened(PaneInfo(
                 id: newPane.id,
