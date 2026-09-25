@@ -25,6 +25,30 @@ import SwiftUI
     }
 }
 
+#Preview("Rich prose") {
+    NWPreviewBoth {
+        NWAgentProse([
+            .table(NWProseTable(
+                alignments: [.leading, .trailing],
+                header: ["Area", "Tools"],
+                rows: [["Terminal panes", NWProseInline.attributed("`pane_list`, `pane_open`, `pane_run`")],
+                       ["Notifications and review", NWProseInline.attributed("`notify`, `review_diff`")]],
+                markdown: "| Area | Tools |")),
+            .list(ordered: false, start: 1, items: [
+                NWProseListItem(text: "Parse tables", task: .done),
+                NWProseListItem(text: "Nest lists", task: .open, children: [
+                    .list(ordered: true, start: 1, items: [NWProseListItem(text: "to any depth")]),
+                ]),
+            ]),
+            .image(NWProseImage(alt: "Build status", source: "https://ci.example.com/badge.png")),
+            .details(summary: "Full log", blocks: [.paragraph("41 tests passed.")]),
+            .code("graph TD\n  A --> B", language: "mermaid"),
+            .footnotes([NWProseFootnote(number: 1, text: "Gathered at the end of the message.")]),
+        ])
+        .frame(width: 640)
+    }
+}
+
 #Preview("Thinking, footer, error") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.xl) {

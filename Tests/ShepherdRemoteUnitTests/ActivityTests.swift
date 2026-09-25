@@ -407,6 +407,23 @@ struct TurnPresentationTests {
         #expect(turns.map(\.messages.count) == [1, 2])
     }
 
+    /// Only the text a reply is still writing holds back a table header waiting for its
+    /// delimiter row; a finished reply, or an earlier message of the live turn, draws every line.
+    @Test func onlyTheStreamingTextHoldsBackAPendingTable() {
+        let header = "Here:\n\n| Area | Tools |\n"
+        func paragraphs(_ presentation: NativeTurnPresentation) -> [String] {
+            presentation.items.flatMap { item -> [String] in
+                guard case .prose(_, _, let blocks, _) = item else { return [] }
+                return blocks.compactMap { if case .paragraph(let text) = $0 { text } else { nil } }
+            }
+        }
+        let streaming = F.assistant(header, status: "streaming")
+        #expect(paragraphs(nativeTurnPresentation([streaming], live: true)) == ["Here:"])
+        #expect(paragraphs(nativeTurnPresentation([F.assistant(header)], live: false)) == ["Here:", "| Area | Tools |"])
+        #expect(paragraphs(nativeTurnPresentation([F.assistant(header), tool("read", "r"), F.assistant("Next", status: "streaming")], live: true))
+            == ["Here:", "| Area | Tools |", "Next"])
+    }
+
     @Test func theThinkingStillStreamingStaysLastAndLive() {
         var streaming = F.assistant("", thinking: "hmm", status: "streaming")
         streaming.timestamp = 5_000
