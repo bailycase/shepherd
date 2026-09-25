@@ -2157,7 +2157,8 @@ Changes, Browser, Artifacts, Files" below).
   in flight as a live activity line ("Building swift build --target ShepherdRemote 11s", from the
   call the run reports; its session file holds only finished calls, so there are no output
   lines), or "› Thinking…" between tools, and nothing while it asks or once a requested pause has
-  no call left to finish. Its transcript's own thinking is never live. Turns that arrive while it
+  no call left to finish. It continues the last turn, under its lines at their spacing
+  (`RunLiveTail.gap`), not a turn apart. Its transcript's own thinking is never live. Turns that arrive while it
   follows fade in where they land. With nothing yet it says "No transcript yet." (or "This run is
   no longer listed.") in `caption` `textTertiary`.
 - **Its footer line** (28pt, Geist 11 `textTertiary`, 14pt side padding): "72 earlier turns" in

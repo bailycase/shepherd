@@ -164,13 +164,23 @@ struct SubagentTranscriptList: View {
                     SubagentTurnView(turn: turn).equatable()
                 }
             }
-            switch live {
-            case .call(let burst): SubagentActivityLine(burst: burst)
-            case .thinking: NWThinking.live()
-            case nil: EmptyView()
+            // It continues the last turn: under its lines at their spacing (MobileSubagent).
+            if let live {
+                Group {
+                    switch live {
+                    case .call(let burst): SubagentActivityLine(burst: burst)
+                    case .thinking: NWThinking.live()
+                    }
+                }
+                .padding(.top, Self.endsInLines(turns.last) ? MobileLayout.activitySpacing - MobileLayout.turnItemSpacing : 0)
             }
         }
         .environment(\.nwProseSize, .small)
+    }
+
+    private static func endsInLines(_ turn: SubagentTranscriptModel.Turn?) -> Bool {
+        if case .activity? = turn?.presentation?.items.last { return true }
+        return false
     }
 }
 

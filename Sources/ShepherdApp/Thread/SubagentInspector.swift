@@ -276,8 +276,11 @@ private struct SubagentRunInspector: View {
                         .nwRunArrival(transcript.arrived.contains(turn.id))
                     }
                     // What the run is doing now (LiveText): its call in flight, or "Thinking…".
+                    // It continues the last turn: under its lines at their spacing, as the
+                    // thread's live line does (Subagents).
                     if let live = run.flatMap(nativeRunLive) {
                         RunLiveTail(live: live).equatable()
+                            .padding(.top, RunLiveTail.gap(after: turns.last) - AppLayout.inspectorTurnSpacing)
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
@@ -583,6 +586,16 @@ final class SubagentTranscriptModel {
 /// between tools. One moves at a time, and nothing spins.
 struct RunLiveTail: View, Equatable {
     let live: NativeRunLive
+
+    /// The space above it: an activity line's under the run's lines, a turn part's under its
+    /// prose or thinking, and a turn's under a message from the parent.
+    static func gap(after turn: NativeTurn?) -> CGFloat {
+        guard let turn, !turn.isUser else { return AppLayout.inspectorTurnSpacing }
+        if case .activity? = TurnPresentationMemo.presentation(turn.messages, live: false).items.last {
+            return AppLayout.activitySpacing
+        }
+        return AppLayout.turnItemSpacing
+    }
 
     var body: some View {
         switch live {
