@@ -43,6 +43,10 @@ final class MobileTerminals {
     }
     /// A pane request that failed, for the panel to say so.
     var problem: String?
+    /// What each thread's terminals run, from its host (`RemoteAgentQuery.terminals`).
+    private(set) var activity: [AgentRef: [PaneID: RemoteTerminalActivity]] = [:]
+    /// The output sequence each session had when it was last on screen.
+    private(set) var seen: [SessionKey: UInt64] = [:]
 
     /// Fixtures only: sessions show these screens and never attach, so a screenshot neither
     /// resizes nor types into a host's terminal.
@@ -76,6 +80,43 @@ final class MobileTerminals {
         }
     }
 
+    // MARK: Activity
+
+    /// Asks the host what the thread's terminals run, every few seconds while the caller runs
+    /// (the thread or its terminal on screen). Hosts without `terminal.activity.v1` are not asked.
+    func watchActivity(_ ref: AgentRef, client: RemoteHostClient) async {
+        guard client.capabilities.contains(RemoteProtocol.terminalActivityCapability) else { return }
+        while !Task.isCancelled {
+            if case .terminals(let rows)? = try? await client.agentQuery(agentID: ref.agent, query: .terminals), !Task.isCancelled {
+                let byPane = Dictionary(rows.map { ($0.paneID, $0) }, uniquingKeysWith: { first, _ in first })
+                if activity[ref] != byPane { activity[ref] = byPane }
+                for row in rows where seen[SessionKey(host: ref.host, session: row.sessionID)] == nil {
+                    // Output from before the first look is not news.
+                    seen[SessionKey(host: ref.host, session: row.sessionID)] = row.outputSequence
+                }
+            }
+            try? await Task.sleep(for: Self.activityInterval)
+        }
+    }
+
+    static let activityInterval: Duration = .seconds(2)
+
+    /// The tab's output is on screen now: nothing in it is unseen.
+    func markSeen(_ ref: AgentRef, sessions: [SessionID]) {
+        for id in sessions {
+            guard let sequence = activity[ref]?.values.first(where: { $0.sessionID == id })?.outputSequence else { continue }
+            let key = SessionKey(host: ref.host, session: id)
+            if seen[key] != sequence { seen[key] = sequence }
+        }
+    }
+
+    /// A session printed since it was last on screen.
+    func hasUnseen(_ ref: AgentRef, session id: SessionID) -> Bool {
+        guard let row = activity[ref]?.values.first(where: { $0.sessionID == id }),
+              let seen = seen[SessionKey(host: ref.host, session: id)] else { return false }
+        return row.outputSequence > seen
+    }
+
     // MARK: Sessions
 
     /// The session for a pane's host session, made on first use and kept while the app runs so a
@@ -83,9 +124,14 @@ final class MobileTerminals {
     func session(host: UUID, id: SessionID) -> MobileTerminalSession {
         let key = SessionKey(host: host, session: id)
         if let session = sessions[key] { return session }
-        let session = MobileTerminalSession(key: key, canned: cannedScreens?[id])
+        let session = MobileTerminalSession(key: key)
         sessions[key] = session
         return session
+    }
+
+    /// The session if one was made; reading a tab's state never makes one.
+    func existingSession(host: UUID, id: SessionID) -> MobileTerminalSession? {
+        sessions[SessionKey(host: host, session: id)]
     }
 
     /// Routes a connection's pushed output to its sessions. Called before every attach; a client
@@ -120,6 +166,8 @@ final class MobileTerminals {
         prune(host: host, live: [])
         wired[host] = nil
         for ref in panels.keys where ref.host == host { panels[ref] = nil }
+        for ref in activity.keys where ref.host == host { activity[ref] = nil }
+        for key in seen.keys where key.host == host { seen[key] = nil }
     }
 
     // MARK: Pane requests
@@ -196,7 +244,8 @@ final class MobileTerminalSession {
     @ObservationIgnored private var settle: Task<Void, Never>?
     @ObservationIgnored private var holds = 0
     @ObservationIgnored private var letGo: Task<Void, Never>?
-    @ObservationIgnored let canned: Data?
+    /// Fixtures: the screen this session shows instead of attaching.
+    var canned: Data? { MobileTerminals.shared.cannedScreens?[key.session] }
     /// Ctrl and ⌥ latched from the key row for the next key.
     var control = false
     var option = false
@@ -206,9 +255,8 @@ final class MobileTerminalSession {
     static let settleDelay: Duration = .milliseconds(120)
     static let detachGrace: Duration = .seconds(1)
 
-    init(key: MobileTerminals.SessionKey, canned: Data?) {
+    init(key: MobileTerminals.SessionKey) {
         self.key = key
-        self.canned = canned
     }
 
     var isCanned: Bool { canned != nil }

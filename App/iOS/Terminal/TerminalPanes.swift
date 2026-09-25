@@ -20,7 +20,21 @@ struct TerminalModel: Equatable {
     /// The tab strip's items.
     let items: [NWTerminalTab]
 
-    @MainActor static func resolve(_ ref: AgentRef, hosts: MobileHosts, terminals: MobileTerminals) -> TerminalModel {
+    /// The sessions on screen, and how far their output has got: they are marked seen as it moves.
+    let onScreenSessions: [SessionID]
+    let onScreenOutput: [UInt64]
+
+    /// A tab not on screen printed, or one exited: the header toggle's dot.
+    var hasNews: Bool {
+        items.contains { item in
+            if case .exited = item.activity { return true }
+            return item.activity == .unseen
+        }
+    }
+
+    /// `onScreen`: the selected tab is showing (the iPad panel is open, or the iPhone's screen is
+    /// up), so its output is seen.
+    @MainActor static func resolve(_ ref: AgentRef, hosts: MobileHosts, terminals: MobileTerminals, onScreen: Bool) -> TerminalModel {
         let host = hosts.host(ref.host)
         let agent = host?.agent(ref.agent)
         let tab = agent.flatMap { agent in host?.state.tabs.first { $0.id == agent.tabID } }
@@ -29,20 +43,34 @@ struct TerminalModel: Equatable {
         let tabs = layout.map { TerminalPanel.tabs(in: $0, thread: thread) } ?? []
         let panel = terminals.panel(ref)
         let selected = TerminalPanel.selected(tabs, chosen: panel.chosenTab, remembering: panel.chosenPanes, focused: panel.focusedPane)
+        let activity = terminals.activity[ref] ?? [:]
         let items = tabs.map { tab in
             let first = tab.panes.first
-            let session = first?.sessionID.map { terminals.session(host: ref.host, id: $0) }
-            let exited: NWTerminalTab.Activity? = if case .exited(let code)? = session?.phase { .exited(failed: (code ?? 0) != 0) } else { nil }
-            return NWTerminalTab(id: tab.id.rawValue, title: Self.title(session: session, pane: first),
-                                 host: host?.name, activity: exited ?? .idle, panes: tab.panes.count)
+            let session = first?.sessionID.flatMap { terminals.existingSession(host: ref.host, id: $0) }
+            let rows = tab.panes.compactMap { activity[$0.id] }
+            let state: NWTerminalTab.Activity
+            if case .exited(let code)? = session?.phase { state = .exited(failed: (code ?? 0) != 0) }
+            else if rows.contains(where: \.isRunning) { state = .running }
+            else if tab.id != selected?.id || !onScreen,
+                    tab.panes.contains(where: { pane in pane.sessionID.map { terminals.hasUnseen(ref, session: $0) } ?? false }) {
+                state = .unseen
+            } else { state = .idle }
+            return NWTerminalTab(id: tab.id.rawValue, title: Self.title(activity: first.flatMap { activity[$0.id] }, session: session, pane: first),
+                                 host: host?.name, activity: state, panes: tab.panes.count)
         }
+        let seenSessions = onScreen ? selected?.panes.compactMap(\.sessionID) ?? [] : []
         return TerminalModel(ref: ref, hostName: host?.name ?? "the host", connected: host?.connectedClient != nil,
                              canChangePanes: host?.supports(RemoteProtocol.paneControlCapability) == true,
-                             layout: layout, thread: thread, tabs: tabs, selected: selected, panel: panel, items: items)
+                             layout: layout, thread: thread, tabs: tabs, selected: selected, panel: panel, items: items,
+                             onScreenSessions: seenSessions,
+                             onScreenOutput: seenSessions.map { id in activity.values.first { $0.sessionID == id }?.outputSequence ?? 0 })
     }
 
-    /// The shell's own title, else the folder it started in.
-    @MainActor private static func title(session: MobileTerminalSession?, pane: LeafPane?) -> String {
+    /// The running command ("make dev"), else the program at the prompt ("zsh"), else the
+    /// shell's own title, else the folder it started in.
+    @MainActor private static func title(activity: RemoteTerminalActivity?, session: MobileTerminalSession?, pane: LeafPane?) -> String {
+        if let command = activity?.command, !command.isEmpty { return String(command.prefix(40)) }
+        if let process = activity?.process, !process.isEmpty { return process }
         if let title = session?.title { return String(title.prefix(40)) }
         if let cwd = pane?.cwd, !cwd.isEmpty {
             let name = (cwd as NSString).lastPathComponent
