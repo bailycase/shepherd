@@ -266,6 +266,23 @@ struct SubagentRunsTests {
         #expect(nativeTranscriptPrepend(["c", "d"].map(Self.message), older: page).map(\.entryID) == ["a", "b", "c", "d"])
     }
 
+    static func user(_ id: String, origin: NativeMessageOrigin? = nil) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: "user", blocks: [NativeThreadBlock(kind: .text, text: id)], origin: origin)
+    }
+
+    /// Only a turn the user wrote throughout drops "from parent"; an older host marks nothing.
+    @Test(arguments: [
+        ([user("a", origin: .user)], true),
+        ([user("a", origin: .user), user("b", origin: .user)], true),
+        ([user("a")], false),
+        ([user("a"), user("b", origin: .user)], false),
+        ([user("a", origin: .steered)], false),
+        ([], false),
+    ] as [([NativeThreadMessage], Bool)])
+    func aTurnIsTheUsersOnlyWhenTheUserWroteAllOfIt(messages: [NativeThreadMessage], users: Bool) {
+        #expect(nativeTranscriptTurnIsTheUsers(messages) == users)
+    }
+
     @Test func aTranscriptCopiesAsRoleAndToolText() {
         let messages = [
             NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Run the tests")]),

@@ -756,7 +756,12 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     try { return await launch(run, message, signal); }
     catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
   }
+  // Every caller is the user (the app's cards and inspector, shepherd-inspect, the fleet view),
+  // never the parent's tools. Recorded beside the session before it is sent, so Shepherd's
+  // inspector captions only the parent's messages "from parent".
   async function messageChild(run, message, mode, ctx) {
+    try { fs.appendFileSync(path.join(run.dir, "user-messages.jsonl"), JSON.stringify({ text: message, at: Date.now() }) + "\n", { mode: 0o600 }); }
+    catch { /* Without the record the message reads as the parent's. */ }
     if (run.settled || !run.proc || run.exited) {
       await resume(run, message, undefined, ctx);
       return { id: run.id, delivery: "accepted or queued", mode: "reply" };

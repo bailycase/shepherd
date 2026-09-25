@@ -175,7 +175,9 @@ events come out on stdout, one record per LF.
   images; see The queue), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
   `subagentCommand` (message, cancel, resume, pause, continue; routed to the children
   extension's control connection, never the parent model), `subagentTranscript` (one page of a
-  child's session file, read from its last 8 MiB), and `queue` (`NativeQueueAction`).
+  child's session file, read from its last 8 MiB; a message the user sent the child, recorded
+  in `user-messages.jsonl` beside the session, carries `origin: .user`), and `queue`
+  (`NativeQueueAction`).
   - Every mutating request carries an operation ID and the expected session and generation.
     Replaying an ID returns the recorded result; reusing it with a different payload gets
     `operation_conflict`. A session mismatch gets `stale_session`.

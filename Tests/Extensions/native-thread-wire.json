@@ -416,5 +416,46 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 19,
+    "result": {
+      "transcript": {
+        "value": {
+          "runID": "native-1",
+          "messages": [
+            {
+              "entryID": "c:u1",
+              "role": "user",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "text": "the task"
+                }
+              ],
+              "truncated": false,
+              "timestamp": 1790281440000
+            },
+            {
+              "entryID": "c:u2",
+              "role": "user",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "text": "check the iPad too"
+                }
+              ],
+              "truncated": false,
+              "timestamp": 1790281446000,
+              "origin": {
+                "user": {}
+              }
+            }
+          ],
+          "earlierCount": 0
+        }
+      }
+    }
   }
 ]
