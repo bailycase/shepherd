@@ -121,10 +121,10 @@ struct RemoteAutomationRow: View {
                 if let reason = abilities.readOnlyReason {
                     Text(reason)
                 }
-                if row.run == nil {
-                    Button("Run Now") { vm.performRemoteAutomation(key, .run) }.disabled(!abilities.run || row.pending)
-                } else {
+                if row.live {
                     Button("Stop") { vm.performRemoteAutomation(key, .stop) }.disabled(!abilities.stop || row.pending)
+                } else {
+                    Button("Run Now") { vm.performRemoteAutomation(key, .run) }.disabled(!abilities.run || row.pending)
                 }
                 Toggle("Starts with Shepherd", isOn: Binding(get: { row.enabled },
                                                              set: { vm.performRemoteAutomation(key, .setEnabled(enabled: $0)) }))

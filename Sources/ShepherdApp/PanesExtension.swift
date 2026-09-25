@@ -651,7 +651,8 @@ enum PanesExtension {
           if (!isAutomationAgent) pi.registerTool({
             name: "automation_start",
             label: "Start Automation",
-            description: "Start a stopped Shepherd automation's watch agent.",
+            description:
+              "Start a Shepherd automation's run. A finished run is replaced by the new one; a run still working or waiting on the user is refused.",
             promptSnippet: "Start a Shepherd automation",
             parameters: Type.Object({
               automationID: Type.String({ description: "Automation id from automation_list" }),

@@ -17,8 +17,10 @@ struct SidebarRemoteAutomation: Equatable {
     /// "running", "needs you", "done", "stopped", "off".
     var word: String
     var enabled: Bool
-    /// Its run's agent: clicking the row opens it.
+    /// Its run's agent, live or settled: clicking the row opens it.
     var run: AgentID?
+    /// Its run works or waits on you: the menu offers Stop, else Run Now.
+    var live: Bool
     var selected: Bool
     var abilities: AutomationAbilities
     var pending: Bool
@@ -73,7 +75,7 @@ extension ShepherdViewModel {
             }
         }
         return SidebarRemoteAutomation(key: row.key, name: row.name, state: state, accessory: accessory, word: word,
-                                       enabled: row.enabled, run: row.run?.agent, selected: selected,
+                                       enabled: row.enabled, run: row.run?.agent, live: row.live, selected: selected,
                                        abilities: row.abilities, pending: pending)
     }
 

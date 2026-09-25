@@ -57,6 +57,18 @@ public struct AutomationRun: Codable, Hashable, Sendable, Identifiable {
     public var duration: Double? {
         (settledAt ?? endedAt).map { max(0, $0 - startedAt) }
     }
+
+    /// Whether a run whose agent still exists is going: working, waiting on you, or pi still
+    /// starting (idle before any turn settled; `run` is the one the host kept for that agent, nil
+    /// while unknown). A settled run only waits to be read, so running the automation again
+    /// replaces it. The host decides Run now by this, and clients offer it by the same rule.
+    public static func isLive(agentStatus: AgentStatus, run: AutomationRun?) -> Bool {
+        switch agentStatus {
+        case .working, .blocked: true
+        case .idle: run?.settledAt == nil
+        case .done: false
+        }
+    }
 }
 
 /// What a remote client may set on an automation: the fields the host's model has.

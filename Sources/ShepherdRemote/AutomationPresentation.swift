@@ -55,6 +55,7 @@ public struct AutomationAbilities: Equatable, Sendable {
         self.readOnlyReason = readOnlyReason
     }
 
+    /// `running`: its run is live (`AutomationRun.isLive`). A settled run can be run again, not stopped.
     public init(host: AutomationHost, running: Bool) {
         let can = host.connected && host.manageable
         self.init(toggle: can, run: can && !running, stop: can && running, edit: can,
@@ -111,7 +112,7 @@ public struct AutomationListRow: Identifiable, Equatable, Sendable {
     public var tone: AutomationTone
     /// A live run counts up from here; an ended one says how long ago it moved.
     public var clock: Clock?
-    /// Its current run's agent: the row opens it.
+    /// Its run's agent, live or settled, until the next run replaces it: the row opens it.
     public var run: FleetRef?
     public var hostName: String
     /// The host's name, when more than one host is known.
@@ -184,14 +185,14 @@ public struct AutomationsModel: Equatable, Sendable {
         var status: String
         var tone: AutomationTone
         var clock: AutomationListRow.Clock?
+        let live = agent.map { AutomationRun.isLive(agentStatus: $0.status, run: current) } ?? false
         if let agent {
-            switch agent.status {
-            case .working, .idle where current?.settledAt == nil:
+            if agent.status == .blocked {
+                (status, tone) = ("Asked you", .attention)
+            } else if live {
                 (status, tone) = ("Running", .running)
                 clock = current.map { .elapsed(since: Date(timeIntervalSince1970: $0.startedAt)) }
-            case .blocked:
-                (status, tone) = ("Asked you", .attention)
-            default:
+            } else {
                 (status, tone) = ("Finished", .done)
                 clock = current.flatMap { $0.settledAt }.map { .ago(Date(timeIntervalSince1970: $0)) }
             }
@@ -216,7 +217,7 @@ public struct AutomationsModel: Equatable, Sendable {
             place: Self.lastComponent(automation.cwd), cwd: automation.cwd, enabled: automation.enabled,
             status: status, tone: tone, clock: clock,
             run: agent.map { FleetRef(host: host.id, agent: $0.id) }, hostName: host.name, hostTag: tag,
-            offline: !host.connected, abilities: AutomationAbilities(host: host, running: agent != nil))
+            offline: !host.connected, abilities: AutomationAbilities(host: host, running: live))
     }
 
     /// The detail of one automation; nil once it is gone from its host. `now`, `timeZone` and
