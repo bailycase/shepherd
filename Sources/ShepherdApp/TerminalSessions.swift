@@ -829,13 +829,7 @@ final class TerminalSessionStore {
                 command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh,
                                                    suggestFiles: suggestionFiles(isAutomation: false))
             } else {
-                let settings = AppSettings.shared
-                command = try ShellIntegration.command(
-                    shell: settings.shellCommand,
-                    themeExtensionPath: settings.piThemeExtension ? try ThemeExtension.installedPath() : nil,
-                    themePath: settings.piThemeExtension
-                        ? try ShepherdPiTheme.installedPath(for: ThemeManager.shared.current) : nil
-                )
+                command = ShellIntegration.command(shell: AppSettings.shared.shellCommand)
             }
             if !session.isRPC { await session.awaitGrid(timeoutNanoseconds: Self.gridWaitNanoseconds) }
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: pane.agentID),

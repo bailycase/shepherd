@@ -148,11 +148,8 @@ An iOS client exists in `App/iOS` but is deferred until after the macOS redesign
 
 ## pi in terminal panes
 
-With Settings ▸ Pi ▸ Sync pi theme on, typing `pi` in a zsh, bash, or fish terminal pane loads
-Shepherd's theme for that run. The startup files live in Shepherd's support directory, and
-Shepherd never edits your shell rc files or pi settings. Your own `pi` aliases and functions take
-precedence, and `command pi` or an absolute path bypasses the integration. Reopen existing panes
-after changing the setting.
+Terminal panes run your configured login shell without wrapping `pi` or injecting a theme.
+pi uses its own theme and settings. Shepherd never edits your shell rc files or pi settings.
 
 pi started by hand in a pane has no Shepherd agent identity, so the agent tools (panes, review,
 automations, peers) and status, naming, and subagent reporting are unavailable there. Use a

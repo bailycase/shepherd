@@ -16,7 +16,7 @@ struct AppSettingsTests {
         #expect(settings.defaultModel.isEmpty)
         #expect(settings.defaultThinking == .medium)
         #expect(settings.autoNameAgents)
-        #expect(settings.piThemeExtension && settings.piPanesExtension && settings.piReviewExtension)
+        #expect(settings.piPanesExtension && settings.piReviewExtension)
         #expect(settings.piSubagentsExtension && settings.piNativeSubagents)
         #expect(!settings.autoUpdatePi && !settings.autoUpdateExtensions)
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
@@ -73,7 +73,6 @@ struct AppSettingsTests {
         settings.defaultModel = "anthropic/claude-sonnet-4"
         settings.defaultThinking = .high
         settings.autoNameAgents = false
-        settings.piThemeExtension = false
         settings.piPanesExtension = false
         settings.piReviewExtension = false
         settings.piSubagentsExtension = false
@@ -98,7 +97,7 @@ struct AppSettingsTests {
         #expect(reloaded.terminalFontFamily == "Menlo" && reloaded.terminalFontSize == 15)
         #expect(reloaded.defaultModel == "anthropic/claude-sonnet-4" && reloaded.defaultThinking == .high)
         #expect(!reloaded.autoNameAgents)
-        #expect(!reloaded.piThemeExtension && !reloaded.piPanesExtension && !reloaded.piReviewExtension)
+        #expect(!reloaded.piPanesExtension && !reloaded.piReviewExtension)
         #expect(!reloaded.piSubagentsExtension && !reloaded.piNativeSubagents)
         #expect(reloaded.autoUpdatePi && reloaded.autoUpdateExtensions)
         #expect(reloaded.shellPath == "/bin/bash")

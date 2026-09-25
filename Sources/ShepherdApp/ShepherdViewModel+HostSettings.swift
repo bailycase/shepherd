@@ -38,7 +38,6 @@ enum HostSettingsMapping {
     /// The bundled extensions a client may turn on or off, in Settings ▸ Pi's order.
     static let bundled: [(id: String, name: String, keyPath: ReferenceWritableKeyPath<AppSettings, Bool>)] = [
         ("namer", "Name agents automatically", \.autoNameAgents),
-        ("theme", "Sync pi theme", \.piThemeExtension),
         ("panes", "Panes and agent tools", \.piPanesExtension),
         ("review", "Diff review tool", \.piReviewExtension),
         ("nativeSubagents", "Native subagents", \.piNativeSubagents),
