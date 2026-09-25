@@ -93,7 +93,8 @@ struct AttentionRow: View, Equatable {
     var compact = false
 
     var body: some View {
-        NWListRow(item.title, subtitle: compact ? nil : item.question, subtitleTone: .attention, leading: item.leading,
+        // The sidebar names the thread; its chip says who asks ("reviewer") or why.
+        NWListRow(compact ? item.thread : item.title, subtitle: compact ? nil : item.question, subtitleTone: .attention, leading: item.leading,
                   trailing: compact ? .reason(item.reason) : item.hostTag.map { .host($0) } ?? .none,
                   chevron: !compact, selected: selected)
     }
