@@ -96,8 +96,7 @@ struct RightPaneSplit<Content: View, Pane: View>: View {
                             .frame(width: layout.width, height: geo.size.height)
                             .clipped()
                     }
-                    .background(Color.nw.bgWindow)
-                    .nwFloatShadow(!docked)
+                    .nwFloatBackground(Color.nw.bgWindow, floating: !docked)
                     .offset(x: max(0, total - layout.width - AppLayout.dividerWidth))
                     .nwTransition(.pane, edge: .trailing)
                 }

@@ -202,6 +202,7 @@ public struct NWHunkHeader: View {
     public init(_ header: String) { self.header = header }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("diff.hunk")
         Text(header)
             .font(.nw(.mono))
             .foregroundStyle(.nw.textTertiary)
@@ -241,6 +242,7 @@ public struct NWFoldRow: View {
     }
 
     public var body: some View {
+        let _ = NWRenderProbe.tick("diff.fold")
         Button {
             #if os(macOS)
             if let expandFile, NSEvent.modifierFlags.contains(.option) { return expandFile() }
@@ -287,26 +289,33 @@ private struct NWFoldRowBody: View {
 }
 
 /// A file's diff (Review board): hunk headers, lines, and folds, with an annotation (an inline
-/// comment, or its editor) under any line. Its body is the rows themselves, so inside a
-/// `LazyVStack` they stay lazy and can scroll under a pinned `NWFileHeader`.
+/// comment, or its editor) under any line that has a note. Its body is the rows themselves, so
+/// inside a `LazyVStack` they stay lazy and can scroll under a pinned `NWFileHeader`.
+///
+/// Each row compares its line and its note (never the closures, which act on the same diff), so
+/// a comment added, opened, or saved redraws its own row rather than every row on screen.
 ///
 ///     Section {
-///         NWDiffView(rows, onComment: comment, onExpand: expand) { line in
-///             if let note = notes[line.key] { NWInlineComment(…) }
+///         NWDiffView(rows, notes: comments, onComment: comment, onExpand: expand) { line, comment in
+///             NWInlineComment(…)
 ///         }
 ///     } header: { NWFileHeader(…) }
-public struct NWDiffView<Annotation: View>: View {
+public struct NWDiffView<Note: Equatable, Annotation: View>: View {
     let rows: [NWDiffRow]
+    let notes: [Int: Note]
     let onComment: ((NWDiffLineContent) -> Void)?
     let onExpand: (String) -> Void
     let onExpandFile: (() -> Void)?
-    let annotation: (NWDiffLineContent) -> Annotation
+    let annotation: (NWDiffLineContent, Note) -> Annotation
 
-    /// `onExpand` gets a fold's id; `onExpandFile` (⌥-click on a fold) opens every fold. The
-    /// annotation is inset under its line (`NWDiffMetrics.annotationInsets`).
-    public init(_ rows: [NWDiffRow], onComment: ((NWDiffLineContent) -> Void)? = nil, onExpand: @escaping (String) -> Void,
-                onExpandFile: (() -> Void)? = nil, @ViewBuilder annotation: @escaping (NWDiffLineContent) -> Annotation) {
+    /// `notes` are keyed by a line's `key`; a line with one shows `annotation` under it, inset
+    /// by `NWDiffMetrics.annotationInsets`. `onExpand` gets a fold's id; `onExpandFile` (⌥-click
+    /// on a fold) opens every fold.
+    public init(_ rows: [NWDiffRow], notes: [Int: Note], onComment: ((NWDiffLineContent) -> Void)? = nil,
+                onExpand: @escaping (String) -> Void, onExpandFile: (() -> Void)? = nil,
+                @ViewBuilder annotation: @escaping (NWDiffLineContent, Note) -> Annotation) {
         self.rows = rows
+        self.notes = notes
         self.onComment = onComment
         self.onExpand = onExpand
         self.onExpandFile = onExpandFile
@@ -315,37 +324,58 @@ public struct NWDiffView<Annotation: View>: View {
 
     public var body: some View {
         ForEach(rows) { row in
-            NWDiffRowView(row: row, onComment: onComment, onExpand: onExpand, onExpandFile: onExpandFile, annotation: annotation)
+            NWDiffRowView(row: row, note: row.lineKey.flatMap { notes[$0] }, onComment: onComment, onExpand: onExpand,
+                          onExpandFile: onExpandFile, annotation: annotation)
+                .equatable()
         }
     }
 }
 
-extension NWDiffView where Annotation == EmptyView {
+/// A diff without notes.
+public enum NWDiffNoNote: Equatable, Sendable {}
+
+extension NWDiffView where Note == NWDiffNoNote, Annotation == EmptyView {
     /// A diff without annotations.
     public init(_ rows: [NWDiffRow], onComment: ((NWDiffLineContent) -> Void)? = nil, onExpand: @escaping (String) -> Void,
                 onExpandFile: (() -> Void)? = nil) {
-        self.init(rows, onComment: onComment, onExpand: onExpand, onExpandFile: onExpandFile) { _ in EmptyView() }
+        self.init(rows, notes: [:], onComment: onComment, onExpand: onExpand, onExpandFile: onExpandFile) { _, _ in EmptyView() }
+    }
+}
+
+extension NWDiffRow {
+    /// A line's key, for its note.
+    var lineKey: Int? {
+        if case .line(let line) = self { line.key } else { nil }
     }
 }
 
 /// One row, always a single view (a lazy stack's fast path). Opaque on the pane's background, so
 /// the rows sliding into place as a fold or a comment opens or closes cover what is fading
-/// under them instead of showing through it.
-private struct NWDiffRowView<Annotation: View>: View {
+/// under them instead of showing through it. Equal while its row and note are.
+private struct NWDiffRowView<Note: Equatable, Annotation: View>: View, Equatable {
     let row: NWDiffRow
+    let note: Note?
     let onComment: ((NWDiffLineContent) -> Void)?
     let onExpand: (String) -> Void
     let onExpandFile: (() -> Void)?
-    let annotation: (NWDiffLineContent) -> Annotation
+    let annotation: (NWDiffLineContent, Note) -> Annotation
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.row == rhs.row && lhs.note == rhs.note && (lhs.onComment == nil) == (rhs.onComment == nil)
+            && (lhs.onExpandFile == nil) == (rhs.onExpandFile == nil)
+    }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("diff.row")
         VStack(alignment: .leading, spacing: 0) {
             switch row {
             case .hunk(_, let header):
                 NWHunkHeader(header)
             case .line(let line):
                 NWDiffLine(line, onComment: onComment.map { comment in { comment(line) } })
-                annotation(line).padding(NWDiffMetrics.annotationInsets)
+                if let note {
+                    annotation(line, note).padding(NWDiffMetrics.annotationInsets)
+                }
             case .fold(let id, let count, let kind, let range):
                 NWFoldRow(count: count, kind: kind, range: range, action: { onExpand(id) }, expandFile: onExpandFile)
             }
