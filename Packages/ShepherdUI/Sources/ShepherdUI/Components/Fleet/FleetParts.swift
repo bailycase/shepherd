@@ -115,6 +115,7 @@ public struct NWListRow: View, Equatable {
     let chevron: Bool
     let selected: Bool
     let dimmed: Bool
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     public init(_ title: String, subtitle: String? = nil, subtitleMono: Bool = true, subtitleTone: AgentState? = nil,
                 clock: NWRowClock? = nil, leading: Leading = .none, trailing: Trailing = .none, chevron: Bool = true,
@@ -131,25 +132,34 @@ public struct NWListRow: View, Equatable {
         self.dimmed = dimmed
     }
 
+    public nonisolated static func == (a: NWListRow, b: NWListRow) -> Bool {
+        a.title == b.title && a.subtitle == b.subtitle && a.subtitleMono == b.subtitleMono && a.subtitleTone == b.subtitleTone
+            && a.clock == b.clock && a.leading == b.leading && a.trailing == b.trailing && a.chevron == b.chevron
+            && a.selected == b.selected && a.dimmed == b.dimmed
+    }
+
     public var body: some View {
         let nw = Color.nw
         HStack(spacing: NW.Space.l) {
             leadingView
                 .frame(width: NWListMetrics.leadingWidth)
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                // At accessibility sizes a line may wrap once rather than lose most of its words.
                 Text(title)
                     .font(.nw(.ui, weight: selected ? .semibold : .medium))
                     .foregroundStyle(nw.textPrimary)
-                    .lineLimit(1)
+                    .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
                 if subtitle != nil || clock != nil {
                     statusLine
                         .font(subtitleMono ? .nw(.mono) : .nw(.caption))
                         .foregroundStyle(subtitleTone?.textColor ?? nw.textTertiary)
-                        .lineLimit(1)
+                        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
                 }
+                // At accessibility sizes the accessory goes under the title, which keeps its width.
+                if typeSize.isAccessibilitySize { trailingView }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            trailingView
+            if !typeSize.isAccessibilitySize { trailingView }
             if chevron {
                 Image(systemName: "chevron.right")
                     .font(.nw(.caption, weight: .semibold))
@@ -273,19 +283,16 @@ public struct NWAttentionCard<Actions: View>: View {
     public var body: some View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.s) {
-            HStack(spacing: NW.Space.s) {
-                Image(systemName: symbol)
-                    .font(.nw(.caption, weight: .semibold))
-                    .foregroundStyle(nw.lantern)
-                    .accessibilityHidden(true)
-                Text(origin).font(.nw(.caption)).foregroundStyle(nw.textTertiary).lineLimit(1)
-                Spacer(minLength: NW.Space.xs)
-                if let host { NWHostBadge(host) }
-                if let since {
-                    TimelineView(NWElapsedSchedule(start: since)) { context in
-                        Text(NWDuration.text(context.date.timeIntervalSince(since)))
-                            .font(.nw(.caption)).foregroundStyle(nw.textTertiary).monospacedDigit()
-                    }
+            // The kind, host and time share a line when they fit; otherwise the host and time drop under.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NW.Space.s) {
+                    originLine
+                    Spacer(minLength: NW.Space.xs)
+                    stamp
+                }
+                VStack(alignment: .leading, spacing: NW.Space.xs) {
+                    originLine
+                    stamp
                 }
             }
             Text(title)
@@ -308,6 +315,29 @@ public struct NWAttentionCard<Actions: View>: View {
         .nwCard(radius: NWListMetrics.cardRadius, fill: selected ? nw.bgSelected : nil, line: selected ? nw.lineStrong : nil)
         .accessibilityElement(children: .contain)
     }
+
+    private var originLine: some View {
+        HStack(spacing: NW.Space.s) {
+            Image(systemName: symbol)
+                .font(.nw(.caption, weight: .semibold))
+                .foregroundStyle(Color.nw.lantern)
+                .accessibilityHidden(true)
+            Text(origin).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).lineLimit(2)
+        }
+    }
+
+    private var stamp: some View {
+        HStack(spacing: NW.Space.s) {
+            if let host { NWHostBadge(host) }
+            if let since {
+                TimelineView(NWElapsedSchedule(start: since)) { context in
+                    Text(NWDuration.text(context.date.timeIntervalSince(since)))
+                        .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
+                        .lineLimit(1).fixedSize()
+                }
+            }
+        }
+    }
 }
 
 /// A host's card (MobileMore, iPadHosts): the name, its address, the connection, what runs there,
@@ -319,18 +349,25 @@ public struct NWHostCard<Actions: View>: View {
     let status: String
     let summary: String
     let summaryTone: AgentState?
+    let openLabel: String?
+    let open: (() -> Void)?
     @ViewBuilder let actions: () -> Actions
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// `state` colors the connection: done while connected, running while connecting, failed
-    /// while offline.
+    /// while offline. With `open`, the card opens on a tap and shows a chevron (a button labeled
+    /// `openLabel` for VoiceOver).
     public init(name: String, address: String, state: AgentState, status: String, summary: String,
-                summaryTone: AgentState? = nil, @ViewBuilder actions: @escaping () -> Actions) {
+                summaryTone: AgentState? = nil, openLabel: String? = nil, open: (() -> Void)? = nil,
+                @ViewBuilder actions: @escaping () -> Actions) {
         self.name = name
         self.address = address
         self.state = state
         self.status = status
         self.summary = summary
         self.summaryTone = summaryTone
+        self.openLabel = openLabel
+        self.open = open
         self.actions = actions
     }
 
@@ -342,17 +379,28 @@ public struct NWHostCard<Actions: View>: View {
                     .font(.nw(.caption, weight: .medium))
                     .foregroundStyle(nw.textSecondary)
                     .accessibilityHidden(true)
-                // The name and address wrap under each other at large text rather than squeezing.
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) { nameText; addressText }
-                    VStack(alignment: .leading, spacing: NW.Space.xxs) { nameText; addressText }
+                // Name, address and status share a line when they fit; at large text each takes its own.
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: NW.Space.xxs) { nameText; addressText; statusView }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) { nameText; addressText }
+                        VStack(alignment: .leading, spacing: NW.Space.xxs) { nameText; addressText }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    statusView
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: NW.Space.xs) {
-                    NWStatusDot(state, size: NWListMetrics.dot - 1)
-                    Text(status).font(.nw(.caption, weight: .medium)).foregroundStyle(state.textColor)
+                if let open {
+                    Button(action: open) {
+                        Image(systemName: "chevron.right")
+                            .font(.nw(.caption, weight: .semibold))
+                            .foregroundStyle(nw.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .nwTouchTarget(height: NW.Height.controlS, width: NW.Height.controlS)
+                    .accessibilityLabel(openLabel ?? name)
                 }
-                .fixedSize()
             }
             Text(summary)
                 .nwText(.caption)
@@ -363,7 +411,17 @@ public struct NWHostCard<Actions: View>: View {
         .padding(NW.Space.l)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nwCard(radius: NWListMetrics.cardRadius)
+        .contentShape(RoundedRectangle(cornerRadius: NWListMetrics.cardRadius))
+        .onTapGesture { open?() }
         .accessibilityElement(children: .contain)
+    }
+
+    private var statusView: some View {
+        HStack(spacing: NW.Space.xs) {
+            NWStatusDot(state, size: NWListMetrics.dot - 1)
+            Text(status).font(.nw(.caption, weight: .medium)).foregroundStyle(state.textColor)
+        }
+        .fixedSize()
     }
 
     private var nameText: some View {
@@ -371,7 +429,8 @@ public struct NWHostCard<Actions: View>: View {
     }
 
     private var addressText: some View {
-        Text(address).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).truncationMode(.middle)
+        Text(address).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
+            .lineLimit(typeSize.isAccessibilitySize ? 2 : 1).truncationMode(.middle)
     }
 }
 
