@@ -1120,9 +1120,6 @@ public final class SessionServer: @unchecked Sendable {
         send(.dirListing(id: id, path: resolved, parent: parent, dirs: names), to: client)
     }
 
-    /// Create a space from a host-side directory. Pure state — no GUI
-    /// involvement — so the server handles it directly, mirroring the GUI's
-    /// own addSpace (space + shell tab in one snapshot).
     /// A remote client managing an automation. Everything but reading its runs goes through
     /// `onAutomationRequest`, the handler an agent's `automation_*` tools reach, so a remote
     /// change follows the same rules as a local one.
@@ -1201,6 +1198,9 @@ public final class SessionServer: @unchecked Sendable {
         return .success((name, prompt, cwd))
     }
 
+    /// Create a space from a host-side directory. Pure state — no GUI
+    /// involvement — so the server handles it directly, mirroring the GUI's
+    /// own addSpace (space + shell tab in one snapshot).
     private func remoteAddSpace(id: Int, path: String, client: ExtensionConnection) {
         let expanded = (path as NSString).expandingTildeInPath
         var isDirectory: ObjCBool = false
