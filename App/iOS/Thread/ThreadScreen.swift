@@ -8,8 +8,8 @@ import ShepherdRemote
 /// status line, the turns, and the composer (`ThreadComposer`, Composer/) at the bottom. The
 /// thread polls its host only while it is on screen and the app is active.
 ///
-/// Hooks other tracks fill: `SubagentCards` (Subagents/) where a turn spawned children,
-/// `SubagentHooks.list` for the footer's "N subagents", `ReviewHooks.open` for the changes card
+/// Hooks other tracks fill: `SubagentTraySection` (Subagents/) above the composer,
+/// `SubagentHooks.list` for the footer's "N subagents" and a turn's subagent lines, `ReviewHooks.open` for the changes card
 /// and edit lines, `AgentActionsMenu` (Search/) in the options menu, the windows' hooks
 /// (Windows/): Open in new window, a turn's Send to… and drag, and text dropped on the composer,
 /// and the terminal (Terminal/): `threadTerminal` under the thread, `TerminalToolbarButton`,
@@ -229,7 +229,7 @@ private struct ThreadTranscript: View {
             UserTurnView(turn: row.turn).equatable()
         } else if let presentation = row.presentation {
             AgentTurnView(thread: ref, presentation: presentation, live: row.live,
-                          subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
+                          subagents: store.placements[row.id]?.all.count ?? 0,
                           startedAt: row.startedAt, working: working,
                           actions: actions(row, running: running))
                 .equatable()

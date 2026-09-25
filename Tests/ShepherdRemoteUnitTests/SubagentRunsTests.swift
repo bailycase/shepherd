@@ -93,15 +93,16 @@ struct SubagentRunsTests {
     }
 
     /// A finished call never names the one running now: an older host reports finished calls only.
+    /// Between calls nothing shows: nothing in a transcript spins (LiveText).
     @Test(arguments: [
-        (nil, nil, nil, "Thinking…"),
+        (nil, nil, nil, nil),
         (true, "bash", ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "sleep 25", at: 1), "Pause requested"),
         (nil, "bash", ChildActivity(tool: "bash", preview: "swift build", at: 1), "Running bash…"),
         (nil, "bash", nil, "Running bash…"),
         (nil, "edit", ChildActivity(kind: ChildActivity.runningKind, tool: "read", preview: "A.swift", at: 1), "Running edit…"),
         (nil, "edit", ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "Sources/App/ThreadView.swift", at: 1), "Running edit ThreadView.swift…"),
-    ] as [(Bool?, String?, ChildActivity?, String)])
-    func aLiveRunsTailNamesOnlyTheCallInFlight(paused: Bool?, tool: String?, activity: ChildActivity?, line: String) {
+    ] as [(Bool?, String?, ChildActivity?, String?)])
+    func aLiveRunsTailNamesOnlyTheCallInFlight(paused: Bool?, tool: String?, activity: ChildActivity?, line: String?) {
         var run = Self.run("w", paused: paused)
         run.currentTool = tool
         run.lastActivity = activity
@@ -184,13 +185,6 @@ struct SubagentRunsTests {
         #expect(mixed?.text == "1 done · 1 failed")
         #expect(mixed?.phase == .failed)
         #expect(nativeRunTally([]) == nil)
-    }
-
-    @Test func theWaitingLineNamesTheLiveRuns() {
-        #expect(nativeRunWaitingLabel([Self.run("worker", startedAt: 1), Self.run("reviewer", startedAt: 2, needsAttention: true),
-                                       Self.run("tests", state: "complete")]) == "Waiting on worker and reviewer")
-        #expect(nativeRunWaitingLabel((1...4).map { Self.run("lane\($0)") }) == "Waiting on 4 subagents")
-        #expect(nativeRunWaitingLabel([Self.run("tests", state: "complete")]) == nil)
     }
 
     @Test func aFinishedGroupStatusSpansFirstStartToLastEnd() {

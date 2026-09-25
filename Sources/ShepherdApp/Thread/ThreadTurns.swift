@@ -102,8 +102,9 @@ struct UserTurn: View, Equatable {
     }
 }
 
-/// One agent turn (NWThread board): thinking, prose, activity lines, subagent cards where their
-/// spawn calls were, then, once it has finished, the changes card and the footer (shown while
+/// One agent turn (NWThread board): thinking, prose, activity lines, the subagent record (where
+/// they started and where they finished), then, once it has finished, the changes card and the
+/// footer (shown while
 /// the turn is hovered). Everything it shows was derived once per turn change
 /// (`NativeTurnPresentation`), and it redraws only when that, its placement, or its flags
 /// change; hovering redraws only the footer.
@@ -111,7 +112,7 @@ struct AgentTurn: View, Equatable {
     let presentation: NativeTurnPresentation
     /// True while this turn is the one streaming.
     let live: Bool
-    var subagents = NativeSubagentPlacement()
+    var subagents = TurnSubagents()
     var subagentActions: SubagentActions? = nil
     /// Timestamp (ms) of the user message that opened this turn: the footer's time and duration.
     var startedAt: Double? = nil
@@ -132,7 +133,7 @@ struct AgentTurn: View, Equatable {
     @State private var hover: MessageHover
 
     /// `hover` seeds the pointer state, for previews and tests.
-    init(presentation: NativeTurnPresentation, live: Bool, subagents: NativeSubagentPlacement = NativeSubagentPlacement(),
+    init(presentation: NativeTurnPresentation, live: Bool, subagents: TurnSubagents = TurnSubagents(),
          subagentActions: SubagentActions? = nil, startedAt: Double? = nil, retry: (() -> Void)? = nil, review: ((String) -> Void)? = nil,
          working: String? = nil, arriving: Bool = false, settled: Bool = true, hover: MessageHover? = nil) {
         self.presentation = presentation
@@ -177,13 +178,6 @@ struct AgentTurn: View, Equatable {
                     itemView(item).nwArrival(entering, Self.entrance(item), edge: .bottom)
                 }
             }
-            // Runs with no spawn row in this turn render after it; a folded group already
-            // placed them in its strip or ledger unless there was no spawn row to fold into.
-            if let subagentActions, !subagents.trailing.isEmpty,
-               subagents.byToolCall.isEmpty || !NativeCardLayout(subagents).folds {
-                SubagentStack(runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing, actions: subagentActions)
-                    .nwArrival(entering)
-            }
             // The tail row passes from the thread into its reply unchanged: it never re-enters.
             if let working { WorkingRow(label: working).nwArrival(shown.appeared && settled) }
             if !live, !presentation.items.isEmpty {
@@ -221,11 +215,10 @@ struct AgentTurn: View, Equatable {
             Prose(blocks: blocks, writingFence: live && openFence).equatable()
         case .work(let group):
             WorkGroupView(group: group, review: review).equatable()
-        case .subagents(_, let callIDs, let all):
-            if let subagentActions {
-                SubagentStack(runs: all ? subagents.all : callIDs.flatMap { subagents.byToolCall[$0] ?? [] },
-                              turnLive: subagents.all.contains { !$0.isTerminal }, actions: subagentActions)
-            }
+        case .subagents(_, let line, _):
+            // Where they started, and where they finished: both open the first run in the
+            // inspector, whose ‹ › browse the rest.
+            NWSubagentRecordLine(title: line.title, meta: line.meta, action: openFirstRun)
         case .note(_, let text):
             Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)
@@ -242,6 +235,12 @@ struct AgentTurn: View, Equatable {
         }
     }
 
+    /// Opens the turn's first subagent; nil while nothing can open it.
+    private var openFirstRun: (() -> Void)? {
+        guard let subagentActions, let first = subagents.first else { return nil }
+        return { subagentActions.inspect(first) }
+    }
+
     private func changesCard(_ changes: NativeTurnChanges) -> some View {
         NWChangesCard(
             title: changes.title, added: changes.added, removed: changes.removed,
@@ -256,7 +255,6 @@ struct AgentTurn: View, Equatable {
     /// Copy and retry, then "2:44 PM · 3m 12s · 23 tool calls" and "3 subagents" as a link to
     /// the first run.
     private var footer: some View {
-        let ordered = subagents.all.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
         let meta = [nativeTurnTimeText(startedAt: startedAt, endedAt: presentation.endedAt),
                     presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
             .compactMap { $0 }.joined(separator: " · ")
@@ -264,13 +262,31 @@ struct AgentTurn: View, Equatable {
         return TurnFooter(
             hover: hover,
             meta: meta,
-            link: ordered.isEmpty || subagentActions == nil ? nil : nativeCount(ordered.count, "subagent"),
-            onLink: ordered.first.flatMap { first in subagentActions.map { actions in { actions.inspect(first) } } },
+            link: subagents.count == 0 || subagentActions == nil ? nil : nativeCount(subagents.count, "subagent"),
+            onLink: openFirstRun,
             onCopy: copy.isEmpty ? nil : {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(copy, forType: .string)
             },
             onRetry: retry)
+    }
+}
+
+/// A turn's subagents as the turn needs them: how many, and the first spawned (what the record
+/// and the footer's "3 subagents" open). Compared by the first run's id alone, so a poll that
+/// moves a live run redraws the tray, never the turn.
+struct TurnSubagents: Equatable {
+    var count = 0
+    var first: ChildRun?
+
+    init(_ placement: NativeSubagentPlacement? = nil) {
+        let all = placement?.all ?? []
+        count = all.count
+        first = all.min { ($0.startedAt ?? 0, $0.id) < ($1.startedAt ?? 0, $1.id) }
+    }
+
+    static func == (a: TurnSubagents, b: TurnSubagents) -> Bool {
+        a.count == b.count && a.first?.runID == b.first?.runID
     }
 }
 

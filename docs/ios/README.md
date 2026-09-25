@@ -191,10 +191,10 @@ keep the version for real breaks.
   resolved through `creationOptions`. Start sends `createAgent` as the Mac's New Agent sheet
   does, then opens the thread; images ride on the first send. An older host says what it lacks
   instead of failing. On iPad it is a small form over the thread, with a popover per chip.
-- **Subagents (`Subagents/`):** cards in the thread where the spawn was (one run as a card, a
-  group as one card that becomes a ledger once every run finishes), the runs list (this turn and
+- **Subagents (`Subagents/`):** the tray above the composer (one row per run, in one card with
+  Up next) and two record lines in the thread where they started and finished, the runs list (this turn and
   earlier), and one run: its goal, its live transcript, and a steer field that reaches only that
-  child. A child's question is answered in place, from the card, the list or the run. Pause,
+  child. A child's question is answered from the tray's Answer (in the composer's place), the list or the run. Pause,
   Continue, Stop and Re-run appear where the host takes them. On iPad the run opens in an
   inspector column beside the thread.
 - **Review (`Review/`):** the changes (working tree vs HEAD, or the PR), with viewed progress,

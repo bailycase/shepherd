@@ -282,7 +282,12 @@ public struct NativeQuestionOption: Equatable, Identifiable, Sendable {
     /// The options of `dialog`, parsed. An option is recommended only when the asker said so:
     /// "(Recommended)" (any case) at the end of its first line, which the title drops.
     public static func options(_ dialog: NativeThreadDialog) -> [NativeQuestionOption] {
-        (dialog.options ?? []).enumerated().map { index, value in
+        options(dialog.options ?? [])
+    }
+
+    /// Answers as offered, parsed the same way (a subagent's question carries them bare).
+    public static func options(_ values: [String]) -> [NativeQuestionOption] {
+        values.enumerated().map { index, value in
             let lines = value.split(separator: "\n", omittingEmptySubsequences: false)
             var title = String(lines.first ?? "").trimmingCharacters(in: .whitespaces)
             var recommended = false

@@ -486,13 +486,16 @@ final class QueueStackState {
 
 // MARK: Views
 
-/// The stack itself: the composer puts it above the card while it has a row to show.
+/// The stack itself: the composer puts it above the card while it has a row to show (in the
+/// dock's card, under the subagents, while they show).
 struct QueueStackView: View {
     @Bindable var state: QueueStackState
     let store: NativeThreadStore
     let running: Bool
     /// The thread has loaded since it came on screen: rows that arrive or leave move.
     let animated: Bool
+    /// Its own card; false under the subagents in the dock's card.
+    var framed = true
     var focusedRow: FocusState<String?>.Binding
     let focusComposer: () -> Void
 
@@ -503,7 +506,7 @@ struct QueueStackView: View {
         NWQueueStack(count: state.count, paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                      collapsed: state.collapsed,
                      scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > NWQueueMetrics.expandedMaxRows,
-                     drop: state.dropSlot,
+                     drop: state.dropSlot, framed: framed,
                      onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
             ForEach(rows) { row in
                 QueueRowView(row: row, hover: state.hover(row.id), focused: focusedRow.wrappedValue == row.id, running: running,
