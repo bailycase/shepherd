@@ -118,15 +118,12 @@ struct ThreadView: View {
                 // While stuck, growth keeps the tail pinned without any scrollTo; detaching only
                 // ever happens on user scroll intent.
                 .defaultScrollAnchor(follower.sticky ? .bottom : nil, for: .sizeChanges)
-                .onScrollGeometryChange(for: ScrollProbe.self) { geometry in
-                    ScrollProbe(distance: Self.distanceFromBottom(geometry),
-                                content: geometry.contentSize.height, container: geometry.containerSize.height,
-                                inset: geometry.contentInsets.bottom)
-                } action: { old, new in
-                    observe(old: old, new: new)
+                .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
+                    // Intent is a wheel tick (350 ms window) or a live drag phase.
+                    let gesture = Date() <= wheelIntentUntil || follower.userScrolling
                     // The size-change anchor does not re-pin when the inset or the composer
                     // changes under it; while stuck, every layout change lands on the tail.
-                    if follower.sticky, new.layoutDiffers(from: old), new.distance > 4 {
+                    if follower.observe(from: old, to: new, gesture: gesture) {
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                 }
@@ -252,35 +249,16 @@ struct ThreadView: View {
         }
     }
 
-    /// How far the visible bottom sits above the end of the content. `containerSize` is the
-    /// viewport minus both insets (the top margin and the composer's safe area), and the offset
-    /// runs from `-top` to `content + bottom - frame`, so at the tail this is exactly 0.
-    /// Content that fits the viewport reads negative.
+    /// How far the visible bottom sits above the end of the content (`NativeScrollProbe`): 0 at
+    /// the tail, negative for content that fits the viewport.
     static func distanceFromBottom(_ geometry: ScrollGeometry) -> CGFloat {
-        geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height - geometry.contentInsets.top
+        CGFloat(probe(geometry).distance)
     }
 
-    private struct ScrollProbe: Equatable {
-        var distance: CGFloat
-        var content: CGFloat
-        var container: CGFloat
-        /// Bottom content inset (the floating composer); a change here is layout, not the user.
-        var inset: CGFloat
-        func layoutDiffers(from other: ScrollProbe) -> Bool {
-            content != other.content || container != other.container || inset != other.inset
-        }
-    }
-
-    /// Intent is a wheel tick (350 ms window) or a live drag phase. Offset changes alone are
-    /// never intent: layout shrink and the resulting offset shift arrive in separate
-    /// callbacks, so "moved up without a size change" misfires on every provisional→history
-    /// swap.
-    private func observe(old: ScrollProbe, new: ScrollProbe) {
-        let gesture = Date() <= wheelIntentUntil || follower.userScrolling
-        let intent = gesture && new.distance > old.distance && !new.layoutDiffers(from: old)
-        // Content that fits the viewport has a negative distance; growth from there is layout.
-        let grew = new.content > old.content && old.distance > 0
-        follower.observe(distanceFromBottom: new.distance, userIntent: intent, contentGrew: grew)
+    static func probe(_ geometry: ScrollGeometry) -> NativeScrollProbe {
+        NativeScrollProbe(content: geometry.contentSize.height, offset: geometry.contentOffset.y,
+                          container: geometry.containerSize.height, insetTop: geometry.contentInsets.top,
+                          insetBottom: geometry.contentInsets.bottom)
     }
 
     /// Wheel/trackpad events are the one user scroll intent SwiftUI does not phase for us.

@@ -602,6 +602,48 @@ public struct NativeScrollFollower: Equatable, Sendable {
 
     /// The pill shows while detached and something is happening or already happened below.
     public func showsJump(running: Bool) -> Bool { !sticky && (running || unseen) }
+
+    /// A stuck view this far above its tail after a layout change is moved back onto it.
+    public static let repinSlack: Double = 4
+
+    /// Two scroll-geometry readings in a row. Intent is a live gesture (`gesture`: a finger or a
+    /// wheel) moving the offset up with the layout unchanged; an offset change alone never is,
+    /// because a layout change and the offset shift it causes arrive in separate readings.
+    /// Returns true when the view should land on its tail again: it is stuck and the layout
+    /// changed under it (rows arrived or re-wrapped, the composer or keyboard resized the inset),
+    /// which the scroll view's size-change anchor does not follow on its own.
+    public mutating func observe(from old: NativeScrollProbe, to new: NativeScrollProbe, gesture: Bool) -> Bool {
+        let layoutChanged = new.layoutDiffers(from: old)
+        let intent = gesture && new.distance > old.distance && !layoutChanged
+        // Content that fits the viewport has a negative distance; growth from there is layout.
+        let grew = new.content > old.content && old.distance > 0
+        observe(distanceFromBottom: new.distance, userIntent: intent, contentGrew: grew)
+        return sticky && layoutChanged && new.distance > Self.repinSlack
+    }
+}
+
+/// One reading of a thread's scroll view, in points: how far the visible bottom sits above the
+/// end of the content, and the sizes whose change is layout rather than the reader.
+public struct NativeScrollProbe: Equatable, Sendable {
+    public var distance: Double
+    public var content: Double
+    public var container: Double
+    /// The bottom inset (the composer, and on iOS the keyboard).
+    public var inset: Double
+
+    /// From SwiftUI's `ScrollGeometry`: `container` is the viewport less both insets, and the
+    /// offset runs from `-insetTop` to `content + insetBottom - frame`, so at the tail the
+    /// distance is exactly 0. Content that fits the viewport reads negative.
+    public init(content: Double, offset: Double, container: Double, insetTop: Double, insetBottom: Double) {
+        distance = content - offset - container - insetTop
+        self.content = content
+        self.container = container
+        inset = insetBottom
+    }
+
+    public func layoutDiffers(from other: NativeScrollProbe) -> Bool {
+        content != other.content || container != other.container || inset != other.inset
+    }
 }
 
 // MARK: Markdown blocks
