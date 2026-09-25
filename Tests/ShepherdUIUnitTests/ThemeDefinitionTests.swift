@@ -36,8 +36,8 @@ struct ThemeDefinitionTests {
     }
 
     @Test(arguments: Variant.all)
-    func syntaxTerminalAndPiColorsAreOpaqueHex(_ variant: Variant) {
-        for group in [variant.value.syntax, variant.value.pi] as [Any] {
+    func syntaxAndTerminalColorsAreOpaqueHex(_ variant: Variant) {
+        for group in [variant.value.syntax] as [Any] {
             for child in Mirror(reflecting: group).children {
                 let value = child.value as? String
                 #expect(value.flatMap(HexColor.init)?.isOpaque == true, "\(variant.testDescription).\(child.label ?? "?") = \(value ?? "nil")")
@@ -58,16 +58,6 @@ struct ThemeDefinitionTests {
         #expect(HexColor(terminal.background) == HexColor(variant.colors.bgWindow))
         #expect(HexColor(terminal.foreground) == HexColor(variant.colors.textPrimary))
         #expect(HexColor(terminal.cursor) == HexColor(variant.colors.lantern))
-    }
-
-    /// pi run by hand in a pane uses the same brand, state, and syntax colors.
-    @Test(arguments: Variant.all)
-    func piThemeUsesTheNightWatchRoles(_ variant: Variant) {
-        let pi = variant.value.pi, c = variant.colors, s = variant.value.syntax
-        #expect(pi.accent == c.lantern && pi.success == c.done && pi.error == c.failed && pi.mdLink == c.running)
-        #expect(pi.text == c.textPrimary && pi.syntaxKeyword == s.keyword && pi.syntaxString == s.string)
-        // Translucent roles are flattened onto the window for pi.
-        #expect(pi.toolErrorBg == variant.painted(\.failedTint, over: \.bgWindow).hexString)
     }
 
     @Test(arguments: Variant.themes)
@@ -101,10 +91,10 @@ struct ThemeDefinitionTests {
         theme.light.terminal.selectionBackground = "nope"
         theme.dark.syntax.keyword = ""
         // Alpha is for UI roles only: renderers get opaque colors.
-        theme.dark.pi.accent = "#f2a93b80"
+        theme.dark.terminal.cursor = "#f2a93b80"
         #expect(theme.invalidColors == [
             "light.terminal.selectionBackground", "light.terminal.palette[3]",
-            "dark.colors.running", "dark.syntax.keyword", "dark.pi.accent",
+            "dark.colors.running", "dark.syntax.keyword", "dark.terminal.cursor",
         ])
     }
 

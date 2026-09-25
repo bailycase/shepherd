@@ -277,7 +277,7 @@ struct NativeThreadStoreTests {
         #expect(host.actions.count == 1 && store.sentCount == 1 && store.draft.isEmpty && store.ready)
     }
 
-    /// What the composer's "Starting pi…" watches: a thread waiting for its pi, never one that
+    /// What the composer's "Starting…" watches: a thread waiting for its pi, never one that
     /// is ready, in trouble, or a thread kept from before that is only refreshing.
     @Test func aThreadAwaitsPiOnlyWhileItsPiHasNotAnswered() async {
         let fresh = manualStore()
@@ -390,18 +390,18 @@ struct NativeThreadStoreTests {
         store.draft = "do the thing"
         let sending = Task { await store.send() }
         await until { store.busy }
-        host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent's pi exited (code 127)."))]
+        host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent exited (code 127)."))]
         await store.refresh()
         await sending.value
         #expect(host.actions.isEmpty && store.draft == "do the thing" && !store.busy)
-        #expect(!store.starting && store.loadError == "native_unavailable: The agent's pi exited (code 127).")
+        #expect(!store.starting && store.loadError == "native_unavailable: The agent exited (code 127).")
     }
 
     @Test func aPiThatNeverStartsBecomesAnErrorAfterTheLimitAndClearsWhenItAnswers() async {
         let (store, host, task) = await startedWhileStarting(manualStore(startingLimit: .zero))
         defer { task.cancel() }
         #expect(!store.starting && !store.acceptsSend)
-        #expect(store.loadError?.hasPrefix("The agent's pi has not started after") == true)
+        #expect(store.loadError?.hasPrefix("The agent has not started after") == true)
         await store.refresh()
         #expect(!store.starting && store.loadError != nil, "still over the limit: the error stays")
         host.starting = false

@@ -29,7 +29,7 @@ enum SidePaneTab: String, CaseIterable, Hashable, Sendable {
     /// What the header button's tip says when pi opened something here with the pane closed.
     var newsText: String {
         switch self {
-        case .changes: "pi opened a review in Changes"
+        case .changes: "Agent opened a review in Changes"
         }
     }
 }
