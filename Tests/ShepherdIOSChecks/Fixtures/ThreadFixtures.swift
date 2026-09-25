@@ -46,7 +46,7 @@ extension FixtureCatalog {
             FixtureScreen(name: "composer", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: { app in
                               app.threads.store(for: preview).draft = "Match the spacing in this screenshot"
-                              ComposerStates.shared.state(for: preview).attach([(ThreadFixtures.image(), "thread-spacing.png")])
+                              Task { await ComposerStates.shared.state(for: preview).attach([(ThreadFixtures.image(), "thread-spacing.png")]) }
                           }),
             // The model picker, from the host's catalog.
             FixtureScreen(name: "models", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
