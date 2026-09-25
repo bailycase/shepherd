@@ -225,16 +225,18 @@ private struct ReviewHeader: View, Equatable {
 }
 
 /// Expand All Files, Collapse All Files, and Copy Review as Text: the review's own ⋯ menu in a
-/// layout pane, the side pane's ⋯ menu on the Changes tab.
+/// layout pane, the side pane's ⋯ menu on the Changes tab. Without a `model` the items find the
+/// pane drawing the review when chosen (`ReviewSession.paneModel`, unobserved): the strip draws
+/// before its pane appears, and a pane rebuilt under it (the inspector closing) never redraws it.
 struct ReviewOptionItems: View {
     let session: ReviewSession
-    let model: ReviewPaneModel?
+    var model: ReviewPaneModel?
 
     var body: some View {
-        Button("Expand All Files") { model?.expandAllFiles() }
-            .disabled(model == nil || session.files.isEmpty)
-        Button("Collapse All Files") { model?.collapseAllFiles() }
-            .disabled(model == nil || session.files.isEmpty)
+        Button("Expand All Files") { (model ?? session.paneModel)?.expandAllFiles() }
+            .disabled(session.files.isEmpty)
+        Button("Collapse All Files") { (model ?? session.paneModel)?.collapseAllFiles() }
+            .disabled(session.files.isEmpty)
         Divider()
         Button("Copy Review as Text") {
             NSPasteboard.general.clearContents()
