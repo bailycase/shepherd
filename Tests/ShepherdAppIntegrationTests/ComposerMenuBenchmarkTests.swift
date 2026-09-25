@@ -112,7 +112,7 @@ struct ComposerMenuBenchmarkTests {
             let result = await FrameTimer.measure(thread.window, region: region, stillFrames: 3, timeout: 2, change: change)
             let counts = NWRenderProbe.stop()
             guard !quiet else { return }
-            print("BENCH chrome \(label): \(result) · composer \(counts["composer.body", default: 0]) · chips \(counts["composer.chips", default: 0]) · thread \(counts["thread.view", default: 0]) · menu rows \(NWMenuDiagnostics.rowBodies)")
+            print("BENCH chrome \(label): \(result) · composer \(counts["composer.body", default: 0]) · chips \(counts["composer.chips", default: 0]) · row min \(counts["composer.controlsMinimum", default: 0]) · row measured \(counts["composer.controlsMeasured", default: 0]) · thread \(counts["thread.view", default: 0]) · menu rows \(NWMenuDiagnostics.rowBodies)")
         }
         // `SHEPHERD_BENCHMARK_ONLY=keystroke|slash|picker|thinking` profiles one interaction.
         let only = ProcessInfo.processInfo.environment["SHEPHERD_BENCHMARK_ONLY"]

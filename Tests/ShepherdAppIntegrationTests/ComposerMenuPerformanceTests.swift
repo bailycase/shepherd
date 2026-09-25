@@ -201,7 +201,9 @@ struct ComposerMenuPerformanceTests {
     }
 
     /// Typing rebuilds the field, never the chips: past the first character (which lights Send),
-    /// a keystroke draws no chip row, so `ViewThatFits` keeps its measurements of them.
+    /// a keystroke draws no chip row, so `ViewThatFits` keeps its measurements of them; and the
+    /// window's minimum-size pass, which each keystroke sets off, is answered for the row without
+    /// measuring it (`ComposerControlsMinimum`).
     @Test func typingRedrawsTheFieldAndNoChipRow() async throws {
         let thread = ComposerThread(animated: false)
         defer { thread.close() }
@@ -213,6 +215,7 @@ struct ComposerMenuPerformanceTests {
             #expect(counts["composer.body", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
             #expect(counts["composer.chips", default: 0] == 0, "'\(letter)': \(counts)")
             #expect(counts["thread.view", default: 0] == 0, "'\(letter)': \(counts)")
+            #expect(counts["composer.controlsMinimum", default: 0] >= 1, "'\(letter)': the minimum-size pass was answered: \(counts)")
         }
     }
 
