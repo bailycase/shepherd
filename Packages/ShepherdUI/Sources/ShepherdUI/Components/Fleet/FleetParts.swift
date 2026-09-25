@@ -18,6 +18,8 @@ public enum NWListMetrics {
     public static let dot: CGFloat = 7
     /// A symbol in a row's leading column.
     public static let symbol: CGFloat = 15
+    /// How far a host's address may shrink to stay on one line before it truncates.
+    public static let addressMinimumScale: CGFloat = 0.6
     /// A row whose host is offline, or an automation switched off.
     public static let dimmedOpacity: Double = 0.55
 }
@@ -435,8 +437,9 @@ public struct NWHostCard<Actions: View>: View {
     }
 
     private var addressText: some View {
+        // One line at any size: an address broken mid-number reads as two.
         Text(address).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
-            .lineLimit(typeSize.isAccessibilitySize ? 2 : 1).truncationMode(.middle)
+            .lineLimit(1).minimumScaleFactor(NWListMetrics.addressMinimumScale).truncationMode(.middle)
     }
 }
 
