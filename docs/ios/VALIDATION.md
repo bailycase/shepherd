@@ -88,7 +88,7 @@ xcrun simctl shutdown "$iphone" "$ipad" && xcrun simctl delete "$iphone" "$ipad"
 
 **How it works.** The script compiles a fixture app from every file in `App/iOS` except
 `App/ShepherdIOSApp.swift`, with `ThreadSimulatorFixture.swift` as its entry point, linking the
-scheme's package objects and copying ShepherdUI's font bundle. The fixture app starts one
+scheme's package objects (SwiftTerm's included) and copying ShepherdUI's font bundle. The fixture app starts one
 in-process `FixtureHost` per fixture host: a real TCP listener on 127.0.0.1 speaking the remote
 protocol, so the app connects through `MobileHosts` and `RemoteHostClient` exactly as it would to
 a Mac. Tokens live in memory and preferences in a scratch domain. Once the online hosts connect,
@@ -98,7 +98,10 @@ the app opens the screen's routes, waits for a thread's first snapshot, settles,
 **What it checks.** A screen that never becomes ready fails, and so does one that asks a host to
 change anything (a send, an abort, an agent action, a terminal attach or input): the fixture
 host refuses those and prints `FIXTURE MUTATION`. Each run also prints the requests every host
-received (`FIXTURE REQUESTS`).
+received (`FIXTURE REQUESTS`). Attaching changes a host's PTY size, so the terminal screens
+(`terminal`, `terminal-keys`, `terminal-split`, `terminal-maximized`, `terminal-empty`,
+`terminal-phone`, `terminal-phone-keys`) never attach: their sessions draw canned screens
+(`MobileTerminals.cannedScreens`), and the host answers only the read `terminals` query.
 
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 
