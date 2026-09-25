@@ -36,7 +36,7 @@ final class TerminalPanels {
     /// What each layout's terminals run (`SessionServer.terminalActivity`, or a host's
     /// `RemoteAgentQuery.terminals`), by pane.
     private(set) var activity: [TerminalPanelKey: [PaneID: RemoteTerminalActivity]] = [:]
-    /// Each session's output sequence when it was last on screen.
+    /// Each session's news (`RemoteTerminalActivity.news`) when it was last on screen.
     private(set) var seen: [SessionID: UInt64] = [:]
 
     /// The panes each layout had when last reconciled: a pane that appears opens the panel on it.
@@ -73,8 +73,8 @@ final class TerminalPanels {
 
     /// Follows the layout: the first time a layout is seen, its panel shows if it has terminals
     /// (as the panes always showed before the panel); after that, a terminal that appears (⌘D,
-    /// an agent's `pane_open`, another device's +) opens the panel on its tab. Returns the new
-    /// pane to focus, if one appeared.
+    /// an agent's `pane_open`, another device's +) opens the panel on its tab, and the panel
+    /// closes with its last terminal. Returns the new pane to focus, if one appeared.
     @discardableResult
     func reconcile(_ key: TerminalPanelKey, layout: PaneNode, thread: PaneID?) -> PaneID? {
         let tabs = TerminalPanel.tabs(in: layout, thread: thread)
@@ -82,6 +82,13 @@ final class TerminalPanels {
         defer { known[key] = panes }
         guard let before = known[key] else {
             if !tabs.isEmpty, panels[key] == nil { update(key) { $0.shown = true } }
+            return nil
+        }
+        if TerminalPanel.closesWithLastTerminal(before: before.count, after: panes.count) {
+            update(key) {
+                $0.shown = false
+                $0.maximized = false
+            }
             return nil
         }
         guard let added = tabs.flatMap(\.panes).map(\.id).last(where: { !before.contains($0) }),
@@ -106,13 +113,13 @@ final class TerminalPanels {
         let byPane = Dictionary(rows.map { ($0.paneID, $0) }, uniquingKeysWith: { first, _ in first })
         if activity[key] != byPane { activity[key] = byPane }
         // Output from before the first look is not news.
-        for row in rows where seen[row.sessionID] == nil { seen[row.sessionID] = row.outputSequence }
+        for row in rows where seen[row.sessionID] == nil { seen[row.sessionID] = row.news }
     }
 
     /// The sessions on screen: everything they printed is seen.
     func markSeen(_ key: TerminalPanelKey, sessions: [SessionID]) {
         for id in sessions {
-            guard let sequence = activity[key]?.values.first(where: { $0.sessionID == id })?.outputSequence,
+            guard let sequence = activity[key]?.values.first(where: { $0.sessionID == id })?.news,
                   seen[id] != sequence else { continue }
             seen[id] = sequence
         }
@@ -120,7 +127,7 @@ final class TerminalPanels {
 
     func hasUnseen(_ key: TerminalPanelKey, session id: SessionID) -> Bool {
         guard let row = activity[key]?.values.first(where: { $0.sessionID == id }), let seen = seen[id] else { return false }
-        return row.outputSequence > seen
+        return row.news > seen
     }
 
     /// The tab strip's items for a layout: the running command or the program at the prompt, a

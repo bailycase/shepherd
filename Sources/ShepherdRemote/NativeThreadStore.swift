@@ -62,6 +62,10 @@ public final class NativeThreadStore {
     public private(set) var loadError: String? { didSet { bothVersions() } }
     public private(set) var notice: String? { didSet { chromeVersion &+= 1 } }
     public private(set) var sentCount = 0
+    /// Whether the last accepted send waits in Up next (a follow-up sent while pi works) rather
+    /// than going into the thread now. Set with `sentCount`, and read when it changes: only a
+    /// send that goes in now brings the reader to the tail.
+    @ObservationIgnored public private(set) var lastSendQueued = false
     /// Optimistic echoes of accepted sends (entryID "pending:<operationID>", status "pending").
     /// A host that holds the queue (`NativeQueue`) shows its own pending row under the same id,
     /// so an echo lasts only until the host's next snapshot. From an older host, an echo is
@@ -1012,6 +1016,7 @@ public final class NativeThreadStore {
             case .accepted(let accepted) where accepted == operation:
                 if let sentText {
                     if draft == sentText { draft = "" }
+                    lastSendQueued = queued
                     sentCount += 1
                     if hostQueues && current.running {
                         // The host queued it (or steered it in): it shows in the queue, not the thread.

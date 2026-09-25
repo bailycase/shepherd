@@ -292,8 +292,8 @@ struct ThreadMotionTests {
         #expect(!onScreen.inBetween.isEmpty)
     }
 
-    /// Detaching from the tail brings "Jump to latest" in over frames (growing from above the
-    /// composer, or under Reduce Motion fading), whatever the rows beside it do.
+    /// Detaching from the tail while pi runs brings "Jump to latest" in over frames (growing from
+    /// above the composer, or under Reduce Motion fading), whatever the rows beside it do.
     @Test(.timingSensitive, arguments: [false, true]) func theJumpPillComesInAsTheThreadDetaches(reduceMotion: Bool) async throws {
         let size = CGSize(width: 900, height: 600)
         let long = (0..<24).map { i in
@@ -301,7 +301,8 @@ struct ThreadMotionTests {
                 : Fixtures.assistant("m\(i)", Array(repeating: "Answer \(i) with enough words to wrap a line or two in the column.",
                                                     count: 20).joined(separator: "\n\n"))
         }
-        let thread = MotionThread(Fixtures.snapshot(long), reduceMotion: reduceMotion, size: size)
+        // Running: with pi idle and nothing new below, a detached thread shows no pill.
+        let thread = MotionThread(Fixtures.snapshot(long, running: true), reduceMotion: reduceMotion, size: size)
         defer { thread.close() }
         try await thread.waitUntilReady()
         // Well above the tail first (not the reader: still following), so the jump lands clear of it.

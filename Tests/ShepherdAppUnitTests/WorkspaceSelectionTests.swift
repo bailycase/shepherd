@@ -61,6 +61,32 @@ struct WorkspaceSelectionTests {
         #expect(!selection.mountedTabs.contains(where: selection.isVisible))
     }
 
+    /// Stopping a selected automation run leaves no agent selected in the hidden automations
+    /// space; the workspace moves to a visible space rather than offering New agent out of sight.
+    @Test func withNoAgentSelectedTheWorkspaceNeverStandsInAHiddenSpace() {
+        let w = Workspace()
+        let runs = Space(name: "Automations", path: "~", hidden: true)
+        var state = w.state
+        state.spaces.insert(runs, at: 0)
+        #expect(WorkspaceSelection.standingSpace(runs.id, agentSelected: false, in: state) == w.home.id)
+        // A run's agent on screen keeps its space.
+        #expect(WorkspaceSelection.standingSpace(runs.id, agentSelected: true, in: state) == runs.id)
+        // Only the hidden space left: the no-spaces state, never the hidden one.
+        let onlyRuns = ShepherdState(spaces: [runs])
+        #expect(WorkspaceSelection.standingSpace(runs.id, agentSelected: false, in: onlyRuns) == nil)
+        #expect(WorkspaceSelection.standingSpace(nil, agentSelected: false, in: onlyRuns) == nil)
+    }
+
+    /// A visible space stays put, with or without an agent; one that is gone gives way to the
+    /// first visible space.
+    @Test(arguments: [false, true])
+    func aVisibleSelectedSpaceStandsUntilItIsGone(agentSelected: Bool) {
+        let w = Workspace()
+        #expect(WorkspaceSelection.standingSpace(w.other.id, agentSelected: agentSelected, in: w.state) == w.other.id)
+        #expect(WorkspaceSelection.standingSpace(SpaceID(), agentSelected: agentSelected, in: w.state) == w.home.id)
+        #expect(WorkspaceSelection.standingSpace(nil, agentSelected: agentSelected, in: w.state) == w.home.id)
+    }
+
     @Test func anAgentOutsideTheSelectedSpaceIsNotShown() {
         let w = Workspace()
         #expect(w.selecting(w.a.agent, in: w.other).activeTabID == nil)
@@ -199,5 +225,34 @@ struct WorkspaceSelectionTests {
         #expect(WorkspaceSelection.coldParkCandidates(hiddenSince: hidden, activeTabID: nil, terminalTabs: Set(hidden.keys), now: now).isEmpty)
         #expect(WorkspaceSelection.hotRetainLimit == 4)
         #expect(WorkspaceSelection.parkDelay == .seconds(30))
+    }
+}
+
+/// What the workspace says with no agent on screen.
+@Suite("Empty workspace")
+@MainActor
+struct EmptyWorkspaceTests {
+    nonisolated static let home = Fixture.space("home")
+    nonisolated static let runs = Space(name: "Automations", path: "~", hidden: true)
+
+    /// "No spaces yet" only when there are none anywhere: the hidden automations space is not
+    /// one, and a connected host's spaces are there in the sidebar to pick from.
+    @Test(arguments: [
+        ([Space](), 0, EmptyWorkspace.Variant.noSpaces),
+        ([runs], 0, .noSpaces),
+        ([], 3, .noSelection),
+        ([runs], 1, .noSelection),
+        ([home], 0, .noSelection),
+    ])
+    func noSpacesMeansNoneOnThisMacOrAnyHost(local: [Space], remote: Int, variant: EmptyWorkspace.Variant) {
+        #expect(EmptyWorkspace.variant(selected: nil, agents: [], localSpaces: local, remoteSpaces: remote) == variant)
+    }
+
+    @Test func aSelectedSpaceSaysWhetherItHasAgents() {
+        let agent = Fixture.agent("a", in: Self.home).agent
+        #expect(EmptyWorkspace.variant(selected: Self.home, agents: [], localSpaces: [Self.home], remoteSpaces: 2)
+            == .space(Self.home.id, hasAgents: false))
+        #expect(EmptyWorkspace.variant(selected: Self.home, agents: [agent], localSpaces: [Self.home], remoteSpaces: 0)
+            == .space(Self.home.id, hasAgents: true))
     }
 }

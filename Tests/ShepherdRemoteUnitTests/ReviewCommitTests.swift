@@ -156,6 +156,24 @@ struct ReviewCommitPresentationTests {
     }
 }
 
+/// Holds whoever waits until opened (at once, once it is open).
+@MainActor
+private final class CommitGate {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var opened = false
+
+    func wait() async {
+        guard !opened else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        opened = true
+        waiters.forEach { $0.resume() }
+        waiters = []
+    }
+}
+
 /// A scripted host: answers each query from `answer`, recording what it was asked.
 @MainActor
 private final class CommitFakeHost {
@@ -166,12 +184,20 @@ private final class CommitFakeHost {
 
     init(_ answer: @escaping (RemoteAgentQuery) throws -> RemoteAgentResult) { self.answer = answer }
 
+    /// Its store waits out no debounce: a test awaits `redraft` instead.
     func store() -> ReviewCommitStore {
-        ReviewCommitStore { [self] query in
+        let store = ReviewCommitStore { [self] query in
             asked.append(query)
             if case .commit = query, let whileCommitting { await whileCommitting() }
             return try answer(query)
         }
+        store.pause = { _ in }
+        return store
+    }
+
+    /// The paths of each draft asked for, in order.
+    var drafts: [[String]] {
+        asked.compactMap { if case .commitMessage(let paths) = $0 { paths } else { nil } }
     }
 }
 
@@ -262,32 +288,161 @@ struct ReviewCommitStoreTests {
         #expect(store.title == "Mine" && store.body.isEmpty)
     }
 
-    @Test func aDraftedMessageStaysWhenAFileIsUnticked() async {
-        let store = host().store()
+    /// A host that drafts "Draft of <names>" for the paths it is asked about.
+    private func namingHost(files: [RemoteCommitFile] = [file("App/iOS/FleetView.swift"), file("App/iOS/HostCard.swift", "A")]) -> CommitFakeHost {
+        CommitFakeHost { query in
+            switch query {
+            case .commitInfo: return .commitInfo(info(files: files))
+            case .commitMessage(let paths):
+                return .commitMessage(title: "Draft of " + paths.map { reviewPathParts($0).name }.joined(separator: ", "), body: "Why.", drafted: true)
+            default: throw RemoteHostClientError.timeout
+            }
+        }
+    }
+
+    @Test func aDraftedMessageIsDraftedAgainForTheTickedFilesKeepingTheOldDraftMeanwhile() async {
+        let fake = namingHost()
+        let store = fake.store()
         await store.begin()
+        #expect(store.title == "Draft of FleetView.swift, HostCard.swift")
 
         store.toggle("App/iOS/FleetView.swift")
 
-        #expect(store.title == "Show host cards" && store.body == "Why." && store.drafted)
+        #expect(store.drafting && store.drafted && store.title == "Draft of FleetView.swift, HostCard.swift", "the old draft stays until the new one")
+        #expect(store.problem == "Redrafting the message…" && !store.canCommit)
+        await store.redraft?.value
+        #expect(fake.drafts == [["App/iOS/FleetView.swift", "App/iOS/HostCard.swift"], ["App/iOS/HostCard.swift"]])
+        #expect(store.title == "Draft of HostCard.swift" && store.drafted && !store.drafting && store.canCommit)
+        #expect(!store.mentionsUntickedFiles)
+    }
+
+    @Test func tickingSeveralFilesCostsOneDraft() async {
+        let files = [file("a/One.swift"), file("a/Two.swift"), file("a/Three.swift")]
+        let fake = namingHost(files: files)
+        let store = fake.store()
+        var waits: [Duration] = []
+        store.pause = { waits.append($0) }
+        await store.begin()
+
+        store.toggle("a/One.swift")
+        store.toggle("a/Two.swift")
+        store.toggle("a/One.swift")
+        await store.redraft?.value
+
+        #expect(fake.drafts.count == 2 && fake.drafts.last == ["a/One.swift", "a/Three.swift"])
+        #expect(store.title == "Draft of One.swift, Three.swift")
+        #expect(!waits.isEmpty && waits.allSatisfy { $0 == store.redraftDelay })
+    }
+
+    @Test func tickingBackToTheDraftedFilesKeepsTheDraftWithoutAsking() async {
+        let fake = namingHost()
+        let store = fake.store()
+        await store.begin()
+
+        store.toggle("App/iOS/FleetView.swift")
+        store.toggle("App/iOS/FleetView.swift")
+        await store.redraft?.value
+
+        #expect(fake.drafts.count == 1 && !store.drafting && store.title == "Draft of FleetView.swift, HostCard.swift")
+    }
+
+    @Test(arguments: ["draft", "plain"])
+    func anEditedMessageIsNeverRedraftedAndSaysItMayMentionUntickedFiles(_ message: String) async {
+        let fake = message == "draft" ? namingHost() : host(info: info(drafts: false))
+        let store = fake.store()
+        await store.begin()
+        store.title = "Mine"
+
+        store.toggle("App/iOS/FleetView.swift")
+        await store.redraft?.value
+
+        #expect(fake.drafts.count == (message == "draft" ? 1 : 0) && !store.drafting)
+        #expect(store.title == "Mine" && store.mentionsUntickedFiles)
+        store.toggle("App/iOS/FleetView.swift")
+        #expect(!store.mentionsUntickedFiles, "every file it was written for is ticked again")
+        store.selectAll(false)
+        #expect(!store.mentionsUntickedFiles, "with nothing ticked, Commit already says why it waits")
+    }
+
+    @Test func editingWhileTheTicksSettleKeepsTheEdit() async {
+        let fake = namingHost()
+        let store = fake.store()
+        await store.begin()
+
+        store.toggle("App/iOS/FleetView.swift")
+        store.body = "Mine."
+        await store.redraft?.value
+
+        #expect(fake.drafts.count == 1 && !store.drafting && store.body == "Mine." && store.mentionsUntickedFiles)
+        #expect(store.problem == nil)
+    }
+
+    @Test func aDraftAnsweredAfterTheTicksMovedOnIsIgnored() async {
+        let files = [file("a/One.swift"), file("a/Two.swift"), file("a/Three.swift")]
+        let fake = namingHost(files: files)
+        let store = fake.store()
+        await store.begin()
+        let answer = fake.answer
+        fake.answer = { [weak store] query in
+            // The reply to the first redraft arrives after Two was unticked too.
+            if case .commitMessage(let paths) = query, paths.count == 2 { store?.toggle("a/Two.swift") }
+            return try answer(query)
+        }
+
+        // The second redraft waits until the stale reply has been looked at.
+        let gate = CommitGate()
+        var pauses = 0
+        store.pause = { _ in
+            pauses += 1
+            if pauses == 2 { await gate.wait() }
+        }
+
+        store.toggle("a/One.swift")
+        await store.redraft?.value
+        #expect(store.title == "Draft of One.swift, Two.swift, Three.swift" && store.drafting, "the stale reply changed nothing")
+        gate.open()
+        await store.redraft?.value
+
+        #expect(fake.drafts == [files.map(\.path), ["a/Two.swift", "a/Three.swift"], ["a/Three.swift"]])
+        #expect(store.title == "Draft of Three.swift" && !store.drafting)
     }
 
     @Test(arguments: [
-        (RemoteAgentResult.commitMessage(title: "Show host cards", body: "Why.", drafted: true), "Show host cards", true),
-        (.commitMessage(title: "Update 2 files in App/iOS", body: "- App/iOS/FleetView.swift\n- App/iOS/HostCard.swift", drafted: false),
-         "Add HostCard.swift", false),
+        (RemoteAgentResult?.none, "Add HostCard.swift"),
+        (.commitMessage(title: "Add HostCard.swift (host)", body: "", drafted: false), "Add HostCard.swift (host)"),
     ])
-    func untickingWhileTheHostDraftsTakesADraftButNotAPlainAnswer(_ answer: RemoteAgentResult, _ title: String, _ drafted: Bool) async {
+    func aFailedRedraftFallsBackToThePlainMessageForTheTickedFiles(_ answer: RemoteAgentResult?, _ title: String) async {
         let fake = host()
         let store = fake.store()
-        fake.answer = { [weak store] query in
-            guard case .commitMessage = query else { return .commitInfo(info()) }
-            store?.toggle("App/iOS/FleetView.swift")
+        await store.begin()
+        fake.answer = { query in
+            guard case .commitMessage = query, let answer else { throw RemoteHostClientError.timeout }
             return answer
         }
 
-        await store.begin()
+        store.toggle("App/iOS/FleetView.swift")
+        await store.redraft?.value
 
-        #expect(store.title == title && store.drafted == drafted)
+        #expect(store.title == title && !store.drafted && !store.drafting && !store.mentionsUntickedFiles)
+    }
+
+    @Test func untickingWhileTheHostDraftsDraftsTheTickedFilesInstead() async {
+        let fake = namingHost()
+        let store = fake.store()
+        let answer = fake.answer
+        fake.answer = { [weak store] query in
+            if case .commitMessage(let paths) = query, paths.count == 2 { store?.toggle("App/iOS/FleetView.swift") }
+            return try answer(query)
+        }
+        let gate = CommitGate()
+        store.pause = { _ in await gate.wait() }
+
+        await store.begin()
+        #expect(store.title == "Add HostCard.swift" && store.drafting, "the plain message follows the tick; the first draft is stale")
+        gate.open()
+        await store.redraft?.value
+
+        #expect(store.title == "Draft of HostCard.swift" && store.drafted && !store.drafting)
     }
 
     @Test func aHostThatCantSayLeavesTheSheetUnavailable() async {
@@ -305,6 +460,7 @@ struct ReviewCommitStoreTests {
         store.selectAll(false)
         #expect(store.problem == "Choose at least one file." && !store.canCommit)
         store.toggle("App/iOS/HostCard.swift")
+        await store.redraft?.value
         #expect(store.canCommit && store.selectedFiles.map(\.path) == ["App/iOS/HostCard.swift"])
         store.title = " "
         #expect(store.problem == "Write a commit message.")
@@ -325,6 +481,7 @@ struct ReviewCommitStoreTests {
         let store = fake.store()
         await store.begin()
         store.toggle("App/iOS/FleetView.swift")
+        await store.redraft?.value
         #expect(!store.canCommit)
         store.confirmedWhileWorking = true
 

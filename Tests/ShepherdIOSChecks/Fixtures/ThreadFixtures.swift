@@ -67,6 +67,15 @@ extension FixtureCatalog {
                                   try? await Task.sleep(for: .milliseconds(50))
                               }
                           }),
+            // A tap on the composer: the field keeps focus while the keyboard comes up, and on an
+            // iPad in portrait the sidebar stays an overlay, hidden (iPadPortrait).
+            FixtureScreen(name: "composer-focus", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
+                          prepare: FollowFixture.focusAndCheck),
+            // The same with the keyboard already up in landscape and the iPad turned to portrait:
+            // the sidebar goes back to being an overlay, and the field keeps the focus through
+            // the turn with no second tap.
+            FixtureScreen(name: "composer-focus-rotate", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
+                          prepare: FollowFixture.focusRotateAndCheck),
             // The model picker, from the host's catalog.
             FixtureScreen(name: "models", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: { _ in ComposerStates.shared.state(for: preview).choosingModel = true }),
@@ -320,6 +329,90 @@ enum FollowFixture {
         check("the reply ends above the composer") { $0 <= MobileLayout.gutter + 1 }
     }
 
+    /// Focuses the composer as a tap does and waits for the keyboard: the field keeps the focus
+    /// and sits above the keyboard, and on an iPad in portrait the sidebar is still a hidden
+    /// overlay (the keyboard's height must not read as a landscape window).
+    @MainActor static func focusAndCheck(_ app: MobileApp) async {
+        let keyboard = KeyboardFrame()
+        focusComposer()
+        try? await Task.sleep(for: .seconds(2))
+        checkFocus(app, keyboard: keyboard)
+    }
+
+    /// Focuses the composer in landscape, then turns the iPad to portrait with the keyboard up:
+    /// the field keeps the focus through the turn, with no second tap, and the checks of
+    /// `focusAndCheck` hold. On iPhone, only `focusAndCheck`.
+    @MainActor static func focusRotateAndCheck(_ app: MobileApp) async {
+        guard UIDevice.current.userInterfaceIdiom == .pad,
+              let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else {
+            return await focusAndCheck(app)
+        }
+        let keyboard = KeyboardFrame()
+        await turn(scene, to: .landscapeRight)
+        focusComposer()
+        try? await Task.sleep(for: .seconds(2))
+        await turn(scene, to: .portrait)
+        try? await Task.sleep(for: .seconds(1))
+        checkFocus(app, keyboard: keyboard)
+    }
+
+    @MainActor private static func checkFocus(_ app: MobileApp, keyboard: KeyboardFrame) {
+        let field = composerField()
+        let focused = field?.isFirstResponder == true
+        print("FIXTURE CHECK \(focused ? "ok" : "FAILED"): the composer keeps focus")
+        if focused, let field, let top = keyboard.top {
+            let bottom = field.convert(field.bounds, to: nil).maxY
+            print("FIXTURE CHECK \(bottom <= top ? "ok" : "FAILED"): the field sits above the keyboard (\(Int(top - bottom))pt)")
+        }
+        if UIDevice.current.userInterfaceIdiom == .pad, let window = field?.window, window.bounds.height > window.bounds.width {
+            let holds = app.navigator.padSidebarOverlays && app.navigator.padColumns == .detailOnly
+            print("FIXTURE CHECK \(holds ? "ok" : "FAILED"): the portrait sidebar stays a hidden overlay")
+        }
+    }
+
+    @MainActor private static func turn(_ scene: UIWindowScene, to orientation: UIInterfaceOrientationMask) async {
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { error in
+            print("FIXTURE ORIENTATION \(error.localizedDescription)")
+        }
+        await FixtureWindows.wait(seconds: 5) {
+            orientation == .portrait ? scene.effectiveGeometry.interfaceOrientation.isPortrait
+                : scene.effectiveGeometry.interfaceOrientation.isLandscape
+        }
+        try? await Task.sleep(for: .seconds(1))
+    }
+
+    /// The top of the keyboard's last frame on screen, in the window's coordinates (full screen
+    /// here). A turn with the keyboard up also reports it going below the screen, or with no
+    /// height, as the composer mounts again (`PadShell`); those frames are passed over.
+    @MainActor private final class KeyboardFrame {
+        private(set) var top: CGFloat?
+        private var observer: NSObjectProtocol?
+
+        init() {
+            observer = NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillChangeFrameNotification, object: nil,
+                                                              queue: .main) { [weak self] note in
+                let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+                MainActor.assumeIsolated {
+                    let window = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.keyWindow
+                    guard let frame, frame.height > 0, let window, frame.minY < window.bounds.maxY else { return }
+                    self?.top = frame.minY
+                }
+            }
+        }
+
+        deinit { observer.map(NotificationCenter.default.removeObserver) }
+    }
+
+    @MainActor private static func composerField() -> UITextView? {
+        var fields: [UITextView] = []
+        func walk(_ view: UIView) {
+            if let field = view as? UITextView, field.isEditable { fields.append(field) }
+            view.subviews.forEach(walk)
+        }
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).forEach(walk)
+        return fields.last
+    }
+
     /// A finger drags the thread up from its tail (its pan recognizer stepped through a drag, as
     /// a touch would), then the turn and its reply arrive in two polls.
     @MainActor static func jump(_ app: MobileApp) async {
@@ -355,13 +448,7 @@ enum FollowFixture {
     /// Puts the caret in the composer's field, so the software keyboard (when the simulator
     /// shows one) raises the composer as a reader's tap would.
     @MainActor private static func focusComposer() {
-        var fields: [UITextView] = []
-        func walk(_ view: UIView) {
-            if let field = view as? UITextView, field.isEditable { fields.append(field) }
-            view.subviews.forEach(walk)
-        }
-        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).forEach(walk)
-        fields.last?.becomeFirstResponder()
+        composerField()?.becomeFirstResponder()
     }
 
     /// The thread's scroll view: the tallest scrolling one that isn't a list (the iPad sidebar)

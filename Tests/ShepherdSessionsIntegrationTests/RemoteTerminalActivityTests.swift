@@ -12,8 +12,9 @@ import ShepherdTestSupport
 struct RemoteTerminalActivityTests {
     /// An agent whose layout holds its thread and two shells: one at rest, one running a command
     /// in its own process group, as a shell with job control runs one.
-    private func seedAgent(_ r: RemoteHost) async throws -> (agent: AgentID, idle: SessionInfo, busy: SessionInfo, panes: [PaneID]) {
-        let idle = try await r.host.shell("echo IDLE_READY; cat")
+    private func seedAgent(_ r: RemoteHost, idleScript: String = "echo IDLE_READY; cat") async throws
+        -> (agent: AgentID, idle: SessionInfo, busy: SessionInfo, panes: [PaneID]) {
+        let idle = try await r.host.shell(idleScript)
         let busy = try await r.host.shell("set -m; sleep 30; true")
         try await r.host.waitForScreen(idle.id, toContain: "IDLE_READY")
         let space = Space(name: "demo", path: r.host.dir.path)
@@ -63,6 +64,31 @@ struct RemoteTerminalActivityTests {
         try await r.host.waitForScreen(seeded.idle.id, toContain: "more-output")
         try await eventually("the sequence to move") {
             await r.server.terminalActivity(agentID: seeded.agent).first { $0.sessionID == seeded.idle.id }!.outputSequence > start
+        }
+    }
+
+    /// A shell answers a new size by drawing its prompt again: that output moves the output
+    /// sequence (the attach watermark) but is not news, so no tab gets a dot for a resize. A
+    /// command printing afterwards is news.
+    @Test func aResizeRedrawIsNotNewsButACommandsOutputIs() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        // Redraws on SIGWINCH as zsh's prompt does; prints ticks once `go` exists, as a command would.
+        let seeded = try await seedAgent(r, idleScript: "trap 'echo REDRAW' WINCH; echo IDLE_READY; "
+            + "while :; do if [ -f go ]; then echo tick; fi; sleep 0.05; done")
+        func idle() async throws -> RemoteTerminalActivity {
+            try #require(await r.server.terminalActivity(agentID: seeded.agent).first { $0.sessionID == seeded.idle.id })
+        }
+        let before = try await idle()
+        r.server.resize(sessionID: seeded.idle.id, cols: 100, rows: 30)
+        try await r.host.waitForScreen(seeded.idle.id, toContain: "REDRAW")
+        let redrawn = try await idle()
+        #expect(redrawn.outputSequence > before.outputSequence)
+        #expect(redrawn.newsSequence == before.newsSequence)
+
+        FileManager.default.createFile(atPath: r.host.dir.appendingPathComponent("go").path, contents: nil)
+        try await eventually("a command's output to be news") {
+            try await idle().news > redrawn.news
         }
     }
 

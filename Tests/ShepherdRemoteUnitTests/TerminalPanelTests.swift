@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import Testing
 @testable import ShepherdRemote
 
@@ -8,6 +9,38 @@ struct TerminalPanelTests {
     private static func leaf(_ id: PaneID) -> PaneNode { .leaf(LeafPane(id: id, cwd: "~/code")) }
     private static func split(_ first: PaneNode, _ second: PaneNode, _ axis: SplitAxis = .horizontal) -> PaneNode {
         .split(axis: axis, ratio: 0.5, first: first, second: second)
+    }
+
+    @Test(arguments: [(1, 0, true), (3, 0, true), (0, 0, false), (2, 1, false), (0, 1, false)])
+    func thePanelClosesWithItsLastTerminal(before: Int, after: Int, closes: Bool) {
+        #expect(TerminalPanel.closesWithLastTerminal(before: before, after: after) == closes)
+    }
+
+    /// Picking a tab whose news equals the last tab's still marks it seen: the mark names the tab
+    /// and its sessions, not just how far their news has got.
+    @Test func theSeenMarkChangesWithTheTabEvenWhenItsNewsMatches() {
+        let firstSession = SessionID(), secondSession = SessionID()
+        let first = LeafPane(sessionID: firstSession, cwd: "~"), second = LeafPane(sessionID: secondSession, cwd: "~")
+        func row(_ pane: LeafPane, _ session: SessionID, news: UInt64) -> RemoteTerminalActivity {
+            RemoteTerminalActivity(paneID: pane.id, sessionID: session, process: "zsh", command: nil,
+                                   outputSequence: news + 3, newsSequence: news)
+        }
+        let activity = [first.id: row(first, firstSession, news: 6), second.id: row(second, secondSession, news: 6)]
+        let a = TerminalPanel.seenMark(selected: TerminalPanelTab(node: .leaf(first)), onScreen: true, activity: activity)
+        let b = TerminalPanel.seenMark(selected: TerminalPanelTab(node: .leaf(second)), onScreen: true, activity: activity)
+        #expect(a.news == b.news && a != b)
+        #expect(b.sessions == [secondSession] && b.news == [6])
+    }
+
+    @Test func nothingIsMarkedSeenOffScreen() {
+        let session = SessionID()
+        let pane = LeafPane(sessionID: session, cwd: "~")
+        let tab = TerminalPanelTab(node: .leaf(pane))
+        let activity = [pane.id: RemoteTerminalActivity(paneID: pane.id, sessionID: session, process: "zsh", command: nil,
+                                                        outputSequence: 4, newsSequence: 2)]
+        #expect(TerminalPanel.seenMark(selected: tab, onScreen: true, activity: activity).sessions == [session])
+        #expect(TerminalPanel.seenMark(selected: tab, onScreen: false, activity: activity) == TerminalSeenMark())
+        #expect(TerminalPanel.seenMark(selected: nil, onScreen: true, activity: [:]) == TerminalSeenMark())
     }
 
     @Test func aLayoutOfOnlyTheThreadHasNoTabs() {
