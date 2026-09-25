@@ -143,11 +143,15 @@ keep the version for real breaks.
   (`shepherd.ios.host` and its one Keychain item) migrates on first launch; if the Keychain is
   locked then, the token moves on the next foreground. Backgrounding
   disconnects every host; the agents keep running on the Macs.
-- **iPhone:** two tabs, Home and Settings, each a navigation stack. Home lists each host with its
-  status (Retry when offline) and agents, and links Needs you, Automations and More.
-- **iPad:** a split view. Landscape shows the sidebar beside the selected thread; in portrait the
-  thread takes the width and the sidebar slides over it. With no thread selected the detail is
-  the overview.
+- **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
+  Automations (read-only) and More (host cards), offline hosts with Retry, Needs you (questions
+  and blocked threads, answered in place when short), and Recents with host tags. `HomeFeed`
+  derives it once per change from each host's state and, while Home is on screen, the threads'
+  snapshots.
+- **iPad:** a split view. Landscape shows the sidebar (New thread, Needs you, Recents, and a
+  footer with the hosts and Settings) beside the selected thread; in portrait the thread takes
+  the width and the sidebar slides over it. With no thread selected the detail is the overview:
+  Needs you, Running now and Finished.
 - **Thread (`ThreadScreen`):** the title with its status line ("Idle · 17 turns · 42k", or the
   running turn's clock; on iPad a status pill with the counters trailing), Stop while the agent
   runs, user bubbles with their times, thinking, prose, work groups folded into one line with
@@ -164,10 +168,10 @@ keep the version for real breaks.
   model picker lists the host's catalog; images come from Photos, resized to the protocol's
   limits; "/…" lists the snapshot's commands. A question from the agent takes the composer's
   place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
-- **Settings:** Appearance (System, Light, Dark), the hosts list with Retry, and a host form
+- **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one).
-- **Stubs:** New thread, Subagents, Review, Search, agent actions, and Home's destinations are
-  placeholders their tracks fill ([CONTRACTS.md](CONTRACTS.md)).
+- **Stubs:** New thread, Subagents, Review, Search, and agent actions are placeholders their
+  tracks fill ([CONTRACTS.md](CONTRACTS.md)).
 
 ## Not in the first release
 
