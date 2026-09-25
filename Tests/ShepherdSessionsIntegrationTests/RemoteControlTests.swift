@@ -171,6 +171,24 @@ struct RemoteControlTests {
         await #expect(throws: RemoteHostClientError.self) { _ = try await client.creationOptions(spaceID: SpaceID(), cwd: nil, fetchFirst: nil) }
     }
 
+    /// A client from before minimal, xhigh and max reads the host's default level as the nearest
+    /// one it knows; a current client reads it as it is.
+    @Test(arguments: [(ThinkingLevel.xhigh, false, ThinkingLevel.high), (.minimal, false, .low), (.xhigh, true, .xhigh), (.medium, false, .medium)])
+    func creationOptionsCarryALevelTheClientDecodes(level: ThinkingLevel, current: Bool, expected: ThinkingLevel) async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let space = Fixture.space()
+        try await r.host.seed(ShepherdState(spaces: [space]))
+        r.server.onRemoteCreationOptions = { _, _, _, done in
+            done(.success(RemoteCreationOptions(base: "origin/main", note: "", fetchFirst: false, model: nil, thinking: level)))
+        }
+        let client = try RawRemote(port: r.port)
+        try await client.hello(token: r.token, capabilities: current ? RemoteProtocol.clientCapabilities : nil)
+        try client.send(.creationOptions(id: 2, spaceID: space.id, cwd: nil, fetchFirst: false))
+        guard case .creationOptions(2, let options) = try await client.next() else { Issue.record("expected options"); return }
+        #expect(options.thinking == expected)
+    }
+
     @Test func agentActionsRouteToTheHostAndNeedAKnownAgent() async throws {
         let r = try RemoteHost()
         defer { r.stop() }

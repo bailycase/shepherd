@@ -54,4 +54,19 @@ struct PiConfigTests {
         #expect(PiConfig.modelEntries(in: dir) == expected)
         #expect(PiConfig.modelIDs(in: dir) == expected.map(\.id))
     }
+
+    /// A model's `thinkingLevelMap`, with a provider's `modelOverrides` laid over it; null kept as
+    /// a level pi drops.
+    @Test func configuredThinkingLevelMapsAreReadPerModel() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let json = #"{"providers":{"qa":{"models":[{"id":"deep","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","minimal":null}},{"id":"plain"}],"# +
+            #""modelOverrides":{"deep":{"thinkingLevelMap":{"max":"max"}},"other":{"thinkingLevelMap":{"xhigh":"high"}}}}}}"#
+        try Data(json.utf8).write(to: dir.appendingPathComponent("models.json"))
+        let maps = PiConfig.thinkingLevelMaps(in: dir)
+        let deep: [String: String?] = ["xhigh": "xhigh", "minimal": String?.none, "max": "max"]
+        #expect(maps["qa/deep"] == deep)
+        #expect(maps["qa/other"] == ["xhigh": "high"])
+        #expect(maps["qa/plain"] == nil)
+    }
 }

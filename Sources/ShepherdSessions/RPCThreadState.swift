@@ -92,6 +92,9 @@ final class RPCThreadState {
     private(set) var running = false
     private(set) var model: String?
     private(set) var thinking: String?
+    /// The levels pi offers `model` (`get_available_thinking_levels`); nil until pi answers, or
+    /// from a pi without the command.
+    private(set) var thinkingLevels: [String]?
     private(set) var stats: NativeThreadStats?
     // A commit combines hashes taken when each part was assigned (the lists here, each
     // provisional and tool entry), so a streamed delta rehashes only the message it grew.
@@ -451,8 +454,10 @@ final class RPCThreadState {
                 self?.refreshState()
             }
         case .setThinking(_, _, _, let level):
-            guard ["off", "low", "medium", "high"].contains(level) else {
-                completion(.failure(code: "invalid", message: "Thinking level must be off, low, medium, or high."))
+            // pi clamps a level the model lacks to the nearest one it takes.
+            guard ThinkingLevel(rawValue: level) != nil else {
+                completion(.failure(code: "invalid", message: "Thinking level must be one of "
+                    + ThinkingLevel.allCases.map(\.rawValue).joined(separator: ", ") + "."))
                 return
             }
             session.request(.setThinkingLevel(level: level)) { [weak self] result in
@@ -592,6 +597,13 @@ final class RPCThreadState {
     // MARK: - Refresh
 
     func refreshState(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
+        // The levels follow the model, so they are asked with the state. pi answers stdin in
+        // order, so they land just before it and ride its commit: no revision of their own.
+        session.request(.getAvailableThinkingLevels, timeout: timeout) { [weak self] result in
+            guard let self, case .success(let response) = result, let levels = response.thinkingLevels,
+                  levels != self.thinkingLevels else { return }
+            self.thinkingLevels = levels
+        }
         session.request(.getState, timeout: timeout) { [weak self] result in
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
@@ -1019,6 +1031,7 @@ final class RPCThreadState {
         hasher.combine(running)
         hasher.combine(model)
         hasher.combine(thinking)
+        hasher.combine(thinkingLevels)
         hasher.combine(piSessionID)
         hasher.combine(stats)
         hasher.combine(commandsHash)
@@ -1082,7 +1095,7 @@ final class RPCThreadState {
         let dialogs = Array(self.dialogs.prefix(Self.dialogLimit))
         var base = NativeThreadSnapshot(
             piSessionID: piSessionID ?? "", generation: generation, revision: revision, running: running,
-            model: model, thinking: thinking, supportedActions: Self.supportedActions, dialogsSupported: true,
+            model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions, dialogsSupported: true,
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
             runtime: "rpc", stats: stats, commands: commands, subagents: subagents

@@ -120,6 +120,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     case getCommands
     case setModel(provider: String, modelId: String)
     case setThinkingLevel(level: String)
+    /// The levels the session's current model takes (`{"levels": [...]}`).
+    case getAvailableThinkingLevels
     case newSession
     case extensionUIResponse(id: String, value: String? = nil, confirmed: Bool? = nil, cancelled: Bool? = nil)
 
@@ -135,6 +137,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         case .getCommands: return "get_commands"
         case .setModel: return "set_model"
         case .setThinkingLevel: return "set_thinking_level"
+        case .getAvailableThinkingLevels: return "get_available_thinking_levels"
         case .newSession: return "new_session"
         case .extensionUIResponse: return "extension_ui_response"
         }
@@ -162,7 +165,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encodeIfPresent(value, forKey: .value)
             try c.encodeIfPresent(confirmed, forKey: .confirmed)
             try c.encodeIfPresent(cancelled, forKey: .cancelled)
-        case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .newSession:
+        case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .getAvailableThinkingLevels, .newSession:
             break
         }
     }
@@ -226,6 +229,13 @@ public struct RPCResponse: Decodable, Hashable, Sendable {
         case .json(let value): try? value["messages"]?.decode([RPCMessage].self)
         case nil: nil
         }
+    }
+
+    /// `get_available_thinking_levels`' levels, in pi's order; nil when it failed (a pi without
+    /// the command) or named none.
+    public var thinkingLevels: [String]? {
+        guard success, let levels = data?["levels"]?.arrayValue?.compactMap(\.stringValue), !levels.isEmpty else { return nil }
+        return levels
     }
 
     enum CodingKeys: String, CodingKey { case id, command, success, data, error }

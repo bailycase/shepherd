@@ -136,7 +136,8 @@ And the rules that follow from them:
 | iPadReview: Revert file in a file's header | Not offered on iOS | The remote protocol has no revert; the Mac's local review keeps it (docs/ios/README.md › Review) |
 | iPadSubagents: Fork as new agent on a finished run | Re-run and Copy transcript | Remote agents have no Fork (docs/native-subagents.md) |
 | iPad sidebar footer: the person (avatar, name, "This Mac · build-01") and Settings | The hosts ("2 of 3 offline" and their names, opening Settings ▸ Hosts) and Settings | Shepherd has no accounts, only hosts (docs/ios/README.md › iPad: "a footer with the hosts and Settings") |
-| ModelPicker: ⌘M opens the model picker (the ⌘M keycap in its search field) | **⇧⌘M**, shown in the palette's Choose model… row and the menu bar, not in the picker | ⌘M is the system Minimize chord |
+| ModelPicker: ⌘M opens the model picker (the ⌘M hint in its search field) | **⇧⌘M**, the hint the search field shows (from `KeybindingsStore`), and the palette's Choose model… row and the menu bar | ⌘M is the system Minimize chord |
+| ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | "With thinking" or "No thinking" for a model neither current nor recently used | pi's catalog carries no such description (Honest affordances) |
 | NWComposer and Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ queues or steers per Settings ▸ Agents, so "sent when the turn ends" would be wrong under Steer |
 | Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; + or ⌘D opens a tab; no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
@@ -1519,13 +1520,13 @@ QuestionStates).
 
 The full-window boards (Main, Running, SlashMenu, ModelPicker, CommandPalette, SettingsKeyboard)
 were drawn before Night Watch's component boards and draw the same parts larger: a radius-12
-composer with 32pt controls and a 14pt field, 36pt slash rows with a ⏎ hint, a 380pt model picker
-with two-line 40pt rows ("Current · this thread", "Used 2h ago in …") and a ⌘M hint in its search, a
-640pt palette with a 56pt search row, 38pt rows, and a lantern scope pill over a 54% scrim, and 22pt
-keycaps, under a 52pt breadcrumb toolbar (Toolbar). Where they disagree, the component boards
-(Composer & menus, Controls, Navigation) win: those sizes, hints, and second lines are not the spec.
-A row or string that only a full-window board shows still holds where the component anatomy has room
-for it (the palette's New agent with options…, New space on <host>…, and "PR #24").
+composer with 32pt controls and a 14pt field, a 640pt palette with a 56pt search row, 38pt rows,
+and a lantern scope pill over a 54% scrim, and 22pt keycaps, under a 52pt breadcrumb toolbar
+(Toolbar). Where they disagree, the component boards (Composer & menus, Controls, Navigation) win,
+with two exceptions: **the slash menu is SlashMenu's and the model picker is ModelPicker's**
+(below), since a menu too narrow for pi's command and model names hid what they were. A row or
+string that only a full-window board shows still holds where the component anatomy has room for
+it (the palette's New agent with options…, New space on <host>…, and "PR #24").
 
 **The card:**
 
@@ -1550,12 +1551,14 @@ for it (the palette's New agent with options…, New space on <host>…, and "PR
   (drop or paste also works), up to 4"; VoiceOver "Attach file".
 - "/ commands" (only when pi reports commands): the "/" in mono (`Font.nw(.code)`), then
   "commands". It puts "/" in the field, which opens the slash menu.
-- the model chip: the model's short name (after "provider/") in mono, with `NWChipChevron` (10pt,
-  `textTertiary`) when it can change; tooltip "Model: <provider/id>"
+- the model chip: the model's short name (after "provider/") in mono, truncating in the middle
+  when the row is short of room (the provider prefix and the model's tail both show), with
+  `NWChipChevron` (10pt, `textTertiary`) when it can change; tooltip "Model: <provider/id>", and
+  VoiceOver reads the whole id
 - the thinking chip: a 13pt `lightbulb` in `textSecondary`, "Thinking", then the level
   ("Medium") in `textPrimary` medium, and the chevron. It is hidden when the model has no
-  reasoning control, as this Mac's catalog or the host's `listModels` says; an unknown model
-  keeps it.
+  reasoning control, as pi's levels for it (only Off), this Mac's catalog, or the host's
+  `listModels` says; an unknown model keeps it.
 - a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
   then the action, a 28pt circle: **Send** (a 14pt `arrow.up` in `textOnLantern` on `lantern`,
   at 35% until there is something to send) or **Stop** (a small rounded `stop.fill` square in
@@ -1744,23 +1747,30 @@ outside the menu (`ComposerMenuTests`). A menu is never taller than the room abo
 keeps 8pt from the thread's top, `AppLayout.menuMargin`, and its list scrolls inside), and beside
 a docked pane it narrows to the card. They share one anatomy (NWComposer › Menus):
 
-- `.nwPopover()` at radius 12 with 6pt padding
-- section headers (`NWMenuHeader`, 24pt): mono 10 medium, uppercase, tracked 6%, `textTertiary`,
-  with an optional trailing count in mono 10.5 tertiary ("4 of 23")
-- 28pt rows (`NWMenuRow`), radius 6, 8pt side padding, their parts 10pt apart, with a
-  `runningTint` highlight that the pointer moves too; the current choice wears a `running` check,
-  trailing. Rows are not `Button`s (the field or the menu keeps keyboard focus), but they
-  read as buttons to VoiceOver.
+- `.nwPopover()` at radius 12 (a 1px `lineStrong` line, `bgRaised`, the popover shadow), with 6pt
+  padding (the model picker's parts carry their own)
+- section headers (`NWMenuHeader`, 24pt; SlashMenu, ModelPicker): Geist 10.5 semibold, uppercase,
+  tracked 6%, `textSecondary`, with an optional trailing count in mono 11 `textTertiary` ("4 of
+  23"), 8pt from the sides (10pt in the model picker)
+- rows (`NWMenuRow`, 28pt unless a menu says otherwise), radius 6 (the boards' 7 on the radius
+  scale), 8pt side padding, their parts 10pt apart, with a `runningTint` highlight that the pointer
+  moves too; the current choice wears a `running` check. Rows are not `Button`s (the field or the
+  menu keeps keyboard focus), but they read as buttons to VoiceOver. A row never wraps: what does
+  not fit truncates.
 - ↑↓ move, ⏎ chooses, Esc closes and returns focus to the field, and a click anywhere outside
-  the menu and the card closes it (the click still lands where it was aimed). No footers and no
-  key hints.
+  the menu and the card closes it (the click still lands where it was aimed). No footers; the
+  only key hints are the slash menu's ⏎ and the model picker's chord.
 
-- **Slash menu** (`NWSlashMenu`, 448pt; SlashMenu, NWComposer): opens when the draft is "/…" with no
-  space yet (or from the chip). "Commands" with "n of m" (matches of all); rows show the command in
-  mono 12 with the typed prefix in semibold `textPrimary` and the rest in `textSecondary` (a 150pt
-  column, 12pt before the description), the description in `ui` regular `textSecondary` (one line,
-  truncating), and its source as an `NWTag` for prompt templates and skills ("prompt", "skill"; none
-  for extension commands). Commands whose name starts with the query come first, then those whose
+- **Slash menu** (`NWSlashMenu`; SlashMenu): opens when the draft is "/…" with no space yet (or
+  from the chip). It spans the composer card, from its leading edge to its trailing one, 8pt above
+  it. "Commands" with "n of m" (matches of all); then one-line 36pt rows
+  (`NWComposerMetrics.slashRowHeight`) with 12pt sides, their parts 12pt apart: the command in
+  mono 12.5 with the typed prefix in semibold `textPrimary`, the rest in `textSecondary` and its
+  argument hint in `textTertiary`, in a column at least 150pt wide that grows to the whole name
+  rather than wrap (`/shepherd-subagents-fleet` stays one line); the description in Geist 13
+  `textSecondary`, truncating at its end; its source as an `NWTag` for prompt templates and skills
+  ("prompt", "skill"; none for extension commands); and on the highlighted row a trailing ⏎ in
+  mono 11 `running`. The whole command is its tooltip. Commands whose name starts with the query come first, then those whose
   name or description contains it. At most 8 rows show, fewer when the room above the card is
   shorter; with none, "No command matches “/re”" in caption tertiary. ⏎ or a click puts "/name" in
   the field and sends it when it can; ⇥ completes "/name " to keep typing. Esc closes it for the
@@ -1772,16 +1782,23 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
 - **Not built yet:** argument hints after the name in `textTertiary` ("/resume [session]",
   "/release-notes [tag]"; NWComposer, SlashMenu). `NWSlashCommand.arguments` draws them, but pi's
   `get_commands` does not send them, so the app has none to show.
-- **Model picker** (`ModelPicker` on `NWModelPicker`, 260pt, its list at most 360pt tall;
-  NWComposer, ModelPicker): from the model chip or ⇧⌘M, either of which also closes it (without
-  `setModel` it beeps). A 30pt search row takes focus: a 12pt `magnifyingglass` in `textTertiary`,
-  "Search models" in `ui` regular, a hairline under it, and 4pt before the list. Then **Recent**
-  (the last four models picked in any thread, newest first; `RecentModels`), then one section per
-  provider in catalog order, headed with the provider's name, leaving out what Recent shows. Rows
-  show the model's short name in mono 12 `textPrimary`, then, trailing, a `running` check on the
-  current one, or its context size in mono 10.5 tertiary ("200K", "1M"), as ModelPicker draws it.
-  NWComposer puts a word there instead ("fast"); pi's catalog carries no such note, so the size
-  stands in (Honest affordances). A query keeps the models whose id contains it and moves the
+- **Model picker** (`ModelPicker` on `NWModelPicker`, 380pt, its list at most 360pt tall;
+  ModelPicker): from the model chip or ⇧⌘M, either of which also closes it (without `setModel` it
+  beeps). A 30pt search row takes focus: a 12pt `magnifyingglass` in `textTertiary`, "Search
+  models" in Geist 13, the picker's chord trailing in mono 11 `textTertiary` ("⇧⌘M", from
+  `KeybindingsStore`), and a hairline under it. The list sits 4pt in from the top and bottom and 6pt
+  from the sides: **Recent** (the last four models picked in any thread, newest first;
+  `RecentModels`), then one section per provider in catalog order, headed with the provider's name
+  4pt below what precedes it, leaving out what Recent shows. Rows are 40pt
+  (`NWComposerMetrics.modelRowHeight`) with 10pt sides, their parts 10pt apart: a 12pt column
+  holding a `running` check on the current model; the model's short name in mono 12.5
+  `textPrimary`, truncating in the middle, so a long id keeps its provider prefix and its tail
+  ("~anthropic/claude-o…pus-4-8"), over a second line in caption `textSecondary`: "Current · this
+  thread", "Used 2h ago in “Plan shepherd extensions”" for a recent model (when and in which thread
+  it was picked), else "With thinking" or "No thinking" as the catalog says (ModelPicker's
+  "Faster, cheaper" has no source in pi's catalog; Honest affordances); and, trailing, its context
+  size in mono 11 `textTertiary` ("200K", "1M"). The whole id is the row's tooltip and what
+  VoiceOver reads. A query keeps the models whose id contains it and moves the
   highlight to the top. While the catalog loads, the list opens with a 12pt spinner and "Loading
   models…" in caption tertiary. Choosing sets the model, records it in Recent, and returns focus to
   the field; it picks the model only. A catalog runs to hundreds of models, so the list is lazy
@@ -1789,10 +1806,15 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   (`ModelCatalog`, `ModelPickerState`; this Mac's catalog is asked once per process, off the main
   actor), and a hover moves the highlight without redrawing the list or scrolling it
   (`ComposerMenuPerformanceTests`).
-- **Thinking menu** (`NWThinkingMenu`, 220pt): from the thinking chip, which also closes it.
-  "Thinking", then Off, Low ("quick"), Medium ("default"), High ("slower, deeper"): the level in
-  `ui` regular `textPrimary`, its note in Geist 12 `textTertiary`, and the check on the current
-  level. It takes focus with the current level highlighted.
+- **Thinking menu** (`NWThinkingMenu`, 220pt; NWComposer): from the thinking chip, which also
+  closes it. "Thinking", then one 28pt row per level pi offers the thread's model
+  (`get_available_thinking_levels`, carried as the snapshot's `thinkingLevels`), in pi's order:
+  Off, Minimal ("fastest"), Low ("quick"), Medium ("default"), High ("slower, deeper"), Extra
+  high ("deeper still"), Max ("slowest, deepest"). A reasoning model usually has Off to High with
+  Minimal; Extra high and Max only where pi maps them; a host that does not say offers Off, Low,
+  Medium and High. The level in `ui` regular `textPrimary`, its note in Geist 12 `textTertiary`,
+  and the check on the current level, trailing. It takes focus with the current level
+  highlighted. The chip names the level the same way ("Extra high").
 - **Agent context menu** (NWComposer › Menus: "Native NSMenu in Swift; shown for spec"): a
   native menu (`.contextMenu`), never a custom popover: Rename… with its keys (⌘R), Fork from here
   and Copy transcript (each with its glyph), a separator, Open in Finder, a separator, and Delete
@@ -2832,8 +2854,8 @@ settings." The chord is read from `KeybindingsStore`, so a rebind never leaves t
   - Default model, "Preselected in the New Agent sheet. “Use pi's default” passes no `--model` at
     all.": a popup whose first item is "Use pi's default · <pi's own default model>", then a divider
     and the catalog's model ids. The catalog and pi's default load in a task, never in `body`.
-  - Default thinking level, "Can be changed per agent from the composer.": Off · Low · Medium ·
-    High, default Medium.
+  - Default thinking level, "Can be changed per agent from the composer.": Off · Minimal · Low ·
+    Medium · High · Extra high · Max, default Medium (pi uses the nearest level a model has).
 - **While pi is working** (the queue's settings; QueueStates' card holds this copy, "Same two
   choices on every platform"):
   - Return while pi is working, "⌘↩ always does the other one.": Queue · Steer, default Queue. The
@@ -3199,7 +3221,11 @@ and the title stays still while rows disclose.
 New Agent's Model row takes "provider/id" (pi's default, or Settings' default, prefilled in that
 form), and its Thinking row follows the composer's thinking chip: it shows only while the chosen
 model (blank: the target's default) takes a thinking level, as the target's catalog says. A model
-the catalog does not know, or a catalog still loading, keeps it.
+the catalog does not know, or a catalog still loading, keeps it. It offers Off, Minimal, Low, Medium
+and High, with Extra high and Max where the target's models.json maps them
+(`ModelListing.thinkingLevels`), and Off to High on a host without `thinking.levels.v1`; a chosen
+level the model lacks shows (and starts) as the one pi would use. The model suggestions truncate
+in the middle, the whole id in each one's tooltip.
 
 **Finalize Worktree** (`FinalizeWorktreeSheet`, 560pt; no board draws it) runs commit → push →
 pull request → (merge) → verify clean → remove worktree → delete local branch in one sheet,
@@ -7069,7 +7095,7 @@ specified; **Not built yet** means none of its surface exists. A board is judged
 subject: the destinations sidebar that most macOS boards draw around it is NWNavigation's and
 NavNewThread's, the Settings nav's Instructions and Experiments rows are those boards', and a
 full-window board's larger sizes and second lines give way to the component boards (Composer,
-questions, and menus).
+questions, and menus), except SlashMenu's and ModelPicker's, which specify their menus.
 
 **macOS**
 
