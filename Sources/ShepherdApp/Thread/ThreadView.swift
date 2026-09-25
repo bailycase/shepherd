@@ -58,11 +58,11 @@ struct ThreadView: View {
         let rows = store.rows
         let running = store.running
         let liveRow = rows.last(where: \.live)
-        // One persistent tail row for the whole run, the last part of the streaming reply (or on
-        // its own before the reply starts). A question replaces it with the composer's question
-        // panel, and live thinking carries its own spinner. A pi that is starting says so in the
-        // composer, never here (`NativeThreadStore.workingLabel`).
-        let working = store.workingLabel
+        // Only one thing moves (LiveText): a running call's own line, thinking, or the reply as it
+        // is written. Between tools the thread ends in "Thinking…", the live turn's last part (or
+        // on its own before the reply has a row). A question waits in the composer instead, and a
+        // pi that is starting says so there too, never here (`NativeThreadStore.showsThinking`).
+        let thinking = store.showsThinking
         // Until the thread has caught up since it came on screen (opening it, or the first pull
         // after switching back to the agent), whatever changes lands at once.
         let catchingUp = arrivals.catchUp.catchingUp(caughtUpAt: store.catchUp?.thread, version: store.threadVersion)
@@ -91,12 +91,12 @@ struct ThreadView: View {
                             // rows on screen: a row that could be nothing would make it evaluate
                             // every row of a long thread on each streamed chunk.
                             VStack(spacing: 0) {
-                                turn(row, running: running, working: row.live ? working : nil, arriving: arrived.contains(row.id),
+                                turn(row, running: running, thinking: row.live && thinking, arriving: arrived.contains(row.id),
                                      settled: settled)
                             }
                             .id(row.id)
                         }
-                        if let working, liveRow == nil { WorkingRow(label: working).nwArrival(settled) }
+                        if thinking, liveRow == nil { NWThinking.live().nwArrival(settled) }
                         Color.clear.frame(height: 1).id(Self.bottomID)
                     }
                     .frame(maxWidth: AppLayout.threadMaxWidth)
@@ -196,7 +196,7 @@ struct ThreadView: View {
     }
 
     /// A sent message rises into the thread; a reply's parts make their own entrances.
-    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?, arriving: Bool, settled: Bool) -> some View {
+    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool, arriving: Bool, settled: Bool) -> some View {
         if row.isUser {
             UserTurn(turn: row.turn)
                 .equatable()
@@ -204,7 +204,7 @@ struct ThreadView: View {
         } else if let presentation = row.presentation {
             AgentTurn(presentation: presentation, live: row.live, subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
                       subagentActions: subagentActions, startedAt: row.startedAt,
-                      retry: retryAction(row, running: running), review: review, working: working, arriving: arriving,
+                      retry: retryAction(row, running: running), review: review, thinking: thinking, arriving: arriving,
                       settled: settled)
                 .equatable()
         }
@@ -278,7 +278,7 @@ struct ThreadView: View {
             if !store.ready, store.loadError == nil, !store.starting, !store.previewing {
                 quiet("Last known thread · refreshing before enabling actions")
             }
-            if !store.dialogsSupported { quiet("This host's pi cannot answer questions here · update Shepherd on the host") }
+            if !store.dialogsSupported { quiet("This host's agent cannot answer questions here · update Shepherd on the host") }
             if store.clipped { quiet("Some earlier output is clipped") }
         }
     }

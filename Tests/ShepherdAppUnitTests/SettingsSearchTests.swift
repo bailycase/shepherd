@@ -31,8 +31,8 @@ struct SettingsSearchTests {
         ("nightly", .advanced, ["Update channel"]),
         ("reasoning", .agents, ["Default thinking level"]),
         ("github", .worktrees, ["Merge PR automatically"]),
-        ("steer", .agents, ["Return while pi is working"]),
-        ("queue", .agents, ["Return while pi is working", "When a turn ends, send the queue"]),
+        ("steer", .agents, ["Return while the agent is working"]),
+        ("queue", .agents, ["Return while the agent is working", "When a turn ends, send the queue"]),
         ("all at once", .agents, ["When a turn ends, send the queue"]),
     ])
     func rowsMatchByTitleOrKeyword(query: String, section: SettingsSection, rows: [String]) {
@@ -48,6 +48,11 @@ struct SettingsSearchTests {
     @Test func aKeywordFindsOnlyTheSectionsThatOwnIt() {
         let hits = SettingsSection.allCases.filter { !$0.matches(for: "dark").isEmpty }
         #expect(hits == [.appearance])
+    }
+
+    @Test func piThemeSyncIsNotASetting() {
+        #expect(SettingsSection.pi.matches(for: "theme").isEmpty)
+        #expect(!SettingsSection.pi.items.contains("Sync pi theme"))
     }
 
     @Test(arguments: ["", "   ", "zzzz-no-such-setting"])

@@ -1,16 +1,17 @@
 import SwiftUI
 
-// Tool activity (NWThread board, "Activity line states"): one quiet line per stretch of work,
-// its lines and their calls on hairline rails, and the changes card that ends a turn with edits.
+// Tool activity (NWThread, ToolRows, LiveText): one quiet line per burst of work, its calls on a
+// hairline rail, and the changes card that ends a turn with edits.
 
 /// One burst of tool work: "Explored 7 files · read 5 · search 2 · 0.9s". 26pt, the label in
 /// 12.5 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt chevron; a real button
 /// with a hover fill that expands the burst into its calls. A failed burst turns `failed` and
-/// stays visible. A live one shows a running spinner, the verb in `textPrimary`, the command,
-/// its elapsed time in running blue, and its last output lines.
+/// stays visible. A live one is the thread's live indicator (LiveText): the tool's own glyph in
+/// `textSecondary`, the verb and the command shimmering (`nwShimmer(active:)`), its elapsed time
+/// in mono 11 `textTertiary`, and its last output lines. Nothing spins.
 public struct NWActivityLine: View {
-    /// Which glyph leads the line. `work` is a stretch's summary, folding the lines beneath it.
-    public enum Kind: Sendable { case work, explore, edit, run, subagents, other }
+    /// Which glyph leads the line: the tool's own, live or done.
+    public enum Kind: Sendable { case explore, edit, run, subagents, other }
 
     public enum Status: Equatable, Sendable {
         case done
@@ -63,7 +64,6 @@ public struct NWActivityLine: View {
     private var symbol: String {
         if status == .failed { return "exclamationmark.triangle" }
         return switch kind {
-        case .work: "rectangle.stack"
         case .explore: "magnifyingglass"
         case .edit: "pencil"
         case .run: "apple.terminal"
@@ -115,25 +115,32 @@ public struct NWActivityLine: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel(accessibilityText)
         .accessibilityValue(action == nil ? "" : isExpanded ? "Expanded" : "Collapsed")
-        .accessibilityHint(action == nil ? "" : kind == .work ? "Shows the steps" : "Shows the calls")
+        .accessibilityHint(action == nil ? "" : "Shows the calls")
     }
 
+    /// The running call (LiveText): its own glyph, still, in `textSecondary`; the verb and the
+    /// command shimmer; the clock ticks beside them in tertiary.
     private func liveHeader(since: Date?) -> some View {
         let nw = Color.nw
         return HStack(spacing: NW.Space.m) {
-            ProgressView().progressViewStyle(.nwSpinner(size: NWThreadMetrics.activityIcon))
-            Text(label).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(nw.textSecondary)
+                .frame(width: NWThreadMetrics.activityIcon, height: NWThreadMetrics.activityIcon)
+            Text(label).font(.nw(.ui, weight: .regular))
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
                 .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
+                .nwShimmer(active: true)
                 .layoutPriority(1)
             if !meta.isEmpty {
-                Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
+                Text(meta).font(.nwMono(11)).lineLimit(1).truncationMode(.tail)
+                    .nwShimmer(active: true)
             }
             if let since {
-                NWElapsedText(since: since, style: .long).font(.nwMono(11)).foregroundStyle(nw.running).fixedSize()
+                NWElapsedText(since: since, style: .long).font(.nwMono(11)).foregroundStyle(nw.textTertiary).fixedSize()
             }
         }
-        .frame(minHeight: NWThreadMetrics.activityHeight)
+        .frame(minHeight: NWThreadMetrics.liveHeight)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
     }
@@ -251,16 +258,16 @@ public struct NWActivityCalls<Menu: View>: View {
     }
 }
 
-/// What an expanded line holds (a summary's lines, a line's calls), indented on a `lineStrong`
-/// hairline rail that runs under the line's glyph.
-public struct NWActivityRail<Content: View>: View {
+/// What an expanded line holds (its calls), indented on a `lineStrong` hairline rail that runs
+/// under the line's glyph.
+struct NWActivityRail<Content: View>: View {
     let content: Content
 
-    public init(@ViewBuilder content: () -> Content) {
+    init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
 
-    public var body: some View {
+    var body: some View {
         content
             .padding(.leading, NWThreadMetrics.railPadding)
             .overlay(alignment: .leading) { NWHairline(.vertical, color: .nw.lineStrong) }

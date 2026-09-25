@@ -64,7 +64,7 @@ enum SubagentFixtures {
     static func liveThread() -> NativeThreadSnapshot {
         let started = now - FixtureData.start - 45 * 60_000
         return FixtureData.snapshot([
-            FixtureData.user("e1", "Fix the Pi model selection and audit the spec.", at: started - 2 * 3_600_000),
+            FixtureData.user("e1", "Fix the agent model selection and audit the spec.", at: started - 2 * 3_600_000),
             FixtureData.assistant("e2", "Two runs: one for the model header, one to audit the spec.", at: started - 2 * 3_600_000 + 4_000),
             FixtureData.tool("e3", "shepherd_child_start", args: #"{"role":"claude-header-path"}"#, at: started - 2 * 3_600_000 + 6_000),
             FixtureData.tool("e4", "shepherd_child_start", args: #"{"role":"spec-audit"}"#, at: started - 2 * 3_600_000 + 7_000),
@@ -117,7 +117,7 @@ enum SubagentFixtures {
         return [
             ChildRun(runID: "run-header", label: "claude-header-path", state: "complete", startedAt: now - 2 * 3_600_000,
                      endedAt: now - 3_600_000 - 60_000, role: "worker", result: ChildResultSummary(files: 1, added: 12, removed: 4, tools: 8, tokens: 30_000),
-                     toolCallID: "call-e3", summary: "Fix Pi model selection."),
+                     toolCallID: "call-e3", summary: "Fix agent model selection."),
             ChildRun(runID: "run-audit", label: "spec-audit", state: "complete", startedAt: now - 2 * 3_600_000,
                      endedAt: now - 2 * 3_600_000 + 20 * 60_000, role: "reviewer", toolCallID: "call-e4", summary: "Listed 11 spec gaps."),
         ]
