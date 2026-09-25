@@ -20,6 +20,7 @@ struct ThreadComposer: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(MobileNavigator.self) private var navigator
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -73,6 +74,14 @@ struct ThreadComposer: View {
         .background(Color.nw.bgWindow)
         .nwAnimation(.content, value: store.dialogs.isEmpty)
         .onChange(of: store.sentCount) { _, _ in focused = false }
+        .onChange(of: focused) { _, focused in
+            if focused { navigator.focusedComposer = ref } else if navigator.focusedComposer == ref { navigator.focusedComposer = nil }
+        }
+        .task {
+            guard navigator.refocusComposer == ref else { return }
+            navigator.refocusComposer = nil
+            focused = true
+        }
         .onChange(of: store.queue, initial: true) { _, queue in state.update(queue: queue) }
         .onChange(of: store.draft, initial: true) { _, draft in state.update(draft: draft, commands: store.commands) }
         .onChange(of: store.commands) { _, commands in state.update(draft: store.draft, commands: commands) }
