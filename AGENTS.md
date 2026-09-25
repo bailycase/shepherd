@@ -22,7 +22,9 @@ agents.
   Mac running Shepherd. The iPhone and iPad client (`App/iOS`) drives them the same way.
 
 **Read [DESIGN.md](DESIGN.md) before touching any UI.** It is the authority on visuals and
-interaction. [ARCHITECTURE.md](ARCHITECTURE.md) maps modules, ownership, and data flow.
+interaction. DESIGN.md is the written form of the design canvas, and a change to how the UI looks or
+behaves updates DESIGN.md in the same change. [ARCHITECTURE.md](ARCHITECTURE.md) maps modules,
+ownership, and data flow.
 
 ## Build, run, test
 
