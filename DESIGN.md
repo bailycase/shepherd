@@ -1849,8 +1849,9 @@ the tool call pi is running now").
   chip. Today a queued message carries images only (Composer › Images).
 - **A Steering row** (QueueSteer, QueueStates · steering): always first, above the queued rows, in
   the order they were steered, on `runningTint` (hovered or focused too; focus adds the ring): the
-  grip's slot stays empty, then a bare 14pt `running` spinner where a queued row has its number (so
-  its text starts 4pt further left), the text, `NWStatusPill(.running, label: "Steering", symbol:
+  grip's slot stays empty, then the still 14pt steer glyph (`arrow.turn.down.right`) in `running`
+  where a queued row has its number (so its text starts 4pt further left; LiveText: waiting isn't
+  working, so nothing on it moves), the text, `NWStatusPill(.running, label: "Steering", symbol:
   "arrow.turn.down.right")`, and Back to the queue (`arrow.uturn.backward`, a 26pt icon button 4pt
   after the pill), both shown at rest, not only on hover. Back to the queue returns it to the queue
   as #1 until pi reads it; if pi has already read it, the host refuses ("pi has already read that
@@ -4140,7 +4141,8 @@ differs.
   (a 34pt circle: Steer all now or Send all now, "When the turn ends, send" with the delivery modes,
   Clear the queue). The rows scroll inside past three and a half (`MobileLayout.queueRowsMaxHeight`,
   at most `queueShare` of the composer's room).
-- **Steering row**, first, until pi takes it: 58pt on `runningTint`, a 15pt `running` spinner, the
+- **Steering row**, first, until pi takes it: 58pt on `runningTint`, the still 15pt `running` steer
+  glyph (MobileQueue; nothing spins), the
   message at 15 on one line, "↳ Steering" (12/500 `running`, an 11pt glyph) under it, and Back to
   the queue (a 34pt button, a 16pt `textSecondary` return arrow) trailing, hit at 44pt.
 - **Queued rows:** 48pt on `bgRaised` with a `lineSubtle` rule above: the number in a 22pt
