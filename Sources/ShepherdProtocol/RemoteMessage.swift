@@ -25,6 +25,11 @@ public enum RemoteProtocol {
     /// messages one per turn, each as it was sent.
     public static let clientCapabilities = [nativeQueueCapability]
     public static let version = 1
+    /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
+    public static let unauthorizedCode = "unauthorized"
+    /// A host's final reply to a `hello` with another `version`; the message ends with the
+    /// host's own ("host speaks protocol 1").
+    public static let versionMismatchCode = "protocol_version"
     public static let pasteCapability = "session.paste.v1"
     public static let paneControlCapability = "pane.control.v1"
     public static let agentActionsCapability = "agent.actions.v1"
