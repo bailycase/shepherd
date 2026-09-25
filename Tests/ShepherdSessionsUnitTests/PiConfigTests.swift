@@ -21,7 +21,8 @@ struct PiConfigTests {
         #expect(PiConfig.sessionsDirectory(environment: env).path == expected + "/sessions")
     }
 
-    /// The model a new session starts with when none is passed: pi's default provider and model.
+    /// The model a new session starts with when none is passed: pi's default provider and model,
+    /// never the bare id another provider could also serve.
     @Test(arguments: [
         (#"{"defaultProvider":"cpa","defaultModel":"gpt-6"}"#, "cpa/gpt-6"),
         (#"{"defaultModel":"gpt-6"}"#, nil),
@@ -31,6 +32,26 @@ struct PiConfigTests {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         try Data(settings.utf8).write(to: dir.appendingPathComponent("settings.json"))
-        #expect(PiConfig.defaultModelReference(in: dir) == expected)
+        #expect(PiConfig.defaultModel(in: dir) == expected)
+    }
+
+    /// models.json in pi's own shape lists each model as "provider/id", the form `--model` takes,
+    /// and says whether it reasons (pi's default is no).
+    @Test(arguments: [
+        (#"{"providers":{"qa":{"baseUrl":"http://x","models":[{"id":"gemini-3.1-flash-lite"},{"id":"deep","reasoning":true}]},"# +
+         #""b":{"models":[{"id":"gemini-3.1-flash-lite","reasoning":false}]}}}"#,
+         [PiModelCatalog.Entry(id: "b/gemini-3.1-flash-lite", reasoning: false),
+          PiModelCatalog.Entry(id: "qa/gemini-3.1-flash-lite", reasoning: false),
+          PiModelCatalog.Entry(id: "qa/deep", reasoning: true)]),
+        (#"{"models":["anthropic/claude-4",{"id":"openai/gpt-5"}]}"#,
+         [PiModelCatalog.Entry(id: "anthropic/claude-4"), PiModelCatalog.Entry(id: "openai/gpt-5")]),
+        ("not json", []),
+    ] as [(String, [PiModelCatalog.Entry])])
+    func configuredModelsAreProviderAndID(_ models: String, expected: [PiModelCatalog.Entry]) throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try Data(models.utf8).write(to: dir.appendingPathComponent("models.json"))
+        #expect(PiConfig.modelEntries(in: dir) == expected)
+        #expect(PiConfig.modelIDs(in: dir) == expected.map(\.id))
     }
 }

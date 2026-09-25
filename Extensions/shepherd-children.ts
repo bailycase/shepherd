@@ -298,6 +298,9 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     try { pi.sendMessage({ customType: "shepherd-child", content: `Child ${run.id} (${run.role}): ${clip(message)}`, display: true },
       { triggerTurn: true, deliverAs: "followUp" }); } catch { /* Result remains retrievable by id. */ }
   }
+  // Run id -> the shepherd_child_wait calls watching it. A completion inside a wait is that
+  // wait's result: a notice as well would wake the parent for a second turn on it.
+  const waiters = new Map();
   function command(run, type, fields = {}, timeout = 10_000) {
     if (!run.proc || run.exited) return Promise.reject(new Error("Child is not running"));
     if (run.pending.size >= 20) return Promise.reject(new Error("Child command queue is full"));
@@ -346,13 +349,15 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
       run.error ||= `Child exited before clean settlement (${signal ?? code}): ${run.stderr}`;
     } else run.state = "complete";
     run.endedAt = Date.now(); run.currentTool = undefined; run.paused = false;
+    if (run.lastActivity?.kind === "running") run.lastActivity = { ...run.lastActivity, kind: "tool" };
     try {
       const lease = JSON.parse(fs.readFileSync(path.join(run.dir, "writer", "owner.json"), "utf8"));
       if (lease.token === run.token) { fs.unlinkSync(path.join(run.dir, "writer", "owner.json")); fs.rmdirSync(path.join(run.dir, "writer")); }
     } catch {}
     run.proc = undefined;
     save(run); run.resolveClosed();
-    notify(run, `${run.state}\n${run.error || run.output || "No text result"}\nSession: ${run.sessionFile}`);
+    const notice = `${run.state}\n${run.error || run.output || "No text result"}\nSession: ${run.sessionFile}`;
+    if (waiters.get(run.id)) run.heldNotice = notice; else notify(run, notice);
   }
   function receive(run, event) {
     if (run.exited) return;
@@ -365,6 +370,8 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     } else if (event.type === "tool_execution_start") {
       run.currentTool = clip(event.toolName, 160); run.latestTool = run.currentTool;
       if (event.toolCallId) run.toolArgs.set(event.toolCallId, event.args);
+      // The card and the inspector name the call in flight ("bash swift test"), not just its tool.
+      run.lastActivity = { kind: "running", tool: clip(event.toolName, 80), preview: toolPreview(event.args), at: Date.now() };
       save(run);
     } else if (event.type === "tool_execution_end") {
       run.currentTool = undefined;
@@ -599,7 +606,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
         runs.set(data.id, { ...data, dir, sessionFile: path.join(dir, "session.jsonl"), output: clip(status.output), error: status.error,
           needsReply: status.needsReply === true, lastStop: status.stopReason,
           turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
-          files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, exitCode: status.exitCode,
+          files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity?.kind === "running" ? { ...status.lastActivity, kind: "tool" } : status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, exitCode: status.exitCode,
           tools: Array.isArray(status.tools) ? data.tools.filter((name) => status.tools.includes(name)) : data.tools,
           missionId: status.missionId ?? data.missionId,
           state: ["complete", "failed", "stopped"].includes(status.state) ? status.state : "stopped", startedAt: status.startedAt ?? data.startedAt, endedAt: status.endedAt, latestTool: status.latestTool });
@@ -695,7 +702,7 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   pi.registerTool({ name: "shepherd_child_agents", label: "child agents", description: "List effective agent profiles, sources and unsupported-field diagnostics. Reads user files and trusted project files without changing them.",
     parameters: Type.Object({}), async execute(_id, _p, _s, _u, ctx) { return result({ defaults, ...discoverChildAgents(ctx, defaults.scope) }); } });
   pi.registerTool({ name: "shepherd_child_start", label: "start child", parameters: startSchema,
-    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Completion wakes the parent. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
+    description: "Start an owned background Pi helper. Use shepherd_child_agents for discovered profiles. Explicit call overrides profile, then Shepherd defaults, then parent model/thinking. Fresh or fork context; tools intersect the parent allowlist. Cwd is not a sandbox. Completion wakes the parent unless shepherd_child_wait returns it. Default creates a mission; mission:false opts out. No nested delegation or automatic worktrees.",
     async execute(id, p, signal, _update, ctx) { return result(await start(p, signal, ctx, undefined, id)); } });
   pi.registerTool({ name: "shepherd_child_message", label: "message child", description: "Message a running child. Acceptance is not completion. Steer runs after current tools; followUp waits for the turn to end.",
     parameters: Type.Object({ id: idSchema, message: textSchema, mode: Type.Optional(StringEnum(["steer", "followUp"])) }),
@@ -706,14 +713,28 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
   pi.registerTool({ name: "shepherd_child_wait", label: "wait for children", description: "Wait for any or all selected children to exit, up to 60 seconds. Timeout or cancelling this wait does not stop the children. Returns bounded results for up to 16 ids.",
     parameters: Type.Object({ ids: Type.Array(idSchema, { minItems: 1, maxItems: 16 }), all: Type.Optional(Type.Boolean()), timeoutSeconds: Type.Optional(Type.Number({ minimum: 0, maximum: 60 })) }),
     async execute(_id, p, signal) {
-      const selected = p.ids.map(get), deadline = Date.now() + (p.timeoutSeconds ?? 30) * 1000;
-      while (Date.now() < deadline) {
-        signal?.throwIfAborted();
-        const done = selected.map((r) => !["running", "queued"].includes(r.state));
-        if (p.all ? done.every(Boolean) : done.some(Boolean)) break;
-        await new Promise((r) => setTimeout(r, 100));
+      const selected = p.ids.map(get), watched = [...new Set(selected)], deadline = Date.now() + (p.timeoutSeconds ?? 30) * 1000;
+      for (const r of watched) waiters.set(r.id, (waiters.get(r.id) ?? 0) + 1);
+      let answered = false;
+      try {
+        while (Date.now() < deadline) {
+          signal?.throwIfAborted();
+          const done = selected.map((r) => !["running", "queued"].includes(r.state));
+          if (p.all ? done.every(Boolean) : done.some(Boolean)) break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        const value = result(selected.map((r) => ({ ...summary(r), output: clip(r.output, 4096) })));
+        answered = true;
+        return value;
+      } finally {
+        for (const r of watched) {
+          const left = waiters.get(r.id) - 1;
+          if (left > 0) waiters.set(r.id, left); else waiters.delete(r.id);
+          // This wait's result carries a completion it saw; a cancelled wait hands it back.
+          if (answered) r.heldNotice = undefined;
+          else if (left <= 0 && r.heldNotice) { const notice = r.heldNotice; r.heldNotice = undefined; notify(r, notice); }
+        }
       }
-      return result(selected.map((r) => ({ ...summary(r), output: clip(r.output, 4096) })));
     } });
   pi.registerTool({ name: "shepherd_child_cancel", label: "cancel child", description: "Clear queued work, abort, and terminate an owned child. Returns only after its process exits. Session history remains available for explicit continuation.",
     parameters: Type.Object({ id: idSchema }), async execute(_id, p) { const run = get(p.id); await stop(run); return result(summary(run)); } });
@@ -735,7 +756,12 @@ export default function shepherdChildren(pi, timers = { setInterval, clearInterv
     try { return await launch(run, message, signal); }
     catch (error) { if (!run.proc) { run.state = "failed"; run.endedAt = Date.now(); run.error = clip(error.message); save(run); } throw error; }
   }
+  // Every caller is the user (the app's cards and inspector, shepherd-inspect, the fleet view),
+  // never the parent's tools. Recorded beside the session before it is sent, so Shepherd's
+  // inspector captions only the parent's messages "from parent".
   async function messageChild(run, message, mode, ctx) {
+    try { fs.appendFileSync(path.join(run.dir, "user-messages.jsonl"), JSON.stringify({ text: message, at: Date.now() }) + "\n", { mode: 0o600 }); }
+    catch { /* Without the record the message reads as the parent's. */ }
     if (run.settled || !run.proc || run.exited) {
       await resume(run, message, undefined, ctx);
       return { id: run.id, delivery: "accepted or queued", mode: "reply" };

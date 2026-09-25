@@ -132,7 +132,9 @@ settings produce diagnostics and are not imported. This is not full pi-subagents
 
 **Questions.** Children use `shepherd_parent_message` for progress or questions. For a question
 the child sets `needsReply`, finishes its turn, and waits for an explicit continuation. Completion
-and messages wake the parent. Delivery is not durable, and not exactly-once across a crash.
+and messages wake the parent, except a completion a `shepherd_child_wait` returns: the parent
+already has that result, so it gets no second turn on it (a wait cancelled before it answers
+hands the completion back). Delivery is not durable, and not exactly-once across a crash.
 
 **Context.** Fresh context is the default unless a profile or setting chooses fork. Fork copies
 the selected branch up to the last complete tool batch, using a separate `SessionManager`. It
@@ -143,7 +145,8 @@ session and model variables stripped. They get `--no-skills --no-prompt-template
 --no-approve`, plus `--no-context-files` when the profile doesn't inherit project context.
 
 **Artifacts.** Each child gets `<support dir>/children/native-<uuid>/`, holding the transcript,
-prompt, status, inspector controls, and a writer lease.
+prompt, status, inspector controls, what the user sent it (`user-messages.jsonl`), and a writer
+lease.
 
 - Paths come from IDs, never task text.
 - The writer lease rejects a second writer and is not reclaimed automatically after a hard
@@ -281,8 +284,10 @@ family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-
   the last agent turn. Once cards stand for a turn's children, its `shepherd_child_wait` and
   `shepherd_child_result` calls are hidden too.
 - **Controls by state:** clicking a card inspects the run.
-  - Running: the last call and the context window used. Pause or Continue and Stop are in the
-    card's context menu and accessibility actions, and visible in the inspector.
+  - Running: the call in flight (else the last call) and the context window used. The extension
+    reports the call in flight as `lastActivity` with `kind: "running"` from its start, and
+    `kind: "tool"` once it ends. Pause or Continue and Stop are in the card's context menu and
+    accessibility actions, and visible in the inspector.
   - Queued or paused: an outlined "Queued" or "Paused" pill ("paused before its next model
     request").
   - Needs you: the question with the child's options as buttons, plus Reply… for free text.
@@ -319,7 +324,12 @@ it.
 - **Live runs** end in a Steer composer addressed to the child ("to: worker · not the parent").
   A failed send keeps the draft.
 - **Finished runs** are read-only: messages from the parent are captioned "from parent", and the
-  bottom bar has Re-run, Fork, and Copy transcript.
+  bottom bar has Re-run, Fork, and Copy transcript. Your own steers and answers (from a card, the
+  inspector, `shepherd-inspect`, or the fleet view) are not: the extension appends each to
+  `user-messages.jsonl` beside the child's session before sending it, and the host marks the
+  matching transcript message `origin: .user` (the first unclaimed message with its text, written
+  no earlier than it was sent). Runs from older extensions have no record, so every later message
+  reads as the parent's.
 - **Re-run** is `shepherd_child_resume` with the original task.
 - **Fork** copies the child's session into pi's session directory under a fresh ID
   (`PiSessionFile.fork`: header rewritten, every entry kept). It starts an RPC agent on it

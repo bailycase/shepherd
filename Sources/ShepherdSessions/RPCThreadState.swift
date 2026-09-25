@@ -25,6 +25,10 @@ final class RPCThreadState {
     static let supportedActions = ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue"]
     /// Bytes of a child session file the transcript reader will scan (tail); older is unreachable.
     static let transcriptReadLimit = 8 * 1024 * 1024
+    /// Beside a native child's session: one `{"text","at"}` line per message the user sent it
+    /// (the children extension's `messageChild`), so its transcript tells them from the parent's.
+    static let userMessagesFile = "user-messages.jsonl"
+    static let userMessagesReadLimit = 1024 * 1024
     /// pi answers a prompt only once its preflight is done: input handlers, a compaction after
     /// an aborted run, image processing, or an extension command running to its end.
     static let promptTimeout: TimeInterval = 30
@@ -518,6 +522,7 @@ final class RPCThreadState {
             if message.role == "custom" && message.display != true { continue }
             entries.append((id, message))
         }
+        let fromUser = userMessageIDs(entries, sent: userMessages(beside: file))
         var arguments: [String: JSONValue] = [:]
         var callTimes: [String: Double] = [:]
         for entry in entries where entry.message.role == "assistant" {
@@ -538,10 +543,50 @@ final class RPCThreadState {
             let args = entry.message.role == "toolResult" ? entry.message.toolCallId.flatMap { arguments[$0] } : nil
             var value = project(entryID: "c:\(entry.id)", message: entry.message, args: args)
             if entry.message.role == "toolResult" { value.startedAt = entry.message.toolCallId.flatMap { callTimes[$0] } }
+            if fromUser.contains(entry.id) { value.origin = .user }
             return value
         }
         return .transcript(value: NativeSubagentTranscript(
             runID: runID, messages: page, olderCursor: pageStart > 0 ? page.first?.entryID : nil, earlierCount: pageStart))
+    }
+
+    /// What the user sent the child whose session is `file`, oldest first; none for a run
+    /// without the file (a pi-subagents run, or one from an older extension).
+    static func userMessages(beside file: String) -> [(text: String, at: Double)] {
+        let path = URL(fileURLWithPath: file).deletingLastPathComponent().appendingPathComponent(userMessagesFile).path
+        guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()).map(Int.init) ?? 0
+        let start = max(0, size - userMessagesReadLimit)
+        try? handle.seek(toOffset: UInt64(start))
+        var data = (try? handle.readToEnd()) ?? Data()
+        if start > 0, let newline = data.firstIndex(of: UInt8(ascii: "\n")) { data = data[data.index(after: newline)...] }
+        struct Line: Decodable { let text: String; let at: Double }
+        let decoder = JSONDecoder()
+        return data.split(separator: UInt8(ascii: "\n")).compactMap { line in
+            (try? decoder.decode(Line.self, from: line)).map { ($0.text, $0.at) }
+        }
+    }
+
+    /// The user messages among `entries` that the user sent: each record claims the first
+    /// message with its text written no earlier than it was sent.
+    static func userMessageIDs(_ entries: [(id: String, message: RPCMessage)], sent: [(text: String, at: Double)]) -> Set<String> {
+        guard !sent.isEmpty else { return [] }
+        var unclaimed = sent
+        var ids: Set<String> = []
+        for entry in entries where entry.message.role == "user" {
+            let text = entry.message.content.compactMap { block -> String? in
+                if case .text(let text) = block { return text }
+                return nil
+            }.joined()
+            // pi stamps the message after the extension records it; a second of slack covers rounding.
+            let written = entry.message.timestamp ?? .infinity
+            guard let index = unclaimed.firstIndex(where: { $0.text == text && written >= $0.at - 1000 }) else { continue }
+            unclaimed.remove(at: index)
+            ids.insert(entry.id)
+            if unclaimed.isEmpty { break }
+        }
+        return ids
     }
 
     // MARK: - Refresh
