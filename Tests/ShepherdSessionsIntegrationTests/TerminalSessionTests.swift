@@ -158,6 +158,45 @@ struct TerminalSessionTests {
         #expect(await h.server.sessionInfo(sessionID: info.id)?.isAlive == false)
     }
 
+    // MARK: - Commands typed into a fresh shell
+
+    /// Typed before the shell reads, the terminal would echo the command above the prompt and
+    /// the line editor would show it again. Here a slow-starting "shell" reads with a line
+    /// editor of its own: out of canonical mode, no terminal echo, and it shows what it read.
+    @Test func aCommandTypedIntoAFreshShellWaitsForItsLineEditor() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let info = try await h.shell(#"sleep 0.3; stty -icanon -echo; printf 'PROMPT> '; IFS= read -r line; printf '%s\ndone\n' "$line"; sleep 30"#)
+        h.server.typeCommand("echo marker", sessionID: info.id)
+        try await h.waitForScreen(info.id, toContain: "done")
+        let lines = await h.screen(info.id).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        #expect(lines.first == "PROMPT> echo marker")
+        #expect(lines.count { $0.contains("echo marker") } == 1)
+    }
+
+    /// The real case: zsh (with no startup files), started a moment late, shows the command once,
+    /// after its prompt ("host% ").
+    @Test func aCommandTypedIntoAFreshZshShowsOnceAtThePrompt() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let info = try await h.shell("sleep 0.3; exec /bin/zsh -f -i")
+        h.server.typeCommand("echo mark''er", sessionID: info.id)
+        try await h.waitForScreen(info.id, toContain: "marker")
+        let screen = await h.screen(info.id)
+        let lines = screen.split(separator: "\n").filter { $0.contains("echo mark''er") }
+        #expect(lines.count == 1, "the command shows once: \(screen.debugDescription)")
+        #expect(lines.first?.hasSuffix("% echo mark''er") == true, "at the prompt: \(screen.debugDescription)")
+    }
+
+    /// A shell with no line editor (canonical mode throughout) still gets the command.
+    @Test func aCommandReachesAShellWithNoLineEditorAfterTheTimeout() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let info = try await h.shell(#"IFS= read -r line; printf 'got:%s\n' "$line"; sleep 30"#)
+        h.server.typeCommand("plain", sessionID: info.id, timeout: 0.2)
+        try await h.waitForScreen(info.id, toContain: "got:plain")
+    }
+
     // MARK: - Resize and foreground
 
     @Test func resizeReachesThePtyAndASameSizeResizeStillNudgesARepaint() async throws {
