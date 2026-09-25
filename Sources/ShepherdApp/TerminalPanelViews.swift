@@ -40,15 +40,14 @@ struct TerminalPanelBar: View {
                 .nwHelp("Hide terminal", shortcut: keys.display(.toggleTerminal))
                 .accessibilityLabel("Hide terminal")
         }
-        .onChange(of: seenOutput, initial: true) {
-            if onScreen, let selected { panels.markSeen(target.key, sessions: selected.panes.compactMap(\.sessionID)) }
+        .onChange(of: seenMark, initial: true) { _, mark in
+            if !mark.sessions.isEmpty { panels.markSeen(target.key, sessions: mark.sessions) }
         }
     }
 
-    /// How far the selected tab's output has got, while it is on screen.
-    private var seenOutput: [UInt64] {
-        guard onScreen, let selected, let rows = vm.terminalPanels.activity[target.key] else { return [] }
-        return selected.panes.compactMap { rows[$0.id]?.outputSequence }
+    /// The selected tab and how far its news has got, while it is on screen.
+    private var seenMark: TerminalSeenMark {
+        TerminalPanel.seenMark(selected: selected, onScreen: onScreen, activity: vm.terminalPanels.activity[target.key] ?? [:])
     }
 }
 

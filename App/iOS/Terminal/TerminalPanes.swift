@@ -20,9 +20,9 @@ struct TerminalModel: Equatable {
     /// The tab strip's items.
     let items: [NWTerminalTab]
 
-    /// The sessions on screen, and how far their output has got: they are marked seen as it moves.
-    let onScreenSessions: [SessionID]
-    let onScreenOutput: [UInt64]
+    /// The tab on screen, its sessions and how far their news has got: they are marked seen
+    /// whenever it changes.
+    let seenMark: TerminalSeenMark
 
     /// A tab not on screen printed, or one exited: the header toggle's dot.
     var hasNews: Bool {
@@ -58,12 +58,10 @@ struct TerminalModel: Equatable {
             return NWTerminalTab(id: tab.id.rawValue, title: Self.title(activity: first.flatMap { activity[$0.id] }, session: session, pane: first),
                                  host: host?.name, activity: state, panes: tab.panes.count)
         }
-        let seenSessions = onScreen ? selected?.panes.compactMap(\.sessionID) ?? [] : []
         return TerminalModel(ref: ref, hostName: host?.name ?? "the host", connected: host?.connectedClient != nil,
                              canChangePanes: host?.supports(RemoteProtocol.paneControlCapability) == true,
                              layout: layout, thread: thread, tabs: tabs, selected: selected, panel: panel, items: items,
-                             onScreenSessions: seenSessions,
-                             onScreenOutput: seenSessions.map { id in activity.values.first { $0.sessionID == id }?.outputSequence ?? 0 })
+                             seenMark: TerminalPanel.seenMark(selected: selected, onScreen: onScreen, activity: activity))
     }
 
     /// The running command ("make dev"), else the program at the prompt ("zsh"), else the
