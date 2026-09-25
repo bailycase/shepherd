@@ -64,6 +64,13 @@ public final class NWPalette: Sendable {
     public let knobOff: Color
     /// The switch and slider knob's small drop shadow.
     public let knobShadow: Color
+    /// The context split's parts (ContextDetails): the system prompt and tools in
+    /// `textTertiary`, instructions, messages, and tool results in the syntax keyword, function,
+    /// and type colors. Swatches and bar segments only; never text.
+    public let contextSystem: Color
+    public let contextInstructions: Color
+    public let contextMessages: Color
+    public let contextToolResults: Color
 
     public init(_ theme: ThemeDefinition) {
         let (l, d) = (theme.light.colors, theme.dark.colors)
@@ -118,6 +125,10 @@ public final class NWPalette: Sendable {
         knobOn = Color(light: "#ffffff", dark: "#ffffff")
         knobOff = Color(light: "#ffffff", dark: "#c9ccd1")
         knobShadow = Color(light: HexColor(red: 0, green: 0, blue: 0, alpha: 0.2), dark: HexColor(red: 0, green: 0, blue: 0, alpha: 0.3))
+        contextSystem = textTertiary
+        contextInstructions = synKeyword
+        contextMessages = synFunction
+        contextToolResults = synType
     }
 }
 
