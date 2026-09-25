@@ -51,7 +51,8 @@ final class MobileHost: Identifiable {
 }
 
 /// Every host the phone knows, each with its own `RemoteHostClient`, connected while the app is
-/// in the foreground and reconnecting with backoff (1, 2, 4… up to 30 s) when one drops.
+/// in the foreground and reconnecting with backoff (1, 2, 4… up to 30 s) when one drops or cannot
+/// be reached. A host that refuses the token or speaks another protocol waits for Edit or Retry.
 /// Records are saved in preferences (`shepherd.ios.hosts`), tokens through `HostTokens` (the
 /// Keychain). The first client's single saved host migrates on first launch.
 @MainActor
@@ -215,12 +216,12 @@ final class MobileHosts {
         let token: String
         do {
             guard let saved = try tokens.read(host.id), !saved.isEmpty else {
-                host.set(.failed("The token is missing. Edit the host to add it."))
+                host.set(.failed(RemoteHostFailure(kind: .tokenMissing, detail: "no token saved")))
                 return
             }
             token = saved
         } catch {
-            host.set(.failed(error.localizedDescription))
+            host.set(.failed(RemoteHostFailure(kind: .tokenUnreadable, detail: error.localizedDescription)))
             return
         }
         let attempt = UUID()
@@ -241,7 +242,7 @@ final class MobileHosts {
         client.onDisconnected = { [weak self, weak host] reason in
             MainActor.assumeIsolated {
                 guard let self, let host, host.attempt == attempt else { return }
-                self.failed(host, reason: reason, attempt: attempt)
+                self.failed(host, RemoteHostFailure(disconnect: reason), attempt: attempt)
             }
         }
         host.connectTask = Task { [weak self, weak host] in
@@ -260,16 +261,16 @@ final class MobileHosts {
             } catch {
                 client.disconnect()
                 guard !Task.isCancelled, let self, let host else { return }
-                self.failed(host, reason: String(describing: error), attempt: attempt)
+                self.failed(host, RemoteHostFailure(error), attempt: attempt)
             }
         }
     }
 
-    private func failed(_ host: MobileHost, reason: String, attempt: UUID) {
+    private func failed(_ host: MobileHost, _ failure: RemoteHostFailure, attempt: UUID) {
         guard host.attempt == attempt else { return }
         disconnect(host)
-        host.set(.failed(reason))
-        guard foreground else { return }
+        host.set(.failed(failure))
+        guard foreground, failure.retries else { return }
         let retryAttempt = host.attempt
         let delay = host.backoff.next()
         let pause = self.pause

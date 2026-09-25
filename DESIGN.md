@@ -529,7 +529,8 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`
      (blocked agents plus subagents asking), and a hover `+` for a new space on the host.
      Otherwise one status row (`NWSidebarNoticeRow`) stands in for its spaces: "Connecting…",
-     "Unreachable" with Retry, or "Off" with Connect. A connected host with automations ends
+     "Unreachable" (or why the host refused: "Token refused", "Update needed") with Retry, or
+     "Off" with Connect. A connected host with automations ends
      with an **Automations** disclosure under its spaces (a space's row: its count, or how many
      runs wait on you), closed by default and remembered per host.
   3. **Automations** as the footer (`NWSidebarFooter`), behind a hairline and hidden while
@@ -1272,7 +1273,9 @@ to Shepherd" or Esc returns.
   - small secondary buttons (danger when destructive)
 - **Footnotes and problems:** footnotes are `caption` in `textTertiary`. Inline problems (like
   the listener's bind error) sit in the row in `failed` under the description. A remote host's
-  status is a state dot plus its word.
+  status is a state dot plus its word; a failed one adds what happened and what to do as its
+  problem ("studio refused the token. Edit the host to paste its current token."), with the
+  client's technical reason only as that line's tooltip. Never show an errno as the message.
 - **Never in `body`:** the installed font families are enumerated once per launch
   (`TerminalFontCatalog`), and pi's config and model catalog load in a task.
 

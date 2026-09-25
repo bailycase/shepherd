@@ -25,7 +25,7 @@ struct MobileHostsCheck {
         let lockedDefaults = scratchDefaults("locked")
         lockedDefaults.set(Data(#"{"name":"Old Mac","host":"127.0.0.1","port":1}"#.utf8), forKey: MobileHosts.legacyKey)
         let memory = HostTokens.memory(legacy: "legacy-token")
-        let locked = Locked()
+        let locked = Locked(true)
         var lockable = memory
         lockable.readLegacy = { if locked.value { throw CocoaError(.fileReadNoPermission) }; return try memory.readLegacy() }
         let whileLocked = MobileHosts(defaults: lockedDefaults, tokens: lockable)
@@ -98,7 +98,21 @@ struct MobileHostsCheck {
         try check(hosts.host(liveID) == nil && tokens.read(liveID) == nil, "forget removes host and token")
         check(MobileHosts(defaults: defaults, tokens: tokens).hosts.map(\.id) == [old.id], "forget is saved")
         await serving.value
-        print("PASS: MobileHosts migration, records without tokens, several hosts over real TCP, pushes, background and foreground, retry and stop, rename, forget")
+
+        // A host that refuses the token says so, and waits for Edit or Retry instead of retrying
+        // on its own (the backoff here is 20 ms, so a retry would show well within the wait).
+        let refusing = try Listener()
+        let refusals = Locked(0)
+        let refusingTask = Task.detached { refusing.refuse(connections: 2, count: refusals) }
+        let refusedID = try hosts.add(RemoteHostEntry(name: "Wrong", address: "127.0.0.1", port: String(refusing.port), token: "wrong-token"))
+        let refused = hosts.host(refusedID)!
+        try await waitUntil("the refused token shown") { refused.phase.failure?.kind == .tokenRefused }
+        try await Task.sleep(for: .milliseconds(300))
+        check(refusals.value == 1 && refused.phase.failure?.kind == .tokenRefused, "a refused token is not retried on its own")
+        hosts.retry(refusedID)
+        try await waitUntil("Retry tries once more") { refusals.value == 2 && refused.phase.failure?.kind == .tokenRefused }
+        await refusingTask.value
+        print("PASS: MobileHosts migration, records without tokens, several hosts over real TCP, pushes, background and foreground, retry and stop, rename, forget, a refused token waits")
     }
 
     static func check(_ condition: @autoclosure () throws -> Bool, _ what: String) rethrows {
@@ -115,8 +129,16 @@ struct MobileHostsCheck {
     }
 }
 
-final class Locked: @unchecked Sendable {
-    var value = true
+final class Locked<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value
+
+    init(_ value: Value) { stored = value }
+
+    var value: Value {
+        get { lock.withLock { stored } }
+        set { lock.withLock { stored = newValue } }
+    }
 }
 
 /// A host that answers hello and the state fetch, pushes one state, and holds the socket until
@@ -163,6 +185,27 @@ final class Listener: @unchecked Sendable {
                 _ = try? readLine(client)
             } catch {
                 fatalError("host failed: \(error)")
+            }
+            close(client)
+        }
+    }
+
+    /// Refuses each hello the way a host refuses a wrong token (a final reply, then close),
+    /// counting the connections.
+    func refuse(connections: Int, count: Locked<Int>) {
+        for _ in 0..<connections {
+            let client = accept(fd, nil, nil)
+            precondition(client >= 0)
+            var one: Int32 = 1
+            _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+            count.value += 1
+            do {
+                guard case .hello(let id, _, _, _, _) = try NDJSON.decode(RemoteRequest.self, from: readLine(client)) else {
+                    fatalError("expected hello")
+                }
+                try write(client, .error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"))
+            } catch {
+                fatalError("refusing host failed: \(error)")
             }
             close(client)
         }

@@ -250,7 +250,9 @@ control) against an older host. Output frames are chunked at 256 KiB to stay und
 - **Detaching** a remote pane never kills the host's session.
 - **Client side:** `RemoteHostStore` persists host configurations, including tokens, in
   UserDefaults (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, reconnecting
-  with exponential backoff capped at 30 s. Remote hosts are not part of `ShepherdState`; they
+  with exponential backoff capped at 30 s, except after a refused token or another protocol
+  version, which wait for Edit or Reconnect (`RemoteHostFailure`, shared with the iOS client).
+  A failed handshake is reported only by what `connect` throws. Remote hosts are not part of `ShepherdState`; they
   appear as their own sidebar sections, and their agents use the same thread views.
 - **Reviews** an agent opens on the host are the host's view state. Remote viewers open their own
   (⇧⌘B).

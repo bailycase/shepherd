@@ -3,10 +3,11 @@ import ShepherdUI
 import AppKit
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // A remote host's rows in the sidebar: its section header, then its spaces and agents with the
 // same rows the local tree uses. While the host is not connected, one status row stands in for
-// them ("Unreachable", Retry).
+// them ("Unreachable", "Token refused", Retry).
 
 extension ShepherdViewModel {
     /// Appends a host's rows to the sidebar tree.
@@ -137,8 +138,8 @@ struct RemoteAutomationRow: View {
     }
 }
 
-/// The row in place of a disconnected host's spaces: Connecting… ⇄ Unreachable ⇄ Off
-/// cross-fade in one slot as the connection retries.
+/// The row in place of a disconnected host's spaces: Connecting… ⇄ Unreachable (or why the host
+/// refused: Token refused, Update needed) ⇄ Off cross-fade in one slot as the connection retries.
 struct HostNoticeRow: View {
     var vm: ShepherdViewModel
     let hostID: UUID
@@ -157,8 +158,8 @@ struct HostNoticeRow: View {
         case .connecting:
             NWSidebarNoticeRow(.running, text: "Connecting…")
                 .nwTransition(.content)
-        case .failed:
-            NWSidebarNoticeRow(.failed, text: "Unreachable", actionTitle: "Retry") { vm.remoteHosts.reconnect(id: hostID) }
+        case .failed(let kind):
+            NWSidebarNoticeRow(.failed, text: kind.headline, actionTitle: "Retry") { vm.remoteHosts.reconnect(id: hostID) }
                 .nwTransition(.content)
         case .disconnected:
             NWSidebarNoticeRow(.idle, text: "Off", actionTitle: "Connect") { vm.remoteHosts.reconnect(id: hostID) }
@@ -168,16 +169,17 @@ struct HostNoticeRow: View {
 }
 
 extension RemoteHostStore.Phase {
-    enum Kind { case disconnected, connecting, connected, failed }
+    enum Kind: Hashable { case disconnected, connecting, connected, failed(RemoteHostFailure.Kind) }
 
-    /// The phase without a failure's reason: what the sidebar's status row and the workspace's
-    /// placeholders cross-fade between (a retry that fails again changes nothing on screen).
+    /// The phase with its failure's kind, not its detail: what the sidebar's status row and
+    /// the workspace's placeholders cross-fade between (a retry that fails the same way again
+    /// changes nothing on screen).
     var kind: Kind {
         switch self {
         case .disconnected: .disconnected
         case .connecting: .connecting
         case .connected: .connected
-        case .failed: .failed
+        case .failed(let failure): .failed(failure.kind)
         }
     }
 }

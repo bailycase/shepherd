@@ -783,8 +783,8 @@ private struct RemoteAgentPaneContent: View {
             case .connecting:
                 PanePlaceholder(text: "connecting to \(connection.config.name)…")
                     .nwTransition(.content)
-            case .failed(let reason):
-                PanePlaceholder(text: "\(connection.config.name) unreachable · \(reason)")
+            case .failed(let failure):
+                PanePlaceholder(text: failure.message(host: connection.config.name))
                     .nwTransition(.content)
             case .disconnected:
                 PanePlaceholder(text: "\(connection.config.name) disconnected")

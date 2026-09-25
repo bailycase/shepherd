@@ -67,9 +67,9 @@ struct RemoteHostRecordTests {
         (RemoteHostPhase.connected, "Connected", true, nil),
         (.connecting, "Connecting", false, nil),
         (.disconnected, "Offline", false, nil),
-        (.failed("connection refused"), "Offline", false, "connection refused"),
-    ] as [(RemoteHostPhase, String, Bool, String?)])
-    func aPhaseReadsAsOneWord(phase: RemoteHostPhase, word: String, connected: Bool, failure: String?) {
+        (.failed(RemoteHostFailure(kind: .unreachable, detail: "refused")), "Offline", false, RemoteHostFailure(kind: .unreachable, detail: "refused")),
+    ] as [(RemoteHostPhase, String, Bool, RemoteHostFailure?)])
+    func aPhaseReadsAsOneWord(phase: RemoteHostPhase, word: String, connected: Bool, failure: RemoteHostFailure?) {
         #expect(phase.word == word)
         #expect(phase.isConnected == connected)
         #expect(phase.failure == failure)

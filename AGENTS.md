@@ -547,7 +547,11 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   session.
 - **Client:** `RemoteHostStore` persists host configs, **including tokens**, in UserDefaults
   (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, with exponential backoff
-  capped at 30 s. Remote hosts are not part of `ShepherdState`.
+  capped at 30 s. A refused token or another protocol version is not retried: the host shows
+  why and waits for Edit or Reconnect. `RemoteHostFailure` (ShepherdRemote) is the one place
+  that reads a failed connect as copy and a retry rule, for the Mac and iOS alike. A client
+  reports a failed handshake only through what `connect` throws, never `onDisconnected`.
+  Remote hosts are not part of `ShepherdState`.
 - **Protocol changes** touch the request and reply enums with every Codable arm, `RemoteProtocol`
   capabilities where relevant, server handling, `RemoteHostClient` (Mac and iOS), and the
   round-trip and listener tests.

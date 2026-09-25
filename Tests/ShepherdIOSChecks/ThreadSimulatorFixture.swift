@@ -196,7 +196,7 @@ final class FixtureRunner {
                 await wait(seconds: 5) { scene.effectiveGeometry.interfaceOrientation.isLandscape }
             }
         }
-        let online = Set(screen.hosts.filter(\.online).map(\.id))
+        let online = Set(screen.hosts.filter { $0.online && !$0.refusesToken }.map(\.id))
         await wait(seconds: 10) { app.hosts.hosts.allSatisfy { !online.contains($0.id) || $0.phase.isConnected } }
         app.navigator.tab = screen.tab
         for route in screen.routes { app.navigator.open(route) }
