@@ -25,9 +25,9 @@ struct FleetTests {
     static func ref(_ agent: String, on host: UUID = studio) -> FleetRef { FleetRef(host: host, agent: AgentID(rawValue: agent)) }
 
     static func snapshot(_ messages: [NativeThreadMessage] = [], running: Bool = false, dialogs: [NativeThreadDialog] = [],
-                         subagents: [ChildRun]? = nil, revision: UInt64 = 1) -> NativeThreadSnapshot {
+                         subagents: [ChildRun]? = nil, revision: UInt64 = 1, actions: [String] = ["answer"]) -> NativeThreadSnapshot {
         NativeThreadSnapshot(piSessionID: "session", generation: "gen", revision: revision, running: running,
-                             supportedActions: ["answer"], dialogsSupported: true, dialogs: dialogs, messages: messages,
+                             supportedActions: actions, dialogsSupported: true, dialogs: dialogs, messages: messages,
                              provisional: [], clipped: false, runtime: "rpc", subagents: subagents)
     }
 
@@ -100,6 +100,16 @@ struct FleetTests {
         #expect(item.question == "Q")
         #expect(item.reason == "asked you")
         #expect(item.session == NativeThreadSession(piSessionID: "session", generation: "gen"))
+    }
+
+    @Test func aThreadWhoseHostTakesNoAnswersIsAnsweredInTheThread() throws {
+        let dialog = NativeThreadDialog(id: "d", kind: .confirm, title: "Q")
+        let snapshot = Self.snapshot(running: true, dialogs: [dialog], actions: [])
+        let model = FleetModel(hosts: [Self.host(Self.studio, "Studio", agents: [Self.agent("dock", .blocked)])],
+                               digests: [Self.ref("dock"): Self.digest(snapshot)])
+        let item = try #require(model.needsYou.first)
+        #expect(item.reply == .open)
+        #expect(item.question == "Q")
     }
 
     @Test func aBlockedAgentWithoutItsSnapshotYetStillNeedsYou() throws {

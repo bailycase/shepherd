@@ -90,9 +90,12 @@ public struct FleetDigest: Equatable, Sendable {
         session = NativeThreadSession(piSessionID: snapshot.piSessionID, generation: snapshot.generation)
         revision = snapshot.revision
         running = snapshot.running
+        // Without `answer` among the thread's actions its own composer refuses an answer too, so
+        // the question is answered in the thread.
+        let answers = snapshot.supportedActions.contains("answer")
         question = snapshot.dialogs.first.map { dialog in
             Question(dialogID: dialog.id, kind: dialog.kind, title: dialog.title, message: dialog.message,
-                     options: dialog.options ?? [], answerable: dialog.unavailable == nil)
+                     options: dialog.options ?? [], answerable: answers && dialog.unavailable == nil)
         }
         subagentQuestion = (snapshot.subagents ?? []).first(where: \.needsAttention).map { run in
             SubagentQuestion(runID: run.runID, label: run.role ?? run.label,
