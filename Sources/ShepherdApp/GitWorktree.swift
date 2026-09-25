@@ -34,7 +34,7 @@ enum GitWorktree {
     }
 
     /// A disposable, readable branch for the New Worktree sheet:
-    /// `worktree/<adjective>-<noun>-<4 digits>`. The suffix keeps repeat
+    /// `agent/<adjective>-<noun>-<4 digits>`. The suffix keeps repeat
     /// creations from colliding; the user can always type their own.
     static func generatedBranch() -> String {
         let adjectives = [
@@ -46,7 +46,7 @@ enum GitWorktree {
             "meadow", "otter", "pine", "quartz", "raven", "summit", "tide", "willow",
         ]
         let number = Int.random(in: 1000...9999)
-        return "worktree/\(adjectives.randomElement()!)-\(nouns.randomElement()!)-\(number)"
+        return "agent/\(adjectives.randomElement()!)-\(nouns.randomElement()!)-\(number)"
     }
 
     struct Identity: Equatable {

@@ -420,7 +420,7 @@ public enum NewThreadRules {
         return ranked.sorted { ($0.rank, $0.order) < ($1.rank, $1.order) }.prefix(limit).map(\.id)
     }
 
-    /// A disposable, readable branch (`worktree/<adjective>-<noun>-<4 digits>`), as the Mac
+    /// A disposable, readable branch (`agent/<adjective>-<noun>-<4 digits>`), as the Mac
     /// generates one. The suffix keeps repeat creations from colliding.
     public static func generatedBranch<R: RandomNumberGenerator>(using generator: inout R) -> String {
         let adjectives = [
@@ -434,7 +434,7 @@ public enum NewThreadRules {
         let adjective = adjectives.randomElement(using: &generator)!
         let noun = nouns.randomElement(using: &generator)!
         let number = Int.random(in: 1000...9999, using: &generator)
-        return "worktree/\(adjective)-\(noun)-\(number)"
+        return "agent/\(adjective)-\(noun)-\(number)"
     }
 
     public static func generatedBranch() -> String {
