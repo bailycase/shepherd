@@ -106,8 +106,9 @@ final class AppSettings {
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
-        /// switch turns on or off (a reset must not stop serving at the next launch).
-        static let resettable = all.filter { $0 != remoteListenerEnabled && $0 != remoteListenerPort }
+        /// switch turns on or off (a reset must not stop serving at the next launch), and the
+        /// skills.sh key, a credential the user pasted rather than a preference.
+        static let resettable = all.filter { ![remoteListenerEnabled, remoteListenerPort, skillsDirectoryKey].contains($0) }
     }
 
     enum Defaults {
@@ -427,7 +428,6 @@ final class AppSettings {
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
         skillsInSlashMenu = Defaults.skillsInSlashMenu
-        skillsDirectoryKey = ""
         returnWhileWorking = Defaults.returnWhileWorking
         queueDelivery = Defaults.queueDelivery
         uiDensity = 1
