@@ -50,6 +50,43 @@ struct RemoteListenerTests {
         #expect(try await client.disconnected())
     }
 
+    /// The host replies `unauthorized` and then closes. The client reports the refusal through
+    /// `connect` alone: the close must not reach `onDisconnected`, where an owner would read it
+    /// as a dropped connection and retry it forever.
+    @Test func aRefusedTokenIsThrownByConnectAndNeverReportedAsADisconnect() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let client = RemoteHostClient()
+        let drops = Locked<[String]>([])
+        client.onDisconnected = { reason in drops.withValue { $0.append(reason) } }
+        var thrown: (any Error)?
+        do {
+            _ = try await client.connect(host: "127.0.0.1", port: r.port, token: "wrong", clientName: "t")
+        } catch {
+            thrown = error
+        }
+        let error = try #require(thrown)
+        #expect(RemoteHostFailure(error).kind == .tokenRefused)
+        // Whatever the client's queue did with the host's close has been handed to main by the
+        // time disconnect returns; draining main runs any callback it scheduled.
+        client.disconnect()
+        await drainMainQueue()
+        #expect(drops.current.isEmpty)
+    }
+
+    @Test func anEstablishedConnectionReportsItsDropOnce() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let client = try await r.typed()
+        let drops = Locked<[String]>([])
+        client.onDisconnected = { reason in drops.withValue { $0.append(reason) } }
+        r.server.stopRemoteListener()
+        try await eventually("the dropped connection to be reported") { !drops.current.isEmpty }
+        client.disconnect()
+        await drainMainQueue()
+        #expect(drops.current.count == 1)
+    }
+
     @Test func anUndecodableFrameDisconnects() async throws {
         let r = try RemoteHost()
         defer { r.stop() }
