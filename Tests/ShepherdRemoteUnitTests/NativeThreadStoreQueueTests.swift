@@ -250,6 +250,37 @@ struct NativeThreadStoreQueueTests {
         #expect(store.queue.map(\.text) == ["a", "b"])
     }
 
+    /// A hidden thread cannot renew an editor's hold, so the store renews the holds it still
+    /// has as the thread comes back on screen, before the host's lease can lapse.
+    @Test func aHoldIsRenewedAsItsThreadComesBackOnScreen() async throws {
+        let host = FakeHost(snapshot(items: [Self.a, Self.b]))
+        host.acceptAll()
+        let pauses = PauseCount()
+        // The loop's interval pause counts, then lasts until the loop is cancelled.
+        let store = NativeThreadStore { duration in
+            guard duration > NativeThreadStore.pushedPullSpacing else { return }
+            await pauses.began()
+            let (cancelled, continuation) = AsyncStream<Void>.makeStream()
+            for await _ in cancelled {}
+            continuation.finish()
+            throw CancellationError()
+        }
+        let shown = Task { await store.run { try host.handle($0) } }
+        await until { pauses.count == 1 }
+        await store.holdQueued(Self.b.id, true)
+        await store.holdQueued(Self.a.id, true)
+        await store.holdQueued(Self.b.id, false)
+        store.suspend()
+        shown.cancel()
+        await shown.value
+        let before = queueActions(host).count
+
+        let again = Task { await store.run { try host.handle($0) } }
+        defer { again.cancel() }
+        await until { pauses.count == 2 }
+        #expect(Array(queueActions(host).dropFirst(before)) == [.hold(id: Self.a.id, held: true)])
+    }
+
     /// Queue edits are not the draft's: they never make the composer busy.
     @Test func queueEditsNeverMakeTheComposerBusy() async throws {
         let (store, host, task) = await started(items: [Self.a])
@@ -305,4 +336,10 @@ private final class HeldAnswer {
         waiter?.resume()
         waiter = nil
     }
+}
+
+@MainActor @Observable
+private final class PauseCount {
+    private(set) var count = 0
+    func began() { count += 1 }
 }
