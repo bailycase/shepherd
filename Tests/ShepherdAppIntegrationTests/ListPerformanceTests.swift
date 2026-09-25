@@ -356,6 +356,41 @@ struct ListPerformanceTests {
         #expect(finished["highlight.render", default: 0] == 1, "\(finished)")
     }
 
+    // MARK: Tables
+
+    /// A reply streaming its summary under a 200-row table redraws none of the table: the
+    /// table is parsed once per chunk in the store, compares equal, and keeps its cells. Its
+    /// first build makes each cell once (the fitting layout; the scrolling one is not built).
+    @Test func aReplyStreamingUnderALargeTableRedrawsNoneOfItsCells() async throws {
+        let rows = 200
+        let table = MarkdownFixtures.largeTable(rows: rows)
+        let turn = ThreadFixture.history(2) + [ThreadFixture.user("u", "List the calls")]
+        // Counting from before the window opens: the thread may load in its first frames.
+        NWRenderProbe.start()
+        let thread = FakeThread(ThreadFixture.snapshot(turn, provisional: [ThreadFixture.streaming(table + "\n\nIn")], running: true),
+                                size: CGSize(width: 1180, height: 900))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await Task.sleep(for: .milliseconds(200))
+        ListPerf.settle(thread.window)
+        let first = NWRenderProbe.stop()
+        #expect(first["prose.tableCell", default: 0] > 0, "the table was built: \(first)")
+        #expect(first["prose.tableCell", default: 0] <= (rows + 1) * 3, "each cell built at most once: \(first)")
+
+        let streamed = try await counting(thread.window) {
+            for index in 1...5 {
+                var next = thread.snapshot
+                next.revision += 1
+                next.provisional = [ThreadFixture.streaming(table + "\n\nIn" + String(repeating: " all, the calls finished", count: index))]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+        #expect(streamed["thread.view", default: 0] >= 5, "the reply streamed: \(streamed)")
+        #expect(streamed["prose.table", default: 0] == 0, "\(streamed)")
+        #expect(streamed["prose.tableCell", default: 0] == 0, "\(streamed)")
+    }
+
     // MARK: Workspace
 
     /// Launching into a workspace of many agents builds the visible layout first: its first
