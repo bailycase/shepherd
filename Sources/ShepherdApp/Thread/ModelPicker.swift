@@ -1,10 +1,13 @@
 import Foundation
 import SwiftUI
 import ShepherdUI
+import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 /// The model catalog as the picker shows it, derived once per catalog (off the main actor)
-/// instead of on every keystroke: each model's short name, note, provider, and search key.
+/// instead of on every keystroke: each model's short name, note, thinking line, provider, and
+/// search key.
 struct ModelCatalog: Sendable {
     struct Model: Sendable, Equatable {
         let id: String
@@ -13,6 +16,9 @@ struct ModelCatalog: Sendable {
         let title: String
         let context: String?
         let reasoning: Bool
+        /// The row's second line: the levels the model takes ("Off · Minimal · Low · Medium ·
+        /// High", or "No thinking"; `NativeModelChoices.thinkingLines`).
+        let thinking: String
         /// The id, lowercased: what a query matches.
         let key: String
     }
@@ -23,10 +29,15 @@ struct ModelCatalog: Sendable {
     let models: [Model]
     private let index: [String: Int]
 
-    init(_ entries: [PiModelCatalog.Entry]) {
+    /// `levels` are the levels models.json configures, per model (`ModelListing.thinkingLevels`);
+    /// a host without `thinking.levels.v1` (`hostTakesAllLevels` false) takes only Off to High.
+    init(_ entries: [PiModelCatalog.Entry], levels: [String: [String]]? = nil, hostTakesAllLevels: Bool = true) {
+        var listing = ModelListing(entries: entries, defaultModel: nil)
+        listing.thinkingLevels = levels
+        let lines = NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: hostTakesAllLevels)
         models = entries.map {
             Model(id: $0.id, provider: $0.provider, title: nativeModelShortName($0.id), context: $0.context, reasoning: $0.reasoning,
-                  key: $0.id.lowercased())
+                  thinking: lines[$0.id] ?? NativeThinkingLevel.line([]), key: $0.id.lowercased())
         }
         index = Dictionary(models.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
@@ -37,23 +48,24 @@ struct ModelCatalog: Sendable {
 
     /// The picker's list for `query`: Recent (the `recent` ids that match, or all of them for no
     /// query, even ones the catalog lacks), then one section per provider in catalog order,
-    /// without the recent models. Each row's second line says what the board's does: the current
-    /// model, where and when a recent one was used (`usage`), or whether a model thinks.
-    func list(query: String, recent: [String], current: String?, usage: [String: RecentModels.Item] = [:],
-              now: Date = Date()) -> NWModelList {
+    /// without the recent models. Each row's second line lists the levels its model takes: pi's
+    /// own for the `current` model when the thread reports them (`currentLevels`), else the
+    /// catalog's.
+    func list(query: String, recent: [String], current: String?, currentLevels: [String]? = nil) -> NWModelList {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        func subtitle(_ id: String, reasoning: Bool?) -> String? {
-            Self.subtitle(id: id, current: current, used: usage[id], reasoning: reasoning, now: now)
+        let currentLine = currentLevels.flatMap { $0.isEmpty ? nil : NativeThinkingLevel.line($0) }
+        func subtitle(_ id: String, catalog: String?) -> String? {
+            id == current ? currentLine ?? catalog : catalog
         }
         func option(_ model: Model) -> NWModelOption {
-            NWModelOption(id: model.id, title: model.title, subtitle: subtitle(model.id, reasoning: model.reasoning), note: model.context,
+            NWModelOption(id: model.id, title: model.title, subtitle: subtitle(model.id, catalog: model.thinking), note: model.context,
                           isCurrent: model.id == current)
         }
         var sections: [NWModelSection] = []
         let recentOptions = recent.compactMap { id -> NWModelOption? in
             if let model = model(id) { return q.isEmpty || model.key.contains(q) ? option(model) : nil }
             return q.isEmpty
-                ? NWModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, reasoning: nil), isCurrent: id == current)
+                ? NWModelOption(id: id, title: nativeModelShortName(id), subtitle: subtitle(id, catalog: nil), isCurrent: id == current)
                 : nil
         }
         if !recentOptions.isEmpty { sections.append(NWModelSection(title: "Recent", options: recentOptions)) }
@@ -68,27 +80,6 @@ struct ModelCatalog: Sendable {
         return NWModelList(sections: sections)
     }
 
-    /// A row's second line (ModelPicker board): "Current · this thread", "Used 2h ago in
-    /// “Plan”", or, for a model neither current nor used, whether it takes a thinking level.
-    static func subtitle(id: String, current: String?, used: RecentModels.Item?, reasoning: Bool?, now: Date) -> String? {
-        if id == current { return "Current · this thread" }
-        if let used {
-            let ago = "Used " + relativeAge(now.timeIntervalSince(used.at))
-            return used.thread.map { "\(ago) in “\($0)”" } ?? ago
-        }
-        return reasoning.map { $0 ? "With thinking" : "No thinking" }
-    }
-
-    /// "just now", "5m ago", "2h ago", "3d ago".
-    static func relativeAge(_ seconds: TimeInterval) -> String {
-        switch max(0, seconds) {
-        case ..<60: "just now"
-        case ..<3600: "\(Int(seconds / 60))m ago"
-        case ..<86_400: "\(Int(seconds / 3600))h ago"
-        default: "\(Int(seconds / 86_400))d ago"
-        }
-    }
-
     // MARK: This Mac's catalog
 
     @MainActor private static var local: ModelCatalog?
@@ -100,7 +91,10 @@ struct ModelCatalog: Sendable {
     @MainActor
     static func loadLocal() async -> ModelCatalog {
         if let local { return local }
-        let task = loadingLocal ?? Task.detached(priority: .utility) { ModelCatalog(PiModelCatalog.entries()) }
+        let task = loadingLocal ?? Task.detached(priority: .utility) {
+            let entries = PiModelCatalog.entries()
+            return ModelCatalog(entries, levels: ModelListing(entries: entries, defaultModel: nil, levelMaps: PiConfig.thinkingLevelMaps()).thinkingLevels)
+        }
         loadingLocal = task
         let catalog = await task.value
         loadingLocal = nil
@@ -109,8 +103,10 @@ struct ModelCatalog: Sendable {
     }
 
     /// A catalog another host served, derived off the main actor.
-    static func derive(_ entries: [PiModelCatalog.Entry]) async -> ModelCatalog {
-        await Task.detached(priority: .userInitiated) { ModelCatalog(entries) }.value
+    static func derive(_ listing: ModelListing, hostTakesAllLevels: Bool) async -> ModelCatalog {
+        await Task.detached(priority: .userInitiated) {
+            ModelCatalog(listing.entries, levels: listing.thinkingLevels, hostTakesAllLevels: hostTakesAllLevels)
+        }.value
     }
 }
 
@@ -127,22 +123,17 @@ final class ModelPickerState {
     private(set) var loading: Bool
     @ObservationIgnored private var catalog: ModelCatalog
     @ObservationIgnored private let recent: [String]
-    @ObservationIgnored private let usage: [String: RecentModels.Item]
     @ObservationIgnored private let current: String?
-    @ObservationIgnored private let opened = Date()
+    @ObservationIgnored private let currentLevels: [String]?
 
-    /// `recent` also says where and when each was used (`RecentModels.load()`).
-    convenience init(catalog: ModelCatalog?, recent: [RecentModels.Item], current: String?) {
-        self.init(catalog: catalog, recent: recent.map(\.id), current: current,
-                  usage: Dictionary(recent.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }))
-    }
-
-    init(catalog: ModelCatalog?, recent: [String], current: String?, usage: [String: RecentModels.Item] = [:]) {
+    /// `currentLevels`: the levels pi reports for the thread's `current` model (the snapshot's),
+    /// nil from a host that does not say.
+    init(catalog: ModelCatalog?, recent: [String], current: String?, currentLevels: [String]? = nil) {
         self.catalog = catalog ?? .empty
         self.recent = recent
-        self.usage = usage
         self.current = current
-        list = self.catalog.list(query: "", recent: recent, current: current, usage: usage, now: opened)
+        self.currentLevels = currentLevels
+        list = self.catalog.list(query: "", recent: recent, current: current, currentLevels: currentLevels)
         loading = self.catalog.isEmpty
     }
 
@@ -153,7 +144,7 @@ final class ModelPickerState {
     }
 
     private func rebuild() {
-        list = catalog.list(query: query, recent: recent, current: current, usage: usage, now: opened)
+        list = catalog.list(query: query, recent: recent, current: current, currentLevels: currentLevels)
         loading = catalog.isEmpty
     }
 }
