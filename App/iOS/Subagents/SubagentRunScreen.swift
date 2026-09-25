@@ -104,7 +104,7 @@ struct SubagentRunView: View {
                     if let summary {
                         // The inspector heads the run with its card, which carries its question.
                         if !compact {
-                            NWRunCard(SubagentValues.card(summary), isEnabled: commands.enabled, open: {},
+                            NWRunCard(SubagentValues.card(summary), isEnabled: commands.enabled, open: nil,
                                       answer: summary.phase == .needsYou ? commands.answer(runID) : nil)
                                 .equatable()
                         }
