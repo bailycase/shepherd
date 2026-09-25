@@ -234,7 +234,7 @@ private struct PalettePreviewPane: View {
         case .move(_, let direction): [NWHighlightRun("Moves this thread one place \(direction == .up ? "up" : "down") in its space on every device.")]
         case .delete: [NWHighlightRun("Stops the agent and closes its thread. You confirm on the next screen.")]
         case .newThread: [NWHighlightRun("Start an agent on any connected host.")]
-        case .settings: [NWHighlightRun("Hosts, appearance, and this device’s settings.")]
+        case .settings: [NWHighlightRun("Hosts, instructions, experiments, and each host’s settings.")]
         }
     }
 

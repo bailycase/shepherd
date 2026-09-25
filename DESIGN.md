@@ -166,6 +166,10 @@ And the rules that follow from them:
 | SettingsInstructionsHosts: every History row offers Restore | The newest row reads "current" | Restoring the file as it is would change nothing (honest affordances) |
 | SettingsExperiments: Learn from Missions, Threads, Automations | Threads and Automations | Missions aren't built |
 | SettingsExperiments: Hosts as a 190pt popup, "Follow Instructions"; a suggestion names "which hosts it applies to" and its chip retargets hosts | A note naming where lines go now, with Open Instructions; the chip retargets the file and reports the hosts; How it works says "for a root file, with the reason." | A line goes where Settings › Instructions sends This Mac's files, so a popup with one option would pick nothing (honest affordances) |
+| MobileInstructions, iPadSettingsInstructions: pi's root files, "Save once, written to each host's ~/.pi/agent/", the editor's path `~/.pi/agent/APPEND_SYSTEM.md`, "Pi reads these at the start of every session", a read order from "root AGENTS.md" | Shepherd's own copies: "Save once, written to every host", the host's instructions folder in the path, "Every pi session Shepherd starts reads these", the order's links named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md" | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
+| MobileExperiments: Learn from Missions, and a mission's folded-map glyph | Threads and Automations | Missions aren't built |
+| MobileInstructionsEdit: a key row of 32pt keys at least 38pt wide on `bgRaised`, over `bgSunken` | The terminal's key row (`NWTerminalKeyRow`: 34pt keycaps at least 44pt wide, over `bgWindow`) | One key row across the app, at touch size |
+| iPadSettingsInstructions: a 76pt header over each column, "Settings" over the list and the page's title with History and Save beside it | The bar, with the page's title; History and Save end the page's first row | The bar keeps back and the title where every iPad screen has them, and NW buttons keep their styles outside a toolbar |
 
 Additions the boards don't have:
 
@@ -4405,7 +4409,7 @@ keyboard is up while the query is empty.
 - **Not built yet:** under the hosts, a card of 52pt rows: Design systems ("2 · acme-web, Night
   Watch", a palette glyph), Pi extensions ("6 installed", a puzzle glyph), and Archive ("41
   threads", a box glyph), each pushing its list. Design systems and Archive wait for the Mac; Pi
-  extensions lists the bundled and installed pi extensions each host loads.
+  extensions opens Settings ▸ Pi extensions (built: a host's bundled and installed extensions).
 
 ### iPhone: Settings (MobileSettings)
 
@@ -4420,23 +4424,51 @@ keyboard is up while the query is empty.
 - **Machines:** Hosts (a display; "1 offline", or the count), then Worktrees (a branch).
 - **A card of its own:** Experiments (a flask; "1 on").
 - **About:** a 24pt Shepherd icon (the crook in `lantern` on `textOnLantern`'s dark, 6pt corners),
-  "Shepherd 0.1.0", and "pi 0.87.1" (mono 13 `textTertiary`) trailing. The app shows "build N"
-  there, since the host reports no pi version, and draws the crook at 15pt with no tile.
-- **In the app** the screen is `bgWindow` with 16pt sides, a value is 12 (`.caption`), and Hosts
-  shows "1 offline" as a problem (mono `failed`) or the host count ("None" with no hosts).
-- **Built today:** Appearance (System, Light, Dark for this device; "System follows this device's
-  appearance. Shepherd on a Mac keeps its own."), Machines ▸ Hosts (the hosts as cards, and the host
-  form), and About.
+  "Shepherd 0.1.0", and "pi 0.87.1" (mono 13 `textTertiary`) trailing.
+- **In the app** the screen is `bgWindow` with 16pt sides, a value is 12 (`.caption`), Hosts shows
+  "1 offline" as a problem (mono `failed`) or the host count ("None" with no hosts), and
+  Appearance keeps the half-filled circle the Mac's Settings uses. A value shows once a host has
+  answered (`SettingsStore`): Defaults, Pi extensions and About's pi are the settings host's (the
+  one their pages last showed, else the first that serves its settings), Instructions the first
+  host whose files read, and Experiments "1 on" or "Off" once any host serves suggestions. About
+  says "build N" until a host reports its pi. Every Settings screen reads every host as it
+  appears, again as a host connects, and on pull to refresh.
 - **Not built yet:** Notifications (which events notify: Needs you by default; it waits for push
-  notifications), Agents ▸ Defaults (the model and thinking a new thread starts with), Pi extensions
-  (the extensions each host loads), Machines ▸ Worktrees (the Mac's worktree settings for new
-  threads), Instructions and Experiments (below).
+  notifications; see Settings ▸ Notifications).
+
+#### A host's settings (Defaults, Worktrees, Pi extensions)
+
+No board draws these pages: they are the Mac's Settings ▸ Agents, Worktrees and Pi (SettingsAgents,
+SettingsWorktrees, SettingsPi) as a host keeps them (`hostSettings.v1`), in iOS Settings' anatomy
+(`Settings/HostSettingsScreens.swift`): a large title and an explanation (`.caption`,
+`textSecondary`), then `SettingsSection` heads over `NWListCard`s of rows, each the title at `ui`
+over a note (12.5/1.45 `textTertiary`, its `code` and **names** marked as the Mac marks them,
+`NWInlineMarkup`) with its control trailing: an `.nwSwitch`, or a menu naming the current value
+beside up-down chevrons.
+
+- **Which host:** with several hosts, a first card, Host, whose menu lists them ("horizon ·
+  offline"); the three pages share the choice. With one host there is no card.
+- **Defaults:** New threads: Model (a menu of "pi's default", then the host's catalog, keeping the
+  current model when the catalog lacks it; mono) and Thinking (Off … Xhigh). While pi is working:
+  When a turn ends, send the queue (One per turn, All at once).
+- **Worktrees:** New worktrees: Base branch (Remote default, Current branch) and Fetch before
+  creating. Finalize: Commit remaining work, Generate PR descriptions, Delete local branch, Merge PR
+  automatically and, while that is on, Merge method (Squash, Merge, Rebase), over "Shepherd never
+  deletes the remote branch: merging the PR cleans it up on GitHub."
+- **Pi extensions:** Bundled with Shepherd: a switch for each extension the host bundles, with its
+  note. Installed with pi: the host's own packages and extensions in mono ("None yet…" without).
+  Updates: Update pi daily and Update extensions daily, over "<host> runs pi 0.87.1."
+- **States:** a spinner while the host answers; offline, "<host> is offline. Its settings show here
+  once it's back."; a Shepherd from before `hostSettings.v1`, "…is too old to share its settings.
+  Update it to change them here."; a failed read, its reason in `failed`. A change shows at once
+  and goes to the host; one it refuses springs back, its reason in a banner.
 
 ### iPhone: Instructions (MobileInstructions, MobileInstructionsEdit)
 
-**Not built yet.** Settings ▸ Instructions edits the root instructions a host hands every pi
-session it starts. The Mac's page is built (SettingsInstructions); a host serves its files over
-`instructions.v1`, which the phone doesn't use yet.
+Settings ▸ Instructions edits the root instructions every pi session Shepherd starts reads, on
+every host (`Settings/InstructionsScreens.swift`; the Mac's page is SettingsInstructions). Each
+host keeps Shepherd's own copies in its support folder and serves them over `instructions.v1`;
+`ClientInstructions` (ShepherdRemote) holds every rule.
 
 - **The page** (MobileInstructions): "‹ Settings", the large title "Instructions", on `bgBase` with
   14pt sides and 10pt apart. "Pi reads these at the start of every session, on every host."
@@ -4455,15 +4487,29 @@ session it starts. The Mac's page is built (SettingsInstructions); a host serves
   being edited on `lanternTint`; a `lantern` caret. Over the keyboard, a key row on `bgSunken` with
   a `lineSubtle` rule: 32pt keys at least 38pt wide on `bgRaised`, 6pt corners, mono 14: `#`, `-`,
   `` ` ``, `**`, Tab.
-- **Where it writes:** the board saves into each host's `~/.pi/agent/`, which Shepherd must never
-  write (AGENTS.md › Gotchas: never install anything into `~/.pi/agent/`). Decide where these files
-  live on the host before building it.
+- **In the app** the page is `bgWindow` with 16pt sides and reads "Every pi session Shepherd starts
+  reads these, on every host. A repo's own AGENTS.md still applies.", and the switch's note is
+  "Save once, written to every host." ("Each host keeps its own." when off): Shepherd writes its
+  own copies, never `~/.pi/agent` (departures). With Same on every host on (the default, kept per
+  device) the page edits the first host whose files read and a save writes both files to every
+  host; a host offline then is owed them ("offline · will sync", remembered on the device) and
+  takes them the next time the page reads it. A host whose files differ reads "differs · 2 lines"
+  in `lanternText`, and Sync now under the card gives each such host the first host's files. Off,
+  a host's row shows the files it holds ("AGENTS · APPEND"), and a tap picks the host the page
+  edits (a `lantern` check). A file's row says "edited" in `lanternText` while its draft waits;
+  drafts last until saved, or until the app quits.
+- **The app's editor** (`InstructionsTextEditor`, TextKit) draws as the Mac's does: its
+  highlighting, and every line changed since the last save tinted, not only the one being typed;
+  its sizes follow Dynamic Type up to 22pt. The key row is the terminal's (`NWTerminalKeyRow`);
+  `` ` `` and `**` wrap a selection, and Tab indents two spaces. Save reads "Save" whatever the scope
+  (VoiceOver hears "Save to 3 hosts"), and a spinner takes its place while it writes; a failed save
+  shows its reason in a banner over the file.
 
 ### iPhone: Experiments (MobileExperiments)
 
-**Not built yet.** Settings ▸ Experiments: features still being tried, each off until turned on.
-The Mac's page is built (SettingsExperiments); a host serves its suggestions over
-`suggestions.v1`, which the phone doesn't use yet.
+Settings ▸ Experiments: features still being tried, each off until turned on
+(`Settings/ExperimentsScreens.swift`; the Mac's page is SettingsExperiments). Its one experiment
+spans every host (`suggestions.v1`); `ClientSuggestions` (ShepherdRemote) holds every rule.
 
 - **The page:** "‹ Settings", the large title "Experiments", on `bgBase`, 14pt sides, 10pt apart.
   "Still being tried out. Each is off until you turn it on." (13.5/1.5 `textSecondary`).
@@ -4478,8 +4524,21 @@ The Mac's page is built (SettingsExperiments); a host serves its suggestions ove
   bubble for a thread and a bolt for an automation in `textSecondary`), the suggested line in mono
   13/1.45 with a `done` "+ " before it and code spans in the syntax string color, where it came from
   under it ("Checkout funnel events · AGENTS.md", "… · build-01"; 12 `textTertiary`), and a chevron
-  that opens it to add or dismiss. Nothing is written until you add it. Adding writes the root
-  AGENTS.md, so it waits on the same decision as Instructions' Where it writes.
+  that opens it to add or dismiss. Nothing is written until you add it.
+- **In the app** the page is `bgWindow` with 16pt sides, and Learn from lists Threads and
+  Automations (Missions aren't built). The switch and the choices change every host that serves
+  suggestions, and show at once. A line leaves off its Markdown bullet and names its host once
+  more than one host serves suggestions. Add all shows from two lines up; with none, "Nothing is
+  waiting. When an agent learns something the hard way, its line shows up here." While it is on,
+  Open Instructions follows the lines. With no host serving suggestions the switch is off and
+  dimmed, over why (no host online, or a Shepherd too old).
+- **A suggestion** (no board; pushed from its row, titled "Suggestion"): the source's glyph and
+  name with its host's badge over "thread · 2h ago"; The line (mono 13 on `doneTint`, editable, one
+  line: Return ends the edit); Why (the agent's reason at `body` in `textSecondary`); Goes to (a
+  File menu, AGENTS.md or APPEND_SYSTEM.md, noted "On <host>. Nothing is written until you add
+  it."); then Add to AGENTS.md (primary, naming the file) and Dismiss (ghost). Either goes back to
+  the list; a refusal stays, with its reason. A line added or dismissed elsewhere reads "This line
+  was added or dismissed."
 
 ### iOS: iPad
 
@@ -5059,19 +5118,22 @@ design agent's note floating over it; Design tool › On iPad specifies it.
 
 #### Settings (iPadSettingsInstructions)
 
-Built: Settings pushes over the detail as one list: Appearance (System, Light, Dark), Machines ›
-Hosts (the count, or "n offline"), and About.
+Settings is a list beside the page: a 300pt column (a 1px `lineSubtle` trailing edge) headed
+"Settings"; rows at least 48pt, 12pt inset and gap, radius 10: a 17pt `textSecondary` glyph and
+the label at 15/500; the open page's row on `bgSelected`, its glyph `textPrimary` and label
+semibold. Pages: Appearance, Agents, Worktrees, Pi, Instructions, Notifications, Hosts, Keyboard,
+Experiments. Agents, Worktrees, Pi and Keyboard are the host's settings, as the Mac shows them.
 
-**Not built yet: Settings as a list beside the page.** A 300pt column (a 1px `lineSubtle`
-trailing edge) headed "Settings"; rows at least 48pt, 12pt inset and gap, radius 10: a 17pt
-`textSecondary` glyph and the label at 15/500; the open page's row on `bgSelected`, its glyph
-`textPrimary` and label semibold. Pages: Appearance, Agents, Worktrees, Pi, Instructions,
-Notifications, Hosts, Keyboard, Experiments. Agents, Worktrees, Pi and Keyboard are the host's
-settings, as the Mac shows them; Notifications waits for push; Instructions and Experiments wait
-for a client of the host's `instructions.v1` and `suggestions.v1`.
+- **In the app** (`SettingsScreen` at regular width; a compact window gets the phone's list): the
+  list is Appearance, Agents, Worktrees, Pi, Instructions, Hosts and Experiments, 10pt in from its
+  edges with rows 2pt apart, and "Shepherd 0.1.0 · pi 0.87.1" under them. Beside it is the phone's
+  own page (Agents is Defaults, Pi is Pi extensions) with its title in the bar, which says no
+  "Settings" of its own. A page that opens another (Experiments' Open Instructions) switches the
+  list in place.
+- **Not built yet:** Keyboard (the host's chords) and Notifications (it waits for push).
 
-**Not built yet: Instructions** (editing the instructions pi reads on every host; the Mac's page
-is Settings › Instructions, SettingsInstructions):
+**Instructions** (editing the instructions pi reads on every host; the Mac's page is Settings ›
+Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
 
 - **Header:** "Instructions", History (secondary) and "Save to 3 hosts" (primary).
 - **Scope:** Every host | Per host (a 300pt segmented control: a `bgSelected` track at radius 9,
@@ -5089,9 +5151,19 @@ is Settings › Instructions, SettingsInstructions):
   folders → repo AGENTS.md → APPEND_SYSTEM.md (the last on `lanternTint` with a `lanternText`
   line, in `textPrimary`). Under it at 12.5/1.5 `textTertiary`: "APPEND_SYSTEM.md is added to the
   end of pi's system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
-- The board edits `~/.pi/agent/APPEND_SYSTEM.md`. Shepherd never writes into `~/.pi/agent/`
-  (AGENTS.md › Gotchas) and keeps its own pi apart from the user's, so the files it edits must
-  be decided before this is built.
+- **In the app** the bar holds the title, and History and Save (NW buttons at `l`) end the page's
+  first row, after the scope control and its state, dropping under them where the row is too
+  narrow. The state names every host ("Studio, build-01 synced · horizon when it's back", "…
+  build-02 differs"), with Sync now as a link while one differs; Per host swaps it for a menu of
+  the host being edited. The path is the host's own instructions folder, the editor is the
+  phone's (`InstructionsTextEditor`) at the iPad's sizes, and it fills the height left: the read
+  order and its note step aside while the keyboard is up. The chips name Shepherd's files
+  ("Shepherd's AGENTS.md", "Shepherd's APPEND_SYSTEM.md"), marking the open one, and the note
+  speaks for the open file (AGENTS.md: "Shepherd's AGENTS.md comes before any folder's or repo's
+  AGENTS.md, so a repo's own file can refine it."). History opens a 360pt popover of the open
+  file's saves on the host edited, newest first: a summary over "07:12 · from iPhone", and Restore
+  on all but the newest ("current"); with Same on every host on, a restore reaches every host. The
+  iPad has no key row.
 
 #### Side pane (iPadPaneBrowser, iPadPaneArtifacts, iPadPaneFiles)
 
@@ -7193,9 +7265,9 @@ questions, and menus).
 | MobileAutomations | iOS: Automations | Partial |
 | MobileMore | iPhone: More | Partial |
 | MobileSettings | iPhone: Settings | Partial |
-| MobileInstructions | iPhone: Instructions | Not built yet |
-| MobileInstructionsEdit | iPhone: Instructions | Not built yet |
-| MobileExperiments | iPhone: Experiments | Not built yet |
+| MobileInstructions | iPhone: Instructions | Built |
+| MobileInstructionsEdit | iPhone: Instructions | Built |
+| MobileExperiments | iPhone: Experiments | Built |
 
 **iPadOS**
 
