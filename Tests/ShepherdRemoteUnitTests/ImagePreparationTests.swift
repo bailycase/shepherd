@@ -1,6 +1,7 @@
 import Foundation
 import CoreGraphics
 import ImageIO
+import UniformTypeIdentifiers
 import Testing
 import ShepherdProtocol
 @testable import ShepherdRemote
@@ -29,6 +30,11 @@ struct ImagePreparationTests {
         #expect(image.mimeType == "image/jpeg")
         #expect(image.name == "photo.jpg")
         #expect(Self.size(image.data) == [300, 200])
+    }
+
+    @Test(arguments: [(UTType.jpeg, true), (.heic, true), (.heif, true), (.png, false), (.gif, false), (.tiff, false)])
+    func photosGoAsJPEGAndEverythingElseAsPNG(type: UTType, jpeg: Bool) {
+        #expect(NativeImagePreparation.sendsAsJPEG(type) == jpeg)
     }
 
     @Test func somethingThatIsNotAnImageIsRefused() {
