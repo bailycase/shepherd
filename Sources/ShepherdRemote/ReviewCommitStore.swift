@@ -207,7 +207,7 @@ public final class ReviewCommitStore {
             refused(error.message)
             await refreshChecks()
         } catch {
-            self.error = "Outcome not yet known: \(Self.text(error)). Don't commit again; its status is checked again."
+            self.error = "\(Self.sentence(error)) Don't commit again; its status is checked again."
         }
     }
 
@@ -242,17 +242,20 @@ public final class ReviewCommitStore {
         return true
     }
 
-    /// Asks the host once how the commit stands; true once it finished.
+    /// Asks the host once how the commit stands; true once it finished. While the commit request
+    /// is unanswered it asks nothing: the host knows the operation only once it has taken the
+    /// request, so an earlier poll would read as an operation it has never heard of.
     @discardableResult
     public func pollOnce() async -> Bool {
         guard let id = operationID, let query else { return true }
+        guard !submitting else { return false }
         do {
             if case .worktreeOperation(let status) = try await query(.worktreeStatus(operationID: id)), status.id == id {
                 adopt(status)
                 error = nil
             }
         } catch {
-            self.error = "Outcome not yet known: \(Self.text(error)). Don't commit again."
+            self.error = "\(Self.sentence(error)) Don't commit again."
         }
         return operation?.finished == true
     }
@@ -301,6 +304,13 @@ public final class ReviewCommitStore {
         case let refusal as ReviewCommitRefusal: refusal.message
         default: String(describing: error)
         }
+    }
+
+    /// `text(error)` as a sentence: its own full stop, or one added.
+    static func sentence(_ error: Error) -> String {
+        let text = self.text(error).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let last = text.last, !".!?…".contains(last) else { return text }
+        return text + "."
     }
 }
 
