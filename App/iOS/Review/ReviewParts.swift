@@ -141,6 +141,12 @@ struct ReviewLoadState: View {
     }
 }
 
+/// What a shown file's colors are for: the file, in one version of the review's files.
+struct ReviewColorsKey: Hashable {
+    let file: String?
+    let version: Int
+}
+
 /// One file's diff as a lazy stack's rows: hunk headers, lines, folds, and each line's comment
 /// under it. With `inlineEditor` the selected line opens a comment editor under it (iPad);
 /// without, the selection is commented on from the screen's bottom bar (the phone).
