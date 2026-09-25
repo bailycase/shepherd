@@ -74,6 +74,20 @@ enum RemoteSamples {
         .search(snippet: "matched text"),
         .search(snippet: nil),
     ]
+
+    static let automation = AutomationID(rawValue: "automation")
+    static let draft = RemoteAutomationDraft(name: "Nightly \"dry\" run", prompt: "Run every migration\nReport", cwd: "/host/repo",
+                                             enabled: false)
+    static let automationRequests: [RemoteAutomationRequest] = [
+        .setEnabled(enabled: true), .setEnabled(enabled: false), .run, .stop, .runs,
+        .create(draft: draft), .update(draft: draft), .delete,
+    ]
+    static let runs: [AutomationRun] = [
+        AutomationRun(id: op, startedAt: 1_700_000_000, settledAt: 1_700_000_043, endedAt: 1_700_000_100, result: .finished),
+        AutomationRun(id: op, startedAt: 1_700_000_200, result: .needsYou, agentID: agent),
+        AutomationRun(id: op, startedAt: 1_700_000_300, endedAt: 1_700_000_400, result: .interrupted),
+    ]
+    static let automationResults: [RemoteAutomationResult] = [.ok, .runs([]), .runs(runs)]
 }
 
 @Suite("Remote requests")
@@ -86,11 +100,11 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction:
+             .creationOptions, .agentQuery, .agentAction, .automation:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 19
+    static let caseCount = 20
 
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
@@ -115,6 +129,7 @@ struct RemoteRequestTests {
         .creationOptions(id: 54, spaceID: S.space, cwd: "/host/repo", fetchFirst: false),
         .agentQuery(id: 31, agentID: S.agent, query: .children),
         .agentAction(id: 20, agentID: S.agent, action: .rename(name: "new \"name\"")),
+        .automation(id: 21, automationID: S.automation, request: .setEnabled(enabled: false)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -151,6 +166,18 @@ struct RemoteRequestTests {
     func everyAgentActionRoundTrips(_ action: RemoteAgentAction) throws {
         #expect(try Wire.roundTrip(RemoteRequest.agentAction(id: 1, agentID: S.agent, action: action))
             == .agentAction(id: 1, agentID: S.agent, action: action))
+    }
+
+    @Test(arguments: RemoteSamples.automationRequests)
+    func everyAutomationRequestRoundTrips(_ request: RemoteAutomationRequest) throws {
+        let message = RemoteRequest.automation(id: 1, automationID: S.automation, request: request)
+        #expect(try Wire.roundTrip(message) == message)
+    }
+
+    @Test func anAutomationRequestNamesItsAutomation() throws {
+        let object = try Wire.object(RemoteRequest.automation(id: 1, automationID: S.automation, request: .run))
+        #expect(object["automationID"] as? String == "automation")
+        #expect(object["type"] as? String == "automation")
     }
 
     @Test func aMinimalCreateAgentOmitsEveryOptional() throws {
@@ -193,11 +220,11 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated:
+             .agentCreated, .automationResult:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 17
+    static let caseCount = 18
 
     static let samples: [RemoteReply] = [
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
@@ -218,6 +245,7 @@ struct RemoteReplyTests {
         .models(id: 10, models: ["anthropic/claude-4", "openai/gpt-5"], defaultModel: "anthropic/claude-4"),
         .spaceAdded(id: 6, spaceID: S.space),
         .agentCreated(id: 7, agentID: S.agent),
+        .automationResult(id: 22, result: .runs(S.runs)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -237,6 +265,33 @@ struct RemoteReplyTests {
     @Test(arguments: RemoteSamples.agentResults)
     func everyAgentResultRoundTrips(_ result: RemoteAgentResult) throws {
         #expect(try Wire.roundTrip(RemoteReply.agentResult(id: 1, result: result)) == .agentResult(id: 1, result: result))
+    }
+
+    @Test(arguments: RemoteSamples.automationResults)
+    func everyAutomationResultRoundTrips(_ result: RemoteAutomationResult) throws {
+        #expect(try Wire.roundTrip(RemoteReply.automationResult(id: 1, result: result)) == .automationResult(id: 1, result: result))
+    }
+
+    /// A run a newer host reports with a result this build does not know reads as stopped;
+    /// optional times and the agent may be absent.
+    @Test func aRunFromANewerHostDecodesLeniently() throws {
+        let json = #"{"id":"00000000-0000-0000-0000-00000000000A","startedAt":5,"result":"skipped"}"#
+        #expect(try Wire.decode(AutomationRun.self, json)
+            == AutomationRun(id: S.op, startedAt: 5, result: .stopped))
+    }
+
+    @Test(arguments: AutomationRunResult.allCases)
+    func everyRunResultRoundTrips(_ result: AutomationRunResult) throws {
+        #expect(try Wire.roundTrip([result]) == [result])
+    }
+
+    @Test(arguments: [
+        (AutomationRun(startedAt: 10, settledAt: 53, endedAt: 100, result: .finished), 43.0 as Double?),
+        (AutomationRun(startedAt: 10, endedAt: 25, result: .stopped), 15),
+        (AutomationRun(startedAt: 10, result: .running), nil),
+    ])
+    func aRunLastsUntilItsFirstFinishedTurnOrItsEnd(_ run: AutomationRun, _ duration: Double?) {
+        #expect(run.duration == duration)
     }
 
     @Test(arguments: [RemoteUploadResult.ready(uploadID: RemoteSamples.op), .complete(path: "/p")])
@@ -295,6 +350,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
             RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeSetupCapability,
             RemoteProtocol.uploadCapability, RemoteProtocol.creationOptionsCapability,
+            RemoteProtocol.automationsCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -309,6 +365,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.pasteCapability == "session.paste.v1")
         #expect(RemoteProtocol.paneControlCapability == "pane.control.v1")
         #expect(RemoteProtocol.uploadCapability == "session.upload.v1")
+        #expect(RemoteProtocol.automationsCapability == "automations.v1")
     }
 
     @Test func aFullUploadChunkFitsInOneFrameAfterBase64() throws {
