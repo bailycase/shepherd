@@ -63,7 +63,8 @@ The iOS client ships through TestFlight, following the Mac's channels:
 - **Missing secrets:** the job is skipped with a notice, and the Mac release is unaffected. It
   never runs for pull requests, tags, or other branches.
 - **Expiry:** Apple processes each build (usually minutes). The Nightly group's testers get it
-  automatically, and it stays installable for 90 days.
+  automatically. Once it has processed, `.github/workflows/testflight-retire.yml` expires every
+  older build, so only the newest stays installable (otherwise each lasts 90 days).
 - **Re-runs:** a re-run keeps the run number, so it keeps the build number. Once the Mac
   nightly has published, re-running the whole workflow skips both builds. To retry only the
   upload, use "Re-run failed jobs". If only the Mac job failed, also use "Re-run failed jobs":
