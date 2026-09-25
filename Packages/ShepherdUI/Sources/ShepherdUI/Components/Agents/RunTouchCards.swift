@@ -126,15 +126,16 @@ public struct NWRunCard: View, Equatable {
     let run: NWRunCardValue
     let isSelected: Bool
     let isEnabled: Bool
-    let open: () -> Void
+    let open: (() -> Void)?
     let answer: ((String) -> Void)?
     let rerun: (() -> Void)?
     private let actionShape: [Bool]
     @Environment(\.dynamicTypeSize) private var dynamicType
 
-    /// `isEnabled` gates answers and Re-run (opening always works). A nil `answer` hides the
+    /// `isEnabled` gates answers and Re-run (opening always works). A nil `open` draws the card
+    /// as a header that opens nothing (the run already on screen); a nil `answer` hides the
     /// question's buttons; a nil `rerun` hides Re-run.
-    public init(_ run: NWRunCardValue, isSelected: Bool = false, isEnabled: Bool = true, open: @escaping () -> Void,
+    public init(_ run: NWRunCardValue, isSelected: Bool = false, isEnabled: Bool = true, open: (() -> Void)?,
                 answer: ((String) -> Void)? = nil, rerun: (() -> Void)? = nil) {
         self.run = run
         self.isSelected = isSelected
@@ -142,7 +143,7 @@ public struct NWRunCard: View, Equatable {
         self.open = open
         self.answer = answer
         self.rerun = rerun
-        actionShape = [answer != nil, rerun != nil]
+        actionShape = [open != nil, answer != nil, rerun != nil]
     }
 
     public nonisolated static func == (a: NWRunCard, b: NWRunCard) -> Bool {
@@ -153,12 +154,19 @@ public struct NWRunCard: View, Equatable {
         let nw = Color.nw
         let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            Button(action: open) { summary }
-                .buttonStyle(.plain)
-                .accessibilityLabel(run.accessibilityLabel)
-                .accessibilityValue(run.progress.map { "\(run.progressLabel ?? "Progress") \(Int(($0 * 100).rounded()))%" } ?? "")
-                .accessibilityHint("Opens the run")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            if let open {
+                Button(action: open) { summary }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(run.accessibilityLabel)
+                    .accessibilityValue(progressValue)
+                    .accessibilityHint("Opens the run")
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+            } else {
+                summary
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(run.accessibilityLabel)
+                    .accessibilityValue(progressValue)
+            }
             if run.state == .attention, let question = run.question { questionBlock(question) }
             if run.state == .failed, let rerun {
                 Button("Re-run", action: rerun).buttonStyle(.nw(.secondary, size: .l)).disabled(!isEnabled)
@@ -178,6 +186,10 @@ public struct NWRunCard: View, Equatable {
         .nwAnimation(.content, value: run.state)
         .nwAnimation(.hover, value: isSelected)
         .accessibilityElement(children: .contain)
+    }
+
+    private var progressValue: String {
+        run.progress.map { "\(run.progressLabel ?? "Progress") \(Int(($0 * 100).rounded()))%" } ?? ""
     }
 
     /// The pill: a live run's time, the wait on you, a finished run's duration, else its word.
