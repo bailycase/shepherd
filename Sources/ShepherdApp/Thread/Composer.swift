@@ -304,13 +304,10 @@ struct Composer: View {
                        tag: command.source.flatMap { $0 == "extension" ? nil : $0 })
     }
 
-    /// Off / Low / Medium / High, with the board's notes.
-    private static let thinkingLevels = [
-        NWThinkingOption(id: "off", title: "Off"),
-        NWThinkingOption(id: "low", title: "Low", note: "quick"),
-        NWThinkingOption(id: "medium", title: "Medium", note: "default"),
-        NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
-    ]
+    /// The levels pi offers the thread's model, with the board's notes.
+    private var thinkingOptions: [NWThinkingOption] {
+        store.thinkingLevels.map { NWThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
+    }
 
     // MARK: Menus
 
@@ -340,7 +337,7 @@ struct Composer: View {
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
             if menu == .thinking, let thinking = store.thinking {
-                NWThinkingMenu(options: Self.thinkingLevels, current: thinking) { level in
+                NWThinkingMenu(options: thinkingOptions, current: thinking) { level in
                     menu = nil
                     composing = true
                     Task { await store.setThinking(level.id) }
@@ -601,7 +598,9 @@ struct Composer: View {
             let settable = store.supportedActions.contains("setModel")
             Button { openModels() } label: {
                 HStack(spacing: NW.Space.s) {
-                    Text(nativeModelShortName(model)).font(Font.nw(.code)).nwContentTransition(.crossFade)
+                    // A long id keeps both ends: the provider prefix and the model's tail.
+                    Text(nativeModelShortName(model)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
+                        .nwContentTransition(.crossFade)
                     if settable { NWChipChevron() }
                 }
             }
@@ -612,8 +611,8 @@ struct Composer: View {
         }
     }
 
-    /// Off / Low / Medium / High, independent of the model; hidden when the model takes no
-    /// thinking level.
+    /// The level pi runs at, opening the levels pi offers the model; hidden when the model takes
+    /// no thinking level.
     @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
         if thinkingAvailable, let thinking = store.thinking {
             Button {
@@ -622,19 +621,20 @@ struct Composer: View {
                 HStack(spacing: NW.Space.s) {
                     Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
                     if !compact { Text("Thinking") }
-                    Text(thinking.capitalized).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
+                    Text(NativeThinkingLevel.title(thinking)).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
                         .nwContentTransition(.crossFade)
                     NWChipChevron()
                 }
             }
             .buttonStyle(.nwComposerChip(active: menu == .thinking))
             .disabled(!store.supports("setThinking"))
-            .accessibilityLabel("Thinking level: \(thinking)")
+            .accessibilityLabel("Thinking level: \(NativeThinkingLevel.title(thinking))")
         }
     }
 
     private var thinkingAvailable: Bool {
         store.thinking != nil && store.supportedActions.contains("setThinking") && reasoningAvailable
+            && NativeThinkingLevel.reasons(store.thinkingLevels)
     }
 
     /// Unknown models (a catalog that did not load) keep the chip.
@@ -649,7 +649,7 @@ struct Composer: View {
     private func openModels() {
         guard store.supports("setModel") else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
-        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model)
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load(), current: store.model)
         dismissCommands()
         menu = .models
         if catalog?.isEmpty != false { Task { await loadModels() } }

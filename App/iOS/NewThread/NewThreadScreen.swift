@@ -192,13 +192,13 @@ private struct NewThreadForm: View {
 
     private var thinkingChip: some View {
         Menu {
-            Picker("Thinking", selection: Binding(get: { model.defaults.thinking }, set: { model.setThinking($0) })) {
-                ForEach(ThinkingLevel.allCases, id: \.self) { level in
-                    Text(level.rawValue.capitalized).tag(level)
+            Picker("Thinking", selection: Binding(get: { model.thinking }, set: { model.setThinking($0) })) {
+                ForEach(model.thinkingLevels, id: \.self) { level in
+                    Text(level.title).tag(level)
                 }
             }
         } label: {
-            NWSelectorChip(model.defaults.thinking.rawValue.capitalized, systemImage: "lightbulb", mono: false, accessibilityName: "Thinking")
+            NWSelectorChip(model.thinking.title, systemImage: "lightbulb", mono: false, accessibilityName: "Thinking")
         }
         .menuStyle(.button)
     }

@@ -188,7 +188,10 @@ keep the version for real breaks.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one).
 - **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking (only
-  for a model that takes a level). Repo
+  for a model that takes a level: Off, Minimal, Low, Medium and High, with Extra high and Max where
+  the host's catalog says the model has them, and Off to High on a host without
+  `thinking.levels.v1`). The composer's thinking chip offers the levels pi reports for the
+  thread's model. Model names truncate in the middle, the full id read aloud. Repo
   lists the host's spaces first and other hosts' after (choosing one moves the thread there), and
   Add repo browses the host's folders (`listDir`, `addSpace`). Host shows each one's status and
   running threads. The New worktree switch (on by default) takes a generated branch and a base

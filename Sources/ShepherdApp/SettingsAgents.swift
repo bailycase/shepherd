@@ -30,7 +30,7 @@ struct AgentSettings: View {
                 }
                 SettingsRow(title: "Default thinking level", subtitle: "Can be changed per agent from the composer.") {
                     NWSegmentedPicker("Default thinking level", selection: $settings.defaultThinking,
-                                      options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
+                                      options: ThinkingLevel.allCases.map { ($0, $0.title) })
                 }
             }
             SettingsGroup(title: "While pi is working") {
