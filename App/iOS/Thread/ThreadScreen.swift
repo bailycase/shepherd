@@ -36,7 +36,6 @@ struct ThreadScreen: View {
         let key = RunKey(session: supported && agent != nil ? host?.session : nil, active: visible && scenePhase == .active)
         let status = ThreadTitle.Status(store: store, agent: agent)
         ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if agent != nil {
                     ThreadComposer(ref: ref)
@@ -47,6 +46,8 @@ struct ThreadScreen: View {
                 }
             }
             .background(Color.nw.bgWindow)
+            // Measured around the composer's inset, which would otherwise shrink what it measures.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer.
             .toolbar(.hidden, for: .tabBar)
             .navigationTitle(agent?.name ?? "Thread")

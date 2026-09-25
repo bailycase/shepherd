@@ -64,7 +64,7 @@ struct QueueSection: View {
     }
 
     @ViewBuilder private func options(running: Bool) -> some View {
-        let queued = store.queue.filter { $0.state == .queued }.map(\.id)
+        let queued = state.queuedIDs
         if !queued.isEmpty {
             Button(running ? "Steer all now" : "Send all now", systemImage: "arrow.turn.down.right") {
                 Task { await running ? store.steerQueued(queued) : store.sendQueuedNow(queued) }
@@ -154,7 +154,7 @@ private struct QueuedRowActions: ViewModifier {
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button("Delete", systemImage: "trash", role: .destructive) { actions.delete(id) }
                     Button("Edit", systemImage: "pencil") { actions.edit(id) }
-                        .tint(Color.nw.bgHover)
+                        .tint(Color.nw.textTertiary)
                 }
                 .contextMenu {
                     Button(steerLabel, systemImage: "arrow.turn.down.right") { actions.steer(id) }

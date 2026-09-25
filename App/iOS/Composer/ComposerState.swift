@@ -22,6 +22,8 @@ final class ComposerState {
     /// Why an image was refused, above the composer until the next attach or send.
     var attachmentError: String?
     private(set) var rows: [NativeQueueStackRow] = []
+    /// The queued messages (not steering), in the order they go: Steer all and Clear.
+    private(set) var queuedIDs: [UUID] = []
     /// A queued message open in the editor sheet, and the editor's text.
     var editing: NativeQueuedMessage?
     var editText = ""
@@ -111,6 +113,8 @@ final class ComposerState {
     private func rebuild() {
         let rows = NativeQueueStack.rows(queue, undo: undo)
         if rows != self.rows { self.rows = rows }
+        let queued = queue.filter { $0.state == .queued }.map(\.id)
+        if queued != queuedIDs { queuedIDs = queued }
     }
 
     func message(_ id: UUID?) -> NativeQueuedMessage? {
