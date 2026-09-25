@@ -67,6 +67,26 @@ struct StateCodingTests {
         #expect(agent.worktreeBranch == nil && agent.worktreeBase == nil && agent.worktreePath == nil)
     }
 
+    /// An agent keeps any level pi has; one this build does not know reads as pi's default.
+    @Test(arguments: [("xhigh", ThinkingLevel.xhigh as ThinkingLevel?), ("minimal", .minimal), ("max", .max), ("ultra", nil)])
+    func anAgentsThinkingLevelDecodes(_ raw: String, _ expected: ThinkingLevel?) throws {
+        let agent = try Fixture.decode(Agent.self, #"{"id":"a1","name":"n","spaceID":"s","tabID":"t","status":"done","thinkingLevel":"\#(raw)"}"#)
+        #expect(agent.thinkingLevel == expected)
+    }
+
+    /// What a client from before minimal, xhigh and max is sent: each level as pi would clamp it
+    /// to Off, Low, Medium and High, and an unchanged state when it already knows them all.
+    @Test func aStateForAnOlderClientCarriesOnlyTheLevelsItKnows() {
+        let space = SpaceID(), tab = TabID()
+        let levels: [ThinkingLevel?] = [.off, .minimal, .low, .medium, .high, .xhigh, .max, nil]
+        let state = ShepherdState(agents: levels.map { Agent(name: "a", spaceID: space, tabID: tab, thinkingLevel: $0) })
+        #expect(!state.usesOnlyLegacyThinkingLevels)
+        let legacy = state.legacyThinkingLevels()
+        #expect(legacy.agents.map(\.thinkingLevel) == [.off, .low, .low, .medium, .high, .high, .high, nil])
+        #expect(legacy.usesOnlyLegacyThinkingLevels)
+        #expect(legacy.legacyThinkingLevels() == legacy)
+    }
+
     @Test func aFreshlyCreatedAgentIsNotFinalNamed() {
         #expect(!Agent(name: "fix the bug", spaceID: SpaceID(), tabID: TabID()).nameIsFinal)
     }

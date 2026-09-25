@@ -238,13 +238,13 @@ public final class RemoteHostClient: @unchecked Sendable {
     /// The host's pi models, its configured default, and which take no thinking level.
     public func listModels() async throws -> ModelListing {
         let reply = try await request { id in .listModels(id: id) }
-        guard case .models(_, let models, let defaultModel, let withoutThinking) = reply else {
+        guard case .models(_, let models, let defaultModel, let withoutThinking, let thinkingLevels) = reply else {
             if case .error(_, let code, let message) = reply {
                 throw RemoteHostClientError.rejected(code: code, message: message)
             }
             throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected listModels reply")
         }
-        return ModelListing(models: models, defaultModel: defaultModel, withoutThinking: withoutThinking)
+        return ModelListing(models: models, defaultModel: defaultModel, withoutThinking: withoutThinking, thinkingLevels: thinkingLevels)
     }
 
     /// Create a space from a directory on the host.
@@ -730,7 +730,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         switch reply {
         case .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
-             .dirListing(let id, _, _, _), .models(let id, _, _, _),
+             .dirListing(let id, _, _, _), .models(let id, _, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):

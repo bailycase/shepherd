@@ -219,6 +219,46 @@ struct NativeThreadTests {
         #expect(try await pi.request(.setThinking(expectedSessionID: s.piSessionID, generation: s.generation, operationID: UUID(), level: "ultra")).failureCode == "invalid")
     }
 
+    /// Every level pi names reaches it as named: minimal, xhigh and max too.
+    @Test(arguments: ["minimal", "xhigh", "max"])
+    func setThinkingPassesPisOtherLevelsThrough(_ level: String) async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        let s = try await pi.ready()
+        let op = UUID()
+        #expect(try await pi.request(.setThinking(expectedSessionID: s.piSessionID, generation: s.generation, operationID: op, level: level)) == .accepted(operationID: op))
+        #expect(try await pi.waitForStdin("set_thinking_level")["level"] as? String == level)
+        _ = try await pi.snapshot("the thinking level to refresh") { $0.thinking == level }
+    }
+
+    /// The snapshot carries the levels pi offers the current model, from the first snapshot on,
+    /// and follows the model.
+    @Test func theSnapshotCarriesTheLevelsPiOffersTheCurrentModel() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let table = #"{"claude-sonnet-4-20250514":["off","minimal","low","medium","high","xhigh","max"],"*":["off","minimal","low","medium","high"]}"#
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_THINKING_LEVELS": table])
+        let s = try await pi.ready()
+        #expect(s.thinkingLevels == ["off", "minimal", "low", "medium", "high", "xhigh", "max"], "with the thread's first state")
+
+        let op = UUID()
+        #expect(try await pi.request(.setModel(expectedSessionID: s.piSessionID, generation: s.generation, operationID: op, model: "anthropic/claude-haiku")) == .accepted(operationID: op))
+        let changed = try await pi.snapshot("the levels of the new model") { $0.model == "anthropic/claude-haiku" && $0.thinkingLevels?.count == 5 }
+        #expect(changed.thinkingLevels == ["off", "minimal", "low", "medium", "high"])
+    }
+
+    /// A pi without the command leaves the levels unsaid, and clients fall back to their own.
+    @Test func aPiWithoutTheLevelsCommandLeavesThemOut() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_THINKING_LEVELS": "unsupported"])
+        _ = try await pi.ready()
+        _ = try await pi.waitForStdin("get_available_thinking_levels")
+        let s = try await pi.snapshot("the thread after pi answered") { $0.thinking != nil }
+        #expect(s.thinkingLevels == nil)
+    }
+
     // MARK: - Questions
 
     @Test func aConfirmQuestionIsAnsweredOnce() async throws {
