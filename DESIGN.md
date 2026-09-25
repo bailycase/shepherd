@@ -3934,8 +3934,6 @@ below collects the rest, and the places those sentences point here.
 - **Status and feedback:** an empty state's sentence is capped at 320pt (`Feedback.swift`), the
   board's at 280. A banner's icon is 13pt, the board's 15.
 - **Agents and review:**
-  - The Changes pane's file header draws no shadow under its bottom hairline while pinned; the
-    ChangesSplit board's casts one (`NWFileHeader`, `Components/Review/FileHeader.swift`).
   - A review from an older host (no `changes.v1`) keeps two scopes (Uncommitted and Pull request)
     and compares the working tree against HEAD, or the PR's merge base, the old way.
   - The Agents and Review components pad and space in 10pt where their boards do (the subagent
@@ -3943,18 +3941,22 @@ below collects the rest, and the places those sentences point here.
     head, the toolbar's gaps, the ledger's gaps, a file header's leading inset,
     `AppLayout.steerTopInset`), which is not a step on the space scale ("Padding and gaps use only
     these steps").
-- **The Changes pane on iPhone and iPad** (`App/iOS/Review/`, the boards against the app):
-  - The iPad keeps its sidebar in landscape, so the docked pane is narrower than the board's
-    640pt and its toolbar drops "2/5 viewed", then the stat (`PadChangesToolbar`); its head sits
-    under the thread's bar rather than beside it.
-  - Not built: the pane's Browser, Artifacts and Files tabs; a file head's Comment on the file and
-    Open buttons; the base picker's "A commit…"; a commits range picked with ⇧; Rich preview and
-    Open in your editor in Diff options (the engine sends no file contents); a draft pull request
-    from the iPad's Commit… (`RemoteCommitOptions` has no draft).
-  - The iPad's Commit… keeps the message card's "Drafted from the diff · edit anything" inside it
-    (`NWCommitMessageEditor`) and titles its primary "Commit & push"; the board has the note under
-    the card and "Commit and push".
-  - A comment names its author "You" with Edit and Delete; the boards draw the initial "B".
+- **The Changes pane: open, waiting on the user's call** (not decided departures; each either
+  gets built as its board draws it or becomes a departure once the user says so):
+  - Mac: a pinned file header's shadow under its bottom hairline (ChangesSplit); the maximized
+    pane's 52pt rail with the window controls and Back to the thread (ChangesWide); ⌘1–9 to jump
+    to a file (ChangesStates), chords that select agents today; Rich preview (the engine sends no
+    file contents).
+  - iPad: the sidebar stays in landscape, so the docked pane is narrower than the board's 640pt;
+    its toolbar drops "2/5 viewed", then the stat (`PadChangesToolbar`), and its head sits under
+    the thread's bar rather than beside it.
+  - iPhone and iPad, not built: a file head's Comment on the file and Open buttons; the base
+    picker's "A commit…"; a commits range (touch has no ⇧); Rich preview and Open in your editor;
+    a draft pull request from Commit… (`RemoteCommitOptions` has no draft).
+  - iPad Commit…: the board puts "Drafted by the agent from the diff. Edit anything." under the
+    message card and titles the primary "Commit and push"; the app keeps the shared form's note
+    inside the card and "Commit & push", which MobileCommit draws.
+  - A comment's author: the boards draw the initial "B"; the touch clients say "You".
 - **Settings (the boards against `SettingsView.swift`, `SettingsComponents.swift`,
   `NWSettingsNavRow`, `NWCardRow`, `NWGroupCard`):** the nav's window-controls strip 38pt
   (`AppLayout.trafficLightHeight`) instead of 44; page titles in `display` (28) instead of 22/600;
@@ -4108,11 +4110,11 @@ components first), with these differences for touch:
     dots follow the host's news, so a tab leaving the screen (its viewer detaching, the PTY taking
     the Mac's size again) leaves no dot.
 - **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
-  iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
+  iPhone the changes' bar reads Send 1 comment and **Commit…** (primary), which presents a sheet
   (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &
   push, with Ask agent to commit as a link under it and in the review's ••• menu). File rows are
-  44pt and show the name alone. On iPad, Commit… (the docked review composer's, or the full-screen
-  review's bar) opens a 400pt popover; its anatomy is in iOS: iPad › Commit. A host without
+  44pt and show the name alone. On iPad, Commit… (the Changes toolbar's, docked or full screen)
+  opens a 400pt popover; its anatomy is in iOS: iPad › Commit. A host without
   `review.commit.v1` keeps the single Commit that asks the agent.
 
 ### iPhone: shell and shared anatomy
