@@ -32,6 +32,16 @@ enum MobileRoute: Hashable, Codable {
         }
     }
 
+    /// The thread a pushed screen belongs to (its runs, its review); nil for a thread itself
+    /// and for screens of no one thread.
+    var thread: AgentRef? {
+        switch self {
+        case .subagents(let route): route.thread
+        case .review(let route): route.thread
+        case .thread, .home, .newThread, .search, .settings, .automations: nil
+        }
+    }
+
     /// The host a route belongs to, so forgetting a host closes its screens.
     var host: UUID? {
         switch self {

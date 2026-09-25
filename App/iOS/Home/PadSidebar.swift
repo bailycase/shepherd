@@ -31,7 +31,9 @@ struct PadSidebar: View {
                     }
                     ForEach(model.needsYou) { item in
                         Button { navigator.open(item.route) } label: {
-                            AttentionRow(item: item, selected: item.runID == nil && item.ref.agentRef == selected, compact: true)
+                            // A subagent's item marks while its run is open over the thread.
+                            AttentionRow(item: item, selected: pushed == item.route || (item.runID == nil && item.ref.agentRef == selected),
+                                         compact: true)
                                 .equatable()
                                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
                         }

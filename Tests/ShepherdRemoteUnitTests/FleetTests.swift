@@ -72,6 +72,30 @@ struct FleetTests {
         #expect(digest.subagentQuestion == FleetDigest.SubagentQuestion(runID: "run-1", label: "reviewer", text: "Rename or replace?"))
     }
 
+    @Test(arguments: [
+        (AgentStatus.working, nil, true),
+        (.blocked, nil, true),
+        (.done, nil, false),
+        (.idle, [], false),
+        (.done, [Fixture.run("finished", state: "complete")], false),
+        (.done, [Fixture.run("background")], true),
+        (.idle, [Fixture.run("finished", state: "failed"), Fixture.run("unknown-state", state: "queued")], true),
+    ] as [(AgentStatus, [ChildRun]?, Bool)])
+    func aSettledThreadStaysWatchedWhileASubagentMayStillAsk(status: AgentStatus, runs: [ChildRun]?, watched: Bool) {
+        let digest = runs.map { Self.digest(Self.snapshot(subagents: $0)) }
+        #expect(FleetDigest.watches(status: status, digest: digest) == watched)
+    }
+
+    @Test func aSettledThreadWithAQuestionOrARunningTurnIsWatched() {
+        #expect(FleetDigest.watches(status: .done, digest: Self.digest(Self.snapshot(running: true))))
+        #expect(FleetDigest.watches(status: .idle, digest: Self.digest(Self.snapshot(dialogs: [
+            NativeThreadDialog(id: "d1", kind: .confirm, title: "Sure?"),
+        ]))))
+        #expect(FleetDigest.watches(status: .done, digest: Self.digest(Self.snapshot(subagents: [
+            Fixture.run("asking", state: "paused", needsAttention: true),
+        ]))))
+    }
+
     @Test func anUnchangedAnswerMatchesOnlyTheSameSessionAndRevision() {
         let digest = Self.digest(Self.snapshot(revision: 7))
         #expect(digest.matches(piSessionID: "session", generation: "gen", revision: 7))

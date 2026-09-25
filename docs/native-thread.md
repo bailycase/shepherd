@@ -255,7 +255,10 @@ one prompt at a time.
   after it). A missing item gets `queue_item_unavailable`.
 - **Status:** between queued turns pi settles for a moment. While the queue goes next,
   `SessionServer` holds back the status extension's "done" (no "Agent finished" banner), and
-  reports it once the queue does not go after all.
+  reports it once the queue does not go after all. It also holds a "done" that arrives before
+  pi's own `agent_settled` on stdout (the two travel apart), because the settle says how the
+  turn ended: a "done" whose turn's last reply failed (`stopReason: "error"`, and not a stop
+  the user asked for) reaches the app with a `TurnFailure` carrying pi's error.
 - **Where a message came from** outlives the app: the host records each delivered message's
   origin by entry id in the support directory's `thread-origins/<pi session>.json` (newest 512
   per session) and applies it to history, so after a relaunch a queue delivery still shows its
