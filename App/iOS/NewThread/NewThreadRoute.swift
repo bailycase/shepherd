@@ -17,21 +17,10 @@ enum NewThreadHooks {
 
 struct NewThreadDestination: View {
     let route: NewThreadRoute
-    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         switch route {
-        case .compose:
-            NWEmptyState(Text("New thread"), message: "Start an agent on any host from here.")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.nw.bgWindow)
-                .navigationTitle("New thread")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { navigator.dismissPresented() }
-                    }
-                }
+        case .compose(let host): NewThreadScreen(preferredHost: host)
         }
     }
 }
