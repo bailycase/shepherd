@@ -132,10 +132,16 @@ struct SettingsView: View {
         withTransaction(instant) { vm.settingsSection = first }
     }
 
-    /// "Shepherd 0.1.0 · agent 0.87.1", or "Shepherd Nightly 0.0.0-nightly.… · agent 0.87.1"
     private var versions: String {
         let app = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
-        return "\(ShepherdEdition.current.displayName) \(app)" + (piUpdates.currentVersion.map { " · agent \($0)" } ?? "")
+        return Self.versions(app: "\(ShepherdEdition.current.displayName) \(app)", agent: piUpdates.currentVersion,
+                             on: vm.settingsSection)
+    }
+
+    /// "Shepherd 0.1.0 · agent 0.87.1", or "Shepherd Nightly 0.0.0-nightly.… · agent 0.87.1".
+    /// The Pi page names the program: "· pi 0.87.1", as the SettingsPi board draws.
+    static func versions(app: String, agent: String?, on section: SettingsSection) -> String {
+        app + (agent.map { " · \(section == .pi ? "pi" : "agent") \($0)" } ?? "")
     }
 
     private var detail: some View {

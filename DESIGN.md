@@ -54,9 +54,10 @@ agents at once?"
 - **The agent, not pi:** copy calls the process it supervises "the agent" or "Agent" ("Agent is
   asking", "Goes when the agent finishes this turn", "the agent's session file"), and a version
   shown to people reads "agent 0.87.1". pi appears in exactly three places, all under Settings:
-  the Settings ▸ Pi page itself, its "Pi" item in the settings navigation, and the real `~/.pi/…`
-  paths on Settings ▸ Instructions. Code, logs, command lines, extension prompts, and these docs
-  still name pi, the program.
+  the Settings ▸ Pi page itself (with the Settings footer's "pi 0.87.1" while it is open), its
+  "Pi" item in the settings navigation, and the real `~/.pi/…` paths on Settings ▸
+  Instructions. Code, logs, command lines, extension prompts, and these docs still name pi, the
+  program.
 - **Not built yet.** The Main and Running boards give the sidebar destinations beside the
   agents, among them **Missions** (one map from a goal to merged pull requests, across every
   repository it touches) and **Designs** (HTML mockups on a canvas, drawn and refined with a
