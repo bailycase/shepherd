@@ -1,11 +1,13 @@
 import SwiftUI
 
 /// The Changes pane's measures (ChangesStates › Toolbar): a 44pt toolbar row, a 32pt compare row,
-/// a 48pt send bar, and the maximized pane's 260pt file list.
+/// a 48pt send bar (58pt on iPad), and the maximized pane's 260pt file list.
 public enum NWChangesMetrics {
     public static let toolbarHeight: CGFloat = 44
     public static let compareHeight: CGFloat = 32
     public static let sendBarHeight: CGFloat = 48
+    /// The send bar on iPad (iPadReview, iPadReviewSplit).
+    public static let touchSendBarHeight: CGFloat = 58
     public static let fileListWidth: CGFloat = 260
     public static let fileListRowHeight: CGFloat = 46
     public static let scopeButtonRadius: CGFloat = 7
@@ -164,57 +166,6 @@ public struct NWCompareRow: View {
         .frame(height: NWChangesMetrics.compareHeight)
         .background(nw.bgBase)
         .overlay(alignment: .bottom) { NWHairline() }
-    }
-}
-
-/// Unsent comments (ReviewSendBar): a 48pt `bgRaised` bar under a strong line, "1 comment on
-/// outbox.go, not sent yet", then Discard and Send to agent. Only there while there are unsent
-/// comments.
-public struct NWReviewSendBar: View {
-    let count: String
-    let detail: String
-    let sending: Bool
-    let onDiscard: () -> Void
-    let onSend: () -> Void
-
-    public init(count: String, detail: String, sending: Bool = false, onDiscard: @escaping () -> Void, onSend: @escaping () -> Void) {
-        self.count = count
-        self.detail = detail
-        self.sending = sending
-        self.onDiscard = onDiscard
-        self.onSend = onSend
-    }
-
-    public var body: some View {
-        let nw = Color.nw
-        HStack(spacing: 10) {
-            Image(systemName: "text.bubble").font(.system(size: 12, weight: .medium)).foregroundStyle(nw.running)
-            Text("\(Text(count).fontWeight(.semibold)) \(detail)")
-                .font(.nw(.ui, weight: .regular))
-                .foregroundStyle(nw.textPrimary)
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer(minLength: NW.Space.m)
-            Button("Discard", action: onDiscard)
-                .buttonStyle(.nw(.ghost, size: .s))
-                .disabled(sending)
-            Button(action: onSend) {
-                HStack(spacing: NW.Space.s) {
-                    if sending { ProgressView().progressViewStyle(.nwSpinner(size: 10)) }
-                    Text("Send to agent")
-                }
-            }
-            .buttonStyle(.nw(.primary, size: .s))
-            .keyboardShortcut(.return, modifiers: .command)
-            .disabled(sending)
-            .help("Send your comments as the agent's next message (⌘↩)")
-        }
-        .padding(.leading, 14)
-        .padding(.trailing, 10)
-        .frame(height: NWChangesMetrics.sendBarHeight)
-        .background(nw.bgRaised)
-        .overlay(alignment: .top) { NWHairline(color: nw.lineStrong) }
-        .accessibilityElement(children: .contain)
     }
 }
 
