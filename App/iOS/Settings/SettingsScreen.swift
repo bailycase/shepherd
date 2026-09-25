@@ -1,9 +1,30 @@
 import SwiftUI
 import ShepherdUI
 
-/// Settings (MobileSettings board; home track): the Settings tab's root on iPhone, pushed over the
-/// detail on iPad. Only what the phone has: appearance, hosts, and about.
+/// Settings (MobileSettings, iPadSettingsInstructions boards; home track): the Settings tab's root
+/// on iPhone, a list of rows each pushing its page; on iPad, pushed over the detail, the list
+/// beside the page it opens. Defaults, Worktrees and Pi extensions are a host's own settings,
+/// Instructions and Experiments span every host, and Appearance is this device's.
 struct SettingsScreen: View {
+    @Environment(MobileHosts.self) private var hosts
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        let store = SettingsStore.of(hosts)
+        Group {
+            if sizeClass == .regular {
+                SettingsSplit(store: store)
+            } else {
+                SettingsList(store: store)
+            }
+        }
+        .task { await store.watch() }
+    }
+}
+
+/// The phone's list: Appearance, then Agents, Machines, Experiments and About.
+private struct SettingsList: View {
+    let store: SettingsStore
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileAppearance.self) private var appearance
     @Environment(MobileNavigator.self) private var navigator
@@ -13,18 +34,27 @@ struct SettingsScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.sectionSpacing) {
                 NWListCard {
-                    row("Appearance", symbol: "circle.lefthalf.filled", trailing: .value(appearance.mode.title), route: .appearance)
+                    row(.appearance, trailing: .value(appearance.mode.title))
+                }
+                SettingsSection("Agents") {
+                    NWListCard {
+                        row(.defaults, trailing: value(store.defaultsValue))
+                        row(.instructions, trailing: value(store.instructionsValue))
+                        row(.pi, trailing: value(store.extensionsValue))
+                    }
                 }
                 SettingsSection("Machines") {
                     NWListCard {
-                        row("Hosts", symbol: "desktopcomputer",
-                            trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline")
-                                : .value(model.hosts.isEmpty ? "None" : String(model.hosts.count)),
-                            route: .hosts)
+                        row(.hosts, trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline")
+                            : .value(model.hosts.isEmpty ? "None" : String(model.hosts.count)))
+                        row(.worktrees, trailing: NWListRow.Trailing.none)
                     }
                 }
+                NWListCard {
+                    row(.experiments, trailing: value(store.experimentsValue))
+                }
                 SettingsSection("About") {
-                    NWListCard { AboutRow() }
+                    NWListCard { AboutRow(pi: store.piVersion) }
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -32,15 +62,107 @@ struct SettingsScreen: View {
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }
+        .refreshable { await store.refresh() }
         .background(Color.nw.bgWindow)
         .navigationTitle("Settings")
     }
 
-    private func row(_ title: String, symbol: String, trailing: NWListRow.Trailing, route: SettingsRoute) -> some View {
-        Button { navigator.open(.settings(route)) } label: {
-            NWListRow(title, leading: .symbol(symbol), trailing: trailing)
+    private func row(_ page: SettingsPage, trailing: NWListRow.Trailing) -> some View {
+        Button { navigator.open(.settings(page.route)) } label: {
+            NWListRow(page.title, leading: .symbol(page.symbol), trailing: trailing)
         }
         .buttonStyle(.nwRow(radius: 0))
+    }
+
+    private func value(_ text: String?) -> NWListRow.Trailing {
+        text.map(NWListRow.Trailing.value) ?? NWListRow.Trailing.none
+    }
+}
+
+/// The iPad's Settings (iPadSettingsInstructions): a 300pt list of its pages, the open one on
+/// `bgSelected`, beside that page. The page names the bar and puts its actions there.
+private struct SettingsSplit: View {
+    let store: SettingsStore
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: MobileLayout.settingsListRowSpacing) {
+                    ForEach(SettingsPage.allCases, id: \.self) { page in
+                        SettingsListItem(page: page, selected: store.page == page) { store.page = page }
+                    }
+                }
+                .padding(MobileLayout.settingsListInset)
+                AboutLine(pi: store.piVersion)
+                    .padding(.horizontal, MobileLayout.settingsListInset + NW.Space.l)
+                    .padding(.vertical, NW.Space.l)
+            }
+            .refreshable { await store.refresh() }
+            .frame(width: MobileLayout.settingsListWidth)
+            .background(Color.nw.bgWindow)
+            NWHairline(.vertical)
+            SettingsPageView(page: store.page)
+                .environment(\.settingsColumn, true)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .id(store.page)
+        }
+        .background(Color.nw.bgWindow)
+    }
+}
+
+/// One page in the iPad's list: its glyph and name; the open one on `bgSelected`, its glyph in
+/// `textPrimary` and its name semibold.
+private struct SettingsListItem: View {
+    let page: SettingsPage
+    let selected: Bool
+    let open: () -> Void
+
+    var body: some View {
+        let nw = Color.nw
+        Button(action: open) {
+            HStack(spacing: NW.Space.l) {
+                Image(systemName: page.symbol)
+                    .font(.nw(.ui, weight: .medium))
+                    .foregroundStyle(selected ? nw.textPrimary : nw.textSecondary)
+                    .frame(width: NWListMetrics.leadingWidth)
+                    .accessibilityHidden(true)
+                Text(page.listTitle)
+                    .font(.nw(.ui, weight: selected ? .semibold : .medium))
+                    .foregroundStyle(nw.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, NW.Space.l)
+            .frame(minHeight: MobileLayout.rowHeight)
+            .background(selected ? nw.bgSelected : .clear, in: RoundedRectangle(cornerRadius: MobileLayout.settingsListRowRadius))
+            .contentShape(RoundedRectangle(cornerRadius: MobileLayout.settingsListRowRadius))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// A Settings page by itself, as the iPad shows it beside the list.
+struct SettingsPageView: View {
+    let page: SettingsPage
+
+    var body: some View {
+        switch page {
+        case .appearance: AppearanceScreen()
+        case .defaults: DefaultsScreen()
+        case .worktrees: WorktreesScreen()
+        case .pi: PiExtensionsScreen()
+        case .instructions: InstructionsScreen()
+        case .hosts: HostsScreen()
+        case .experiments: ExperimentsScreen()
+        }
+    }
+}
+
+extension SettingsStore {
+    /// Opens another page: in place beside the iPad's list, else on its own.
+    func open(_ page: SettingsPage, inColumn: Bool, navigator: MobileNavigator) {
+        if inColumn { self.page = page } else { navigator.open(.settings(page.route)) }
     }
 }
 
@@ -62,20 +184,18 @@ struct SettingsSection<Content: View>: View {
     }
 }
 
-/// Shepherd's version and build.
+/// Shepherd's version beside the pi the host runs ("pi 0.87.1"), or this build while no host
+/// has said: the crook on its dark tile.
 private struct AboutRow: View {
-    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-    static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+    let pi: String?
 
     var body: some View {
         HStack(spacing: NW.Space.l) {
-            NWCrook()
-                .frame(width: NWListMetrics.symbol, height: NWListMetrics.symbol)
+            ShepherdTile()
                 .frame(width: NWListMetrics.leadingWidth)
-                .accessibilityHidden(true)
-            Text("Shepherd \(Self.version)").font(.nw(.ui, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
+            Text("Shepherd \(AboutLine.version)").font(.nw(.ui, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
             Spacer(minLength: NW.Space.m)
-            Text("build \(Self.build)").font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
+            Text(pi ?? "build \(AboutLine.build)").font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
         }
         .padding(.horizontal, NW.Space.l)
         .frame(minHeight: NWListMetrics.rowHeight)
@@ -83,9 +203,35 @@ private struct AboutRow: View {
     }
 }
 
+/// The iPad list's foot: "Shepherd 0.1.0 · pi 0.87.1".
+private struct AboutLine: View {
+    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+
+    let pi: String?
+
+    var body: some View {
+        Text(["Shepherd \(Self.version)", pi ?? "build \(Self.build)"].joined(separator: " · "))
+            .nwText(.caption)
+            .foregroundStyle(Color.nw.textTertiary)
+    }
+}
+
+/// Shepherd's icon at list size: the crook in `lantern` on its dark tile.
+private struct ShepherdTile: View {
+    var body: some View {
+        NWCrook()
+            .frame(width: MobileLayout.settingsAboutCrook, height: MobileLayout.settingsAboutCrook)
+            .frame(width: MobileLayout.settingsAboutTile, height: MobileLayout.settingsAboutTile)
+            .background(Color.nw.textOnLantern, in: RoundedRectangle(cornerRadius: NW.Radius.s))
+            .accessibilityHidden(true)
+    }
+}
+
 /// Settings ▸ Appearance: System, Light or Dark, for this device.
 struct AppearanceScreen: View {
     @Environment(MobileAppearance.self) private var appearance
+    @Environment(\.settingsColumn) private var inColumn
 
     var body: some View {
         ScrollView {
@@ -115,6 +261,7 @@ struct AppearanceScreen: View {
                     .padding(.horizontal, NW.Space.xs)
             }
             .padding(.horizontal, MobileLayout.gutter)
+            .padding(.top, inColumn ? MobileLayout.settingsColumnTop : 0)
             .frame(maxWidth: MobileLayout.homeMaxWidth)
             .frame(maxWidth: .infinity)
         }

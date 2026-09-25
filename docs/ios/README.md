@@ -182,7 +182,14 @@ keep the version for real breaks.
   limits; "/…" lists the snapshot's commands. A question from the agent takes the composer's
   place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
-  (add, edit, forget; a blank token keeps the saved one).
+  (add, edit, forget; a blank token keeps the saved one). A host's own settings as the Mac's
+  Settings sets them (`hostSettings.v1`): Defaults (model, thinking, the queue), Worktrees and Pi
+  extensions, with a host picker when there are several. Instructions: the root AGENTS.md and
+  APPEND_SYSTEM.md every pi session Shepherd starts reads (`instructions.v1`), the same on every
+  host or per host, in an editor with line numbers and a Markdown key row. Experiments: Suggested
+  instructions across every host (`suggestions.v1`), the lines agents drafted to add, edit first or
+  dismiss. On iPad the list sits beside the page. The rules live in ShepherdRemote
+  (`ClientHostSettings`, `ClientInstructions`, `ClientSuggestions`), held by `SettingsStore`.
 - **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking (only
   for a model that takes a level). Repo
   lists the host's spaces first and other hosts' after (choosing one moves the thread there), and

@@ -154,6 +154,15 @@ final class FixtureHost: @unchecked Sendable {
         case .listModels(let id):
             note("listModels")
             return [.models(id: id, models: data.models, defaultModel: data.models.first, withoutThinking: data.withoutThinking)]
+        case .hostSettings(let id, .fetch) where data.hostSettings != nil:
+            note("hostSettings.fetch")
+            return [.hostSettings(id: id, settings: data.hostSettings!)]
+        case .instructions(let id, .fetch) where data.instructions != nil:
+            note("instructions.fetch")
+            return [.instructions(id: id, snapshot: data.instructions!)]
+        case .suggestions(let id, .fetch) where data.suggestions != nil:
+            note("suggestions.fetch")
+            return [.suggestions(id: id, snapshot: data.suggestions!)]
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _),
              .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _):
             note(Self.kind(request))
