@@ -303,9 +303,9 @@ private struct NewThreadForm: View {
 }
 
 private extension View {
-    /// The iPad board's sheet is a page over the thread, not a narrow form.
+    /// The iPad board's sheet is a form over the thread, which stays in view around it.
     @ViewBuilder
     func newThreadSizing(pad: Bool) -> some View {
-        if pad { presentationSizing(.page) } else { self }
+        if pad { presentationSizing(.form) } else { self }
     }
 }
