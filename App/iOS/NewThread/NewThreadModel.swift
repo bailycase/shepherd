@@ -214,6 +214,8 @@ final class NewThreadModel {
         guard let hostID else { return }
         let requestID = defaults.begin(hostID: hostID)
         defaultsSession = sessions[hostID]
+        // A new attempt replaces the last one's error; what still blocks Start says so itself.
+        errorText = nil
         modelOptions = []
         rankModels()
         guard let client = hosts.host(hostID)?.connectedClient, let spaceID else {
@@ -249,6 +251,7 @@ final class NewThreadModel {
     func resolveBase(fetch: Bool?) {
         guard draft.usesWorktree, let target = draft.baseTarget else { return }
         let requestID = base.begin(target)
+        errorText = nil
         guard let client = hosts.host(target.host)?.connectedClient else {
             base.fail(requestID: requestID)
             return
