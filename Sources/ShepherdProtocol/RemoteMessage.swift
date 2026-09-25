@@ -23,7 +23,9 @@ public enum RemoteProtocol {
     /// delivered message came from (`nativeQueueCapability`). An older client, which lists
     /// nothing, finds its own sends in the thread by their text, so a host delivers its queued
     /// messages one per turn, each as it was sent.
-    public static let clientCapabilities = [nativeQueueCapability]
+    /// It also decodes every thinking level pi has (`thinkingLevelsCapability`); a host sends an
+    /// older client's state and creation options with each level clamped to `ThinkingLevel.legacy`.
+    public static let clientCapabilities = [nativeQueueCapability, thinkingLevelsCapability]
     public static let version = 1
     /// A host's final reply to a `hello` whose token it refused; it closes the connection after.
     public static let unauthorizedCode = "unauthorized"
@@ -47,7 +49,7 @@ public enum RemoteProtocol {
     public static let automationsCapability = "automations.v1"
     /// The host takes every level pi has (`ThinkingLevel`: minimal, xhigh, max too) in
     /// `createAgent`. An older host knows only `ThinkingLevel.legacy`, and refuses a request
-    /// carrying another.
+    /// carrying another. A client lists it too: it decodes them in state and creation options.
     public static let thinkingLevelsCapability = "thinking.levels.v1"
     public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability]
 

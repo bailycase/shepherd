@@ -309,7 +309,10 @@ transport differs.
   clients offer exactly those, or off/low/medium/high from a host that sends none. `setThinking`
   takes any of pi's seven (off, minimal, low, medium, high, xhigh, max), and pi clamps a level
   the model lacks. `createAgent` takes minimal, xhigh and max only from a host that lists
-  `thinking.levels.v1`; clients offer an older host Off to High.
+  `thinking.levels.v1`; clients offer an older host Off to High. Clients list it in `hello`
+  too: a client that does not is sent state and creation options with each level clamped to
+  Off to High, as pi clamps (minimal reads as low, xhigh and max as high), since it cannot
+  decode the others.
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
     agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
