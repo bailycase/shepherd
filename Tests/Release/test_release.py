@@ -1079,6 +1079,18 @@ class RetireCommandTests(unittest.TestCase):
         self.assertEqual(self.server.state["tokens"], [])
 
 
+class ReleaseConcurrencyTests(unittest.TestCase):
+    """A release run is never cancelled: nightly pushes queue, and the newest waiting one ships next."""
+
+    def test_a_newer_push_waits_instead_of_cancelling_the_running_release(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as f:
+            release_yml = f.read()
+        m = re.search(r"^concurrency:\n((?:  .*\n)+)", release_yml, re.M)
+        self.assertIsNotNone(m)
+        self.assertIn("group: release-${{ github.ref }}", m.group(1))
+        self.assertIn("cancel-in-progress: false", m.group(1))
+
+
 class RetireWorkflowTests(unittest.TestCase):
     """release.yml's retire-testflight job runs only after the testflight job uploads."""
 

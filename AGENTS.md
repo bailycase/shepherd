@@ -872,6 +872,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   every feed's update until one ages out. So a nightly re-run whose commit already carries a
   `nightly-*` tag builds nothing (push again instead), and a tag's re-run stops at
   `gh release create`.
+- **Runs queue; they never cancel.** A push waits for the release already running, and a newer push
+  replaces only the one still waiting, so every started run finishes (a cancelled run can leave a
+  TestFlight upload unretired or the feeds half written) and the newest commit ships next.
 - **Two apps, never each other's updates.** Shepherd Nightly has its own bundle id, name
   (`Shepherd Nightly.app`), DMG and feed, and every feed carries one app only. Sparkle is not
   the boundary: its installer picks the new app in an archive by the host's *file name* first
