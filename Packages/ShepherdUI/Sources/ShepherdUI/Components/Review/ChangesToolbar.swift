@@ -193,7 +193,7 @@ public struct NWReviewSendBar: View {
                 .font(.nw(.ui, weight: .regular))
                 .foregroundStyle(nw.textPrimary)
                 .lineLimit(1)
-                .truncationMode(.middle)
+                .truncationMode(.tail)
             Spacer(minLength: NW.Space.m)
             Button("Discard", action: onDiscard)
                 .buttonStyle(.nw(.ghost, size: .s))

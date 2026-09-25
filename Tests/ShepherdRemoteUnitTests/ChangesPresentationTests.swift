@@ -36,6 +36,21 @@ struct ChangesPresentationTests {
         """)
     }
 
+    /// A comment on a whole file leads its file's comments and quotes no line.
+    @Test func aCommentOnTheWholeFileQuotesNoLine() {
+        let file = ReviewComment(fileID: "a.go", lineID: -1, filePath: "a.go", lineNumber: 0, text: "Split this file")
+        #expect(formatChangesReview(fileIDs: ["a.go"], comments: [Self.comment("a.go", line: 3, "and this"), file],
+                                    scopeTitle: "Last turn") == """
+        Diff review (Last turn):
+
+        a.go (the whole file)
+          Split this file
+
+        a.go:3 [+ code]
+          and this
+        """)
+    }
+
     @Test func aRecordedTurnBecomesTheCard() throws {
         let turn = ChangesTurn(messageTimestamp: 42, startedAt: 1, state: .ready,
                                files: [ChangesFile(path: "ledger/outbox.go", status: .modified, added: 9, removed: 3),

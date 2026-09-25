@@ -44,6 +44,7 @@ extension ShepherdViewModel {
         }
         guard let session else { return }
         if let turnID, session.engine != nil, session.scope != .turn(id: turnID) {
+            session.scopeChosen = true
             setChangesScope(session, .turn(id: turnID))
         }
         focus(session, path: path)
@@ -337,6 +338,7 @@ extension ShepherdViewModel {
         session.loadRequestID = requestID
         session.isLoading = true
         session.loadError = nil
+        session.loadErrorIsNotice = false
         let scope = session.scope
         let options = session.options
         Task {
@@ -351,7 +353,9 @@ extension ShepherdViewModel {
                 guard isCurrent(session), session.loadRequestID == requestID else { return }
                 session.list = nil
                 session.files = []
-                session.loadError = (error as? ChangesError)?.message ?? String(describing: error)
+                let changes = error as? ChangesError
+                session.loadError = changes?.message ?? String(describing: error)
+                session.loadErrorIsNotice = [ChangesError.unavailable, ChangesError.notARepository].contains(changes?.code)
             }
             session.isLoading = false
             if case .local(let agentID)? = owner(of: session) { checkouts?.refresh(agentID) }
