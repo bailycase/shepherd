@@ -7150,7 +7150,7 @@ questions, and menus).
 | iPadSubagents | iOS: iPad › Subagents | Partial |
 | iPadPortrait | iOS: iPad › Shell and sidebar, Composer and commands | Partial |
 | iPadSidebar | iOS: iPad › Shell and sidebar | Partial |
-| iPadPortraitLaunch, iPadPortraitLaunchLight | iOS: iPad › Shell and sidebar (Portrait) | Partial |
+| iPadPortraitLaunch, iPadPortraitLaunchLight | iOS: iPad › Shell and sidebar (Portrait) | Built |
 | iPadLock | Notifications and Live Activities › Live Activities, Lock-screen widget (iPad) | Not built yet |
 | iPadOverview | iOS: iPad › Overview | Partial |
 | iPadNewThread | iOS: iPad › New thread | Partial |
