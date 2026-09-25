@@ -1358,7 +1358,7 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   - Expanded: 8pt beneath, the text in italic 12.5 at 1.55 in `textSecondary`, 12pt past a 2pt
     `lineStrong` rule, at the prose measure. It opens and closes with `disclosure`.
   - Live (LiveText): the disclosure's chevron, still, 11pt in `textTertiary`, and "Thinking…" in
-    `ui` (12.5) shimmering, 8pt apart on a 26pt row, with no clock. It is the thread's live line
+    italic `ui` (12.5) shimmering, 8pt apart on a 26pt row, with no clock. It is the thread's live line
     between tools (see Live text), and when thinking ends it cross-fades in place into what the
     finished row is (below), or leaves.
   - Finished, by what the stretch carries. Providers often keep their reasoning back
