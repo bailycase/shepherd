@@ -71,11 +71,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # C also saves the build cache, right after building.
+      # On a master push or a manual run, C also saves the caches right after
+      # building. Pull requests save nothing: each restores its base's newest
+      # entry (nightly's from the warm job) and compiles its own changes on top,
+      # which keeps the cache quota free and an upload off C's critical path.
       - uses: ./.github/actions/swift-build
         with:
           clean: ${{ inputs.clean }}
-          save: ${{ matrix.shard == 'C' }}
+          save: ${{ matrix.shard == 'C' && github.event_name != 'pull_request' }}
 
       # Diagnostic: git calls cost 0.16-0.2 s each in tests here, against
       # 0.035 s on the same image before. Tests run /usr/bin/git, the xcrun shim.
