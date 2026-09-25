@@ -850,6 +850,40 @@ class AppStoreConnectClientTests(unittest.TestCase):
             client.builds("123")
         self.assertEqual(len(opener.requests), 1)
 
+    def test_a_redirect_is_refused_so_the_token_never_follows_it(self):
+        seen = {"elsewhere": []}
+
+        class Elsewhere(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                seen["elsewhere"].append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+        elsewhere = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Elsewhere)
+
+        class Redirecting(Elsewhere):
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.1:{elsewhere.server_port}/v1/apps")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+        api = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Redirecting)
+        for server in (elsewhere, api):
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            self.addCleanup(server.server_close)
+            self.addCleanup(server.shutdown)
+        client = release.AppStoreConnect(lambda: "TOKEN", f"http://127.0.0.1:{api.server_port}")
+        with self.assertRaises(release.AppStoreConnectError) as caught:
+            client.app_id("com.bailycase.shepherd.ios")
+        self.assertIn("302", str(caught.exception))
+        self.assertEqual(seen["elsewhere"], [])
+
     def test_a_next_page_that_loops_is_an_error(self):
         client, _ = self.client({("GET", "/v1/builds?"): (200, {
             "data": [], "links": {"next": f"{API}/v1/builds?cursor=2"}})})
