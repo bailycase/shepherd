@@ -592,7 +592,6 @@ struct ListPerformanceTests {
     }
 
     // MARK: Review
-    // MARK: Review
 
     private func review(_ files: [DiffFile]) -> OffscreenWindow {
         OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, ReviewPaneContent(model: ListFixtures.reviewModel(files)))
