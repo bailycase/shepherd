@@ -99,6 +99,8 @@ public final class NativeThreadStore {
     /// Each reply's subagents, where their spawn calls were (keyed by turn id).
     public private(set) var placements: [String: NativeSubagentPlacement] = [:] { didSet { threadVersion &+= 1 } }
     public private(set) var subagents: [NativeSubagent] = [] { didSet { chromeVersion &+= 1 } }
+    /// The subagent tray above the composer, while it shows (`nativeTrayRuns`).
+    public private(set) var tray: NativeSubagentTray? { didSet { chromeVersion &+= 1 } }
     /// When the prompt that opened the current turn was sent (ms). A queued follow-up has not
     /// opened a turn yet; nil while the newest prompt is an echo.
     public private(set) var lastPromptAt: Double?
@@ -131,14 +133,16 @@ public final class NativeThreadStore {
     public private(set) var supportedActions: Set<String> = [] { didSet { bothVersions() } }
     public private(set) var clipped = false { didSet { threadVersion &+= 1 } }
     /// The thread's own running state: `settledRunning` unless the connection is lost (a
-    /// cached running snapshot is not running). The working row and Stop read it.
+    /// cached running snapshot is not running). The live "Thinking…" and Stop read it.
     public private(set) var running = false { didSet { bothVersions() } }
     /// What the host last reported, without the settling `running` adds.
     public private(set) var hostRunning = false
-    /// The thread's tail row: pi's current activity while it runs (nil under live thinking,
-    /// which has its own spinner, and while a question waits). A pi starting again says so in
+    /// pi works with nothing moving in the thread, so the thread ends in the live "Thinking…"
+    /// line (LiveText): between tools (the live turn's `betweenTools`), or before pi's reply has
+    /// a row. False while a question waits (the composer shows it). A running call is its own
+    /// live line, and a reply being written is its own indicator; a pi starting again says so in
     /// the composer (`awaitingPi`), never here.
-    public private(set) var workingLabel: String? { didSet { threadVersion &+= 1 } }
+    public private(set) var showsThinking = false { didSet { threadVersion &+= 1 } }
     /// User turns in the thread (the toolbar counts them once the whole history is loaded).
     public private(set) var userTurnCount = 0
     public private(set) var hasSubagents = false
@@ -161,7 +165,7 @@ public final class NativeThreadStore {
     /// after moves as usual (`CatchUpGate`). Not observed: it changes no pixel itself, so
     /// catching up costs no pass of its own.
     @ObservationIgnored public private(set) var catchUp: CatchUp?
-    /// Bumped whenever what the thread's rows show changes (rows, the working label, the
+    /// Bumped whenever what the thread's rows show changes (rows, the live "Thinking…", the
     /// notices, readiness), and what the composer and the toolbar show (`chromeVersion`). Not
     /// observed: views read them as they render.
     @ObservationIgnored public private(set) var threadVersion = 0
@@ -359,6 +363,9 @@ public final class NativeThreadStore {
         if runs != subagents { subagents = runs }
         let placements = nativeSubagentPlacements(runs, turns: turns)
         if placements != self.placements { self.placements = placements }
+        let trayRuns = nativeTrayRuns(runs, placements: placements, turnOrder: turns.map(\.id), lastUserMessageAt: promptAt)
+        let tray = trayRuns.map(NativeSubagentTray.init)
+        if tray != self.tray { self.tray = tray }
 
         // The streaming reply is the last one, with only queued follow-ups below it.
         let running = loadError == nil && settledRunning
@@ -424,20 +431,17 @@ public final class NativeThreadStore {
         if hostRunning != self.hostRunning { self.hostRunning = hostRunning }
         let running = loadError == nil && settledRunning
         if running != self.running { self.running = running }
-        let label = workingLabel(running: running, dialogs: dialogs)
-        if label != workingLabel { workingLabel = label }
+        let thinking = showsThinking(running: running, dialogs: dialogs)
+        if thinking != showsThinking { showsThinking = thinking }
         let userTurns = turns.count(where: \.isUser)
         if userTurns != userTurnCount { userTurnCount = userTurns }
         if subagents.isEmpty == hasSubagents { hasSubagents = !subagents.isEmpty }
     }
 
-    private func workingLabel(running: Bool, dialogs: [NativeThreadDialog]) -> String? {
-        guard running, dialogs.isEmpty else { return nil }
-        if let presentation = rows.last(where: \.live)?.presentation {
-            if presentation.endsInLiveThinking { return nil }
-            if presentation.endsInLiveActivity { return "Working…" }
-        }
-        return nativeWorkingLabel(snapshot?.provisional ?? [])
+    private func showsThinking(running: Bool, dialogs: [NativeThreadDialog]) -> Bool {
+        guard running, dialogs.isEmpty else { return false }
+        guard let live = rows.last(where: \.live) else { return true }
+        return live.presentation?.betweenTools ?? false
     }
 
     /// The queue as the host last reported it, with this client's unconfirmed changes on top.
@@ -730,7 +734,7 @@ public final class NativeThreadStore {
             }
             resumeStartWaiters(false)
             let limit = startingLimit.formatted(.units(allowed: [.minutes, .seconds], width: .wide))
-            let message = "The agent's pi has not started after \(limit)."
+            let message = "The agent has not started after \(limit)."
             if loadError != message {
                 loadError = message
                 derive()

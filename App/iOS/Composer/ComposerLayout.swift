@@ -14,6 +14,10 @@ extension MobileLayout {
     /// never more than `queueShare` of the composer's room.
     static let queueRowsMaxHeight: CGFloat = (CGFloat(NWTouchQueueMetrics.visibleRows) + 0.5) * NWTouchQueueMetrics.rowHeight
     static let queueShare: CGFloat = 0.45
+    /// An open tray's rows before they scroll, and their share of the composer's room: the
+    /// subagents and Up next share one card, so each keeps some of it.
+    static let trayRowsMaxHeight: CGFloat = 5.5 * NW.Height.touch
+    static let trayShare: CGFloat = 0.35
     /// The share of the composer's room a question's text and answers may take before they
     /// scroll; the rest keeps its actions in reach.
     static let questionScrollShare: CGFloat = 0.7

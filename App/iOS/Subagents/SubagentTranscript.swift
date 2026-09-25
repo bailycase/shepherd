@@ -114,7 +114,9 @@ final class SubagentTranscriptModel {
                 if let cached = presentations[turn.id], cached.live == isLive, cached.messages == turn.messages {
                     presentation = cached.value
                 } else {
-                    presentation = nativeTurnPresentation(turn.messages, live: isLive)
+                    // Never live thinking: a transcript holds finished messages, and the run's
+                    // own tail says what moves (`nativeRunLive`).
+                    presentation = nativeTurnPresentation(turn.messages, live: false)
                     presentations[turn.id] = (turn.messages, isLive, presentation)
                 }
                 next.append(Turn(id: turn.id, user: [], userTime: nil, presentation: presentation, live: isLive))
@@ -145,7 +147,8 @@ final class SubagentTranscriptModel {
 /// prose and tool lines.
 struct SubagentTranscriptList: View {
     let model: SubagentTranscriptModel
-    let working: String?
+    /// What the run is doing now (LiveText): its call in flight; nil between calls.
+    let live: NativeActivityBurst?
     let emptyText: String
     /// Draw the first message from the parent, the task (the iPhone's goal box already shows it).
     var showsTask = true
@@ -161,9 +164,18 @@ struct SubagentTranscriptList: View {
                     SubagentTurnView(turn: turn).equatable()
                 }
             }
-            if let working { NWWorkingRow(working) }
+            // It continues the last turn: under its lines at their spacing (MobileSubagent).
+            if let live {
+                SubagentActivityLine(burst: live)
+                    .padding(.top, Self.endsInLines(turns.last) ? MobileLayout.activitySpacing - MobileLayout.turnItemSpacing : 0)
+            }
         }
         .environment(\.nwProseSize, .small)
+    }
+
+    private static func endsInLines(_ turn: SubagentTranscriptModel.Turn?) -> Bool {
+        if case .activity? = turn?.presentation?.items.last { return true }
+        return false
     }
 }
 
@@ -197,18 +209,18 @@ private struct SubagentTurnItem: View {
 
     var body: some View {
         switch item {
-        case .thinking(_, let text, let seconds, let live, let since):
+        case .thinking(_, let text, let seconds, let live, _):
             if live {
-                NWThinking(liveSince: since.map { Date(timeIntervalSince1970: $0 / 1000) }, seconds: seconds)
+                NWThinking.live()
             } else {
                 NWThinking(nativeThoughtText(seconds), text: text, isExpanded: $openThinking,
                            spokenTitle: nativeThoughtSpokenText(seconds))
             }
         case .prose(_, _, let blocks, _):
             NWAgentProse(ProseView.proseBlocks(blocks))
-        case .work(let group):
+        case .activity(_, let bursts):
             VStack(alignment: .leading, spacing: MobileLayout.activitySpacing) {
-                ForEach(group.finished + group.running) { burst in
+                ForEach(bursts) { burst in
                     SubagentActivityLine(burst: burst)
                 }
             }
@@ -228,7 +240,7 @@ private struct SubagentTurnItem: View {
 }
 
 /// One burst of the child's tool work; a finished burst expands to its calls.
-private struct SubagentActivityLine: View {
+struct SubagentActivityLine: View {
     let burst: NativeActivityBurst
     @State private var expanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
