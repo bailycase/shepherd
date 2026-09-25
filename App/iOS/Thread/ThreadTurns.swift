@@ -55,14 +55,16 @@ struct AgentTurnActions {
     var subagents: (() -> Void)?
 }
 
-/// One agent turn (MobileThread board): thinking, prose, work groups, subagent cards where their
-/// spawn calls were, notes and errors, then, once finished, the changes card and the footer.
+/// One agent turn (MobileThread board): thinking, prose, work groups, the subagent record (where
+/// they started and where they finished), notes and errors, then, once finished, the changes
+/// card and the footer.
 /// Everything it draws was derived once per turn change (`NativeTurnPresentation`).
 struct AgentTurnView: View, Equatable {
     let thread: AgentRef
     let presentation: NativeTurnPresentation
     let live: Bool
-    var subagents = NativeSubagentPlacement()
+    /// How many subagents the turn started (the footer's "3 subagents").
+    var subagents = 0
     /// Timestamp (ms) of the user message that opened this turn: the footer's time and duration.
     var startedAt: Double?
     /// The streaming turn's tail row ("Working…").
@@ -83,12 +85,6 @@ struct AgentTurnView: View, Equatable {
         VStack(alignment: .leading, spacing: MobileLayout.turnItemSpacing) {
             ForEach(presentation.items) { item in
                 itemView(item)
-            }
-            // Runs with no spawn row in this turn render after it, unless a folded group
-            // already placed them.
-            if !subagents.trailing.isEmpty, subagents.byToolCall.isEmpty || !NativeCardLayout(subagents).folds {
-                SubagentCards(thread: thread, runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing,
-                              turnLive: live)
             }
             if let working { NWWorkingRow(working) }
             if !live, !presentation.items.isEmpty {
@@ -112,9 +108,9 @@ struct AgentTurnView: View, Equatable {
             ProseView(blocks: blocks).equatable()
         case .work(let group):
             WorkGroupView(group: group, review: actions.review).equatable()
-        case .subagents(_, let callIDs, let all):
-            SubagentCards(thread: thread, runs: all ? subagents.all : callIDs.flatMap { subagents.byToolCall[$0] ?? [] },
-                          turnLive: subagents.all.contains { !$0.isTerminal })
+        case .subagents(_, let line, _):
+            // Where they started, and where they finished: both open the thread's subagents.
+            NWSubagentRecordLine(title: line.title, meta: line.meta, action: actions.subagents)
         case .note(_, let text):
             Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).textSelection(.enabled)
@@ -143,7 +139,7 @@ struct AgentTurnView: View, Equatable {
 
     /// Copy and Retry, then "2:44 PM · 3m 12s · 6 tool calls", and "3 subagents" as a link.
     private var footer: some View {
-        let runs = subagents.all.count
+        let runs = subagents
         let meta = [nativeTurnTimeText(startedAt: startedAt, endedAt: presentation.endedAt),
                     presentation.toolCalls > 0 ? nativeCount(presentation.toolCalls, "tool call") : nil]
             .compactMap { $0 }.joined(separator: " · ")

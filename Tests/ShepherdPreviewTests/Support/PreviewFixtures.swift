@@ -118,12 +118,14 @@ final class QueueThreadFixture {
 
     var request: NativeThreadStore.Request { { [host] value in host.answer(value) } }
 
-    /// Header over thread, the way the workspace composes a native agent.
-    func thread(title: String = "Add refund events") -> some View {
+    /// Header over thread, the way the workspace composes a native agent. `inspect` wires the
+    /// subagent inspector, so the tray shows.
+    func thread(title: String = "Add refund events", inspect: Bool = false) -> some View {
         VStack(spacing: 0) {
             ThreadHeader(store: store, project: "payments", title: title)
             ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview",
-                       agentName: "Add refund events", workingDirectory: "~/Developer/payments", review: { _ in }, queueState: state)
+                       agentName: "Add refund events", workingDirectory: "~/Developer/payments", inspectSubagent: inspect ? { _ in } : nil,
+                       review: { _ in }, queueState: state)
         }
         .environment(\.threadCommands, commands)
     }
@@ -226,16 +228,19 @@ enum Threads {
             ChildRun(runID: "native-worker", label: "worker: restyle", state: "running", startedAt: now - (37 * 60 + 21) * 1000, needsAttention: false,
                      role: "worker", model: "anthropic/claude-opus-4-5", thinking: "high", context: "background", step: ChildStep(index: 1, total: 1),
                      turns: 78, toolCalls: 82, tokens: 922_000, contextPercent: 62,
-                     lastActivity: ChildActivity(tool: "edit", preview: "Sources/ShepherdRemote/NativeThreadPresentation.swift", diff: ChildDiff(added: 31, removed: 0), at: now - 4000),
-                     toolCallID: "spawn-worker", task: "Restyle the desktop native thread view to match the spec; system fonts at spec sizes.", sessionFile: "/tmp/worker.jsonl"),
-            ChildRun(runID: "native-reviewer", label: "reviewer: check", state: "running", startedAt: now - (2 * 60 + 10) * 1000, needsAttention: true,
+                     lastActivity: ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "Sources/ShepherdRemote/NativeThreadPresentation.swift",
+                                                 at: now - 4000),
+                     toolCallID: "spawn-worker", task: "Restyle the desktop native thread view to match the spec; system fonts at spec sizes.", sessionFile: "/tmp/worker.jsonl",
+                     files: [ChildFileChange(path: "Sources/ShepherdRemote/NativeThreadPresentation.swift", added: 31, removed: 4)]),
+            ChildRun(runID: "native-reviewer", label: "reviewer: check", state: "running", startedAt: now - 30 * 60_000, needsAttention: true,
                      attentionText: "Two token names collide", role: "reviewer", model: "anthropic/claude-sonnet-4-5", context: "async", turns: 3, tokens: 40_000,
-                     question: ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`. Rename the new ones, or replace the old ones everywhere?",
+                     lastActivity: ChildActivity(tool: "shepherd_parent_message", at: now - 130_000),
+                     question: ChildQuestion(text: "Two token names collide with existing `Tokens.textSecondary`. Rename the new token names, or replace the old ones everywhere?",
                                              options: ["Replace everywhere", "Rename new ones"]), toolCallID: "spawn-reviewer"),
             ChildRun(runID: "native-tests", label: "tests: run", state: "complete", startedAt: now - 600_000, endedAt: now - 600_000 + (4 * 60 + 2) * 1000, needsAttention: false,
                      role: "tests", model: "anthropic/claude-haiku-4-5", context: "async", turns: 9, toolCalls: 19, tokens: 118_000,
                      result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118_000), toolCallID: "spawn-tests",
-                     output: "Added 6 presentation tests. All 14 pass on macOS and iOS simulators."),
+                     output: "Added 6 presentation tests · 14 pass. All 14 pass on macOS and iOS simulators."),
             ChildRun(runID: "native-docs", label: "docs: write", state: "failed", startedAt: now - 900_000, endedAt: now - 100_000, needsAttention: false,
                      role: "docs", turns: 41, exitReason: "exit 1 · context limit reached after 41 turns", toolCallID: "spawn-docs"),
         ])
@@ -247,21 +252,19 @@ enum Threads {
         return retimed([
             ChildRun(runID: "native-worker", label: "worker: restyle", state: "complete", startedAt: t0, endedAt: t0 + 41 * 60_000, role: "worker",
                      model: "anthropic/claude-opus-4-5", context: "background", turns: 78, toolCalls: 118, tokens: 922_000,
-                     result: ChildResultSummary(files: 5, added: 200, removed: 60, tools: 118, tokens: 922_000), toolCallID: "spawn-worker",
-                     task: "Restyle the desktop native thread view.", output: "Restyled thread, sidebar and composer to the spec.",
-                     files: [ChildFileChange(path: "Sources/ShepherdApp/Thread/ThreadView.swift", added: 120, removed: 40),
-                             ChildFileChange(path: "Sources/ShepherdApp/SidebarView.swift", added: 30, removed: 10)],
-                     summary: "Restyled thread, sidebar and composer to the spec.", sessionID: "child-worker", cwd: "/tmp"),
+                     result: ChildResultSummary(files: 5, added: 190, removed: 58, tools: 118, tokens: 922_000), toolCallID: "spawn-worker",
+                     task: "Restyle the desktop native thread view.", output: "Restyled thread, sidebar, composer and iOS to the spec.",
+                     summary: "Restyled thread, sidebar, composer and iOS to the spec.", sessionID: "child-worker", cwd: "/tmp"),
             ChildRun(runID: "native-reviewer", label: "reviewer: check", state: "complete", startedAt: t0 + 60_000, endedAt: t0 + 13 * 60_000, role: "reviewer",
                      model: "anthropic/claude-sonnet-4-5", context: "async", turns: 6, toolCalls: 24, tokens: 460_000,
-                     result: ChildResultSummary(files: 0, added: 0, removed: 0, tools: 24, tokens: 460_000), toolCallID: "spawn-reviewer",
-                     task: "Check each step against the spec.", output: "Two token collisions fixed by renaming.",
-                     summary: "Two token collisions fixed by renaming.", sessionID: "child-reviewer", cwd: "/tmp"),
+                     result: ChildResultSummary(files: 0, added: 32, removed: 3, tools: 24, tokens: 460_000), toolCallID: "spawn-reviewer",
+                     task: "Check each step against the spec.", output: "2 spec deviations fixed · you chose replace everywhere.",
+                     summary: "2 spec deviations fixed · you chose replace everywhere.", sessionID: "child-reviewer", cwd: "/tmp"),
             ChildRun(runID: "native-tests", label: "tests: run", state: "complete", startedAt: t0 + 41 * 60_000, endedAt: t0 + 45 * 60_000, role: "tests",
                      model: "anthropic/claude-haiku-4-5", context: "async", turns: 11, toolCalls: 19, tokens: 118_000,
-                     result: ChildResultSummary(files: 2, added: 118, removed: 4, tools: 19, tokens: 118_000), toolCallID: "spawn-tests",
-                     task: "Add presentation tests and run the suites.", output: "Added 6 presentation tests. All 14 pass.",
-                     sessionFile: "/tmp/tests.jsonl", summary: "Added 6 presentation tests. All 14 pass.", sessionID: "child-tests", cwd: "/tmp"),
+                     result: ChildResultSummary(files: 2, added: 96, removed: 3, tools: 19, tokens: 118_000), toolCallID: "spawn-tests",
+                     task: "Add presentation tests and run the suites.", output: "Added 6 presentation tests · 14 pass.",
+                     sessionFile: "/tmp/tests.jsonl", summary: "Added 6 presentation tests · 14 pass.", sessionID: "child-tests", cwd: "/tmp"),
         ])
     }
 
@@ -278,8 +281,10 @@ enum Threads {
                 NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Restyle Shepherd's native UI to match the design spec. Split it up if that's faster.")]),
                 NativeThreadMessage(entryID: "a", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Splitting into three: a worker for the restyle, a reviewer that checks each step against the spec, and a tests run in parallel.")]),
                 spawn("spawn-worker", "worker"), spawn("spawn-reviewer", "reviewer"), spawn("spawn-tests", "tests"),
-                NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: running ? "*Waiting on worker and reviewer.*" : "All three handed off; the suites are green.")]),
-            ],
+            ] + (running ? [] : [
+                NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "All three handed off. Integrated the worker's restyle with the reviewer's two fixes; the test suite is green on both platforms. The branch is ready for the review pane whenever you want to look.")],
+                                    timestamp: (runs.compactMap(\.endedAt).max() ?? 0) + 60_000),
+            ]),
             provisional: [], clipped: false, runtime: "rpc",
             stats: NativeThreadStats(contextTokens: 60_000, contextWindow: 200_000, contextPercent: 30, totalTokens: 1_600_000),
             subagents: runs)

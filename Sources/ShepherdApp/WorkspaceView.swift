@@ -294,7 +294,8 @@ struct AgentLayoutView: View, Equatable {
                             vm.subagentInspector.runByAgent.removeValue(forKey: agentID)
                         }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
                             do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
-                        }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) })
+                        }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) },
+                        focusSteer: vm.subagentInspector.steerRun == inspecting, steerFocused: { [vm] in vm.subagentInspector.steerRun = nil })
                         // The inspector keys its run itself, so a run switch nudges in from its side.
                         .nwTransition(.content)
                     } else if let review {
@@ -645,6 +646,7 @@ struct PaneLeafView: View, Equatable {
                     agentName: model.agentName,
                     workingDirectory: pane.cwd,
                     inspectSubagent: { [vm] in vm.toggleSubagentInspector(agentID: agentID, runID: $0.runID) },
+                    steerSubagent: { [vm] in vm.steerSubagent(agentID: agentID, runID: $0.runID) },
                     inspectedRunID: inspecting,
                     review: { [vm] path in vm.selectAgent(agentID); vm.openReview(agentID: agentID, path: path) }
                 )
@@ -676,6 +678,7 @@ struct AgentThreadPane: View {
     let agentName: String
     var workingDirectory: String?
     var inspectSubagent: ((ChildRun) -> Void)? = nil
+    var steerSubagent: ((ChildRun) -> Void)? = nil
     var inspectedRunID: String? = nil
     var review: ((String) -> Void)? = nil
 
@@ -686,7 +689,7 @@ struct AgentThreadPane: View {
             case .connecting, .live:
                 ThreadView(store: store, active: active, isFocused: isFocused, request: request, preview: preview, commandKey: commandKey,
                            agentName: agentName, workingDirectory: workingDirectory, inspectSubagent: inspectSubagent,
-                           inspectedRunID: inspectedRunID, review: review)
+                           steerSubagent: steerSubagent, inspectedRunID: inspectedRunID, review: review)
             case .failed(let reason):
                 PanePlaceholder(text: "session unavailable · \(reason)")
                     .nwTransition(.content)
@@ -827,7 +830,8 @@ private struct RemoteAgentLayoutView: View {
                         SubagentInspector(store: store, runID: inspecting, active: true, close: { [vm, ref] in
                             vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
                         }, select: { [vm, ref] in vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
-                        review: { [vm, ref] in vm.openRemoteReview(ref, path: $0) })
+                        review: { [vm, ref] in vm.openRemoteReview(ref, path: $0) },
+                        focusSteer: vm.subagentInspector.steerRun == inspecting, steerFocused: { [vm] in vm.subagentInspector.steerRun = nil })
                         // The inspector keys its run itself, so a run switch nudges in from its side.
                         .nwTransition(.content)
                     } else if let review {
@@ -1027,6 +1031,10 @@ private struct RemoteAgentThreadPane: View {
                 } else {
                     vm.subagentInspector.remoteRuns[ref] = run.runID
                 }
+            },
+            steerSubagent: { run in
+                vm.subagentInspector.remoteRuns[ref] = run.runID
+                vm.subagentInspector.steerRun = run.runID
             },
             inspectedRunID: inspecting,
             review: { path in vm.openRemoteReview(ref, path: path) },

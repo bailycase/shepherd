@@ -9,6 +9,9 @@ final class RightPaneState {
     static let widthKey = "shepherd.rightPaneWidth"
     var runByAgent: [AgentID: String] = [:]
     var remoteRuns: [RemoteAgentRef: String] = [:]
+    /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),
+    /// until it does.
+    var steerRun: String?
     /// Zero until the user resizes: the pane then takes the 600pt default.
     var width: CGFloat {
         didSet { UserDefaults.standard.set(Double(width), forKey: Self.widthKey) }
