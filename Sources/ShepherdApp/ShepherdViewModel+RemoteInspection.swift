@@ -17,7 +17,8 @@ extension ShepherdViewModel {
                     catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
                     return
                 case .commitInfo, .commitMessage, .commit:
-                    completion(.failure(RemoteCreateAgentError("Commit from review is not served by this host yet")))
+                    do { completion(.success(try await self.handleReviewCommit(agentID, query: query))) }
+                    catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
                     return
                 default: break
                 }

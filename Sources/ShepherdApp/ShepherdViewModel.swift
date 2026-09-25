@@ -98,6 +98,10 @@ final class ShepherdViewModel {
     var hostWorktreeOperations: [UUID: RemoteWorktreeOperation] = [:]
     var hostWorktreeOperationAgents: [UUID: AgentID] = [:]
     var hostBusyWorktrees: Set<String> = []
+    /// A review pane's Commit… sheet by review session, kept while its commit runs.
+    @ObservationIgnored var reviewCommitStores: [UUID: ReviewCommitStore] = [:]
+    /// Runs commit from review's git and gh (tests stub gh here); reads time out, mutations don't.
+    @ObservationIgnored var reviewCommitRunner: ReviewCommitGit.Runner = { await LoginShell.run($0, cwd: $1) }
     var startingCheckoutUsers: [UUID: String] = [:]
     var remoteChildren: [RemoteAgentRef: [ChildRun]] {
         Dictionary(uniqueKeysWithValues: remoteHosts.connections.flatMap { connection in
