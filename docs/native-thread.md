@@ -111,7 +111,8 @@ events come out on stdout, one record per LF.
 `RPCThreadState` is the server-side projection of one agent's thread, confined to the same queue.
 
 - **Bootstrap** runs on spawn or resume. It sends `get_state` (session ID, model, thinking
-  level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost), and
+  level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost; a context of 0, pi's
+  estimate before its first reply, is sent as unknown), and
   `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("pi is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a

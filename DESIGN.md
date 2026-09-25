@@ -602,8 +602,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
     remote agent's space reads "⌁ host")
   - a spacer
   - counters in micro tertiary: "18 turns · 46k ctx · 3 subagents · 1.6m tok". The turn count
-    appears once the whole history is loaded, and the tooltip has the context window, session
-    tokens, and cost.
+    appears once the whole history is loaded, and the context once pi has measured it (never
+    "0 ctx": a first turn has none until pi's first reply). The tooltip has the context window,
+    session tokens, and cost.
   - the pane toggles, lantern-tinted while their pane is open: subagents
     (`arrow.triangle.branch`, ⌘I, only when the thread has subagents) and review
     (`plus.forwardslash.minus`, ⇧⌘B)
