@@ -89,7 +89,7 @@ extension ShepherdViewModel {
         for agent in orderedAgents {
             let space = state.spaces.first { $0.id == agent.spaceID }
             items.append(PaletteItem(id: "agent.\(agent.id.rawValue)", kind: .agent(agent.id), section: .agents,
-                                     title: agent.name, subtitle: space.map { "\($0.name) · \(Self.statusWord(agent.status))" },
+                                     title: agent.name, subtitle: space.map { "\($0.name) · \(AgentRow.statusWord(agent.status, turnFailed: failedTurns.contains(agent.id)))" },
                                      icon: "bubble.left"))
         }
         for connection in remoteHosts.connections where connection.phase == .connected {
@@ -105,15 +105,6 @@ extension ShepherdViewModel {
                                      icon: "folder"))
         }
         return items
-    }
-
-    private static func statusWord(_ status: AgentStatus) -> String {
-        switch status {
-        case .working: "running"
-        case .blocked: "needs you"
-        case .idle: "idle"
-        case .done: "done"
-        }
     }
 
     /// "Fix remote nightly · running 4m" — the parent thread and the run's state.

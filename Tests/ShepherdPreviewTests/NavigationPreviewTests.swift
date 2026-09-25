@@ -16,8 +16,9 @@ extension PreviewTests {
     // MARK: Sidebar
 
     /// A space with agents in every status, a working one whose subagent waits on you (its row
-    /// asks), one with finished subagents (no mark), a worktree agent, a second space, an
-    /// automation, and an unreachable second machine. The palette lists the subagents.
+    /// asks), one with finished subagents (no mark), one whose turn failed, a worktree agent, a
+    /// second space, an automation, and an unreachable second machine. The palette lists the
+    /// subagents.
     private func populatedWorkspace() async throws -> (PreviewWorkspace, [Agent]) {
         let workspace = try PreviewWorkspace()
         let space = Space(name: "Shepherd", path: workspace.dir.path)
@@ -26,6 +27,7 @@ extension PreviewTests {
             ("Plan shepherd extensions", .working, nil), ("Dock review pane", .blocked, "worktree/dock-review"),
             ("Fix remote subagent deletion", .idle, nil), ("Investigate SwiftUI live preview", .working, nil),
             ("Fix remote nightly", .done, nil), ("Fix agent deletion workflow", .idle, nil),
+            ("Bump the Sparkle feed", .done, nil),
         ]
         var agents: [Agent] = [], tabs: [ShepherdCore.Tab] = []
         for (index, row) in rows.enumerated() {
@@ -41,6 +43,7 @@ extension PreviewTests {
         vm.selectedAgentID = agents[3].id
         vm.statusSince[agents[0].id] = Date().addingTimeInterval(-8 * 60)
         vm.statusSince[agents[3].id] = Date().addingTimeInterval(-31)
+        vm.failedTurns.insert(agents[6].id)
         vm.applyAgentChildren(agents[3].id, Array(Threads.liveRuns.prefix(3)))
         vm.applyAgentChildren(agents[4].id, Threads.doneRuns)
         vm.automationsExpanded = true
