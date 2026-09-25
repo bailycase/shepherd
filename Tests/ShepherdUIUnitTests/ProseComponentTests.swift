@@ -86,9 +86,12 @@ struct ProseComponentTests {
     /// Column widths: natural widths capped at the maximum, hugging content that fits,
     /// growing wrapped columns into spare room, and shrinking toward the minimum when the
     /// table must fit. Outside `fitting` (in a scroll view) columns keep their natural widths.
-    @Test(arguments: [
+    typealias ColumnCase = (ideal: [CGFloat], available: CGFloat?, fitting: Bool, widths: [CGFloat])
+
+    // Typed up front: inferring this table's tuples timed out the type checker on CI.
+    nonisolated static let columnCases: [ColumnCase] = [
         // Fits: hugs its content.
-        (ideal: [100, 80] as [CGFloat], available: 640 as CGFloat?, fitting: true, widths: [100, 80] as [CGFloat]),
+        (ideal: [100, 80], available: 640, fitting: true, widths: [100, 80]),
         // A long column is capped, then grows into the room left (up to its content).
         (ideal: [200, 1000], available: 640, fitting: true, widths: [200, 440]),
         (ideal: [200, 400], available: 640, fitting: true, widths: [200, 400]),
@@ -99,17 +102,21 @@ struct ProseComponentTests {
         (ideal: [50, 400, 400], available: nil, fitting: true, widths: [50, 100, 100]),
         // In a scroll view: natural widths, whatever the room.
         (ideal: [50, 400, 400], available: 200, fitting: false, widths: [50, 300, 300]),
-    ])
+    ]
+
+    @Test(arguments: columnCases)
     func tableColumnsSizeToContentUpToACap(ideal: [CGFloat], available: CGFloat?, fitting: Bool, widths: [CGFloat]) {
         #expect(NWTableLayout.widths(for: available, ideal: ideal, fitting: fitting, minimum: 100, maximum: 300) == widths)
     }
 
     /// A column never shrinks under its widest word (an identifier stays whole), up to the cap.
-    @Test(arguments: [
-        (words: [250, 90] as [CGFloat], available: 400 as CGFloat?, widths: [260, 140] as [CGFloat]),
+    nonisolated static let wordCases: [(words: [CGFloat], available: CGFloat?, widths: [CGFloat])] = [
+        (words: [250, 90], available: 400, widths: [260, 140]),
         (words: [250, 90], available: nil, widths: [250, 100]),
         (words: [900, 900], available: nil, widths: [300, 300]),
-    ])
+    ]
+
+    @Test(arguments: wordCases)
     func aColumnKeepsItsWidestWordWhole(words: [CGFloat], available: CGFloat?, widths: [CGFloat]) {
         #expect(NWTableLayout.widths(for: available, ideal: [300, 300], words: words, fitting: true, minimum: 100, maximum: 300) == widths)
     }
