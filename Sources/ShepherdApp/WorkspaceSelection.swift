@@ -40,6 +40,17 @@ struct WorkspaceSelection {
     /// mounts the rest after its first frame, a few per run-loop turn (`mountOrder`).
     var pendingMountTabIDs: Set<TabID> = []
 
+    /// The space the workspace stands in. With an agent selected, the selected space while it
+    /// exists. With none, a hidden space never stands: the reserved automations space holds only
+    /// runs, reached through their rows, and a New agent there would land out of sight. Otherwise
+    /// the first visible space, or nil with none (the no-spaces empty state).
+    static func standingSpace(_ selected: SpaceID?, agentSelected: Bool, in state: ShepherdState) -> SpaceID? {
+        if let selected, let space = state.spaces.first(where: { $0.id == selected }), agentSelected || !space.hidden {
+            return selected
+        }
+        return state.spaces.first { !$0.hidden }?.id
+    }
+
     /// Hidden this long before a layout is eligible to park. Long enough
     /// that flipping between two agents never parks either.
     static let parkDelay: Duration = .seconds(30)
