@@ -94,6 +94,73 @@ struct ComposerMenuBenchmarkTests {
         print("BENCH slash close: \(slashClose)")
     }
 
+    /// What each composer interaction costs the chrome around it, without motion so the first
+    /// frame is all of the work: a plain keystroke, "/" and the keystrokes after it, the model
+    /// chip, and the thinking chip, each with the composer bodies, chip rows, thread bodies and
+    /// menu rows it drew. `SHEPHERD_BENCHMARK_REPEAT=n` runs the sequence n times (for a
+    /// profiler), printing the last.
+    @Test func chrome() async throws {
+        let thread = ComposerThread(animated: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        let region = CGRect(x: thread.columnLeading, y: 0, width: 460, height: thread.size.height)
+        let repeats = Int(ProcessInfo.processInfo.environment["SHEPHERD_BENCHMARK_REPEAT"] ?? "") ?? 1
+        var quiet = repeats > 1
+        func measure(_ label: String, _ change: () -> Void) async {
+            NWMenuDiagnostics.rowBodies = 0
+            NWRenderProbe.start()
+            let result = await FrameTimer.measure(thread.window, region: region, stillFrames: 3, timeout: 2, change: change)
+            let counts = NWRenderProbe.stop()
+            guard !quiet else { return }
+            print("BENCH chrome \(label): \(result) · composer \(counts["composer.body", default: 0]) · chips \(counts["composer.chips", default: 0]) · thread \(counts["thread.view", default: 0]) · menu rows \(NWMenuDiagnostics.rowBodies)")
+        }
+        // `SHEPHERD_BENCHMARK_ONLY=keystroke|slash|picker|thinking` profiles one interaction.
+        let only = ProcessInfo.processInfo.environment["SHEPHERD_BENCHMARK_ONLY"]
+        func wanted(_ interaction: String) -> Bool { only == nil || only == interaction }
+        for round in 0..<repeats {
+            quiet = round < repeats - 1
+            if wanted("keystroke") {
+                for letter in ["h", "e", "l", "l", "o"] { await measure("keystroke '\(letter)'") { thread.store.draft += letter } }
+                await measure("clear draft") { thread.store.draft = "" }
+            }
+            if wanted("slash") {
+                await measure("slash open") { thread.store.draft = "/" }
+                for draft in ["/r", "/re", "/rev"] { await measure("slash keystroke '\(draft)'") { thread.store.draft = draft } }
+                await measure("slash close") { thread.store.draft = "" }
+            }
+            if wanted("picker") {
+                for _ in 0..<2 {
+                    await measure("picker open") { thread.openModelPicker() }
+                    await measure("picker close") { thread.openModelPicker() }
+                }
+            }
+            if wanted("thinking") {
+                for _ in 0..<2 {
+                    await measure("thinking open") { thread.commands.send(.thinkingMenu, to: ComposerThread.key) }
+                    await measure("thinking close") { thread.commands.send(.thinkingMenu, to: ComposerThread.key) }
+                }
+            }
+        }
+    }
+
+    /// What deriving the picker's list costs on the main thread, apart from drawing it.
+    @Test func derivation() {
+        func ms(_ work: () -> Void) -> Double {
+            let start = ContinuousClock.now
+            work()
+            return ListPerf.milliseconds(ContinuousClock.now - start)
+        }
+        var catalog = ModelCatalog.empty
+        let build = (0..<5).map { _ in ms { catalog = ModelCatalog(ModelCatalogFixture.entries) } }
+        let state = (0..<5).map { _ in ms { _ = ModelPickerState(catalog: catalog, recent: ["openai/gpt-5"], current: "anthropic/claude-opus-4-5") } }
+        let query = (0..<5).map { _ in ms { _ = catalog.list(query: "cla", recent: [], current: nil) } }
+        let recent = (0..<5).map { _ in ms { _ = RecentModels.load() } }
+        print("BENCH derive catalog (\(ModelCatalogFixture.entries.count) models): \(build.map { $0 / 1000 }.millisecondSummary)")
+        print("BENCH derive picker state (no query): \(state.map { $0 / 1000 }.millisecondSummary)")
+        print("BENCH derive list for 'cla': \(query.map { $0 / 1000 }.millisecondSummary)")
+        print("BENCH read recent models: \(recent.map { $0 / 1000 }.millisecondSummary)")
+    }
+
     /// What a hover costs: the pointer moving onto another row sets the highlight.
     @Test func hover() async throws {
         let options = ModelCatalogFixture.entries.map { NWModelOption(id: $0.id, title: $0.id, note: $0.context) }
