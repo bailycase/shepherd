@@ -830,7 +830,7 @@ other tools merge only with the same tool.
 - "/ commands" (only when pi reports commands)
 - the model chip (the model in mono 12, with a chevron when it can change)
 - the thinking chip (`lightbulb`, "Thinking", the level; hidden when the model has no reasoning
-  control)
+  control, as this Mac's catalog or the host's `listModels` says; an unknown model keeps it)
 - a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
   then the action, a 28pt circle: **Send** (an arrow on `lantern`, at 35% until there is
   something to send) or **Stop** (a square on `failed`). While pi works with a draft, Stop steps
@@ -1304,6 +1304,11 @@ worktree sheet) and every confirmation share one anatomy, `NWDialog` (460pt by d
   `dangerFill` button and never the default: destroying things takes a click.
 - anything a destructive action would destroy is called out in an attention banner
   (`DialogBanner`); an error is a `failed` banner. Never a system alert.
+
+New Agent's Model row takes "provider/id" (pi's default, or Settings' default, prefilled in that
+form), and its Thinking row follows the composer's thinking chip: it shows only while the chosen
+model (blank: the target's default) takes a thinking level, as the target's catalog says. A model
+the catalog does not know, or a catalog still loading, keeps it.
 
 `DialogSheet` and `DialogAction` (`DialogSheet.swift`) build a confirmation from that anatomy.
 `AppDialogs` (`AppDialogs.swift`) presents the view model's sheets (creation, rename, delete,

@@ -100,4 +100,11 @@ extension ModelListing {
         self.init(models: entries.map(\.id), defaultModel: defaultModel,
                   withoutThinking: entries.filter { !$0.reasoning }.map(\.id))
     }
+
+    /// The listing as catalog rows, for a picker and the thinking chip. A model the listing does
+    /// not say takes no thinking level reasons (`takesThinking`).
+    public var entries: [PiModelCatalog.Entry] {
+        let plain = Set(withoutThinking ?? [])
+        return models.map { PiModelCatalog.Entry(id: $0, reasoning: !plain.contains($0)) }
+    }
 }
