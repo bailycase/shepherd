@@ -29,6 +29,8 @@ struct FixtureHostData {
     /// Offline hosts refuse connections, so the app shows them unreachable.
     var online = true
     var models: [String] = ["anthropic/claude-opus", "anthropic/claude-sonnet", "openai/gpt-5"]
+    /// The models `listModels` says take no thinking level; nil answers as an older host does.
+    var withoutThinking: [String]? = nil
     /// Answers a request before the default handler (agent queries, transcripts, …); nil
     /// falls through.
     var reply: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil

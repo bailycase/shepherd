@@ -21,9 +21,9 @@ final class PreviewWorkspace {
     var server: SessionServer { scratch.server }
     var dir: URL { scratch.dir }
 
-    init() throws {
+    init(modelCatalog: @escaping SessionServer.ModelCatalog = { ScratchServer.standInModels }) throws {
         try PreviewEnvironment.install()
-        scratch = try ScratchServer()
+        scratch = try ScratchServer(modelCatalog: modelCatalog)
         settings = AppSettings(store: defaults)
         // Never ask a real model to write a PR description while rendering the finalize sheet.
         settings.worktreeGeneratePRDescription = false
