@@ -122,9 +122,9 @@ extension PreviewTests {
         }
     }
 
-    /// A terminal split beside the thread with the review open: the review docks at the window's
-    /// trailing edge beside the whole layout (the main column decides, not the thread's half),
-    /// and the thread keeps its place on the left.
+    /// A terminal beside the thread with the review open: the terminal panel sits under the
+    /// thread, and the review docks at the window's trailing edge beside the whole layout at its
+    /// full height (the main column decides, not the thread's share).
     @Test func appWindowReviewBesideASplitLayout() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
@@ -143,6 +143,41 @@ extension PreviewTests {
         let shell = vm.sessions.session(for: terminal, in: split)
         try await Preview.render("app-window-review-split", size: CGSize(width: 1440, height: 900), ready: {
             store.ready && shell.phase == .live && vm.reviewSessions.values.first?.isLoading == false
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// The terminal panel (TerminalSplit, TerminalStates boards): two tabs under the thread, the
+    /// first split right, then the same panel maximized over the folded thread.
+    @Test(arguments: [false, true])
+    func appWindowTerminalPanel(maximized: Bool) async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let (agent, tab) = try await workspace.agent("Add refund events", in: space, order: 0, live: true)
+        let thread = try #require(agent.paneID)
+        let shell = LeafPane(cwd: space.path), beside = LeafPane(cwd: space.path), second = LeafPane(cwd: space.path)
+        var panel = tab
+        // + twice from the thread, then Split right in the first tab.
+        panel.layout = tab.layout.splitting(pane: thread, axis: .horizontal, newPane: shell)!
+            .splitting(pane: thread, axis: .horizontal, newPane: second)!
+            .splitting(pane: shell.id, axis: .vertical, newPane: beside)!
+        try await workspace.seed(ShepherdState(spaces: [space], tabs: [panel], agents: [agent]))
+        vm.selectAgent(agent.id)
+        let key = TerminalPanelKey(host: nil, tab: panel.id)
+        vm.terminalPanels.update(key) {
+            $0.shown = true
+            $0.chosenTab = shell.id
+            $0.chosenPanes = [shell.id, beside.id]
+            $0.maximized = maximized
+        }
+        let store = vm.threadStores.store(for: agent.id)
+        let shells = [shell, beside].map { vm.sessions.session(for: $0, in: panel) }
+        try await Preview.render(maximized ? "app-window-terminal-maximized" : "app-window-terminal-panel",
+                                 size: CGSize(width: 1440, height: 900), ready: {
+            (maximized || store.ready) && shells.allSatisfy { $0.phase == .live } && vm.terminalPanels.activity[key]?.count == 3
         }) {
             RootView(vm: vm)
         }

@@ -12,6 +12,7 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
     case splitVertical, splitHorizontal, closePane, deleteAgent
     case focusNextPane, focusPreviousPane
     case toggleSidebar, toggleRightPane, modelPicker, stopAgent, previousTurn, nextTurn, inspectSubagent
+    case toggleTerminal, maximizeTerminal
     /// Scoped to the composer (like its ↩) and a focused queued message, so it has no menu item:
     /// it sends the other way while pi works (steer ⇄ queue) and steers the focused message.
     case alternateSend
@@ -40,6 +41,8 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .previousTurn: return "Previous Turn"
         case .nextTurn: return "Next Turn"
         case .inspectSubagent: return "Inspect Subagent"
+        case .toggleTerminal: return "Show or Hide Terminal"
+        case .maximizeTerminal: return "Maximize or Restore Terminal"
         case .alternateSend: return "Send the Other Way (Steer or Queue)"
         }
     }
@@ -74,6 +77,9 @@ enum ShortcutAction: String, CaseIterable, Codable, Identifiable {
         case .previousTurn: return KeyChord(key: "up", command: true, option: true)
         case .nextTurn: return KeyChord(key: "down", command: true, option: true)
         case .inspectSubagent: return KeyChord(key: "i", command: true)
+        // The boards' ⌃` has no ⌘, which every chord here needs; ⌘J is the panel toggle editors use.
+        case .toggleTerminal: return KeyChord(key: "j", command: true)
+        case .maximizeTerminal: return KeyChord(key: "return", command: true, shift: true)
         case .alternateSend: return KeyChord(key: "return", command: true)
         }
     }

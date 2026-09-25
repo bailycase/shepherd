@@ -56,7 +56,7 @@ struct TerminalSurfaceConfigTests {
     private static let defaultAppChords = [
         "cmd+n", "shift+cmd+t", "shift+cmd+n", "cmd+r", "shift+cmd+w", "cmd+k", "cmd+down", "cmd+up",
         "cmd+d", "shift+cmd+d", "cmd+w", "alt+cmd+right", "alt+cmd+left", "shift+cmd+s", "shift+cmd+b",
-        "shift+cmd+m", "cmd+period", "alt+cmd+up", "alt+cmd+down", "cmd+i",
+        "shift+cmd+m", "cmd+period", "alt+cmd+up", "alt+cmd+down", "cmd+i", "cmd+j", "shift+cmd+enter",
     ]
 
     @Test func everyDefaultAppShortcutIsUnbound() {

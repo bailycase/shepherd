@@ -171,6 +171,12 @@ struct PaneCommands: Commands {
                 .keyboardShortcut(keys.shortcut(.focusNextPane))
             Button("Focus Previous Pane") { later { vm.focusAdjacentPane(-1) } }
                 .keyboardShortcut(keys.shortcut(.focusPreviousPane))
+            Divider()
+            Button("Show or Hide Terminal") { later { vm.toggleTerminalPanel() } }
+                .keyboardShortcut(keys.shortcut(.toggleTerminal))
+            Button("Maximize or Restore Terminal") { later { vm.toggleTerminalMaximized() } }
+                .keyboardShortcut(keys.shortcut(.maximizeTerminal))
+            Button("New Terminal") { later { vm.newTerminalTab() } }
         }
     }
 }

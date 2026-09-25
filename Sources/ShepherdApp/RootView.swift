@@ -247,7 +247,10 @@ struct WorkspaceHeaderView: View {
         ThreadHeader(store: store, project: project, title: title, leadingInset: leadingInset, showSidebar: showSidebar,
                      reviewOpen: vm.isReviewPaneShowing, inspectorOpen: vm.isInspectorShowing,
                      reviewShortcut: keys.display(.toggleRightPane), inspectShortcut: keys.display(.inspectSubagent),
-                     toggleReview: { vm.toggleReviewPane() }, toggleSubagents: { vm.toggleSubagentPane() }, rename: rename)
+                     toggleReview: { vm.toggleReviewPane() }, toggleSubagents: { vm.toggleSubagentPane() }, rename: rename,
+                     terminalOpen: vm.isTerminalPanelShowing, terminalNews: vm.terminalHasNews,
+                     terminalShortcut: keys.display(.toggleTerminal),
+                     toggleTerminal: vm.canShowTerminalPanel ? { vm.toggleTerminalPanel() } : nil)
             .equatable()
     }
 }
