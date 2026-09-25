@@ -525,9 +525,9 @@ struct ListPerformanceTests {
                                     provisional: [], clipped: false, subagents: runs)
     }
 
-    /// A finished workflow's ledger in the thread builds only the rows on screen, even though
-    /// it sits inside one of the thread's own lazy rows.
-    @Test func aLedgerOfTwoHundredRunsInAThreadBuildsOnlyTheRowsOnScreen() async throws {
+    /// A finished workflow of two hundred runs: the tray above the composer shows four rows and
+    /// "Show 196 more", and the thread records the runs in two lines, never a row each.
+    @Test func aWorkflowOfTwoHundredRunsShowsFourTrayRows() async throws {
         let runs = (0..<200).map { index in
             var run = ListFixtures.run(index, state: "complete")
             run.toolCallID = "spawn-\(index)"
@@ -539,46 +539,61 @@ struct ListPerformanceTests {
         NWRenderProbe.start()
         window = OffscreenWindow(size: CGSize(width: 900, height: 800), dark: true,
                                  ThreadView(store: store, active: true, isFocused: false, request: { _ in .snapshot(value: snapshot) },
-                                            commandKey: "ledger", inspectSubagent: { _ in }))
+                                            commandKey: "tray", inspectSubagent: { _ in }))
         defer {
             store.stop()
             window.close()
         }
-        try await eventuallyOnMain("the thread to load") { store.ready }
+        try await eventuallyOnMain("the thread to load") { store.ready && store.tray != nil }
         ListPerf.settle(window)
         let rows = NWRenderProbe.stop()
 
-        #expect(rows["runs.ledgerRow", default: 0] > 0, "the ledger shows: \(rows)")
-        // About twenty rows fit; the lazy stack builds some ahead of the ones on screen (about 50
-        // here, at any speed). On macOS 26 (CI) the ledger built 121, and 112 built with Xcode 26
-        // on macOS 27, while the thread around it built the same rows as here.
-        withKnownIssue("older SwiftUI builds more of a ledger nested in the thread's lazy stack", isIntermittent: true) {
-            #expect(rows["runs.ledgerRow", default: 0] <= 80, "\(rows)")
-        } when: { ListPerf.olderLazyStacks }
+        #expect(rows["tray.row", default: 0] > 0, "the tray shows: \(rows)")
+        #expect(rows["tray.row", default: 0] <= 8, "\(rows)")
     }
 
-    private struct Stack: View {
+    /// An open tray of two hundred runs scrolls inside, building only the rows in view.
+    private struct TrayHost: View {
         let runs: [ChildRun]
+        let state: SubagentTrayState
 
         var body: some View {
-            SubagentStack(runs: runs, turnLive: true, actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
+            SubagentTrayView(tray: NativeSubagentTray(runs), state: state, runs: runs,
+                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }), answer: { _ in })
                 .frame(width: 800)
         }
     }
 
-    /// Among two hundred live runs folded into the strip, one changing state redraws its own
-    /// segment; the rest keep theirs (and so does hovering, which each segment keeps itself).
-    @Test func oneRunChangingRedrawsOnlyItsSegmentOfTheStrip() throws {
+    @Test func anOpenTrayOfTwoHundredRunsBuildsOnlyTheRowsInView() throws {
         let runs = (0..<200).map { ListFixtures.run($0) }
-        let window = OffscreenWindow(size: CGSize(width: 800, height: 400), dark: true, Stack(runs: runs))
+        let state = SubagentTrayState()
+        state.expanded = true
+        var window: OffscreenWindow!
+        let rows = ListPerf.counting {
+            window = OffscreenWindow(size: CGSize(width: 800, height: 500), dark: true, TrayHost(runs: runs, state: state))
+            ListPerf.settle(window)
+        }
+        defer { window.close() }
+
+        #expect(rows["tray.row", default: 0] > 0, "\(rows)")
+        #expect(rows["tray.row", default: 0] <= 2 * AppLayout.trayExpandedMaxRows, "\(rows)")
+    }
+
+    /// Among two hundred live runs, one changing state redraws its own row; the rest keep theirs.
+    @Test func oneRunChangingRedrawsOnlyItsTrayRow() throws {
+        let runs = (0..<200).map { ListFixtures.run($0) }
+        let state = SubagentTrayState()
+        state.expanded = true
+        let window = OffscreenWindow(size: CGSize(width: 800, height: 500), dark: true, TrayHost(runs: runs, state: state))
         defer { window.close() }
         ListPerf.settle(window)
         var next = runs
-        next[5].state = "complete"
+        next[2].state = "complete"
+        next[2].endedAt = 2_000
 
-        let rows = ListPerf.counting { ListPerf.time(window) { window.show(Stack(runs: next)) } }
+        let rows = ListPerf.counting { ListPerf.time(window) { window.show(TrayHost(runs: next, state: state)) } }
 
-        #expect(rows["runs.stripSegment", default: 0] <= 2, "\(rows)")
+        #expect(rows["tray.row", default: 0] <= 2, "\(rows)")
     }
 
     // MARK: Review
