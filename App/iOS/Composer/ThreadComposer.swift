@@ -179,15 +179,15 @@ struct ThreadComposer: View {
             ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel")) { state.choosingModel = true }
         }
         if NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
-                                       listing: state.models) {
-            ThinkingChip(level: store.thinking, enabled: live) { level in Task { await store.setThinking(level) } }
+                                       listing: state.models, levels: store.thinkingLevels) {
+            ThinkingChip(level: store.thinking, levels: store.thinkingLevels, enabled: live) { level in Task { await store.setThinking(level) } }
         }
     }
 
     private func hasChips(_ store: NativeThreadStore, state: ComposerState) -> Bool {
         !store.commands.isEmpty || store.model != nil || store.supportedActions.contains("setModel")
             || NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
-                                           listing: state.models)
+                                           listing: state.models, levels: store.thinkingLevels)
     }
 
     private func acceptsImages(_ store: NativeThreadStore) -> Bool {
