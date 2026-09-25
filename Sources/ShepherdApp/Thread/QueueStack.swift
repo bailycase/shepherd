@@ -500,7 +500,7 @@ struct QueueStackView: View {
         let rows = state.rows
         let keys = KeybindingsStore.shared
         let actions = QueueRowActions(state: state, store: store, running: running)
-        NWQueueStack(count: state.count, paused: store.queuePaused ? (store.queueNotice ?? Self.pausedHelp) : nil,
+        NWQueueStack(count: state.count, paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
                      collapsed: state.collapsed,
                      scrolls: rows.last?.kind == .more(hidden: 0, expanded: true) && rows.count - 1 > NWQueueMetrics.expandedMaxRows,
                      drop: state.dropSlot,
@@ -554,8 +554,6 @@ struct QueueStackView: View {
             }
         }
     }
-
-    static let pausedHelp = "The queue waits for you: send it, steer it in, or send a new message."
 
     private func isEditing(_ row: QueueRowModel) -> Bool {
         if case .editing = row.kind { true } else { false }

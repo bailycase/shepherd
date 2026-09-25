@@ -20,7 +20,12 @@ struct QueueSection: View {
         let rows = state.rows
         if !rows.isEmpty {
             let running = store.running
-            NWTouchQueueCard(count: store.queue.count, paused: store.queuePaused) {
+            let queued = state.queuedIDs
+            // Paused (pi was stopped, or a turn failed), the header shows Send now: the Mac shows
+            // it on each row's hover and its reason in a tooltip, neither of which touch has.
+            NWTouchQueueCard(count: store.queue.count,
+                             paused: NativeQueueStack.pausedReason(paused: store.queuePaused, notice: store.queueNotice),
+                             resume: !running && enabled && !queued.isEmpty ? { Task { await store.sendQueuedNow(queued) } } : nil) {
                 VStack(spacing: 0) {
                     ForEach(rows) { row in
                         QueueRowView(row: row, first: row.id == rows.first?.id, steerLabel: NativeQueueStack.steerLabel(running: running),

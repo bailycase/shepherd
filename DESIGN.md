@@ -1510,6 +1510,9 @@ components first), with these differences for touch:
 - **Following** (the boards draw only a thread at its tail): the Mac's rule (Thread ›
   Following), with a finger's drag as the only intent. "↓ Jump to latest" (`NWJumpToLatest`)
   sits 8pt above the composer, drawn as on the Mac with a 44pt hit area.
+- **A paused queue** has no hover to reveal a row's Send now or the header's tooltip: its header
+  shows Send now (secondary, small; the ••• menu's Send all now) between "Paused" and the •••,
+  and the reason is its VoiceOver hint.
 - **Windows (iPad; iPadSplitView, iPadPalette boards):** each window is a whole Shepherd, with
   its own sidebar and thread, over the same hosts and drafts. "Open in new window"
   (`macwindow.badge.plus`) sits in a thread's options menu and in the sidebar's and the palette's

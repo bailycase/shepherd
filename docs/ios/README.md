@@ -171,7 +171,9 @@ keep the version for real breaks.
   card with that row under the field. Send queues while pi works (hold it to Steer now). Up
   next draws the host's queue: steering messages first with Back to the queue, queued ones
   with swipe (Edit, Delete) and long-press (Steer now, Edit, Move to top, Delete) actions, an
-  Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). The
+  Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). A
+  paused queue (after Stop, or a failed turn) shows Send now in its header, with its reason as
+  the VoiceOver hint, where the Mac shows it on a row's hover and in a tooltip. The
   model picker lists the host's catalog; images come from Photos, resized to the protocol's
   limits; "/…" lists the snapshot's commands. A question from the agent takes the composer's
   place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.

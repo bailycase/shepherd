@@ -75,6 +75,16 @@ struct ComposerPresentationTests {
         #expect(NativeQueueStack.steerLabel(running: running) == label)
     }
 
+    @Test(arguments: [
+        (false, nil, nil),
+        (false, "pi's turn ended with an error, so the queue is waiting.", nil),
+        (true, nil, NativeQueueStack.pausedHelp),
+        (true, "pi's turn ended with an error, so the queue is waiting.", "pi's turn ended with an error, so the queue is waiting."),
+    ] as [(Bool, String?, String?)])
+    func aPausedQueueSaysWhyItWaitsAndOnlyThen(paused: Bool, notice: String?, reason: String?) {
+        #expect(NativeQueueStack.pausedReason(paused: paused, notice: notice) == reason)
+    }
+
     // MARK: Slash commands
 
     private let commands = [
