@@ -119,7 +119,7 @@ private struct ThreadTranscript: View {
     var body: some View {
         let rows = store.rows
         let running = store.running
-        let working = store.workingLabel
+        let thinking = store.showsThinking
         let liveRow = rows.last(where: \.live)
         ScrollViewReader { proxy in
             ScrollView {
@@ -142,14 +142,15 @@ private struct ThreadTranscript: View {
                         // One view per row whatever it holds, so the lazy stack builds only the
                         // rows on screen.
                         VStack(spacing: 0) {
-                            // A running call is live on its own line (MobileApproval board): no
-                            // "Working…" under it.
-                            turn(row, running: running, working: row.live && row.presentation?.endsInLiveActivity != true ? working : nil)
+                            // Only one thing moves (LiveText): a running call's own line
+                            // (MobileApproval), thinking, or the reply as it is written; between
+                            // tools the live turn ends in "Thinking…".
+                            turn(row, running: running, thinking: row.live && thinking)
                         }
                         .turnTransfer(row, thread: ref)
                         .id(row.id)
                     }
-                    if let working, liveRow == nil { NWWorkingRow(working) }
+                    if thinking, liveRow == nil { NWThinking.live() }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
                 .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth : .infinity)
@@ -224,13 +225,13 @@ private struct ThreadTranscript: View {
                           insetBottom: geometry.contentInsets.bottom)
     }
 
-    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?) -> some View {
+    @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, thinking: Bool) -> some View {
         if row.isUser {
             UserTurnView(turn: row.turn).equatable()
         } else if let presentation = row.presentation {
             AgentTurnView(thread: ref, presentation: presentation, live: row.live,
                           subagents: store.placements[row.id] ?? NativeSubagentPlacement(),
-                          startedAt: row.startedAt, working: working,
+                          startedAt: row.startedAt, thinking: thinking,
                           actions: actions(row, running: running))
                 .equatable()
         }
