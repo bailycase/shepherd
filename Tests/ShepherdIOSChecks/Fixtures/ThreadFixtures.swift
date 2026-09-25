@@ -15,6 +15,14 @@ extension FixtureCatalog {
         return [
             // MobileThread, iPadThread: a finished turn, tokens in the header, the changes card.
             FixtureScreen(name: "thread", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)]),
+            // Rich content in prose: the reported reply's table, then task and nested lists,
+            // images, a disclosure and footnotes, then a table wider than the phone and fences.
+            FixtureScreen(name: "thread-table", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.toolsReply)),
+                          routes: [.thread(preview)]),
+            FixtureScreen(name: "thread-rich", hosts: ThreadFixtures.hosts(
+                preview: ThreadFixtures.reply(MarkdownFixtures.structureReply(image: "docs/thread-table.png"))), routes: [.thread(preview)]),
+            FixtureScreen(name: "thread-wide", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.wideReply)),
+                          routes: [.thread(preview)]),
             // A turn the user stopped mid-command: "stopped" on its line and a quiet note, no error.
             FixtureScreen(name: "stopped", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.stopped()), routes: [.thread(preview)]),
             // Thinking the model kept back: a plain "Thought for 10s" line, then thinking it shared.
@@ -163,6 +171,15 @@ enum ThreadFixtures {
             F.tool("m6", "bash", args: #"{"command":"xcodebuild -scheme 'Shepherd (Dev)' build"}"#, output: "** BUILD SUCCEEDED **", at: 180_000),
             F.assistant("m7", "Removed the visible speaker labels and the desktop gutter. User-message fills still distinguish the conversation.\n\nFocused regression test and Mac Dev build passed.",
                         at: 192_000),
+        ]))
+    }
+
+    /// A question and an answer in rich Markdown (MarkdownFixtures).
+    static func reply(_ text: String) -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        return rpc(F.snapshot([
+            F.user("m1", "Which tools does Shepherd expose to its agents?"),
+            F.assistant("m2", text, at: 9_000),
         ]))
     }
 
