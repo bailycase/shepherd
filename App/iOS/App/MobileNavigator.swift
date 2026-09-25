@@ -32,7 +32,8 @@ final class MobileNavigator {
     /// Screens pushed over the detail's root.
     var padPath: [MobileRoute] = []
     var padColumns: NavigationSplitViewVisibility = .automatic
-    /// Portrait: the sidebar slides over the thread, so choosing a row hides it again.
+    /// Portrait: the sidebar slides over the thread, so choosing a row hides it again; with no
+    /// thread chosen it stays out.
     var padSidebarOverlays = false
 
     /// A route shown modally over everything.
@@ -100,7 +101,10 @@ final class MobileNavigator {
         homePath.removeAll { $0.host == host }
         settingsPath.removeAll { $0.host == host }
         padPath.removeAll { $0.host == host }
-        if padSelection?.host == host { padSelection = nil }
+        if padSelection?.host == host {
+            padSelection = nil
+            padColumns = .all
+        }
         if presented?.route.host == host { presented = nil }
     }
 

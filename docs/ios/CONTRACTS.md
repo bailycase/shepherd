@@ -83,7 +83,8 @@ The shell: iPhone (compact width) is `PhoneShell`, a `TabView` with Home (`HomeS
 Settings (`SettingsScreen`), each a `NavigationStack`. iPad (regular width) is `PadShell`, a
 `NavigationSplitView` with `PadSidebar` beside the detail: the selected thread, or `PadOverview`
 when none is. Landscape shows both columns; in portrait the thread keeps the width and the
-sidebar slides over it, and choosing a row hides it again.
+sidebar slides over it, and choosing a row hides it again. With no thread chosen, the sidebar
+is out in portrait too.
 
 ## App state
 

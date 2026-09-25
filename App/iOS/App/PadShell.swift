@@ -26,8 +26,9 @@ struct PadShell: View {
             .onChange(of: portrait, initial: true) { _, portrait in
                 navigator.padSidebarOverlays = portrait
                 // After the split view has taken its new style: while it changes, it writes its
-                // own idea of the columns back through the binding.
-                Task { @MainActor in navigator.padColumns = portrait ? .detailOnly : .all }
+                // own idea of the columns back through the binding. With no thread chosen, the
+                // sidebar stays out in portrait too: the overview alone offers no way to one.
+                Task { @MainActor in navigator.padColumns = portrait && navigator.padSelection != nil ? .detailOnly : .all }
             }
         }
     }
