@@ -255,6 +255,8 @@ final class ReviewPaneModel {
     var expandedFiles: Set<String> = []
     var editing: ReviewSession.CommentKey?
     var reverting: DiffFile?
+    /// The Commit… sheet while it is open.
+    var commitStore: ReviewCommitStore?
     var currentFile: String?
     var currentHunk: String?
     private(set) var highlights: [String: ReviewHighlight] = [:]

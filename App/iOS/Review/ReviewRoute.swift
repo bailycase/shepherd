@@ -10,10 +10,13 @@ enum ReviewRoute: Hashable, Codable {
     case diff(AgentRef, path: String)
     /// Finalize a worktree agent: commit, push, pull request, cleanup, run by its host. Presented.
     case finalize(AgentRef)
+    /// Commit from review on iPhone (Commit/): the message, the files, push or a pull request,
+    /// run by the host. Presented; on iPad it is a popover beside Commit….
+    case commit(AgentRef)
 
     var thread: AgentRef {
         switch self {
-        case .changes(let ref, _), .diff(let ref, _), .finalize(let ref): ref
+        case .changes(let ref, _), .diff(let ref, _), .finalize(let ref), .commit(let ref): ref
         }
     }
 }
@@ -48,6 +51,8 @@ struct ReviewDestination: View {
             }
         case .finalize(let ref):
             FinalizeScreen(ref: ref)
+        case .commit(let ref):
+            CommitScreen(ref: ref)
         }
     }
 }
