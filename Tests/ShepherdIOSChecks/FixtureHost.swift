@@ -15,6 +15,16 @@ final class FixtureHost: @unchecked Sendable {
     private var listener: Int32 = -1
     private let lock = NSLock()
     private var seen: [String] = []
+    /// The connections being served, for `push`.
+    private var connections: Set<Int32> = []
+    /// One frame at a time on a connection: a reply and a push never interleave.
+    private let writing = NSLock()
+
+    private static let registry = NSLock()
+    nonisolated(unsafe) private static var started: [UUID: FixtureHost] = [:]
+
+    /// The running host with this id, for a screen that changes what a host says after it shows.
+    static func running(_ id: UUID) -> FixtureHost? { registry.withLock { started[id] } }
 
     init(_ data: FixtureHostData) {
         self.data = data
@@ -40,6 +50,7 @@ final class FixtureHost: @unchecked Sendable {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
         }
         port = UInt16(bigEndian: address.sin_port)
+        Self.registry.withLock { Self.started[data.id] = self }
         guard data.online else {
             close(fd)
             return
@@ -56,8 +67,18 @@ final class FixtureHost: @unchecked Sendable {
         }
     }
 
+    /// Pushes a new state to every connected client, as a host does after it changes.
+    func push(_ state: ShepherdState) {
+        guard let encoded = try? NDJSON.encode(RemoteReply.stateChanged(state: state)) else { return }
+        for fd in lock.withLock({ connections }) { _ = write(fd, encoded) }
+    }
+
     private func serve(_ fd: Int32) {
-        defer { close(fd) }
+        lock.withLock { _ = connections.insert(fd) }
+        defer {
+            lock.withLock { _ = connections.remove(fd) }
+            close(fd)
+        }
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 65_536)
         while true {
@@ -78,7 +99,7 @@ final class FixtureHost: @unchecked Sendable {
     }
 
     private func write(_ fd: Int32, _ data: Data) -> Bool {
-        data.withUnsafeBytes { bytes in
+        writing.withLock { data.withUnsafeBytes { bytes in
             var offset = 0
             while offset < bytes.count {
                 let written = Darwin.write(fd, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
@@ -86,7 +107,7 @@ final class FixtureHost: @unchecked Sendable {
                 offset += written
             }
             return true
-        }
+        } }
     }
 
     private func note(_ kind: String) {

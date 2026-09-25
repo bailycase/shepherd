@@ -88,6 +88,9 @@ struct TerminalScreen: View {
         } message: {
             Text(closing.map { model.closeConfirmation($0).message } ?? "")
         }
+        .onChange(of: terminals.cannedClose, initial: true) { _, pane in
+            if let pane, let tab = model.tab(for: pane.rawValue) { closing = tab }
+        }
     }
 
     private var liveSessions: Set<SessionID> {

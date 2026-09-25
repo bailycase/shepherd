@@ -107,8 +107,12 @@ the reply ends above the composer, and `thread-jump` (a drag up from the tail, s
 the scroll view's pan recognizer) that new output leaves the thread where the reader left it,
 with "Jump to latest" showing. Attaching changes a host's PTY size, so the terminal screens
 (`terminal`, `terminal-keys`, `terminal-split`, `terminal-maximized`, `terminal-empty`,
-`terminal-phone`, `terminal-phone-keys`) never attach: their sessions draw canned screens
-(`MobileTerminals.cannedScreens`), and the host answers only the read `terminals` query.
+`terminal-phone`, `terminal-phone-keys`, and the ones below) never attach: their sessions draw
+canned screens (`MobileTerminals.cannedScreens`), and the host answers only the read `terminals`
+query. `terminal-close` and `terminal-phone-close` open the split tab's close confirmation
+(`MobileTerminals.cannedClose`). `terminal-relaunched` and `terminal-phone-relaunched` have the
+host push the layout it has after a relaunch (the shell pane under a new session) and check that
+the pane draws the new session's own screen.
 
 **Windows.** Without `-w` the fixture app is single-window, as the screens of the other tracks
 expect. With it, a screen can open more windows (CONTRACTS.md › Fixture screens): `windows-split`
