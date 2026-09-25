@@ -27,6 +27,7 @@ struct InstructionsTextEditor: UIViewRepresentable {
         view.text = text
         view.accessibilityLabel = accessibilityLabel
         focus.textView = view
+        context.coordinator.category = UIContentSizeCategory(context.environment.dynamicTypeSize)
         context.coordinator.restyle(view)
         return view
     }
@@ -42,14 +43,17 @@ struct InstructionsTextEditor: UIViewRepresentable {
             view.text = text
             view.undoManager?.removeAllActions()
         }
-        // A new text size restyles at the new size.
-        _ = dynamicTypeSize
+        // A new text size restyles at the new size: read from SwiftUI's environment, which has
+        // it before the text view is in a window.
+        context.coordinator.category = UIContentSizeCategory(dynamicTypeSize)
         context.coordinator.restyle(view)
     }
 
     @MainActor
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: InstructionsTextEditor
+        /// The text size to style at (Dynamic Type), from the view's environment.
+        var category: UIContentSizeCategory = .large
         /// What the text view was last styled for: a render that changes none of it leaves the
         /// text alone (and an input method's marked text with it).
         private var styled: (text: String, saved: String, size: CGFloat)?
@@ -78,7 +82,8 @@ struct InstructionsTextEditor: UIViewRepresentable {
             guard view.markedTextRange == nil else { return }
             let text = view.text ?? ""
             let saved = parent.saved
-            let styles = InstructionsEditorStyles(metrics: view.metrics, traits: view.traitCollection)
+            let styles = InstructionsEditorStyles(metrics: view.metrics,
+                                                  traits: UITraitCollection(preferredContentSizeCategory: category))
             if let styled, styled.text == text, styled.saved == saved, styled.size == styles.size { return }
             styled = (text, saved, styles.size)
             let storage = view.textStorage

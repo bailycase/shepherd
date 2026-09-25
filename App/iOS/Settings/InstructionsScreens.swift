@@ -325,16 +325,21 @@ private struct InstructionsPadPage: View {
         let edited = model.edited(in: hosts)
         let snapshot = edited.flatMap { model.files(of: $0).snapshot }
         VStack(alignment: .leading, spacing: MobileLayout.instructionsPadSpacing) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: NW.Space.l) {
-                    scope(model, hosts: hosts)
-                    Spacer(minLength: NW.Space.l)
-                    actions(model, hosts: hosts, ready: snapshot != nil)
+            // History's popover hangs off its button, so the actions are built once: only the
+            // scope wraps under its picker when the column is narrow.
+            HStack(alignment: .top, spacing: NW.Space.l) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NW.Space.l) {
+                        scopePicker(model)
+                        scopeState(model, hosts: hosts)
+                    }
+                    VStack(alignment: .leading, spacing: NW.Space.s) {
+                        scopePicker(model)
+                        scopeState(model, hosts: hosts)
+                    }
                 }
-                VStack(alignment: .leading, spacing: NW.Space.m) {
-                    scope(model, hosts: hosts)
-                    actions(model, hosts: hosts, ready: snapshot != nil)
-                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                actions(model, hosts: hosts, ready: snapshot != nil)
             }
             if let problem = model.problem {
                 NWBanner(.failed, title: problem) {
@@ -362,10 +367,14 @@ private struct InstructionsPadPage: View {
         .nwAnimation(.content, value: focus.editing)
     }
 
-    /// Every host | Per host, then each host's state, or which host is edited.
-    private func scope(_ model: ClientInstructions, hosts: [SettingsHost]) -> some View {
+    /// Every host | Per host.
+    private func scopePicker(_ model: ClientInstructions) -> some View {
+        InstructionsScopePicker(sameEverywhere: Binding(get: { model.sameEverywhere }, set: { model.sameEverywhere = $0 }))
+    }
+
+    /// Each host's state, or which host is edited.
+    private func scopeState(_ model: ClientInstructions, hosts: [SettingsHost]) -> some View {
         HStack(spacing: NW.Space.l) {
-            InstructionsScopePicker(sameEverywhere: Binding(get: { model.sameEverywhere }, set: { model.sameEverywhere = $0 }))
             if model.sameEverywhere {
                 if let line = model.syncLine(in: hosts) {
                     Text(line).nwText(.caption).foregroundStyle(Color.nw.textTertiary).lineLimit(2)
