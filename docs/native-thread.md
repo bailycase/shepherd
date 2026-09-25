@@ -463,8 +463,10 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
   (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw
   arguments.
-- **`ThreadMarkdown`:** prose (inline Markdown styled once per text) and code blocks, colored by
-  tree-sitter off the main actor and cached.
+- **`ThreadMarkdown`:** prose and code blocks. The reply's blocks come parsed from the store
+  (`nativeMarkdownParse`, ShepherdRemote: tables, task and nested lists, images, `<details>`,
+  footnotes; see DESIGN.md › Rich content in prose); inline Markdown is styled once per text
+  (`NWProseInline`), and code blocks are colored by tree-sitter off the main actor and cached.
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
   - chips: model with its picker on ⇧⌘M, and thinking
