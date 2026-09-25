@@ -29,7 +29,9 @@ public struct NativeCardLayout: Equatable, Hashable, Sendable {
 /// the footer. Built once per turn change; views only read it.
 public struct NativeTurnPresentation: Equatable, Sendable {
     public enum Item: Equatable, Sendable, Identifiable {
-        /// Thinking for one stretch of work (merged between prose), or the live block.
+        /// Thinking for one stretch of work (merged between prose), or the live block. `text` is
+        /// only what the reader can read, "" when the model shared none: then the finished row is
+        /// a plain "Thought for Ns" line, and it is left out when it was not timed either.
         case thinking(id: String, text: String, seconds: Double?, live: Bool, since: Double?)
         /// `openFence`: the text ends inside a fence still open (the block a reply is writing).
         case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
@@ -96,7 +98,8 @@ public func nativeTurnPresentation(
 ) -> NativeTurnPresentation {
     enum Raw {
         case thinking(String, Double?, message: String, since: Double?)
-        case prose(String)
+        /// `streaming`: the text block a reply is still writing.
+        case prose(String, streaming: Bool)
         case tool(NativeThreadMessage)
         case note(String)
         case error(String, Int)
@@ -120,7 +123,7 @@ public func nativeTurnPresentation(
             else { raw.append(.error(text, 1)) }
             continue
         }
-        for block in message.blocks {
+        for (index, block) in message.blocks.enumerated() {
             switch block.kind {
             case .thinking:
                 raw.append(.thinking(block.text, message.thinkingSeconds, message: message.entryID,
@@ -128,7 +131,7 @@ public func nativeTurnPresentation(
             case .unsupportedImage: raw.append(.note("Image attached"))
             case .text:
                 if message.role == "assistant" || message.role == "user" {
-                    raw.append(.prose(block.text))
+                    raw.append(.prose(block.text, streaming: message.status == "streaming" && index == message.blocks.count - 1))
                 } else {
                     raw.append(.note(message.role == "custom" ? block.text : message.role.replacingOccurrences(of: "_", with: " ") + " · " + block.text))
                 }
@@ -169,13 +172,17 @@ public func nativeTurnPresentation(
     func flushStretch() {
         flushCalls()
         if !stretchThinking.isEmpty {
-            let text = stretchThinking.map(\.text).joined(separator: "\n\n")
+            // The ordinal is spent either way, so leaving an empty row out moves no other id.
+            let id = nextID("thinking")
+            let text = stretchThinking.map(\.text).filter(nativeThinkingIsReadable).joined(separator: "\n\n")
             var seconds: Double?
             var counted: Set<String> = []
             for part in stretchThinking where counted.insert(part.message).inserted {
                 if let value = part.seconds { seconds = (seconds ?? 0) + value }
             }
-            items.append(.thinking(id: nextID("thinking"), text: text, seconds: seconds, live: false, since: nil))
+            if !text.isEmpty || nativeThoughtIsTimed(seconds) {
+                items.append(.thinking(id: id, text: text, seconds: seconds, live: false, since: nil))
+            }
         }
         items += stretchItems
         stretchThinking = []
@@ -210,9 +217,9 @@ public func nativeTurnPresentation(
             let value = call(message)
             stretchCalls.append(value)
             calls.append(value)
-        case .prose(let text):
+        case .prose(let text, let streaming):
             flushStretch()
-            let parsed = nativeMarkdownParse(text)
+            let parsed = nativeMarkdownParse(text, streaming: live && streaming)
             items.append(.prose(id: nextID("prose"), text: text, blocks: parsed.blocks, openFence: parsed.endsInOpenFence))
             copy.append(text)
         case .note(let text):
@@ -228,7 +235,8 @@ public func nativeTurnPresentation(
     }
     flushStretch()
     if case .thinking(let text, let seconds, _, let since)? = liveThinking {
-        items.append(.thinking(id: nextID("thinking"), text: text, seconds: seconds, live: true, since: since))
+        items.append(.thinking(id: nextID("thinking"), text: nativeThinkingIsReadable(text) ? text : "", seconds: seconds,
+                               live: true, since: since))
     }
     // An error that ended a finished turn offers Retry.
     if !live, case .error(let id, let text, let count, _)? = items.last {
@@ -245,9 +253,32 @@ public func nativeTurnErrorText(_ text: String, toolCalls: Int) -> String {
     return "\(trimmed) — the turn stopped after \(nativeCount(toolCalls, "tool call"))."
 }
 
+/// Thinking a reader can read: anything but whitespace.
+public func nativeThinkingIsReadable(_ text: String) -> Bool {
+    text.contains { !$0.isWhitespace }
+}
+
+/// Thinking timed at half a second or more, long enough to say how long.
+public func nativeThoughtIsTimed(_ seconds: Double?) -> Bool {
+    (seconds ?? 0) >= 0.5
+}
+
 /// "Thought for 4s", "Thought for 1m 04s", or "Thought" when it was shorter than half a
 /// second or the host never timed it.
 public func nativeThoughtText(_ seconds: Double?) -> String {
-    guard let seconds, seconds >= 0.5 else { return "Thought" }
+    guard let seconds, nativeThoughtIsTimed(seconds) else { return "Thought" }
     return "Thought for " + (seconds < 60 ? "\(Int(seconds.rounded()))s" : nativeDurationText(seconds))
+}
+
+/// `nativeThoughtText` as VoiceOver says it: "Thought for 4 seconds", "Thought for 1 minute
+/// 4 seconds".
+public func nativeThoughtSpokenText(_ seconds: Double?) -> String {
+    guard let seconds, nativeThoughtIsTimed(seconds) else { return "Thought" }
+    func unit(_ count: Int, _ name: String) -> String { "\(count) \(name)" + (count == 1 ? "" : "s") }
+    if seconds < 60 { return "Thought for " + unit(Int(seconds.rounded()), "second") }
+    let whole = Int(seconds)
+    let parts = whole < 3600
+        ? [unit(whole / 60, "minute"), whole % 60 > 0 ? unit(whole % 60, "second") : nil]
+        : [unit(whole / 3600, "hour"), (whole % 3600) / 60 > 0 ? unit((whole % 3600) / 60, "minute") : nil]
+    return "Thought for " + parts.compactMap { $0 }.joined(separator: " ")
 }

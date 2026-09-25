@@ -27,6 +27,38 @@ public enum PiConfig {
         agentDirectory(environment: environment).appendingPathComponent("sessions", isDirectory: true)
     }
 
+    /// The thinking levels models.json configures, per "provider/id": a model's own
+    /// `thinkingLevelMap` (`providers.<name>.models[]`), with a `modelOverrides.<id>` map laid
+    /// over it, as pi composes them. A level mapped to null is present with a nil value (pi
+    /// drops it); a level absent from the map is absent. Empty when unreadable.
+    public static func thinkingLevelMaps(in directory: URL = agentDirectory()) -> [String: [String: String?]] {
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("models.json")),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let providers = root["providers"] as? [String: Any] else { return [:] }
+        func map(_ value: Any?) -> [String: String?]? {
+            guard let object = value as? [String: Any] else { return nil }
+            var result: [String: String?] = [:]
+            for (level, mapped) in object {
+                if mapped is NSNull { result[level] = .some(nil) } else if let mapped = mapped as? String { result[level] = mapped }
+            }
+            return result
+        }
+        var maps: [String: [String: String?]] = [:]
+        for (name, value) in providers {
+            guard let provider = value as? [String: Any] else { continue }
+            for case let model as [String: Any] in provider["models"] as? [Any] ?? [] {
+                guard let id = (model["id"] as? String)?.trimmingCharacters(in: .whitespaces), !id.isEmpty,
+                      let levels = map(model["thinkingLevelMap"]) else { continue }
+                maps["\(name)/\(id)"] = levels
+            }
+            for (id, override) in provider["modelOverrides"] as? [String: Any] ?? [:] {
+                guard let levels = map((override as? [String: Any])?["thinkingLevelMap"]) else { continue }
+                maps["\(name)/\(id)", default: [:]].merge(levels) { $1 }
+            }
+        }
+        return maps
+    }
+
     /// Models from models.json as "provider/id", the form `--model` and `setModel` take; empty
     /// when unreadable. pi's own shape (`providers.<name>.models[].id`) names each model's
     /// provider and whether it reasons (pi's default is no). Other shapes are read leniently:

@@ -345,6 +345,16 @@ struct ThreadProjectionTests {
         #expect(message.content == [.thinking("hmm, yes"), .text("final text")])
     }
 
+    /// pi streams Anthropic's redacted thinking as its placeholder, without the `redacted` flag
+    /// the finished block carries: it reads as nothing to show from the start.
+    @Test func aStreamedRedactedBlockEndsWithNothingToRead() throws {
+        let message = try stream([
+            #"{"type":"thinking_start","contentIndex":0}"#,
+            #"{"type":"thinking_end","contentIndex":0,"content":"[Reasoning redacted]"}"#,
+        ])
+        #expect(message.content == [.thinking("")])
+    }
+
     @Test func toolCallsStartBareAndCompleteWithArguments() throws {
         let started = try stream([#"{"type":"toolcall_start","contentIndex":0,"id":"call_abc","toolName":"bash"}"#])
         #expect(started.content == [.toolCall(id: "call_abc", name: "bash", arguments: nil)])

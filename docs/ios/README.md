@@ -63,7 +63,11 @@ The iOS client ships through TestFlight, following the Mac's channels:
 - **Missing secrets:** the job is skipped with a notice, and the Mac release is unaffected. It
   never runs for pull requests, tags, or other branches.
 - **Expiry:** Apple processes each build (usually minutes). The Nightly group's testers get it
-  automatically, and it stays installable for 90 days.
+  automatically. Once it has processed, the Release workflow's `retire-testflight` job expires
+  every older build, so only the newest stays installable (otherwise each lasts 90 days). The
+  first nightly push after that job landed also clears the builds already there. It has no
+  manual run: a dry run (`release.py retire-testflight --dry-run`) works only locally, with the
+  App Store Connect key.
 - **Re-runs:** a re-run keeps the run number, so it keeps the build number. Once the Mac
   nightly has published, re-running the whole workflow skips both builds. To retry only the
   upload, use "Re-run failed jobs". If only the Mac job failed, also use "Re-run failed jobs":
@@ -191,7 +195,10 @@ keep the version for real breaks.
   dismiss. On iPad the list sits beside the page. The rules live in ShepherdRemote
   (`ClientHostSettings`, `ClientInstructions`, `ClientSuggestions`), held by `SettingsStore`.
 - **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking (only
-  for a model that takes a level). Repo
+  for a model that takes a level: Off, Minimal, Low, Medium and High, with Extra high and Max where
+  the host's catalog says the model has them, and Off to High on a host without
+  `thinking.levels.v1`). The composer's thinking chip offers the levels pi reports for the
+  thread's model. Model names truncate in the middle, the full id read aloud. Repo
   lists the host's spaces first and other hosts' after (choosing one moves the thread there), and
   Add repo browses the host's folders (`listDir`, `addSpace`). Host shows each one's status and
   running threads. The New worktree switch (on by default) takes a generated branch and a base
