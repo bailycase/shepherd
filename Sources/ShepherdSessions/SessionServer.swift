@@ -156,6 +156,8 @@ public final class SessionServer: @unchecked Sendable {
         /// output read while detached. The attach watermark samples this
         /// counter after the screen has consumed the same bytes.
         var outputSequence: UInt64 = 0
+        /// The output that is news to a viewer who looked away: not a redraw after a resize.
+        var news = TerminalNews()
         /// A delivery stays in flight until its main-queue callback returns.
         /// A cancelled delivery still occupies this slot until its callback
         /// runs, keeping the renderer from receiving overlapping output.
@@ -1298,7 +1300,14 @@ public final class SessionServer: @unchecked Sendable {
         // A same-size resize would SIGWINCH the child into a full repaint for
         // nothing; attach paths get their redraw from the snapshot instead.
         guard session.cols != minCols || session.rows != minRows else { return }
-        session.resize(cols: minCols, rows: minRows)
+        resizePTY(session, sessionID: sessionID, cols: minCols, rows: minRows)
+    }
+
+    /// Server queue. Every PTY resize goes through here: what the child prints next redraws
+    /// its screen, which is not news (`TerminalNews`).
+    private func resizePTY(_ session: PTYSession, sessionID: SessionID, cols: Int, rows: Int) {
+        outputStates[sessionID]?.news.resized(at: .now)
+        session.resize(cols: cols, rows: rows)
     }
 
     /// The host GUI's own surface size. It controls the PTY only while no
@@ -2562,7 +2571,8 @@ public final class SessionServer: @unchecked Sendable {
             let process = pty.foregroundProcessName.map { $0.hasPrefix("-") ? String($0.dropFirst()) : $0 }
             return RemoteTerminalActivity(paneID: leaf.id, sessionID: sessionID, process: process,
                                           command: pty.runningCommandLine,
-                                          outputSequence: outputStates[sessionID]?.outputSequence ?? 0)
+                                          outputSequence: outputStates[sessionID]?.outputSequence ?? 0,
+                                          newsSequence: outputStates[sessionID]?.news.sequence ?? 0)
         }
     }
 
@@ -2580,7 +2590,7 @@ public final class SessionServer: @unchecked Sendable {
     public func resize(sessionID: SessionID, cols: Int, rows: Int) {
         queue.async {
             guard let session = self.sessions[sessionID]?.pty else { return }
-            session.resize(cols: cols, rows: rows)
+            self.resizePTY(session, sessionID: sessionID, cols: cols, rows: rows)
         }
     }
 
@@ -2632,6 +2642,7 @@ public final class SessionServer: @unchecked Sendable {
     private func deliverOutput(sessionID: SessionID, data: Data) {
         guard let output = outputStates[sessionID] else { return }
         output.outputSequence &+= 1
+        output.news.output(at: .now)
         // Remote streaming happens on the server queue in delivery order and
         // is independent of the GUI's attach state — a headless host has no
         // GUI viewer, and the remote client must still receive output.

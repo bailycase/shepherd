@@ -45,7 +45,7 @@ final class MobileTerminals {
     var problems: [AgentRef: String] = [:]
     /// What each thread's terminals run, from its host (`RemoteAgentQuery.terminals`).
     private(set) var activity: [AgentRef: [PaneID: RemoteTerminalActivity]] = [:]
-    /// The output sequence each session had when it was last on screen.
+    /// Each session's news (`RemoteTerminalActivity.news`) when it was last on screen.
     private(set) var seen: [SessionKey: UInt64] = [:]
 
     /// Fixtures only: sessions show these screens and never attach, so a screenshot neither
@@ -92,7 +92,7 @@ final class MobileTerminals {
                 if activity[ref] != byPane { activity[ref] = byPane }
                 for row in rows where seen[SessionKey(host: ref.host, session: row.sessionID)] == nil {
                     // Output from before the first look is not news.
-                    seen[SessionKey(host: ref.host, session: row.sessionID)] = row.outputSequence
+                    seen[SessionKey(host: ref.host, session: row.sessionID)] = row.news
                 }
             }
             try? await Task.sleep(for: Self.activityInterval)
@@ -104,7 +104,7 @@ final class MobileTerminals {
     /// The tab's output is on screen now: nothing in it is unseen.
     func markSeen(_ ref: AgentRef, sessions: [SessionID]) {
         for id in sessions {
-            guard let sequence = activity[ref]?.values.first(where: { $0.sessionID == id })?.outputSequence else { continue }
+            guard let sequence = activity[ref]?.values.first(where: { $0.sessionID == id })?.news else { continue }
             let key = SessionKey(host: ref.host, session: id)
             if seen[key] != sequence { seen[key] = sequence }
         }
@@ -114,7 +114,7 @@ final class MobileTerminals {
     func hasUnseen(_ ref: AgentRef, session id: SessionID) -> Bool {
         guard let row = activity[ref]?.values.first(where: { $0.sessionID == id }),
               let seen = seen[SessionKey(host: ref.host, session: id)] else { return false }
-        return row.outputSequence > seen
+        return row.news > seen
     }
 
     // MARK: Sessions

@@ -112,6 +112,24 @@ struct TerminalPanelsTests {
         #expect(panels.reconcile(key, layout: grown, thread: thread.id) == nil)
     }
 
+    /// A tab's dot follows the host's news, not every read of output: a resize's redraw moves
+    /// only the output sequence.
+    @Test func aRedrawThatIsNotNewsLeavesNoDot() throws {
+        let panels = TerminalPanels(defaults: ScratchDefaults())
+        let session = try #require(shell.sessionID)
+        func row(output: UInt64, news: UInt64?) -> RemoteTerminalActivity {
+            RemoteTerminalActivity(paneID: shell.id, sessionID: session, process: "zsh", command: nil,
+                                   outputSequence: output, newsSequence: news)
+        }
+        panels.setActivity([row(output: 2, news: 2)], for: key)
+        panels.setActivity([row(output: 5, news: 2)], for: key)
+        #expect(!panels.hasUnseen(key, session: session))
+        panels.setActivity([row(output: 6, news: 3)], for: key)
+        #expect(panels.hasUnseen(key, session: session))
+        panels.markSeen(key, sessions: [session])
+        #expect(!panels.hasUnseen(key, session: session))
+    }
+
     @Test func theHeightPersistsAndABadValueFallsBackToTheDefault() {
         let defaults = ScratchDefaults()
         TerminalPanels(defaults: defaults).height = 420

@@ -1217,6 +1217,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
 - **Tab states** (`NWTerminalTab.Activity`): at rest the program at its prompt ("zsh"); a
   running command names the tab ("make dev") with a running spinner; output printed while the
   tab was off screen adds a running-blue dot; an exited session is tertiary (failed if it failed).
+  A resize is not news: a shell or TUI redraws on SIGWINCH (a window resize, maximize or
+  restore, a hidden panel's panes following the geometry, a remote viewer leaving), so the host
+  counts no output for a second after it gives a PTY a size (`TerminalNews`, carried as
+  `RemoteTerminalActivity.newsSequence`; an older host's every read counts).
   The selected tab of a remote agent names its host. What each terminal runs comes from
   `SessionServer.terminalActivity` (a remote agent's host answers `RemoteAgentQuery.terminals`),
   polled every 2 s while the layout is on screen; an older host leaves plain tabs named for the
@@ -1560,7 +1564,9 @@ components first), with these differences for touch:
   `bgRaised`. On iPhone the thread's options open the panes full screen with the same strip and
   key row. The terminal is SwiftTerm's view on Night Watch's terminal palette in Geist Mono at
   the code size, following Dynamic Type to 20pt; the strip and key row stop growing at
-  xxxLarge. Closing a tab asks first ("Its shell on <host> stops.").
+  xxxLarge. Closing a tab asks first ("Its shell on <host> stops."). As on the Mac, tab dots
+  follow the host's news, so a tab leaving the screen (its viewer detaching, the PTY taking the
+  Mac's size again) leaves no dot.
 - **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
   iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
   (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &
