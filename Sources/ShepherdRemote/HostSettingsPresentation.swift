@@ -49,7 +49,7 @@ public enum HostSettingsPresentation {
     }
 
     public static func title(_ level: ThinkingLevel) -> String {
-        level.rawValue.capitalized
+        level.title
     }
 
     public static func title(_ mode: NativeQueueMode) -> String {
