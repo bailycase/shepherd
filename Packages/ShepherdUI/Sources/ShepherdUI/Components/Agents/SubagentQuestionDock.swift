@@ -7,9 +7,6 @@ import SwiftUI
 
 public enum NWQuestionDockMetrics {
     public static let padding = EdgeInsets(top: 10, leading: NW.Space.l, bottom: 10, trailing: NW.Space.l)
-    public static let headerHeight: CGFloat = 26
-    public static let glyph: CGFloat = 13
-    public static let hideButton: CGFloat = 26
     public static let questionSize: CGFloat = 13.5
     public static let optionPadding = EdgeInsets(top: NW.Space.m, leading: 10, bottom: NW.Space.m, trailing: 10)
     public static let optionSpacing: CGFloat = 11
@@ -17,7 +14,6 @@ public enum NWQuestionDockMetrics {
     public static let numberRadius: CGFloat = 5
     public static let recommendedHeight: CGFloat = 20
     public static let recommendedPadding: CGFloat = 7
-    public static let headerSpacing: CGFloat = 7
     /// Between an option's title and its description, and the question's extra leading.
     public static let optionLineSpacing: CGFloat = 3
     public static let questionLineSpacing: CGFloat = 3
@@ -79,16 +75,7 @@ public struct NWSubagentQuestionDock: View {
         let nw = Color.nw
         let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
         VStack(alignment: .leading, spacing: NW.Space.l) {
-            HStack(spacing: NWQuestionDockMetrics.headerSpacing) {
-                NWBranchGlyph(.attention, size: NWQuestionDockMetrics.glyph, color: nw.lanternText)
-                Text("\(name) is asking").font(.nwSans(12, .semibold)).foregroundStyle(nw.lanternText)
-                Spacer(minLength: NW.Space.m)
-                Button(action: hide) { Image(systemName: "chevron.down") }
-                    .buttonStyle(.nwIcon(size: NWQuestionDockMetrics.hideButton))
-                    .help("Hide the question")
-                    .accessibilityLabel("Hide the question")
-            }
-            .frame(height: NWQuestionDockMetrics.headerHeight)
+            NWQuestionHead(.subagent(name), hide: hide)
             Text(NWInlineMarkup.attributed(question, codeSize: 12))
                 .font(.nwSans(NWQuestionDockMetrics.questionSize, .semibold))
                 .foregroundStyle(nw.textPrimary)
@@ -132,7 +119,7 @@ public struct NWSubagentQuestionDock: View {
         }
         .nwAnimation(.hover, value: chosen)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(name) is asking: \(question)")
+        .accessibilityLabel("\(NWQuestionAsker.subagent(name).title): \(question)")
     }
 
     private func send() {
