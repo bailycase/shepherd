@@ -63,6 +63,13 @@ extension ShepherdViewModel {
         state.spaces.filter { !$0.hidden }
     }
 
+    /// The spaces connected hosts list in the sidebar.
+    var remoteSpaceCount: Int {
+        remoteHosts.connections.reduce(0) { count, connection in
+            connection.phase == .connected ? count + connection.state.spaces.count { !$0.hidden } : count
+        }
+    }
+
     var spaceTree: [(space: Space, agents: [Agent], depth: Int)] {
         refreshedSidebarDerivations().tree
     }
@@ -270,7 +277,8 @@ extension ShepherdViewModel {
     }
 
     /// Reselect the most recently selected agent that still exists, after
-    /// `dying` goes away. Falls back to no selection (an empty workspace) when history is empty.
+    /// `dying` goes away. Falls back to no selection (an empty workspace) when history is empty,
+    /// leaving a hidden space (a stopped automation run's) for a visible one.
     func selectPreviousAgent(after dying: AgentID) {
         selectionHistory.removeAll { $0 == dying }
         while let candidate = selectionHistory.last {
@@ -281,6 +289,8 @@ extension ShepherdViewModel {
             selectionHistory.removeLast()
         }
         selectedAgentID = nil
+        let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: false, in: state)
+        if standing != selectedSpaceID { selectedSpaceID = standing }
     }
 
     /// The pane to focus when entering `tabID`.

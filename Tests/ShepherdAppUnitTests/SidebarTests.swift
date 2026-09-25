@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdUI
 import Testing
 @testable import ShepherdApp
@@ -228,27 +229,33 @@ struct SidebarRowTests {
         #expect(AgentRow.statusWord(status, turnFailed: true) == word)
         var agent = Fixture.agent("Nightly run", in: Fixture.space("s")).agent
         agent.status = status
-        #expect(AutomationRow.stateWord(agent, turnFailed: true) == word)
-        #expect(AutomationRow.state(agent, turnFailed: true) == state)
+        let run = AutomationRun(startedAt: 0, settledAt: 1, result: .finished, agentID: agent.id)
+        #expect(AutomationRow.stateWord(agent, run: run, turnFailed: true) == word)
+        #expect(AutomationRow.state(agent, run: run, turnFailed: true) == state)
     }
 
-    /// Its menu offers Stop only while the run reads running or needs you; a run that reads done
-    /// runs again (replacing it), like one that is stopped.
+    /// Its menu offers Stop while the run is going, by the rule the host refuses Run Now by: a
+    /// run whose pi is still starting (idle before any turn settled) reads running and stops,
+    /// and only a settled run reads done and runs again (replacing it), like one that is stopped.
     @Test(arguments: [
-        (AgentStatus?.none, "stopped", AgentState.idle, false),
-        (.working, "running", .running, true),
-        (.blocked, "needs you", .attention, true),
-        (.idle, "done", .done, false),
-        (.done, "done", .done, false),
+        (AgentStatus?.none, false, "stopped", AgentState.idle, false),
+        (.idle, false, "running", .running, true),
+        (.working, false, "running", .running, true),
+        (.blocked, false, "needs you", .attention, true),
+        (.idle, true, "done", .done, false),
+        (.working, true, "running", .running, true),
+        (.blocked, true, "needs you", .attention, true),
+        (.done, true, "done", .done, false),
     ])
-    func anAutomationRowReadsItsRunsStatus(status: AgentStatus?, word: String, state: AgentState, live: Bool) {
+    func anAutomationRowReadsItsRunsStatus(status: AgentStatus?, settled: Bool, word: String, state: AgentState, live: Bool) {
         let agent = status.map { status in
             var agent = Fixture.agent("Nightly run", in: Fixture.space("s")).agent
             agent.status = status
             return agent
         }
-        #expect(AutomationRow.stateWord(agent, turnFailed: false) == word)
-        #expect(AutomationRow.state(agent, turnFailed: false) == state)
-        #expect(AutomationRow.isLive(agent) == live)
+        let run = agent.map { AutomationRun(startedAt: 0, settledAt: settled ? 1 : nil, result: .running, agentID: $0.id) }
+        #expect(AutomationRow.stateWord(agent, run: run, turnFailed: false) == word)
+        #expect(AutomationRow.state(agent, run: run, turnFailed: false) == state)
+        #expect(AutomationRow.isLive(agent, run: run) == live)
     }
 }

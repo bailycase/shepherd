@@ -525,7 +525,8 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   agent.
 - **Sections** (`NWSidebarSection`): a micro caps label with a trailing count; clicking it folds
   the section. With remote hosts configured, hovering a header shows its machine chord (⌃⇧n).
-  1. **This Mac**, with its agent count and a hover `+` for New Space….
+  1. **This Mac**, with its agent count and a hover `+` for New Space…. With no spaces while a
+     host's section follows, a quiet status row says "No spaces" with New space….
   2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`
      (blocked agents plus subagents asking), and a hover `+` for a new space on the host.
      Otherwise one status row (`NWSidebarNoticeRow`) stands in for its spaces: "Connecting…",
@@ -557,9 +558,12 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   surfaces through its agent's row, which takes the needs-you dot and "ASK", and counts toward
   its space's and host's needs-you counts, so the row to click is always marked. Live and
   finished subagents leave the agent's row as it is.
-- **Automation rows:** the automation's name, and its run's state: "running", "ASK", "done", or
-  "stopped" (a hollow dot, not selectable). The context menu has Stop while the run is running or
-  asks, else Run Now (a done run's thread is replaced by the new run's), and Delete Automation.
+- **Automation rows:** the automation's name, and its run's state: "running" (a run whose pi is
+  still starting included), "ASK", "done", or "stopped" (a hollow dot, not selectable). Live
+  follows the host's own rule (`AutomationRun.isLive`, read from the run log's open run), so a
+  run reads done only once a turn has settled. The context menu has Stop while the run is live,
+  else Run Now (a done run's thread is replaced by the new run's), and Delete Automation. A
+  refused Run Now shows `ActionErrorDialog`.
 - **A remote host's automation rows** (`RemoteSidebarSection.swift`) nest one level under its
   Automations disclosure with the same dots and words, plus "off" for one that does not start
   with Shepherd. Clicking a row opens its run's thread, or its details while it has none. The
@@ -625,7 +629,11 @@ crook, a title, one sentence, actions):
 - A selected space that has agents, with none on screen: "No agent selected", "Pick one in the
   sidebar, or start another in <space>.", and the same actions.
 - No spaces at all: "No spaces yet", "A space is a project folder your agents work in.", and a
-  primary **New space…** button.
+  primary **New space…** button. None at all means none on this Mac (the hidden automations
+  space is not one) and none on a connected host; with only a host's spaces it is the "No agent
+  selected" state below.
+- The workspace never stands in the hidden automations space with no agent: stopping a
+  selected run moves it to the first visible space.
 - Otherwise: "No agent selected", "Pick one in the sidebar, or start a new one.", and the New
   agent keycaps.
 
@@ -1599,7 +1607,8 @@ or the iPad sidebar's.
   footer is Edit and Run now (with Open run while the finished run's thread is there; running
   again replaces it), or, while a run works or asks you, Stop (confirmed: it deletes the run's
   thread) and Open run.
-  The ••• menu has Open Run, Edit and Delete Automation (confirmed).
+  The ••• menu has Open Run, Edit and Delete Automation (confirmed). Each confirmation rises
+  from the control that asked (Stop, or the ••• menu), never from the middle of the screen.
 - **Form:** Name, Prompt, Where it runs (Host when adding and more than one can take it, then
   Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new
   automation keeps one id for the life of the form, so saving again after an answer that never
