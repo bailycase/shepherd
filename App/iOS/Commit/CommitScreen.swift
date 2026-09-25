@@ -94,12 +94,11 @@ struct CommitScreen: View {
         .overlay(alignment: .top) { NWHairline() }
     }
 
-    /// Closing a finished commit reloads the changes, so what was committed leaves the list.
+    /// Closing a finished commit (or one whose outcome never came back) reloads the changes, so
+    /// what was committed leaves the list.
     private func close(_ store: ReviewCommitStore) {
-        let finished = store.operation?.finished == true
         navigator.dismissPresented()
-        if finished {
-            store.reset()
+        if store.closed() {
             Task { await ReviewStores.shared.store(for: ref).load(hosts: hosts) }
         }
     }

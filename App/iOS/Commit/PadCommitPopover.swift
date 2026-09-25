@@ -26,13 +26,12 @@ private struct PadCommitPopoverPresenter: ViewModifier {
         }
     }
 
-    /// Closing a finished commit reloads the review, so what was committed leaves it.
+    /// Closing a finished commit (or one whose outcome never came back) reloads the review, so
+    /// what was committed leaves it.
     private func close() {
         guard CommitStores.shared.popover == ref else { return }
         CommitStores.shared.popover = nil
-        let store = CommitStores.shared.store(for: ref, hosts: hosts)
-        if store.operation?.finished == true {
-            store.reset()
+        if CommitStores.shared.store(for: ref, hosts: hosts).closed() {
             Task { await ReviewStores.shared.store(for: ref).load(hosts: hosts) }
         }
     }
