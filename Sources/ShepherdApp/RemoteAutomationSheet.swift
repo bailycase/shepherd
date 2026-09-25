@@ -14,8 +14,8 @@ struct RemoteAutomationSheet: View {
     var body: some View {
         if let detail = vm.remoteAutomationDetail(key) {
             content(detail)
-                // A run starting or ending on the host changes what the runs say.
-                .task(id: detail.row.run) { await vm.loadRemoteAutomationRuns(key) }
+                // A run starting, settling or ending on the host changes what the runs say.
+                .task(id: [detail.row.run?.agent.rawValue ?? "", detail.row.status]) { await vm.loadRemoteAutomationRuns(key) }
         } else {
             DialogSheet(title: "Automation", subtitle: "This automation is no longer on the host.",
                         actions: [DialogAction("Close", kind: .prominent) { vm.remoteAutomationSheet = nil }])
