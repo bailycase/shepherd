@@ -510,17 +510,32 @@ public struct NWRunGroupCard: View, Equatable {
             NWBranchGlyph(state, size: NWRunTouchMetrics.glyph, color: finished ? nil : nw.textSecondary)
             // At accessibility sizes the status takes the line under the title, without steps.
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                HStack(spacing: NW.Space.m) {
-                    Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
-                        .accessibilityAddTraits(.isHeader)
-                    if finished, !large {
-                        NWStepStrip(rows.map(\.state), segmentWidth: NW.Space.m).fixedSize()
-                    }
-                }
+                Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary).lineLimit(1)
+                    .fixedSize()
+                    .accessibilityAddTraits(.isHeader)
                 if let status, large { statusText(status).lineLimit(2) }
             }
-            Spacer(minLength: NW.Space.m)
-            if let status, !large { statusText(status).lineLimit(1) }
+            // The title never truncates: on a narrow card the steps give way first, then the
+            // status shortens.
+            if let status, !large {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NW.Space.m) {
+                        NWStepStrip(rows.map(\.state), segmentWidth: NW.Space.m).fixedSize()
+                        Spacer(minLength: NW.Space.m)
+                        statusText(status).lineLimit(1).fixedSize()
+                    }
+                    HStack(spacing: 0) {
+                        Spacer(minLength: NW.Space.m)
+                        statusText(status).lineLimit(1).fixedSize()
+                    }
+                    HStack(spacing: 0) {
+                        Spacer(minLength: NW.Space.m)
+                        statusText(status).lineLimit(1)
+                    }
+                }
+            } else {
+                Spacer(minLength: NW.Space.m)
+            }
             if let openAll {
                 Button(action: openAll) {
                     HStack(spacing: NW.Space.xs) {
