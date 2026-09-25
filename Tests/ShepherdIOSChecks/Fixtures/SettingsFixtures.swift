@@ -17,9 +17,9 @@ extension FixtureCatalog {
 }
 
 extension FixtureData {
-    /// The usual hosts, with the laptop up but refusing the phone's token.
-    static func refusingLaptop() -> [FixtureHostData] {
-        hosts().map { host in
+    /// The given hosts (the usual ones by default), with the laptop up but refusing the phone's token.
+    static func refusingLaptop(_ hosts: [FixtureHostData] = hosts()) -> [FixtureHostData] {
+        hosts.map { host in
             var host = host
             if host.id == laptop {
                 host.online = true

@@ -17,6 +17,9 @@ extension FixtureCatalog {
             FixtureScreen(name: "needsyou-empty", hosts: HomeFixtureData.quiet(), routes: [.home(.needsYou)], prepare: settle),
             FixtureScreen(name: "automations", hosts: fleet, routes: [.home(.automations)], prepare: settle),
             FixtureScreen(name: "more", hosts: fleet, routes: [.home(.more)], prepare: settle),
+            // The laptop is up but refuses the phone's token, instead of being unreachable.
+            FixtureScreen(name: "home-refused", hosts: FixtureData.refusingLaptop(fleet), prepare: settle),
+            FixtureScreen(name: "more-refused", hosts: FixtureData.refusingLaptop(fleet), routes: [.home(.more)], prepare: settle),
             FixtureScreen(name: "recents", hosts: fleet, routes: [.home(.recents)], prepare: settle),
             // iPad: the sidebar over a portrait thread (run with --sidebar).
             FixtureScreen(name: "home-sidebar", hosts: fleet, routes: [.thread(FixtureData.ref(FixtureData.preview))], prepare: settle),
