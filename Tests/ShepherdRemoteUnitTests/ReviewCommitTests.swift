@@ -161,12 +161,15 @@ struct ReviewCommitPresentationTests {
 private final class CommitFakeHost {
     var asked: [RemoteAgentQuery] = []
     var answer: (RemoteAgentQuery) throws -> RemoteAgentResult
+    /// Runs while a commit request is unanswered.
+    var whileCommitting: (() async -> Void)?
 
     init(_ answer: @escaping (RemoteAgentQuery) throws -> RemoteAgentResult) { self.answer = answer }
 
     func store() -> ReviewCommitStore {
         ReviewCommitStore { [self] query in
             asked.append(query)
+            if case .commit = query, let whileCommitting { await whileCommitting() }
             return try answer(query)
         }
     }
@@ -337,6 +340,36 @@ struct ReviewCommitStoreTests {
         #expect(store.steps.map(\.state) == [.done("on feat/rows"), .done("committed 1a2b3c4")])
     }
 
+    @Test func pollingWhileTheCommitIsUnansweredAsksTheHostNothing() async {
+        let fake = host()
+        let store = fake.store()
+        await store.begin()
+        var early: Bool?
+        fake.whileCommitting = { [weak store] in early = await store?.pollOnce() }
+
+        await store.commit()
+
+        #expect(early == false)
+        #expect(!fake.asked.contains { if case .worktreeStatus = $0 { true } else { false } }, "the host hadn't taken the commit yet")
+        #expect(store.error == nil && store.outcome == .running)
+        #expect(await store.pollOnce())
+        #expect(store.outcome == .succeeded(prURL: nil))
+    }
+
+    @Test(arguments: [
+        ("Operation is unknown. Check the repository.", "Operation is unknown. Check the repository. Don't commit again."),
+        ("The host is offline", "The host is offline. Don't commit again."),
+        ("Is it done? ", "Is it done? Don't commit again."),
+    ])
+    func anUnknownOutcomeSaysWhyInWholeSentences(_ message: String, _ error: String) async {
+        let store = CommitFakeHost { _ in throw RemoteHostClientError.rejected(code: "query_failed", message: message) }.store()
+        store.adopt(RemoteWorktreeOperation(id: UUID()))
+
+        #expect(await store.pollOnce() == false)
+
+        #expect(store.error == error)
+    }
+
     @Test func aRefusedCommitBringsTheFormBackWithWhy() async {
         let store = host(commit: .failure(.rejected(code: "query_failed", message: "README.md changed since the sheet opened."))).store()
         await store.begin()
@@ -384,7 +417,7 @@ struct ReviewCommitStoreTests {
         await store.commit()
 
         #expect(store.stage == .operation && store.operationID != nil)
-        #expect(store.error?.hasPrefix("Outcome not yet known") == true)
+        #expect(store.error?.hasSuffix("Don't commit again; its status is checked again.") == true)
         #expect(!store.canCommit)
     }
 
