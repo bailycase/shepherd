@@ -1,4 +1,6 @@
 import Foundation
+import ShepherdProtocol
+import ShepherdRemote
 import Testing
 @testable import ShepherdApp
 
