@@ -75,6 +75,8 @@ final class RemoteHostStore {
         var supportsReviewCommit: Bool { client?.capabilities.contains(RemoteProtocol.reviewCommitCapability) == true }
         /// The host serves automations over the protocol; older hosts show them read-only.
         var supportsAutomations: Bool { client?.capabilities.contains(RemoteProtocol.automationsCapability) == true }
+        /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
+        var supportsAllThinkingLevels: Bool { client?.capabilities.contains(RemoteProtocol.thinkingLevelsCapability) == true }
         var supportsWorktreeCreation: Bool {
             client?.capabilities.isSuperset(of: [RemoteProtocol.creationOptionsCapability, RemoteProtocol.worktreeActionsCapability]) == true
         }

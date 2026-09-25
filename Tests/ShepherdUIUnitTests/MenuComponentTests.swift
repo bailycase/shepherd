@@ -22,21 +22,21 @@ struct MenuComponentTests {
 
     @Test func aModelListKnowsItsHeightAndWhereEachModelIs() {
         let list = NWModelList(sections: Self.sections)
-        #expect(list.height == 2 * NWComposerMetrics.menuHeaderHeight + 3 * NWComposerMetrics.menuRowHeight)
+        #expect(list.height == 2 * (NWComposerMetrics.menuHeaderHeight + NWComposerMetrics.modelSectionGap) + 3 * NWComposerMetrics.modelRowHeight)
         #expect(list.rowID(ofOption: 2) == "a/a/two")
         #expect(list.rowID(ofOption: 3) == nil)
         #expect(NWModelList(sections: []).height == 0)
     }
 
-    /// The picker's list is 360pt tall at most, less when the room above the card is short, and
-    /// never shorter than one row.
-    @Test(arguments: [(nil, 360), (.infinity, 360), (1000, 360), (406, 360), (200, 154), (40, 28)] as [(CGFloat?, CGFloat)])
+    /// The picker's list is 360pt tall at most, less when the room above the card is short (its
+    /// 30pt search and the list's 4pt insets), and never shorter than one row.
+    @Test(arguments: [(nil, 360), (.infinity, 360), (1000, 360), (398, 360), (200, 162), (40, 40)] as [(CGFloat?, CGFloat)])
     @MainActor func thePickersListFitsTheRoomItIsGiven(room: CGFloat?, list: CGFloat) {
         #expect(NWModelPicker.listMaxHeight(in: room) == list)
     }
 
     /// The slash menu shows eight rows at most, fewer when the room is short, and always one.
-    @Test(arguments: [(nil, 8), (.infinity, 8), (1000, 8), (260, 8), (259, 7), (100, 2), (10, 1)] as [(CGFloat?, Int)])
+    @Test(arguments: [(nil, 8), (.infinity, 8), (1000, 8), (324, 8), (323, 7), (120, 2), (10, 1)] as [(CGFloat?, Int)])
     @MainActor func theSlashMenuShowsTheRowsThatFit(room: CGFloat?, rows: Int) {
         #expect(NWSlashMenu.visibleRows(in: room) == rows)
     }

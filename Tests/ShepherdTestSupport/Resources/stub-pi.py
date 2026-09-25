@@ -44,6 +44,9 @@ $STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and 
 after every "tools:N" run, like pi resuming its session file.
 
 set_model / set_thinking_level update STATE (unknown provider -> error).
+get_available_thinking_levels answers pi's reasoning set (off, minimal, low, medium, high),
+or $STUB_PI_THINKING_LEVELS: a comma list for every model, or a JSON object from model id to
+its list ("*" for the rest); "unsupported" answers as a pi without the command.
 A prompt carrying images also logs {"type": "stub-images", "count": N}.
 
 $STUB_PI_HISTORY_BYTES seeds that many bytes of prior history (see below).
@@ -420,6 +423,17 @@ for raw in sys.stdin.buffer:
         else:
             STATE["model"] = dict(STATE["model"], id=cmd.get("modelId"), provider=cmd.get("provider"))
             respond(cmd, t, data=STATE["model"])
+    elif t == "get_available_thinking_levels":
+        spec = os.environ.get("STUB_PI_THINKING_LEVELS", "off,minimal,low,medium,high")
+        if spec == "unsupported":
+            respond(cmd, t, success=False, error=f"Unknown command: {t}")
+        else:
+            if spec.startswith("{"):
+                table = json.loads(spec)
+                levels = table.get(STATE["model"]["id"], table.get("*", []))
+            else:
+                levels = [level for level in spec.split(",") if level]
+            respond(cmd, t, data={"levels": levels})
     elif t == "set_thinking_level":
         STATE["thinkingLevel"] = cmd.get("level")
         respond(cmd, t)

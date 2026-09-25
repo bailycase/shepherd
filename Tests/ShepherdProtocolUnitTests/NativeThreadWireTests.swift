@@ -47,6 +47,7 @@ struct NativeThreadWireTests {
         .answer(expectedSessionID: "s", generation: "g", operationID: op, dialogID: "d", answer: .cancel),
         .setModel(expectedSessionID: "s", generation: "g", operationID: op, model: "anthropic/claude"),
         .setThinking(expectedSessionID: "s", generation: "g", operationID: op, level: "off"),
+        .setThinking(expectedSessionID: "s", generation: "g", operationID: op, level: "xhigh"),
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .message, text: "A", mode: .steer),
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .cancel),
         .subagentCommand(expectedSessionID: "s", generation: "g", operationID: op, runID: "native-1", action: .resume),
@@ -95,7 +96,7 @@ struct NativeThreadWireTests {
         .failure(code: NativeThreadCode.starting, message: "pi is starting."),
         .snapshot(value: NativeThreadSnapshot(
             piSessionID: "s", generation: "g", revision: 4, running: true, model: "p/m", thinking: "low",
-            supportedActions: ["send", "abort"], dialogsSupported: true,
+            thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"], supportedActions: ["send", "abort"], dialogsSupported: true,
             dialogs: [NativeThreadDialog(id: "d", kind: .editor, title: "Edit", options: ["a"], message: "m", placeholder: "p",
                                          prefill: "x", timeout: 5000, unavailable: "external-editor")],
             widgets: [NativeThreadWidget(namespace: "pi", key: "notify", kind: .status, title: "warning", text: "careful")],
