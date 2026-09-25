@@ -32,6 +32,15 @@ final class AutomationsStore {
     var failure: Failure?
     /// The automation the iPad shows beside the list; the first one when nil or gone.
     var chosen: AutomationKey?
+    /// The destructive change a detail asks about, over the control that asked (Stop, or the
+    /// ••• menu's Delete).
+    var confirming: Confirmation?
+
+    struct Confirmation: Equatable {
+        enum Kind: Equatable { case stop, delete }
+        var key: AutomationKey
+        var kind: Kind
+    }
 
     @ObservationIgnored private let hosts: MobileHosts
     @ObservationIgnored private var inputs: [AutomationHost] = []

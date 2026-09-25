@@ -313,11 +313,16 @@ public struct NWRunBars: View, Equatable {
         self.last = last
     }
 
+    /// "Last run" for one bar, "Last 14 runs" for more.
+    static func title(runs: Int) -> String {
+        runs == 1 ? "Last run" : "Last \(runs) runs"
+    }
+
     public var body: some View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.s) {
             HStack {
-                Text("Last \(bars.count) runs".uppercased())
+                Text(Self.title(runs: bars.count).uppercased())
                     .font(.nw(.micro, weight: .regular))
                     .foregroundStyle(nw.textTertiary)
                     .accessibilityAddTraits(.isHeader)

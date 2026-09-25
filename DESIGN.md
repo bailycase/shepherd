@@ -525,7 +525,8 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   agent.
 - **Sections** (`NWSidebarSection`): a micro caps label with a trailing count; clicking it folds
   the section. With remote hosts configured, hovering a header shows its machine chord (⌃⇧n).
-  1. **This Mac**, with its agent count and a hover `+` for New Space….
+  1. **This Mac**, with its agent count and a hover `+` for New Space…. With no spaces while a
+     host's section follows, a quiet status row says "No spaces" with New space….
   2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`
      (blocked agents plus subagents asking), and a hover `+` for a new space on the host.
      Otherwise one status row (`NWSidebarNoticeRow`) stands in for its spaces: "Connecting…",
@@ -557,9 +558,12 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   surfaces through its agent's row, which takes the needs-you dot and "ASK", and counts toward
   its space's and host's needs-you counts, so the row to click is always marked. Live and
   finished subagents leave the agent's row as it is.
-- **Automation rows:** the automation's name, and its run's state: "running", "ASK", "done", or
-  "stopped" (a hollow dot, not selectable). The context menu has Stop while the run is running or
-  asks, else Run Now (a done run's thread is replaced by the new run's), and Delete Automation.
+- **Automation rows:** the automation's name, and its run's state: "running" (a run whose pi is
+  still starting included), "ASK", "done", or "stopped" (a hollow dot, not selectable). Live
+  follows the host's own rule (`AutomationRun.isLive`, read from the run log's open run), so a
+  run reads done only once a turn has settled. The context menu has Stop while the run is live,
+  else Run Now (a done run's thread is replaced by the new run's), and Delete Automation. A
+  refused Run Now shows `ActionErrorDialog`.
 - **A remote host's automation rows** (`RemoteSidebarSection.swift`) nest one level under its
   Automations disclosure with the same dots and words, plus "off" for one that does not start
   with Shepherd. Clicking a row opens its run's thread, or its details while it has none. The
@@ -625,7 +629,11 @@ crook, a title, one sentence, actions):
 - A selected space that has agents, with none on screen: "No agent selected", "Pick one in the
   sidebar, or start another in <space>.", and the same actions.
 - No spaces at all: "No spaces yet", "A space is a project folder your agents work in.", and a
-  primary **New space…** button.
+  primary **New space…** button. None at all means none on this Mac (the hidden automations
+  space is not one) and none on a connected host; with only a host's spaces it is the "No agent
+  selected" state below.
+- The workspace never stands in the hidden automations space with no agent: stopping a
+  selected run moves it to the first visible space.
 - Otherwise: "No agent selected", "Pick one in the sidebar, or start a new one.", and the New
   agent keycaps.
 
@@ -645,9 +653,13 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   changes never move the view either: a drag up measures the rows it reveals, and landing on
   the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
-  agent runs or unseen output arrived. The composer draws it over the fade it lays on the thread
-  and under its card and menus, so the fade never washes it out and it never covers an open
-  menu. Sending re-attaches. The composer floats over the scroll view, which is inset by the
+  agent runs or unseen output arrived: new rows or the last one growing, never the content
+  height alone (a scroll or a turn jump measures the rows it reveals). The composer draws it
+  over the fade it lays on the thread and under its card and menus, so the fade never washes it
+  out and it never covers an open menu. A send that goes in now (pi idle, or a steer)
+  re-attaches and lands on its turn, unless the reader leaves the tail again first. A follow-up
+  that waits in Up next leaves the reader's place alone, then and when it goes: its delivery is
+  new output like any other. The composer floats over the scroll view, which is inset by the
   composer's measured height, so the thread always ends at its last turn.
 - **Turn jumps:** ⌥⌘↑ and ⌥⌘↓ move between user turns (the target lands at the top); stepping
   past the last returns to the tail.
@@ -1159,11 +1171,19 @@ layout" above.
 - **Commit… sheet** (`ReviewCommitSheet`, 520pt, derived from the iPadCommit board; parts in
   `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
   - The message card (`NWCommitMessageEditor`, a raised card with a strong line): the summary in
-    semibold over the description, both editable, and a note: "Drafted from the diff · edit
+    semibold over the description, both editable, each growing to its lines whenever its text
+    changes (typed, or filled in by the host), and a note: "Drafted from the diff · edit
     anything" (a sparkle), "Written from the file list · edit anything", or a spinner with
     "Drafting from the diff…". The plain message shows at once and follows the ticked files
     until someone edits it; the drafted one replaces it only if nothing was typed meanwhile.
     Drafting follows Settings ▸ Worktrees ▸ Generate PR descriptions and its model.
+  - A message nobody edited follows the ticks. The plain one is rewritten at once. A drafted one
+    is drafted again for the ticked files once they stay put for 600 ms, so ticking several
+    files costs one draft; the old draft stays (spinner, and Commit waits with "Redrafting the
+    message…") until the new one arrives. An answer for earlier ticks is dropped, and a failed
+    draft puts the plain message for the ticked files in its place. An edited message is never
+    rewritten: once a file it was written for is unticked, its note reads "May mention files you
+    unticked" (an exclamation circle, as quiet as the other notes).
   - "Files" with "n of m" and Select All/None, then a card of `NWCommitFileRow`s (a row-high
     checkbox row: lantern checkbox, the name in mono, its directory in tertiary, the diff stat;
     the whole row toggles). Every file starts ticked; the list scrolls past 232pt.
@@ -1217,6 +1237,12 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
 - **Tab states** (`NWTerminalTab.Activity`): at rest the program at its prompt ("zsh"); a
   running command names the tab ("make dev") with a running spinner; output printed while the
   tab was off screen adds a running-blue dot; an exited session is tertiary (failed if it failed).
+  A resize is not news: a shell or TUI redraws on SIGWINCH (a window resize, maximize or
+  restore, a hidden panel's panes following the geometry, a remote viewer leaving), so the host
+  counts no output for a second after it gives a PTY a size (`TerminalNews`, carried as
+  `RemoteTerminalActivity.newsSequence`; an older host's every read counts). Showing a tab marks
+  it seen whenever the tab, its panes, or their news change (`TerminalSeenMark`), so picking a
+  tab whose output matches the last one's still clears its dot.
   The selected tab of a remote agent names its host. What each terminal runs comes from
   `SessionServer.terminalActivity` (a remote agent's host answers `RemoteAgentQuery.terminals`),
   polled every 2 s while the layout is on screen; an older host leaves plain tabs named for the
@@ -1228,7 +1254,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
 - **Show and hide:** ⌘J or the toolbar's terminal toggle (`NWPaneToggle`, lantern while open).
   Hidden, a running-blue dot on the toggle (`NWToggleBadge`) says a tab printed. Showing gives the
   keyboard to the selected tab; hiding gives it back to the thread. A layout seen for the first
-  time with terminals shows its panel.
+  time with terminals shows its panel. The panel closes with its last terminal, however it goes
+  (its tab closed, the agent's `pane_close`, its shell exiting), and the thread takes the layout
+  again; ⌘J with no terminals shows the empty state ("No terminals in this thread yet." and New
+  Terminal).
 - **Height:** 330pt by default, persisted app-wide (`shepherd.terminalPanelHeight`). Drag the
   panel's top edge (9pt hit area, row-resize pointer): it snaps at a third, half and two-thirds
   of the layout within 12pt, keeps the panel at least 120pt and the thread at least 160pt;
@@ -1258,6 +1287,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
   assistant's text, never pi's system prompt, tool definitions, thinking, tool calls or results;
   its rows show a snippet of that text with the match in bold. A host answers a remote client's
   conversation search the same way.
+- **This thread** also carries the Pane menu's terminal commands while a thread with a layout is
+  on screen: Show or Hide terminal (⌘J), New terminal (⌘D, shown while the thread has the
+  keyboard), and Maximize or Restore terminal (⇧⌘↩), named for what they will do, with keycaps
+  from `KeybindingsStore`.
 - **Rows** (`NWPaletteRow`, the sidebar's row height): a stroke icon, the label, dim context, and
   the real shortcut as keycaps. The highlight is `runningTint` with a running icon. Subagent rows
   wear their run's state color.
@@ -1564,7 +1597,9 @@ components first), with these differences for touch:
   palette in Geist Mono at the code size, following Dynamic Type to 20pt; the strip and key row
   stop growing at xxxLarge. Closing a tab asks first, saying how many shells stop ("Its shell on
   <host> stops.", "Its 3 shells on <host> stop."); a title another tab shares adds the tab's
-  place ("Close zsh (tab 2)?").
+  place ("Close zsh (tab 2)?"). As on the Mac, the iPad panel closes with its last terminal while
+  the host is connected, and tab dots follow the host's news, so a tab leaving the screen (its
+  viewer detaching, the PTY taking the Mac's size again) leaves no dot.
 - **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
   iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
   (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &
@@ -1599,7 +1634,8 @@ or the iPad sidebar's.
   footer is Edit and Run now (with Open run while the finished run's thread is there; running
   again replaces it), or, while a run works or asks you, Stop (confirmed: it deletes the run's
   thread) and Open run.
-  The ••• menu has Open Run, Edit and Delete Automation (confirmed).
+  The ••• menu has Open Run, Edit and Delete Automation (confirmed). Each confirmation rises
+  from the control that asked (Stop, or the ••• menu), never from the middle of the screen.
 - **Form:** Name, Prompt, Where it runs (Host when adding and more than one can take it, then
   Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new
   automation keeps one id for the life of the form, so saving again after an answer that never

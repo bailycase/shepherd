@@ -110,6 +110,24 @@ extension PreviewTests {
         }
     }
 
+    /// No spaces on this Mac while a connected host has some: This Mac says so under its header
+    /// (with New space…), and the workspace asks to pick an agent rather than claiming there are
+    /// no spaces at all.
+    @Test func emptyWorkspaceWithOnlyRemoteSpaces() async throws {
+        let workspace = try PreviewWorkspace()
+        let host = try await AutomationHostFixture()
+        defer { workspace.stop(); host.server.stop() }
+        _ = try await host.connect(workspace)
+        let vm = workspace.vm
+        #expect(vm.sidebarTree().items.contains(.noLocalSpaces))
+        #expect(EmptyWorkspace.variant(selected: vm.selectedSpace, agents: vm.state.agents, localSpaces: vm.state.spaces,
+                                       remoteSpaces: vm.remoteSpaceCount) == .noSelection)
+
+        try await Preview.render("empty-remote-spaces-only", size: CGSize(width: 1280, height: 760)) {
+            RootView(vm: vm)
+        }
+    }
+
     @Test func remoteAutomationSheet() async throws {
         let workspace = try PreviewWorkspace()
         let host = try await AutomationHostFixture()

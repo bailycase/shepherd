@@ -4,10 +4,11 @@ import ShepherdProtocol
 import ShepherdRemote
 
 // Automations track's screens: the list with runs (iPhone; the iPad's list beside a detail),
-// one automation with its chart and runs, one whose run is going, one whose run finished with
-// its thread still there (Run now again, Open run to read it), one whose run was cut short by
-// the host quitting, the form, and a host from before automations over the remote protocol
-// (read-only). Hosts answer `runs` from here; the fixture host refuses every change.
+// one automation with its chart and runs, one whose run is going (and the Stop and Delete
+// confirmations), one whose run finished with its thread still there (Run now again, Open run
+// to read it), one whose run was cut short by the host quitting, the form, and a host from
+// before automations over the remote protocol (read-only). Hosts answer `runs` from here; the
+// fixture host refuses every change.
 extension FixtureCatalog {
     static var automations: [FixtureScreen] {
         let fleet = AutomationsFixtureData.fleet()
@@ -17,6 +18,14 @@ extension FixtureCatalog {
             { app in
                 await AutomationsStore.of(app.hosts).refreshRuns()
                 AutomationsStore.of(app.hosts).chosen = key
+            }
+        }
+        let merge = AutomationKey(host: FixtureData.studio, automation: AutomationsFixtureData.merge)
+        let confirm: (AutomationKey, AutomationsStore.Confirmation.Kind) -> @MainActor (MobileApp) async -> Void = { key, kind in
+            { app in
+                await AutomationsStore.of(app.hosts).refreshRuns()
+                AutomationsStore.of(app.hosts).chosen = key
+                AutomationsStore.of(app.hosts).confirming = .init(key: key, kind: kind)
             }
         }
         return [
@@ -29,6 +38,13 @@ extension FixtureCatalog {
             FixtureScreen(name: "automation-detail-running", hosts: fleet,
                           routes: [.home(.automations), .automations(.detail(host: FixtureData.studio, automation: AutomationsFixtureData.merge))],
                           prepare: settle),
+            // Stop and Delete ask over the control that asked: Stop in the footer, Delete from the ••• menu.
+            FixtureScreen(name: "automation-detail-stop-confirm", hosts: fleet,
+                          routes: [.home(.automations), .automations(.detail(host: FixtureData.studio, automation: AutomationsFixtureData.merge))],
+                          prepare: confirm(merge, .stop)),
+            FixtureScreen(name: "automation-detail-delete-confirm", hosts: fleet,
+                          routes: [.home(.automations), .automations(.detail(host: FixtureData.buildBox, automation: AutomationsFixtureData.bump))],
+                          prepare: confirm(bump, .delete)),
             FixtureScreen(name: "automation-detail-finished", hosts: AutomationsFixtureData.fleet(bumpLatest: .finished),
                           routes: [.home(.automations), .automations(.detail(host: FixtureData.buildBox, automation: AutomationsFixtureData.bump))],
                           prepare: settle),

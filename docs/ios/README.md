@@ -155,8 +155,9 @@ keep the version for real breaks.
   snapshots.
 - **iPad:** a split view. Landscape shows the sidebar (New thread, Needs you, Recents, and a
   footer with the hosts and Settings) beside the selected thread; in portrait the thread takes
-  the width and the sidebar slides over it. With no thread selected the detail is the overview:
-  Needs you, Running now and Finished.
+  the width and the sidebar slides over it. Portrait is the window's shape, never what the
+  keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
+  overview: Needs you, Running now and Finished.
 - **Thread (`ThreadScreen`):** the title with its status line ("Idle · 17 turns · 42k", or the
   running turn's clock; on iPad a status pill with the counters trailing), Stop while the agent
   runs, user bubbles with their times, thinking, prose, work groups folded into one line with
@@ -204,7 +205,8 @@ keep the version for real breaks.
   per-file revert: the remote protocol has none.
 - **Commit from review (`Commit/`):** on a host with `review.commit.v1`, Commit… opens the
   commit: a sheet on iPhone, a popover beside Commit… on iPad. The host drafts the message from
-  the diff (a plain one from the file list shows first), every changed file starts ticked, and
+  the diff (a plain one from the file list shows first), every changed file starts ticked, a
+  message nobody edited follows the ticks (drafted again for the ticked files), and
   Push after commit (to the upstream, setting one when there is none) or Open a pull request
   instead picks where it goes. The host runs it (`ReviewCommitStore` in ShepherdRemote drives
   the sheet) and refuses a detached HEAD, a merge or rebase in progress, a file that changed since
@@ -244,9 +246,12 @@ keep the version for real breaks.
   ctrl, ⌥, `|`, `~`, `/`, `-`, arrows; two rows on a phone in portrait) sits under the terminal
   while it has the keyboard, and a hardware keyboard types directly. Tabs name what
   runs in them and show a spinner or a dot for new output where the host answers
-  `RemoteAgentQuery.terminals` (`terminal.activity.v1`). Closing a tab asks (naming how many
-  shells stop, and the tab's place when another tab has its title), then asks the host to close
-  its panes; the host keeps the Mac's rules (never the agent's own pane, never the last pane). A host without pane control (`pane.control.v1`) shows its terminals but offers no +,
+  `RemoteAgentQuery.terminals` (`terminal.activity.v1`); the dot follows the row's `news`, which
+  leaves out a redraw after a resize on hosts that send `newsSequence`. The iPad panel closes
+  with its last terminal. Closing a tab asks (naming how many shells stop, and the tab's place
+  when another tab has its title), then asks the host to close its panes; the host keeps the
+  Mac's rules (never the agent's own pane, never the last pane). A host without pane control
+  (`pane.control.v1`) shows its terminals but offers no +,
   split or close. A terminal's screen is in one iPad window at a time: another window showing the
   same thread says "open in another window" until the first lets it go.
 

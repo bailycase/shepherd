@@ -1,3 +1,4 @@
+import ShepherdTestKit
 import Testing
 @testable import ShepherdApp
 
@@ -91,6 +92,37 @@ struct PaletteSearchTests {
             item("dashboard", .thisThread),       // substring "ar"
         ]
         #expect(PaletteSearch.filter(items, query: "ar").map(\.section) == [.commands, .thisThread, .agents])
+    }
+}
+
+/// The Pane menu's terminal commands in the palette, under This thread.
+@MainActor
+@Suite("Palette terminal commands")
+struct PaletteTerminalCommandTests {
+    private let keys = KeybindingsStore(store: ScratchDefaults())
+
+    @Test func searchingTerminalFindsShowNewAndMaximize() {
+        let items = ShepherdViewModel.terminalPaletteItems(shown: false, maximized: false, threadFocused: true, keys: keys)
+        let found = PaletteSearch.filter(items, query: "term", scope: .commands)
+        #expect(found.map(\.title) == ["Show terminal", "New terminal", "Maximize terminal"])
+        #expect(found.allSatisfy { $0.section == .thisThread })
+        #expect(found.map(\.shortcut) == [keys.display(.toggleTerminal), keys.display(.splitVertical), keys.display(.maximizeTerminal)])
+    }
+
+    @Test(arguments: [
+        (false, false, "Show terminal", "Maximize terminal"),
+        (true, false, "Hide terminal", "Maximize terminal"),
+        (true, true, "Hide terminal", "Restore terminal"),
+    ])
+    func theCommandsSayWhatTheyWillDo(shown: Bool, maximized: Bool, toggle: String, maximize: String) {
+        let titles = ShepherdViewModel.terminalPaletteItems(shown: shown, maximized: maximized, threadFocused: true, keys: keys).map(\.title)
+        #expect(titles == [toggle, "New terminal", maximize])
+    }
+
+    /// ⌘D splits a focused terminal; it opens a new one only from the thread.
+    @Test func newTerminalShowsItsChordOnlyFromTheThread() {
+        let items = ShepherdViewModel.terminalPaletteItems(shown: true, maximized: false, threadFocused: false, keys: keys)
+        #expect(items.first { $0.id == "action.newTerminal" }?.shortcut == nil)
     }
 }
 

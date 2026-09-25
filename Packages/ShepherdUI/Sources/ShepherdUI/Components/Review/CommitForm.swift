@@ -26,7 +26,8 @@ public enum NWCommitFormMetrics {
 
 /// The commit's message as a card: the summary line in semibold over the description, and a note
 /// saying where it came from ("Drafted from the diff · edit anything"), or a spinner while the
-/// host drafts it. Both fields edit in place.
+/// host drafts it. Once an edited message may mention files since left out, the note says so
+/// instead. Both fields edit in place.
 public struct NWCommitMessageEditor: View {
     public enum Source: Sendable, Equatable {
         /// The host is drafting it from the diff.
@@ -40,35 +41,42 @@ public struct NWCommitMessageEditor: View {
     @Binding var title: String
     @Binding var message: String
     let source: Source
+    let mentionsUntickedFiles: Bool
     let radius: CGFloat
     let fill: Color?
 
-    public init(title: Binding<String>, message: Binding<String>, source: Source, radius: CGFloat = NW.Radius.m, fill: Color? = nil) {
+    public init(title: Binding<String>, message: Binding<String>, source: Source, mentionsUntickedFiles: Bool = false,
+                radius: CGFloat = NW.Radius.m, fill: Color? = nil) {
         _title = title
         _message = message
         self.source = source
+        self.mentionsUntickedFiles = mentionsUntickedFiles
         self.radius = radius
         self.fill = fill
     }
 
     public var body: some View {
         let nw = Color.nw
+        // Both fields take their ideal height: a sheet sized to its content proposes a field the
+        // height it had, so text set from outside (the host's message, a draft) stayed clipped to it.
         VStack(alignment: .leading, spacing: NW.Space.s) {
             TextField("Summary", text: $title, prompt: Text("Summary").foregroundStyle(nw.textTertiary), axis: .vertical)
                 .lineLimit(1...3)
+                .fixedSize(horizontal: false, vertical: true)
                 .font(.nw(.body, weight: .semibold))
                 .foregroundStyle(nw.textPrimary)
                 .accessibilityLabel("Commit summary")
             TextField("Description", text: $message, prompt: Text("Description (optional)").foregroundStyle(nw.textTertiary), axis: .vertical)
                 .lineLimit(1...8)
+                .fixedSize(horizontal: false, vertical: true)
                 .font(.nw(.ui, weight: .regular))
                 .foregroundStyle(nw.textSecondary)
                 .accessibilityLabel("Commit description")
             HStack(spacing: NW.Space.s) {
-                if source == .drafting {
+                if source == .drafting && !mentionsUntickedFiles {
                     ProgressView().progressViewStyle(.nwSpinner).controlSize(.mini)
                 } else {
-                    Image(systemName: source == .drafted ? "sparkle" : "list.bullet")
+                    Image(systemName: mentionsUntickedFiles ? "exclamationmark.circle" : source == .drafted ? "sparkle" : "list.bullet")
                         .font(.nw(.micro))
                         .accessibilityHidden(true)
                 }
@@ -78,6 +86,7 @@ public struct NWCommitMessageEditor: View {
             .foregroundStyle(nw.textTertiary)
             .nwContentTransition(.crossFade)
             .nwComponentAnimation(.content, value: source)
+            .nwComponentAnimation(.content, value: mentionsUntickedFiles)
             .accessibilityElement(children: .combine)
         }
         .textFieldStyle(.plain)
@@ -89,7 +98,9 @@ public struct NWCommitMessageEditor: View {
     }
 
     private var note: String {
-        switch source {
+        // An edited message keeps what was typed, whatever a draft brings.
+        if mentionsUntickedFiles { return "May mention files you unticked" }
+        return switch source {
         case .drafting: "Drafting from the diff…"
         case .drafted: "Drafted from the diff · edit anything"
         case .written: "Written from the file list · edit anything"
@@ -249,6 +260,8 @@ public struct NWCommitOptionRow: View {
         VStack(alignment: .leading, spacing: NW.Space.l) {
             NWCommitMessageEditor(title: $title, message: $message, source: .drafted)
             NWCommitMessageEditor(title: .constant("Update 3 files in App/iOS"), message: .constant(""), source: .drafting)
+            NWCommitMessageEditor(title: .constant("Show tool rows' commands"), message: .constant("Also covers FleetView."), source: .drafted,
+                                  mentionsUntickedFiles: true)
             VStack(spacing: 0) {
                 NWCommitFileRow(.init(id: "a", name: "DesktopNativeThreadView.swift", directory: "Sources/ShepherdApp/", status: .modified,
                                       added: 58, removed: 41, selected: true)) {}

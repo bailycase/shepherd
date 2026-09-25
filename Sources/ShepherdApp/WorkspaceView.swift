@@ -143,34 +143,43 @@ struct EmptyWorkspace: View {
     var vm: ShepherdViewModel
     private var keys: KeybindingsStore { .shared }
 
-    private enum Variant: Equatable {
+    enum Variant: Equatable {
         case space(SpaceID, hasAgents: Bool)
         case noSpaces
         case noSelection
     }
 
+    /// No spaces means none anywhere: not on this Mac (its hidden automations space aside), and
+    /// none on a connected host, whose spaces the sidebar lists to pick from.
+    static func variant(selected: Space?, agents: [Agent], localSpaces: [Space], remoteSpaces: Int) -> Variant {
+        if let space = selected { return .space(space.id, hasAgents: agents.contains { $0.spaceID == space.id }) }
+        return localSpaces.allSatisfy(\.hidden) && remoteSpaces == 0 ? .noSpaces : .noSelection
+    }
+
     private var variant: Variant {
-        if let space = vm.selectedSpace { return .space(space.id, hasAgents: vm.state.agents.contains { $0.spaceID == space.id }) }
-        return vm.state.spaces.isEmpty ? .noSpaces : .noSelection
+        Self.variant(selected: vm.selectedSpace, agents: vm.state.agents, localSpaces: vm.state.spaces,
+                     remoteSpaces: vm.remoteSpaceCount)
     }
 
     var body: some View {
         ZStack {
-            if let space = vm.selectedSpace {
-                let hasAgents = vm.state.agents.contains { $0.spaceID == space.id }
-                NWEmptyState(Text(hasAgents ? "No agent selected" : "No agents in \(space.name)"),
-                             message: hasAgents ? "Pick one in the sidebar, or start another in \(space.name)."
-                                                : "Start one to work in \(space.path.abbreviatingWithTilde).") {
-                    Button("New agent") { vm.quickCreateAgent(in: space.id) }
-                        .buttonStyle(.nw(.primary))
-                    NWKeycap(keys.display(.newAgent))
+            switch variant {
+            case .space(_, let hasAgents):
+                if let space = vm.selectedSpace {
+                    NWEmptyState(Text(hasAgents ? "No agent selected" : "No agents in \(space.name)"),
+                                 message: hasAgents ? "Pick one in the sidebar, or start another in \(space.name)."
+                                                    : "Start one to work in \(space.path.abbreviatingWithTilde).") {
+                        Button("New agent") { vm.quickCreateAgent(in: space.id) }
+                            .buttonStyle(.nw(.primary))
+                        NWKeycap(keys.display(.newAgent))
+                    }
                 }
-            } else if vm.state.spaces.isEmpty {
+            case .noSpaces:
                 NWEmptyState(Text("No spaces yet"), message: "A space is a project folder your agents work in.") {
                     Button("New space…") { vm.addSpaceFromPanel() }
                         .buttonStyle(.nw(.primary))
                 }
-            } else {
+            case .noSelection:
                 NWEmptyState(Text("No agent selected"), message: "Pick one in the sidebar, or start a new one.") {
                     NWKeycap(keys.display(.newAgent))
                 }

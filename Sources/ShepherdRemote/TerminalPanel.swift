@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdProtocol
 
 /// One tab of an agent's terminal panel: a stretch of its layout with no thread in it, drawn
 /// with its own splits. Identified by its first pane, which a split inside the tab keeps.
@@ -78,6 +79,38 @@ public enum TerminalPanel {
     /// refuses both; a tab always leaves the thread behind).
     public static func panesToClose(_ tab: TerminalPanelTab, thread: PaneID?) -> [PaneID] {
         tab.panes.map(\.id).filter { $0 != thread }
+    }
+
+    /// The panel closes with its last terminal, however it went (its tab closed, the agent
+    /// closed its pane, its shell exited): true when a layout that had tabs has none left. A
+    /// panel shown with no terminals (⌘J, the toggle) keeps its empty state.
+    public static func closesWithLastTerminal(before: Int, after: Int) -> Bool {
+        before > 0 && after == 0
+    }
+
+    /// What is on screen to be marked seen: nothing while the panel is off screen, else the
+    /// selected tab, its sessions, and how far each has news (`RemoteTerminalActivity.news`).
+    public static func seenMark(selected: TerminalPanelTab?, onScreen: Bool,
+                                activity: [PaneID: RemoteTerminalActivity]) -> TerminalSeenMark {
+        guard onScreen, let selected else { return TerminalSeenMark() }
+        let panes = selected.panes.filter { $0.sessionID != nil }
+        return TerminalSeenMark(tab: selected.id, sessions: panes.compactMap(\.sessionID),
+                                news: panes.map { activity[$0.id]?.news })
+    }
+}
+
+/// The selected tab's output while it is on screen. A client marks its sessions seen whenever
+/// this changes: a tab picked (even one whose news matches the last tab's), a pane joining it,
+/// or its news moving.
+public struct TerminalSeenMark: Equatable, Sendable {
+    public var tab: PaneID?
+    public var sessions: [SessionID]
+    public var news: [UInt64?]
+
+    public init(tab: PaneID? = nil, sessions: [SessionID] = [], news: [UInt64?] = []) {
+        self.tab = tab
+        self.sessions = sessions
+        self.news = news
     }
 }
 

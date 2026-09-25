@@ -13,8 +13,8 @@ struct ScrollFollowerJumpTests {
         #expect(!follower.sticky)
         follower.observe(distanceFromBottom: 180)      // left the band: landed on the earlier turn
         #expect(!follower.jumping && !follower.sticky)
-        follower.observe(distanceFromBottom: 240, contentGrew: true)
-        #expect(follower.showsJump(running: true))
+        follower.contentArrived()
+        #expect(follower.showsJump(running: false))
     }
 
     @Test func afterLandingTheBottomReStucksAsUsual() {
@@ -34,11 +34,28 @@ struct ScrollFollowerJumpTests {
         #expect(follower.sticky && !follower.jumping)
     }
 
-    @Test func growthWhileTheJumpIsInTheBandIsRememberedAsUnseen() {
+    @Test func outputWhileTheJumpIsInTheBandIsRememberedAsUnseen() {
         var follower = NativeScrollFollower()
         follower.beginJump()
-        follower.observe(distanceFromBottom: 30, contentGrew: true)
+        follower.observe(distanceFromBottom: 30)
+        follower.contentArrived()
         #expect(follower.unseen)
+    }
+
+    /// ⌥⌘↑ with pi idle: the lazy stack measures the rows the jump reveals, so the content
+    /// height rises in the band and after landing. Nothing new arrived, so no pill.
+    @Test func rowsMeasuredDuringAndAfterAJumpAreNothingNew() {
+        var follower = NativeScrollFollower()
+        let tail = NativeScrollProbe(content: 2000, offset: 1420, container: 520, insetTop: 60, insetBottom: 120)
+        follower.beginJump()
+        let inBand = NativeScrollProbe(content: 2040, offset: 1420, container: 520, insetTop: 60, insetBottom: 120)
+        let landed = NativeScrollProbe(content: 2040, offset: 200, container: 520, insetTop: 60, insetBottom: 120)
+        let measured = NativeScrollProbe(content: 2300, offset: 200, container: 520, insetTop: 60, insetBottom: 120)
+        _ = follower.observe(from: tail, to: inBand, gesture: false)
+        _ = follower.observe(from: inBand, to: landed, gesture: false)
+        _ = follower.observe(from: landed, to: measured, gesture: false)
+        #expect(!follower.sticky && !follower.unseen)
+        #expect(!follower.showsJump(running: false))
     }
 
     @Test func jumpingToLatestCancelsAJump() {
