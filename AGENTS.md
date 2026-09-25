@@ -499,15 +499,19 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   can (the automation exists; a new or edited one has a name, a prompt and a directory on the
   host).
 - **Run now** (`startAutomation`) follows `AutomationRun.isLive`: a run whose agent works, asks,
-  or has not settled a turn yet refuses ("already running"); a settled run is replaced, its agent
-  deleted (the log closes it as finished) before the new run starts. Clients offer Run now or
-  Stop by the same rule (`AutomationAbilities`), so a finished run never offers only Stop.
+  or has not settled a turn yet refuses ("already running"), and so does a second start while
+  one is starting. A settled run is replaced once the new run exists: the automation moves to
+  the new run (the log closes the old one as finished), the host's selection follows if the old
+  run was on screen, and only then is the old run's agent deleted, so nothing else is drawn in
+  between. Clients offer Run now or Stop by the same rule (`AutomationAbilities`), so a
+  finished run never offers only Stop.
 - **Runs are kept** (`AutomationRunLog`, `automation-runs.json`, the newest 30 per automation):
   a run opens when an automation gains an agent, follows that agent's status (running, needs
-  you, finished), and closes when the agent goes (finished if its turn had finished, else
-  stopped). At startup every run still open closes as interrupted. The server records them from
-  every committed state, so no caller records a run by hand; removing an automation forgets its
-  runs. Remote clients read them with `RemoteAutomationRequest.runs`.
+  you, finished), and closes when the automation loses that agent, to deletion or to its next
+  run (finished if its turn had finished, else stopped). At startup every run still open closes
+  as interrupted. The server records them from every committed state, so no caller records a
+  run by hand; removing an automation forgets its runs. Remote clients read them with
+  `RemoteAutomationRequest.runs`.
 - **At startup:** the previous run's agents and their layouts are dropped
   (`SessionServer.automationRunAgentIDs`: every agent in the hidden space, plus any agent an
   automation still points at), every automation's `agentID` is cleared, and enabled automations
