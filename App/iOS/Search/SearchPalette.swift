@@ -200,25 +200,31 @@ private struct PalettePreviewPane: View {
                 if let caption = Self.caption(entry) {
                     NWHighlightedText(caption, style: .caption, color: .secondary, lines: 3)
                 }
-                HStack(spacing: NW.Space.m) {
-                    Button { activate(entry) } label: {
-                        HStack(spacing: NW.Space.s) {
-                            Text(Self.verb(entry))
-                            NWKeycap("↩")
-                        }
-                    }
-                    .buttonStyle(.nw(Self.destructive(entry) ? .danger : .primary, size: .l))
-                    .nwTouchTarget(height: NW.Height.controlL)
-                    // Windows/ (iPadPalette board): beside Open, for a thread.
-                    if case .open(let ref) = entry.action {
-                        OpenInNewWindowButton(thread: ref, prominent: true) { navigator.dismissPresented() }
-                    }
+                // Windows/ (iPadPalette board): Open in new window beside Open, for a thread; under
+                // it when the two don't fit side by side (large text).
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NW.Space.m) { actions(entry) }
+                    VStack(alignment: .leading, spacing: NW.Space.m) { actions(entry) }
                 }
             } else {
                 Text("Nothing selected").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         .padding(NW.Space.l + NW.Space.xxs)
+    }
+
+    @ViewBuilder private func actions(_ entry: SearchEntry) -> some View {
+        Button { activate(entry) } label: {
+            HStack(spacing: NW.Space.s) {
+                Text(Self.verb(entry))
+                NWKeycap("↩")
+            }
+        }
+        .buttonStyle(.nw(Self.destructive(entry) ? .danger : .primary, size: .l))
+        .nwTouchTarget(height: NW.Height.controlL)
+        if case .open(let ref) = entry.action {
+            OpenInNewWindowButton(thread: ref, prominent: true) { navigator.dismissPresented() }
+        }
     }
 
     private static func caption(_ entry: SearchEntry) -> [NWHighlightRun]? {
