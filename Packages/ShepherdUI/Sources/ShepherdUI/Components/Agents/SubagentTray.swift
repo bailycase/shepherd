@@ -339,12 +339,16 @@ public struct NWSubagentTrayRow: View {
         let nw = Color.nw
         switch run.line {
         case .working(let verb, let subject, let live):
-            HStack(spacing: NW.Space.s) {
-                Text(verb).font(.nwSans(m.textSize)).foregroundStyle(nw.textSecondary).fixedSize()
+            // One run of text, so the verb and its subject truncate together at the tail.
+            let verbText = Text(verb).font(.nwSans(m.textSize)).foregroundStyle(nw.textSecondary)
+            Group {
                 if let subject {
-                    Text(subject).font(.nwMono(m.subjectSize)).foregroundStyle(nw.textPrimary).lineLimit(1).truncationMode(.middle)
+                    Text("\(verbText) \(Text(subject).font(.nwMono(m.subjectSize)).foregroundStyle(nw.textPrimary))")
+                } else {
+                    verbText
                 }
             }
+            .lineLimit(1).truncationMode(.tail)
             .modifier(NWLiveText(live: live))
         case .waiting(let text), .result(let text):
             Text(text).font(.nwSans(m.textSize)).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.tail)
