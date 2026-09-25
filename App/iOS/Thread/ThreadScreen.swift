@@ -19,6 +19,8 @@ struct ThreadScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var visible = false
+    /// The thread's height: the composer may take a share of it (`composerMaxHeight`).
+    @State private var height: CGFloat = 0
 
     /// The poll loop's identity: a new connection, or the thread leaving the screen, restarts it.
     private struct RunKey: Equatable {
@@ -32,25 +34,32 @@ struct ThreadScreen: View {
         let store = threads.store(for: ref)
         let supported = host?.supports(RemoteProtocol.nativeThreadCapability) == true
         let key = RunKey(session: supported && agent != nil ? host?.session : nil, active: visible && scenePhase == .active)
+        let status = ThreadTitle.Status(store: store, agent: agent)
         ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if agent != nil {
                     ThreadComposer(ref: ref)
+                        .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
                         .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.gutter : .infinity)
                         .frame(maxWidth: .infinity)
                         .background(Color.nw.bgWindow)
                 }
             }
             .background(Color.nw.bgWindow)
+            // Measured around the composer's inset, which would otherwise shrink what it measures.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
             // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer.
             .toolbar(.hidden, for: .tabBar)
             .navigationTitle(agent?.name ?? "Thread")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    ThreadTitle(name: agent?.name ?? "Thread", status: ThreadTitle.Status(store: store, agent: agent))
+                    ThreadTitle(name: agent?.name ?? "Thread", status: status, wide: sizeClass == .regular)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if sizeClass == .regular {
+                        ThreadCounters(status: status)
+                    }
                     if agent != nil {
                         ThreadStopButton(store: store, enabled: key.session != nil)
                         ThreadOptionsMenu(ref: ref, store: store, enabled: key.session != nil)
@@ -119,7 +128,9 @@ private struct ThreadTranscript: View {
                         // One view per row whatever it holds, so the lazy stack builds only the
                         // rows on screen.
                         VStack(spacing: 0) {
-                            turn(row, running: running, working: row.live ? working : nil)
+                            // A running call is live on its own line (MobileApproval board): no
+                            // "Working…" under it.
+                            turn(row, running: running, working: row.live && row.presentation?.endsInLiveActivity != true ? working : nil)
                         }
                         .id(row.id)
                     }
@@ -168,6 +179,7 @@ private struct ThreadTranscript: View {
             actions.retry = { [store] in Task { await store.send(text: text) } }
         }
         actions.review = { path in ReviewHooks.open(thread: ref, file: path, navigator: navigator) }
+        actions.reviewChanges = { ReviewHooks.open(thread: ref, file: nil, navigator: navigator) }
         if store.placements[row.id]?.isEmpty == false {
             actions.subagents = { navigator.open(SubagentHooks.list(thread: ref)) }
         }
@@ -175,12 +187,19 @@ private struct ThreadTranscript: View {
     }
 }
 
-/// The title and status line: "Idle · 17 turns".
+/// The title and status line (MobileThread, MobileApproval, iPadThread boards). On a phone,
+/// the name over "Idle · 17 turns · 42k", or "Running · 21s" while a turn runs. On iPad, the name
+/// and a status pill on one line, with the counters ("17 turns · 42k ctx") trailing
+/// (`ThreadCounters`).
 struct ThreadTitle: View {
     struct Status: Equatable {
         var state: AgentState
         var label: String
+        /// Exact only once the whole history is loaded.
         var turns: Int?
+        var contextTokens: Int?
+        /// When the running turn's prompt was sent (ms); nil at rest.
+        var runningSince: Double?
 
         @MainActor init(store: NativeThreadStore, agent: Agent?) {
             if store.loadError != nil { state = .failed; label = "Error" }
@@ -188,28 +207,84 @@ struct ThreadTitle: View {
             else if store.running { state = .running; label = AgentState.running.label }
             else if let agent { state = AgentState(agent.status); label = state.label }
             else { state = .idle; label = AgentState.idle.label }
-            // The count is exact only once the whole history is loaded.
             turns = store.olderCursor == nil && store.snapshot != nil ? store.userTurnCount : nil
+            contextTokens = store.stats?.contextTokens
+            runningSince = store.running && store.dialogs.isEmpty ? store.lastPromptAt : nil
+        }
+
+        func meta(now: Date) -> NativeThreadMeta {
+            NativeThreadMeta(turns: turns, contextTokens: contextTokens, runningSince: runningSince,
+                             now: now.timeIntervalSince1970 * 1000)
         }
     }
 
     let name: String
     let status: Status
+    /// iPad: the name and a pill on one line.
+    var wide = false
 
     var body: some View {
+        Group {
+            // Only a running turn's clock ticks.
+            if status.runningSince != nil {
+                TimelineView(.periodic(from: .now, by: 1)) { context in content(status.meta(now: context.date)) }
+            } else {
+                content(status.meta(now: .distantPast))
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder private func content(_ meta: NativeThreadMeta) -> some View {
+        if wide { pill(meta) } else { compact(meta) }
+    }
+
+    private func compact(_ meta: NativeThreadMeta) -> some View {
         VStack(spacing: NW.Space.xxs) {
             Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-            HStack(spacing: NW.Space.s) {
-                NWStatusDot(status.state)
-                Text(status.label).foregroundStyle(status.state.textColor)
-                if let turns = status.turns {
-                    Text("· " + nativeCount(turns, "turn")).foregroundStyle(Color.nw.textTertiary)
-                }
+            // The whole line when it fits; otherwise the counters go (a large text size would
+            // only show them as "1…"), then the running clock, and the status word stays whole.
+            ViewThatFits(in: .horizontal) {
+                statusLine(meta.compact).fixedSize()
+                statusLine(meta.elapsed.map { [$0] } ?? []).fixedSize()
+                statusLine([]).fixedSize(horizontal: false, vertical: true)
             }
             .font(.nw(.caption))
             .lineLimit(1)
         }
-        .accessibilityElement(children: .combine)
+    }
+
+    private func statusLine(_ parts: [String]) -> some View {
+        HStack(spacing: NW.Space.s) {
+            NWStatusDot(status.state)
+            Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor)
+            ForEach(parts, id: \.self) { part in
+                Text("· " + part).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
+            }
+        }
+    }
+
+    private func pill(_ meta: NativeThreadMeta) -> some View {
+        HStack(spacing: NW.Space.m) {
+            Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+            NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
+                .fixedSize()
+        }
+    }
+}
+
+/// iPad's trailing counters: "17 turns · 42k ctx".
+struct ThreadCounters: View {
+    let status: ThreadTitle.Status
+
+    var body: some View {
+        let counters = status.meta(now: .distantPast).counters
+        if !counters.isEmpty {
+            Text(counters.joined(separator: " · "))
+                .font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
+                .fixedSize()
+                .accessibilityLabel(counters.joined(separator: ", "))
+        }
     }
 }
 
