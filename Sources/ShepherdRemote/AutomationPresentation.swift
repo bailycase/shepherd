@@ -94,7 +94,7 @@ public struct AutomationRunBar: Identifiable, Equatable, Sendable {
 }
 
 /// An automation's row: its name, when it runs and where, and how its last run went.
-public struct AutomationRow: Identifiable, Equatable, Sendable {
+public struct AutomationListRow: Identifiable, Equatable, Sendable {
     public var id: AutomationKey { key }
     public var key: AutomationKey
     public var name: String
@@ -105,7 +105,8 @@ public struct AutomationRow: Identifiable, Equatable, Sendable {
     public var place: String
     public var cwd: String
     public var enabled: Bool
-    /// "Running", "Asked you", "Finished", "Stopped", "Off", "Not run yet".
+    /// "Running", "Asked you", "Finished", "Stopped", "Interrupted", "Not run yet"; "On" or "Off"
+    /// while its runs are not read.
     public var status: String
     public var tone: AutomationTone
     /// A live run counts up from here; an ended one says how long ago it moved.
@@ -130,7 +131,7 @@ public struct AutomationRow: Identifiable, Equatable, Sendable {
 /// An automation opened on its own (the detail): its row, the runs the host kept, newest first,
 /// the chart of the latest, and the last run.
 public struct AutomationDetail: Equatable, Sendable {
-    public var row: AutomationRow
+    public var row: AutomationListRow
     /// Newest first.
     public var runs: [AutomationRunRow]
     /// Oldest first, the latest `chartLimit`.
@@ -147,9 +148,9 @@ public struct AutomationDetail: Equatable, Sendable {
 /// Every host's automations, derived once per change.
 public struct AutomationsModel: Equatable, Sendable {
     /// Every automation, host by host, in each host's order.
-    public var rows: [AutomationRow] = []
-    public var live: [AutomationRow] = []
-    public var quiet: [AutomationRow] = []
+    public var rows: [AutomationListRow] = []
+    public var live: [AutomationListRow] = []
+    public var quiet: [AutomationListRow] = []
 
     public init() {}
 
@@ -169,17 +170,17 @@ public struct AutomationsModel: Equatable, Sendable {
         quiet = rows.filter { !$0.live }
     }
 
-    public func row(_ key: AutomationKey) -> AutomationRow? {
+    public func row(_ key: AutomationKey) -> AutomationListRow? {
         rows.first { $0.key == key }
     }
 
     static func row(_ automation: Automation, key: AutomationKey, host: AutomationHost, agent: Agent?,
-                    runs: [AutomationRun]?, tag: String?) -> AutomationRow {
+                    runs: [AutomationRun]?, tag: String?) -> AutomationListRow {
         let current = agent.flatMap { agent in runs?.last(where: { $0.agentID == agent.id }) }
         let last = runs?.last
         var status: String
         var tone: AutomationTone
-        var clock: AutomationRow.Clock?
+        var clock: AutomationListRow.Clock?
         if let agent {
             switch agent.status {
             case .working, .idle where current?.settledAt == nil:
@@ -194,8 +195,11 @@ public struct AutomationsModel: Equatable, Sendable {
         } else if let last {
             (status, tone) = (Self.word(last.result).capitalizedFirst, Self.tone(last.result))
             clock = (last.endedAt ?? last.settledAt).map { .ago(Date(timeIntervalSince1970: $0)) }
-        } else {
+        } else if runs != nil {
             (status, tone) = automation.enabled ? ("Not run yet", .stopped) : ("Off", .off)
+        } else {
+            // Its runs are not read yet: say only whether it starts with Shepherd.
+            (status, tone) = automation.enabled ? ("On", .stopped) : ("Off", .off)
         }
         if !automation.enabled, agent == nil, runs?.isEmpty == false {
             status = "Off · " + status.lowercasedFirst
@@ -203,7 +207,7 @@ public struct AutomationsModel: Equatable, Sendable {
         if !host.connected {
             (status, tone, clock) = ("Host offline", .off, nil)
         }
-        return AutomationRow(
+        return AutomationListRow(
             key: key, name: automation.name, prompt: automation.prompt,
             when: automation.enabled ? "When Shepherd starts" : "By hand",
             place: Self.lastComponent(automation.cwd), cwd: automation.cwd, enabled: automation.enabled,
