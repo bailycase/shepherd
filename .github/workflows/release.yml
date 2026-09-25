@@ -398,6 +398,11 @@ jobs:
             echo "::error::$DEVELOPER_DIR is a beta Xcode, which App Store Connect refuses." && exit 1
           fi
 
+      # SwiftTerm, the iOS terminal's view, compiles Metal shaders, and the runner's Xcode ships
+      # without the Metal toolchain ("cannot execute tool 'metal'").
+      - name: Metal toolchain
+        run: xcodebuild -downloadComponent MetalToolchain
+
       - name: Archive ${{ env.SCHEME }} (unsigned)
         run: |
           xcodebuild archive \
