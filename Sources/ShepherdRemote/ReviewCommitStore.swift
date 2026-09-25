@@ -26,7 +26,12 @@ public final class ReviewCommitStore {
     public private(set) var info: RemoteCommitInfo?
     public var title = ""
     public var body = ""
-    public private(set) var selected: Set<String> = [] { didSet { derive() } }
+    public private(set) var selected: Set<String> = [] {
+        didSet {
+            derive()
+            followSelection()
+        }
+    }
     /// Push after commit (to the upstream, setting one when there is none).
     public var push = true
     /// Open a pull request instead: push the branch and open the PR.
@@ -47,6 +52,8 @@ public final class ReviewCommitStore {
     @ObservationIgnored private var loadID = UUID()
     /// The message as the host wrote it, so a draft replaces it only while nobody has typed.
     @ObservationIgnored private var written: (title: String, body: String) = ("", "")
+    /// The written message is the one written from the file list, so it follows the selection.
+    @ObservationIgnored private var writtenFromFiles = false
 
     public init(query: ((RemoteAgentQuery) async throws -> RemoteAgentResult)? = nil) {
         self.query = query
@@ -107,6 +114,7 @@ public final class ReviewCommitStore {
     public func adopt(_ info: RemoteCommitInfo) {
         self.info = info
         written = (info.title, info.body)
+        writtenFromFiles = reviewCommitFallbackMessage(info.files) == written
         title = info.title
         body = info.body
         drafted = false
@@ -124,6 +132,7 @@ public final class ReviewCommitStore {
         if let title { self.title = title }
         if let body { self.body = body }
         written = (self.title, self.body)
+        writtenFromFiles = !drafted && reviewCommitFallbackMessage(selectedFiles) == written
         self.drafted = drafted
         self.drafting = drafting
     }
@@ -133,15 +142,17 @@ public final class ReviewCommitStore {
         guard let info, info.draftsMessage, !info.files.isEmpty, !drafting, let query else { return }
         drafting = true
         defer { drafting = false }
-        let before = (title, body)
         do {
             guard case .commitMessage(let title, let body, let drafted) = try await query(.commitMessage(paths: info.files.flatMap(\.paths))) else { return }
             guard self.info == info, operationID == nil, !title.isEmpty else { return }
+            // A plain message (the draft failed) adds nothing to the one following the files.
+            guard drafted || !writtenFromFiles else { return }
             // Anything typed while the host drafted wins over the draft.
-            guard self.title == before.0, self.body == before.1, before.0 == written.title, before.1 == written.body else { return }
+            guard showsWritten else { return }
             self.title = title
             self.body = body
             written = (title, body)
+            writtenFromFiles = !drafted && reviewCommitFallbackMessage(selectedFiles) == written
             self.drafted = drafted
         } catch {
             // The plain message stays; a failed draft is not worth a banner.
@@ -156,6 +167,19 @@ public final class ReviewCommitStore {
 
     public func selectAll(_ on: Bool) {
         selected = on ? Set(info?.files.map(\.id) ?? []) : []
+    }
+
+    private var showsWritten: Bool { title == written.title && body == written.body }
+
+    /// The message written from the file list describes the ticked files until someone edits it.
+    /// With nothing ticked it stays as it was, for the next tick to rewrite.
+    private func followSelection() {
+        guard writtenFromFiles, showsWritten, !selectedFiles.isEmpty else { return }
+        let next = reviewCommitFallbackMessage(selectedFiles)
+        guard next != written else { return }
+        written = next
+        title = next.title
+        body = next.body
     }
 
     // MARK: The operation
