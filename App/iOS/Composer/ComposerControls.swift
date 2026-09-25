@@ -56,19 +56,21 @@ struct ModelChip: View {
         let title = model.map(NativeModelChoices.shortName) ?? "Model"
         Button(action: open) {
             HStack(spacing: NW.Space.s) {
-                Text(title).font(.nw(.mono)).lineLimit(1)
+                Text(title).font(.nw(.mono)).lineLimit(1).truncationMode(.middle)
                 if canChange { NWChipChevron() }
             }
         }
         .disabled(!canChange)
-        .accessibilityLabel("Model, \(title)")
+        .accessibilityLabel("Model, \(model ?? title)")
         .accessibilityHint(canChange ? "Choose the agent's model" : "")
     }
 }
 
-/// The thinking chip: a menu of Off, Low, Medium and High, checked at the current level.
+/// The thinking chip: a menu of the levels pi offers the thread's model, checked at the current
+/// level.
 struct ThinkingChip: View {
     let level: String?
+    let levels: [NativeThinkingLevel]
     let enabled: Bool
     let choose: (String) -> Void
 
@@ -76,7 +78,7 @@ struct ThinkingChip: View {
         let title = level.map(NativeThinkingLevel.title) ?? "Default"
         Menu {
             Picker("Thinking", selection: Binding(get: { level ?? "" }, set: choose)) {
-                ForEach(NativeThinkingLevel.all) { option in
+                ForEach(levels) { option in
                     Text(option.note.map { "\(option.title) · \($0)" } ?? option.title).tag(option.id)
                 }
             }
@@ -141,6 +143,7 @@ struct ModelPickerSheet: View {
                                     } label: {
                                         HStack {
                                             Text(model.title).font(.nw(.code)).foregroundStyle(Color.nw.textPrimary)
+                                                .lineLimit(1).truncationMode(.middle)
                                             Spacer(minLength: NW.Space.m)
                                             if model.isCurrent {
                                                 Image(systemName: "checkmark").foregroundStyle(Color.nw.running)
@@ -150,6 +153,7 @@ struct ModelPickerSheet: View {
                                         .frame(minHeight: NW.Height.touch)
                                         .contentShape(Rectangle())
                                     }
+                                    .accessibilityLabel(model.id)
                                     .accessibilityAddTraits(model.isCurrent ? .isSelected : [])
                                 }
                             }

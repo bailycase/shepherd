@@ -93,7 +93,7 @@ struct ComposerMenuPerformanceTests {
         let scroll = try #require(Self.menuScroll(in: window))
         let clip = scroll.contentView
         let end = try #require(scroll.documentView).bounds.height - clip.bounds.height
-        let step = 3 * NWComposerMetrics.menuRowHeight
+        let step = 3 * NWComposerMetrics.modelRowHeight
         // A menu holds its list at the top while it grows in; wait until a scroll stays put.
         var held = 0
         try await eventuallyOnMain("the list to keep a scroll") {
@@ -154,7 +154,7 @@ struct ComposerMenuPerformanceTests {
         model.selection = 40
         try await eventuallyOnMain("↑↓ to scroll the highlight into view") {
             window.layout()
-            return clip.bounds.origin.y >= 40 * NWComposerMetrics.menuRowHeight - clip.bounds.height
+            return clip.bounds.origin.y >= 40 * NWComposerMetrics.slashRowHeight - clip.bounds.height
         }
     }
 
@@ -182,7 +182,7 @@ struct ComposerMenuPerformanceTests {
             model.selection = position
             window.layout()
             let top = Self.top(ofOption: position)
-            if clip.bounds.minY > top + 1 || top + NWComposerMetrics.menuRowHeight > clip.bounds.maxY + 1 { hidden.append(position) }
+            if clip.bounds.minY > top + 1 || top + NWComposerMetrics.modelRowHeight > clip.bounds.maxY + 1 { hidden.append(position) }
         }
         #expect(hidden.isEmpty, "highlighted models out of view: \(hidden)")
     }
@@ -200,14 +200,17 @@ struct ComposerMenuPerformanceTests {
         return order.map { NWModelSection(title: $0, options: byProvider[$0] ?? []) }
     }()
 
+    /// A section header's height with the gap above it.
+    static let header = NWComposerMetrics.menuHeaderHeight + NWComposerMetrics.modelSectionGap
+
     /// The model at `y` down the list.
     static func option(at y: CGFloat) -> Int {
         var top: CGFloat = 0, position = 0
         for section in sections {
-            top += NWComposerMetrics.menuHeaderHeight
+            top += header
             if y < top { return position }
             for _ in section.options {
-                top += NWComposerMetrics.menuRowHeight
+                top += NWComposerMetrics.modelRowHeight
                 if y < top { return position }
                 position += 1
             }
@@ -219,9 +222,9 @@ struct ComposerMenuPerformanceTests {
     static func top(ofOption position: Int) -> CGFloat {
         var top: CGFloat = 0, seen = 0
         for section in sections {
-            top += NWComposerMetrics.menuHeaderHeight
-            if position < seen + section.options.count { return top + CGFloat(position - seen) * NWComposerMetrics.menuRowHeight }
-            top += CGFloat(section.options.count) * NWComposerMetrics.menuRowHeight
+            top += header
+            if position < seen + section.options.count { return top + CGFloat(position - seen) * NWComposerMetrics.modelRowHeight }
+            top += CGFloat(section.options.count) * NWComposerMetrics.modelRowHeight
             seen += section.options.count
         }
         return top
@@ -243,7 +246,7 @@ private final class HighlightModel {
 }
 
 private struct PickerHost: View {
-    static let size = CGSize(width: 340, height: 480)
+    static let size = CGSize(width: 400, height: 480)
     @Bindable var model: HighlightModel
     let sections: [NWModelSection]
 

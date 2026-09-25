@@ -39,6 +39,8 @@ struct RPCWireTests {
         (.setModel(provider: "anthropic", modelId: "claude-sonnet-4"), nil,
          #"{"type":"set_model","provider":"anthropic","modelId":"claude-sonnet-4"}"#),
         (.setThinkingLevel(level: "high"), nil, #"{"type":"set_thinking_level","level":"high"}"#),
+        (.setThinkingLevel(level: "xhigh"), nil, #"{"type":"set_thinking_level","level":"xhigh"}"#),
+        (.getAvailableThinkingLevels, nil, #"{"type":"get_available_thinking_levels"}"#),
         (.newSession, "n", #"{"id":"n","type":"new_session"}"#),
         (.extensionUIResponse(id: "uuid-1", value: "Allow"), nil, #"{"type":"extension_ui_response","id":"uuid-1","value":"Allow"}"#),
         (.extensionUIResponse(id: "uuid-2", confirmed: true), nil, #"{"type":"extension_ui_response","id":"uuid-2","confirmed":true}"#),
@@ -93,6 +95,21 @@ struct RPCWireTests {
         {"type":"response","command":"get_commands","success":true,"data":{"commands":[{"name":"session-name","source":"extension","path":"/x"},{"name":"skill:brave","source":"skill"}]}}
         """)
         #expect(commands.data?["commands"]?.arrayValue?.map { $0["name"]?.stringValue } == ["session-name", "skill:brave"])
+    }
+
+    /// pi 0.87.1's own replies (a scratch models.json: a model mapping xhigh and max with minimal
+    /// null, one reasoning model without a map, and one without reasoning), then a pi without the
+    /// command.
+    @Test(arguments: [
+        (#"{"id":"1","type":"response","command":"get_available_thinking_levels","success":true,"data":{"levels":["off","low","medium","high","xhigh","max"]}}"#,
+         ["off", "low", "medium", "high", "xhigh", "max"]),
+        (#"{"id":"1","type":"response","command":"get_available_thinking_levels","success":true,"data":{"levels":["off","minimal","low","medium","high"]}}"#,
+         ["off", "minimal", "low", "medium", "high"]),
+        (#"{"id":"1","type":"response","command":"get_available_thinking_levels","success":true,"data":{"levels":["off"]}}"#, ["off"]),
+        (#"{"id":"1","type":"response","command":"get_available_thinking_levels","success":false,"error":"Unknown command: get_available_thinking_levels"}"#, nil),
+    ] as [(String, [String]?)])
+    func availableThinkingLevelsDecodeFromPisReply(json: String, levels: [String]?) throws {
+        #expect(try Self.response(json).thinkingLevels == levels)
     }
 
     // MARK: Messages

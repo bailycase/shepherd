@@ -117,6 +117,9 @@ public final class NativeThreadStore {
     public private(set) var commands: [NativeCommand] = [] { didSet { chromeVersion &+= 1 } }
     public private(set) var model: String? { didSet { chromeVersion &+= 1 } }
     public private(set) var thinking: String? { didSet { chromeVersion &+= 1 } }
+    /// The levels the thinking menu offers: pi's for the current model, or
+    /// `NativeThinkingLevel.fallback` from a host that does not say.
+    public private(set) var thinkingLevels: [NativeThinkingLevel] = NativeThinkingLevel.fallback { didSet { chromeVersion &+= 1 } }
     public private(set) var stats: NativeThreadStats?
     public private(set) var supportedActions: Set<String> = [] { didSet { bothVersions() } }
     public private(set) var clipped = false { didSet { threadVersion &+= 1 } }
@@ -399,6 +402,8 @@ public final class NativeThreadStore {
         if commands != self.commands { self.commands = commands }
         if value?.model != model { model = value?.model }
         if value?.thinking != thinking { thinking = value?.thinking }
+        let levels = NativeThinkingLevel.levels(value?.thinkingLevels)
+        if levels != thinkingLevels { thinkingLevels = levels }
         if value?.stats != stats { stats = value?.stats }
         let actions = Set(value?.supportedActions ?? [])
         if actions != supportedActions { supportedActions = actions }
