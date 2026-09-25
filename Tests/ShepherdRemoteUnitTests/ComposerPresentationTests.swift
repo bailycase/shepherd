@@ -145,6 +145,39 @@ struct ComposerPresentationTests {
         #expect(NativeModelChoices.provider("model") == "Other")
     }
 
+    /// A model row's second line: the levels in pi's order, titled as the thinking menu titles
+    /// them, or "No thinking" when a model takes none but Off.
+    @Test(arguments: [(["off", "minimal", "low", "medium", "high"], "Off · Minimal · Low · Medium · High"),
+                      (["off", "minimal", "low", "medium", "high", "xhigh", "max"], "Off · Minimal · Low · Medium · High · Extra high · Max"),
+                      (["off", "low", "ultra"], "Off · Low · Ultra"),
+                      (["off"], "No thinking"),
+                      ([], "No thinking")] as [([String], String)])
+    func aModelsThinkingLineListsItsLevels(levels: [String], line: String) {
+        #expect(NativeThinkingLevel.line(levels) == line)
+    }
+
+    /// Each model's line comes from the rule the New thread sheet uses (reasoning, then
+    /// models.json's levels), Off to High on an older host, and pi's own list for the thread's
+    /// current model when it reports one.
+    @Test func eachModelsThinkingLineFollowsTheHostsCatalog() {
+        let listing = ModelListing(models: ["a/plain", "a/standard", "a/max", "a/live"], defaultModel: nil, withoutThinking: ["a/plain"],
+                                   thinkingLevels: ["a/max": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]])
+        let lines = NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: true, current: "a/live", currentLevels: ["off", "high"])
+        #expect(lines == ["a/plain": "No thinking", "a/standard": "Off · Minimal · Low · Medium · High",
+                          "a/max": "Off · Minimal · Low · Medium · High · Extra high · Max", "a/live": "Off · High"])
+        let older = NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: false)
+        #expect(older["a/max"] == "Off · Low · Medium · High")
+        #expect(older["a/live"] == "Off · Low · Medium · High")
+        #expect(NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: true, current: "a/live", currentLevels: [])["a/live"]
+            == "Off · Minimal · Low · Medium · High")
+    }
+
+    @Test func eachModelChoiceCarriesItsThinkingLine() {
+        let sections = NativeModelChoices.sections(["openai/gpt-5", "openai/o3"], current: "local/llama",
+                                                   thinking: ["openai/gpt-5": "No thinking", "local/llama": "Off · High"])
+        #expect(sections.flatMap(\.models).map(\.thinking) == ["Off · High", "No thinking", nil])
+    }
+
     @Test(arguments: [("medium", "Medium"), ("off", "Off"), ("minimal", "Minimal"), ("xhigh", "Extra high"), ("max", "Max"), ("ultra", "Ultra")])
     func thinkingLevelsReadAsTheirTitles(level: String, title: String) {
         #expect(NativeThinkingLevel.title(level) == title)

@@ -153,7 +153,8 @@ final class FixtureHost: @unchecked Sendable {
             return [.nativeThread(id: id, result: .snapshot(value: snapshot))]
         case .listModels(let id):
             note("listModels")
-            return [.models(id: id, models: data.models, defaultModel: data.models.first, withoutThinking: data.withoutThinking)]
+            return [.models(id: id, models: data.models, defaultModel: data.models.first, withoutThinking: data.withoutThinking,
+                            thinkingLevels: data.thinkingLevels)]
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
