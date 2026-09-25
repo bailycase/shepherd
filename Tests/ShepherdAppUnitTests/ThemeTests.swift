@@ -3,71 +3,38 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// The theme file pi watches (for a pi run by hand in a shell pane) and the variant marker
-/// Neovim watches are external contracts.
-@Suite("Pi theme file")
-struct PiThemeFileTests {
-    /// pi's theme schema: every key is required.
-    private static let requiredColorKeys: Set<String> = [
-        "accent", "border", "borderAccent", "borderMuted", "success", "error", "warning",
-        "muted", "dim", "text", "thinkingText",
-        "selectedBg", "scrollbarThumb", "searchMatchBg", "searchMatchText",
-        "userMessageBg", "userMessageText", "customMessageBg", "customMessageText",
-        "customMessageLabel", "toolPendingBg", "toolSuccessBg", "toolErrorBg", "toolTitle", "toolOutput",
-        "mdHeading", "mdLink", "mdLinkUrl", "mdCode", "mdCodeBlock", "mdCodeBlockBorder",
-        "mdQuote", "mdQuoteBorder", "mdHr", "mdListBullet",
-        "toolDiffAdded", "toolDiffRemoved", "toolDiffContext",
-        "syntaxComment", "syntaxKeyword", "syntaxFunction", "syntaxVariable", "syntaxString",
-        "syntaxNumber", "syntaxType", "syntaxOperator", "syntaxPunctuation",
-        "thinkingOff", "thinkingMinimal", "thinkingLow", "thinkingMedium", "thinkingHigh",
-        "thinkingXhigh", "thinkingMax", "bashMode",
-    ]
-
-    @Test(arguments: ShepherdTheme.all.map(\.id))
-    func everyVariantWritesACompletePiTheme(id: String) throws {
-        let theme = try #require(ShepherdTheme.all.first { $0.id == id })
-        let data = try ShepherdPiTheme.encodedData(for: theme)
-        let document = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-
-        #expect(document["name"] as? String == "night-watch")
-        #expect((document["$schema"] as? String)?.hasSuffix("theme-schema.json") == true)
-        let colors = try #require(document["colors"] as? [String: String])
-        #expect(Set(colors.keys) == Self.requiredColorKeys)
-        for (key, value) in colors {
-            // Empty inherits Ghostty's foreground; everything else is #RRGGBB.
-            #expect(value.isEmpty || value.wholeMatch(of: /#[0-9A-Fa-f]{6}/) != nil, "\(key) = \(value)")
-        }
-        #expect(data.last == 0x0A)
-    }
+/// The variant marker Neovim watches is independent of pi's terminal theme.
+@Suite("Theme marker")
+struct ThemeMarkerTests {
 
     @Test func variantIDsAreTheSpellingNeovimWatches() {
         #expect(ShepherdTheme.all.map(\.id) == ["night-watch-dark", "night-watch-light"])
         #expect(ShepherdTheme.nightWatchDark.isDark && !ShepherdTheme.nightWatchLight.isDark)
     }
 
-    @Test func installingWritesTheThemeAndTheActiveVariantMarker() throws {
+    @Test func installingWritesOnlyTheActiveVariantMarker() throws {
         let directory = try Fixture.scratchDirectory("pi-theme")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let marker = directory.appendingPathComponent(ShepherdPiTheme.variantFilename)
+        let marker = directory.appendingPathComponent(ShepherdThemeMarker.filename)
 
-        let path = try ShepherdPiTheme.installedPath(for: .nightWatchDark, directory: directory)
-        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == ShepherdPiTheme.encodedData(for: .nightWatchDark))
+        try ShepherdThemeMarker.install(for: .nightWatchDark, directory: directory)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path) == [ShepherdThemeMarker.filename])
         #expect(try String(contentsOf: marker, encoding: .utf8) == "night-watch-dark\n")
 
-        #expect(try ShepherdPiTheme.installedPath(for: .nightWatchLight, directory: directory) == path)
-        #expect(try Data(contentsOf: URL(fileURLWithPath: path)) == ShepherdPiTheme.encodedData(for: .nightWatchLight))
+        try ShepherdThemeMarker.install(for: .nightWatchLight, directory: directory)
         #expect(try String(contentsOf: marker, encoding: .utf8) == "night-watch-light\n")
     }
 
-    /// pi watches the file; rewriting identical bytes would trigger a pointless reload.
-    @Test func reinstallingTheSameThemeLeavesTheFileAlone() throws {
+    /// Rewriting identical bytes would trigger a pointless editor reload.
+    @Test func reinstallingTheSameThemeLeavesTheMarkerAlone() throws {
         let directory = try Fixture.scratchDirectory("pi-theme")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let path = try ShepherdPiTheme.installedPath(for: .nightWatchDark, directory: directory)
+        try ShepherdThemeMarker.install(for: .nightWatchDark, directory: directory)
+        let path = directory.appendingPathComponent(ShepherdThemeMarker.filename).path
         let past = Date(timeIntervalSince1970: 1_000_000)
         try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: path)
 
-        _ = try ShepherdPiTheme.installedPath(for: .nightWatchDark, directory: directory)
+        try ShepherdThemeMarker.install(for: .nightWatchDark, directory: directory)
 
         let modified = try FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date
         #expect(modified == past)

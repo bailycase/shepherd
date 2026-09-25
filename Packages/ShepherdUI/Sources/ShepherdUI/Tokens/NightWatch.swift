@@ -1,10 +1,8 @@
 import Foundation
 
 // Night Watch, the only shipped theme. The UI and syntax roles are the Foundations board's
-// values verbatim (translucent roles as #RRGGBBAA). The terminal and pi palettes are derived
-// from those roles: terminal panes sit on bgWindow, and the pi theme uses the same brand, state,
-// and syntax colors, with translucent tints flattened onto bgWindow because pi and Ghostty want
-// opaque colors.
+// values verbatim (translucent roles as #RRGGBBAA). Terminal panes sit on bgWindow,
+// with translucent selection colors flattened onto it because Ghostty wants opaque colors.
 extension ThemeDefinition {
     public static let nightWatch = ThemeDefinition(
         id: "night-watch",
@@ -86,7 +84,7 @@ extension ThemeDefinition {
 }
 
 extension ThemeVariant {
-    /// A Night Watch variant: the given roles, with the terminal and pi palettes derived from them.
+    /// A Night Watch variant: the given roles, with the terminal palette derived from them.
     static func nightWatch(colors c: ThemeColors, syntax s: SyntaxColors, ansi: [String], selectionAlpha: Double) -> ThemeVariant {
         /// A translucent role (or `tint` at `alpha`) flattened onto the window surface.
         func flat(_ tint: String, alpha: Double? = nil) -> String {
@@ -104,63 +102,6 @@ extension ThemeVariant {
                 selectionBackground: flat(c.running, alpha: selectionAlpha),
                 selectionForeground: c.textPrimary,
                 palette: ansi
-            ),
-            pi: PiColors(
-                accent: c.lantern,
-                border: c.lineStrong,
-                borderAccent: c.lantern,
-                borderMuted: c.lineSubtle,
-                success: c.done,
-                error: c.failed,
-                warning: c.lantern,
-                muted: c.textSecondary,
-                dim: c.textTertiary,
-                text: c.textPrimary,
-                thinkingText: c.textSecondary,
-                selectedBg: flat(c.bgSelected),
-                scrollbarThumb: c.lineStrong,
-                searchMatchBg: flat(c.lanternTint),
-                searchMatchText: c.textPrimary,
-                userMessageBg: c.bgBubble,
-                userMessageText: c.textPrimary,
-                customMessageBg: c.bgSunken,
-                customMessageText: c.textSecondary,
-                customMessageLabel: c.lantern,
-                toolPendingBg: c.bgSunken,
-                toolSuccessBg: flat(c.doneTint),
-                toolErrorBg: flat(c.failedTint),
-                toolTitle: c.textPrimary,
-                toolOutput: c.textSecondary,
-                mdHeading: c.lanternText,
-                mdLink: c.running,
-                mdLinkUrl: c.textTertiary,
-                mdCode: c.lanternText,
-                mdCodeBlock: c.textPrimary,
-                mdCodeBlockBorder: c.lineStrong,
-                mdQuote: c.textSecondary,
-                mdQuoteBorder: c.lineStrong,
-                mdHr: c.lineStrong,
-                mdListBullet: c.lantern,
-                toolDiffAdded: c.done,
-                toolDiffRemoved: c.failed,
-                toolDiffContext: c.textTertiary,
-                syntaxComment: s.comment,
-                syntaxKeyword: s.keyword,
-                syntaxFunction: s.function,
-                syntaxVariable: s.variable,
-                syntaxString: s.string,
-                syntaxNumber: s.number,
-                syntaxType: s.type,
-                syntaxOperator: s.operators,
-                syntaxPunctuation: s.punctuation,
-                thinkingOff: c.lineStrong,
-                thinkingMinimal: c.textTertiary,
-                thinkingLow: c.running,
-                thinkingMedium: s.keyword,
-                thinkingHigh: c.lantern,
-                thinkingXhigh: c.done,
-                thinkingMax: c.textPrimary,
-                bashMode: c.done
             )
         )
     }
