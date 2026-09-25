@@ -6,11 +6,20 @@ import ShepherdRemote
 
 /// The iPad inspector beside a thread (iPadSteer, iPadSubagents boards): which thread it serves
 /// and which run it shows (nil: the thread's list of runs). A card tapped in that thread switches
-/// the run in place instead of opening another screen.
+/// the run in place instead of opening another screen. Each window has its own
+/// (`of(navigator)`), so an inspector opened in one iPad window leaves another's alone.
 @MainActor
 @Observable
 final class SubagentInspection {
-    static let shared = SubagentInspection()
+    private static let windows = NSMapTable<MobileNavigator, SubagentInspection>.weakToStrongObjects()
+
+    /// The inspection of the window `navigator` belongs to.
+    static func of(_ navigator: MobileNavigator) -> SubagentInspection {
+        if let inspection = windows.object(forKey: navigator) { return inspection }
+        let inspection = SubagentInspection()
+        windows.setObject(inspection, forKey: navigator)
+        return inspection
+    }
 
     private(set) var thread: AgentRef?
     private(set) var runID: String?
@@ -39,8 +48,9 @@ enum SubagentOpening {
     static func open(_ route: SubagentsRoute, navigator: MobileNavigator) {
         let thread = route.thread
         let runID: String? = if case .run(_, let id) = route { id } else { nil }
-        if navigator.layout == .pad, SubagentInspection.shared.thread == thread {
-            SubagentInspection.shared.show(thread, runID: runID)
+        let inspection = SubagentInspection.of(navigator)
+        if navigator.layout == .pad, inspection.thread == thread {
+            inspection.show(thread, runID: runID)
             return
         }
         if navigator.layout == .pad {
@@ -54,10 +64,10 @@ enum SubagentOpening {
     }
 }
 
-/// Keeps the thread's store polling while a subagents screen is up. The thread under it stops
-/// the store as it leaves the screen, which can land after this screen started it, so the loop
-/// takes it back whenever nothing else runs it. The store is shared: a thread on screen again
-/// runs it, and this loop then waits.
+/// Keeps the thread's store polling while a subagents screen is up, through the thread's viewers
+/// (`ThreadStores.viewers(for:)`) like the thread itself: it joins the loop the thread on
+/// screen runs, and runs it whenever nothing else does (the thread under it on iPhone, which
+/// stops it as it leaves the screen, or another window's).
 struct SubagentThreadKeeper: ViewModifier {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
@@ -78,15 +88,10 @@ struct SubagentThreadKeeper: ViewModifier {
             .onAppear { visible = true }
             .onDisappear { visible = false }
             .task(id: key) {
-                guard key.active, key.session != nil, let client = host?.connectedClient else { return }
-                let store = threads.store(for: ref)
+                guard key.active, let session = key.session, let client = host?.connectedClient else { return }
                 let agentID = ref.agent
-                while !Task.isCancelled {
-                    if store.isLive {
-                        try? await Task.sleep(for: .milliseconds(250))
-                    } else {
-                        await store.run { request in try await client.nativeThread(agentID: agentID, request: request) }
-                    }
+                await threads.viewers(for: ref).run(connection: session) { request in
+                    try await client.nativeThread(agentID: agentID, request: request)
                 }
             }
     }

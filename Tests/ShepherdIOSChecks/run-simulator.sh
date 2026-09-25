@@ -12,6 +12,7 @@
 #   -t <size>        a Dynamic Type category for simctl ui content_size (e.g. extra-extra-large)
 #   -n <label>       the device part of file names (default: the simulator's name)
 #   --sidebar        open the iPad sidebar over a portrait thread
+#   -w               an app that supports multiple windows, as the shipped app does (the windows-* screens)
 #   --list           print the screen names and exit
 #
 # Screens: any name in Tests/ShepherdIOSChecks/Fixtures (home, thread, question, newthread, …), or "all".
@@ -19,7 +20,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 root=$PWD
 
-device="" out="" products="" schemes="both" orientation="portrait" text_size="" label="" sidebar="" list=""
+device="" out="" products="" schemes="both" orientation="portrait" text_size="" label="" sidebar="" list="" windows=false
 screens=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -31,8 +32,9 @@ while [[ $# -gt 0 ]]; do
         -t) text_size=$2; shift 2 ;;
         -n) label=$2; shift 2 ;;
         --sidebar) sidebar=shown; shift ;;
+        -w) windows=true; shift ;;
         --list) list=1; shift ;;
-        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
         *) screens+=("$1"); shift ;;
     esac
 done
@@ -40,7 +42,7 @@ if [[ -n "$list" ]]; then
     grep -ho 'FixtureScreen(name: "[^"]*"' Tests/ShepherdIOSChecks/Fixtures/*.swift | sed 's/.*"\(.*\)"/\1/'
     exit 0
 fi
-[[ -n "$device" && -n "$out" && ${#screens[@]} -gt 0 ]] || { sed -n '2,20p' "$0"; exit 64; }
+[[ -n "$device" && -n "$out" && ${#screens[@]} -gt 0 ]] || { sed -n '2,21p' "$0"; exit 64; }
 if [[ "${screens[0]}" == all ]]; then
     screens=($(grep -ho 'FixtureScreen(name: "[^"]*"' Tests/ShepherdIOSChecks/Fixtures/*.swift | sed 's/.*"\(.*\)"/\1/'))
 fi
@@ -79,11 +81,12 @@ cat > "$app/Info.plist" <<'PLIST'
 <key>UILaunchScreen</key><dict/>
 <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
 <key>UIRequiresFullScreen</key><true/>
-<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><MULTIPLE_WINDOWS/></dict>
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 </dict></plist>
 PLIST
+sed -i '' "s|<MULTIPLE_WINDOWS/>|<$windows/>|" "$app/Info.plist"
 sources=()
 while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS -name '*.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
 xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target arm64-apple-ios27.0-simulator -swift-version 5 \
