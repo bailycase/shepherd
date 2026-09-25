@@ -13,10 +13,12 @@ import ShepherdRemote
 final class SubagentTranscriptModel {
     struct Turn: Identifiable, Equatable {
         var id: String
-        /// A user turn: the task (the first) or a message from the parent (every later one); all
-        /// come from the parent.
+        /// A user turn: the task (the first), then the parent's steers and resumes, or the
+        /// user's own messages.
         var user: [String]
         var userTime: Double?
+        /// Captioned "from parent": every user turn but the ones the user wrote.
+        var fromParent = false
         /// An agent turn's items.
         var presentation: NativeTurnPresentation?
         var live: Bool
@@ -105,7 +107,7 @@ final class SubagentTranscriptModel {
             if turn.isUser {
                 let text = turn.messages.map { $0.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n") }
                 next.append(Turn(id: turn.id, user: text, userTime: turn.messages.first?.timestamp,
-                                 presentation: nil, live: false))
+                                 fromParent: !nativeTranscriptTurnIsTheUsers(turn.messages), presentation: nil, live: false))
             } else {
                 let isLive = live && index == lastAgent
                 let presentation: NativeTurnPresentation
@@ -139,7 +141,8 @@ final class SubagentTranscriptModel {
 }
 
 /// The transcript's turns, one step smaller than the thread's prose: the parent's messages as
-/// bubbles captioned "from parent", then each agent turn's thinking, prose and tool lines.
+/// bubbles captioned "from parent" (the user's own are not), then each agent turn's thinking,
+/// prose and tool lines.
 struct SubagentTranscriptList: View {
     let model: SubagentTranscriptModel
     let working: String?
@@ -179,7 +182,7 @@ struct SubagentTurnView: View, Equatable {
         } else {
             VStack(alignment: .trailing, spacing: MobileLayout.activitySpacing) {
                 ForEach(Array(turn.user.enumerated()), id: \.offset) { _, text in
-                    NWUserBubble(text, timestamp: turn.userTime.map { nativeClockText($0, meridiem: false) }, note: "from parent")
+                    NWUserBubble(text, timestamp: turn.userTime.map { nativeClockText($0, meridiem: false) }, note: turn.fromParent ? "from parent" : nil)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
