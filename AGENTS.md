@@ -340,21 +340,23 @@ Sources/
                        No deps.
   ShepherdProtocol/    ExtensionMessage/ExtensionReply (+ ChildRun, PaneInfo, …), RemoteMessage
                        (RemoteRequest/RemoteReply, RemoteProtocol version + capabilities),
-                       NativeThread (requests, results, NativeThreadSnapshot), RPCWire (pi's
+                       NativeThread (requests, results, NativeThreadSnapshot), NativeThreadContext
+                       (the context and compactions), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
                        (activity lines, the changes card), NativeQueueRules (the queue's rules,
-                       host and client),
+                       host and client), NativeContextPresentation (the context ring, its
+                       details, compaction lines),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
-                       works), ThreadOriginStore (where delivered messages came from, kept per pi
+                       works; +Context: what fills the context, compactions), ThreadOriginStore (where delivered messages came from, kept per pi
                        session), AutomationRunLog (each automation's runs), PTYSession,
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
@@ -372,8 +374,9 @@ Sources/
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
-                       Composer, QueueStack ("Up next", the queue above the composer), Subagents,
-                       SubagentPresentation, SubagentInspector
+                       Composer, QueueStack ("Up next", the queue above the composer),
+                       ContextMeter (the ring beside Send, its details, compaction lines),
+                       Subagents, SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
@@ -535,7 +538,7 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   or trusted network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
-  - native thread requests
+  - native thread requests, with the context and Compact now behind `native.context.v1`
   - attach, detach, input, resize, and acknowledged paste
   - pane open, close, and split resize
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions`

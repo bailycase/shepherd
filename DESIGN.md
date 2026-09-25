@@ -1511,6 +1511,29 @@ other tools merge only with the same tool.
   head), and its diff stat in mono 11. A row has the row hover fill and opens the review pane at
   that file.
 
+**Compactions** (ContextIdeas › In the thread, ContextCompacted; `CompactionItem` in
+`Thread/ContextMeter.swift`, on ShepherdUI's `NWCompactionDivider` and `NWCompactionSummary`;
+`NativeCompactionRow` in ShepherdRemote). A compaction leaves one line where it happened, like
+other thread events, inside the reply it happened in: a `lineSubtle` rule on each side, 12pt
+from the words, which are 7pt apart — an arrows-in glyph in `textTertiary`, what happened in 12
+`textSecondary`, the context before and after in mono 11 `textTertiary` ("184k → 23k"), a
+`lineStrong` "·", and **Show summary** (12 `textPrimary`, a 9pt chevron). The words follow pi's
+reason: "Compacted automatically" (threshold), "You compacted" (manual), "Context overflowed ·
+compacted and retried" (overflow, in `lanternText` with a warning glyph), "Compacting context…"
+with the size while it runs (shimmering, no glyph), "Compaction stopped · nothing changed" when it
+was stopped, and "Compaction failed · nothing changed" (the reason in its tooltip). A compaction
+from before this host saw it (another run, or a relaunch) reads "Compacted" with its size before.
+Everything above it stays readable for as long as the agent's pi runs, though pi now sees only
+the summary; after a relaunch the thread starts at the latest compaction, as pi keeps it.
+
+Show summary opens **What the agent kept** in place (Hide summary closes it): a `bgSunken` card
+with a `lineSubtle` line, radius 8, 14pt above and below and 16pt at the sides; a text glyph,
+"What the agent kept" (12 semibold), its size and "written by the agent" in mono 10.5
+`textTertiary`, and Copy trailing; then the agent's own sections, 12pt apart, each its heading
+(12 semibold `textPrimary`) over its text (12.5 `textSecondary`, 1.5 line height), and the files it
+changed as "Files changed" with their names in mono 11, 12pt apart. The files pi read are left out.
+The ring's Show summary opens the same card.
+
 #### Rich content in prose
 
 Agents write more than paragraphs and lists; everything they commonly write draws as a native part,
@@ -1637,8 +1660,9 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   reasoning control, as pi's levels for it (only Off), this Mac's catalog, or the host's
   `listModels` says; an unknown model keeps it.
 - a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
-  then the action, a 28pt circle: **Send** (a 14pt `arrow.up` in `textOnLantern` on `lantern`,
-  at 35% until there is something to send) or **Stop** (a small rounded `stop.fill` square in
+  then the context ring (Context meter, below) 6pt before the action, a 28pt circle: **Send** (a
+  14pt `arrow.up` in `textOnLantern` on `lantern`, at 35% until there is something to send) or
+  **Stop** (a small rounded `stop.fill` square in
   `textOnFailed` on `failed`). While pi works with a draft, Stop steps aside **outlined** (a
   `lineStrong` hairline, no fill, `bgHover` under the pointer, the square in `failed`) and Send
   takes the corner, 6pt apart; filled Stop ⇄ outlined Stop + Send cross-fades (`content`).
@@ -1903,6 +1927,79 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   (Sidebar › Context menus). **Not built yet:** Fork from here, Copy transcript, and Open in
   Finder for an agent (the subagent inspector has Fork, Copy Transcript, and Show Session File in
   Finder for a finished run), and ⌘R shown beside Rename….
+
+**Context meter** (ContextIdeas: placement A, "its own circle, beside Send"; ContextDetails,
+ContextFull, ContextCompacted; `ContextMeterButton` and `ContextDetailsPopover` in
+`Thread/ContextMeter.swift`, on ShepherdUI's `NWContextMeterButton`, `NWContextRing` and
+`NWContextDetails`; sizes are `NWContextMetrics`). What fills the model's context window is a
+small ring in the control row, just before Send (and before Stop while pi works); the composer
+never shows text for it, and the toolbar's counters are not where it lives. The ring comes from
+the host (`NativeThreadSnapshot.context`, docs/native-thread.md); a host from before it reports
+none, and the row has no ring.
+
+- **The ring:** an 18pt trimmed circle, 2.2pt stroke with round caps, starting at 12 o'clock,
+  over a `lineStrong` track, in a 32pt circle button that fills `bgHover` under the pointer and
+  `bgSelected` while its details are open. The button is the board's 32pt in the row of 28pt
+  controls; it overhangs the row by 2pt above and below, so the composer keeps its height. States
+  (`NativeContextMeter`, ShepherdRemote): **empty** (the track alone: the agent has not replied, so
+  there is no number); **under 60%** `textSecondary`; **60–85%** `lantern`; **over 85%** `failed`;
+  **compacting** a `running` arc of 28% that turns, from `compaction_start` to `compaction_end`;
+  **after compaction** a dashed `textSecondary` circle at 80% (dashes 1.55pt), until the agent's
+  next reply gives a real number. It redraws only when the usage changes, never with a streamed
+  chunk or a keystroke (`ListPerformanceTests`).
+- **Hover** (`.help`): "42k of 200k · 21%", or "about 23k of 200k · exact after the next reply"
+  after a compaction; "Compacting 184k…"; before any reply, "Nothing yet of 200k · the agent
+  hasn't replied". VoiceOver: "Context 21% full", "Context: compacting", "Context: updating after
+  compaction", "Context: nothing yet". Sizes round to the nearest thousand ("184k" is a 200k
+  window less pi's 16,384 reserve).
+- **Click for details:** a popover above the ring, 8pt over the card with its trailing edge on the
+  ring's (`.overlay`, like the composer's menus: it never moves the card or the thread); Esc or a
+  click outside closes it, and so does a click on an item it finds. `bgRaised`, radius 12, the
+  popover shadow and a `lineStrong` line; 340pt with the split, 300pt otherwise; 14pt sides.
+  - A header: "Context" (12.5 semibold) and, trailing, the model and window in mono 10.5
+    `textTertiary` ("claude-opus · 200k"). Then the total in Geist 22 semibold (−0.44 tracking)
+    with "of 200k" (12.5 `textSecondary`) and the percentage trailing in mono 12.
+  - An 8pt bar of the window on `lineSubtle`: each part's share, 1.5pt apart — the system prompt
+    and tools in `textTertiary`, instructions in the syntax keyword color, messages in the
+    function color, tool results in the type color (`contextSystem`, `contextInstructions`,
+    `contextMessages`, `contextToolResults`: swatches only, never text) — and the auto-compact mark,
+    a 1.5×14pt `textSecondary` tick where pi compacts on its own, labeled under the bar in mono 10
+    `textTertiary` ("auto-compact · 184k ↑"; no mark while auto-compaction is off).
+  - **The split** (`ContextDetails(.split)`): 26pt rows of an 8pt swatch, the part ("System prompt
+    and tools", "Instructions · AGENTS.md", "Messages", "Tool results") and its size in mono 11.5
+    ("6.8k"), then "Free" in `textTertiary`. **Largest** (a mono 10 uppercase label, "click to find
+    in thread" trailing): the three largest tool results, each a file or terminal glyph, the file's
+    name or the command's first line in mono 11.5 `textSecondary`, and its size; `bgHover` under
+    the pointer, and a click scrolls the thread to the turn holding it (loading older pages as
+    needed). The footnote in 11 `textTertiary`: "The total is the agent’s. The split is Shepherd’s
+    estimate from the messages." Then a `lineSubtle` rule and **Compact now…**, a 30pt full-width
+    button on `bgWindow` with a `lineStrong` line; it opens the field for what to keep (below) and
+    **Compact now** in `lantern`. With no split to show (`.simple`), the total, the bar in
+    `textTertiary`, the mark, and Compact now….
+  - **Almost full** (ContextFull, past 85%): the title "Context almost full" and the total and
+    percentage in `failed`; the bar; then the problem in 12.5 `textSecondary`: the biggest part
+    ("Tool results are 138k of it."), what pi will do ("The agent will compact on its own at 184k,
+    before its next reply.", or "The agent will not compact on its own." when auto-compaction is
+    off), and "Compact now to say what the summary should keep."; a field for what to keep (at
+    least 52pt, `bgWindow`, a `lineStrong` line that turns `textTertiary` while focused, radius 8,
+    a `lantern` caret); and **Compact now** in `lantern` (↩ in the field sends it too). What the
+    field holds goes to pi as the compaction's instructions.
+  - **Compacting:** "Compacting", "started 0:08 ago" ticking in the header, "Summarizing **184k**
+    into a short brief. The last 20k stay as they are." (the size in mono `textPrimary`, the line
+    shimmering), and a `running` bar that runs most of the way in the first seconds and never fills
+    (pi says nothing of how far along it is). Nothing to press; it closes itself when the agent is
+    done.
+  - **Just compacted:** "Context" with "just compacted", "~23k of 200k" in `textSecondary` with
+    "estimate", the bar dashed 4/3 in `textTertiary`, "The agent reports the exact number after
+    its next reply. Was 184k." in 11 `textTertiary`, and **Show summary**, which opens what the agent
+    kept in the thread and scrolls to it.
+  - Compact now is pi's `compact`, which stops a run to compact: it is offered while the agent is
+    idle, and its tooltip says why not while it works.
+  - **Not built yet: Compact automatically.** The boards' switch drives pi's
+    `set_auto_compaction`, which pi 0.87.1 writes to the user's own `settings.json`
+    (`SettingsManager.setCompactionEnabled`); Shepherd never writes pi's settings, so the switch
+    waits on a decision. The details read pi's `autoCompactionEnabled` for the mark and the
+    almost-full text.
 
 ### Up next (the queue)
 
@@ -7212,6 +7309,9 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
 | PaneStates | Side pane; Right pane | Partial |
+| ContextDetails | Composer, questions, and menus › Context meter | Partial |
+| ContextFull | Composer, questions, and menus › Context meter | Partial |
+| ContextCompacted | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
 | QueueStack | Up next (the queue) | Built |
 | QueueSteer | Up next (the queue); Thread › User turn (Steered) | Built |
 | QueueEdit | Up next (the queue); Composer › Send menu | Built |
@@ -7354,6 +7454,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWStatus, NWStatusLight | Components › Status and feedback; Status language | Partial |
 | NWThread, NWThreadLight | Thread | Partial |
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
+| ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Partial |
 | NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Sidebar destinations, Needs you, and Recents; Toolbar | Partial |
 | NWAgents, NWAgentsLight | Subagents; Right pane › Subagent inspector; Mission components | Partial |
 | NWReview, NWReviewLight | Right pane › Review | Built |

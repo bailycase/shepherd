@@ -150,8 +150,10 @@ events come out on stdout, one record per LF.
     Clients read `aborted` as stopped: the call's line says "stopped" and the turn ends in a
     quiet "Stopped" note, never an error with Retry. After a relaunch, history read from pi
     shows such a run as pi recorded it.
-  - `turn_*` events are ignored, and so is anything the lenient `RPCWire` decoder doesn't know
-    (compaction included).
+  - `compaction_start` and `compaction_end` run a compaction as a live row and land it in
+    history (see Context and compaction). An assistant `message_end` asks for `get_session_stats`
+    again, so the context moves once per reply, never per token.
+  - `turn_*` events are ignored, and so is anything the lenient `RPCWire` decoder doesn't know.
 - **Session switches** are detected whenever `get_state` reports a new session ID. The
   projection resets and gets a new `generation`.
 - **Questions:** `extension_ui_request` with `select`, `confirm`, `input`, or `editor` becomes a
@@ -189,7 +191,8 @@ events come out on stdout, one record per LF.
 - **Requests** (`NativeThreadRequest`): `snapshot`, `send` (follow-up or steer delivery, optional
   images; see The queue), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
   `subagentCommand` (message, cancel, resume, pause, continue; routed to the children
-  extension's control connection, never the parent model), `subagentTranscript` (one page of a
+  extension's control connection, never the parent model), `compact` (pi's `compact`, with what
+  to keep; see Context and compaction), `subagentTranscript` (one page of a
   child's session file, read from its last 8 MiB; a message the user sent the child, recorded
   in `user-messages.jsonl` beside the session, carries `origin: .user`), and `queue`
   (`NativeQueueAction`).
@@ -201,7 +204,7 @@ events come out on stdout, one record per LF.
     (10 s, 30 s for a prompt: pi answers a prompt only after its preflight) is
     `outcome_unknown`, never reported as a refusal: pi may still run it.
   - `supportedActions` lists what clients may offer: `send`, `abort`, `answer`, `setModel`,
-    `setThinking`, `sendImages`, `subagents`, `queue`.
+    `setThinking`, `sendImages`, `subagents`, `queue`, `compact`.
 - **Subagents:** the rows the subagent display extension publishes (`setAgentChildren`) ride the
   snapshot as `subagents`.
 
@@ -286,6 +289,55 @@ one prompt at a time.
   app kills pi on quit (asking first while agents work), and on relaunch every agent resumes
   idle, so a restored queue could only come back paused against a run that no longer exists.
 
+## Context and compaction
+
+What fills the model's context window rides the snapshot as `context` (`NativeThreadContext`,
+`RPCThreadState+Context.swift`); a snapshot without one comes from an older host, and clients
+draw no context meter.
+
+- **The total is pi's:** `get_session_stats` › `contextUsage` (`tokens`, `window`), asked at the
+  bootstrap, after each assistant reply (`message_end`), at `agent_end`, and after a compaction.
+  pi reports no window without a model, and its `tokens` are null after a compaction until its
+  next reply: then `estimate` stands in (pi's `estimatedTokensAfter` for a compaction this host
+  saw, else the host's own sizing) and `before` is the size it replaced.
+- **The auto-compact mark** is `window − compaction.reserveTokens`, from pi's settings as pi
+  resolves them (`PiConfig.compactionSettings`: the project's `.pi/settings.json` over the agent
+  directory's, a `modelOverrides` entry for the model over both, 16,384 by default), read once per
+  model and never written. `autoCompact` is `get_state`'s `autoCompactionEnabled`; `keepRecent` is
+  `keepRecentTokens` (20,000 by default).
+- **The split and the largest items are the host's estimate** (`RPCThreadState.estimate`), taken
+  from `get_messages` with each history refresh: four characters a token, as pi estimates. pi
+  0.87's structured system prompt rides the message list as `system` messages (sections, a null
+  removing one, and the tools added or removed); the host folds them, counts the
+  `project_context` section as instructions (naming its `<project_instructions path>` files) and
+  the rest, with the tools' definitions, as the system prompt; user and assistant messages, the
+  agent's calls, and summaries as messages; and tool results as tool results. Every part is
+  scaled to pi's total. `largest` is the three largest tool results, named by the file they read
+  or wrote or the command they ran (the same name's results add up, found at the largest), each
+  with its thread entry (`t:<call id>`) so a client can find it. System messages never become
+  thread rows.
+- **A compaction** (`compaction_start` › `compaction_end`): `context.compacting` holds its reason
+  and start, and a live row (role `compaction`, `NativeCompaction` phase `running`) sits at the
+  tail. When it ends, a success refreshes history, state and stats, and the live row goes with the
+  refresh; a stopped one (`aborted`) or a failed one (`errorMessage`) stays as a live row, phase
+  `stopped` or `failed`, until the next run. In history pi's `compactionSummary` message carries
+  `compaction` (phase `done`, its summary clipped to the text limit, `tokensBefore`, and, for one
+  this host saw, its reason and `tokensAfter`), and older clients ignore it.
+- **Where it happened:** pi lists its latest compaction first, then what it kept; the host moves
+  the summary after the kept messages written before it (`RPCThreadState.chronological`, the
+  preview from pi's session file too). After a compaction pi's list starts at what it kept; the
+  host keeps the history it had shown before it, above the compaction, for as long as this pi
+  runs (`keepingSummarized`). After a relaunch the thread starts at the latest compaction.
+- **Compact now** (`compact`, with optional `instructions`, up to 16 KiB): pi's `compact` with
+  `customInstructions`. pi aborts a running turn to compact, so the host takes it only while pi is
+  idle and no prompt of its own is on its way (`busy` otherwise, or while a compaction runs). The
+  answer is the dispatch: pi answers `compact` only once the summary is written, and reports the
+  compaction as events meanwhile.
+- **Never `set_auto_compaction`:** pi 0.87.1 handles it with
+  `SettingsManager.setCompactionEnabled`, which writes `compaction.enabled` into the user's global
+  `settings.json` (`~/.pi/agent`, or `PI_CODING_AGENT_DIR`). Shepherd never writes pi's settings, so
+  the boards' Compact automatically switch is not built.
+
 ## Serving
 
 `SessionServer.nativeThread(agentID:request:)` answers the local GUI directly on the server
@@ -297,8 +349,9 @@ transport differs.
   requests get `native_limit`. Remote requests are also bound by the 1 MiB TCP frame, so
   `RemoteHostClient` rejects larger image sends before sending.
 - **Remote capabilities:** remote model, thinking, and image requests need the host's
-  `native.thread.v2` capability, and `queue` requests its `native.queue.v1`
-  (`RemoteHostClient` refuses them against an older host with `update_required`).
+  `native.thread.v2` capability, `queue` requests its `native.queue.v1`, and `compact` its
+  `native.context.v1`, which also says the host sends `context` (`RemoteHostClient` refuses them
+  against an older host with `update_required`, `RemoteHostClient.missingCapability`).
 - **Models:** `listModels` answers the host's catalog as "provider/id", its default in the same
   form, and `withoutThinking`, the models that take no thinking level (`ModelListing`). A host
   from before that field sends none, and clients then keep the thinking control for every model.
@@ -342,11 +395,14 @@ The store is `@MainActor @Observable`, and it derives what the thread draws once
 reply's subagent `placements`, and `lastPromptAt` (the current turn's start). Views read those
 stored values, so a keystroke in the composer re-renders only the composer. What the chrome
 draws is cached the same way, one property each (`session`, `dialogs`, `widgets`, `commands`,
-`model`, `thinking`, `thinkingLevels`, `stats`, `supportedActions`, `clipped`, `running`, `workingLabel`,
-`userTurnCount`, …), assigned only when it changes. The snapshot is one value that every
-streamed chunk replaces, so the composer and the toolbar never read it: a chunk
-redraws the thread and its live row, and a poll that moves only the context count redraws only
-the toolbar's counters (`ListPerformanceTests`). A finished tool
+`model`, `thinking`, `thinkingLevels`, `stats`, `contextMeter`, `contextDetails`,
+`supportedActions`, `clipped`, `running`, `workingLabel`, `userTurnCount`, …), assigned only
+when it changes. The snapshot is one value that every streamed chunk replaces, so the composer
+and the toolbar never read it: a chunk redraws the thread and its live row, a poll that moves
+only the context count redraws only the toolbar's counters, and one that moves the context
+redraws only the ring beside Send, which reads `contextMeter` alone (`ListPerformanceTests`).
+`compactions` (`NativeCompactionExpansion`) holds which compactions show what the agent kept;
+`compact(instructions:)` sends Compact now. A finished tool
 call is parsed once (`NativeActivityCall`, cached by entry); a running call is re-read as its
 output grows.
 
@@ -505,7 +561,10 @@ requests sent to its host.
 - **Integration (`swift test --filter IntegrationTests`):** a real `SessionServer`
   (`ScratchServer`) driving the scripted stub pi (`StubPi.command`,
   `Tests/ShepherdTestSupport/Resources/stub-pi.py`). The stub's prompt keywords script
-  questions, hangs, crashes, oversized records, widgets, session switches, and long histories.
+  questions, hangs, crashes, oversized records, widgets, session switches, long histories, a
+  context worth sizing ("context", "fill-context"), and compactions ("auto-compact",
+  "compact-abort", and `compact` itself, held with "hold" in its instructions); `ContextTests`
+  drive them.
   For example, `LargeHistoryTests` loads a 6 MiB history. A "tools:N" prompt runs a pi-like
   agent loop with pi 0.87.1's queues (steering read after each tool batch, follow-ups when the
   run would stop, `queue_update`, `clear_queue`, abort keeping follow-ups, and a stranded steer
