@@ -187,17 +187,21 @@ public struct NWListRow: View, Equatable {
             Text(subtitle ?? "")
         case .elapsed(let since)?:
             TimelineView(NWElapsedSchedule(start: since, style: .long)) { context in
-                Text(joined(NWDuration.text(context.date.timeIntervalSince(since), .long)))
+                timed(NWDuration.text(context.date.timeIntervalSince(since), .long))
             }
         case .ago(let at)?:
             TimelineView(NWElapsedSchedule(start: at)) { context in
-                Text(joined(NWDuration.text(context.date.timeIntervalSince(at)) + " ago"))
+                timed(NWDuration.text(context.date.timeIntervalSince(at)) + " ago")
             }
         }
     }
 
-    private func joined(_ time: String) -> String {
-        [subtitle, time].compactMap { $0 }.joined(separator: " · ")
+    /// The status with its time: a long command truncates, the time stays whole.
+    private func timed(_ time: String) -> some View {
+        HStack(spacing: 0) {
+            if let subtitle { Text(subtitle) }
+            Text(subtitle == nil ? time : " · " + time).fixedSize()
+        }
     }
 
     @ViewBuilder private var leadingView: some View {
