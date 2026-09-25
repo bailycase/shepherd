@@ -23,21 +23,25 @@ public struct NWTouchDiffLine: View, Equatable {
     let wraps: Bool
     let selected: Bool
     let commented: Bool
+    let changeBar: Bool
     let onTap: (() -> Void)?
 
+    /// `changeBar` marks an added or removed line with a 3pt bar at its leading edge (the
+    /// Changes pane's gutter bar, iPadReview), which the selection's bar replaces.
     public init(_ line: NWDiffLineContent, gutters: Int = 1, wraps: Bool = true, selected: Bool = false, commented: Bool = false,
-                onTap: (() -> Void)? = nil) {
+                changeBar: Bool = false, onTap: (() -> Void)? = nil) {
         self.line = line
         self.gutters = gutters
         self.wraps = wraps
         self.selected = selected
         self.commented = commented
+        self.changeBar = changeBar
         self.onTap = onTap
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.line == rhs.line && lhs.gutters == rhs.gutters && lhs.wraps == rhs.wraps && lhs.selected == rhs.selected
-            && lhs.commented == rhs.commented && (lhs.onTap == nil) == (rhs.onTap == nil)
+            && lhs.commented == rhs.commented && lhs.changeBar == rhs.changeBar && (lhs.onTap == nil) == (rhs.onTap == nil)
     }
 
     public var body: some View {
@@ -66,7 +70,11 @@ public struct NWTouchDiffLine: View, Equatable {
         .frame(minHeight: NW.Height.rowCompact)
         .background(background(nw))
         .overlay(alignment: .leading) {
-            if selected { Rectangle().fill(nw.running).frame(width: NWTouchDiffMetrics.selectionBar) }
+            if selected {
+                Rectangle().fill(nw.running).frame(width: NWTouchDiffMetrics.selectionBar)
+            } else if changeBar, line.kind != .context {
+                Rectangle().fill(line.kind == .added ? nw.done : nw.failed).frame(width: NWTouchDiffMetrics.selectionBar)
+            }
         }
         .contentShape(Rectangle())
         .onTapGesture { onTap?() }
@@ -174,23 +182,27 @@ public struct NWTouchFoldRow: View {
 }
 
 /// One row of a diff side by side (iPadReviewSplit board): the old line beside the new one, each
-/// with its number and sign on one line, a 1px rule between. An empty side is blank.
+/// with its number and sign on one line, a 1px rule between. An empty side is blank, or with
+/// `hatched` striped so the rows still line up (ChangesStates › Filler).
 public struct NWSplitDiffRow: View, Equatable {
     let old: NWDiffLineContent?
     let new: NWDiffLineContent?
     let selected: NWDiffLineContent.ID?
+    let hatched: Bool
     let onTap: ((NWDiffLineContent) -> Void)?
 
-    public init(old: NWDiffLineContent?, new: NWDiffLineContent?, selected: NWDiffLineContent.ID? = nil,
+    public init(old: NWDiffLineContent?, new: NWDiffLineContent?, selected: NWDiffLineContent.ID? = nil, hatched: Bool = false,
                 onTap: ((NWDiffLineContent) -> Void)? = nil) {
         self.old = old
         self.new = new
         self.selected = selected
+        self.hatched = hatched
         self.onTap = onTap
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.old == rhs.old && lhs.new == rhs.new && lhs.selected == rhs.selected && (lhs.onTap == nil) == (rhs.onTap == nil)
+        lhs.old == rhs.old && lhs.new == rhs.new && lhs.selected == rhs.selected && lhs.hatched == rhs.hatched
+            && (lhs.onTap == nil) == (rhs.onTap == nil)
     }
 
     public var body: some View {
@@ -204,10 +216,33 @@ public struct NWSplitDiffRow: View, Equatable {
 
     @ViewBuilder private func side(_ line: NWDiffLineContent?) -> some View {
         if let line {
-            NWTouchDiffLine(line, gutters: 1, wraps: false, selected: line.id == selected, onTap: onTap.map { tap in { tap(line) } })
+            NWTouchDiffLine(line, gutters: 1, wraps: false, selected: line.id == selected, changeBar: hatched,
+                            onTap: onTap.map { tap in { tap(line) } })
+        } else if hatched {
+            NWHatchStripes()
+                .stroke(Color.nw.lineSubtle, lineWidth: 1)
+                .clipped()
+                .frame(maxWidth: .infinity, minHeight: NW.Height.rowCompact)
+                .accessibilityHidden(true)
         } else {
             Color.clear.frame(maxWidth: .infinity, minHeight: NW.Height.rowCompact).accessibilityHidden(true)
         }
+    }
+}
+
+/// Stripes at 135°, every 6pt: the side of a split row with no line opposite.
+struct NWHatchStripes: Shape {
+    static let spacing: CGFloat = 6
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        var x = rect.minX - rect.height
+        while x < rect.maxX {
+            path.move(to: CGPoint(x: x, y: rect.maxY))
+            path.addLine(to: CGPoint(x: x + rect.height, y: rect.minY))
+            x += Self.spacing
+        }
+        return path
     }
 }
 
