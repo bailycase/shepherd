@@ -122,13 +122,13 @@ extension ShepherdViewModel {
     /// Deletes the agent of an automation's settled run so the next can start. A live run
     /// (`AutomationRun.isLive`) throws instead: running again never cuts one short.
     private func replaceSettledRun(of automation: Automation, agentID: AgentID) async throws {
-        guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
         let run = await server.automationRuns(automation.id).last { $0.agentID == agentID }
+        // Read after the runs: another start may have replaced the run, or its agent started a turn.
+        guard state.automations.first(where: { $0.id == automation.id })?.agentID == agentID,
+              let agent = state.agents.first(where: { $0.id == agentID }) else { return }
         guard !AutomationRun.isLive(agentStatus: agent.status, run: run) else {
             throw AgentStartFailure(message: "\(automation.name) is already running")
         }
-        // Another start may have replaced it while the runs were read.
-        guard state.automations.first(where: { $0.id == automation.id })?.agentID == agentID else { return }
         try await deleteAgentPersisted(agentID)
     }
 
