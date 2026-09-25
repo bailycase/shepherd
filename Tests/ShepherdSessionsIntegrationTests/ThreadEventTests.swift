@@ -100,7 +100,7 @@ struct ThreadEventTests {
     @Test func requestsBeforePiReportsItsSessionAreStarting() async throws {
         let t = try Thread(bootstrap: false)
         defer { t.stop() }
-        #expect(await t.request(.snapshot()) == .failure(code: NativeThreadCode.starting, message: "pi is starting."))
+        #expect(await t.request(.snapshot()) == .failure(code: NativeThreadCode.starting, message: "The agent is starting."))
     }
 
     /// pi reads stdin only once it has started, so a pi slower than the request deadline

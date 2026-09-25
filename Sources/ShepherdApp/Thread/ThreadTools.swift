@@ -204,7 +204,7 @@ struct ToolOutputSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if truncated {
-                Text("The host clipped this output; the full text is in pi's session file.")
+                Text("The host clipped this output; the full text is in the agent's session file.")
                     .font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(NW.Space.l)
             }
         }
