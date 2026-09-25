@@ -10,7 +10,8 @@ import ShepherdRemote
 ///
 /// Hooks other tracks fill: `SubagentCards` (Subagents/) where a turn spawned children,
 /// `SubagentHooks.list` for the footer's "N subagents", `ReviewHooks.open` for the changes card
-/// and edit lines, and `AgentActionsMenu` (Search/) in the options menu.
+/// and edit lines, `AgentActionsMenu` (Search/) in the options menu, and the terminal
+/// (Terminal/): `threadTerminal` under the thread, `TerminalToolbarButton`, `TerminalMenuItems`.
 struct ThreadScreen: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
@@ -48,6 +49,8 @@ struct ThreadScreen: View {
             .background(Color.nw.bgWindow)
             // Measured around the composer's inset, which would otherwise shrink what it measures.
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+            // iPad: the terminal panel under the thread and its composer (Terminal/).
+            .threadTerminal(ref)
             // A thread takes the whole screen on iPhone (MobileThread board): no tab bar under the composer.
             .toolbar(.hidden, for: .tabBar)
             .navigationTitle(agent?.name ?? "Thread")
@@ -61,6 +64,9 @@ struct ThreadScreen: View {
                         ThreadCounters(status: status)
                     }
                     if agent != nil {
+                        if sizeClass == .regular {
+                            TerminalToolbarButton(thread: ref)
+                        }
                         ThreadStopButton(store: store, enabled: key.session != nil)
                         ThreadOptionsMenu(ref: ref, store: store, enabled: key.session != nil)
                     }
@@ -303,7 +309,8 @@ private struct ThreadStopButton: View {
     }
 }
 
-/// The thread's options: refresh, subagents, and the agent actions (Search/).
+/// The thread's options: refresh, subagents, the terminal (Terminal/), and the agent actions
+/// (Search/).
 private struct ThreadOptionsMenu: View {
     let ref: AgentRef
     let store: NativeThreadStore
@@ -317,6 +324,7 @@ private struct ThreadOptionsMenu: View {
             if store.hasSubagents {
                 Button("Subagents", systemImage: "person.2") { navigator.open(SubagentHooks.list(thread: ref)) }
             }
+            TerminalMenuItems(thread: ref)
             AgentActionsMenu(thread: ref)
         } label: {
             Label("Thread options", systemImage: "ellipsis")

@@ -28,6 +28,7 @@ Never commit a `project.pbxproj` change for a new file.
 | D. Subagents | `Subagents/`, `Fixtures/SubagentsFixtures.swift` | the cards in a thread, the list, one run's transcript and steer |
 | E. Review | `Review/`, `Fixtures/ReviewFixtures.swift`, the `DiffFile` move into a shared module | changes, the diff reader, comments, Request changes, Commit as a turn, Finalize, review docked on iPad |
 | F. Search & actions | `Search/`, `Fixtures/SearchFixtures.swift` | search across agents, rename and delete, the iPad ⌘K palette |
+| G. Terminal | `Terminal/`, `Fixtures/TerminalFixtures.swift` | terminal panes: the iPad panel under a thread, the iPhone's full-screen panes, the key row |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
 track and are also the Mac's. A track may add to them (a component under
@@ -49,14 +50,15 @@ enum MobileRoute: Hashable, Codable {
     case review(ReviewRoute)              // Review/ReviewRoute.swift
     case search(SearchRoute)              // Search/SearchRoute.swift
     case settings(SettingsRoute)          // Settings/SettingsRoute.swift
+    case terminal(TerminalRoute)          // Terminal/TerminalRoute.swift
 }
 ```
 
 Each track owns its route enum and its destination view (`HomeDestination`,
 `NewThreadDestination`, `SubagentsDestination`, `ReviewDestination`, `SearchDestination`,
-`SettingsDestination`) in its folder. **To add a screen, add a case to your own enum and handle
+`SettingsDestination`, `TerminalDestination`) in its folder. **To add a screen, add a case to your own enum and handle
 it in your own destination.** The shell never changes. Keep your enum `Hashable` and `Codable`
-(fixtures name routes), and keep `thread` on `SubagentsRoute` and `ReviewRoute`: forgetting a
+(fixtures name routes), and keep `thread` on `SubagentsRoute`, `ReviewRoute` and `TerminalRoute`: forgetting a
 host closes the screens of its threads through it.
 
 Routes today:
@@ -74,6 +76,7 @@ Routes today:
 | `.search(.rename(AgentRef) / .delete(AgentRef))` | rename, delete or Delete Worktree Agent (presented) |
 | `.search(.problem(title:message:))` | an agent action from a menu that failed (presented) |
 | `.settings(.root / .hosts / .host(UUID?) / .appearance)` | Settings, hosts, a host's form (nil adds one), appearance |
+| `.terminal(.panes(AgentRef))` | a thread's terminal panes full screen (iPhone; iPad shows them in the panel) |
 
 Screens reach each other only through `MobileNavigator` (in the environment):
 
@@ -102,6 +105,8 @@ is out in portrait too.
 | `MobileAppearance` | `@Environment(MobileAppearance.self)` | System, Light or Dark |
 | `MobileApp` | `@Environment(\.mobileApp)` | `forget(host:)`, which clears a host from every store |
 
+- The terminal track (`MobileTerminals`) owns every client's `onOutput` and `onSessionExited`,
+  wiring each new connection's client on its first attach: nothing else sets them.
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
   tied to one connection on `host.session`: it changes with every new connection.
 - Check capabilities with `host.supports(RemoteProtocol.…Capability)` before offering a feature.
@@ -125,6 +130,9 @@ is out in portrait too.
 | Start a thread | `NewThread/NewThreadRoute.swift` (C) | Home, the iPad sidebar and overview | `NewThreadHooks.open(host: UUID? = nil, navigator:)` |
 | Home roots | `Home/` (A) | `PhoneShell`, `PadShell` | `HomeScreen()`, `PadSidebar()`, `PadOverview()` |
 | Settings root | `Settings/SettingsScreen.swift` (A) | `PhoneShell` | `SettingsScreen()` |
+| Terminal panel | `Terminal/TerminalPanelView.swift` (G) | `ThreadScreen`, on its content (the transcript with the composer) | `.threadTerminal(_ ref: AgentRef)`; adds nothing in compact width |
+| Terminal toggle | `Terminal/TerminalRoute.swift` (G) | `ThreadScreen`'s toolbar, iPad only | `TerminalToolbarButton(thread: AgentRef)` |
+| Terminal menu item | `Terminal/TerminalRoute.swift` (G) | the thread's options menu (menu items only) | `TerminalMenuItems(thread: AgentRef)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
 the owning track replaces the body. Keep the signature. A hook drawn inside a turn
