@@ -88,11 +88,14 @@ struct ThreadEventTests {
         #expect(s.thinking == "medium")
         #expect(!s.running)
         #expect(s.runtime == "rpc" && s.dialogsSupported)
-        #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue"])
+        #expect(s.supportedActions == ["send", "abort", "answer", "setModel", "setThinking", "sendImages", "subagents", "queue", "compact"])
         #expect(s.queue == NativeQueue(mode: .all), "an empty queue says the host holds one")
         #expect(s.messages.map(\.entryID) == ["user:1733234567890", "assistant:1733234567891"])
         #expect(s.messages.first?.blocks == [NativeThreadBlock(kind: .text, text: "Hello!")])
         #expect(s.stats == NativeThreadStats(contextTokens: 60000, contextWindow: 200000, contextPercent: 30, totalTokens: 105000, cost: 0.45))
+        #expect(s.context == NativeThreadContext(tokens: 60000, window: 200000, autoCompactAt: 200000 - 16384, autoCompact: true, keepRecent: 20000,
+                                                 split: s.context?.split), "pi's total, and the mark from pi's default reserve")
+        #expect(s.context?.split?.total ?? 0 > 0)
         #expect(s.commands?.map(\.name) == ["session-name", "fix-tests"])
         #expect(s.provisional.isEmpty && s.dialogs.isEmpty && s.widgets == [] && !s.clipped && s.olderCursor == nil)
     }
@@ -162,7 +165,8 @@ struct ThreadEventTests {
         .init(name: "a dialog", setup: [], event: #"{"type":"extension_ui_request","id":"d1","method":"select","title":"Pick","options":["a"]}"#, revisions: 1),
         .init(name: "a widget", setup: [], event: #"{"type":"extension_ui_request","id":"w1","method":"setWidget","widgetKey":"k","widgetLines":["hi"]}"#, revisions: 1),
         .init(name: "a repeated queue update", setup: [queueUpdate], event: queueUpdate, revisions: 0),
-        .init(name: "an unknown event", setup: [], event: #"{"type":"compaction_start","reason":"threshold"}"#, revisions: 0),
+        .init(name: "an unknown event", setup: [], event: #"{"type":"auto_retry_start","attempt":1}"#, revisions: 0),
+        .init(name: "a compaction starting", setup: [], event: #"{"type":"compaction_start","reason":"threshold"}"#, revisions: 1),
         .init(name: "an idle agent settling", setup: [], event: #"{"type":"agent_settled"}"#, revisions: 0),
         .init(name: "a repeated tool output", setup: [start, toolStart, toolUpdate], event: toolUpdate, revisions: 0),
         .init(name: "an empty text delta", setup: [start, messageStart, textStart, textDelta("Hi")], event: textDelta(""), revisions: 0),

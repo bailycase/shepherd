@@ -225,9 +225,37 @@ struct RPCWireTests {
          .toolExecutionEnd(toolCallId: "c1", toolName: "bash", result: nil, isError: false)),
         (#"{"type":"extension_error","extensionPath":"/x.ts","event":"tool_call","error":"boom"}"#,
          .extensionError(extensionPath: "/x.ts", event: "tool_call", error: "boom")),
-        (#"{"type":"compaction_start","reason":"threshold"}"#, .unknown(type: "compaction_start")),
+        (#"{"type":"compaction_start","reason":"threshold"}"#, .compactionStart(reason: "threshold")),
+        (#"{"type":"compaction_end","reason":"manual","aborted":true,"willRetry":false}"#,
+         .compactionEnd(reason: "manual", result: nil, aborted: true, willRetry: false, errorMessage: nil)),
+        (#"{"type":"compaction_end","reason":"manual","aborted":false,"errorMessage":"Compaction failed: Nothing to compact"}"#,
+         .compactionEnd(reason: "manual", result: nil, aborted: false, willRetry: false, errorMessage: "Compaction failed: Nothing to compact")),
+        (#"{"type":"compaction_end","reason":"overflow","result":{"summary":"S","tokensBefore":203000,"estimatedTokensAfter":21000,"firstKeptEntryId":"k"},"aborted":false,"willRetry":true}"#,
+         .compactionEnd(reason: "overflow", result: RPCCompactionResult(summary: "S", tokensBefore: 203_000, estimatedTokensAfter: 21_000, firstKeptEntryId: "k"),
+                        aborted: false, willRetry: true, errorMessage: nil)),
+        (#"{"type":"auto_retry_start","attempt":1}"#, .unknown(type: "auto_retry_start")),
         (#"{"reason":"threshold"}"#, .unknown(type: "")),
     ]
+
+    /// Compact now: pi's `compact`, with what to keep only when there is some.
+    @Test func compactCarriesItsInstructionsOnlyWhenGiven() throws {
+        let with = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RPCCommandFrame(id: "1", command: .compact(customInstructions: "keep the files")))) as? [String: Any]
+        #expect(with?["type"] as? String == "compact" && with?["customInstructions"] as? String == "keep the files" && with?["id"] as? String == "1")
+        let without = try JSONSerialization.jsonObject(with: JSONEncoder().encode(RPCCommandFrame(id: nil, command: .compact()))) as? [String: Any]
+        #expect(without?.keys.sorted() == ["type"])
+    }
+
+    /// A compaction summary carries its summary and size; pi's structured system prompt its
+    /// sections (a null removes one) and tools. Other roles decode as before.
+    @Test func summariesAndSystemPromptsDecodeTheirOwnFields() throws {
+        let summary = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"compactionSummary","summary":"S","tokensBefore":184000,"timestamp":5}"#.utf8))
+        #expect(summary.summary == "S" && summary.tokensBefore == 184_000 && summary.content.isEmpty)
+        let system = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"system","content":"","sections":{"preamble":"You are","docs":null},"toolsAdded":[{"name":"read"}],"toolsRemoved":[{"name":"ls"}]}"#.utf8))
+        #expect(system.sections?["preamble"] == .some("You are") && system.sections?["docs"] == .some(nil))
+        #expect(system.toolsAdded?.first?["name"]?.stringValue == "read" && system.toolsRemoved?.count == 1)
+        let user = try JSONDecoder().decode(RPCMessage.self, from: Data(#"{"role":"user","content":"hi","summary":"not mine","sections":{"a":"b"}}"#.utf8))
+        #expect(user.summary == nil && user.sections == nil)
+    }
 
     @Test(arguments: simpleEvents)
     func eventsDecode(json: String, expected: RPCEvent) throws {
