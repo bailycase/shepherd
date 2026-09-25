@@ -39,8 +39,14 @@ struct Composer: View {
     var jumpToLatest: (() -> Void)? = nil
     /// The "Up next" stack's state, from a test or preview that drives it; else the composer's own.
     var queueState: QueueStackState? = nil
-    /// What the subagent tray's rows do; nil hides the tray (a thread with no inspector).
-    var subagents: SubagentActions? = nil
+    /// Opens a subagent in the inspector; nil hides the tray (a thread with no inspector). The
+    /// composer takes the thread's own closures, never ones built per render, so a revision the
+    /// thread adopts leaves the composer alone.
+    var inspectSubagent: ((ChildRun) -> Void)? = nil
+    /// Opens a subagent with its Steer field focused (the tray's Steer).
+    var steerSubagent: ((ChildRun) -> Void)? = nil
+    /// The run open in the inspector: its tray row wears the selection.
+    var inspectedRunID: String? = nil
     @State private var attachments: [ImageAttachment] = []
     @State private var attachmentError: String?
     @State private var dropTargeted = false
@@ -151,6 +157,18 @@ struct Composer: View {
     }
 
     private var showsTray: Bool { subagents != nil && store.tray != nil }
+
+    /// What the tray's rows do.
+    private var subagents: SubagentActions? {
+        guard let inspectSubagent else { return nil }
+        return SubagentActions(
+            inspect: inspectSubagent,
+            command: { [store] run, action, text, mode in
+                Task { await store.subagentCommand(runID: run.runID, action: action, text: text, mode: mode) }
+            },
+            steer: steerSubagent,
+            inspectedRunID: inspectedRunID)
+    }
 
     /// The run whose question is open, while it still asks.
     private var answeringRun: ChildRun? {

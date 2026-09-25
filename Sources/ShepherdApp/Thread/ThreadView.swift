@@ -104,7 +104,6 @@ struct ThreadView: View {
                     .frame(maxWidth: AppLayout.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
-
                 }
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
@@ -159,7 +158,8 @@ struct ThreadView: View {
                          jumpToLatest: follower.showsJump(running: running) ? {
                              follower.jumpToLatest()
                              proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                         } : nil, queueState: queueState, subagents: inspectSubagent == nil ? nil : subagentActions)
+                         } : nil, queueState: queueState,
+                         inspectSubagent: inspectSubagent, steerSubagent: steerSubagent, inspectedRunID: inspectedRunID)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { composerHeight = $0 }
             }
         }
