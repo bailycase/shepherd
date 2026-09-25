@@ -36,6 +36,7 @@ extension ShepherdViewModel {
                 tree.append(.remoteAgent(hostID: hostID, model: remoteSidebarRowModel(for: agent, on: connection, badges: badges)))
             }
         }
+        appendRemoteAutomations(connection, to: &tree)
     }
 
     /// A connected host's agent count, or how many questions wait on you there.
@@ -87,6 +88,51 @@ struct RemoteAgentRow: View {
                 Button(agent.worktreeBranch == nil ? "Delete Agent" : "Delete Worktree Agent…", role: .destructive) {
                     vm.requestRemoteDelete(ref)
                 }
+            }
+    }
+}
+
+/// A host's Automations disclosure: its count, or how many runs wait on you.
+struct RemoteAutomationsRow: View {
+    var vm: ShepherdViewModel
+    let header: SidebarRemoteAutomations
+
+    var body: some View {
+        let hostID = header.hostID
+        SpaceRow(name: "Automations", collapsed: header.collapsed, count: header.count, blocked: header.blocked,
+                 onToggle: { vm.toggleRemoteAutomations(hostID) })
+    }
+}
+
+/// An automation on a host: its run's dot and word. Clicking opens its run, or its details
+/// while it has none; the context menu runs, stops, switches and deletes it on the host.
+struct RemoteAutomationRow: View {
+    var vm: ShepherdViewModel
+    let row: SidebarRemoteAutomation
+
+    var body: some View {
+        let key = row.key
+        let abilities = row.abilities
+        NWSidebarRow(row.name, state: row.state, selected: row.selected, depth: 1, accessory: row.accessory)
+            .opacity(row.pending ? NWListMetrics.dimmedOpacity : 1)
+            .sidebarTapRow { vm.openRemoteAutomation(row) }
+            .accessibilityLabel("\(row.name), automation, \(row.word)")
+            .contextMenu {
+                if let reason = abilities.readOnlyReason {
+                    Text(reason)
+                }
+                if row.run == nil {
+                    Button("Run Now") { vm.performRemoteAutomation(key, .run) }.disabled(!abilities.run || row.pending)
+                } else {
+                    Button("Stop") { vm.performRemoteAutomation(key, .stop) }.disabled(!abilities.stop || row.pending)
+                }
+                Toggle("Starts with Shepherd", isOn: Binding(get: { row.enabled },
+                                                             set: { vm.performRemoteAutomation(key, .setEnabled(enabled: $0)) }))
+                    .disabled(!abilities.toggle || row.pending)
+                Button("Details and Runs…") { vm.showRemoteAutomation(key) }
+                Divider()
+                Button("Delete Automation", role: .destructive) { vm.performRemoteAutomation(key, .delete) }
+                    .disabled(!abilities.edit || row.pending)
             }
     }
 }

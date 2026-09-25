@@ -48,6 +48,14 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.availabilityCode(code, legacyHost: legacyHost) == read)
     }
 
+    /// An older host shows its automations read-only: nothing is sent to it.
+    @Test(arguments: [RemoteAutomationRequest.setEnabled(enabled: true), .run, .stop, .runs, .delete,
+                      .create(draft: RemoteAutomationDraft(name: "n", prompt: "p", cwd: "/", enabled: true))])
+    func automationsNeedAHostThatAdvertisesThem(_ request: RemoteAutomationRequest) async {
+        let client = RemoteHostClient()
+        #expect(await code { try await client.automation(AutomationID(), request: request) } == "update_required")
+    }
+
     @Test(arguments: [
         NativeThreadRequest.snapshot(),
         .setModel(expectedSessionID: "s", generation: "g", operationID: UUID(), model: "p/m"),
@@ -63,10 +71,27 @@ struct RemoteHostClientTests {
         RemoteAgentQuery.children, .review(pullRequest: false), .search(query: "q"),
         .worktreeInfo, .worktreeStatus(operationID: UUID()), .deleteKeepingWorktree,
         .worktreeSetup(action: .check), .worktreeCommitCount(base: "main"), .worktreeDescription(base: "main", title: "t"),
+        .commitInfo, .commitMessage(paths: ["a"]),
+        .commit(operationID: UUID(), options: RemoteCommitOptions(head: "", files: [], title: "t", body: "", push: .none)),
     ])
     func agentQueriesAreGatedBeforeSending(_ query: RemoteAgentQuery) async {
         let client = RemoteHostClient()
         #expect(await code { _ = try await client.agentQuery(agentID: AgentID(), query: query) } == "update_required")
+    }
+
+    /// Commit from review needs its own capability: a host that inspects agents but predates
+    /// it is never asked to commit.
+    @Test(arguments: [
+        (RemoteAgentQuery.commitInfo, RemoteProtocol.reviewCommitCapability),
+        (.commitMessage(paths: []), RemoteProtocol.reviewCommitCapability),
+        (.commit(operationID: UUID(), options: RemoteCommitOptions(head: "", files: [], title: "t", body: "", push: .upstream)),
+         RemoteProtocol.reviewCommitCapability),
+        (.worktreeStatus(operationID: UUID()), RemoteProtocol.worktreeActionsCapability),
+        (.review(pullRequest: false), RemoteProtocol.agentInspectionCapability),
+        (.worktreeDescription(base: "main", title: "t"), RemoteProtocol.worktreeSetupCapability),
+    ])
+    func eachAgentQueryNeedsItsCapability(_ query: RemoteAgentQuery, _ capability: String) {
+        #expect(RemoteHostClient.capability(for: query) == capability)
     }
 
     @Test(arguments: [RemoteAgentAction.rename(name: "t"), .deleteKeepingWorktree, .reorder(target: AgentID())])
