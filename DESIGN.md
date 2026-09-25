@@ -862,9 +862,12 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
   stamped (older hosts and state files) follow, newest created first. `lastActiveAt` and `waitingOn`
   are live state on `Agent`, broadcast to remote clients like a status; `waitingOn` is never written
   to state.json. At launch the most recently active agent on this Mac shows.
-- **Hosts:** a connected host's agents join both lists, tagged. A host that is not connected lists
-  nothing: More ▸ Hosts says how many are offline, and the Hosts page carries their notices and
-  Retry.
+- **Hosts:** a connected host's agents join both lists, tagged. A host that drops keeps its threads
+  in Recents as it last sent them (NavHosts' `horizon` rows), dimmed (`NWListMetrics.dimmedOpacity`,
+  as on the iPad), never in Needs you since nothing there can be answered, and with a menu that
+  says "Host Offline"; opening one shows the host's connection state. A host not reached since
+  launch lists nothing. More ▸ Hosts says how many are offline, and the Hosts page carries their
+  notices and Retry.
 - **Footer** (`NWSidebarFooter`): behind a hairline, padded 10pt above and below and 12pt at the
   sides, with a 10pt gap. It holds a 26pt `bgSelected` circle with the initial in Geist 11.5
   semibold, the Mac user's full name (`NSFullUserName`) in `ui` medium over "This Mac · <the
@@ -888,7 +891,7 @@ yet, so they are hidden until built, and More holds Hosts and Extensions. "Mac u
     included; `AutomationRun.isLive`), else Run Now, then Delete Automation. Run Now replaces a done
     run once the new run exists; a refused Run Now shows `ActionErrorDialog`.
   - Remote threads: Rename…, Finalize Worktree… (worktree agents), Review Uncommitted Changes,
-    Review PR Changes, and Delete Agent or Delete Worktree Agent….
+    Review PR Changes, and Delete Agent or Delete Worktree Agent…, while the host is connected.
 - **Motion:** rows arriving, leaving and moving up animate `.list` (keyed on the rows' ids, never
   the rows), and More's rows disclose (`.disclosure`). Selecting a row changes no row's place, so
   it lands at once. A status report or a settled name changes only its row, in place (`.content`),
@@ -3781,7 +3784,6 @@ below collects the rest, and the places those sentences point here.
     opening prompt carries no images.
   - A Needs you reason is the question's own title cut to 14 characters ("Retention…"), where the
     boards condense it ("retention?").
-  - A host that is not connected lists none of its threads; the boards draw no offline row.
 - **A pi dialog posts no notification** (Notifications and Live Activities › The catalog):
   a confirm, select, input or editor dialog shows in the thread, but only a tool named like
   `ask` or `question` sets `blocked`, so any other question reaches no one outside the window

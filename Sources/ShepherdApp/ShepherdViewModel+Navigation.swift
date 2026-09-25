@@ -70,8 +70,9 @@ extension ShepherdViewModel {
         SidebarSource(
             local: state, localChildren: childRuns.rows, failedTurns: failedTurns, statusSince: statusSince,
             openRuns: openAutomationRuns,
-            hosts: remoteHosts.connections.filter { $0.phase == .connected }.map {
-                SidebarSource.Host(id: $0.id, name: $0.config.name, state: $0.state, children: $0.children)
+            hosts: remoteHosts.connections.map {
+                SidebarSource.Host(id: $0.id, name: $0.config.name, state: $0.state, children: $0.children,
+                                   offline: $0.phase != .connected)
             })
     }
 

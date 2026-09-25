@@ -234,9 +234,10 @@ struct ContinueCard: Equatable {
 }
 
 extension ShepherdViewModel {
-    /// The most recent running thread (automation runs aside), for the New thread page.
+    /// The most recent running thread (automation runs and offline hosts' threads aside), for the
+    /// New thread page.
     var continueCard: ContinueCard? {
-        for row in sidebarLists.recents where row.leading == .dot(.running) {
+        for row in sidebarLists.recents where row.leading == .dot(.running) && !row.offline {
             switch row.id {
             case .local(let id):
                 return ContinueCard(id: row.id, title: row.title, since: statusSince[id])

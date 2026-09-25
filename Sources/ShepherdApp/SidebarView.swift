@@ -146,7 +146,8 @@ private struct SidebarItemView: View, Equatable {
             case .header(let kind):
                 NWSidebarSection(kind)
             case .row(let row):
-                NWSidebarRow(row.title, leading: row.leading, selected: row.selected, accessory: row.accessory)
+                NWSidebarRow(row.title, leading: row.leading, selected: row.selected, dimmed: row.offline,
+                             accessory: row.accessory)
                     .help(row.help)
                     .sidebarTapRow { vm.selectSidebarRow(row.id) }
                     .accessibilityLabel(row.accessibilityLabel)
@@ -188,19 +189,35 @@ private struct SidebarRowMenu: View {
                 }
             }
         case .remote(let ref):
-            Button("Rename…") { vm.remoteRenameTarget = ref }
-            Divider()
-            if row.worktree {
-                Button("Finalize Worktree…") {
-                    vm.remoteWorktreeFinalize = true
-                    vm.remoteWorktreeSheet = ref
-                }
+            if row.offline {
+                // Every action goes through the host, which is not connected.
+                Button("Host Offline") {}.disabled(true)
+            } else {
+                RemoteRowMenu(vm: vm, row: row, ref: ref)
             }
-            Button("Review Uncommitted Changes") { vm.openRemoteReview(ref, pullRequest: false) }
-            Button("Review PR Changes") { vm.openRemoteReview(ref, pullRequest: true) }
-            Button(row.worktree ? "Delete Worktree Agent…" : "Delete Agent", role: .destructive) {
-                vm.requestRemoteDelete(ref)
+        }
+    }
+}
+
+/// A connected host's thread: what its row offered in the old tree.
+private struct RemoteRowMenu: View {
+    var vm: ShepherdViewModel
+    let row: SidebarListRow
+    let ref: RemoteAgentRef
+
+    var body: some View {
+        Button("Rename…") { vm.remoteRenameTarget = ref }
+        Divider()
+        if row.worktree {
+            Button("Finalize Worktree…") {
+                vm.remoteWorktreeFinalize = true
+                vm.remoteWorktreeSheet = ref
             }
+        }
+        Button("Review Uncommitted Changes") { vm.openRemoteReview(ref, pullRequest: false) }
+        Button("Review PR Changes") { vm.openRemoteReview(ref, pullRequest: true) }
+        Button(row.worktree ? "Delete Worktree Agent…" : "Delete Agent", role: .destructive) {
+            vm.requestRemoteDelete(ref)
         }
     }
 }
