@@ -32,8 +32,11 @@ runs:
           grep -q -- "$flag" <<<"$help" || { echo "::error::this toolchain's swift build has no $flag"; exit 1; }
         done
         echo "SWIFTPM_FLAGS=$flags" >> "$GITHUB_ENV"
-        swift --version
-        version=$(swift --version 2>/dev/null | head -1 | shasum -a 256 | cut -c1-12)
+        # An image update can change the SDK or Xcode build under the same
+        # swiftlang string, so the key covers all three.
+        toolchain=$({ swift --version; xcrun --show-sdk-version; xcodebuild -version; } 2>/dev/null)
+        echo "$toolchain"
+        version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)
         echo "prefix=spm-build-$RUNNER_OS-e$CACHE_EPOCH-$version" >> "$GITHUB_OUTPUT"
 
     # Checked-out dependencies: about 1 GB of git packs that no toolchain change
