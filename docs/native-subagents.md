@@ -319,11 +319,13 @@ it.
 - **Transcript:** pages the child's session file (its last 8 MiB) 50 entries at a time, using the
   thread's own projection, one type step smaller. "N earlier turns · Show all" loads more.
   Scrolling up stops following a live run. Switching children invalidates pending pages, and
-  Copy Transcript loads every page first.
+  Copy Transcript loads every page first. A live run's transcript ends in its call in flight,
+  drawn as the thread's live line from what the run reports (`nativeRunLive`); nothing shows
+  between calls.
 - **Live runs** end in a Steer composer addressed to the child ("to: worker · not the parent").
   A failed send keeps the draft.
 - **Finished runs** are read-only: messages from the parent are captioned "from parent", and the
-  bottom bar has Re-run, Fork, and Copy transcript. Your own steers and answers (from a card, the
+  bottom bar has Re-run, Fork, and Copy transcript. Your own steers and answers (from the tray, the
   inspector, `shepherd-inspect`, or the fleet view) are not: the extension appends each to
   `user-messages.jsonl` beside the child's session before sending it, and the host marks the
   matching transcript message `origin: .user` (the first unclaimed message with its text, written

@@ -13,8 +13,9 @@ public enum NWTouchQueueMetrics {
     public static let rowHeight: CGFloat = 48
     /// The queue glyph in the header.
     public static let glyph: CGFloat = 14
-    /// The spinner in a steering row's number slot.
-    public static let spinner: CGFloat = 16
+    /// The still steer glyph in a steering row's number slot (MobileQueue; LiveText: waiting
+    /// isn't working).
+    public static let steerGlyph: CGFloat = 15
     /// Rows the stack shows before it scrolls inside, so it never takes the thread's room.
     public static let visibleRows = 3
 }
@@ -130,7 +131,7 @@ private struct NWTouchQueueHeader<Options: View>: View {
 ///
 /// - **Queued:** its number (the order it goes), the text on up to two lines, and a photo glyph
 ///   with a count for its images. Its actions are the app's swipe actions and long-press menu.
-/// - **Steering:** on `runningTint`, a running spinner in the number's place, the text, "↳
+/// - **Steering:** on `runningTint`, the still `running` steer glyph in the number's place, the text, "↳
 ///   Steering" under it, and Back to the queue.
 /// - **Deleted / Cleared:** where a message was deleted (or the queue cleared), with Undo.
 public struct NWTouchQueueRow: View {
@@ -175,7 +176,11 @@ public struct NWTouchQueueRow: View {
                 switch kind {
                 case .queued(let number): NWQueueNumber(number).nwTransition(.content)
                 default:
-                    ProgressView().progressViewStyle(.nwSpinner(size: NWTouchQueueMetrics.spinner, color: nw.running))
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(nw.running)
+                        .frame(width: NWTouchQueueMetrics.steerGlyph, height: NWTouchQueueMetrics.steerGlyph)
+                        .accessibilityHidden(true)
                         .nwTransition(.content)
                 }
             }

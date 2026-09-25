@@ -349,7 +349,8 @@ public struct NWSubagentTrayRow: View {
                 }
             }
             .lineLimit(1).truncationMode(.tail)
-            .modifier(NWLiveText(live: live))
+            // The words shimmer while the call runs, as the thread's live line does (LiveText).
+            .nwShimmer(active: live)
         case .waiting(let text), .result(let text):
             Text(text).font(.nwSans(m.textSize)).foregroundStyle(nw.textSecondary).lineLimit(1).truncationMode(.tail)
         case .asks(let question):
@@ -527,13 +528,3 @@ public struct NWSubagentRecordLine: View {
     }
 }
 
-// MARK: Live text
-
-/// Live words shimmer while their call runs (LiveText); still once it ends.
-struct NWLiveText: ViewModifier {
-    let live: Bool
-
-    func body(content: Content) -> some View {
-        if live { content.nwShimmer() } else { content }
-    }
-}
