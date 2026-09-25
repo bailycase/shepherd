@@ -1237,6 +1237,12 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
 - **Tab states** (`NWTerminalTab.Activity`): at rest the program at its prompt ("zsh"); a
   running command names the tab ("make dev") with a running spinner; output printed while the
   tab was off screen adds a running-blue dot; an exited session is tertiary (failed if it failed).
+  A resize is not news: a shell or TUI redraws on SIGWINCH (a window resize, maximize or
+  restore, a hidden panel's panes following the geometry, a remote viewer leaving), so the host
+  counts no output for a second after it gives a PTY a size (`TerminalNews`, carried as
+  `RemoteTerminalActivity.newsSequence`; an older host's every read counts). Showing a tab marks
+  it seen whenever the tab, its panes, or their news change (`TerminalSeenMark`), so picking a
+  tab whose output matches the last one's still clears its dot.
   The selected tab of a remote agent names its host. What each terminal runs comes from
   `SessionServer.terminalActivity` (a remote agent's host answers `RemoteAgentQuery.terminals`),
   polled every 2 s while the layout is on screen; an older host leaves plain tabs named for the
@@ -1248,7 +1254,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
 - **Show and hide:** ⌘J or the toolbar's terminal toggle (`NWPaneToggle`, lantern while open).
   Hidden, a running-blue dot on the toggle (`NWToggleBadge`) says a tab printed. Showing gives the
   keyboard to the selected tab; hiding gives it back to the thread. A layout seen for the first
-  time with terminals shows its panel.
+  time with terminals shows its panel. The panel closes with its last terminal, however it goes
+  (its tab closed, the agent's `pane_close`, its shell exiting), and the thread takes the layout
+  again; ⌘J with no terminals shows the empty state ("No terminals in this thread yet." and New
+  Terminal).
 - **Height:** 330pt by default, persisted app-wide (`shepherd.terminalPanelHeight`). Drag the
   panel's top edge (9pt hit area, row-resize pointer): it snaps at a third, half and two-thirds
   of the layout within 12pt, keeps the panel at least 120pt and the thread at least 160pt;
@@ -1278,6 +1287,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
   assistant's text, never pi's system prompt, tool definitions, thinking, tool calls or results;
   its rows show a snippet of that text with the match in bold. A host answers a remote client's
   conversation search the same way.
+- **This thread** also carries the Pane menu's terminal commands while a thread with a layout is
+  on screen: Show or Hide terminal (⌘J), New terminal (⌘D, shown while the thread has the
+  keyboard), and Maximize or Restore terminal (⇧⌘↩), named for what they will do, with keycaps
+  from `KeybindingsStore`.
 - **Rows** (`NWPaletteRow`, the sidebar's row height): a stroke icon, the label, dim context, and
   the real shortcut as keycaps. The highlight is `runningTint` with a running icon. Subagent rows
   wear their run's state color.
@@ -1580,7 +1593,10 @@ components first), with these differences for touch:
   `bgRaised`. On iPhone the thread's options open the panes full screen with the same strip and
   key row. The terminal is SwiftTerm's view on Night Watch's terminal palette in Geist Mono at
   the code size, following Dynamic Type to 20pt; the strip and key row stop growing at
-  xxxLarge. Closing a tab asks first ("Its shell on <host> stops.").
+  xxxLarge. Closing a tab asks first ("Its shell on <host> stops."). As on the Mac, the iPad
+  panel closes with its last terminal while the host is connected, and tab dots follow the
+  host's news, so a tab leaving the screen (its viewer detaching, the PTY taking the Mac's size
+  again) leaves no dot.
 - **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
   iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
   (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &

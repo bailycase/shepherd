@@ -290,6 +290,19 @@ extension PreviewTests {
         }
     }
 
+    /// "term" finds the Pane menu's terminal commands under This thread, with their keycaps.
+    @Test func commandPaletteTerminalCommands() async throws {
+        let (workspace, agents) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        workspace.vm.selectAgent(agents[3].id)
+        try await Preview.render("command-palette-terminal", size: CGSize(width: 1000, height: 520)) {
+            Color.nw.bgWindow
+                .nwCommandPalette(isPresented: .constant(true)) {
+                    PaletteCard(items: workspace.vm.paletteItems, run: { _ in }, close: {}, initialQuery: "term")
+                }
+        }
+    }
+
     // MARK: Toolbar and right pane
 
     /// The thread toolbar in its states: running with subagents, needs you with the review

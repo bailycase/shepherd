@@ -92,7 +92,9 @@ enum RemoteSamples {
         .search(snippet: "matched text"),
         .search(snippet: nil),
         .terminals([RemoteTerminalActivity(paneID: pane, sessionID: SessionID(), process: "make", command: "make dev", outputSequence: 42),
-                    RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: nil, command: nil, outputSequence: 0)]),
+                    RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: nil, command: nil, outputSequence: 0),
+                    RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: "zsh", command: nil, outputSequence: 9,
+                                           newsSequence: 4)]),
         .terminals([]),
         .commitInfo(commitInfo),
         .commitInfo(detachedInfo),
@@ -376,6 +378,16 @@ struct RemoteReplyTests {
             id: 5, attachment: RemoteAttachment(sessionID: S.session, cols: 1, rows: 2, viewportGeneration: 3)
         ))
         #expect(object["sessionID"] as? String == "session")
+    }
+
+    /// A host from before `newsSequence` counts every read of output, so its tabs' news is that.
+    @Test func aTerminalFromAnOlderHostTakesItsOutputSequenceAsNews() throws {
+        let row = try Wire.decode(RemoteTerminalActivity.self,
+                                  #"{"paneID":"pane","sessionID":"session","process":"zsh","outputSequence":7}"#)
+        #expect(row.newsSequence == nil && row.news == 7)
+        let newer = RemoteTerminalActivity(paneID: S.pane, sessionID: S.session, process: "zsh", command: nil,
+                                           outputSequence: 7, newsSequence: 2)
+        #expect(newer.news == 2)
     }
 
     @Test func worktreeCheckStatePassesOnlyWhenPassed() {

@@ -47,6 +47,7 @@ private struct ThreadTerminalPanel: ViewModifier {
             }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if columnHeight != $0 { columnHeight = $0 } }
+        .background { TerminalPanelCloser(ref: ref) }
         .nwAnimation(.pane, value: shows)
         .nwAnimation(.pane, value: maximized)
         .onAppear { visible = true }
@@ -68,6 +69,31 @@ private struct ThreadTerminalPanel: ViewModifier {
     }
 }
 
+/// Closes the panel with its last terminal, as the Mac's does: its tab closed here or on
+/// another device, the agent closed its pane, or its shell exited. Only while the host is
+/// connected, so a dropped connection leaves the panel as it was. Its own view, so the thread
+/// modifier never observes the host's tabs.
+private struct TerminalPanelCloser: View {
+    let ref: AgentRef
+    @Environment(MobileHosts.self) private var hosts
+
+    var body: some View {
+        Color.clear
+            .accessibilityHidden(true)
+            .onChange(of: terminalCount) { before, after in
+                guard let before, let after, TerminalPanel.closesWithLastTerminal(before: before, after: after) else { return }
+                MobileTerminals.shared.update(ref) { $0.shown = false; $0.maximized = false }
+            }
+    }
+
+    /// How many tabs the thread's layout has, while the host is connected.
+    private var terminalCount: Int? {
+        guard let host = hosts.host(ref.host), host.phase.isConnected, let agent = host.agent(ref.agent),
+              let tab = host.state.tabs.first(where: { $0.id == agent.tabID }) else { return nil }
+        return TerminalPanel.tabs(in: tab.layout, thread: agent.paneID).count
+    }
+}
+
 /// Resolves the panel's values from the host and the store, and drops sessions the host no
 /// longer lists.
 private struct TerminalPanelHost: View {
@@ -82,8 +108,8 @@ private struct TerminalPanelHost: View {
             .onChange(of: liveSessions, initial: true) { _, live in
                 if hosts.host(ref.host)?.phase.isConnected == true { terminals.prune(host: ref.host, live: live) }
             }
-            .onChange(of: model.onScreenOutput, initial: true) {
-                terminals.markSeen(ref, sessions: model.onScreenSessions)
+            .onChange(of: model.seenMark, initial: true) { _, mark in
+                terminals.markSeen(ref, sessions: mark.sessions)
             }
     }
 
