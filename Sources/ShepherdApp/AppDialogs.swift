@@ -34,10 +34,6 @@ struct AppDialogs: ViewModifier {
                     vm.remoteRenameTarget = nil
                 }
             }
-            .sheet(item: $vm.remoteAutomationItem) { item in
-                RemoteAutomationSheet(vm: vm, key: item.value)
-                    .dialogSheetFrame()
-            }
             .sheet(item: $vm.remoteWorktreeItem) { item in
                 RemoteWorktreeSheet(vm: vm, target: item.target, finalize: item.finalize)
                     .dialogSheetFrame()

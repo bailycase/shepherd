@@ -128,36 +128,4 @@ extension PreviewTests {
             RootView(vm: vm)
         }
     }
-
-    @Test func remoteAutomationSheet() async throws {
-        let workspace = try PreviewWorkspace()
-        let host = try await AutomationHostFixture()
-        defer { workspace.stop(); host.server.stop() }
-        let connection = try await host.connect(workspace)
-        let key = AutomationKey(host: connection.id, automation: host.nightly.id)
-        let vm = workspace.vm
-        await vm.loadRemoteAutomationRuns(key)
-        #expect(vm.remoteAutomationRuns[key]?.count == 14)
-
-        try await Preview.render("sheet-remote-automation", size: CGSize(width: AppLayout.automationSheetWidth, height: 860)) {
-            RemoteAutomationSheet(vm: vm, key: key)
-        }
-    }
-
-    /// A run that finished keeps its thread to read, and the footer offers Run Now again.
-    @Test func remoteAutomationSheetAfterARun() async throws {
-        let workspace = try PreviewWorkspace()
-        let host = try await AutomationHostFixture()
-        defer { workspace.stop(); host.server.stop() }
-        let connection = try await host.connect(workspace)
-        let key = AutomationKey(host: connection.id, automation: host.bump.id)
-        let vm = workspace.vm
-        await vm.loadRemoteAutomationRuns(key)
-        let detail = try #require(vm.remoteAutomationDetail(key))
-        #expect(detail.row.run != nil && !detail.row.live && detail.row.abilities.run)
-
-        try await Preview.render("sheet-remote-automation-settled", size: CGSize(width: AppLayout.automationSheetWidth, height: 620)) {
-            RemoteAutomationSheet(vm: vm, key: key)
-        }
-    }
 }

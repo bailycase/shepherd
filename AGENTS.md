@@ -371,8 +371,7 @@ Sources/
       in +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
-      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +Pages),
-      RemoteAutomationSheet
+      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +Pages)
     Pages/             the sidebar destinations' pages: AutomationsPage and HostsPage (views over
                        AutomationsPageModel and HostsPageModel, derived per change), their
                        destinations (PageDestinations: runs read, sheets), AutomationEditorSheet,

@@ -4,9 +4,8 @@ import ShepherdProtocol
 import ShepherdRemote
 import ShepherdUI
 
-// A remote host's automations: the shared presentation of them, the sheet with one's details
-// and runs, and the changes that go to the host (`RemoteAutomationRequest`), which applies the
-// same rules as its own.
+// A remote host's automations: the shared presentation of them, their runs, and the changes
+// that go to the host (`RemoteAutomationRequest`), which applies the same rules as its own.
 
 extension ShepherdViewModel {
     /// A connected host's automations as the shared presentation reads them.
@@ -15,11 +14,6 @@ extension ShepherdViewModel {
                                   manageable: connection.supportsAutomations, state: connection.state)
         let runs = remoteAutomationRuns.filter { $0.key.host == connection.id }
         return AutomationsModel(hosts: [host], runs: runs)
-    }
-
-    func showRemoteAutomation(_ key: AutomationKey) {
-        remoteAutomationSheet = key
-        Task { await loadRemoteAutomationRuns(key) }
     }
 
     /// Reads the runs the host kept. A host that cannot say keeps what was read before.
@@ -37,12 +31,7 @@ extension ShepherdViewModel {
             defer { remoteAutomationsPending.remove(key) }
             do {
                 try await remoteHosts.automation(key, request: request)
-                if request == .delete {
-                    if remoteAutomationSheet == key { remoteAutomationSheet = nil }
-                    remoteAutomationRuns[key] = nil
-                } else if remoteAutomationSheet == key {
-                    await loadRemoteAutomationRuns(key)
-                }
+                if request == .delete { remoteAutomationRuns[key] = nil }
             } catch {
                 remoteActionError = AutomationsModel.failureText(request, error)
             }
