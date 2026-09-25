@@ -130,6 +130,9 @@ for screen in "${screens[@]}"; do
         else
             echo "FAIL: $screen ($scheme) never became ready"; tail -20 "$log" 2>/dev/null; status=1
         fi
+        # A screen that measures what it shows prints "FIXTURE CHECK ok|FAILED: …".
+        grep "^FIXTURE CHECK" "$log" 2>/dev/null | sed "s/^/$screen ($scheme): /" || true
+        if grep -q "^FIXTURE CHECK FAILED" "$log" 2>/dev/null; then status=1; fi
         if grep -q "^FIXTURE MUTATION" "$log" 2>/dev/null; then
             echo "FAIL: $screen ($scheme) asked a host to change something:"; grep "^FIXTURE MUTATION" "$log"; status=1
         fi
