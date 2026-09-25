@@ -7,8 +7,13 @@ import Testing
 struct SettingsSearchTests {
     @Test func theNavListsEveryPageInDesignOrder() {
         #expect(SettingsSection.allCases.map(\.title) == [
-            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Remote", "Keyboard", "Advanced",
+            "Appearance", "Terminal", "Agents", "Worktrees", "Pi", "Instructions", "Remote", "Keyboard", "Advanced",
         ])
+    }
+
+    /// Instructions fills the detail area; every other page sits in the 720pt column.
+    @Test func onlyInstructionsIsAWidePage() {
+        #expect(SettingsSection.allCases.filter(\.isWide) == [.instructions])
     }
 
     @Test func everyPageListsItsRows() {
@@ -34,6 +39,9 @@ struct SettingsSearchTests {
         ("steer", .agents, ["Return while pi is working"]),
         ("queue", .agents, ["Return while pi is working", "When a turn ends, send the queue"]),
         ("all at once", .agents, ["When a turn ends, send the queue"]),
+        ("system prompt", .instructions, ["AGENTS.md", "APPEND_SYSTEM.md"]),
+        ("sync", .instructions, ["Same on every host"]),
+        ("append", .instructions, ["APPEND_SYSTEM.md"]),
     ])
     func rowsMatchByTitleOrKeyword(query: String, section: SettingsSection, rows: [String]) {
         #expect(section.matches(for: query) == rows)

@@ -70,6 +70,36 @@ struct SettingsPreviewTests {
         }
     }
 
+    private nonisolated static let instructionsSample = """
+        # How I work
+
+        ## Stack
+        - Swift 6 and SwiftUI on macOS 26. Packages build with `swift build`.
+        - Tests use Swift Testing, never XCTest.
+
+        ## Before you say you're done
+        - `swift test` passes.
+        - Small commits, imperative subjects, no emoji.
+
+        """
+
+    /// Instructions with both files saved and an unsaved edit: the changed line tinted, "● edited"
+    /// in the header, Save lit.
+    @Test func settingsInstructionsEdited() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        try workspace.server.instructions.save(.agents, content: Self.instructionsSample)
+        try workspace.server.instructions.save(.appendSystem, content: "Never force-push to main.\n")
+        let model = workspace.vm.instructions
+        await model.refresh()
+        model.setText(Self.instructionsSample.replacingOccurrences(of: "passes.", with: "passes and `swiftformat --lint .` is clean."),
+                      file: .agents, on: .local)
+        workspace.vm.settingsSection = .instructions
+        try await Preview.render("settings-instructions-edited", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Settings ▸ Advanced ▸ Updates as each app shows it. Sparkle only runs in a bundled app,
     /// so the Advanced page above renders without this group.
     @Test func updateChannelRows() async throws {
