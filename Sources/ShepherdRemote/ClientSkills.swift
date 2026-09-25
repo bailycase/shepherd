@@ -125,6 +125,26 @@ public struct SkillInstall: Equatable, Sendable {
     }
 }
 
+/// Where a skill on skills.sh stands on the hosts: Install, installing (the hosts it has
+/// reached), installed, or installed with a newer commit waiting.
+public enum SkillResultState: Equatable, Sendable {
+    case install
+    case installing(SkillInstall)
+    case installed
+    case update
+
+    @MainActor
+    public init(_ skill: DirectorySkill, model: ClientSkills, hosts: [SkillsHost]) {
+        if let install = model.installs[skill.id], install.isRunning {
+            self = .installing(install)
+        } else if let row = model.row(skill.slug, in: hosts) {
+            self = row.skill.update == nil ? .installed : .update
+        } else {
+            self = .install
+        }
+    }
+}
+
 /// Settings ▸ Skills' model. Skills are global: with Same skills on every host on (the default,
 /// kept per device), every change goes to every host, one that is offline is owed it and takes it
 /// when it's back, and the list shows the first host's skills with where each host is. Off, the

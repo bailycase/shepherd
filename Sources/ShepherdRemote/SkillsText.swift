@@ -256,6 +256,28 @@ public enum SkillsText {
         String(commit.prefix(7))
     }
 
+    // MARK: Files
+
+    /// A skill's top-level entries from its files' paths, relative to its folder: SKILL.md first,
+    /// then files by name, then folders with how many files each holds. Hidden ones are left out.
+    public static func entries(paths: [String]) -> [SkillFileEntry] {
+        var top: [String: SkillFileEntry] = [:]
+        for path in paths {
+            let parts = path.split(separator: "/", maxSplits: 1).map(String.init)
+            guard let first = parts.first, !first.hasPrefix(".") else { continue }
+            if parts.count == 1 {
+                top[first] = SkillFileEntry(name: first)
+            } else {
+                top[first, default: SkillFileEntry(name: first, isDirectory: true, fileCount: 0)].fileCount += 1
+            }
+        }
+        return top.values.sorted { a, b in
+            if (a.name == "SKILL.md") != (b.name == "SKILL.md") { return a.name == "SKILL.md" }
+            if a.isDirectory != b.isDirectory { return !a.isDirectory }
+            return a.name.localizedStandardCompare(b.name) == .orderedAscending
+        }
+    }
+
     // MARK: Private
 
     private static let preamble = "The following skills provide specialized instructions for specific tasks.\n"

@@ -326,25 +326,6 @@ struct SkillsDirectorySheet: View {
     }
 }
 
-/// Where a skill in the directory stands on the hosts.
-enum SkillResultState: Equatable {
-    case install
-    case installing(SkillInstall)
-    case installed
-    case update
-
-    @MainActor
-    init(_ skill: DirectorySkill, model: ClientSkills, hosts: [SkillsHost]) {
-        if let install = model.installs[skill.id], install.isRunning {
-            self = .installing(install)
-        } else if let row = model.row(skill.slug, in: hosts) {
-            self = row.skill.update == nil ? .installed : .update
-        } else {
-            self = .install
-        }
-    }
-}
-
 /// A skill in the directory: its place in a ranked list, name (the search's match lit), seal,
 /// repository, installs, and whether it's installed, installing (hosts counted, nothing spins),
 /// or has an update.
@@ -1135,8 +1116,8 @@ struct SkillPreviewLine: Identifiable, Equatable {
     }
 }
 
-/// A skill from skills.sh, ready to preview: its SKILL.md's description and lines, what it costs
-/// when used, and its files.
+/// A skill from skills.sh, ready to preview (`DirectoryPreview`), with its SKILL.md's lines
+/// highlighted once.
 struct SkillPreview: Equatable {
     let skill: DirectorySkill
     let summary: String?
@@ -1147,13 +1128,13 @@ struct SkillPreview: Equatable {
 
     @MainActor
     init(skill: DirectorySkill, files: [DirectoryFile]) {
+        let preview = DirectoryPreview(skill: skill, files: files)
         self.skill = skill
-        let text = files.first { $0.path == "SKILL.md" || $0.path.lowercased().hasSuffix("/skill.md") }?.contents ?? ""
-        summary = SkillsText.frontmatter(text).description
-        lines = SkillPreviewLine.lines(text)
-        tokens = SkillsText.tokens(text)
-        paths = files.map(\.path)
-        entries = LocalSkillFolder.entries(paths: paths)
+        summary = preview.summary
+        lines = SkillPreviewLine.lines(preview.instructions)
+        tokens = preview.tokens
+        paths = preview.paths
+        entries = preview.entries
     }
 }
 
@@ -1195,7 +1176,7 @@ enum LocalSkillFolder {
             let files = self.files(under: folder).map { relative($0, to: folder) }
             skills.append(RepoSkill(path: path, name: SkillsText.folderName(for: frontmatter, path: path, repo: root.lastPathComponent),
                                     summary: frontmatter.description ?? "", instructions: String(text.prefix(16 * 1024)),
-                                    files: entries(paths: files)))
+                                    files: SkillsText.entries(paths: files)))
             if skills.count >= 200 { break }
         }
         guard !skills.isEmpty else { throw Failure(description: "No folder in \(root.lastPathComponent) holds a SKILL.md.") }
@@ -1218,26 +1199,6 @@ enum LocalSkillFolder {
             result.append(SkillFile(path: relative(url, to: folder), contents: data, executable: executable))
         }
         return result
-    }
-
-    /// Top-level entries from relative paths: SKILL.md first, files by name, then folders with
-    /// their file counts.
-    static func entries(paths: [String]) -> [SkillFileEntry] {
-        var top: [String: SkillFileEntry] = [:]
-        for path in paths {
-            let parts = path.split(separator: "/", maxSplits: 1).map(String.init)
-            guard let first = parts.first, !first.hasPrefix(".") else { continue }
-            if parts.count == 1 {
-                top[first] = SkillFileEntry(name: first)
-            } else {
-                top[first, default: SkillFileEntry(name: first, isDirectory: true, fileCount: 0)].fileCount += 1
-            }
-        }
-        return top.values.sorted { a, b in
-            if (a.name == "SKILL.md") != (b.name == "SKILL.md") { return a.name == "SKILL.md" }
-            if a.isDirectory != b.isDirectory { return !a.isDirectory }
-            return a.name.localizedStandardCompare(b.name) == .orderedAscending
-        }
     }
 
     private static func files(under folder: URL) -> [URL] {

@@ -1,7 +1,8 @@
 import Foundation
+import ShepherdProtocol
 
 /// A skill listed on skills.sh, the open directory of agent skills.
-public struct DirectorySkill: Identifiable, Hashable, Sendable {
+public struct DirectorySkill: Identifiable, Hashable, Codable, Sendable {
     /// Its name in its repository ("find-skills"): what a host installs.
     public var slug: String
     public var name: String
@@ -30,6 +31,29 @@ public struct DirectoryFile: Hashable, Sendable {
     public init(path: String, contents: String) {
         self.path = path
         self.contents = contents
+    }
+}
+
+/// A skill from skills.sh, ready to preview before it's installed: its SKILL.md, what it says it
+/// does, what it costs when the agent reads it, and its files.
+public struct DirectoryPreview: Equatable, Sendable {
+    public let skill: DirectorySkill
+    /// The SKILL.md, empty when skills.sh sent none.
+    public let instructions: String
+    /// Its frontmatter's description.
+    public let summary: String?
+    public let tokens: Int
+    /// Every file's path, relative to the skill's folder.
+    public let paths: [String]
+    public let entries: [SkillFileEntry]
+
+    public init(skill: DirectorySkill, files: [DirectoryFile]) {
+        self.skill = skill
+        instructions = files.first { $0.path == "SKILL.md" || $0.path.lowercased().hasSuffix("/skill.md") }?.contents ?? ""
+        summary = SkillsText.frontmatter(instructions).description
+        tokens = SkillsText.tokens(instructions)
+        paths = files.map(\.path)
+        entries = SkillsText.entries(paths: paths)
     }
 }
 
