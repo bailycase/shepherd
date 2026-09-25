@@ -4,10 +4,10 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdTestSupport
-import ShepherdUI
 import SwiftUI
 import Testing
 @testable import ShepherdApp
+@testable import ShepherdUI
 
 /// Budgets for the long lists (DESIGN.md › Performance), over realistic large fixtures in
 /// off-screen windows. The budgets count row bodies (`NWRenderProbe`), which a slower machine
@@ -553,6 +553,34 @@ struct ListPerformanceTests {
         }
         #expect(rows["diff.line", default: 0] > 100, "the diff scrolled: \(rows)")
         #expect(rows["diff.commentButton", default: 0] == 0, "\(rows)")
+    }
+
+    /// A hovered line's `+` is built with no AppKit view behind it (a `Button` brings two): the
+    /// pointer resting over a scrolling diff hovers a new line every step.
+    @Test func aHoveredLinesPlusBringsNoAppKitView() throws {
+        func views(_ view: NSView) -> Int { 1 + view.subviews.reduce(0) { $0 + views($1) } }
+        let lines = ListFixtures.diffFile("Big.swift", lines: 30).hunks[0].lines.map { line in
+            NWDiffLineContent(id: "\(line.id)", key: line.id, kind: line.kind.diffKind, oldNumber: line.oldLine, newNumber: line.newLine,
+                              text: AttributedString(line.text), source: line.text)
+        }
+        func window(hovering: Bool) -> OffscreenWindow {
+            OffscreenWindow(size: CGSize(width: 600, height: 800), dark: true, VStack(spacing: 0) {
+                ForEach(lines) { NWDiffLine($0, onComment: {}, hovering: hovering) }
+            })
+        }
+        var rest: OffscreenWindow!, hovered: OffscreenWindow!
+        let buttons = ListPerf.counting {
+            rest = window(hovering: false)
+            hovered = window(hovering: true)
+            ListPerf.settle(rest)
+            ListPerf.settle(hovered)
+        }
+        defer {
+            rest.close()
+            hovered.close()
+        }
+        #expect(buttons["diff.commentButton", default: 0] == lines.count, "every hovered line shows its +: \(buttons)")
+        #expect(views(hovered.host) == views(rest.host))
     }
 
     /// Opening a comment's editor on a line and saving it redraws that line's row, not every row

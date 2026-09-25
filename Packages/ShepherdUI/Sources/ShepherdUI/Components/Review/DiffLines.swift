@@ -113,6 +113,13 @@ public struct NWDiffLine: View {
         self.onComment = onComment
     }
 
+    /// A line that starts hovered (tests: hovering is seeded, never the pointer).
+    init(_ line: NWDiffLineContent, onComment: (() -> Void)?, hovering: Bool) {
+        self.line = line
+        self.onComment = onComment
+        _hovering = State(initialValue: hovering)
+    }
+
     public var body: some View {
         let _ = NWRenderProbe.tick("diff.line")
         let nw = Color.nw
@@ -137,18 +144,8 @@ public struct NWDiffLine: View {
                     .frame(width: NWDiffLine.commentButtonSize + 2 * NW.Space.s, height: NWDiffLine.commentButtonSize)
                     .overlay {
                         if hovering {
-                            Button(action: onComment) {
-                                let _ = NWRenderProbe.tick("diff.commentButton")
-                                Image(systemName: "plus")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundStyle(nw.textOnLantern)
-                                    .frame(width: NWDiffLine.commentButtonSize, height: NWDiffLine.commentButtonSize)
-                                    .background(nw.lantern, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityHidden(true)
-                            .help("Comment on this line")
-                            .nwTransition(.hover)
+                            NWDiffCommentButton(action: onComment)
+                                .nwTransition(.hover)
                         }
                     }
             }
@@ -174,6 +171,27 @@ public struct NWDiffLine: View {
         case .removed: nw.failedTint
         case .context: hovering && onComment != nil ? nw.bgHover : .clear
         }
+    }
+}
+
+/// A hovered line's lantern `+`. Not a `Button`, which cost twice as much to build: the pointer
+/// resting over a scrolling diff hovers a new line every step. The line's own accessibility
+/// action comments for VoiceOver.
+private struct NWDiffCommentButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        let _ = NWRenderProbe.tick("diff.commentButton")
+        let nw = Color.nw
+        Image(systemName: "plus")
+            .font(.system(size: 9, weight: .bold))
+            .foregroundStyle(nw.textOnLantern)
+            .frame(width: NWDiffLine.commentButtonSize, height: NWDiffLine.commentButtonSize)
+            .background(nw.lantern, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: action)
+            .accessibilityHidden(true)
+            .help("Comment on this line")
     }
 }
 
