@@ -73,6 +73,7 @@ static void refuse(const char *bin, const char *command) {
 static const char *const agentVariables[] = {
     "SHEPHERD_AGENT_ID=", "SHEPHERD_SOCKET=", "SHEPHERD_EXT_", "SHEPHERD_NATIVE_CHILDREN=", "SHEPHERD_CHILD_",
     "SHEPHERD_NEEDS_NAME=", "SHEPHERD_AUTOMATION=", "SHEPHERD_MODEL=", "SHEPHERD_PI_THEME_",
+    "SHEPHERD_INSTRUCTIONS_DIR=", "SHEPHERD_SUGGEST_FILES=",
 };
 
 /// The name of the first agent-only variable in the environment, or an empty string.
