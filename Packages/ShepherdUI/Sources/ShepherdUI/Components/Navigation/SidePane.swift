@@ -13,7 +13,7 @@ public enum NWSidePaneMetrics {
     public static let chipChevron: CGFloat = 9
     public static let chipLabelSize: CGFloat = 11
     public static let chipHostSize: CGFloat = 10.5
-    /// The "pi opened something" tip under the header button.
+    /// The "Agent opened something" tip under the header button.
     public static let tipWidth: CGFloat = 330
     /// A tab's glyph and side padding (a little tighter without its label).
     public static let tabGlyph: CGFloat = 14
@@ -115,7 +115,7 @@ public struct NWBranchChip: View {
 /// The one side-pane button in the thread's header (`SidePaneButton`, PaneStates): shows or
 /// hides the pane, lit while it shows. When pi opens something for the pane while it is closed,
 /// the button takes an 8pt running dot instead of the pane opening, and a tip under it says what
-/// ("pi opened a review in Changes ⇧⌘B") for a few seconds, and again while it is hovered.
+/// ("Agent opened a review in Changes ⇧⌘B") for a few seconds, and again while it is hovered.
 public struct NWSidePaneButton: View {
     let isOn: Bool
     let news: String?
@@ -305,7 +305,7 @@ public struct NWSidePaneTabs<Options: View>: View {
             .nwAnimation(.hover, value: hovering)
             .nwHelp(tab.title, shortcut: tab.shortcut)
             .accessibilityLabel(tab.title)
-            .accessibilityValue([tab.count.map { "\($0)" }, tab.news ? "pi opened something" : nil].compactMap { $0 }.joined(separator: ", "))
+            .accessibilityValue([tab.count.map { "\($0)" }, tab.news ? "the agent opened something" : nil].compactMap { $0 }.joined(separator: ", "))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
         }
     }

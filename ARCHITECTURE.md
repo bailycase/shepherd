@@ -110,8 +110,8 @@ running.
 **Appearance.** `ThemeStore.shared` (ShepherdUI) holds the theme, text scale, and density
 that views read; `AppSettings` feeds it the Text size and Density settings. `ThemeManager` (app)
 holds the System/Light/Dark choice. It pushes the resolved variant to what cannot follow
-SwiftUI's appearance by itself: Ghostty surfaces (a live `setTheme`) and the pi theme file used
-by pi run by hand in a terminal pane.
+SwiftUI's appearance by itself: Ghostty surfaces (a live `setTheme`) and the
+`shepherd-active-theme` variant marker watched by external editors such as Neovim.
 
 **Layout.** `RootView` lays the window out itself: the sidebar, the toolbar, the workspace, and
 the side pane (`RightPaneSplit`, `SidePaneView`). `ShellLayout` (`AppLayout+Navigation.swift`) is
@@ -204,7 +204,6 @@ authentication boundary ([SECURITY.md](SECURITY.md)).
   opens it; the tab and the header's button take a dot).
 - **`shepherd-subagents.ts`:** publishes subagent runs with `setAgentChildren`.
 - **`shepherd-children.ts`:** opens a `helloChildren` control connection for subagent commands.
-- **`shepherd-theme.ts`:** loaded only by pi run by hand in a terminal pane.
 
 The server owns PTYs but not layouts, so pane requests from an agent (and from remote clients,
 through `onRemotePaneRequest`) are forwarded to the GUI and answered with a `PaneOutcome`.

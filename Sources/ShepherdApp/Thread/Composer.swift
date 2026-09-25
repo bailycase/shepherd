@@ -472,7 +472,7 @@ struct Composer: View {
     private var actionRow: some View {
         ViewThatFits(in: .horizontal) {
             actionChips(compact: false, startingLabel: true)
-            // "Starting pi…" gives up its words before the chips do.
+            // "Starting…" gives up its words before the chips do.
             actionChips(compact: false, startingLabel: false)
             actionChips(compact: true, startingLabel: false)
         }
@@ -515,19 +515,19 @@ struct Composer: View {
         .nwAnimation(.content, value: startingShown)
     }
 
-    /// "Starting pi…" beside the action, quiet and in the row it never resizes. Its spinner
-    /// gives way to Send's own while a message waits for pi.
+    /// "Starting…" beside the action, quiet and in the row it never resizes. Its spinner
+    /// gives way to Send's own while a message waits for the agent.
     private func startingIndicator(label: Bool) -> some View {
         HStack(spacing: AppLayout.startingSpacing) {
             if !store.busy {
                 ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner, color: Color.nw.textTertiary))
             }
-            if label { Text("Starting pi…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+            if label { Text("Starting…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
         }
         .padding(.trailing, NW.Space.s)
-        .help("pi is starting. A message sent now goes once it is ready.")
+        .help("The agent is starting. A message sent now goes once it is ready.")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Starting pi")
+        .accessibilityLabel("Starting the agent")
     }
 
     /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
@@ -547,7 +547,7 @@ struct Composer: View {
                 if store.busy {
                     ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
                         .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-                        .accessibilityLabel("Waiting for pi")
+                        .accessibilityLabel("Waiting for the agent")
                         .nwTransition(.content)
                 } else {
                     NWComposerActionButton(stops ? .stop : .send, ringed: menu == .send,
@@ -768,9 +768,9 @@ struct Composer: View {
     static func sendOptions(_ setting: ReturnWhileWorking, send: String, alternate: String) -> [NWSendOption] {
         let steers = setting == .steer
         return [
-            NWSendOption(id: "queue", title: "Queue", detail: "Goes when pi finishes this turn.", glyph: .queue,
+            NWSendOption(id: "queue", title: "Queue", detail: "Goes when the agent finishes this turn.", glyph: .queue,
                          shortcut: steers ? alternate : send),
-            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once pi’s current tool calls finish, before its next step.",
+            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once the agent’s current tool calls finish, before its next step.",
                          glyph: .symbol("arrow.turn.down.right"), shortcut: steers ? send : alternate),
         ]
     }
@@ -924,7 +924,7 @@ struct QuestionPanel: View {
             }
             .disabled(blocked)
             if dialog.timeout != nil {
-                Text("pi may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
+                Text("The agent may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         // An external editor opening or closing dims the answers and says why.

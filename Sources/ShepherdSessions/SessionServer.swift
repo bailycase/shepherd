@@ -678,12 +678,12 @@ public final class SessionServer: @unchecked Sendable {
             if let sessionID = leaf.sessionID, let code = retiredRPCSessions[sessionID] {
                 unavailable(Self.exitMessage(code))
             } else {
-                completion(.failure(code: NativeThreadCode.starting, message: "pi is starting."))
+                completion(.failure(code: NativeThreadCode.starting, message: "The agent is starting."))
             }
             return
         }
         guard let thread = session.thread else {
-            unavailable("The agent's pane is not running pi.")
+            unavailable("The agent is not running in its pane.")
             return
         }
         guard session.isAlive else {
@@ -700,7 +700,7 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private static func exitMessage(_ code: Int32?) -> String {
-        "The agent's pi exited (\(code.map { "code \($0)" } ?? "signal"))."
+        "The agent exited (\(code.map { "code \($0)" } ?? "signal"))."
     }
 
     /// Server queue. Writes a childCommand to the agent's children-extension connection and

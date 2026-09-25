@@ -74,7 +74,7 @@ private let started = Date().addingTimeInterval(-41 * 60)
                 Button("Reset Width") {}
             }
             .frame(width: 400)
-            NWSidePaneButton(isOn: false, news: "pi opened a review in Changes", shortcut: "⇧⌘B") {}
+            NWSidePaneButton(isOn: false, news: "Agent opened a review in Changes", shortcut: "⇧⌘B") {}
                 .padding(.bottom, 48)
         }
         .frame(width: 720, alignment: .trailing)

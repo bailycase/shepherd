@@ -194,7 +194,7 @@ enum PiSessionFile {
         guard let newline = data.firstIndex(of: UInt8(ascii: "\n")),
               var header = try? JSONSerialization.jsonObject(with: data[..<newline]) as? [String: Any],
               header["type"] as? String == "session" else {
-            throw ForkFailure(message: "The subagent's session file has no pi session header.")
+            throw ForkFailure(message: "The subagent's session file has no session header.")
         }
         let sessionID = UUID().uuidString.lowercased()
         let now = Date()

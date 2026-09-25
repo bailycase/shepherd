@@ -328,7 +328,7 @@ final class ShepherdViewModel {
     private let sidebarDefaults: UserDefaults
     let keybindings: KeybindingsStore
     let themeManager: ThemeManager
-    let installPiTheme: (ShepherdTheme) throws -> Void
+    let installThemeMarker: (ShepherdTheme) throws -> Void
     @ObservationIgnored private var commandHoldTask: Task<Void, Never>?
     @ObservationIgnored private var flagsMonitor: Any?
     @ObservationIgnored private var keyDownMonitor: Any?
@@ -388,7 +388,7 @@ final class ShepherdViewModel {
         remoteHosts: RemoteHostStore? = nil,
         sidebarDefaults: UserDefaults = .standard,
         themeInstaller: @escaping (ShepherdTheme) throws -> Void = { theme in
-            _ = try ShepherdPiTheme.installedPath(for: theme)
+            try ShepherdThemeMarker.install(for: theme)
         },
         restoresAgentsAtLaunch: Bool = true,
         checkoutReader: CheckoutMonitor.Reader? = CheckoutMonitor.git
@@ -402,7 +402,7 @@ final class ShepherdViewModel {
         self.keybindings = keybindings ?? .shared
         self.themeManager = themeManager ?? .shared
         self.remoteHosts = remoteHosts ?? RemoteHostStore()
-        self.installPiTheme = themeInstaller
+        self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
         self.selectedSpaceID = nil
         self.selectedAgentID = nil
