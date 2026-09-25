@@ -94,6 +94,21 @@ public enum PiConfig {
         return "\(provider)/\(model)"
     }
 
+    /// The pi packages and extensions pi loads from its own settings.json, as declared there: each
+    /// package's source ("npm:@example/pi-tools@1.0.0", in the string or the object form), then
+    /// each extension path. Shepherd's own come by `-e` and are not among them.
+    public static func installedExtensions(in directory: URL = agentDirectory()) -> [String] {
+        guard let object = settings(in: directory) else { return [] }
+        let packages = (object["packages"] as? [Any] ?? []).compactMap { entry -> String? in
+            if let source = entry as? String { return source }
+            return (entry as? [String: Any])?["source"] as? String
+        }
+        let extensions = object["extensions"] as? [Any] ?? []
+        return (packages + extensions.compactMap { $0 as? String })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     private static func settings(in directory: URL) -> [String: Any]? {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("settings.json")) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]

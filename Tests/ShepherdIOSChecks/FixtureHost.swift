@@ -155,7 +155,7 @@ final class FixtureHost: @unchecked Sendable {
             note("listModels")
             return [.models(id: id, models: data.models, defaultModel: data.models.first, withoutThinking: data.withoutThinking)]
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _),
-             .instructions(let id, _), .suggestions(let id, _):
+             .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
         default:
@@ -193,6 +193,11 @@ final class FixtureHost: @unchecked Sendable {
             // Reading the host's suggestions changes nothing; every other request writes.
             if command == .fetch { return nil }
             mutation("suggestions." + String(describing: command).prefix { $0 != "(" })
+            return [.error(id: id, code: "fixture", message: refused)]
+        case .hostSettings(let id, let command):
+            // Reading the host's settings changes nothing; a change writes them.
+            if command == .fetch { return nil }
+            mutation("hostSettings.change")
             return [.error(id: id, code: "fixture", message: refused)]
         case .detach, .input, .resize:
             mutation(Self.kind(request))

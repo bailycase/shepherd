@@ -522,6 +522,7 @@ final class ShepherdViewModel {
         server.setDefaultQueueMode(self.settings.queueDelivery)
         self.settings.onQueueDeliveryChange = { [weak server] mode in server?.setDefaultQueueMode(mode) }
         installRemoteInspection()
+        installHostSettings()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
             Task { @MainActor in
                 guard let self else {

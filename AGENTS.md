@@ -348,7 +348,8 @@ Sources/
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
                        Instructions (Settings ▸ Instructions' files, history and requests),
-                       Suggestions (Settings ▸ Experiments ▸ Suggested instructions).
+                       Suggestions (Settings ▸ Experiments ▸ Suggested instructions),
+                       HostSettings (a host's settings as a client sees and changes them).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
                        the changes card), NativeQueueRules (the queue's rules, host and client),
@@ -377,7 +378,8 @@ Sources/
       +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
-      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal), RemoteAutomationSheet
+      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings),
+      RemoteAutomationSheet
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
@@ -570,6 +572,9 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   - `suggestions` (`suggestions.v1`): Settings ▸ Experiments ▸ Suggested instructions on the host
     (fetch, configure, add as edited and retargeted, add all, dismiss, undo), answered with the
     experiment's settings and its lines
+  - `hostSettings` (`hostSettings.v1`): what the host's Settings ▸ Agents, Worktrees and Pi set,
+    the pi packages its pi loads, and its Shepherd and pi versions; one change per request
+    (`HostSettingChange`), applied as the Mac's own Settings would
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
@@ -579,9 +584,9 @@ The user's rc files and pi settings are never edited, and agent-only variables a
 - **Attach is atomic** on the server queue: viewport registration, snapshot, attachment, and
   replay watermark happen in one turn.
 - **Host-side handlers:** remote pane and agent-creation requests go through
-  `onRemotePaneRequest` and `onRemoteCreateAgent` with the same authorization as local requests.
-  A server without those handlers rejects them. Detaching a remote pane never kills the host
-  session.
+  `onRemotePaneRequest` and `onRemoteCreateAgent` with the same authorization as local requests,
+  and host settings through `onRemoteHostSettings` (the GUI owns `AppSettings`). A server without
+  those handlers rejects them. Detaching a remote pane never kills the host session.
 - **Client:** `RemoteHostStore` persists host configs, **including tokens**, in UserDefaults
   (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, with exponential backoff
   capped at 30 s. A refused token or another protocol version is not retried: the host shows
