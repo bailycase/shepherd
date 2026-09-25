@@ -283,8 +283,10 @@ family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-
   the last agent turn. Once cards stand for a turn's children, its `shepherd_child_wait` and
   `shepherd_child_result` calls are hidden too.
 - **Controls by state:** clicking a card inspects the run.
-  - Running: the last call and the context window used. Pause or Continue and Stop are in the
-    card's context menu and accessibility actions, and visible in the inspector.
+  - Running: the call in flight (else the last call) and the context window used. The extension
+    reports the call in flight as `lastActivity` with `kind: "running"` from its start, and
+    `kind: "tool"` once it ends. Pause or Continue and Stop are in the card's context menu and
+    accessibility actions, and visible in the inspector.
   - Queued or paused: an outlined "Queued" or "Paused" pill ("paused before its next model
     request").
   - Needs you: the question with the child's options as buttons, plus Reply… for free text.

@@ -437,6 +437,9 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => fs.existsSync(path.join(dir, "env"))); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
     const shellCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
     assert.equal(shellCard.currentTool, "bash"); assert.equal(shellCard.state, "running");
+    // The card names the call in flight, not only its tool.
+    assert.equal(shellCard.lastActivity.kind, "running"); assert.equal(shellCard.lastActivity.tool, "bash");
+    assert.match(shellCard.lastActivity.preview, /^printf '%s'/);
     // A resumed (restored) run ticks again while it works: a publish a second with no events.
     assert.equal(ticks.active.size, 1);
     const published = h.projections.length;
@@ -450,6 +453,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const cancelled = (await h.call("wait", { ids: [shell.id], timeoutSeconds: 30 }))[0]; assert.equal(cancelled.state, "stopped");
     const stoppedCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
     assert.equal(stoppedCard.lastActivity.tool, "bash"); assert.match(stoppedCard.lastActivity.preview, /^printf/); assert.equal(stoppedCard.toolCalls, 1);
+    assert.equal(stoppedCard.lastActivity.kind, "tool", "a finished call is no longer in flight");
     const stopStatus = () => JSON.parse(fs.readFileSync(path.join(runDir, "status.json")));
     await until(() => stopStatus().controlRequestID === "stop-fixture");
     assert.equal(stopStatus().controlNotice, "stop accepted · stopped");

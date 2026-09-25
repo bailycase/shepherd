@@ -276,7 +276,7 @@ private struct SubagentRunInspector: View {
                         .nwRunArrival(transcript.arrived.contains(turn.id))
                     }
                     if let run, !run.isTerminal {
-                        let working = run.paused == true ? "Pause requested" : run.currentTool.map { "Running \($0)…" } ?? "Thinking…"
+                        let working = nativeRunWorking(run)
                         WorkingRow(label: working)
                             .nwAnimation(.content, value: working)
                     }

@@ -1031,8 +1031,9 @@ next model request both draw as `queued`).
     the name, a mono model tag, and the state pill. In a narrow thread the tags give way (the
     model first) before the name truncates.
   - **One mono 11 `textSecondary` line**, then per state:
-    - **Running:** the last call ("edit ThreadView.swift"), and a 4pt bar with its percent for
-      the context window used. The card never grows while it runs.
+    - **Running:** the call in flight, else the last one ("edit ThreadView.swift", "bash swift
+      test"), and a 4pt bar with its percent for the context window used. The card never grows
+      while it runs.
     - **Queued / Paused:** an outlined pill ("Queued" or "Paused") and "waiting to start" or
       "paused before its next model request".
     - **Needs you:** "waiting on your answer · 2m" (the wait counts from the child's
@@ -1093,9 +1094,11 @@ layout" above.
   files as `running` links (with their diff stat) that open the review pane at the file, then
   "n more files".
 - **The run's own transcript**, drawn with the thread's components one step smaller
-  (`nwProseSize` `.small`), times and footers on hover as in the thread. It follows live, with
-  "n earlier turns · Show all" and "Following live" (or "Reading earlier output") beneath.
-  Scrolling up stops following.
+  (`nwProseSize` `.small`), times and footers on hover as in the thread. A live one ends in a
+  working row: the call in flight ("Running bash swift build…"; its session file holds only
+  finished calls), "Pause requested", or "Thinking…". It follows live, with "n earlier turns ·
+  Show all" and "Following live" (or "Reading earlier output") beneath. Scrolling up stops
+  following.
 - **A Steer composer** while the run is live: the composer card's anatomy, "Steer <name> —
   delivered before its next turn", "to: <name> · not the parent", and a primary Steer button.
   A failed send keeps the draft.

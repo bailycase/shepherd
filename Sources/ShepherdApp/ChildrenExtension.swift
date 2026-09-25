@@ -376,6 +376,7 @@ enum ChildrenExtension {
               run.error ||= `Child exited before clean settlement (${signal ?? code}): ${run.stderr}`;
             } else run.state = "complete";
             run.endedAt = Date.now(); run.currentTool = undefined; run.paused = false;
+            if (run.lastActivity?.kind === "running") run.lastActivity = { ...run.lastActivity, kind: "tool" };
             try {
               const lease = JSON.parse(fs.readFileSync(path.join(run.dir, "writer", "owner.json"), "utf8"));
               if (lease.token === run.token) { fs.unlinkSync(path.join(run.dir, "writer", "owner.json")); fs.rmdirSync(path.join(run.dir, "writer")); }
@@ -396,6 +397,8 @@ enum ChildrenExtension {
             } else if (event.type === "tool_execution_start") {
               run.currentTool = clip(event.toolName, 160); run.latestTool = run.currentTool;
               if (event.toolCallId) run.toolArgs.set(event.toolCallId, event.args);
+              // The card and the inspector name the call in flight ("bash swift test"), not just its tool.
+              run.lastActivity = { kind: "running", tool: clip(event.toolName, 80), preview: toolPreview(event.args), at: Date.now() };
               save(run);
             } else if (event.type === "tool_execution_end") {
               run.currentTool = undefined;
@@ -630,7 +633,7 @@ enum ChildrenExtension {
                 runs.set(data.id, { ...data, dir, sessionFile: path.join(dir, "session.jsonl"), output: clip(status.output), error: status.error,
                   needsReply: status.needsReply === true, lastStop: status.stopReason,
                   turns: status.turns, toolCalls: status.toolCalls, tokens: status.tokens, contextPercent: status.contextPercent, added: status.added, removed: status.removed,
-                  files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, exitCode: status.exitCode,
+                  files: new Map((Array.isArray(status.files) ? status.files : []).map((f) => typeof f === "string" ? [f, { added: 0, removed: 0 }] : [f.path, { added: f.added ?? 0, removed: f.removed ?? 0 }])), lastActivity: status.lastActivity?.kind === "running" ? { ...status.lastActivity, kind: "tool" } : status.lastActivity, questionOptions: status.questionOptions, questionText: status.questionText, exitCode: status.exitCode,
                   tools: Array.isArray(status.tools) ? data.tools.filter((name) => status.tools.includes(name)) : data.tools,
                   missionId: status.missionId ?? data.missionId,
                   state: ["complete", "failed", "stopped"].includes(status.state) ? status.state : "stopped", startedAt: status.startedAt ?? data.startedAt, endedAt: status.endedAt, latestTool: status.latestTool });

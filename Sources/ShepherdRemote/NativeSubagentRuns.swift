@@ -196,6 +196,17 @@ public func nativeRunActivity(_ run: ChildRun) -> String {
     return run.currentTool ?? "working"
 }
 
+/// A live run's last line in its transcript: "Pause requested", the call in flight with its
+/// command or file ("Running bash swift test…"), else "Thinking…".
+public func nativeRunWorking(_ run: ChildRun) -> String {
+    if run.paused == true { return "Pause requested" }
+    guard let tool = run.currentTool else { return "Thinking…" }
+    guard let call = run.lastActivity, call.isRunning, call.tool == tool, let preview = call.preview, !preview.isEmpty else {
+        return "Running \(tool)…"
+    }
+    return "Running \(tool) \(nativeRunFileName(preview))…"
+}
+
 /// A native child asks through `shepherd_parent_message`, so that call's time is when it began
 /// waiting; anything else gives no honest start.
 public func nativeRunAskedAt(_ run: ChildRun) -> Double? {
