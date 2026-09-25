@@ -426,21 +426,24 @@ struct ListPerformanceReport {
 
     private struct GroupHost: View {
         let runs: [ChildRun]
+        let state: SubagentTrayState = {
+            let state = SubagentTrayState()
+            state.expanded = true
+            return state
+        }()
 
         var body: some View {
-            ScrollView {
-                SubagentStack(runs: runs, turnLive: runs.contains { !$0.isTerminal },
-                              actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
-                    .padding(NW.Space.l)
-            }
-            .frame(width: 800, height: 800)
-            .background(Color.nw.bgWindow)
+            SubagentTrayView(tray: NativeSubagentTray(runs), state: state, runs: runs,
+                             actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }), answer: { _ in })
+                .padding(NW.Space.l)
+                .frame(width: 800, height: 800, alignment: .top)
+                .background(Color.nw.bgWindow)
         }
     }
 
     @Test(arguments: ["running", "complete"])
     func subagents(state: String) throws {
-        let name = "subagents (200 runs, \(state == "complete" ? "ledger" : "strip"))"
+        let name = "subagents (200 runs in the open tray, \(state))"
         let runs = (0..<200).map { ListFixtures.run($0, state: state) }
         let window = open(name, size: CGSize(width: 800, height: 800)) { GroupHost(runs: runs) }
         defer { window.close() }

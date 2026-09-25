@@ -147,8 +147,8 @@ final class SubagentTranscriptModel {
 /// prose and tool lines.
 struct SubagentTranscriptList: View {
     let model: SubagentTranscriptModel
-    /// What the run is doing now (LiveText): its call in flight, or "Thinking…".
-    let live: NativeRunLive?
+    /// What the run is doing now (LiveText): its call in flight; nil between calls.
+    let live: NativeActivityBurst?
     let emptyText: String
     /// Draw the first message from the parent, the task (the iPhone's goal box already shows it).
     var showsTask = true
@@ -166,13 +166,8 @@ struct SubagentTranscriptList: View {
             }
             // It continues the last turn: under its lines at their spacing (MobileSubagent).
             if let live {
-                Group {
-                    switch live {
-                    case .call(let burst): SubagentActivityLine(burst: burst)
-                    case .thinking: NWThinking.live()
-                    }
-                }
-                .padding(.top, Self.endsInLines(turns.last) ? MobileLayout.activitySpacing - MobileLayout.turnItemSpacing : 0)
+                SubagentActivityLine(burst: live)
+                    .padding(.top, Self.endsInLines(turns.last) ? MobileLayout.activitySpacing - MobileLayout.turnItemSpacing : 0)
             }
         }
         .environment(\.nwProseSize, .small)

@@ -292,6 +292,57 @@ struct ThreadPreviewTests {
         }
     }
 
+    /// QuestionAsk, QuestionPick and QuestionStates on the Mac: the shared head over the agent's
+    /// own question in the composer card (one waiting, then two), the question hidden to its
+    /// line, and a subagent's question asking and picked.
+    @Test func questionStates() async throws {
+        func controls() -> some View {
+            Group {
+                Button {} label: { Image(systemName: "paperclip") }.buttonStyle(.nwIcon(size: NWComposerMetrics.chipHeight))
+                Button {} label: { HStack(spacing: 6) { Text("claude-opus").font(.nwMono(12)); NWChipChevron() } }.buttonStyle(.nwComposerChip())
+                Spacer(minLength: 8)
+                NWComposerActionButton(.send, enabled: false) {}
+            }
+        }
+        let select = NativeThreadDialog(id: "handle", kind: .select, title: "How should I handle Horizon’s uncommitted edits?",
+                                        options: ["Compare, keep what’s unique, then go through GitHub",
+                                                  "Leave Horizon alone and deploy from a clean checkout"])
+        let next = NativeThreadDialog(id: "hosts", kind: .select, title: "Which host should get the new Traefik config?",
+                                      options: ["build-01", "horizon"])
+        let options = [
+            NWQuestionDockOption(number: 1, title: "Replace everywhere", detail: "41 call sites move to the spec colors. One PR, bigger diff.",
+                                 recommended: true),
+            NWQuestionDockOption(number: 2, title: "Rename the new ones", detail: "New names get an nw prefix. Old screens keep the old ones."),
+        ]
+        let question = "Rename the new token names, or replace `Tokens.textSecondary` everywhere?"
+        let size = CGSize(width: 1400, height: 620)
+        try await Preview.render("question-states", size: size) {
+            HStack(alignment: .top, spacing: 32) {
+                VStack(alignment: .leading, spacing: 28) {
+                    NWComposer(isFocused: false) {
+                        QuestionPanel(dialog: select, enabled: true, answer: { _ in }, hide: {})
+                    } controls: { controls() }
+                    NWComposer(isFocused: false) {
+                        QuestionPanel(dialog: next, count: 2, enabled: true, answer: { _ in }, hide: {})
+                    } controls: { controls() }
+                    NWComposer(isFocused: false) {
+                        NWQuestionHiddenLine(.agent, question: select.title) {}
+                    } controls: { controls() }
+                }
+                .frame(width: 640)
+                VStack(alignment: .leading, spacing: 28) {
+                    NWSubagentQuestionDock(name: "reviewer", question: question, options: options, answer: { _ in }, hide: {})
+                    NWSubagentQuestionDock(name: "reviewer", question: question, options: options, chosen: 1, answer: { _ in }, hide: {})
+                }
+                .frame(width: 600)
+                Spacer(minLength: 0)
+            }
+            .padding(32)
+            .frame(width: size.width, height: size.height, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
+        }
+    }
+
     /// NWComposer board: idle, focused with text, running, with an attachment; and its menus.
     @Test func composerStates() async throws {
         func controls(stop: Bool = false, enabled: Bool = false) -> some View {
