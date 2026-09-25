@@ -65,8 +65,6 @@ enum SubagentValues {
 struct SubagentList: Equatable {
     var current: [NativeRunSummary] = []
     var earlier: [NativeRunSummary] = []
-    var tally: String?
-    var tallyState: AgentState = .idle
 
     var isEmpty: Bool { current.isEmpty && earlier.isEmpty }
 
@@ -87,10 +85,6 @@ struct SubagentList: Equatable {
         let sections = nativeRunSections(store.subagents, placements: store.placements, turnOrder: store.rows.map(\.id))
         current = sections.current.map(nativeRunSummary)
         earlier = sections.earlier.map(nativeRunSummary)
-        if let tally = nativeRunTally(store.subagents) {
-            self.tally = tally.text
-            tallyState = AgentState(tally.phase)
-        }
     }
 }
 

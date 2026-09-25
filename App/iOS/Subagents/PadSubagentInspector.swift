@@ -54,8 +54,8 @@ struct PadSubagentInspector: View {
                 SubagentRunView(ref: ref, store: store, runID: runID, compact: false)
                     .id(runID)
             } else {
-                NWRunHeader("Subagents", state: nativeRunTally(store.subagents).map { AgentState($0.phase) } ?? .idle,
-                            meta: nativeRunTally(store.subagents)?.text ?? "") {
+                let tally = nativeRunTally(store.subagents)
+                NWRunHeader("Subagents", state: tally.map { AgentState($0.phase) } ?? .idle, meta: tally?.text ?? "") {
                     closeButton
                 }
                 ScrollView {
