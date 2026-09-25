@@ -1802,8 +1802,8 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   `thinking.levels.v1`), except that the thread's current model lists what pi reports for it, which
   is live (`NativeModelChoices.thinkingLines`). The iOS picker's rows carry the same line under the
   name. Trailing, the row's context size in mono 11 `textTertiary` ("200K", "1M"). The whole id
-  is the row's tooltip and what VoiceOver reads, with the levels. A query keeps the models whose id contains it and moves the
-  highlight to the top. While the catalog loads, the list opens with a 12pt spinner and "Loading
+  is the row's tooltip and what VoiceOver reads, with the levels. A query keeps the models whose
+  id contains it and moves the highlight to the top. While the catalog loads, the list opens with a 12pt spinner and "Loading
   models…" in caption tertiary. Choosing sets the model, records it in Recent, and returns focus to
   the field; it picks the model only. A catalog runs to hundreds of models, so the list is lazy
   (only the rows on screen exist), derived once per catalog and query rather than while drawing
