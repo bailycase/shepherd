@@ -54,9 +54,14 @@ a zsh login shell, so the user's `PATH` resolves:
   newly added to pi's settings, and a `PI_OFFLINE` that every extension and subagent inherits
   (pi-subagents then stops finding agents and skills in the global npm root). A slow boot is
   covered instead by the thread drawing at once (below).
-- **The opening prompt** is the first native `send`, delivered once pi's session is ready (the
-  server's servable signal, below, ends the wait). It is not a positional argument, because RPC
-  mode ignores positional messages.
+- **The opening prompt** is the first native `send`. It is not a positional argument, because RPC
+  mode ignores positional messages. The app hands it to the host with the new pi
+  (`SessionServer.sendOpeningPrompt`), which holds it until the thread serves and sends it in
+  the same queue turn, before it answers any request: the first snapshot any client gets shows
+  it, pending until pi starts it, and none shows the thread without it. Its send's operation id
+  is the agent's id (`OpeningPrompt`), so the client that created the agent (the Mac's New
+  Agent, a remote Mac's or iOS's New thread) previews the same pending row while pi starts, and
+  the row keeps its identity when the host's lands and when pi starts the turn.
 
 Quitting the app kills every child. On relaunch each agent respawns in its pi session with its
 history intact. State files from before RPC agents decode unchanged: `Agent` ignores the
@@ -300,7 +305,7 @@ transport differs.
     whichever comes last), `SessionServer.onNativeThreadServable` tells the local app, once per
     pi, after the state broadcast of the binding. The app hands that agent's thread store a
     pushed revision (`revisionAvailable()`, below), so a thread on screen pulls at once instead
-    of at its next poll. The opening prompt's wait and the launch queue end on the same signal.
+    of at its next poll. The launch queue ends on the same signal.
     Remote clients keep polling; the remote protocol has no push for this.
   - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
     its pi exited (with the exit code, also after the app retired the session).
@@ -368,8 +373,9 @@ output grows.
   preview. A message sent then waits behind the composer's spinner, still in the field and with
   nothing dispatched, and the field's text goes once the first snapshot lands; the draft stays
   if the thread stops or fails first. A new agent's store gets a known-empty preview
-  (`PiSessionPreview.empty`, with the model and thinking level its pi launches with) before the
-  agent is selected, so its thread draws complete at once. A pi still
+  (`PiSessionPreview.empty`, with the model and thinking level its pi launches with, and its
+  opening prompt's pending row) before the agent is selected, so its thread draws complete at
+  once, with what the user asked for. A pi still
   starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
 - **Preview:** while a local thread has nothing from pi, `run(request:preview:)` reads the
   agent's pi session file alongside the first pull (`PiSessionFile.previewLoader`, off the main

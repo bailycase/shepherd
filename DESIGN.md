@@ -653,7 +653,10 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   Shepherd on the host", "Some earlier output is clipped".
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
   ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
-  state, a resuming agent's history), and a message sent meanwhile waits for pi. Nothing says
+  state, or its opening prompt as a message pi has not read yet, at 70%; a resuming agent's
+  history), and a message sent meanwhile waits for pi. The opening prompt is the row pi's first
+  snapshot carries, so it stays put when pi answers and when pi starts the turn; the device that
+  created the agent draws it, and every other viewer sees it in that first snapshot. Nothing says
   pi is starting unless pi is slow: past two seconds (`AppLayout.startingIndicatorDelay`), well
   beyond a normal start (pi answers about 0.8 s after ⌘N, about 1 s after a relaunch), or past
   half a second (`AppLayout.blankStartingIndicatorDelay`) while the thread has nothing to show

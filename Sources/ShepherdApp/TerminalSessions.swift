@@ -3,6 +3,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 
 enum TerminalSessionStoreError: Error, CustomStringConvertible {
@@ -252,16 +253,6 @@ final class TerminalSessionStore {
     /// (`SessionServer.onNativeThreadServable`).
     var onThreadServable: ((AgentID) -> Void)?
 
-    /// Waits for an agent's pi to serve, resumed once by `threadServable` or by a timeout.
-    private final class ServableWaiter {
-        private var continuation: CheckedContinuation<Void, Never>?
-        init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
-        func resume() {
-            continuation?.resume()
-            continuation = nil
-        }
-    }
-    private var servableWaiters: [AgentID: [ServableWaiter]] = [:]
     /// The order restored agents' pi start in, and the work that starts each one queued.
     private(set) var startQueue = AgentStartQueue()
     private var queuedStarts: [AgentID: () async -> Bool] = [:]
@@ -313,23 +304,8 @@ final class TerminalSessionStore {
     }
 
     private func threadServable(_ agentID: AgentID) {
-        for waiter in servableWaiters.removeValue(forKey: agentID) ?? [] { waiter.resume() }
         onThreadServable?(agentID)
         startFinished(agentID)
-    }
-
-    /// Returns once `agentID`'s pi serves its thread, or after `limit`, whichever is first.
-    private func waitUntilServable(_ agentID: AgentID, upTo limit: Duration) async {
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let waiter = ServableWaiter(continuation)
-            servableWaiters[agentID, default: []].append(waiter)
-            Task { [weak self] in
-                try? await Task.sleep(for: limit)
-                waiter.resume()
-                self?.servableWaiters[agentID]?.removeAll { $0 === waiter }
-                if self?.servableWaiters[agentID]?.isEmpty == true { self?.servableWaiters.removeValue(forKey: agentID) }
-            }
-        }
     }
 
     /// The agents whose thread is on screen: only their revisions are pushed (`onThreadRevision`).
@@ -586,7 +562,7 @@ final class TerminalSessionStore {
 
     /// Spawn the pi session for a freshly created agent, bind it to its pane,
     /// and attach — so the pane view's `session(for:in:)` finds it live.
-    func createAgentSession(pane: LeafPane, tab: Tab, agent: Agent, initialPrompt: String?, isAutomation: Bool = false) async throws {
+    func createAgentSession(pane: LeafPane, tab: Tab, agent: Agent, openingPrompt: OpeningPrompt?, isAutomation: Bool = false) async throws {
         defer { reservedPanes.remove(pane.id) }
         try await ensureBootstrapped()
         guard let state = serverState,
@@ -607,7 +583,7 @@ final class TerminalSessionStore {
             guard rpc else { throw TerminalSessionStoreError.paneUnavailable(pane.id) }
             // Give pi a session to find, so --session-id does not warn.
             let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd)
-            // RPC mode ignores a positional prompt; it goes in as the first `prompt` command below.
+            // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
             let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh, isAutomation: isAutomation)
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
                   session.sessionID == nil,
@@ -628,6 +604,8 @@ final class TerminalSessionStore {
             )
             createdSessionID = info.id
             aliveSessions.insert(info.id)
+            // The host holds it until pi serves, so no snapshot shows the thread without it.
+            if let openingPrompt { await server.sendOpeningPrompt(openingPrompt, sessionID: info.id) }
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id) else {
                 throw TerminalSessionStoreError.paneUnavailable(pane.id)
             }
@@ -647,9 +625,6 @@ final class TerminalSessionStore {
             }
             try await adopt(session, sessionID: info.id)
             createdSessionID = nil
-            if let initialPrompt, !initialPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                sendOpeningPrompt(initialPrompt, to: agent.id, sessionID: info.id)
-            }
         } catch {
             if let createdSessionID {
                 await discardCreatedSession(
@@ -662,31 +637,6 @@ final class TerminalSessionStore {
                 session.phase = .failed(String(describing: error))
             }
             throw error
-        }
-    }
-
-    /// An agent's opening prompt: wait for pi to answer its first snapshot, then send
-    /// it as a normal native `send`. Detached so creation does not block on pi's startup;
-    /// a failure is logged, never fatal (the user can type the prompt again). The server's
-    /// servable signal ends each wait at once; the checks between them are the fallback.
-    private func sendOpeningPrompt(_ text: String, to agentID: AgentID, sessionID: SessionID) {
-        Task { [weak self] in
-            guard let self else { return }
-            let deadline = ContinuousClock.now + .seconds(60)
-            while ContinuousClock.now < deadline, self.aliveSessions.contains(sessionID) {
-                if case .snapshot(let snapshot) = try? await self.server.nativeThread(agentID: agentID, request: .snapshot()),
-                   !snapshot.piSessionID.isEmpty {
-                    let result = try? await self.server.nativeThread(agentID: agentID, request: .send(
-                        expectedSessionID: snapshot.piSessionID, generation: snapshot.generation,
-                        operationID: UUID(), text: text, delivery: .followUp))
-                    if case .failure(let code, let message) = result {
-                        NSLog("Shepherd: opening prompt for agent \(agentID) rejected: \(code) \(message)")
-                    }
-                    return
-                }
-                await self.waitUntilServable(agentID, upTo: .milliseconds(250))
-            }
-            NSLog("Shepherd: agent \(agentID) never became ready for its opening prompt")
         }
     }
 

@@ -73,6 +73,8 @@ final class RPCThreadState {
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
     private var announcedServable = false
+    /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
+    private var openingPrompt: (text: String, id: UUID)?
     /// Requests get a snapshot rather than `native_starting`.
     var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString
@@ -576,7 +578,34 @@ final class RPCThreadState {
     private func announceIfServable() {
         guard isServable, !announcedServable else { return }
         announcedServable = true
+        if let opening = openingPrompt {
+            openingPrompt = nil
+            deliverOpeningPrompt(opening.text, id: opening.id)
+        }
         onServable?()
+    }
+
+    /// A new agent's opening prompt (`OpeningPrompt`), sent the moment the thread serves: in the
+    /// same queue turn, before any request is answered, so the first snapshot a client gets shows
+    /// it (pending until pi starts it) and none shows the thread without it.
+    func sendOpeningPrompt(_ text: String, id: UUID) {
+        guard isServable else {
+            openingPrompt = (text, id)
+            return
+        }
+        deliverOpeningPrompt(text, id: id)
+    }
+
+    private func deliverOpeningPrompt(_ text: String, id: UUID) {
+        let sessionID = session.id
+        guard text.utf8.count <= Self.textLimit else {
+            ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: over \(Self.textLimit) bytes")
+            return
+        }
+        send(id: id, text: text, delivery: .followUp, images: []) { result in
+            guard case .failure(let code, let message) = result else { return }
+            ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: \(code) \(message)")
+        }
     }
 
     private func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {

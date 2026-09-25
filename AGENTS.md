@@ -443,7 +443,10 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   pi has none yet.
 - `--model`/`--thinking` go only to a fresh session.
 - Extensions follow Settings ▸ Pi ▸ Bundled extensions.
-- The opening prompt is the first native `send`, not a positional argument.
+- The opening prompt is the first native `send`, not a positional argument. The host holds it
+  (`SessionServer.sendOpeningPrompt`) and sends it the moment pi serves, so every client's first
+  snapshot shows it; the client that created the agent draws the same pending row meanwhile
+  (`OpeningPrompt`, named after the agent).
 - A new agent's pi spawns with its creation. At launch every restored agent's pi starts from
   the first adoption of the workspace, not when its layout mounts, in `AgentStartQueue`'s
   order: the agent on screen first (and any agent selected while it waits), then the rest a
