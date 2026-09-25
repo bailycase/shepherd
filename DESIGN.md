@@ -2155,8 +2155,9 @@ Changes, Browser, Artifacts, Files" below).
 - **The run's own transcript**, drawn with the thread's components one step smaller
   (`nwProseSize` `.small`), 14pt padding, turns 16pt apart, times and footers on hover as in the
   thread. A live transcript opens at its end and follows; a finished one opens at its start. A
-  live one ends in a working row: the call in flight ("Running bash swift build…"; its session
-  file holds only finished calls), "Pause requested", or "Thinking…". Turns that arrive while it
+  live one ends in a working row while a call is in flight ("Running bash swift build…"; its
+  session file holds only finished calls) or a pause is pending ("Pause requested"); between
+  calls nothing shows, since nothing in a transcript spins (Subagents, LiveText). Turns that arrive while it
   follows fade in where they land. With nothing yet it says "No transcript yet." (or "This run is
   no longer listed.") in `caption` `textTertiary`.
 - **Its footer line** (28pt, Geist 11 `textTertiary`, 14pt side padding): "72 earlier turns" in
