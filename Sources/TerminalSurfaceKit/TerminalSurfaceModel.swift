@@ -500,25 +500,16 @@ extension TerminalConfiguration {
         // from being silently swallowed.
         "shift+cmd+right_bracket", "shift+cmd+left_bracket",
         "alt+cmd+left", "alt+cmd+right",
-        // ⌘↑/↓: previous/next agent in sidebar tree order. ⌥⌘↑/↓: turn jumps.
+        // ⌘↑/↓: previous/next agent in sidebar order. ⌥⌘↑/↓: turn jumps.
         "cmd+up", "cmd+down", "alt+cmd+up", "alt+cmd+down",
         // ⇧⌘S sidebar · ⇧⌘B review pane · ⇧⌘M model picker · ⌘. stop · ⌘I inspect.
         "shift+cmd+s", "shift+cmd+b", "shift+cmd+m", "cmd+period", "cmd+i",
-        // ⌘1–9: agent selection in sidebar tree order.
+        // ⌘1–9: the first nine Recents rows.
         "cmd+one", "cmd+two", "cmd+three", "cmd+four", "cmd+five",
         "cmd+six", "cmd+seven", "cmd+eight", "cmd+nine",
         "cmd+physical:one", "cmd+physical:two", "cmd+physical:three",
         "cmd+physical:four", "cmd+physical:five", "cmd+physical:six",
         "cmd+physical:seven", "cmd+physical:eight", "cmd+physical:nine",
-        // ⌃⇧1–9: machine jump (local + remote hosts in sidebar order).
-        "ctrl+shift+one", "ctrl+shift+two", "ctrl+shift+three",
-        "ctrl+shift+four", "ctrl+shift+five", "ctrl+shift+six",
-        "ctrl+shift+seven", "ctrl+shift+eight", "ctrl+shift+nine",
-        "ctrl+shift+physical:one", "ctrl+shift+physical:two",
-        "ctrl+shift+physical:three", "ctrl+shift+physical:four",
-        "ctrl+shift+physical:five", "ctrl+shift+physical:six",
-        "ctrl+shift+physical:seven", "ctrl+shift+physical:eight",
-        "ctrl+shift+physical:nine",
         // ⌘, Settings. Ghostty's built-in open_config binding is stored as a
         // unicode trigger while "comma" parses as a physical key, so both
         // spellings must be unbound for the chord to reach the app menu.

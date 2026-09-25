@@ -14,13 +14,15 @@ extension ShepherdViewModel {
         let keys = KeybindingsStore.shared
 
         // Commands.
-        let creationSpace = selectedRemoteAgent.flatMap { target in
-            remoteHosts.connections.first { $0.id == target.hostID }?.state.spaces.first { $0.id == remoteAgent(target)?.spaceID }
-        } ?? selectedSpace ?? state.spaces.first
-        if let space = creationSpace {
-            items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
-                                     title: "New agent", subtitle: "in \(space.name)/",
-                                     shortcut: keys.display(.newAgent), icon: "plus"))
+        items.append(PaletteItem(id: "action.newAgent", kind: .action("newAgent"), section: .commands,
+                                 title: "New thread", shortcut: keys.display(.newAgent), icon: "plus"))
+        // The New thread page's project: what the sidebar's space rows offered.
+        if shownDestination == .newThread, let place = newThread.place, place.host == nil,
+           let space = state.spaces.first(where: { $0.id == place.space }) {
+            items.append(PaletteItem(id: "action.renameSpace", kind: .action("renameSpace"), section: .commands,
+                                     title: "Rename space…", subtitle: space.name, icon: "pencil"))
+            items.append(PaletteItem(id: "action.removeSpace", kind: .action("removeSpace"), section: .commands,
+                                     title: "Remove space…", subtitle: space.name, icon: "trash"))
         }
         items.append(PaletteItem(id: "action.newAgentOptions", kind: .action("newAgentOptions"), section: .commands,
                                  title: "New agent with options…", shortcut: keys.display(.newAgentOptions),
@@ -91,11 +93,13 @@ extension ShepherdViewModel {
             }
         }
 
-        // Destinations: agents in sidebar order, then remote agents and spaces.
-        for agent in orderedAgents {
-            let space = state.spaces.first { $0.id == agent.spaceID }
+        // Destinations: this Mac's agents in sidebar order (Needs you, then Recents), then remote
+        // agents and spaces.
+        let spaceNames = Dictionary(state.spaces.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        for id in localRecentsOrder {
+            guard let agent = state.agents.first(where: { $0.id == id }) else { continue }
             items.append(PaletteItem(id: "agent.\(agent.id.rawValue)", kind: .agent(agent.id), section: .agents,
-                                     title: agent.name, subtitle: space.map { "\($0.name) · \(AgentRow.statusWord(agent.status, turnFailed: failedTurns.contains(agent.id)))" },
+                                     title: agent.name, subtitle: spaceNames[agent.spaceID].map { "\($0) · \(AgentRow.statusWord(agent.status, turnFailed: failedTurns.contains(agent.id)))" },
                                      icon: "bubble.left"))
         }
         for connection in remoteHosts.connections where connection.phase == .connected {
@@ -192,7 +196,9 @@ extension ShepherdViewModel {
             remoteSpacePickerHostID = hostID
         case .action(let action):
             switch action {
-            case "newAgent": quickCreateAgent()
+            case "newAgent": openNewThread()
+            case "renameSpace": spaceRenameTarget = newThread.place?.space
+            case "removeSpace": spaceDeleteTarget = newThread.place?.space
             case "newAgentOptions": showNewAgentSheet = true
             case "newSpace": addSpaceFromPanel()
             case "rename": renameSelectedAgent()

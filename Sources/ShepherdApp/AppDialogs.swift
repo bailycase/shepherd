@@ -124,7 +124,8 @@ struct AppDialogs: ViewModifier {
                         vm.spacePickerTarget = nil
                         Task {
                             do {
-                                _ = try await vm.addRemoteSpace(hostID: hostID, path: path)
+                                let spaceID = try await vm.addRemoteSpace(hostID: hostID, path: path)
+                                vm.openNewThread(in: spaceID, hostID: hostID)
                             } catch {
                                 vm.remoteActionError = "Couldn't add the space on \(connection.config.name): \(error)"
                             }

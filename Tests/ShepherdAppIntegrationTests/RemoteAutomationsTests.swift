@@ -26,10 +26,6 @@ struct RemoteAutomationsTests {
         let key = AutomationKey(host: connection.id, automation: automation.id)
         let host = remote.host.server
 
-        // The host's automations sit under its spaces, behind a disclosure.
-        #expect(vm.sidebarTree().items.contains { if case .remoteAutomations(let header) = $0 { header.count == 1 } else { false } })
-        #expect(!vm.sidebarTree().items.contains { if case .remoteAutomation = $0 { true } else { false } })
-        vm.toggleRemoteAutomations(connection.id)
         let row = try #require(Self.row(key, in: vm))
         #expect(row.word == "off" && row.run == nil && row.abilities.run && !row.abilities.stop)
 
@@ -48,11 +44,16 @@ struct RemoteAutomationsTests {
         let runAgent = try #require(host.state.automations.first?.agentID)
         let hidden = try #require(host.state.spaces.first { $0.hidden })
         #expect(host.state.agents.first { $0.id == runAgent }?.spaceID == hidden.id, "a run lives in the hidden space")
-        #expect(!vm.sidebarTree().items.contains { if case .space(let s) = $0 { s.hostID == connection.id && s.id == hidden.id } else { false } })
+        // The run is in Recents with its bolt; the hidden space is never a project to start in.
+        let ref = RemoteAgentRef(hostID: connection.id, agentID: runAgent)
+        try await eventuallyOnMain("the run to reach Recents") {
+            vm.sidebarLists.recents.contains { $0.id == .remote(ref) && $0.leading == .glyph("bolt", attention: false) }
+        }
+        #expect(!NewThreadState.hosts(vm).contains { $0.id == connection.id && $0.spaces.contains { $0.id == hidden.id } })
 
-        vm.openRemoteAutomation(try #require(Self.row(key, in: vm)))
-        #expect(vm.selectedRemoteAgent == RemoteAgentRef(hostID: connection.id, agentID: runAgent))
-        #expect(Self.row(key, in: vm)?.selected == true)
+        vm.selectSidebarRow(.remote(ref))
+        #expect(vm.selectedRemoteAgent == ref)
+        #expect(vm.presentedSidebarLists.recents.first { $0.id == .remote(ref) }?.selected == true)
 
         vm.performRemoteAutomation(key, .stop)
         try await eventuallyOnMain("the run's agent to go") {
@@ -85,7 +86,6 @@ struct RemoteAutomationsTests {
         let connection = try await remote.connect(local.remoteHosts)
         let key = AutomationKey(host: connection.id, automation: automation.id)
         let host = remote.host.server
-        vm.toggleRemoteAutomations(connection.id)
 
         vm.performRemoteAutomation(key, .run)
         try await eventuallyOnMain("the first run to start", timeout: .seconds(30)) {
@@ -143,10 +143,24 @@ struct RemoteAutomationsTests {
         #expect(vm.remoteActionError == "Couldn't start the run: The automation no longer exists on the host.")
     }
 
-    static func row(_ key: AutomationKey, in vm: ShepherdViewModel) -> SidebarRemoteAutomation? {
-        for item in vm.sidebarTree().items {
-            if case .remoteAutomation(let row) = item, row.key == key { return row }
+    /// A remote automation as the Automations page reads it, with the word its run's state reads.
+    struct Row {
+        let row: AutomationListRow
+        var run: AgentID? { row.run?.agent }
+        var live: Bool { row.live }
+        var abilities: AutomationAbilities { row.abilities }
+        var word: String {
+            guard row.run != nil else { return row.enabled ? "stopped" : "off" }
+            return switch row.tone {
+            case .attention: "needs you"
+            case .running: "running"
+            default: "done"
+            }
         }
-        return nil
+    }
+
+    static func row(_ key: AutomationKey, in vm: ShepherdViewModel) -> Row? {
+        guard let connection = vm.remoteHosts.connections.first(where: { $0.id == key.host }) else { return nil }
+        return vm.remoteAutomationsModel(connection).rows.first { $0.key == key }.map(Row.init)
     }
 }

@@ -5,27 +5,31 @@ private let started = Date().addingTimeInterval(-41 * 60)
 #Preview("Sidebar") {
     NWPreviewBoth {
         HStack(alignment: .top, spacing: NW.Space.xl) {
-            ForEach(NWDensity.allCases) { density in
-                NWSidebar {
-                    VStack(alignment: .leading, spacing: 1) {
-                        NWSidebarSection("This Mac", detail: .count(19), toggle: {})
-                        NWSidebarDisclosureRow("Shepherd", expanded: true) { _ in
-                            Text("8").font(.nw(.micro, weight: .regular)).foregroundStyle(.nw.textTertiary)
-                        }
-                        NWSidebarRow("Plan shepherd extensions", state: .running, depth: 1,
-                                     accessory: .elapsed(since: started, tone: .running))
-                        NWSidebarRow("Dock review pane", state: .attention, depth: 1, accessory: .ask)
-                        NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true, depth: 1)
-                        NWSidebarRow("Fix remote subagent deletion", state: .idle, depth: 1, worktree: true)
-                        NWSidebarRow("nightly-fix", state: .stuck, depth: 1, accessory: .text("14m", tone: .stuck))
-                        NWSidebarSection("horizon", detail: .text("Unreachable", tone: .failed))
-                        NWSidebarNoticeRow(.failed, text: "Unreachable · 3h", actionTitle: "Retry") {}
+            ForEach([NWDensity.standard, .compact]) { density in
+                NWSidebar(topBar: NWSidebarTopBar(searchShortcut: "⌘K", hideShortcut: "⇧⌘S", search: {}, hide: {})) {
+                    VStack(alignment: .leading, spacing: NWSidebarMetrics.rowSpacing) {
+                        NWSidebarDestination("New thread", icon: .newThread, trailing: .keycaps("⌘N")) {}
+                        NWSidebarDestination("Automations", icon: .symbol("bolt")) {}
+                        NWSidebarDestination("More", icon: .disclosure(open: true)) {}
+                        NWSidebarDestination("Hosts", icon: .symbol("display"), selected: true, child: true,
+                                             trailing: .alert("1 offline")) {}
+                        NWSidebarDestination("Extensions", icon: .symbol("puzzlepiece.extension"), child: true) {}
+                        NWSidebarSection(.needsYou(count: 2))
+                        NWSidebarRow("Checkout funnel events", state: .attention, accessory: .reason("retention?"))
+                        NWSidebarRow("Nightly triage", leading: .glyph("bolt", attention: true), accessory: .reason("approve plan"))
+                        NWSidebarSection(.recents)
+                        NWSidebarRow("Investigate SwiftUI live preview", state: .running, selected: true,
+                                     accessory: .elapsed(since: started))
+                        NWSidebarRow("Fix remote subagent deletion", state: .idle, accessory: .tag("horizon"))
+                        NWSidebarRow("Merge PR #24 after CI", leading: .glyph("bolt", attention: false), accessory: .text("done"))
+                        NWSidebarRow("Fix terminal output buffer", state: .done)
+                        NWSidebarRow("Fix remote nightly", state: .failed, accessory: .tag("horizon"))
                     }
-                    .padding(.horizontal, NWSidebarMetrics.treeInset)
+                    .padding(.horizontal, NWSidebarMetrics.listInset)
                 } footer: {
-                    NWSidebarFooter("Automations", systemImage: "bolt", count: 1, expanded: false) {}
+                    NWSidebarFooter(name: "Baily", detail: "This Mac · build-01") {}
                 }
-                .frame(width: 232, height: 520)
+                .frame(width: 232, height: 560)
                 .nwBorder(.nw.lineSubtle, radius: NW.Radius.m)
                 .nwDensity(density)
             }

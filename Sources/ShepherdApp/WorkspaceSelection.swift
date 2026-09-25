@@ -33,6 +33,9 @@ struct WorkspaceSelection {
     /// True while a remote agent is selected: no local layout is visible (the
     /// remote pane renders instead), but everything stays mounted.
     var remoteSelectionActive: Bool = false
+    /// A page the main column shows in place of a thread (New thread, Automations, Hosts): no
+    /// layout is visible, and every mounted one stays mounted, as for a remote selection.
+    var destination: MainDestination? = nil
     /// Layouts to keep unmounted (decided by `coldParkCandidates`, applied
     /// by the view model). Never contains the active tab.
     var parkedTabIDs: Set<TabID> = []
@@ -117,8 +120,8 @@ struct WorkspaceSelection {
         }
     }
 
-    /// The workspace follows the sidebar: the selected agent's layout, or nothing (an empty
-    /// workspace) when no agent is selected.
+    /// The workspace follows the sidebar: the selected agent's layout, or nothing (a page)
+    /// when no agent is selected or a page is.
     var activeTab: Tab? {
         guard let id = activeTabID else { return nil }
         return state.tabs.first { $0.id == id }
@@ -128,7 +131,7 @@ struct WorkspaceSelection {
     /// tree). Visibility is checked per pane on every SwiftUI update, so this
     /// path stays allocation-free.
     var activeTabID: TabID? {
-        if remoteSelectionActive { return nil }
+        if remoteSelectionActive || destination != nil { return nil }
         guard let id = selectedAgentID,
               let agent = state.agents.first(where: { $0.id == id }),
               agent.spaceID == selectedSpaceID,

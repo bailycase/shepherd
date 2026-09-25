@@ -58,6 +58,13 @@ struct RootView: View {
                 }
                 WorkspaceView(vm: vm)
             }
+            // A page (New thread, Automations, Hosts) covers the whole column, toolbar included;
+            // the layouts under it stay mounted and hidden, as when switching agents.
+            .overlay {
+                DestinationLayer(vm: vm, chrome: PageHeaderChrome(
+                    leadingInset: docked || isFullScreen ? 0 : AppLayout.trafficLightInset,
+                    showSidebar: docked ? nil : { vm.toggleSidebar() }))
+            }
             .frame(maxWidth: .infinity)
             .background(Color.nw.bgWindow)
             // Every mounted layout reflows when the column's width changes; relaid out on each
@@ -187,6 +194,23 @@ private struct SidebarOverlayDismissal: ViewModifier {
         content
             .onChange(of: vm.selectedAgentID) { vm.dismissSidebarOverlay() }
             .onChange(of: vm.selectedRemoteAgent) { vm.dismissSidebarOverlay() }
+            .onChange(of: vm.destination) { vm.dismissSidebarOverlay() }
+    }
+}
+
+/// The page the main column shows in place of a thread, if any. Its own view, so a page coming
+/// or going reruns this and not the root view around it.
+private struct DestinationLayer: View {
+    var vm: ShepherdViewModel
+    let chrome: PageHeaderChrome
+
+    var body: some View {
+        switch vm.shownDestination {
+        case .newThread?: NewThreadPage(vm: vm, chrome: chrome)
+        case .automations?: AutomationsDestination(vm: vm, chrome: chrome)
+        case .hosts?: HostsDestination(vm: vm, chrome: chrome)
+        case nil: EmptyView()
+        }
     }
 }
 
