@@ -555,6 +555,9 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// A programmatic jump (previous/next turn) has not left the bottom band yet: its first
     /// frames start at the tail, and those positions are not the reader asking to follow.
     public var jumping = false
+    /// The reader sent a message that goes into the thread now: land on the tail once its turn
+    /// is there (`userTurnArrived`). The reader leaving the tail before then cancels it.
+    public var awaitingSentTurn = false
 
     public init(sticky: Bool = true, userScrolling: Bool = false, unseen: Bool = false) {
         self.sticky = sticky
@@ -578,7 +581,10 @@ public struct NativeScrollFollower: Equatable, Sendable {
             unseen = false
             return
         }
-        if userIntent { sticky = false }
+        if userIntent {
+            sticky = false
+            awaitingSentTurn = false
+        }
     }
 
     /// The thread's tail changed: a row arrived, or the last one grew. Detached, that is output
@@ -586,6 +592,23 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// the rows a scroll or a turn jump reveals grows it too, and that is nothing new.
     public mutating func contentArrived() {
         if !sticky { unseen = true }
+    }
+
+    /// The reader sent a message. One that goes into the thread now re-attaches: stick, and land
+    /// on its turn once it is there. A follow-up that waits in Up next (`queued`) is not in the
+    /// thread and leaves the reader's place alone; when it goes later, it is output like any other.
+    public mutating func sent(queued: Bool) {
+        guard !queued else { return }
+        jumpToLatest()
+        awaitingSentTurn = true
+    }
+
+    /// The thread's last user turn changed. True when that is the reader's own send landing, and
+    /// the view should scroll to its tail.
+    public mutating func userTurnArrived() -> Bool {
+        guard awaitingSentTurn else { return false }
+        awaitingSentTurn = false
+        return true
     }
 
     /// The user asked for the tail (jump pill, send): stick and forget what was missed.
@@ -600,6 +623,7 @@ public struct NativeScrollFollower: Equatable, Sendable {
     public mutating func beginJump() {
         sticky = false
         jumping = true
+        awaitingSentTurn = false
     }
 
     /// The pill shows while detached and something is happening or already happened below.
