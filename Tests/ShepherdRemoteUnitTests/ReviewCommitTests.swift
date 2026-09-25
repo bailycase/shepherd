@@ -241,6 +241,52 @@ struct ReviewCommitStoreTests {
         #expect(store.title == "Mine" && !store.drafted)
     }
 
+    @Test func thePlainMessageFollowsTheTickedFilesUntilSomeoneEditsIt() async {
+        let store = host(info: info(drafts: false)).store()
+        await store.begin()
+
+        store.toggle("App/iOS/FleetView.swift")
+        #expect(store.title == "Add HostCard.swift" && store.body.isEmpty)
+        store.toggle("App/iOS/FleetView.swift")
+        #expect(store.title == "Update 2 files in App/iOS" && store.body == "- App/iOS/FleetView.swift\n- App/iOS/HostCard.swift")
+        store.selectAll(false)
+        #expect(store.title == "Update 2 files in App/iOS", "with nothing ticked the message waits for the next tick")
+        store.toggle("App/iOS/FleetView.swift")
+        #expect(store.title == "Update FleetView.swift")
+
+        store.title = "Mine"
+        store.toggle("App/iOS/HostCard.swift")
+        #expect(store.title == "Mine" && store.body.isEmpty)
+    }
+
+    @Test func aDraftedMessageStaysWhenAFileIsUnticked() async {
+        let store = host().store()
+        await store.begin()
+
+        store.toggle("App/iOS/FleetView.swift")
+
+        #expect(store.title == "Show host cards" && store.body == "Why." && store.drafted)
+    }
+
+    @Test(arguments: [
+        (RemoteAgentResult.commitMessage(title: "Show host cards", body: "Why.", drafted: true), "Show host cards", true),
+        (.commitMessage(title: "Update 2 files in App/iOS", body: "- App/iOS/FleetView.swift\n- App/iOS/HostCard.swift", drafted: false),
+         "Add HostCard.swift", false),
+    ])
+    func untickingWhileTheHostDraftsTakesADraftButNotAPlainAnswer(_ answer: RemoteAgentResult, _ title: String, _ drafted: Bool) async {
+        let fake = host()
+        let store = fake.store()
+        fake.answer = { [weak store] query in
+            guard case .commitMessage = query else { return .commitInfo(info()) }
+            store?.toggle("App/iOS/FleetView.swift")
+            return answer
+        }
+
+        await store.begin()
+
+        #expect(store.title == title && store.drafted == drafted)
+    }
+
     @Test func aHostThatCantSayLeavesTheSheetUnavailable() async {
         let store = CommitFakeHost { _ in throw RemoteHostClientError.rejected(code: "query_failed", message: "Not a git repository") }.store()
 

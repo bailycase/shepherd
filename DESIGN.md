@@ -1145,9 +1145,9 @@ layout" above.
   - The message card (`NWCommitMessageEditor`, a raised card with a strong line): the summary in
     semibold over the description, both editable, and a note: "Drafted from the diff · edit
     anything" (a sparkle), "Written from the file list · edit anything", or a spinner with
-    "Drafting from the diff…". The plain message shows at once; the drafted one replaces it only
-    if nothing was typed meanwhile. Drafting follows Settings ▸ Worktrees ▸ Generate PR
-    descriptions and its model.
+    "Drafting from the diff…". The plain message shows at once and follows the ticked files
+    until someone edits it; the drafted one replaces it only if nothing was typed meanwhile.
+    Drafting follows Settings ▸ Worktrees ▸ Generate PR descriptions and its model.
   - "Files" with "n of m" and Select All/None, then a card of `NWCommitFileRow`s (a row-high
     checkbox row: lantern checkbox, the name in mono, its directory in tertiary, the diff stat;
     the whole row toggles). Every file starts ticked; the list scrolls past 232pt.
