@@ -81,6 +81,32 @@ public enum TerminalPanel {
     }
 }
 
+/// What closing a tab asks first on iOS (iPad panel, iPhone screen): which tab, and how many
+/// shells stop on the host. A title another tab shares ("zsh" in every tab at its prompt) adds
+/// the tab's place, and a split tab counts every shell it closes.
+public struct TerminalCloseConfirmation: Equatable, Sendable {
+    public let title: String
+    public let message: String
+
+    /// `titles` are the tabs' titles in the strip's order, one per tab of `tabs`.
+    public init(_ tab: TerminalPanelTab, in tabs: [TerminalPanelTab], titles: [String], thread: PaneID?, host: String) {
+        let index = tabs.firstIndex { $0.id == tab.id }
+        let name = index.flatMap { titles.indices.contains($0) ? titles[$0] : nil } ?? "terminal"
+        if let index, titles.filter({ $0 == name }).count > 1 {
+            title = "Close \(name) (tab \(index + 1))?"
+        } else {
+            title = "Close \(name)?"
+        }
+        let closing = Set(TerminalPanel.panesToClose(tab, thread: thread))
+        let shells = tab.panes.filter { closing.contains($0.id) && $0.isReview != true }.count
+        message = switch shells {
+        case 0: "It closes on \(host)."
+        case 1: "Its shell on \(host) stops."
+        default: "Its \(shells) shells on \(host) stop."
+        }
+    }
+}
+
 /// How tall the terminal panel is. It snaps to a third, half and two-thirds of the column while
 /// dragged, keeps the thread above it at least `threadMinimum`, and resets to its default.
 public enum TerminalPanelHeight {

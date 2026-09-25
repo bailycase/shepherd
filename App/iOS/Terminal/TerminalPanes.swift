@@ -80,6 +80,12 @@ struct TerminalModel: Equatable {
     }
 
     func tab(for id: String) -> TerminalPanelTab? { tabs.first { $0.id.rawValue == id } }
+
+    /// What closing `tab` asks: which tab (its place when another has its title) and how many
+    /// shells stop.
+    func closeConfirmation(_ tab: TerminalPanelTab) -> TerminalCloseConfirmation {
+        TerminalCloseConfirmation(tab, in: tabs, titles: items.map(\.title), thread: thread, host: hostName)
+    }
 }
 
 /// One tab's panes with the host's splits: 1pt dividers, each side its share.
