@@ -1,6 +1,7 @@
 import AppKit
 import UserNotifications
 import ShepherdCore
+import ShepherdProtocol
 import ShepherdSessions
 
 /// System notifications for agent lifecycle: an agent finishing a turn, failing one, or
@@ -16,6 +17,7 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// SwiftPM runs), so everything guards on this.
     private let available = Bundle.main.bundleIdentifier != nil
     private var requestedAuthorization = false
+    private var subagentAsks = SubagentAsks()
 
     override init() {
         super.init()
@@ -32,6 +34,19 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
         let watching = isAgentVisible && NSApp.isActive
         guard let banner = AgentBanners.status(of: agent, from: old, failure: failure, watching: watching) else { return }
         post(banner)
+    }
+
+    /// An agent's subagents as published: a run that starts asking posts a banner, by the same
+    /// rules as the agent's own question.
+    func subagentsChanged(_ agent: Agent, children: [ChildRun], isAgentVisible: Bool) {
+        let asking = subagentAsks.update(agentID: agent.id, children: children)
+        guard available, !asking.isEmpty, !(isAgentVisible && NSApp.isActive) else { return }
+        for run in asking { post(AgentBanners.subagentQuestion(run, of: agent)) }
+    }
+
+    /// The agent is gone; its subagents' questions go with it.
+    func forgetSubagents(of agentID: AgentID) {
+        subagentAsks.forget(agentID)
     }
 
     private func post(_ banner: AgentBanner) {

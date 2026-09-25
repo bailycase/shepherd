@@ -298,7 +298,7 @@ final class ShepherdViewModel {
     let sidebarDropZone = SidebarDropZone()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = RightPaneState()
-    /// System notifications when an unwatched agent finishes or blocks.
+    /// System notifications when an unwatched agent finishes, fails, or asks, or a subagent asks.
     let notifications = AgentNotifications()
     let settings: AppSettings
     private let sidebarDefaults: UserDefaults
@@ -767,6 +767,10 @@ final class ShepherdViewModel {
         // publisher's timestamp, which no view reads, so it goes to the unobserved storage.
         if updated.rows == childRuns.rows { _childRuns = updated } else { childRuns = updated }
         syncChildSweepTimer()
+        if let agent = state.agents.first(where: { $0.id == agentID }) {
+            let visible = selectedAgentID == agentID && selectedRemoteAgent == nil
+            notifications.subagentsChanged(agent, children: children, isAgentVisible: visible)
+        }
     }
 
     /// One agent's published child runs: its sidebar row asks while one waits on you, and a

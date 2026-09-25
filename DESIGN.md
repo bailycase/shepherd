@@ -90,7 +90,7 @@ And the rules that follow from them:
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: "Pi" | "pi" | The app's spelling, until the rest of that redesign lands |
-| Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn, fails one, or asks a question while you aren't watching it (`AgentNotifications`; see Status language) | Reaches you outside the app |
+| Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn, fails one, or asks a question, or one of its subagents asks, while you aren't watching it (`AgentNotifications`; see Status language) | Reaches you outside the app |
 | Missions, the mission graph, the attention inbox, evidence review (Lab boards) | Not built | Out of scope for this pass |
 | ⌘M opens the model picker (earlier handoff) | **⇧⌘M** | ⌘M is the system Minimize chord |
 | A compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither: the tree starts under the window controls | The sidebar is navigation only; ⌘K opens the palette and ⌘N (or a space's hover `+`) starts an agent |
@@ -1280,8 +1280,11 @@ isn't frontmost):
 | A turn finished | the agent | "Agent finished" | no |
 | A turn failed | the agent | "Turn failed", then the error's first line | yes |
 | The agent asks a question | the agent | "Agent needs your input" | yes |
+| A subagent asks a question | the agent | "Subagent *label* needs your input", then the question's first line | yes |
 
-An agent's banners replace each other. Clicking a banner selects the agent.
+An agent's own banners replace each other; each subagent's question has its own. A subagent
+posts once per question, however often its extension republishes. Clicking a banner selects
+the agent.
 
 ## Components
 
