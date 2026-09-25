@@ -11,8 +11,8 @@ import ShepherdRemote
 struct InstructionsSettings: View {
     @Bindable var model: InstructionsModel
 
-    static let explanation = "Root files for every pi session Shepherd starts: `AGENTS.md` for how you work, "
-        + "`APPEND_SYSTEM.md` for rules that override everything else. Repos can still add their own AGENTS.md."
+    static let explanation = "The agent’s root files, read at the start of every session Shepherd starts: `AGENTS.md` for how "
+        + "you work, `APPEND_SYSTEM.md` for rules that override everything else. Repos can still add their own AGENTS.md."
     static let perHostExplanation = "Per host: each machine keeps its own root files."
 
     var body: some View {
@@ -510,14 +510,14 @@ private struct InstructionsSideColumn: View {
     }
 }
 
-/// How pi reads them: five steps in order, each a small card joined to the next, the open
+/// How the agent reads them: five steps in order, each a small card joined to the next, the open
 /// file's own step marked.
 private struct InstructionsReadingOrder: View {
     let file: InstructionFile
 
     private var steps: [(title: String, note: String, file: InstructionFile?)] {
         [
-            ("pi's system prompt", "built in", nil),
+            ("Agent’s system prompt", "built in", nil),
             ("Shepherd's AGENTS.md", (file == .agents ? "this file · " : "") + "every repo", .agents),
             ("AGENTS.md in parent folders", "if any", nil),
             ("the repo's AGENTS.md", "most specific context", nil),
@@ -528,7 +528,7 @@ private struct InstructionsReadingOrder: View {
     var body: some View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.m) {
-            NWSectionHeader("How pi reads them").padding(.horizontal, NW.Space.xxs)
+            NWSectionHeader("How the agent reads them").padding(.horizontal, NW.Space.xxs)
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
                     if index > 0 {
@@ -541,7 +541,7 @@ private struct InstructionsReadingOrder: View {
                     stepCard(index + 1, title: step.title, note: step.note, marked: step.file == file)
                 }
             }
-            SettingsNote(text: "Later files win. pi's own files in ~/.pi/agent still load, each just before Shepherd's. "
+            SettingsNote(text: "Later files win. The agent’s own files in ~/.pi/agent still load, each just before Shepherd's. "
                 + "A session reads them when it starts: running agents keep the version they started with, "
                 + "new agents and automations get this one.")
                 .padding(.horizontal, NW.Space.xxs)

@@ -83,7 +83,7 @@ extension AppLayout {
     static let instructionsDiffTextSize: CGFloat = 12
     static let instructionsDiffLineHeight: CGFloat = 22
     static let instructionsDiffSignWidth: CGFloat = 14
-    /// How pi reads them: small cards joined by a 10pt connector, 1.5pt wide and 17pt in; the
+    /// How the agent reads them: small cards joined by a 10pt connector, 1.5pt wide and 17pt in; the
     /// number in a 16pt column, the title in mono 11.5 over a Geist 11 note.
     static let instructionsStepConnectorHeight: CGFloat = 10
     static let instructionsStepConnectorInset: CGFloat = 17
