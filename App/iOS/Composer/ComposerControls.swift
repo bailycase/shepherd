@@ -56,19 +56,21 @@ struct ModelChip: View {
         let title = model.map(NativeModelChoices.shortName) ?? "Model"
         Button(action: open) {
             HStack(spacing: NW.Space.s) {
-                Text(title).font(.nw(.mono)).lineLimit(1)
+                Text(title).font(.nw(.mono)).lineLimit(1).truncationMode(.middle)
                 if canChange { NWChipChevron() }
             }
         }
         .disabled(!canChange)
-        .accessibilityLabel("Model, \(title)")
+        .accessibilityLabel("Model, \(model ?? title)")
         .accessibilityHint(canChange ? "Choose the agent's model" : "")
     }
 }
 
-/// The thinking chip: a menu of Off, Low, Medium and High, checked at the current level.
+/// The thinking chip: a menu of the levels pi offers the thread's model, checked at the current
+/// level.
 struct ThinkingChip: View {
     let level: String?
+    let levels: [NativeThinkingLevel]
     let enabled: Bool
     let choose: (String) -> Void
 
@@ -76,7 +78,7 @@ struct ThinkingChip: View {
         let title = level.map(NativeThinkingLevel.title) ?? "Default"
         Menu {
             Picker("Thinking", selection: Binding(get: { level ?? "" }, set: choose)) {
-                ForEach(NativeThinkingLevel.all) { option in
+                ForEach(levels) { option in
                     Text(option.note.map { "\(option.title) · \($0)" } ?? option.title).tag(option.id)
                 }
             }
@@ -110,14 +112,18 @@ struct CommandsChip: View {
 }
 
 /// The model picker (from the model chip): the host's catalog in one section per provider,
-/// searchable, with a check on the current model.
+/// searchable, with a check on the current model and each model's thinking levels under its name.
 struct ModelPickerSheet: View {
     let host: MobileHost?
     let current: String?
+    /// The levels pi reports for the current model (the snapshot's), read as the sheet loads.
+    let currentLevels: () -> [String]?
     let choose: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var models: [String]?
+    /// Each model's second line (`NativeModelChoices.thinkingLines`), derived once per catalog.
+    @State private var thinking: [String: String] = [:]
     @State private var failure: String?
     @State private var sections: [NativeModelSection] = []
 
@@ -140,7 +146,14 @@ struct ModelPickerSheet: View {
                                         dismiss()
                                     } label: {
                                         HStack {
-                                            Text(model.title).font(.nw(.code)).foregroundStyle(Color.nw.textPrimary)
+                                            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                                                Text(model.title).font(.nw(.code)).foregroundStyle(Color.nw.textPrimary)
+                                                    .lineLimit(1).truncationMode(.middle)
+                                                if let levels = model.thinking {
+                                                    Text(levels).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                                                        .lineLimit(1).truncationMode(.tail)
+                                                }
+                                            }
                                             Spacer(minLength: NW.Space.m)
                                             if model.isCurrent {
                                                 Image(systemName: "checkmark").foregroundStyle(Color.nw.running)
@@ -150,6 +163,7 @@ struct ModelPickerSheet: View {
                                         .frame(minHeight: NW.Height.touch)
                                         .contentShape(Rectangle())
                                     }
+                                    .accessibilityLabel(model.id + (model.thinking.map { ", \($0)" } ?? ""))
                                     .accessibilityAddTraits(model.isCurrent ? .isSelected : [])
                                 }
                             }
@@ -173,22 +187,27 @@ struct ModelPickerSheet: View {
     }
 
     private func derive() {
-        sections = NativeModelChoices.sections(models ?? [], current: current, query: query)
+        sections = NativeModelChoices.sections(models ?? [], current: current, query: query, thinking: thinking)
+    }
+
+    private func adopt(_ listing: ModelListing, host: MobileHost) {
+        models = listing.models
+        thinking = NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: host.supports(RemoteProtocol.thinkingLevelsCapability),
+                                                    current: current, currentLevels: currentLevels())
+        derive()
     }
 
     private func load() async {
         guard let host else { failure = "This host was forgotten."; return }
         if let cached = ComposerStates.shared.models(host: host.id, session: host.session) {
-            models = cached.models
-            derive()
+            adopt(cached, host: host)
             return
         }
         guard let client = host.connectedClient else { failure = "\(host.name) is offline."; return }
         do {
             let listing = try await client.listModels()
             ComposerStates.shared.setModels(listing, host: host.id, session: host.session)
-            models = listing.models
-            derive()
+            adopt(listing, host: host)
         } catch {
             failure = String(describing: error)
         }

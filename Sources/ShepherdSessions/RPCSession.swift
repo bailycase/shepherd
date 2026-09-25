@@ -15,8 +15,8 @@ enum RPCError: Error, Equatable, CustomStringConvertible {
     var description: String {
         switch self {
         case .timeout: return "RPC request timed out"
-        case .exited(let code): return "pi exited (\(code.map(String.init) ?? "signal")) with the request outstanding"
-        case .notAlive: return "pi is not running"
+        case .exited(let code): return "The agent exited (\(code.map(String.init) ?? "signal")) with the request outstanding"
+        case .notAlive: return "The agent is not running"
         }
     }
 }

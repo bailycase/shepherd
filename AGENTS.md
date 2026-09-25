@@ -245,10 +245,11 @@ pointing at the installed pi package. They isolate `HOME` and use a local fake p
 
 **Release rules** (`Tests/Release/test_release.py`, Python's `unittest`, stdlib only) test
 `scripts/release.py`: what each trigger builds (the iOS TestFlight upload included), which feeds
-each release lands in, the legacy aliases, `verify-app`, and `verify-ios`. They also read the
-Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`, and
-`AppUpdater.swift`, so a bundle id, feed name or signing setting that drifts from the script
-fails before a release builds.
+each release lands in, the legacy aliases, `verify-app`, `verify-ios`, and which TestFlight builds
+`retire-testflight` expires (against a local fake App Store Connect). They also read the
+Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`,
+`AppUpdater.swift`, and the Release workflow, so a bundle id, feed name or signing setting that
+drifts from the script fails before a release builds.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -280,7 +281,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twelve).
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all eleven).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
@@ -343,8 +344,10 @@ Sources/
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
-                       NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
-                       the changes card), NativeQueueRules (the queue's rules, host and client),
+                       NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
+                       parser: tables, lists, images, details, footnotes), NativeActivity
+                       (activity lines, the changes card), NativeQueueRules (the queue's rules,
+                       host and client),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), ShepherdLog. Shared with the iOS client.
@@ -382,11 +385,11 @@ Sources/
     CommandPalette, CommandPaletteView, PaletteContentSearch, Keybindings (KeybindingsStore)
     SettingsView, SettingsWindow, SettingsComponents, Settings{Appearance, Terminal, Agents,
       Worktrees, Pi, Remote, Keyboard, Advanced}, AppSettings
-    Themes (ThemeManager, ShepherdTheme), ShepherdPiTheme, ShellIntegration, ComponentGallery
+    Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
       AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
-    Status/Namer/Panes/Review/Theme/Subagents/Children/InspectExtension.swift  embedded extensions
+    Status/Namer/Panes/Review/Subagents/Children/InspectExtension.swift  embedded extensions
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
   ShepherdUI/          Night Watch, its own local package (module ShepherdUI; macOS 26, iOS 27;
@@ -410,7 +413,6 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
-  shepherd-theme.ts       theme sync for pi run by hand in a terminal pane
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -456,7 +458,7 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   opt out (`restoresAgentsAtLaunch: false`); their pi starts when a pane's session is asked for.
 - Starting is quiet: a thread draws what it knows at once (a new agent's empty state, a
   resuming agent's history read from pi's session file), accepts a send that waits for pi, and
-  says "Starting pi…" only when pi is slow (DESIGN.md › Thread, Composer).
+  says "Starting…" only when pi is slow (DESIGN.md › Thread, Composer).
 
 `RPCThreadState` projects pi's events into the `NativeThreadSnapshot` that
 `SessionServer.nativeThread` serves locally and, over TCP, remotely
@@ -483,9 +485,9 @@ validated nor written to `state.json` on its own, since every turn reports twice
 resets statuses anyway. The next structural mutation writes it along with its own change. Keep
 anything that must survive a relaunch out of that path.
 
-**Terminal panes** run the shell from Settings ▸ Terminal as a login shell. Startup files in the
-support directory's `shell-integration/` wrap `pi` so pi run by hand picks up Shepherd's theme.
-The user's rc files and pi settings are never edited, and agent-only variables are blanked.
+**Terminal panes** run the shell from Settings ▸ Terminal as a login shell, without wrapping
+`pi` or injecting a theme. The user's rc files and pi settings are never edited, and agent-only
+variables are blanked.
 
 **Automations** are saved prompts (`ShepherdState.automations`).
 
@@ -582,15 +584,15 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The twelve files in `Extensions/` are canonical.
-pi loads the copies that the eight `Sources/ShepherdApp/*Extension.swift` files write to the
+**Embedded extensions have one canonical copy.** The eleven files in `Extensions/` are canonical.
+pi loads the copies that the seven `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`.
 
 - Edit a `.ts`/`.mjs` file and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twelve pairs.
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all eleven pairs.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
 - The panes extension speaks the request/reply half of `ExtensionMessage`/`ExtensionReply`.
@@ -859,6 +861,12 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   on it, and without the key it is skipped with a notice. Its version is the project's
   `MARKETING_VERSION`, and its build number is the run number. Beta tags (external testing) and
   stable tags (the App Store) upload nothing yet ([docs/ios](docs/ios/README.md#distribution)).
+- **Only the newest TestFlight build stays installable.** After the testflight job uploads,
+  the Release workflow's `retire-testflight` job (`release.py retire-testflight`) waits up to 45
+  minutes for Apple to process that build, then expires every older one. If it fails processing
+  or never finishes, nothing expires. The first nightly push after it lands also clears the
+  builds already there. There is no manual run; a dry run (`--dry-run`) works only locally, with
+  the App Store Connect key.
 - **One build number, one release.** A re-run keeps `github.run_number`, the build number.
   `generate_appcast` refuses a feed directory holding two archives of one build, and that fails
   every feed's update until one ages out. So a nightly re-run whose commit already carries a

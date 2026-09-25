@@ -30,7 +30,8 @@ struct Composer: View {
     let agentName: String?
     let hasTurns: Bool
     let gutter: CGFloat
-    var listModels: (() async -> [PiModelCatalog.Entry])?
+    /// Another host's catalog; nil for this Mac's (`ModelCatalog.loadLocal`).
+    var listModels: (() async -> ModelCatalog)?
     /// Set by the command center: open that menu.
     var menuRequest: ComposerMenuRequest?
     /// Set while the thread is detached from its tail: what "Jump to latest" does.
@@ -304,13 +305,10 @@ struct Composer: View {
                        tag: command.source.flatMap { $0 == "extension" ? nil : $0 })
     }
 
-    /// Off / Low / Medium / High, with the board's notes.
-    private static let thinkingLevels = [
-        NWThinkingOption(id: "off", title: "Off"),
-        NWThinkingOption(id: "low", title: "Low", note: "quick"),
-        NWThinkingOption(id: "medium", title: "Medium", note: "default"),
-        NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
-    ]
+    /// The levels pi offers the thread's model, with the board's notes.
+    private var thinkingOptions: [NWThinkingOption] {
+        store.thinkingLevels.map { NWThinkingOption(id: $0.id, title: $0.title, note: $0.note) }
+    }
 
     // MARK: Menus
 
@@ -340,7 +338,7 @@ struct Composer: View {
                 .nwTransition(.overlay, anchor: .bottomLeading)
             }
             if menu == .thinking, let thinking = store.thinking {
-                NWThinkingMenu(options: Self.thinkingLevels, current: thinking) { level in
+                NWThinkingMenu(options: thinkingOptions, current: thinking) { level in
                     menu = nil
                     composing = true
                     Task { await store.setThinking(level.id) }
@@ -474,7 +472,7 @@ struct Composer: View {
     private var actionRow: some View {
         ViewThatFits(in: .horizontal) {
             actionChips(compact: false, startingLabel: true)
-            // "Starting pi…" gives up its words before the chips do.
+            // "Starting…" gives up its words before the chips do.
             actionChips(compact: false, startingLabel: false)
             actionChips(compact: true, startingLabel: false)
         }
@@ -517,19 +515,19 @@ struct Composer: View {
         .nwAnimation(.content, value: startingShown)
     }
 
-    /// "Starting pi…" beside the action, quiet and in the row it never resizes. Its spinner
-    /// gives way to Send's own while a message waits for pi.
+    /// "Starting…" beside the action, quiet and in the row it never resizes. Its spinner
+    /// gives way to Send's own while a message waits for the agent.
     private func startingIndicator(label: Bool) -> some View {
         HStack(spacing: AppLayout.startingSpacing) {
             if !store.busy {
                 ProgressView().progressViewStyle(.nwSpinner(size: AppLayout.startingSpinner, color: Color.nw.textTertiary))
             }
-            if label { Text("Starting pi…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+            if label { Text("Starting…").font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
         }
         .padding(.trailing, NW.Space.s)
-        .help("pi is starting. A message sent now goes once it is ready.")
+        .help("The agent is starting. A message sent now goes once it is ready.")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Starting pi")
+        .accessibilityLabel("Starting the agent")
     }
 
     /// Send and Stop are one button that morphs; the spinner cross-fades over it while pi
@@ -549,7 +547,7 @@ struct Composer: View {
                 if store.busy {
                     ProgressView().progressViewStyle(.nwSpinner(color: Color.nw.textTertiary))
                         .frame(width: NWComposerMetrics.actionSize, height: NWComposerMetrics.actionSize)
-                        .accessibilityLabel("Waiting for pi")
+                        .accessibilityLabel("Waiting for the agent")
                         .nwTransition(.content)
                 } else {
                     NWComposerActionButton(stops ? .stop : .send, ringed: menu == .send,
@@ -601,7 +599,9 @@ struct Composer: View {
             let settable = store.supportedActions.contains("setModel")
             Button { openModels() } label: {
                 HStack(spacing: NW.Space.s) {
-                    Text(nativeModelShortName(model)).font(Font.nw(.code)).nwContentTransition(.crossFade)
+                    // A long id keeps both ends: the provider prefix and the model's tail.
+                    Text(nativeModelShortName(model)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
+                        .nwContentTransition(.crossFade)
                     if settable { NWChipChevron() }
                 }
             }
@@ -612,8 +612,8 @@ struct Composer: View {
         }
     }
 
-    /// Off / Low / Medium / High, independent of the model; hidden when the model takes no
-    /// thinking level.
+    /// The level pi runs at, opening the levels pi offers the model; hidden when the model takes
+    /// no thinking level.
     @ViewBuilder private func thinkingChip(compact: Bool) -> some View {
         if thinkingAvailable, let thinking = store.thinking {
             Button {
@@ -622,19 +622,20 @@ struct Composer: View {
                 HStack(spacing: NW.Space.s) {
                     Image(systemName: "lightbulb").font(.system(size: AppLayout.chipSymbol, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
                     if !compact { Text("Thinking") }
-                    Text(thinking.capitalized).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
+                    Text(NativeThinkingLevel.title(thinking)).foregroundStyle(Color.nw.textPrimary).fontWeight(.medium)
                         .nwContentTransition(.crossFade)
                     NWChipChevron()
                 }
             }
             .buttonStyle(.nwComposerChip(active: menu == .thinking))
             .disabled(!store.supports("setThinking"))
-            .accessibilityLabel("Thinking level: \(thinking)")
+            .accessibilityLabel("Thinking level: \(NativeThinkingLevel.title(thinking))")
         }
     }
 
     private var thinkingAvailable: Bool {
         store.thinking != nil && store.supportedActions.contains("setThinking") && reasoningAvailable
+            && NativeThinkingLevel.reasons(store.thinkingLevels)
     }
 
     /// Unknown models (a catalog that did not load) keep the chip.
@@ -649,7 +650,8 @@ struct Composer: View {
     private func openModels() {
         guard store.supports("setModel") else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
-        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model)
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model,
+                                  currentLevels: store.snapshot?.thinkingLevels)
         dismissCommands()
         menu = .models
         if catalog?.isEmpty != false { Task { await loadModels() } }
@@ -669,7 +671,7 @@ struct Composer: View {
     }
 
     private func loadModels() async {
-        let loaded = if let listModels { await ModelCatalog.derive(listModels()) } else { await ModelCatalog.loadLocal() }
+        let loaded = if let listModels { await listModels() } else { await ModelCatalog.loadLocal() }
         catalog = loaded
         picker?.update(loaded)
     }
@@ -766,9 +768,9 @@ struct Composer: View {
     static func sendOptions(_ setting: ReturnWhileWorking, send: String, alternate: String) -> [NWSendOption] {
         let steers = setting == .steer
         return [
-            NWSendOption(id: "queue", title: "Queue", detail: "Goes when pi finishes this turn.", glyph: .queue,
+            NWSendOption(id: "queue", title: "Queue", detail: "Goes when the agent finishes this turn.", glyph: .queue,
                          shortcut: steers ? alternate : send),
-            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once pi’s current tool calls finish, before its next step.",
+            NWSendOption(id: "steer", title: "Steer now", detail: "Lands once the agent’s current tool calls finish, before its next step.",
                          glyph: .symbol("arrow.turn.down.right"), shortcut: steers ? send : alternate),
         ]
     }
@@ -922,7 +924,7 @@ struct QuestionPanel: View {
             }
             .disabled(blocked)
             if dialog.timeout != nil {
-                Text("pi may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
+                Text("The agent may stop waiting for this answer").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         // An external editor opening or closing dims the answers and says why.

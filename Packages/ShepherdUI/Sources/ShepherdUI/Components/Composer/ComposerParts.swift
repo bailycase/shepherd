@@ -12,9 +12,14 @@ public enum NWComposerMetrics {
     public static let menuRowHeight: CGFloat = 28
     public static let menuHeaderHeight: CGFloat = 24
     public static let menuMaxRows = 8
-    public static let slashMenuWidth: CGFloat = 448
+    /// The slash menu (SlashMenu board) spans the composer card: 36pt rows with 12pt sides, the
+    /// command in a column at least 150pt wide.
+    public static let slashRowHeight: CGFloat = 36
     public static let slashNameWidth: CGFloat = 150
-    public static let modelPickerWidth: CGFloat = 260
+    /// The model picker (ModelPicker board): 380pt, two-line 40pt rows, sections 4pt apart.
+    public static let modelPickerWidth: CGFloat = 380
+    public static let modelRowHeight: CGFloat = 40
+    public static let modelSectionGap: CGFloat = 4
     public static let modelSearchHeight: CGFloat = 30
     public static let modelPickerMaxHeight: CGFloat = 360
     public static let thinkingMenuWidth: CGFloat = 220

@@ -20,19 +20,20 @@ struct ComposerMenuTests {
 
         var testDescription: String { rawValue }
 
-        /// Its popover's height at rest over a full catalog and command list, and its board width.
+        /// Its popover's height at rest over a full catalog and command list, and its board width
+        /// (the slash menu spans the card).
         var height: CGFloat {
             let padding = 2 * NW.Space.s
             switch self {
-            case .slash: return NWComposerMetrics.menuHeaderHeight + CGFloat(NWComposerMetrics.menuMaxRows) * NWComposerMetrics.menuRowHeight + padding
-            case .models: return NWComposerMetrics.modelSearchHeight + NW.Space.xs + NWComposerMetrics.modelPickerMaxHeight + padding
+            case .slash: return NWComposerMetrics.menuHeaderHeight + CGFloat(NWComposerMetrics.menuMaxRows) * NWComposerMetrics.slashRowHeight + padding
+            case .models: return NWComposerMetrics.modelSearchHeight + 2 * NW.Space.xs + NWComposerMetrics.modelPickerMaxHeight
             case .thinking: return NWComposerMetrics.menuHeaderHeight + 4 * NWComposerMetrics.menuRowHeight + padding
             }
         }
 
         var width: CGFloat {
             switch self {
-            case .slash: NWComposerMetrics.slashMenuWidth
+            case .slash: .infinity
             case .models: NWComposerMetrics.modelPickerWidth
             case .thinking: NWComposerMetrics.thinkingMenuWidth
             }
@@ -143,7 +144,7 @@ struct ComposerMenuTests {
         let band = Int(thread.cardTop - NWComposerMetrics.focusRing - 1)
         let solid = try #require(Pixels.bounds(differing: before, after, rows: 0..<band, by: Self.edge))
         #expect(solid.minY >= AppLayout.menuMargin - 1, "the picker stays inside the thread: \(solid)")
-        #expect(solid.minY <= AppLayout.menuMargin + NWComposerMetrics.menuRowHeight, "and takes the room it has: \(solid)")
+        #expect(solid.minY <= AppLayout.menuMargin + NWComposerMetrics.modelRowHeight, "and takes the room it has: \(solid)")
         let list = try #require(thread.menuScroll?.documentView)
         #expect(list.bounds.height > thread.menuScroll!.contentView.bounds.height, "the list scrolls inside the picker")
     }
@@ -191,7 +192,7 @@ struct ComposerMenuTests {
         // its field editor takes over, so the picker's comparison leaves that one row out.
         let pickerTop = thread.cardTop - AppLayout.menuGap - Menu.models.height
         let searchField = CGRect(x: thread.columnLeading, y: pickerTop, width: Menu.models.width,
-                                 height: NW.Space.s + NWComposerMetrics.modelSearchHeight)
+                                 height: NWComposerMetrics.modelSearchHeight)
         let models = try await after { Menu.models.open(in: thread) }
         _ = try await after { Menu.models.open(in: thread) }
         let thinking = try await after { Menu.thinking.open(in: thread) }

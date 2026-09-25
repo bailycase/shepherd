@@ -1,7 +1,8 @@
 import SwiftUI
 
-// Messages (NWThread board): the user's bubble, the agent's prose and code, thinking, the turn
-// footer and the turn-level error. Value inputs only; the app owns the thread.
+// Messages (NWThread board): the user's bubble, code, thinking, the turn footer and the
+// turn-level error (the agent's prose is in Prose.swift). Value inputs only; the app owns the
+// thread.
 
 /// When a message's quiet details show: the bubble's time and a finished turn's footer. Only
 /// while the pointer is over the message (`hovering`, which the host tracks for the whole
@@ -110,111 +111,6 @@ public struct NWUserBubble: View {
     }
 }
 
-// MARK: Prose
-
-/// One Markdown block of agent prose, with its inline runs already styled.
-public enum NWProseBlock: Equatable, Sendable {
-    case heading(level: Int, text: AttributedString)
-    case paragraph(AttributedString)
-    case list(ordered: Bool, start: Int, items: [NWProseListItem])
-    case quote(AttributedString)
-    case code(String, language: String?)
-    case rule
-}
-
-public struct NWProseListItem: Equatable, Sendable {
-    public var text: AttributedString
-    /// One nested level: a sub-list or a fenced block under the item.
-    public var children: [NWProseBlock]
-
-    public init(text: AttributedString, children: [NWProseBlock] = []) {
-        self.text = text
-        self.children = children
-    }
-}
-
-/// Agent prose: body 13.5/1.6 in `textPrimary` at the 640pt measure, blocks 12pt apart.
-/// Headings at `.headline`, lists indented 20pt (one nested level), quotes on a
-/// 2pt rule, fenced code through `code` (an `NWCodeBlock` unless the app highlights it).
-/// Text follows `nwProseSize`.
-public struct NWAgentProse<Code: View>: View {
-    let blocks: [NWProseBlock]
-    let maxWidth: CGFloat
-    let code: (String, String?) -> Code
-
-    public init(_ blocks: [NWProseBlock], maxWidth: CGFloat = NWThreadMetrics.proseMeasure,
-                @ViewBuilder code: @escaping (String, String?) -> Code) {
-        self.blocks = blocks
-        self.maxWidth = maxWidth
-        self.code = code
-    }
-
-    public var body: some View {
-        VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWProseBlocks(blocks: blocks, code: code)
-        }
-        .frame(maxWidth: maxWidth, alignment: .leading)
-    }
-}
-
-extension NWAgentProse where Code == NWCodeBlock {
-    public init(_ blocks: [NWProseBlock], maxWidth: CGFloat = NWThreadMetrics.proseMeasure) {
-        self.init(blocks, maxWidth: maxWidth) { NWCodeBlock($0, language: $1) }
-    }
-}
-
-private struct NWProseBlocks<Code: View>: View {
-    let blocks: [NWProseBlock]
-    var nested = false
-    let code: (String, String?) -> Code
-    @Environment(\.nwProseSize) private var size
-
-    var body: some View {
-        let nw = Color.nw
-        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-            switch block {
-            case .heading(_, let text):
-                Text(text).font(.nw(.headline, size: size)).lineSpacing(NWTextStyle.headline.lineSpacing(size))
-                    .foregroundStyle(nw.textPrimary).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, nested ? 0 : NW.Space.xs)
-                    .accessibilityAddTraits(.isHeader)
-            case .paragraph(let text):
-                Text(text).nwText(.body, size: size).foregroundStyle(nw.textPrimary).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-            case .quote(let text):
-                Text(text).nwText(.body, size: size).italic().foregroundStyle(nw.textSecondary).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, NW.Space.l)
-                    .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
-            case .code(let text, let language):
-                code(text, language)
-            case .rule:
-                NWHairline().padding(.vertical, NW.Space.xs)
-            case .list(let ordered, let start, let items):
-                VStack(alignment: .leading, spacing: NW.Space.xs) {
-                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                        HStack(alignment: .firstTextBaseline, spacing: 0) {
-                            // The marker ends 6pt before the item, as a list's outside marker does.
-                            Text(ordered ? "\(start + index)." : "•")
-                                .font(.nw(.body, size: size)).foregroundStyle(nw.textPrimary).monospacedDigit()
-                                .fixedSize()
-                                .frame(width: NWThreadMetrics.listIndent - NW.Space.s, alignment: .trailing)
-                                .padding(.trailing, NW.Space.s)
-                                .accessibilityHidden(!ordered)
-                            VStack(alignment: .leading, spacing: NW.Space.xs) {
-                                Text(item.text).nwText(.body, size: size).foregroundStyle(nw.textPrimary).textSelection(.enabled)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                NWProseBlocks(blocks: item.children, nested: true, code: code)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 // MARK: Code
 
 /// A fenced block (NWThread board): `bgSunken`, a 1px line, radius 8; a 28pt header with the
@@ -240,7 +136,15 @@ public struct NWCodeBlock: View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NW.Space.m) {
-                Text(language ?? "code").font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
+                let kind = NWFenceKind(language)
+                HStack(spacing: NW.Space.xs) {
+                    if let glyph = kind.glyph {
+                        Image(systemName: glyph).font(.system(size: NWThreadMetrics.codeLabelGlyph, weight: .medium))
+                            .accessibilityHidden(true)
+                    }
+                    Text(kind.label).font(.nwMono(10.5))
+                }
+                .foregroundStyle(nw.textTertiary)
                 Spacer(minLength: 0)
                 Button {
                     NWPasteboard.copy(code)
@@ -292,6 +196,34 @@ public struct NWCodeBlock: View {
     }
 }
 
+/// What a fence's header says. Diagram and math fences are drawn as their source (Shepherd
+/// renders neither), so their header names what the source is, after a glyph: "mermaid ·
+/// diagram source", "latex · math source".
+struct NWFenceKind: Equatable {
+    let label: String
+    let glyph: String?
+
+    init(_ language: String?) {
+        guard let language, !language.isEmpty else {
+            self.init(label: "code", glyph: nil)
+            return
+        }
+        switch language.lowercased() {
+        case "mermaid", "plantuml", "dot", "graphviz", "d2":
+            self.init(label: "\(language) · diagram source", glyph: "point.3.connected.trianglepath.dotted")
+        case "math", "latex", "tex", "katex":
+            self.init(label: "\(language) · math source", glyph: "function")
+        default:
+            self.init(label: language, glyph: nil)
+        }
+    }
+
+    private init(label: String, glyph: String?) {
+        self.label = label
+        self.glyph = glyph
+    }
+}
+
 /// A copy button's glyph (code blocks, the turn footer): two squares that turn into a check
 /// for a moment after each copy, replacing the symbol and popping.
 struct NWCopyGlyph: View {
@@ -310,49 +242,52 @@ struct NWCopyGlyph: View {
 // MARK: Thinking
 
 /// The model's thinking (NWThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
-/// italic 12. Expanded: the text in italic 12.5 on a 2pt rule. Live: a spinner, "Thinking…"
-/// and its seconds, collapsing to "Thought for Ns" when it ends.
+/// italic 12. Expanded: the text in italic 12.5 on a 2pt rule. Live (LiveText): "› Thinking…"
+/// shimmering on a 26pt line, the thread's live indicator between tools, settling into "Thought
+/// for Ns" when it ends. With no text (the model kept its reasoning back), finished thinking is
+/// the plain line, not a control.
 public struct NWThinking: View {
     let title: String
+    let spokenTitle: String
     let text: String
     @Binding var isExpanded: Bool
     let live: Bool
-    let since: Date?
-    let seconds: Double?
 
-    /// Finished thinking: `title` is "Thought for 4s".
-    public init(_ title: String, text: String, isExpanded: Binding<Bool>) {
+    /// Finished thinking: `title` is "Thought for 4s", `spokenTitle` how VoiceOver says it
+    /// ("Thought for 4 seconds"). An empty `text` draws the plain line.
+    public init(_ title: String, text: String, isExpanded: Binding<Bool>, spokenTitle: String? = nil) {
         self.title = title
+        self.spokenTitle = spokenTitle ?? title
         self.text = text
         _isExpanded = isExpanded
         live = false
-        since = nil
-        seconds = nil
     }
 
-    /// Thinking that is still streaming: seconds tick from `since` when known, else show
-    /// `seconds` as the host last measured them.
-    public init(liveSince since: Date?, seconds: Double? = nil) {
+    private init() {
         title = "Thinking…"
+        spokenTitle = "Thinking"
         text = ""
         _isExpanded = .constant(false)
         live = true
-        self.since = since
-        self.seconds = seconds
     }
+
+    /// pi thinking between tools: its thinking streaming, or nothing yet to show for it.
+    public static func live() -> NWThinking { NWThinking() }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// When thinking ends, "Thinking… 4s" cross-fades into "Thought for 4s" in place, as long
-    /// as the caller keeps one `NWThinking` for both (the same view identity).
+    /// When thinking ends, "Thinking…" cross-fades into "Thought for 4s" in place, as long as
+    /// the caller keeps one `NWThinking` for both (the same view identity).
     public var body: some View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.m) {
             ZStack(alignment: .leading) {
-                if live { liveHeader.nwTransition(.content) } else { toggle.nwTransition(.content) }
+                if live { liveHeader.nwTransition(.content) }
+                else if text.isEmpty { plainLine.nwTransition(.content) }
+                else { toggle.nwTransition(.content) }
             }
             .nwAnimation(.content, value: live)
-            if isExpanded, !live {
+            if isExpanded, !live, !text.isEmpty {
                 Text(text)
                     .font(.nwSans(12.5)).italic()
                     .lineSpacing(NWTextStyle.caption.lineSpacing + 2)
@@ -368,20 +303,34 @@ public struct NWThinking: View {
         }
     }
 
+    /// The disclosure's chevron, still, in `textTertiary`, and "Thinking…" in italic 12.5
+    /// shimmering (LiveText: text moves, icons don't).
     private var liveHeader: some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m) {
-            ProgressView().progressViewStyle(.nwSpinner(size: 12, color: nw.textSecondary))
-            Text(title).font(.nwSans(12)).italic().foregroundStyle(nw.textSecondary)
-            if let since {
-                NWElapsedText(since: since, style: .long).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
-            } else if let seconds {
-                Text(NWDuration.text(seconds, .long)).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
-            }
+        HStack(spacing: NW.Space.m) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Color.nw.textTertiary)
+                .frame(width: NWThreadMetrics.liveChevron, height: NWThreadMetrics.liveChevron)
+            Text(title).font(.nw(.ui, weight: .regular)).italic().lineLimit(1).nwShimmer(active: true)
         }
-        .frame(minHeight: NWThreadMetrics.activityHeight)
+        .frame(minHeight: NWThreadMetrics.liveHeight)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Thinking")
+        .accessibilityLabel(spokenTitle)
+    }
+
+    /// Thinking the model did not share: the collapsed row's words alone, with nothing to open.
+    private var plainLine: some View {
+        let note = "\(spokenTitle). The model didn't share its reasoning."
+        return Text(title).font(.nwSans(12)).italic()
+            .nwContentTransition(.numeric())
+            .nwAnimation(.content, value: title)
+            .foregroundStyle(Color.nw.textSecondary)
+            #if os(iOS)
+            .frame(minHeight: NW.Height.touch)
+            #endif
+            .nwHelp(note)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(note)
     }
 
     private var toggle: some View {
@@ -403,7 +352,7 @@ public struct NWThinking: View {
         }
         .buttonStyle(.plain)
         .nwFocusRing(radius: NW.Radius.xs)
-        .accessibilityLabel(title)
+        .accessibilityLabel(spokenTitle)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
         .accessibilityHint("Shows the model's thinking")
     }
@@ -537,23 +486,3 @@ public struct NWTurnError: View {
     }
 }
 
-/// The tail row while an agent runs: a running spinner and what it is doing, in italic 12.
-public struct NWWorkingRow: View {
-    let label: String
-
-    public init(_ label: String) { self.label = label }
-
-    public var body: some View {
-        HStack(spacing: NW.Space.m) {
-            ProgressView().progressViewStyle(.nwSpinner(size: 12))
-            // "Working…" ⇄ "Running <tool>…" ⇄ "Thinking…" cross-fade.
-            Text(label).font(.nwSans(12)).italic().foregroundStyle(Color.nw.textSecondary)
-                .nwContentTransition(.crossFade)
-                .nwAnimation(.content, value: label)
-        }
-        .padding(.leading, NW.Space.xs)
-        .frame(minHeight: NWThreadMetrics.activityHeight)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-    }
-}

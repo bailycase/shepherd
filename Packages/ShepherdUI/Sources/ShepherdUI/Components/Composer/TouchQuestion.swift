@@ -1,7 +1,7 @@
 import SwiftUI
 
 // A question from pi or an extension in the composer's place, for touch (MobileQuestion,
-// iPadQuestion boards): "pi is asking" in lantern, the question, then the asker's answers as
+// iPadQuestion boards): "Agent is asking" in lantern, the question, then the asker's answers as
 // numbered cards you choose and confirm with Answer. Shepherd has no permission model: the
 // cards are the answers the asker offered, never an approval it did not.
 
@@ -38,7 +38,7 @@ public struct NWQuestionCard<Content: View>: View {
             bottomTrailing: docked ? 0 : NW.Radius.l, topTrailing: NW.Radius.l))
         VStack(alignment: .leading, spacing: NW.Space.l) {
             HStack(spacing: NW.Space.s) {
-                Label("pi is asking", systemImage: "questionmark.circle")
+                Label("Agent is asking", systemImage: "questionmark.circle")
                     .font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.lanternText)
                 Spacer(minLength: NW.Space.m)
                 if count > 1 {

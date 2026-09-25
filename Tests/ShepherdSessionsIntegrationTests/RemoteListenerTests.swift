@@ -114,6 +114,36 @@ struct RemoteListenerTests {
         #expect(try await client.next() == .stateChanged(state: ShepherdState(spaces: [space])))
     }
 
+    /// A client from before minimal, xhigh and max decodes only Off to High, so its fetched and
+    /// pushed state carries each agent's level clamped to those; a current client's keeps them.
+    @Test func anOlderClientGetsTheWorkspaceWithLevelsItCanDecode() async throws {
+        let r = try RemoteHost()
+        defer { r.stop() }
+        let space = Fixture.space()
+        var deep = Fixture.agent(in: space, name: "deep")
+        deep.agent.thinkingLevel = .xhigh
+        var quick = Fixture.agent(in: space, name: "quick")
+        quick.agent.thinkingLevel = .minimal
+        var plain = Fixture.agent(in: space, name: "plain")
+        plain.agent.thinkingLevel = .medium
+        try await r.host.seed(Fixture.workspace([deep, quick, plain], space: space))
+        let older = try await r.raw()
+        let current = try RawRemote(port: r.port)
+        try await current.hello(token: r.token, capabilities: RemoteProtocol.clientCapabilities)
+
+        for (client, expected) in [(older, [ThinkingLevel.high, .low, .medium]), (current, [.xhigh, .minimal, .medium])] {
+            try client.send(.stateFetch(id: 2))
+            guard case .state(2, let state) = try await client.next() else { Issue.record("expected state"); return }
+            #expect(state.agents.map(\.thinkingLevel) == expected)
+        }
+        try await r.server.renameAgent(plain.agent.id, to: "renamed")
+        for (client, expected) in [(older, [ThinkingLevel.high, .low, .medium]), (current, [.xhigh, .minimal, .medium])] {
+            guard case .stateChanged(let state) = try await client.next() else { Issue.record("expected a push"); return }
+            #expect(state.agents.map(\.thinkingLevel) == expected)
+            #expect(state.agents.map(\.name).contains("renamed"))
+        }
+    }
+
     /// A connection that never authenticated gets no broadcasts: its first frame after a late
     /// hello is the hello reply, not a push it was never entitled to.
     @Test func unauthenticatedClientsReceiveNoPushes() async throws {

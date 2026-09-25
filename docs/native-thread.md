@@ -115,11 +115,13 @@ events come out on stdout, one record per LF.
 
 `RPCThreadState` is the server-side projection of one agent's thread, confined to the same queue.
 
-- **Bootstrap** runs on spawn or resume. It sends `get_state` (session ID, model, thinking
-  level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost; a context of 0, pi's
+- **Bootstrap** runs on spawn or resume. It sends `get_available_thinking_levels` (the levels
+  pi offers the current model, in pi's order; asked just before every `get_state`, whose answer
+  follows it and commits both, so the levels never move the revision on their own; a pi without
+  the command leaves them unsaid), `get_state` (session ID, model, thinking level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost; a context of 0, pi's
   estimate before its first reply, is sent as unknown), and
   `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` and
-  `get_messages` have answered, requests fail with `native_starting` ("pi is starting."): pi
+  `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
   than the 10 s request deadline answers requests already given up on; when `get_state` times
@@ -300,6 +302,17 @@ transport differs.
 - **Models:** `listModels` answers the host's catalog as "provider/id", its default in the same
   form, and `withoutThinking`, the models that take no thinking level (`ModelListing`). A host
   from before that field sends none, and clients then keep the thinking control for every model.
+  `thinkingLevels` names the levels of the models whose models.json `thinkingLevelMap` says
+  (pi's `getSupportedThinkingLevels`: xhigh and max only where mapped); another reasoning model
+  is offered off, minimal, low, medium and high before its session starts.
+- **Thinking levels:** the snapshot's `thinkingLevels` is what pi offers the current model;
+  clients offer exactly those, or off/low/medium/high from a host that sends none. `setThinking`
+  takes any of pi's seven (off, minimal, low, medium, high, xhigh, max), and pi clamps a level
+  the model lacks. `createAgent` takes minimal, xhigh and max only from a host that lists
+  `thinking.levels.v1`; clients offer an older host Off to High. Clients list it in `hello`
+  too: a client that does not is sent state and creation options with each level clamped to
+  Off to High, as pi clamps (minimal reads as low, xhigh and max as high), since it cannot
+  decode the others. pi reporting only Off (a model without reasoning) hides the thinking chip.
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
     agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
@@ -329,7 +342,7 @@ The store is `@MainActor @Observable`, and it derives what the thread draws once
 reply's subagent `placements`, and `lastPromptAt` (the current turn's start). Views read those
 stored values, so a keystroke in the composer re-renders only the composer. What the chrome
 draws is cached the same way, one property each (`session`, `dialogs`, `widgets`, `commands`,
-`model`, `thinking`, `stats`, `supportedActions`, `clipped`, `running`, `workingLabel`,
+`model`, `thinking`, `thinkingLevels`, `stats`, `supportedActions`, `clipped`, `running`, `showsThinking`,
 `userTurnCount`, …), assigned only when it changes. The snapshot is one value that every
 streamed chunk replaces, so the composer and the toolbar never read it: a chunk
 redraws the thread and its live row, and a poll that moves only the context count redraws only
@@ -370,7 +383,7 @@ output grows.
 - **Starting:** `native_starting` sets `starting`, never `loadError`. `awaitingPi` (starting,
   previewing, or no snapshot yet, without an error) is what the composer watches: only after it
   has held for `AppLayout.startingIndicatorDelay` (two seconds, past a normal start of about
-  0.8 s after ⌘N and 1 s after a relaunch) does the control row say "Starting pi…", or for
+  0.8 s after ⌘N and 1 s after a relaunch) does the control row say "Starting…", or for
   `AppLayout.blankStartingIndicatorDelay` (half a second) while the thread has no snapshot to
   draw at all (a remote agent's, or a local one with no readable session file). A normal start
   never shows it. `acceptsSend` offers Send whenever
@@ -415,7 +428,7 @@ output grows.
   `supportsQueue` gates all of it. The queue's properties are chrome (`chromeVersion`), so a
   queue that changed while the thread was hidden lands without motion when it catches up.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
-  boundaries don't flicker the working row or the Stop button.
+  boundaries don't flicker the live "Thinking…" or the Stop button.
 - **Drafts and gating:** `draft` belongs to the store; `send(images:delivery:)` sends with a
   delivery chosen at send time (the Mac composer's ↩, ⌘↩, or its Send menu). `delivery` is kept
   for the iOS client, which still picks one ahead of time.
@@ -459,12 +472,15 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
 - **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
   thread.
 - **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
-  footer with copy and retry), and the working row. A turn tracks the pointer over it
+  footer with copy and retry), and, between tools, the live "Thinking…" (DESIGN.md › Thread ›
+  Live text). A turn tracks the pointer over it
   (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw
   arguments.
-- **`ThreadMarkdown`:** prose (inline Markdown styled once per text) and code blocks, colored by
-  tree-sitter off the main actor and cached.
+- **`ThreadMarkdown`:** prose and code blocks. The reply's blocks come parsed from the store
+  (`nativeMarkdownParse`, ShepherdRemote: tables, task and nested lists, images, `<details>`,
+  footnotes; see DESIGN.md › Rich content in prose); inline Markdown is styled once per text
+  (`NWProseInline`), and code blocks are colored by tree-sitter off the main actor and cached.
 - **`Composer`:**
   - the field, attachments (resized to a 2000 px longest edge; at most 4 images of 2 MiB each)
   - chips: model with its picker on ⇧⌘M, and thinking

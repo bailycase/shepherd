@@ -295,10 +295,12 @@ public func nativeTurns(_ messages: [NativeThreadMessage], aliases: [String: Str
     var turns: [NativeTurn] = []
     // pi's system entries (prompt-section updates) and blank messages have nothing to read; kept,
     // they render as stray notes and stretch the turn's duration to the next system update.
-    // User messages always stay: they are the turn boundaries.
+    // User messages always stay: they are the turn boundaries. So does finished thinking the
+    // host timed, though the model shared none of it: it reads "Thought for Ns".
     for message in messages where message.role == "user" || (message.role != "system" && (message.toolName != nil
         || message.role == "toolResult" || message.truncated || message.status == "error" || message.status == "aborted"
-        || message.blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.kind == .unsupportedImage })) {
+        || message.blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.kind == .unsupportedImage }
+        || (message.status != "streaming" && nativeThoughtIsTimed(message.thinkingSeconds) && message.blocks.contains { $0.kind == .thinking }))) {
         let isUser = message.role == "user"
         if isUser, message.origin == .steered, let last = turns.last, !last.isUser {
             turns[turns.count - 1].messages.append(message)
@@ -380,18 +382,6 @@ public func nativeToolGroupSummary(_ messages: [NativeThreadMessage]) -> String 
 public func nativeHeadTruncated(_ path: String, max: Int) -> String {
     guard path.count > max, max > 1 else { return path }
     return "…" + path.suffix(max - 1)
-}
-
-/// Label for the persistent tail indicator while the agent runs: the running tool wins,
-/// then a thinking block that is still streaming, otherwise plain work.
-public func nativeWorkingLabel(_ provisional: [NativeThreadMessage]) -> String {
-    if let tool = provisional.last(where: { $0.toolName != nil && $0.status == "running" })?.toolName {
-        return "Running \(tool)…"
-    }
-    if let last = provisional.last(where: { $0.role == "assistant" })?.blocks.last, last.kind == .thinking {
-        return "Thinking…"
-    }
-    return "Working…"
 }
 
 // MARK: Subagent cards (DESIGN.md › Subagents)
@@ -671,180 +661,4 @@ public struct NativeScrollProbe: Equatable, Sendable {
     public func layoutDiffers(from other: NativeScrollProbe) -> Bool {
         content != other.content || container != other.container || inset != other.inset
     }
-}
-
-// MARK: Markdown blocks
-
-public enum NativeMarkdownBlock: Equatable, Sendable {
-    case heading(level: Int, text: String)
-    case paragraph(String)
-    case list(ordered: Bool, start: Int, items: [NativeMarkdownListItem])
-    case quote(String)
-    /// A fenced block; `language` is the fence's info word ("swift"), when given.
-    case code(String, language: String?)
-    case rule
-}
-
-public struct NativeMarkdownListItem: Equatable, Sendable {
-    public var text: String
-    /// One level of nesting: a sub-list, or a fenced block indented under the item.
-    public var children: [NativeMarkdownBlock]
-    public init(text: String, children: [NativeMarkdownBlock] = []) {
-        self.text = text
-        self.children = children
-    }
-}
-
-/// Small block parser for agent prose: headings, lists (one nested level), blockquotes,
-/// fenced code, rules, paragraphs. Inline Markdown stays inside each block's text for the
-/// renderer. Fences keep their contents literal and an unclosed fence runs to the end.
-public func nativeMarkdownBlocks(_ text: String) -> [NativeMarkdownBlock] {
-    nativeMarkdownParse(text).blocks
-}
-
-/// `nativeMarkdownBlocks`, and whether the text ends inside a fence still open: the fenced
-/// block a streaming reply is writing, the last one, whose code is still growing.
-public func nativeMarkdownParse(_ text: String) -> (blocks: [NativeMarkdownBlock], endsInOpenFence: Bool) {
-    var endsInOpenFence = false
-    var blocks: [NativeMarkdownBlock] = []
-    var paragraph: [String] = []
-    var quote: [String] = []
-    var list: (ordered: Bool, start: Int, items: [NativeMarkdownListItem])?
-    var child: (ordered: Bool, start: Int, items: [NativeMarkdownListItem])?
-    var listBreak = false
-
-    func flushParagraph() {
-        if !paragraph.isEmpty { blocks.append(.paragraph(paragraph.joined(separator: "\n"))) }
-        paragraph = []
-    }
-    func flushQuote() {
-        if !quote.isEmpty { blocks.append(.quote(quote.joined(separator: "\n"))) }
-        quote = []
-    }
-    func flushChild() {
-        guard let nested = child, list != nil, !list!.items.isEmpty else { child = nil; return }
-        list!.items[list!.items.count - 1].children.append(.list(ordered: nested.ordered, start: nested.start, items: nested.items))
-        child = nil
-    }
-    func flushList() {
-        flushChild()
-        if let list, !list.items.isEmpty { blocks.append(.list(ordered: list.ordered, start: list.start, items: list.items)) }
-        list = nil
-        listBreak = false
-    }
-    func flushAll() { flushParagraph(); flushQuote(); flushList() }
-    func appendContinuation(_ text: String) {
-        let separator = listBreak ? "\n\n" : "\n"
-        if child != nil, !child!.items.isEmpty {
-            child!.items[child!.items.count - 1].text += separator + text
-        } else if list != nil, !list!.items.isEmpty {
-            list!.items[list!.items.count - 1].text += separator + text
-        }
-        listBreak = false
-    }
-
-    let lines = text.components(separatedBy: "\n")
-    var index = 0
-    while index < lines.count {
-        let line = lines[index]
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        let indent = line.prefix(while: { $0 == " " }).count
-        let fence = String(trimmed.prefix(while: { $0 == "`" }))
-
-        if fence.count >= 3 {
-            var body: [String] = []
-            var next = index + 1
-            var closed = false
-            while next < lines.count {
-                let candidate = lines[next].trimmingCharacters(in: .whitespaces)
-                let marker = String(candidate.prefix(while: { $0 == "`" }))
-                if marker.count >= fence.count, candidate == marker { closed = true; break }
-                let lead = lines[next].prefix(while: { $0 == " " }).count
-                body.append(String(lines[next].dropFirst(min(indent, lead))))
-                next += 1
-            }
-            let info = trimmed.dropFirst(fence.count).trimmingCharacters(in: .whitespaces)
-                .split(separator: " ").first.map(String.init)
-            let code = NativeMarkdownBlock.code(body.joined(separator: "\n"), language: info?.isEmpty == false ? info : nil)
-            if list != nil, !list!.items.isEmpty, indent >= 2 {
-                // Indented under an item: the fence belongs to that item, contents stay literal.
-                flushChild()
-                list!.items[list!.items.count - 1].children.append(code)
-                listBreak = false
-            } else {
-                flushAll()
-                blocks.append(code)
-            }
-            index = closed ? next + 1 : next
-            endsInOpenFence = !closed
-            continue
-        }
-        index += 1
-
-        if trimmed.isEmpty {
-            flushParagraph()
-            flushQuote()
-            if list != nil { listBreak = true }
-            continue
-        }
-        if trimmed.count >= 3, let first = trimmed.first, "-*_".contains(first),
-           trimmed.allSatisfy({ $0 == first || $0 == " " }) {
-            flushAll()
-            blocks.append(.rule)
-            continue
-        }
-        let hashes = trimmed.prefix(while: { $0 == "#" }).count
-        if (1...6).contains(hashes), trimmed.dropFirst(hashes).first == " " {
-            flushAll()
-            blocks.append(.heading(level: hashes, text: trimmed.dropFirst(hashes).trimmingCharacters(in: .whitespaces)))
-            continue
-        }
-        if trimmed.hasPrefix(">") {
-            flushParagraph()
-            flushList()
-            quote.append(String(trimmed.dropFirst(trimmed.hasPrefix("> ") ? 2 : 1)))
-            continue
-        }
-        if let item = nativeListItem(trimmed) {
-            flushParagraph()
-            flushQuote()
-            if list == nil {
-                list = (item.ordered, item.number, [])
-            } else if indent < 2 {
-                if list!.ordered != item.ordered || list!.items.isEmpty { flushList(); list = (item.ordered, item.number, []) }
-            } else {
-                if child == nil || child!.ordered != item.ordered { flushChild(); child = (item.ordered, item.number, []) }
-                child!.items.append(NativeMarkdownListItem(text: item.text))
-                listBreak = false
-                continue
-            }
-            flushChild()
-            list!.items.append(NativeMarkdownListItem(text: item.text))
-            listBreak = false
-            continue
-        }
-        if list != nil, !list!.items.isEmpty, !listBreak || indent >= 2 {
-            appendContinuation(trimmed)
-            continue
-        }
-        flushQuote()
-        flushList()
-        paragraph.append(line)
-    }
-    flushAll()
-    return (blocks, endsInOpenFence)
-}
-
-/// "- item", "* item", "+ item", "3. item", "3) item" → marker kind, number, and text.
-private func nativeListItem(_ trimmed: String) -> (ordered: Bool, number: Int, text: String)? {
-    if let first = trimmed.first, "-*+".contains(first) {
-        let rest = trimmed.dropFirst()
-        guard rest.first == " " else { return nil }
-        return (false, 1, rest.trimmingCharacters(in: .whitespaces))
-    }
-    let digits = trimmed.prefix(while: \.isNumber)
-    guard !digits.isEmpty, digits.count <= 9, let number = Int(digits) else { return nil }
-    let rest = trimmed.dropFirst(digits.count)
-    guard let punct = rest.first, punct == "." || punct == ")", rest.dropFirst().first == " " else { return nil }
-    return (true, number, rest.dropFirst().trimmingCharacters(in: .whitespaces))
 }

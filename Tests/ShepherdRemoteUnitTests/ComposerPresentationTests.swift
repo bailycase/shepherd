@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import ShepherdCore
 import ShepherdProtocol
 @testable import ShepherdRemote
 
@@ -144,9 +145,73 @@ struct ComposerPresentationTests {
         #expect(NativeModelChoices.provider("model") == "Other")
     }
 
-    @Test(arguments: [("medium", "Medium"), ("off", "Off"), ("xhigh", "Xhigh")])
+    /// A model row's second line: the levels in pi's order, titled as the thinking menu titles
+    /// them, or "No thinking" when a model takes none but Off.
+    @Test(arguments: [(["off", "minimal", "low", "medium", "high"], "Off · Minimal · Low · Medium · High"),
+                      (["off", "minimal", "low", "medium", "high", "xhigh", "max"], "Off · Minimal · Low · Medium · High · Extra high · Max"),
+                      (["off", "low", "ultra"], "Off · Low · Ultra"),
+                      (["off"], "No thinking"),
+                      ([], "No thinking")] as [([String], String)])
+    func aModelsThinkingLineListsItsLevels(levels: [String], line: String) {
+        #expect(NativeThinkingLevel.line(levels) == line)
+    }
+
+    /// Each model's line comes from the rule the New thread sheet uses (reasoning, then
+    /// models.json's levels), Off to High on an older host, and pi's own list for the thread's
+    /// current model when it reports one.
+    @Test func eachModelsThinkingLineFollowsTheHostsCatalog() {
+        let listing = ModelListing(models: ["a/plain", "a/standard", "a/max", "a/live"], defaultModel: nil, withoutThinking: ["a/plain"],
+                                   thinkingLevels: ["a/max": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]])
+        let lines = NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: true, current: "a/live", currentLevels: ["off", "high"])
+        #expect(lines == ["a/plain": "No thinking", "a/standard": "Off · Minimal · Low · Medium · High",
+                          "a/max": "Off · Minimal · Low · Medium · High · Extra high · Max", "a/live": "Off · High"])
+        let older = NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: false)
+        #expect(older["a/max"] == "Off · Low · Medium · High")
+        #expect(older["a/live"] == "Off · Low · Medium · High")
+        #expect(NativeModelChoices.thinkingLines(listing, hostTakesAllLevels: true, current: "a/live", currentLevels: [])["a/live"]
+            == "Off · Minimal · Low · Medium · High")
+    }
+
+    @Test func eachModelChoiceCarriesItsThinkingLine() {
+        let sections = NativeModelChoices.sections(["openai/gpt-5", "openai/o3"], current: "local/llama",
+                                                   thinking: ["openai/gpt-5": "No thinking", "local/llama": "Off · High"])
+        #expect(sections.flatMap(\.models).map(\.thinking) == ["Off · High", "No thinking", nil])
+    }
+
+    @Test(arguments: [("medium", "Medium"), ("off", "Off"), ("minimal", "Minimal"), ("xhigh", "Extra high"), ("max", "Max"), ("ultra", "Ultra")])
     func thinkingLevelsReadAsTheirTitles(level: String, title: String) {
         #expect(NativeThinkingLevel.title(level) == title)
+    }
+
+    /// The thinking menu offers exactly the levels pi reports for the model, in its order; a host
+    /// that reports none gets Off, Low, Medium and High.
+    @Test(arguments: [
+        (["off", "minimal", "low", "medium", "high", "xhigh", "max"] as [String]?,
+         ["Off", "Minimal", "Low", "Medium", "High", "Extra high", "Max"]),
+        (["off", "minimal", "low", "medium", "high"], ["Off", "Minimal", "Low", "Medium", "High"]),
+        (["off", "medium", "ultra"], ["Off", "Medium", "Ultra"]),
+        (["off"], ["Off"]),
+        (nil, ["Off", "Low", "Medium", "High"]),
+        ([], ["Off", "Low", "Medium", "High"]),
+    ])
+    func theThinkingMenuOffersTheLevelsPiReportsFor(_ reported: [String]?, _ titles: [String]) {
+        #expect(NativeThinkingLevel.levels(reported).map(\.title) == titles)
+    }
+
+    /// Before a session starts: the standard set (with Minimal) for a reasoning model, xhigh and
+    /// max where the host's configuration names them, nothing without reasoning, and only Off to
+    /// High on a host that takes no more.
+    @Test(arguments: [
+        ("qa/deep" as String?, true, ["off", "minimal", "low", "medium", "high"]),
+        ("qa/max", true, ["off", "minimal", "low", "medium", "high", "xhigh", "max"]),
+        ("qa/max", false, ["off", "low", "medium", "high"]),
+        ("qa/plain", true, []),
+    ])
+    func aNewAgentIsOfferedTheLevelsItsModelTakes(_ model: String?, _ hostTakesAll: Bool, _ expected: [String]) {
+        let listing = ModelListing(models: ["qa/plain", "qa/deep", "qa/max"], defaultModel: nil, withoutThinking: ["qa/plain"],
+                                   thinkingLevels: ["qa/max": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]])
+        #expect(ThinkingLevel.offered(model: model, listing: listing, hostTakesAllLevels: hostTakesAll).map(\.rawValue) == expected)
+        #expect(ThinkingLevel.offered(model: model, listing: nil, hostTakesAllLevels: true).count == 5, "the standard set while it loads")
     }
 
     /// The thinking chip goes with a level pi can set, unless the host says the thread's model
@@ -164,6 +229,20 @@ struct ComposerPresentationTests {
         let listing = ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"])
         #expect(NativeThinkingLevel.offered(thinking: thinking, supportedActions: actions, model: model,
                                             listing: catalogLoaded ? listing : nil) == offered)
+    }
+
+    /// pi's own list rules too: a model it offers only Off has no chip, whatever the catalog
+    /// says (a model the host's catalog does not know).
+    @Test(arguments: [
+        (["off"] as [String]?, false),
+        (["off", "minimal", "low", "medium", "high"], true),
+        (nil, true),
+    ])
+    func theThinkingChipGoesWhenPiOffersOnlyOff(reported: [String]?, offered: Bool) {
+        let levels = NativeThinkingLevel.levels(reported)
+        #expect(NativeThinkingLevel.reasons(levels) == offered)
+        #expect(NativeThinkingLevel.offered(thinking: "off", supportedActions: ["setThinking"], model: "qa/unknown",
+                                            listing: ModelListing(models: [], defaultModel: nil), levels: levels) == offered)
     }
 
     // MARK: Questions

@@ -120,6 +120,8 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
     case getCommands
     case setModel(provider: String, modelId: String)
     case setThinkingLevel(level: String)
+    /// The levels the session's current model takes (`{"levels": [...]}`).
+    case getAvailableThinkingLevels
     case newSession
     case extensionUIResponse(id: String, value: String? = nil, confirmed: Bool? = nil, cancelled: Bool? = nil)
 
@@ -135,6 +137,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         case .getCommands: return "get_commands"
         case .setModel: return "set_model"
         case .setThinkingLevel: return "set_thinking_level"
+        case .getAvailableThinkingLevels: return "get_available_thinking_levels"
         case .newSession: return "new_session"
         case .extensionUIResponse: return "extension_ui_response"
         }
@@ -162,7 +165,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encodeIfPresent(value, forKey: .value)
             try c.encodeIfPresent(confirmed, forKey: .confirmed)
             try c.encodeIfPresent(cancelled, forKey: .cancelled)
-        case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .newSession:
+        case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .getAvailableThinkingLevels, .newSession:
             break
         }
     }
@@ -228,6 +231,13 @@ public struct RPCResponse: Decodable, Hashable, Sendable {
         }
     }
 
+    /// `get_available_thinking_levels`' levels, in pi's order; nil when it failed (a pi without
+    /// the command) or named none.
+    public var thinkingLevels: [String]? {
+        guard success, let levels = data?["levels"]?.arrayValue?.compactMap(\.stringValue), !levels.isEmpty else { return nil }
+        return levels
+    }
+
     enum CodingKeys: String, CodingKey { case id, command, success, data, error }
 
     private struct MessagesData: Decodable {
@@ -253,12 +263,18 @@ public struct RPCResponse: Decodable, Hashable, Sendable {
 
 public enum RPCContentBlock: Codable, Hashable, Sendable {
     case text(String)
+    /// The reasoning a reader can read, or "" when the provider kept it back (see
+    /// `readableThinking`).
     case thinking(String)
     case toolCall(id: String, name: String, arguments: JSONValue?)
     case image(mimeType: String, data: String)
     case unknown(type: String)
 
-    enum CodingKeys: String, CodingKey { case type, text, thinking, id, name, arguments, mimeType, data }
+    enum CodingKeys: String, CodingKey { case type, text, thinking, thinkingSignature, redacted, id, name, arguments, mimeType, data }
+
+    /// What pi-ai writes as the text of Anthropic's `redacted_thinking` (flagged `redacted`);
+    /// a streamed `thinking_end` carries it without the flag.
+    public static let redactedThinkingPlaceholder = "[Reasoning redacted]"
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -267,7 +283,10 @@ public enum RPCContentBlock: Codable, Hashable, Sendable {
         case "text":
             self = .text(try c.decodeIfPresent(String.self, forKey: .text) ?? "")
         case "thinking":
-            self = .thinking(try c.decodeIfPresent(String.self, forKey: .thinking) ?? "")
+            self = .thinking(Self.readableThinking(
+                try c.decodeIfPresent(String.self, forKey: .thinking) ?? "",
+                signature: try? c.decodeIfPresent(String.self, forKey: .thinkingSignature),
+                redacted: (try? c.decodeIfPresent(Bool.self, forKey: .redacted)) ?? false))
         case "toolCall":
             self = .toolCall(
                 id: try c.decodeIfPresent(String.self, forKey: .id) ?? "",
@@ -282,6 +301,38 @@ public enum RPCContentBlock: Codable, Hashable, Sendable {
         default:
             self = .unknown(type: type)
         }
+    }
+
+    /// pi-ai keeps reasoning it cannot show as a thinking block: Anthropic's `redacted_thinking`
+    /// (`redacted`, the placeholder as its text), and encrypted or omitted reasoning (OpenAI's
+    /// `encrypted_content`, Anthropic's omitted display, a proxy that streams none) with empty
+    /// text and the opaque payload in `thinkingSignature`. Those read as "". A summary pi left
+    /// only in the signature (OpenRouter's `reasoning_details` without `reasoning` deltas, an
+    /// OpenAI Responses reasoning item) is read from there.
+    static func readableThinking(_ text: String, signature: String?, redacted: Bool) -> String {
+        if redacted { return "" }
+        if text.contains(where: { !$0.isWhitespace }) { return text }
+        guard let signature, let first = signature.first(where: { !$0.isWhitespace }), first == "[" || first == "{",
+              let json = try? JSONSerialization.jsonObject(with: Data(signature.utf8)) else { return "" }
+        let parts: [String]
+        if let details = json as? [[String: Any]] {
+            // openai-completions: reasoning.summary / reasoning.text details (reasoning.encrypted is opaque).
+            parts = details.compactMap { detail in
+                switch detail["type"] as? String {
+                case "reasoning.summary": detail["summary"] as? String
+                case "reasoning.text": detail["text"] as? String
+                default: nil
+                }
+            }
+        } else if let item = json as? [String: Any], item["type"] as? String == "reasoning" {
+            // openai-responses: the reasoning item, its summary first.
+            let texts = { (key: String) in ((item[key] as? [[String: Any]]) ?? []).compactMap { $0["text"] as? String } }
+            let summary = texts("summary")
+            parts = summary.isEmpty ? texts("content") : summary
+        } else {
+            parts = []
+        }
+        return parts.filter { $0.contains(where: { !$0.isWhitespace }) }.joined(separator: "\n\n")
     }
 
     public func encode(to encoder: Encoder) throws {
