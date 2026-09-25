@@ -49,6 +49,13 @@ struct ReviewCommitGitTests {
         #expect(checkout.remoteUpstream == nil && checkout.pushRemote == "origin")
     }
 
+    @Test func anUpstreamOfAnotherNameIsNeverPushedTo() throws {
+        // `git switch -c feat origin/main` tracks origin/main: a push must not land on main.
+        let checkout = try #require(ReviewCommitGit.parseCheckout(
+            "root=/r\nbranch=feat\nupstream=origin/main\nupremote=origin\nupmerge=refs/heads/main\nremote=origin\n"))
+        #expect(checkout.remoteUpstream == nil && checkout.pushUpstream == nil && checkout.pushRemote == "origin")
+    }
+
     @Test(arguments: [
         ("remote=upstream\n", "upstream"),
         ("remote=origin\nremote=fork\n", "origin"),

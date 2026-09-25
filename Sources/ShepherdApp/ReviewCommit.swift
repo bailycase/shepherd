@@ -38,11 +38,17 @@ enum ReviewCommitGit {
             return remotes.count == 1 ? remotes[0] : nil
         }
 
-        /// The upstream when it is a remote's branch (a local upstream is never pushed to).
+        /// The upstream a push goes to: a remote's branch of the same name, as git's `simple` push
+        /// has it. A local upstream, or one of another name (a feature branch made from
+        /// origin/main), is never pushed to: the branch goes to its own name instead.
         var remoteUpstream: (remote: String, merge: String)? {
-            guard let upstreamRemote, upstreamRemote != ".", let upstreamMerge, !upstreamMerge.isEmpty else { return nil }
+            guard let branch, let upstreamRemote, upstreamRemote != ".", let upstreamMerge,
+                  upstreamMerge == "refs/heads/" + branch else { return nil }
             return (upstreamRemote, upstreamMerge)
         }
+
+        /// `upstream` when a push goes to it (`remoteUpstream`), else nil.
+        var pushUpstream: String? { remoteUpstream == nil ? nil : upstream }
 
         /// The branch a pull request goes into: the push remote's HEAD, else its main or master.
         var defaultBranch: String? {
@@ -133,7 +139,7 @@ enum ReviewCommitGit {
             }
         }.value
         let message = reviewCommitFallbackMessage(files)
-        return RemoteCommitInfo(repository: root, branch: checkout.branch, head: checkout.head, upstream: checkout.upstream,
+        return RemoteCommitInfo(repository: root, branch: checkout.branch, head: checkout.head, upstream: checkout.pushUpstream,
                                 pushRemote: checkout.pushRemote, defaultBranch: checkout.defaultBranch, files: files,
                                 title: message.title, body: message.body, draftsMessage: draftsMessage && !files.isEmpty,
                                 agentWorking: agentWorking, blocked: checkout.blocked)

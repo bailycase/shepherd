@@ -237,6 +237,30 @@ struct ReviewCommitTests {
         #expect(try git(["log", "-1", "--format=%s", "feat/rows"], in: sandbox.origin).hasPrefix("Fix the 'thing'"))
     }
 
+    @Test(arguments: [RemoteCommitPush.upstream, .pullRequest])
+    func aBranchTrackingTheDefaultBranchIsPushedToItsOwnNameNeverToMain(_ push: RemoteCommitPush) async throws {
+        let sandbox = try WorktreeSandbox(origin: true)
+        defer { sandbox.remove() }
+        try git(["switch", "-q", "-c", "feat/tracks-main", "--track", "origin/main"], in: sandbox.repo)
+        try write("changed\n", "README.md", in: sandbox)
+        let runner = Runner()
+        runner.prURL = "https://github.com/o/r/pull/26"
+        let info = try await info(sandbox, runner: runner)
+        #expect(info.upstream == nil && !info.onDefaultBranch)
+        #expect(reviewCommitPushDetail(info) == "origin/feat/tracks-main · sets upstream")
+        let main = try git(["rev-parse", "main"], in: sandbox.origin)
+
+        let committer = await run(options(info, ["README.md"], push: push), in: sandbox, runner: runner)
+
+        #expect(committer.phase == .succeeded)
+        #expect(committer.states[.push("origin/feat/tracks-main")] == .done("pushed"))
+        #expect(try git(["rev-parse", "main"], in: sandbox.origin) == main, "main on the remote is untouched")
+        #expect(try git(["log", "-1", "--format=%s", "feat/tracks-main"], in: sandbox.origin).hasPrefix("Fix the 'thing'"))
+        if push == .pullRequest {
+            #expect(runner.ghCommands.first?.hasPrefix("gh pr create --head 'feat/tracks-main' --base 'main'") == true)
+        }
+    }
+
     @Test func aPullRequestFromTheDefaultBranchCommitsOnANewBranch() async throws {
         let sandbox = try WorktreeSandbox(origin: true)
         defer { sandbox.remove() }
