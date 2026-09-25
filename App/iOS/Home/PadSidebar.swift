@@ -38,6 +38,7 @@ struct PadSidebar: View {
                                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
                         }
                         .buttonStyle(.nwRow(radius: NW.Radius.m))
+                        .contextMenu { OpenInNewWindowButton(thread: item.ref.agentRef) }
                     }
                 }
                 if !model.recents.isEmpty {
@@ -49,6 +50,7 @@ struct PadSidebar: View {
                                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
                         }
                         .buttonStyle(.nwRow(radius: NW.Radius.m))
+                        .contextMenu { OpenInNewWindowButton(thread: row.ref.agentRef) }
                     }
                 }
             }

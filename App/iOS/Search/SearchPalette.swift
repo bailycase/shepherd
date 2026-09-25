@@ -146,6 +146,7 @@ private struct PaletteRow: View, Equatable {
     let selected: Bool
     let select: (String) -> Void
     let activate: (SearchEntry) -> Void
+    @Environment(MobileNavigator.self) private var navigator
 
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.entry == rhs.entry && lhs.selected == rhs.selected }
 
@@ -156,6 +157,12 @@ private struct PaletteRow: View, Equatable {
                               minHeight: NWSearchMetrics.compactRowHeight)
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            // Windows/: the row's thread in a window of its own.
+            if case .open(let ref) = entry.action {
+                OpenInNewWindowButton(thread: ref) { navigator.dismissPresented() }
+            }
+        }
         .onHover { if $0 { select(entry.id) } }
         .accessibilityLabel(entry.spoken)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -169,6 +176,7 @@ private struct PalettePreviewPane: View {
     let entry: SearchEntry?
     let state: PalettePreviewStore.State
     let activate: (SearchEntry) -> Void
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         VStack(alignment: .leading, spacing: NW.Space.l) {
@@ -192,19 +200,31 @@ private struct PalettePreviewPane: View {
                 if let caption = Self.caption(entry) {
                     NWHighlightedText(caption, style: .caption, color: .secondary, lines: 3)
                 }
-                Button { activate(entry) } label: {
-                    HStack(spacing: NW.Space.s) {
-                        Text(Self.verb(entry))
-                        NWKeycap("↩")
-                    }
+                // Windows/ (iPadPalette board): Open in new window beside Open, for a thread; under
+                // it when the two don't fit side by side (large text).
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NW.Space.m) { actions(entry) }
+                    VStack(alignment: .leading, spacing: NW.Space.m) { actions(entry) }
                 }
-                .buttonStyle(.nw(Self.destructive(entry) ? .danger : .primary, size: .l))
-                .nwTouchTarget(height: NW.Height.controlL)
             } else {
                 Text("Nothing selected").font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
             }
         }
         .padding(NW.Space.l + NW.Space.xxs)
+    }
+
+    @ViewBuilder private func actions(_ entry: SearchEntry) -> some View {
+        Button { activate(entry) } label: {
+            HStack(spacing: NW.Space.s) {
+                Text(Self.verb(entry))
+                NWKeycap("↩")
+            }
+        }
+        .buttonStyle(.nw(Self.destructive(entry) ? .danger : .primary, size: .l))
+        .nwTouchTarget(height: NW.Height.controlL)
+        if case .open(let ref) = entry.action {
+            OpenInNewWindowButton(thread: ref, prominent: true) { navigator.dismissPresented() }
+        }
     }
 
     private static func caption(_ entry: SearchEntry) -> [NWHighlightRun]? {
