@@ -868,7 +868,7 @@ public final class SessionServer: @unchecked Sendable {
                 ), to: client)
                 return
             }
-            guard let expected = remoteToken, token == expected else {
+            guard let expected = remoteToken, RemoteToken.matches(token, expected: expected) else {
                 ShepherdLog.warning("remote client '\(clientName)' rejected: bad token (fd \(client.fd))")
                 sendFinal(.error(id: id, code: "unauthorized", message: "bad token"), to: client)
                 return
