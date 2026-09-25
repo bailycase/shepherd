@@ -105,6 +105,29 @@ struct NativeThreadStoreTests {
         return (store, host, task)
     }
 
+    // MARK: Recorded turns
+
+    /// A reply carries the turn its host recorded for the message that opened it (its
+    /// "Edited N files" card); an Undo arriving with the next snapshot changes that row alone.
+    @Test func aReplyCarriesTheTurnRecordedForItsPrompt() async {
+        var prompt = F.user("fix it", id: "u")
+        prompt.timestamp = 42
+        var turn = ChangesTurn(messageTimestamp: 42, startedAt: 42, endedAt: 50, state: .ready,
+                               files: [ChangesFile(path: "a.go", status: .modified, added: 1, removed: 1)], canUndo: true)
+        var snapshot = F.snapshot(messages: [prompt, hi])
+        snapshot.turnChanges = [turn]
+        let (store, host, task) = await started(snapshot)
+        defer { task.cancel() }
+        #expect(store.rows.map(\.recordedTurn) == [nil, turn])
+
+        turn.state = .undone
+        snapshot.turnChanges = [turn]
+        snapshot.revision = 2
+        host.snapshot = snapshot
+        await store.refresh()
+        #expect(store.rows.last?.recordedTurn?.state == .undone)
+    }
+
     // MARK: Loading
 
     @Test func theFirstRequestIsAFreshSnapshot() async throws {

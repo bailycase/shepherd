@@ -34,7 +34,8 @@ extension NativeTurnChanges {
             File(path: file.path, status: file.status == .added ? .added : file.status == .deleted ? .deleted : .modified,
                  added: file.added, removed: file.removed)
         }
-        self.init(files: files, added: turn.added, removed: turn.removed)
+        self.init(files: files, added: turn.added, removed: turn.removed, fileCount: turn.fileCount, turnID: turn.id,
+                  undone: turn.state == .undone, canUndo: turn.canUndo, canRedo: turn.canRedo)
     }
 }
 

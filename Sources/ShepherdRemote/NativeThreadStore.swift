@@ -27,6 +27,9 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
     /// The opening prompt's text (a reply's Retry) and time (its footer).
     public var promptText: String?
     public var startedAt: Double?
+    /// The turn the host recorded for this reply (`NativeThreadSnapshot.turnChanges`): its
+    /// changes card, with Undo and Redo.
+    public var recordedTurn: ChangesTurn? = nil
 
     public var id: String { turn.id }
     public var isUser: Bool { turn.isUser }
@@ -380,7 +383,8 @@ public final class NativeThreadStore {
             kept.insert(turn.id)
             let prompt = opener.map { $0.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n") }
             rows.append(NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
-                                        startedAt: opener?.messages.first?.timestamp))
+                                        startedAt: opener?.messages.first?.timestamp,
+                                        recordedTurn: changesTurn(forMessageAt: opener?.messages.first?.timestamp, in: snapshot?.turnChanges)))
         }
         if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
         if rows != self.rows { self.rows = rows }
