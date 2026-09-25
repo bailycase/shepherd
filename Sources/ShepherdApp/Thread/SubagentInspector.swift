@@ -23,6 +23,9 @@ struct SubagentInspector: View {
     var fork: ((ChildRun) async -> String?)? = nil
     /// Opens a touched file in the review pane.
     var review: ((String) -> Void)? = nil
+    /// Focus the Steer field (the tray's Steer asked for it); `steerFocused` says it took it.
+    var focusSteer = false
+    var steerFocused: () -> Void = {}
     @State private var shown = ShownRun()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -36,7 +39,7 @@ struct SubagentInspector: View {
         let edge = arrival?.edge
         ZStack {
             SubagentRunInspector(store: store, runID: runID, siblings: arrival?.siblings ?? [], active: active, close: close,
-                                 select: select, fork: fork, review: review)
+                                 select: select, fork: fork, review: review, focusSteer: focusSteer, steerFocused: steerFocused)
                 .id(runID)
                 .transition(.asymmetric(insertion: (edge.map { NW.Motion.list.transition(reduceMotion: reduceMotion, edge: $0) }) ?? .opacity,
                                         removal: .opacity))
@@ -68,6 +71,8 @@ private struct SubagentRunInspector: View {
     var select: ((ChildRun) -> Void)?
     var fork: ((ChildRun) async -> String?)?
     var review: ((String) -> Void)?
+    let focusSteer: Bool
+    let steerFocused: () -> Void
     @State private var transcript = SubagentTranscriptModel()
     @State private var siblings: [ChildRun]
     @State private var draft = ""
@@ -77,7 +82,10 @@ private struct SubagentRunInspector: View {
     @FocusState private var composing: Bool
 
     init(store: NativeThreadStore, runID: String, siblings: [ChildRun], active: Bool, close: @escaping () -> Void,
-         select: ((ChildRun) -> Void)?, fork: ((ChildRun) async -> String?)?, review: ((String) -> Void)?) {
+         select: ((ChildRun) -> Void)?, fork: ((ChildRun) async -> String?)?, review: ((String) -> Void)?,
+         focusSteer: Bool, steerFocused: @escaping () -> Void) {
+        self.focusSteer = focusSteer
+        self.steerFocused = steerFocused
         self.store = store
         self.runID = runID
         self.active = active
@@ -111,6 +119,13 @@ private struct SubagentRunInspector: View {
         }
         .onChange(of: SiblingKey(store: store)) {
             siblings = nativeSubagentSiblings(of: runID, in: store.subagents, turns: nativeTurns(store.displayedMessages))
+        }
+        // The tray's Steer opened it: its Steer field takes the keyboard, once.
+        .task(id: focusSteer) {
+            guard focusSteer else { return }
+            await Task.yield()
+            composing = true
+            steerFocused()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Inspector for \(Self.role(run))")
@@ -275,11 +290,11 @@ private struct SubagentRunInspector: View {
                         // lands: the transcript's layout, and so following the tail, changes at once.
                         .nwRunArrival(transcript.arrived.contains(turn.id))
                     }
-                    // What the run is doing now (LiveText): its call in flight, or "Thinking…".
-                    // It continues the last turn: under its lines at their spacing, as the
-                    // thread's live line does (Subagents).
+                    // What the run is doing now (LiveText): its call in flight. It continues the
+                    // last turn: under its lines at their spacing, as the thread's live line does
+                    // (Subagents). Between calls nothing shows.
                     if let live = run.flatMap(nativeRunLive) {
-                        RunLiveTail(live: live).equatable()
+                        RunLiveTail(burst: live).equatable()
                             .padding(.top, RunLiveTail.gap(after: turns.last) - AppLayout.inspectorTurnSpacing)
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)
@@ -582,10 +597,10 @@ final class SubagentTranscriptModel {
     }
 }
 
-/// The end of a live run's transcript: the call in flight as its live line, or "Thinking…"
-/// between tools. One moves at a time, and nothing spins.
+/// The end of a live run's transcript: its call in flight, as the thread's live line. Nothing
+/// shows between calls, and nothing spins.
 struct RunLiveTail: View, Equatable {
-    let live: NativeRunLive
+    let burst: NativeActivityBurst
 
     /// The space above it: an activity line's under the run's lines, a turn part's under its
     /// prose or thinking, and a turn's under a message from the parent.
@@ -598,9 +613,6 @@ struct RunLiveTail: View, Equatable {
     }
 
     var body: some View {
-        switch live {
-        case .call(let burst): ActivityLineView(burst: burst).equatable()
-        case .thinking: NWThinking.live()
-        }
+        ActivityLineView(burst: burst).equatable()
     }
 }

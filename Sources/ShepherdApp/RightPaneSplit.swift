@@ -14,8 +14,11 @@ final class RightPaneState {
     var open: Set<SidePaneOwner> = []
     /// Each pane's tab, while it is not the first.
     var tabs: [SidePaneOwner: SidePaneTab] = [:]
-    /// Tabs pi opened something in since you last showed them.
+    /// Tabs the agent opened something in since you last showed them.
     var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
+    /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),
+    /// until it does.
+    var steerRun: String?
     /// Zero until the user resizes: the pane then takes the 600pt default.
     var width: CGFloat {
         didSet { UserDefaults.standard.set(Double(width), forKey: Self.widthKey) }

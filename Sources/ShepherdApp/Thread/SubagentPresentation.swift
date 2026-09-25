@@ -3,24 +3,10 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Child runs projected onto the Agents components' values. Pure and clock-free: a live figure
-/// carries the date it counts from, and `NWElapsedText` does the counting.
+/// Child runs projected onto the Agents components' values (the tray and the inspector). Pure
+/// and clock-free: a live figure carries the date it counts from, and `NWElapsedText` does the
+/// counting.
 enum SubagentPresentation {
-    /// How a turn's runs render: cards while few are live, the strip (plus the cards that need
-    /// you) when many are, and the ledger once the whole group has finished.
-    enum Layout: Equatable { case cards, strip, ledger }
-
-    static func layout(_ runs: [ChildRun], turnLive: Bool) -> Layout {
-        let live = turnLive || runs.contains { !$0.isTerminal }
-        if !live, nativeSubagentGroupIsTerminal(runs) { return .ledger }
-        return runs.count > NativeRunsStrip.collapseThreshold ? .strip : .cards
-    }
-
-    /// Spawn order.
-    static func ordered(_ runs: [ChildRun]) -> [ChildRun] {
-        runs.sorted { ($0.startedAt ?? 0) < ($1.startedAt ?? 0) }
-    }
-
     // MARK: State
 
     /// A run on Night Watch's one status enum. A queued run and a run paused before its next
@@ -39,107 +25,49 @@ enum SubagentPresentation {
         nativeSubagentState(run) == .running && run.paused == true ? "Paused" : nil
     }
 
-    // MARK: Card
+    // MARK: Tray
 
-    static func card(_ run: ChildRun) -> NWSubagentRun {
-        let (name, role) = names(run)
-        let state = state(run)
-        var card = NWSubagentRun(id: run.id, name: name, role: role, model: run.model.map(modelTag), state: state,
-                                 stateLabel: stateLabel(run), detail: "")
-        switch state {
-        case .attention:
-            card.detail = "waiting on your answer"
-            card.waitingSince = askedAt(run)
-            card.question = NWSubagentQuestion(text: run.question?.text ?? run.attentionText ?? "", options: run.question?.options ?? [])
-        case .done:
-            let summary = summaryLine(run)
-            card.detail = summary.isEmpty ? "finished" : lineWithoutFinalPeriod(summary)
-            card.detailMeta = [(run.toolCalls ?? run.result?.tools).flatMap { $0 > 0 ? plural($0, "tool") : nil },
-                               duration(run).map { NWDuration.text($0) }].compactMap { $0 }.joined(separator: " · ")
-        case .failed:
-            card.detail = run.exitReason ?? run.state
-        case .queued:
-            card.detail = run.paused == true ? "paused before its next model request" : "waiting to start"
-        default:
-            card.detail = activity(run)
-            if let percent = run.contextPercent {
-                card.progress = min(1, max(0, percent / 100))
-                card.progressLabel = "Context window used"
-            }
+    /// A phase on Night Watch's one status enum: queued and paused runs both wait.
+    static func state(_ phase: NativeRunPhase) -> AgentState {
+        switch phase {
+        case .running: .running
+        case .queued, .paused: .queued
+        case .needsYou: .attention
+        case .done: .done
+        case .failed: .failed
         }
-        return card
     }
 
-    /// The card's name and role tag. A native child's label is "role: task", so it is named by
+    /// The store's tray as the tray's rows and header draw it.
+    static func tray(_ tray: NativeSubagentTray) -> (summary: NWSubagentTraySummary, rows: [NWSubagentTrayRun]) {
+        let summary = NWSubagentTraySummary(title: tray.title, cells: tray.cells.map(state),
+                                            tally: tray.tally.map { NWSubagentTraySummary.Part($0.text, state: $0.phase.map(state)) })
+        return (summary, tray.rows.map(row))
+    }
+
+    static func row(_ row: NativeTrayRow) -> NWSubagentTrayRun {
+        let line: NWSubagentTrayRun.Line = switch row.line {
+        case .working(let verb, let subject, let live): .working(verb: verb, subject: subject, live: live)
+        case .waiting(let text): .waiting(text)
+        case .asks(let question): .asks(question)
+        case .result(let text): .result(text)
+        case .failed(let reason): .failed(reason)
+        }
+        return NWSubagentTrayRun(id: row.id, name: row.name, state: state(row.phase), line: line, added: row.added, removed: row.removed,
+                                 since: row.since.map(date), until: row.until.map(date), accessibilityLabel: row.accessibilityLabel)
+    }
+
+    private static func date(_ milliseconds: Double) -> Date {
+        Date(timeIntervalSince1970: milliseconds / 1000)
+    }
+
+    /// A run's name and role tag. A native child's label is "role: task", so it is named by
     /// its role and no tag repeats it; a workflow lane is named by its key and tagged with its
     /// role.
     static func names(_ run: ChildRun) -> (name: String, role: String?) {
         guard let role = run.role, !role.isEmpty else { return (run.label, nil) }
         if run.label == role || run.label.hasPrefix("\(role): ") { return (role, nil) }
         return (run.label, role)
-    }
-
-    /// What a running child is doing: its last call, a path shortened to the file name
-    /// ("edit ThreadView.swift"), else the tool in flight.
-    static func activity(_ run: ChildRun) -> String {
-        if let last = run.lastActivity {
-            guard let preview = last.preview, !preview.isEmpty else { return last.tool }
-            return "\(last.tool) \(fileName(preview))"
-        }
-        return run.currentTool ?? "working"
-    }
-
-    /// A native child asks through `shepherd_parent_message`, so that call's time is when it
-    /// began waiting; anything else gives no honest start, and the wait shows no figure.
-    static func askedAt(_ run: ChildRun) -> Date? {
-        guard let last = run.lastActivity, last.tool == "shepherd_parent_message" else { return nil }
-        return Date(timeIntervalSince1970: last.at / 1000)
-    }
-
-    // MARK: Ledger and strip
-
-    static func ledger(_ runs: [ChildRun]) -> NWRunLedgerSummary {
-        let ordered = ordered(runs)
-        let entries = ordered.map { run -> NWRunLedgerEntry in
-            let state = state(run)
-            let summary = state == .failed ? (run.exitReason ?? run.state) : summaryLine(run)
-            let files = run.result?.files ?? run.files?.count ?? 0
-            let meta = [files > 0 ? plural(files, "file") : nil, duration(run).map { NWDuration.text($0) }].compactMap { $0 }
-            return NWRunLedgerEntry(id: run.id, name: names(run).name, state: state, summary: summary, meta: meta.joined(separator: " · "))
-        }
-        let failed = entries.count { $0.state == .failed }
-        var status = failed == 0 ? ["all done"] : ["\(entries.count - failed) done", "\(failed) failed"]
-        if let span = span(ordered), let until = span.until { status.append(NWDuration.text(until.timeIntervalSince(span.since))) }
-        return NWRunLedgerSummary(title: plural(entries.count, "subagent"), state: failed == 0 ? .done : .failed,
-                                  status: status.joined(separator: " · "),
-                                  added: ordered.compactMap { $0.result?.added }.reduce(0, +),
-                                  removed: ordered.compactMap { $0.result?.removed }.reduce(0, +), entries: entries)
-    }
-
-    /// The strip counts each run as its cell and pill draw it: queued and paused runs wait
-    /// (hollow cells), so neither is tallied as running. A cell is named as its card is, so its
-    /// tooltip matches the card it opens.
-    static func strip(_ runs: [ChildRun]) -> NWRunsStripSummary {
-        let ordered = ordered(runs)
-        let cells = ordered.map { NWRunsStripCell(id: $0.id, name: names($0).name, state: state($0), stateLabel: stateLabel($0)) }
-        let states = cells.map(\.state)
-        let tally = ["done", "running", "queued", "paused", "needs you", "failed"].compactMap { word -> String? in
-            let n = cells.count { $0.word == word }
-            return n > 0 ? "\(n) \(word)" : nil
-        }
-        let tokens = ordered.compactMap(\.tokens).reduce(0, +)
-        let glyph = [AgentState.attention, .running, .queued, .failed].first(where: states.contains) ?? .done
-        let span = span(ordered)
-        return NWRunsStripSummary(title: plural(ordered.count, "subagent"), state: glyph, cells: cells,
-                                  states: tally.joined(separator: " · "), tokens: tokens > 0 ? "\(nativeCompactTokens(tokens)) tok" : nil,
-                                  since: span?.since, until: span?.until)
-    }
-
-    /// The group's time: from its first start, until its last end once every run finished.
-    static func span(_ runs: [ChildRun]) -> (since: Date, until: Date?)? {
-        guard let first = runs.compactMap(\.startedAt).min() else { return nil }
-        let until = runs.allSatisfy(\.isTerminal) ? runs.compactMap(\.endedAt).max().map { Date(timeIntervalSince1970: max(first, $0) / 1000) } : nil
-        return (Date(timeIntervalSince1970: first / 1000), until)
     }
 
     // MARK: Inspector
