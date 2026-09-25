@@ -395,6 +395,8 @@ public struct NWThinking: View {
     private var plainLine: some View {
         let note = "\(spokenTitle). The model didn't share its reasoning."
         return Text(title).font(.nwSans(12)).italic()
+            .nwContentTransition(.numeric())
+            .nwAnimation(.content, value: title)
             .foregroundStyle(Color.nw.textSecondary)
             #if os(iOS)
             .frame(minHeight: NW.Height.touch)
