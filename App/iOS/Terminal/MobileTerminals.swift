@@ -237,6 +237,9 @@ final class MobileTerminalSession {
     private(set) var title: String?
     /// The terminal has the keyboard: the key row shows.
     var focused = false
+    /// The pane view whose window shows the screen. A UIView lives in one window, so when two
+    /// iPad windows show the same thread, the first to appear keeps it until it leaves.
+    private(set) var viewer: UUID?
 
     /// The live view, made by `TerminalSurface` and kept here across remounts.
     @ObservationIgnored var surface: TerminalSurfaceView?
@@ -287,6 +290,14 @@ final class MobileTerminalSession {
             guard !Task.isCancelled, let self, self.holds == 0 else { return }
             self.perform(self.link.want(false))
         }
+    }
+
+    func claim(_ view: UUID) {
+        if viewer == nil { viewer = view }
+    }
+
+    func letGo(_ view: UUID) {
+        if viewer == view { viewer = nil }
     }
 
     /// The view laid out at a grid; the host hears it once it settles.
