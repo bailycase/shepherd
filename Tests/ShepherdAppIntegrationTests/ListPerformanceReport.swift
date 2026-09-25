@@ -230,7 +230,7 @@ struct ListPerformanceReport {
         let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
         // Small steps (a trackpad's) through the first files and into the 3k-line file and back,
         // then big ones (a flung wheel) through the whole diff and back.
-        for (step, steps) in [(CGFloat(40), 1500), (200, 5000)] {
+        for (step, steps) in [(CGFloat(40), 750), (200, 5000)] {
             ListPerf.jump(window, scroll, toEnd: false)
             var down = ListPerf.Scroll(), up = ListPerf.Scroll()
             let scrollingDown = ListPerf.counting { down = ListPerf.scroll(window, scroll, step: step, steps: steps) }
