@@ -902,7 +902,10 @@ final class RPCThreadState {
                 message.content[index] = .thinking(delta.delta ?? "")
             }
         case "thinking_end":
-            if let content = delta.content { message.content[index] = .thinking(content) }
+            // Streamed without its `redacted` flag; message_end brings the block itself.
+            if let content = delta.content {
+                message.content[index] = .thinking(content == RPCContentBlock.redactedThinkingPlaceholder ? "" : content)
+            }
         case "toolcall_start":
             message.content[index] = .toolCall(id: delta.id ?? "", name: delta.toolName ?? "", arguments: nil)
         case "toolcall_end":
