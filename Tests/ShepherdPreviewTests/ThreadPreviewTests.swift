@@ -126,7 +126,7 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// The same agent once its pi has kept it waiting past the delay: "Starting pi…" beside Send,
+    /// The same agent once its pi has kept it waiting past the delay: "Starting…" beside Send,
     /// no banner, and Send offered for a typed draft.
     @Test func threadStarting() async throws {
         let fixture = ThreadFixture(Threads.empty)
@@ -166,7 +166,7 @@ struct ThreadPreviewTests {
     }
 
     /// A relaunched agent's thread read from pi's session file while its pi boots: the history
-    /// as pi will show it, and "Starting pi…" beside Send once pi keeps it waiting.
+    /// as pi will show it, and "Starting…" beside Send once pi keeps it waiting.
     @Test func threadRestoring() async throws {
         let fixture = ThreadFixture(ActivityThreads.idle)
         fixture.starting = true

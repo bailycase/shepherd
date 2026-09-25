@@ -282,7 +282,7 @@ struct ThreadView: View {
             if !store.ready, store.loadError == nil, !store.starting, !store.previewing {
                 quiet("Last known thread · refreshing before enabling actions")
             }
-            if !store.dialogsSupported { quiet("This host's pi cannot answer questions here · update Shepherd on the host") }
+            if !store.dialogsSupported { quiet("This host's agent cannot answer questions here · update Shepherd on the host") }
             if store.clipped { quiet("Some earlier output is clipped") }
         }
     }

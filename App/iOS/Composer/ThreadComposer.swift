@@ -243,7 +243,7 @@ struct ThreadComposer: View {
                 }
             }
             .accessibilityLabel(running ? "Queue message" : "Send")
-            .accessibilityHint(running ? "Goes when pi finishes this turn" : "")
+            .accessibilityHint(running ? "Goes when the agent finishes this turn" : "")
             .accessibilityActions {
                 if running, enabled {
                     Button("Steer now") { send(.steer, store: store, state: state) }

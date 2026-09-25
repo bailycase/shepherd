@@ -723,7 +723,7 @@ public final class NativeThreadStore {
             }
             resumeStartWaiters(false)
             let limit = startingLimit.formatted(.units(allowed: [.minutes, .seconds], width: .wide))
-            let message = "The agent's pi has not started after \(limit)."
+            let message = "The agent has not started after \(limit)."
             if loadError != message {
                 loadError = message
                 derive()

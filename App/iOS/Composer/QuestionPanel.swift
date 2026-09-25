@@ -14,9 +14,9 @@ struct QuestionPanel: View {
     let enabled: Bool
     /// On a phone the panel docks to the bottom edge; on iPad it is a card in the column.
     let docked: Bool
-    /// Who asks ("pi is asking", "reviewer is asking"), and what the panel's way out says:
+    /// Who asks ("Agent is asking", "reviewer is asking"), and what the panel's way out says:
     /// Dismiss cancels pi's question; a subagent's is only hidden (Hide).
-    var title = "pi is asking"
+    var title = "Agent is asking"
     var dismissTitle = "Dismiss"
     let answer: (NativeDialogAnswer) -> Void
     @Environment(\.composerMaxHeight) private var maxHeight
@@ -27,7 +27,7 @@ struct QuestionPanel: View {
     @State private var width: CGFloat = 0
     private let options: [NativeQuestionOption]
 
-    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, docked: Bool = false, title: String = "pi is asking",
+    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, docked: Bool = false, title: String = "Agent is asking",
          dismissTitle: String = "Dismiss", answer: @escaping (NativeDialogAnswer) -> Void) {
         self.title = title
         self.dismissTitle = dismissTitle
@@ -66,7 +66,7 @@ struct QuestionPanel: View {
                 }
                 choices.disabled(blocked)
                 if dialog.timeout != nil {
-                    Text("pi may stop waiting for this answer").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                    Text("The agent may stop waiting for this answer").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
                 }
             }
             .fittedScroll(maxHeight: maxHeight * MobileLayout.questionScrollShare)

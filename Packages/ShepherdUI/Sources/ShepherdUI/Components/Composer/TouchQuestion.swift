@@ -1,7 +1,7 @@
 import SwiftUI
 
 // A question from pi or an extension in the composer's place, for touch (MobileQuestion,
-// iPadQuestion boards): "pi is asking" in lantern, the question, then the asker's answers as
+// iPadQuestion boards): "Agent is asking" in lantern, the question, then the asker's answers as
 // numbered cards you choose and confirm with Answer. Shepherd has no permission model: the
 // cards are the answers the asker offered, never an approval it did not.
 
@@ -26,8 +26,8 @@ public struct NWQuestionCard<Content: View>: View {
     let title: String
     let content: Content
 
-    /// `title` names the asker: "pi is asking", or a subagent's name ("reviewer is asking").
-    public init(docked: Bool, count: Int = 1, title: String = "pi is asking", @ViewBuilder content: () -> Content) {
+    /// `title` names the asker: "Agent is asking", or a subagent's name ("reviewer is asking").
+    public init(docked: Bool, count: Int = 1, title: String = "Agent is asking", @ViewBuilder content: () -> Content) {
         self.docked = docked
         self.count = count
         self.title = title
