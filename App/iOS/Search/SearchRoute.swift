@@ -26,12 +26,13 @@ enum SearchHooks {
         }
     }
 
-    /// ⌘K: opens search, or closes the palette when it is already up.
+    /// ⌘K: opens search, or closes the palette when it is already up. Another sheet (a new
+    /// thread's draft, a delete in progress) is never replaced by it.
     static func toggle(navigator: MobileNavigator) {
-        if case .search(.palette)? = navigator.presented?.route {
-            navigator.dismissPresented()
-        } else {
-            open(navigator: navigator)
+        switch navigator.presented?.route {
+        case .search(.palette)?: navigator.dismissPresented()
+        case nil: open(navigator: navigator)
+        default: break
         }
     }
 }
