@@ -51,7 +51,7 @@ struct IdleCostTests {
         return (all.count, all.filter { $0.dot.animation(forKey: NWLayerMotion.glowKey) != nil }.count)
     }
 
-    /// A thread that has loaded draws no spinner: "Starting pi…" is gone for good, not turning
+    /// A thread that has loaded draws no spinner: "Starting…" is gone for good, not turning
     /// where no one sees it.
     @Test func aLoadedThreadDrawsNoSpinnerFrames() async throws {
         let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(2)))

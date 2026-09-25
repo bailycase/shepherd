@@ -58,7 +58,7 @@ struct KeyboardSettings: View {
     /// setting, and only the alternate send can be rebound.
     private var whileWorking: some View {
         let setting = AppSettings.shared.returnWhileWorking
-        return SettingsGroup(title: "While pi is working") {
+        return SettingsGroup(title: "While the agent is working") {
             ForEach(WhileWorkingKey.all) { key in
                 switch key {
                 case .send:
