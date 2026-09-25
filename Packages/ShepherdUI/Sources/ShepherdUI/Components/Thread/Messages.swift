@@ -242,17 +242,16 @@ struct NWCopyGlyph: View {
 // MARK: Thinking
 
 /// The model's thinking (NWThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
-/// italic 12. Expanded: the text in italic 12.5 on a 2pt rule. Live: a spinner, "Thinking…"
-/// and its seconds, collapsing to "Thought for Ns" when it ends. With no text (the model kept
-/// its reasoning back), finished thinking is the plain line, not a control.
+/// italic 12. Expanded: the text in italic 12.5 on a 2pt rule. Live (LiveText): "› Thinking…"
+/// shimmering on a 26pt line, the thread's live indicator between tools, settling into "Thought
+/// for Ns" when it ends. With no text (the model kept its reasoning back), finished thinking is
+/// the plain line, not a control.
 public struct NWThinking: View {
     let title: String
     let spokenTitle: String
     let text: String
     @Binding var isExpanded: Bool
     let live: Bool
-    let since: Date?
-    let seconds: Double?
 
     /// Finished thinking: `title` is "Thought for 4s", `spokenTitle` how VoiceOver says it
     /// ("Thought for 4 seconds"). An empty `text` draws the plain line.
@@ -262,26 +261,23 @@ public struct NWThinking: View {
         self.text = text
         _isExpanded = isExpanded
         live = false
-        since = nil
-        seconds = nil
     }
 
-    /// Thinking that is still streaming: seconds tick from `since` when known, else show
-    /// `seconds` as the host last measured them.
-    public init(liveSince since: Date?, seconds: Double? = nil) {
+    private init() {
         title = "Thinking…"
         spokenTitle = "Thinking"
         text = ""
         _isExpanded = .constant(false)
         live = true
-        self.since = since
-        self.seconds = seconds
     }
+
+    /// pi thinking between tools: its thinking streaming, or nothing yet to show for it.
+    public static func live() -> NWThinking { NWThinking() }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// When thinking ends, "Thinking… 4s" cross-fades into "Thought for 4s" in place, as long
-    /// as the caller keeps one `NWThinking` for both (the same view identity).
+    /// When thinking ends, "Thinking…" cross-fades into "Thought for 4s" in place, as long as
+    /// the caller keeps one `NWThinking` for both (the same view identity).
     public var body: some View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.m) {
@@ -307,18 +303,17 @@ public struct NWThinking: View {
         }
     }
 
+    /// The disclosure's chevron, still, in `textTertiary`, and "Thinking…" in italic 12.5
+    /// shimmering (LiveText: text moves, icons don't).
     private var liveHeader: some View {
-        let nw = Color.nw
-        return HStack(spacing: NW.Space.m) {
-            ProgressView().progressViewStyle(.nwSpinner(size: 12, color: nw.textSecondary))
-            Text(title).font(.nwSans(12)).italic().foregroundStyle(nw.textSecondary)
-            if let since {
-                NWElapsedText(since: since, style: .long).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
-            } else if let seconds {
-                Text(NWDuration.text(seconds, .long)).font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
-            }
+        HStack(spacing: NW.Space.m) {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 8, weight: .semibold))
+                .foregroundStyle(Color.nw.textTertiary)
+                .frame(width: NWThreadMetrics.liveChevron, height: NWThreadMetrics.liveChevron)
+            Text(title).font(.nw(.ui, weight: .regular)).italic().lineLimit(1).nwShimmer(active: true)
         }
-        .frame(minHeight: NWThreadMetrics.activityHeight)
+        .frame(minHeight: NWThreadMetrics.liveHeight)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spokenTitle)
     }
@@ -491,23 +486,3 @@ public struct NWTurnError: View {
     }
 }
 
-/// The tail row while an agent runs: a running spinner and what it is doing, in italic 12.
-public struct NWWorkingRow: View {
-    let label: String
-
-    public init(_ label: String) { self.label = label }
-
-    public var body: some View {
-        HStack(spacing: NW.Space.m) {
-            ProgressView().progressViewStyle(.nwSpinner(size: 12))
-            // "Working…" ⇄ "Running <tool>…" ⇄ "Thinking…" cross-fade.
-            Text(label).font(.nwSans(12)).italic().foregroundStyle(Color.nw.textSecondary)
-                .nwContentTransition(.crossFade)
-                .nwAnimation(.content, value: label)
-        }
-        .padding(.leading, NW.Space.xs)
-        .frame(minHeight: NWThreadMetrics.activityHeight)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-    }
-}

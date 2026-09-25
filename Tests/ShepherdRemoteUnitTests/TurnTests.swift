@@ -95,14 +95,6 @@ struct TurnTests {
         #expect(nativeToolGroupSummary([]) == "0 tool calls")
     }
 
-    @Test func workingLabelPrefersTheRunningToolThenStreamingThinking() {
-        #expect(nativeWorkingLabel([]) == "Working…")
-        #expect(nativeWorkingLabel([F.assistant("", thinking: "hm", status: "streaming")]) == "Thinking…")
-        #expect(nativeWorkingLabel([F.assistant("answer", thinking: "hm")]) == "Working…")
-        #expect(nativeWorkingLabel([F.assistant("", thinking: "hm"), F.tool("bash", status: "running")]) == "Running bash…")
-        #expect(nativeWorkingLabel([F.tool("bash", status: "complete")]) == "Working…")
-    }
-
     @Test func touchedPathsAreTheCurrentTurnsEditsAndWritesWhileRunning() {
         let messages = [
             F.tool("edit", args: #"{"path":"old.swift"}"#), F.user(),
