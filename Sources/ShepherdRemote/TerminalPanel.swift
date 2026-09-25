@@ -233,6 +233,9 @@ public struct RemoteTerminalLink: Equatable, Sendable {
     public private(set) var phase: Phase = .detached
     /// The view's settled grid.
     public private(set) var grid: Grid?
+    /// Numbers each attach sent, so a late answer to an earlier one (the view left and came back
+    /// while it was in flight) never settles the current one.
+    public private(set) var attempt = 0
     private var wanted = false
     /// The grid the host last had from this viewer.
     private var sent: Grid?
@@ -275,14 +278,14 @@ public struct RemoteTerminalLink: Equatable, Sendable {
         }
     }
 
-    /// The host accepted the attach.
-    public mutating func attached() {
-        if phase == .attaching { phase = .live }
+    /// The host accepted attach number `attempt`.
+    public mutating func attached(attempt: Int) {
+        if phase == .attaching, attempt == self.attempt { phase = .live }
     }
 
-    /// The host refused the attach, or the request failed.
-    public mutating func attachFailed(_ reason: String) {
-        guard phase == .attaching else { return }
+    /// The host refused attach number `attempt`, or its request failed.
+    public mutating func attachFailed(_ reason: String, attempt: Int) {
+        guard phase == .attaching, attempt == self.attempt else { return }
         phase = .failed(reason)
         sent = nil
     }
@@ -306,6 +309,7 @@ public struct RemoteTerminalLink: Equatable, Sendable {
     private mutating func attachIfReady() -> [Command] {
         guard wanted, let grid else { return [] }
         phase = .attaching
+        attempt += 1
         sent = grid
         return [.attach(cols: grid.cols, rows: grid.rows)]
     }

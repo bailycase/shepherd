@@ -163,7 +163,7 @@ struct RemoteTerminalLinkTests {
         #expect(link.noteGrid(cols: 100, rows: 30) == [.attach(cols: 100, rows: 30)])
         #expect(link.phase == .attaching)
         #expect(link.acceptsOutput)
-        link.attached()
+        link.attached(attempt: link.attempt)
         #expect(link.phase == .live)
     }
 
@@ -178,7 +178,7 @@ struct RemoteTerminalLinkTests {
         var link = RemoteTerminalLink()
         _ = link.want(true)
         _ = link.noteGrid(cols: 80, rows: 24)
-        link.attached()
+        link.attached(attempt: link.attempt)
         #expect(link.noteGrid(cols: 80, rows: 24).isEmpty)
         #expect(link.noteGrid(cols: 120, rows: 24) == [.resize(cols: 120, rows: 24)])
         #expect(link.noteGrid(cols: 0, rows: 24).isEmpty)
@@ -188,7 +188,7 @@ struct RemoteTerminalLinkTests {
         var link = RemoteTerminalLink()
         _ = link.want(true)
         _ = link.noteGrid(cols: 80, rows: 24)
-        link.attached()
+        link.attached(attempt: link.attempt)
         #expect(link.want(false) == [.detach])
         #expect(!link.acceptsOutput)
         #expect(link.want(false).isEmpty)
@@ -199,7 +199,7 @@ struct RemoteTerminalLinkTests {
         var link = RemoteTerminalLink()
         _ = link.want(true)
         _ = link.noteGrid(cols: 80, rows: 24)
-        link.attached()
+        link.attached(attempt: link.attempt)
         link.disconnected()
         #expect(link.phase == .detached)
         #expect(link.want(true) == [.attach(cols: 80, rows: 24)])
@@ -209,18 +209,34 @@ struct RemoteTerminalLinkTests {
         var link = RemoteTerminalLink()
         _ = link.want(true)
         _ = link.noteGrid(cols: 80, rows: 24)
-        link.attachFailed("no_such_session")
+        link.attachFailed("no_such_session", attempt: link.attempt)
         #expect(link.phase == .failed("no_such_session"))
         #expect(link.noteGrid(cols: 90, rows: 24).isEmpty)
         #expect(link.want(false).isEmpty)
         #expect(link.want(true) == [.attach(cols: 90, rows: 24)])
     }
 
+    @Test func aLateAnswerToAnEarlierAttachNeverSettlesTheCurrentOne() {
+        var link = RemoteTerminalLink()
+        _ = link.want(true)
+        _ = link.noteGrid(cols: 80, rows: 24)
+        let first = link.attempt
+        #expect(link.want(false) == [.detach])
+        #expect(link.want(true) == [.attach(cols: 80, rows: 24)])
+        #expect(link.attempt != first)
+        link.attachFailed("no_such_session", attempt: first)
+        #expect(link.phase == .attaching)
+        link.attached(attempt: first)
+        #expect(link.phase == .attaching)
+        link.attached(attempt: link.attempt)
+        #expect(link.phase == .live)
+    }
+
     @Test func anExitedSessionNeverAttachesAgain() {
         var link = RemoteTerminalLink()
         _ = link.want(true)
         _ = link.noteGrid(cols: 80, rows: 24)
-        link.attached()
+        link.attached(attempt: link.attempt)
         link.exited(1)
         #expect(link.phase == .exited(1))
         #expect(link.want(false).isEmpty)
