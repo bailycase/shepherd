@@ -63,6 +63,10 @@ struct TerminalScreen: View {
         }
         .background(Color.nw.bgWindow)
         .onChange(of: model.onScreenOutput, initial: true) { terminals.markSeen(ref, sessions: model.onScreenSessions) }
+        // Sessions the host no longer lists let go of their screens, as the iPad panel's do.
+        .onChange(of: liveSessions, initial: true) { _, live in
+            if hosts.host(ref.host)?.phase.isConnected == true { terminals.prune(host: ref.host, live: live) }
+        }
         .task(id: ActivityKey(session: hosts.host(ref.host)?.session, active: scenePhase == .active)) {
             guard scenePhase == .active, let client = hosts.host(ref.host)?.connectedClient else { return }
             await terminals.watchActivity(ref, client: client)
@@ -84,6 +88,10 @@ struct TerminalScreen: View {
         } message: {
             Text("Its shell on \(model.hostName) stops.")
         }
+    }
+
+    private var liveSessions: Set<SessionID> {
+        Set(hosts.host(ref.host)?.state.tabs.flatMap { $0.layout.leaves.compactMap(\.sessionID) } ?? [])
     }
 
     private func newTab(_ model: TerminalModel) {
