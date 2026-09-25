@@ -611,14 +611,17 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// because a layout change and the offset shift it causes arrive in separate readings.
     /// Returns true when the view should land on its tail again: it is stuck and the layout
     /// changed under it (rows arrived or re-wrapped, the composer or keyboard resized the inset),
-    /// which the scroll view's size-change anchor does not follow on its own.
+    /// which the scroll view's size-change anchor does not follow on its own. Never during a
+    /// gesture: a drag up measures the rows it reveals, and moving the view then would pull it
+    /// out from under the finger (on iOS it also ends the drag, so the reader could never leave
+    /// the tail). The gesture's next reading detaches it, or its end re-sticks it.
     public mutating func observe(from old: NativeScrollProbe, to new: NativeScrollProbe, gesture: Bool) -> Bool {
         let layoutChanged = new.layoutDiffers(from: old)
         let intent = gesture && new.distance > old.distance && !layoutChanged
         // Content that fits the viewport has a negative distance; growth from there is layout.
         let grew = new.content > old.content && old.distance > 0
         observe(distanceFromBottom: new.distance, userIntent: intent, contentGrew: grew)
-        return sticky && layoutChanged && new.distance > Self.repinSlack
+        return sticky && layoutChanged && !gesture && new.distance > Self.repinSlack
     }
 }
 

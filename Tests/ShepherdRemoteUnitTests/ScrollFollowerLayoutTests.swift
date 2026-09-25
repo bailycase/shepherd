@@ -30,8 +30,8 @@ struct ScrollFollowerLayoutTests {
              new: probe(container: 300, inset: 340), sticky: true, repins: true),
         Case(testDescription: "rows re-wrapping beside a docked review keep it stuck and land on the tail",
              new: probe(content: 2600, container: 520), sticky: true, repins: true),
-        Case(testDescription: "a layout change during a drag is layout, not the reader",
-             new: probe(content: 2400), gesture: true, sticky: true, repins: true),
+        Case(testDescription: "a layout change during a drag is layout, not the reader, and leaves the finger's place alone",
+             new: probe(content: 2400), gesture: true, sticky: true, repins: false),
         Case(testDescription: "a drag moving it up with the layout unchanged detaches",
              new: probe(offset: 1120), gesture: true, sticky: false, repins: false),
         Case(testDescription: "moving up without a gesture never detaches",
@@ -51,6 +51,23 @@ struct ScrollFollowerLayoutTests {
         #expect(repins == c.repins)
         #expect(follower.sticky == c.sticky)
         #expect(follower.unseen == c.unseen)
+    }
+
+    /// A drag up from the tail measures the rows it reveals: that reading stays stuck without
+    /// pulling the thread back, and the drag's next reading detaches it.
+    @Test func aDragThatMeasuresRowsAboveStillLeavesTheTail() {
+        var follower = NativeScrollFollower()
+        let dragged = Self.probe(offset: 1370)
+        let measured = Self.probe(content: 2159, offset: 1370)
+        let repins = [
+            follower.observe(from: Self.tail, to: dragged, gesture: true),
+            follower.observe(from: dragged, to: measured, gesture: true),
+        ]
+        #expect(repins == [false, false])
+        #expect(follower.sticky)
+        let further = follower.observe(from: measured, to: Self.probe(content: 2159, offset: 1320), gesture: true)
+        #expect(!further)
+        #expect(!follower.sticky)
     }
 
     @Test func theTailIsZeroAndFittingContentIsNegative() {
