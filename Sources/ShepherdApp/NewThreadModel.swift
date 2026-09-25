@@ -271,7 +271,7 @@ final class NewThreadState {
                 prompt = ""
                 worktree = false
             } catch {
-                self.error = "\(error)"
+                self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)"
             }
         }
     }
