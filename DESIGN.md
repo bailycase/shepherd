@@ -557,9 +557,12 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   surfaces through its agent's row, which takes the needs-you dot and "ASK", and counts toward
   its space's and host's needs-you counts, so the row to click is always marked. Live and
   finished subagents leave the agent's row as it is.
-- **Automation rows:** the automation's name, and its run's state: "running", "ASK", "done", or
-  "stopped" (a hollow dot, not selectable). The context menu has Stop while the run is running or
-  asks, else Run Now (a done run's thread is replaced by the new run's), and Delete Automation.
+- **Automation rows:** the automation's name, and its run's state: "running" (a run whose pi is
+  still starting included), "ASK", "done", or "stopped" (a hollow dot, not selectable). Live
+  follows the host's own rule (`AutomationRun.isLive`, read from the run log's open run), so a
+  run reads done only once a turn has settled. The context menu has Stop while the run is live,
+  else Run Now (a done run's thread is replaced by the new run's), and Delete Automation. A
+  refused Run Now shows `ActionErrorDialog`.
 - **A remote host's automation rows** (`RemoteSidebarSection.swift`) nest one level under its
   Automations disclosure with the same dots and words, plus "off" for one that does not start
   with Shepherd. Clicking a row opens its run's thread, or its details while it has none. The

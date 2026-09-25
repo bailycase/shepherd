@@ -75,6 +75,10 @@ final class ShepherdViewModel {
     /// Agents whose last turn ended in an error: done, but their sidebar row reads failed.
     /// Ephemeral, like the status it qualifies.
     var failedTurns: Set<AgentID> = []
+    /// Each automation's run whose agent still exists, as the server's run log keeps it: an
+    /// idle run agent is starting until its run has settled (`AutomationRun.isLive`). Read with
+    /// every adopted state.
+    var openAutomationRuns: [AutomationID: AutomationRun] = [:]
     /// ⌘⇧S hides the sidebar. Persisted, like the other sidebar disclosure choices.
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
@@ -702,6 +706,8 @@ final class ShepherdViewModel {
     /// Adopt a server snapshot wholesale, keeping selection when IDs persist.
     func adopt(_ serverState: ShepherdState) {
         state = serverState
+        let runs = server.openAutomationRuns
+        if runs != openAutomationRuns { openAutomationRuns = runs }
         threadStores.prune(live: Set(state.agents.map(\.id)))
         pruneReviewSessions()
         // First adoption of the restored workspace: stand the enabled
