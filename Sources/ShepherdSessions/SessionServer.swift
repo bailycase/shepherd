@@ -239,6 +239,14 @@ public final class SessionServer: @unchecked Sendable {
     public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client saved or restored this host's root instructions: the GUI's Settings page
+    /// follows. Delivered on the main actor.
+    public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
+
+    /// Shepherd's root instructions for pi on this host (the support directory's
+    /// `instructions/`): remote clients read and save them through the server, and the Mac's
+    /// Settings page through this store directly.
+    public let instructions: InstructionsStore
 
     private let queue = DispatchQueue(label: "shepherd.sessions")
     private let socketPath: String
@@ -422,6 +430,7 @@ public final class SessionServer: @unchecked Sendable {
         self.modelCatalog = modelCatalog
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
+        self.instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
     }
 
     /// The queue mode of every agent that has not chosen its own (`NativeQueueAction.setMode`).
@@ -1012,6 +1021,8 @@ public final class SessionServer: @unchecked Sendable {
             }
         case .automation(let id, let automationID, let request):
             remoteAutomation(id: id, automationID: automationID, request: request, client: client)
+        case .instructions(let id, let request):
+            remoteInstructions(id: id, request: request, client: client)
         case .stateFetch(let id):
             send(.state(id: id, state: store.state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -1196,6 +1207,35 @@ public final class SessionServer: @unchecked Sendable {
     struct AutomationDraftError: Error, Equatable {
         let code: String
         let message: String
+    }
+
+    /// A remote client reading or saving this host's root instructions. They are two small
+    /// files behind the store's lock, so the server answers here, with or without a GUI; a save
+    /// or a restore tells the GUI, whose Settings page follows.
+    private func remoteInstructions(id: Int, request: RemoteInstructionsRequest, client: ExtensionConnection) {
+        do {
+            let snapshot: InstructionsSnapshot
+            switch request {
+            case .fetch:
+                snapshot = instructions.snapshot()
+            case .save(let file, let content, let origin, let sync):
+                snapshot = try instructions.save(file, content: content, origin: origin, sync: sync)
+                announceInstructions(snapshot)
+            case .restore(let revisionID, let origin):
+                snapshot = try instructions.restore(revisionID: revisionID, origin: origin)
+                announceInstructions(snapshot)
+            }
+            send(.instructions(id: id, snapshot: snapshot), to: client)
+        } catch InstructionsStore.StoreError.noSuchRevision {
+            send(.error(id: id, code: "no_such_revision", message: InstructionsStore.StoreError.noSuchRevision.description), to: client)
+        } catch {
+            send(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+        }
+    }
+
+    private func announceInstructions(_ snapshot: InstructionsSnapshot) {
+        guard let handler = onInstructionsChanged else { return }
+        hopToMain { handler(snapshot) }
     }
 
     /// A remote draft as the host would save it: a name and a prompt that are not blank, and a
