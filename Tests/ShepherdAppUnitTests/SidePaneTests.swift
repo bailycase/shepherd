@@ -29,12 +29,12 @@ struct SidePaneTests {
     @Test(arguments: [
         // open, inspecting, news → lit, dot
         (false, false, false, false, nil),
-        (false, false, true, false, "pi opened a review in Changes"),
+        (false, false, true, false, "Agent opened a review in Changes"),
         (true, false, false, true, nil),
         // The strip is on screen: its tab says it, not the button.
         (true, false, true, true, nil),
         // An inspected run covers the strip.
-        (true, true, true, true, "pi opened a review in Changes"),
+        (true, true, true, true, "Agent opened a review in Changes"),
         (false, true, false, true, nil),
     ] as [(Bool, Bool, Bool, Bool, String?)])
     func theHeaderButtonLightsWhileThePaneShowsAndTakesTheDotWhileTheStripIsHidden(
