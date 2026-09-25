@@ -34,6 +34,88 @@ xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd iOS' \
 An unsigned build can fail Keychain access at runtime (`-34018`). Use a signed build to exercise
 connecting. [VALIDATION.md](VALIDATION.md) covers the scripted checks.
 
+## Distribution
+
+The iOS client ships through TestFlight, following the Mac's channels:
+
+| Trigger | iOS lane | Status |
+| --- | --- | --- |
+| push to `nightly` | TestFlight, internal testing | done |
+| tag `vX.Y.Z-beta.N` | TestFlight, external testing | later |
+| tag `vX.Y.Z` (the beta's commit re-tagged) | App Store | later |
+
+**How the nightly lane works:**
+
+- **Job:** every push to `nightly` runs the `testflight` job in `.github/workflows/release.yml`
+  beside the Shepherd Nightly build. `scripts/release.py plan` decides it (`ios`), and
+  `Tests/Release` tests the rule.
+- **Build:** the job runs on the `xcode-27` runner, because the target needs the iOS 27 SDK.
+  It archives `Shepherd iOS` unsigned, and `release.py verify-ios` checks the app.
+- **Signing and upload:** `xcodebuild -exportArchive` with `App/iOS/ExportOptions.plist`,
+  `-allowProvisioningUpdates`, and the App Store Connect key. It signs with the team's
+  cloud-managed Apple Distribution certificate and uploads the build. No certificate is
+  exported and no keychain is involved.
+- **Versions:** the build number is the workflow's run number, the same one as the Shepherd
+  Nightly build from that commit. The version is the project's `MARKETING_VERSION`. The Mac
+  nightly's `0.0.0-nightly.<stamp>` is not a valid iOS version.
+- **Missing secrets:** the job is skipped with a notice, and the Mac release is unaffected. It
+  never runs for pull requests, tags, or other branches.
+- **Expiry:** Apple processes each build (usually minutes). The Nightly group's testers get it
+  automatically, and it stays installable for 90 days.
+- **Re-runs:** a re-run keeps the run number, so it keeps the build number. Once the Mac
+  nightly has published, re-running the whole workflow skips both builds. To retry only the
+  upload, use "Re-run failed jobs". If only the Mac job failed, also use "Re-run failed jobs":
+  re-running everything would upload the same build number again, which App Store Connect
+  refuses. Or push again.
+
+**One-time setup, in order:**
+
+1. The Account Holder accepts any pending agreements in App Store Connect (Business). A free app
+   needs no paid-apps agreement.
+2. Register the App ID `com.bailycase.shepherd.ios` under Certificates, Identifiers & Profiles:
+   Identifiers ▸ + ▸ App IDs ▸ App, Explicit, with no capabilities. Skip this step if Xcode
+   already registered it for a device run. App Store Connect's New App form only lists bundle
+   IDs that are already registered.
+3. In App Store Connect, go to Apps ▸ + ▸ New App:
+   - Platform iOS, a name, a language, bundle ID `com.bailycase.shepherd.ios`, and a SKU (for
+     example `shepherd-ios`).
+   - The API cannot create this record, and uploads fail without it.
+4. Go to Users and Access ▸ Integrations ▸ App Store Connect API ▸ Team Keys ▸ Generate:
+   - Access must be **Admin**. Developer and App Manager keys fail with a cloud-signing
+     permission error.
+   - Download the `.p8` (it downloads only once), and note the Key ID and Issuer ID.
+5. Add these repository secrets under GitHub ▸ Settings ▸ Secrets and variables ▸ Actions:
+   - `APP_STORE_CONNECT_KEY_ID`
+   - `APP_STORE_CONNECT_ISSUER_ID`
+   - `APP_STORE_CONNECT_KEY_P8`: the `.p8` file's text pasted as-is, not base64.
+6. In the app's TestFlight ▸ Internal Testing ▸ +, create a group (for example "Nightly"), check
+   **Enable automatic distribution**, and add testers. Testers are App Store Connect users,
+   up to 100.
+7. Testers install TestFlight with the same Apple Account and accept the invite. The next push
+   to `nightly` uploads a build.
+
+The first upload is also the first real test of the unsigned-archive, cloud-signed-export path.
+The export step prints `DistributionSummary.plist` when there is one, which shows the signing
+certificate and entitlements it used.
+
+**Compatibility with Macs.** `hello` requires `RemoteProtocol.version` to match exactly, so a
+TestFlight nightly and an older Mac stop talking the moment the version is bumped. A nightly
+always pairs with the Shepherd Nightly from the same commit. Once builds reach people who
+update the phone and the Mac at different times, grow the protocol through `capabilities` and
+keep the version for real breaks.
+
+**Later lanes:**
+
+- **Beta, external testing:** the same job on a beta tag, with the tag's `X.Y.Z` as the version
+  and `testFlightInternalTestingOnly` off. Then add the processed build to an external group and
+  submit it for Beta App Review through the App Store Connect API. External testing needs its
+  test information filled in, and the first build is reviewed.
+- **Stable, App Store:** promotion re-tags the beta's commit, so attach the beta's build to a new
+  App Store version instead of rebuilding. This needs store metadata, iPad and iPhone
+  screenshots, privacy labels, and an age rating.
+- **Version trains:** once `X.Y.Z` ships on the App Store it accepts no more builds, so the
+  nightly version then has to move past it (derived in `release.py`).
+
 ## What it is made of
 
 - **Target:** the `Shepherd iOS` Xcode target (iOS 27, iPhone and iPad) compiles the nine files
