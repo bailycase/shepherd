@@ -150,12 +150,16 @@ final class ModelPickerState {
 }
 
 /// The model picker over `NWModelPicker`: Recent (up to 4), then one section per provider, with
-/// the picker's chord in its search row.
-struct ModelPicker: View {
+/// the picker's chord in its search row. Equal while it shows the same picker in the same room:
+/// its query, highlight and list reach it through the state's observation, so a composer redraw
+/// for something else (the field losing focus to the search) leaves its list alone.
+struct ModelPicker: View, Equatable {
     @Bindable var state: ModelPickerState
     var maxHeight: CGFloat?
     let choose: (String) -> Void
     let close: () -> Void
+
+    static func == (a: Self, b: Self) -> Bool { a.state === b.state && a.maxHeight == b.maxHeight }
 
     var body: some View {
         NWModelPicker(query: $state.query, list: state.list, loading: state.loading, selection: $state.selection, maxHeight: maxHeight,
