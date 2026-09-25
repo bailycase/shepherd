@@ -122,7 +122,7 @@ struct SubagentListContent: View {
                 if let run { SubagentControlItems(run: run, commands: commands) }
             }
             .accessibilityActions {
-                if let run {
+                if let run, commands.enabled {
                     ForEach(nativeRunControls(run), id: \.self) { control in
                         Button(control.title) { commands.control(run.runID, control) }
                     }
