@@ -241,7 +241,7 @@ keep the version for real breaks.
   attach is retried with backoff (1 s doubling to 30 s) while the pane stays on screen, and a
   pane the host gives a new session (every pane respawns its shell when the host relaunches)
   gets a new view that attaches to it. Keys go to the host as `input`; a key row (esc, tab,
-  ctrl, ⌥, arrows, `|`, `~`, `/`, `-`) sits under the terminal
+  ctrl, ⌥, `|`, `~`, `/`, `-`, arrows; two rows on a phone in portrait) sits under the terminal
   while it has the keyboard, and a hardware keyboard types directly. Tabs name what
   runs in them and show a spinner or a dot for new output where the host answers
   `RemoteAgentQuery.terminals` (`terminal.activity.v1`). Closing a tab asks, then asks the host

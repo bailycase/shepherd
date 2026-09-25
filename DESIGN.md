@@ -1556,11 +1556,13 @@ components first), with these differences for touch:
   grabber on its top edge for the divider (snapping as on the Mac) in place of a pointer
   handle, and the terminal toggle in the thread's header. While a terminal has the keyboard, a
   key row sits under it, over the software keyboard: esc, tab, ctrl, ⌥ (latched in lantern
-  until the next key), the arrows, `|`, `~`, `/`, `-` as 34pt keycaps at least 44 wide on
-  `bgRaised`. On iPhone the thread's options open the panes full screen with the same strip and
-  key row. The terminal is SwiftTerm's view on Night Watch's terminal palette in Geist Mono at
-  the code size, following Dynamic Type to 20pt; the strip and key row stop growing at
-  xxxLarge. Closing a tab asks first ("Its shell on <host> stops.").
+  until the next key), `|`, `~`, `/`, `-`, then the arrows, as 34pt keycaps at least 44 wide on
+  `bgRaised`. One row where it fits; on a phone in portrait it wraps into two rows of six equal
+  keys (the arrows together in the second), and only where two rows don't fit either does it
+  scroll, with its scroll bar showing. On iPhone the thread's options open the panes full screen
+  with the same strip and key row. The terminal is SwiftTerm's view on Night Watch's terminal
+  palette in Geist Mono at the code size, following Dynamic Type to 20pt; the strip and key row
+  stop growing at xxxLarge. Closing a tab asks first ("Its shell on <host> stops.").
 - **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
   iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
   (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &
