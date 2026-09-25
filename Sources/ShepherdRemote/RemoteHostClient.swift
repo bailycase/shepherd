@@ -414,6 +414,8 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: RemoteProtocol.worktreeActionsCapability
         case .commitInfo, .commitMessage, .commit: RemoteProtocol.reviewCommitCapability
         case .terminals: RemoteProtocol.terminalActivityCapability
+        case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
+            RemoteProtocol.changesCapability
         default: RemoteProtocol.agentInspectionCapability
         }
     }
@@ -426,7 +428,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         // The host's setup probes and a drafted commit message run a model or the network.
         let slow: Bool
         switch query {
-        case .worktreeSetup, .worktreeCommitCount, .worktreeDescription, .commitMessage: slow = true
+        case .worktreeSetup, .worktreeCommitCount, .worktreeDescription, .commitMessage, .changesOverview, .changesList: slow = true
         default: slow = false
         }
         let reply = try await request(timeout: slow ? 150 : 30) { .agentQuery(id: $0, agentID: agentID, query: query) }
