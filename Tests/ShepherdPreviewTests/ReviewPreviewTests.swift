@@ -77,12 +77,14 @@ struct ReviewPreviewTests {
         }
     }
 
-    /// The Commit… sheet (derived from the iPadCommit board): the drafted message, three files
-    /// with one left out, and the options; the message written from the file list, following the
-    /// ticked files; drafting; an agent still working; a checkout it
+    /// The Commit… sheet (derived from the iPadCommit board): the message drafted for two of
+    /// three files, the third left out, and the options; the message written from the file list, following the
+    /// ticked files; drafting; the draft kept while it is drafted again for the ticked files; an
+    /// edited message that may mention an unticked file; an agent still working; a checkout it
     /// refuses; then the host's steps running, done with a pull request, stopped at a push, and
     /// a commit the host no longer knows (after a restart).
-    @Test(arguments: ["form", "written", "drafting", "working", "blocked", "pr-default", "running", "done", "failed", "unknown"])
+    @Test(arguments: ["form", "written", "drafting", "redrafting", "edited", "working", "blocked", "pr-default", "running", "done", "failed",
+                      "unknown"])
     func commitSheet(_ state: String) async throws {
         let store = await CommitBoard.store(state)
         try await Preview.render("sheet-commit-\(state)", size: CGSize(width: AppLayout.commitSheetWidth, height: 720)) {
@@ -361,6 +363,16 @@ enum CommitBoard {
             store.stage(info())
             store.toggle("App/iOS/FleetView.swift")
         case "drafting": store.stage(info(), drafting: true)
+        case "redrafting":
+            // A host that drafts, and a pause that never ends: the redraft stays asked for.
+            store.stage(info(), title: title, body: body, drafted: true)
+            store.query = { _ in throw ReviewCommitRefusal("The preview asks the host nothing.") }
+            store.pause = { _ in throw CancellationError() }
+            store.toggle("App/iOS/FleetView.swift")
+        case "edited":
+            store.stage(info(), title: title, body: body + " FleetView keeps its rows.", drafted: true)
+            store.body += "\n\nEdited by hand."
+            store.toggle("App/iOS/FleetView.swift")
         case "working": store.stage(info(working: true), title: title, body: body, drafted: true)
         case "blocked": store.stage(info(blocked: "A rebase is in progress in this checkout. Finish or abort it first."))
         case "pr-default":

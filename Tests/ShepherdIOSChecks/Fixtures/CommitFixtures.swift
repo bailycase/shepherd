@@ -17,6 +17,8 @@ extension FixtureCatalog {
                           prepare: CommitFixture.drafted),
             FixtureScreen(name: "commit-written", hosts: CommitFixture.hosts(drafts: false), routes: [thread, changes],
                           presented: .review(.commit(ref)), prepare: CommitFixture.writtenWithOneUnticked),
+            FixtureScreen(name: "commit-edited", hosts: CommitFixture.hosts(), routes: [thread, changes], presented: .review(.commit(ref)),
+                          prepare: CommitFixture.editedWithOneUnticked),
             FixtureScreen(name: "commit-working", hosts: CommitFixture.hosts(working: true), routes: [thread, changes],
                           presented: .review(.commit(ref)), prepare: CommitFixture.drafted),
             FixtureScreen(name: "commit-running", hosts: CommitFixture.hosts(operation: CommitFixture.running), routes: [thread, changes],
@@ -94,6 +96,15 @@ enum CommitFixture {
     @MainActor static func writtenWithOneUnticked(_ app: MobileApp) async {
         let store = store(app)
         await ReviewFixture.until { store.stage == .form }
+        store.toggle("App/iOS/FleetView.swift")
+    }
+
+    /// The drafted message edited, then a file it was drafted for unticked: the message stays and
+    /// says it may mention it.
+    @MainActor static func editedWithOneUnticked(_ app: MobileApp) async {
+        await drafted(app)
+        let store = store(app)
+        store.body += " FleetView keeps its rows."
         store.toggle("App/iOS/FleetView.swift")
     }
 

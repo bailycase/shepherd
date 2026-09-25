@@ -100,7 +100,8 @@ struct ReviewCommitSheet: View {
                 NWBanner(.failed, title: "Nothing was committed", message: error)
             }
             NWCommitMessageEditor(title: $store.title, message: $store.body,
-                                  source: store.drafting ? .drafting : store.drafted ? .drafted : .written)
+                                  source: store.drafting ? .drafting : store.drafted ? .drafted : .written,
+                                  mentionsUntickedFiles: store.mentionsUntickedFiles)
             VStack(alignment: .leading, spacing: NW.Space.s) {
                 HStack {
                     Text("Files").font(.nw(.ui, weight: .semibold)).foregroundStyle(Color.nw.textSecondary)

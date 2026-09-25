@@ -1159,11 +1159,19 @@ layout" above.
 - **Commit… sheet** (`ReviewCommitSheet`, 520pt, derived from the iPadCommit board; parts in
   `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
   - The message card (`NWCommitMessageEditor`, a raised card with a strong line): the summary in
-    semibold over the description, both editable, and a note: "Drafted from the diff · edit
+    semibold over the description, both editable, each growing to its lines whenever its text
+    changes (typed, or filled in by the host), and a note: "Drafted from the diff · edit
     anything" (a sparkle), "Written from the file list · edit anything", or a spinner with
     "Drafting from the diff…". The plain message shows at once and follows the ticked files
     until someone edits it; the drafted one replaces it only if nothing was typed meanwhile.
     Drafting follows Settings ▸ Worktrees ▸ Generate PR descriptions and its model.
+  - A message nobody edited follows the ticks. The plain one is rewritten at once. A drafted one
+    is drafted again for the ticked files once they stay put for 600 ms, so ticking several
+    files costs one draft; the old draft stays (spinner, and Commit waits with "Redrafting the
+    message…") until the new one arrives. An answer for earlier ticks is dropped, and a failed
+    draft puts the plain message for the ticked files in its place. An edited message is never
+    rewritten: once a file it was written for is unticked, its note reads "May mention files you
+    unticked" (an exclamation circle, as quiet as the other notes).
   - "Files" with "n of m" and Select All/None, then a card of `NWCommitFileRow`s (a row-high
     checkbox row: lantern checkbox, the name in mono, its directory in tertiary, the diff stat;
     the whole row toggles). Every file starts ticked; the list scrolls past 232pt.
