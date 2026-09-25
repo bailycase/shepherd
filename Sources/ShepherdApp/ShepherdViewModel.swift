@@ -60,6 +60,9 @@ final class ShepherdViewModel {
     var moreOpen = false
     /// Needs you and Recents, derived once per change of what they read (`SidebarSource`).
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, lists: SidebarLists)?
+    /// Who the sidebar's footer names: the Mac's user and computer, read once. Previews pass their
+    /// own, so a render never shows the machine it ran on.
+    @ObservationIgnored var sidebarFooterIdentity: (name: String, detail: String)?
     /// The Automations and Hosts pages, derived again only when what they read changed.
     @ObservationIgnored var automationsPageCache: (inputs: AutomationsPageInputs, model: AutomationsPageModel)?
     @ObservationIgnored var hostsPageCache: (inputs: HostsPageInputs, model: HostsPageModel)?

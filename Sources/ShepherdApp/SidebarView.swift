@@ -26,7 +26,7 @@ struct SidebarView: View {
                 SidebarListsView(vm: vm)
             }
         } footer: {
-            let footer = SidebarDerivation.footer
+            let footer = vm.sidebarFooterIdentity ?? SidebarDerivation.footer
             NWSidebarFooter(name: footer.name, detail: footer.detail, settingsShortcut: "⌘,") { vm.showSettings = true }
         }
     }
