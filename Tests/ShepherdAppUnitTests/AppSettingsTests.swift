@@ -270,6 +270,16 @@ struct PiUpdateTests {
         #expect(PiUpdateManager.automaticUpdateArguments(updatePi: pi, updateExtensions: extensions) == commands)
     }
 
+    @Test(arguments: [
+        (false, false, [[String]]()),
+        (true, false, [["update"]]),
+        (false, true, [["update", "--extensions"]]),
+        (true, true, [["update"], ["update", "--extensions"]]),
+    ])
+    func updateNowRunsWhateverThereIsToUpdateInOneRun(pi: Bool, extensions: Bool, commands: [[String]]) {
+        #expect(PiUpdateManager.updateNowArguments(pi: pi, extensions: extensions) == commands)
+    }
+
     @Test func updatingIsOfferedUntilCheckedOrWhenOutdatedButNeverWhileBusy() {
         #expect(PiUpdateManager.canUpdatePi(lastChecked: nil, isOutdated: false, isBusy: false))
         #expect(PiUpdateManager.canUpdatePi(lastChecked: Date(), isOutdated: true, isBusy: false))

@@ -17,7 +17,7 @@ struct AgentSettings: View {
         SettingsPage(title: "Agents", explanation: Self.explanation(keys)) {
             SettingsGroup(title: "New agents") {
                 SettingsRow(title: "Default model",
-                            subtitle: "Preselected in the New Agent sheet. “Use pi's default” passes no --model at all.") {
+                            subtitle: "Preselected in the New Agent sheet. “Use pi's default” passes no `--model` at all.") {
                     NWPopupMenu(settings.defaultModel.isEmpty ? "Use pi's default · \(piDefaultModel)" : settings.defaultModel,
                                 mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
                         Button("Use pi's default · \(piDefaultModel)") { settings.defaultModel = "" }
