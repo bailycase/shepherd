@@ -8,7 +8,8 @@ public enum NativeThreadRequest: Codable, Hashable, Sendable {
     case answer(expectedSessionID: String, generation: String, operationID: UUID, dialogID: String, answer: NativeDialogAnswer)
     /// v2: `model` is "provider/id". Gated by `setModel` in `supportedActions`.
     case setModel(expectedSessionID: String, generation: String, operationID: UUID, model: String)
-    /// v2: off/low/medium/high. Gated by `setThinking` in `supportedActions`.
+    /// v2: a level the snapshot's `thinkingLevels` lists (off/low/medium/high from a host that
+    /// sends none). Gated by `setThinking` in `supportedActions`.
     case setThinking(expectedSessionID: String, generation: String, operationID: UUID, level: String)
     /// v2 (RPC agents with native children): drive one subagent run. Routed to the children
     /// extension, never to the parent model. `text` is the reply/steer for `.message`.
@@ -338,6 +339,9 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
     public var running: Bool
     public var model: String?
     public var thinking: String?
+    /// The levels pi offers the current model (`get_available_thinking_levels`), in pi's order.
+    /// nil from an older host, or before pi has answered: clients then offer off/low/medium/high.
+    public var thinkingLevels: [String]?
     public var supportedActions: [String]
     public var dialogsSupported: Bool
     public var dialogs: [NativeThreadDialog]
@@ -363,7 +367,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
 
     public init(
         piSessionID: String, generation: String, revision: UInt64, running: Bool, model: String? = nil,
-        thinking: String? = nil, supportedActions: [String], dialogsSupported: Bool, dialogs: [NativeThreadDialog],
+        thinking: String? = nil, thinkingLevels: [String]? = nil, supportedActions: [String], dialogsSupported: Bool, dialogs: [NativeThreadDialog],
         widgets: [NativeThreadWidget]? = nil, messages: [NativeThreadMessage], olderCursor: String? = nil,
         provisional: [NativeThreadMessage], clipped: Bool, runtime: String? = nil, stats: NativeThreadStats? = nil,
         commands: [NativeCommand]? = nil, subagents: [NativeSubagent]? = nil, queue: NativeQueue? = nil
@@ -374,6 +378,7 @@ public struct NativeThreadSnapshot: Codable, Hashable, Sendable {
         self.running = running
         self.model = model
         self.thinking = thinking
+        self.thinkingLevels = thinkingLevels
         self.supportedActions = supportedActions
         self.dialogsSupported = dialogsSupported
         self.dialogs = dialogs

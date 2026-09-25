@@ -45,7 +45,11 @@ public enum RemoteProtocol {
     /// The host serves `RemoteRequest.automation`: on and off, Run now and Stop, the runs it
     /// kept, and create, edit and delete. Older hosts show automations read-only.
     public static let automationsCapability = "automations.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability]
+    /// The host takes every level pi has (`ThinkingLevel`: minimal, xhigh, max too) in
+    /// `createAgent`. An older host knows only `ThinkingLevel.legacy`, and refuses a request
+    /// carrying another.
+    public static let thinkingLevelsCapability = "thinking.levels.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -102,11 +106,29 @@ public struct ModelListing: Hashable, Sendable {
     /// nil when the host does not say (a Shepherd before this field): every model then keeps the
     /// thinking control, as it did.
     public var withoutThinking: [String]?
+    /// The levels a model takes where pi's configuration says (a models.json
+    /// `thinkingLevelMap`), as pi spells them. A reasoning model not listed takes the standard
+    /// set (`ThinkingLevel.supported`); nil from a host that does not say.
+    public var thinkingLevels: [String: [String]]?
 
-    public init(models: [String], defaultModel: String?, withoutThinking: [String]? = nil) {
+    public init(models: [String], defaultModel: String?, withoutThinking: [String]? = nil, thinkingLevels: [String: [String]]? = nil) {
         self.models = models
         self.defaultModel = defaultModel
         self.withoutThinking = withoutThinking
+        self.thinkingLevels = thinkingLevels
+    }
+
+    /// The levels to offer `model` (blank: the default) before its session starts: none without
+    /// reasoning, the configured ones where the listing has them, else the standard set (Off to
+    /// High, with Minimal).
+    public func offeredThinkingLevels(_ model: String?) -> [ThinkingLevel] {
+        guard takesThinking(model) else { return [] }
+        let trimmed = model?.trimmingCharacters(in: .whitespaces) ?? ""
+        if let id = trimmed.isEmpty ? defaultModel : trimmed, let levels = thinkingLevels?[id] {
+            let known = levels.compactMap(ThinkingLevel.init(rawValue:))
+            if !known.isEmpty { return known }
+        }
+        return ThinkingLevel.supported(reasoning: true)
     }
 
     /// Whether `model` (blank: the default) takes a thinking level. A model the listing does not
@@ -457,7 +479,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                 spaceID: try c.decode(SpaceID.self, forKey: .spaceID),
                 cwd: try c.decodeIfPresent(String.self, forKey: .cwd),
                 model: try c.decodeIfPresent(String.self, forKey: .model),
-                thinking: try c.decodeIfPresent(ThinkingLevel.self, forKey: .thinking),
+                // A level this host does not know reads as its default (a newer client's).
+                thinking: (try? c.decodeIfPresent(ThinkingLevel.self, forKey: .thinking)) ?? nil,
                 initialPrompt: try c.decodeIfPresent(String.self, forKey: .initialPrompt),
                 worktreeBranch: try c.decodeIfPresent(String.self, forKey: .worktreeBranch),
                 worktreeBase: try c.decodeIfPresent(String.self, forKey: .worktreeBase),
@@ -605,7 +628,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case dirListing(id: Int, path: String, parent: String?, dirs: [String])
     /// The host's pi models as "provider/id" (may be empty), its configured default, and the ones
     /// that take no thinking level (absent from a host that does not say; see `ModelListing`).
-    case models(id: Int, models: [String], defaultModel: String?, withoutThinking: [String]? = nil)
+    /// `thinkingLevels`: the configured levels of the models that have them (`ModelListing`).
+    case models(id: Int, models: [String], defaultModel: String?, withoutThinking: [String]? = nil, thinkingLevels: [String: [String]]? = nil)
     /// Space created on the host (the state push carries the full snapshot).
     case spaceAdded(id: Int, spaceID: SpaceID)
     /// Agent created and its pi process spawned on the host.
@@ -617,7 +641,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case result
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
-        case path, parent, dirs, models, defaultModel, withoutThinking, attachment, options
+        case path, parent, dirs, models, defaultModel, withoutThinking, thinkingLevels, attachment, options
     }
 
     private enum Kind: String, Codable {
@@ -704,7 +728,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 models: try c.decode([String].self, forKey: .models),
                 defaultModel: try c.decodeIfPresent(String.self, forKey: .defaultModel),
-                withoutThinking: try c.decodeIfPresent([String].self, forKey: .withoutThinking)
+                withoutThinking: try c.decodeIfPresent([String].self, forKey: .withoutThinking),
+                thinkingLevels: try c.decodeIfPresent([String: [String]].self, forKey: .thinkingLevels)
             )
         case .spaceAdded:
             self = .spaceAdded(
@@ -785,12 +810,13 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(path, forKey: .path)
             try c.encodeIfPresent(parent, forKey: .parent)
             try c.encode(dirs, forKey: .dirs)
-        case .models(let id, let models, let defaultModel, let withoutThinking):
+        case .models(let id, let models, let defaultModel, let withoutThinking, let thinkingLevels):
             try c.encode(Kind.models, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(models, forKey: .models)
             try c.encodeIfPresent(defaultModel, forKey: .defaultModel)
             try c.encodeIfPresent(withoutThinking, forKey: .withoutThinking)
+            try c.encodeIfPresent(thinkingLevels, forKey: .thinkingLevels)
         case .spaceAdded(let id, let spaceID):
             try c.encode(Kind.spaceAdded, forKey: .type)
             try c.encode(id, forKey: .id)

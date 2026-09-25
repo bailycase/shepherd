@@ -155,7 +155,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         paneID = try c.decodeIfPresent(PaneID.self, forKey: .paneID)
         status = try c.decode(AgentStatus.self, forKey: .status)
         model = try c.decodeIfPresent(String.self, forKey: .model)
-        thinkingLevel = try c.decodeIfPresent(ThinkingLevel.self, forKey: .thinkingLevel)
+        // A level this build does not know (a newer build's) reads as none: pi's default.
+        thinkingLevel = (try? c.decodeIfPresent(ThinkingLevel.self, forKey: .thinkingLevel)) ?? nil
         // Absent in pre-autoname state.json files; those names were picked by a
         // human (or the old name generator) and must not be overwritten.
         nameIsFinal = try c.decodeIfPresent(Bool.self, forKey: .nameIsFinal) ?? true

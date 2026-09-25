@@ -39,6 +39,8 @@ struct RPCWireTests {
         (.setModel(provider: "anthropic", modelId: "claude-sonnet-4"), nil,
          #"{"type":"set_model","provider":"anthropic","modelId":"claude-sonnet-4"}"#),
         (.setThinkingLevel(level: "high"), nil, #"{"type":"set_thinking_level","level":"high"}"#),
+        (.setThinkingLevel(level: "xhigh"), nil, #"{"type":"set_thinking_level","level":"xhigh"}"#),
+        (.getAvailableThinkingLevels, nil, #"{"type":"get_available_thinking_levels"}"#),
         (.newSession, "n", #"{"id":"n","type":"new_session"}"#),
         (.extensionUIResponse(id: "uuid-1", value: "Allow"), nil, #"{"type":"extension_ui_response","id":"uuid-1","value":"Allow"}"#),
         (.extensionUIResponse(id: "uuid-2", confirmed: true), nil, #"{"type":"extension_ui_response","id":"uuid-2","confirmed":true}"#),

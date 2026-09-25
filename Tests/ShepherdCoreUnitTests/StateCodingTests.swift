@@ -67,6 +67,13 @@ struct StateCodingTests {
         #expect(agent.worktreeBranch == nil && agent.worktreeBase == nil && agent.worktreePath == nil)
     }
 
+    /// An agent keeps any level pi has; one this build does not know reads as pi's default.
+    @Test(arguments: [("xhigh", ThinkingLevel.xhigh as ThinkingLevel?), ("minimal", .minimal), ("max", .max), ("ultra", nil)])
+    func anAgentsThinkingLevelDecodes(_ raw: String, _ expected: ThinkingLevel?) throws {
+        let agent = try Fixture.decode(Agent.self, #"{"id":"a1","name":"n","spaceID":"s","tabID":"t","status":"done","thinkingLevel":"\#(raw)"}"#)
+        #expect(agent.thinkingLevel == expected)
+    }
+
     @Test func aFreshlyCreatedAgentIsNotFinalNamed() {
         #expect(!Agent(name: "fix the bug", spaceID: SpaceID(), tabID: TabID()).nameIsFinal)
     }
