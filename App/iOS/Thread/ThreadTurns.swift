@@ -109,9 +109,14 @@ struct AgentTurnView: View, Equatable {
             ProseView(blocks: blocks).equatable()
         case .work(let group):
             WorkGroupView(group: group, review: actions.review).equatable()
-        case .subagents(_, let line, _):
+        case .subagents(_, let lines):
             // Where they started, and where they finished: both open the thread's subagents.
-            NWSubagentRecordLine(title: line.title, meta: line.meta, action: actions.subagents)
+            // Adjacent, they sit together as activity lines do.
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                ForEach(lines, id: \.title) { line in
+                    NWSubagentRecordLine(title: line.title, meta: line.meta, action: actions.subagents)
+                }
+            }
         case .note(_, let text):
             Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).textSelection(.enabled)

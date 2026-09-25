@@ -35,8 +35,10 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
         /// A stretch of tool work: its lines, folded into one summary line once there are two.
         case work(NativeWorkGroup)
-        /// A line of the turn's subagent record: where they started, or where they finished.
-        case subagents(id: String, line: NativeSubagentRecordLine, finished: Bool)
+        /// The turn's subagent record: where they started, and where they finished. Both lines
+        /// are one item while nothing came between them, so they sit together as activity
+        /// lines do (SubagentsDone).
+        case subagents(id: String, lines: [NativeSubagentRecordLine])
         case note(id: String, text: String)
         /// A failed provider request; `final` when it ended the turn.
         case error(id: String, text: String, count: Int, final: Bool)
@@ -46,7 +48,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 
         public var id: String {
             switch self {
-            case .thinking(let id, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _, _), .note(let id, _), .error(let id, _, _, _),
+            case .thinking(let id, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _): id
             case .work(let group): "work:" + group.id
             }
@@ -196,13 +198,17 @@ public func nativeTurnPresentation(
     func placeStart() {
         guard let record = cards.record, !placedStart else { return }
         flushCalls()
-        stretchItems.append(.subagents(id: "subagents:started", line: record.started, finished: false))
+        stretchItems.append(.subagents(id: "subagents:started", lines: [record.started]))
         placedStart = true
     }
     func placeFinish() {
         guard placedStart, !placedFinish, let finished = cards.record?.finished else { return }
         flushCalls()
-        stretchItems.append(.subagents(id: "subagents:finished", line: finished, finished: true))
+        if case .subagents(let id, let lines)? = stretchItems.last, id == "subagents:started" {
+            stretchItems[stretchItems.count - 1] = .subagents(id: id, lines: lines + [finished])
+        } else {
+            stretchItems.append(.subagents(id: "subagents:finished", lines: [finished]))
+        }
         placedFinish = true
     }
 
