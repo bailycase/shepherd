@@ -46,10 +46,11 @@ on:
 permissions:
   contents: write
 
-# A newer nightly push supersedes a queued/running one; tags never cancel.
+# Runs queue and never cancel: a push waits for the running release to finish, and a newer push
+# replaces only the one still waiting, so every started run completes and the newest commit ships next.
 concurrency:
   group: release-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: false
 
 jobs:
   plan:
