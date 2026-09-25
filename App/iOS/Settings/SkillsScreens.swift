@@ -812,7 +812,7 @@ struct AddSkillsScreen: View {
                     SkillPickLine(skill: skill, picked: installed != nil || picked.contains(skill.path),
                                   installed: installed.map { $0.skill.update == nil ? "Installed" : "Installed · update" },
                                   first: index == 0) {
-                        if picked.contains(skill.path) { picked.remove(skill.path) } else { picked.insert(skill.path) }
+                        picked.formSymmetricDifference([skill.path])
                     }
                     .equatable()
                 }
