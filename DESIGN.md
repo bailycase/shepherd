@@ -525,7 +525,8 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   agent.
 - **Sections** (`NWSidebarSection`): a micro caps label with a trailing count; clicking it folds
   the section. With remote hosts configured, hovering a header shows its machine chord (⌃⇧n).
-  1. **This Mac**, with its agent count and a hover `+` for New Space….
+  1. **This Mac**, with its agent count and a hover `+` for New Space…. With no spaces while a
+     host's section follows, a quiet status row says "No spaces" with New space….
   2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`
      (blocked agents plus subagents asking), and a hover `+` for a new space on the host.
      Otherwise one status row (`NWSidebarNoticeRow`) stands in for its spaces: "Connecting…",
@@ -628,7 +629,9 @@ crook, a title, one sentence, actions):
 - A selected space that has agents, with none on screen: "No agent selected", "Pick one in the
   sidebar, or start another in <space>.", and the same actions.
 - No spaces at all: "No spaces yet", "A space is a project folder your agents work in.", and a
-  primary **New space…** button.
+  primary **New space…** button. None at all means none on this Mac (the hidden automations
+  space is not one) and none on a connected host; with only a host's spaces it is the "No agent
+  selected" state below.
 - The workspace never stands in the hidden automations space with no agent: stopping a
   selected run moves it to the first visible space.
 - Otherwise: "No agent selected", "Pick one in the sidebar, or start a new one.", and the New

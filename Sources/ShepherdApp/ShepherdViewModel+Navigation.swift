@@ -63,6 +63,13 @@ extension ShepherdViewModel {
         state.spaces.filter { !$0.hidden }
     }
 
+    /// The spaces connected hosts list in the sidebar.
+    var remoteSpaceCount: Int {
+        remoteHosts.connections.reduce(0) { count, connection in
+            connection.phase == .connected ? count + connection.state.spaces.count { !$0.hidden } : count
+        }
+    }
+
     var spaceTree: [(space: Space, agents: [Agent], depth: Int)] {
         refreshedSidebarDerivations().tree
     }
