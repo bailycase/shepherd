@@ -159,7 +159,6 @@ private struct PadFileHeader: View {
                     .toggleStyle(.button)
                     .font(.nw(.ui))
                     .tint(Color.nw.done)
-                    .accessibilityLabel(viewed ? "Viewed" : "Mark viewed")
                 Picker("Diff style", selection: $store.diffStyle) {
                     Text("Unified").tag(ReviewStore.DiffStyle.unified)
                     Text("Split").tag(ReviewStore.DiffStyle.split)
