@@ -36,9 +36,8 @@ struct ScrollFollowerLayoutTests {
              new: probe(offset: 1120), gesture: true, sticky: false, repins: false),
         Case(testDescription: "moving up without a gesture never detaches",
              new: probe(offset: 1120), sticky: true, repins: false),
-        Case(testDescription: "detached, growth is left where it is and marked unseen",
-             start: NativeScrollFollower(sticky: false), new: probe(content: 2400, offset: 1120), sticky: false, repins: false,
-             unseen: true),
+        Case(testDescription: "detached, growth is left where it is and is not output by itself",
+             start: NativeScrollFollower(sticky: false), new: probe(content: 2400, offset: 1120), sticky: false, repins: false),
         Case(testDescription: "a layout change that leaves it at the tail needs no scroll",
              new: probe(content: 2002, offset: 1422), sticky: true, repins: false),
     ]

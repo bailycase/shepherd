@@ -181,6 +181,24 @@ extension ShepherdViewModel {
         automation.agentID.flatMap { id in state.agents.first { $0.id == id } }
     }
 
+    /// The run log's open run of that agent; nil while the log has not caught up with it.
+    func automationRun(_ automation: Automation, agent: Agent?) -> AutomationRun? {
+        guard let agent, let run = openAutomationRuns[automation.id], run.agentID == agent.id else { return nil }
+        return run
+    }
+
+    /// Run Now from the sidebar. A refusal (its run is still going, the automation is gone)
+    /// shows the failed-action dialog rather than doing nothing.
+    func runAutomationNow(_ id: AutomationID) {
+        Task { @MainActor in
+            do {
+                try await startAutomation(id)
+            } catch {
+                remoteActionError = String(describing: error)
+            }
+        }
+    }
+
     private func adoptCanonical() {
         let canonical = server.state
         sessions.stateDidChange(canonical)

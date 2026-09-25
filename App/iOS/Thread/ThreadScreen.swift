@@ -113,8 +113,6 @@ private struct ThreadTranscript: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// Follows the tail until the reader drags away from it (DESIGN.md › Thread › Following).
     @State private var follower = NativeScrollFollower()
-    /// Set on send: once the echoed turn is in the thread, land on the tail.
-    @State private var scrollToTurnPending = false
 
     private static let bottomID = "thread-bottom"
 
@@ -181,20 +179,23 @@ private struct ThreadTranscript: View {
                 }
             }
             .onChange(of: store.sentCount) { _, _ in
-                follow { $0.jumpToLatest(); return false }
-                scrollToTurnPending = true
+                // A send that goes in now re-attaches; a follow-up that waits in Up next leaves
+                // the reader where they are, now and when it goes.
+                guard !store.lastSendQueued else { return }
+                follow { $0.sent(queued: false); return false }
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
             .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
-                // The echoed turn joins once pi takes it: land on it, even if the reader had
-                // scrolled up meanwhile.
-                guard scrollToTurnPending, id != nil else { return }
-                scrollToTurnPending = false
+                // The echoed turn joins once pi takes it: land on it, unless the reader dragged
+                // away meanwhile.
+                guard id != nil, follow({ $0.userTurnArrived() }) else { return }
                 Task { @MainActor in
                     await Task.yield()
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
+            // New output at the tail is what "unseen" means, never the content height.
+            .onChange(of: rows.last) { _, _ in follow { $0.contentArrived(); return false } }
             // Laid out in the thread's safe area, so it sits on the composer; the margin of its
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {

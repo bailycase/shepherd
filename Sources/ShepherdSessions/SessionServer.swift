@@ -2247,6 +2247,13 @@ public final class SessionServer: @unchecked Sendable {
 
     // MARK: - Automations (server queue)
 
+    /// Each automation's run whose agent still exists, from any thread without waiting for the
+    /// server queue: a state broadcast or awaited mutation is always reflected in it. The local
+    /// GUI reads whether a run is live (`AutomationRun.isLive`) from it.
+    public var openAutomationRuns: [AutomationID: AutomationRun] {
+        runLog.openRuns
+    }
+
     /// The runs the host kept for an automation, oldest first; a run's agent only while it exists.
     public func automationRuns(_ automationID: AutomationID) async -> [AutomationRun] {
         await enqueueValue { self.runLog.runs(for: automationID, in: self.store.state) }

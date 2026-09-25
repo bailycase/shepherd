@@ -6,8 +6,8 @@ import ShepherdRemote
 /// The runs of each automation, kept by the server so a remote client can read how the last
 /// ones went after their agents are gone (`automation-runs.json` in the support directory,
 /// newest `limit` per automation). A run opens when an automation gains an agent and closes
-/// when it loses it; in between it follows the agent's status. Confined to the server queue;
-/// writes go to disk off it, in order.
+/// when it loses it; in between it follows the agent's status. Confined to the server queue,
+/// except `openRuns`; writes go to disk off it, in order.
 final class AutomationRunLog: @unchecked Sendable {
     static let limit = 30
 
@@ -20,12 +20,22 @@ final class AutomationRunLog: @unchecked Sendable {
     /// Oldest first, by automation.
     private(set) var runs: [AutomationID: [AutomationRun]] = [:]
     private let writes = DispatchQueue(label: "shepherd.automation-runs", qos: .utility)
+    private let openLock = NSLock()
+    private var published: [AutomationID: AutomationRun] = [:]
 
     init(url: URL) {
         self.url = url
         if let data = try? Data(contentsOf: url), let file = try? JSONDecoder().decode(File.self, from: data) {
             runs = Dictionary(uniqueKeysWithValues: file.runs.map { (AutomationID(rawValue: $0.key), $0.value) })
         }
+        publish()
+    }
+
+    /// Each automation's run still open (its agent exists), from any thread without waiting
+    /// for the server queue. Published before the state that moved it is broadcast, so a GUI
+    /// adopting that state finds its run here.
+    var openRuns: [AutomationID: AutomationRun] {
+        openLock.withLock { published }
     }
 
     /// The automation's runs, oldest first, as a client sees them: a run's agent only while
@@ -72,6 +82,7 @@ final class AutomationRunLog: @unchecked Sendable {
         next = next.filter { !$0.value.isEmpty }
         guard next != runs else { return }
         runs = next
+        publish()
         save()
     }
 
@@ -87,7 +98,10 @@ final class AutomationRunLog: @unchecked Sendable {
                 return Self.closed(run, status: nil, at: time, result: run.settledAt == nil ? .interrupted : .finished)
             }
         }
-        if changed { save() }
+        if changed {
+            publish()
+            save()
+        }
     }
 
     /// Waits for every write queued so far (the server stopping, and tests).
@@ -124,6 +138,14 @@ final class AutomationRunLog: @unchecked Sendable {
             run.result = finished ? .finished : .stopped
         }
         return run
+    }
+
+    private func publish() {
+        var open: [AutomationID: AutomationRun] = [:]
+        for (id, list) in runs {
+            if let run = list.last, run.endedAt == nil { open[id] = run }
+        }
+        openLock.withLock { published = open }
     }
 
     private func save() {

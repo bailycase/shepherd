@@ -92,6 +92,9 @@ enum SidebarItem: Identifiable, Equatable {
     case remoteAgent(hostID: UUID, model: SidebarAgentRowModel)
     /// A host that isn't connected: one status row stands in for its spaces.
     case notice(hostID: UUID, phase: RemoteHostStore.Phase.Kind)
+    /// This Mac has no spaces while a host's section follows: a quiet row says so under its
+    /// header and offers New space….
+    case noLocalSpaces
     /// A connected host's Automations disclosure, under its spaces.
     case remoteAutomations(SidebarRemoteAutomations)
     case remoteAutomation(SidebarRemoteAutomation)
@@ -106,6 +109,7 @@ enum SidebarItem: Identifiable, Equatable {
         case .agent(let model): AnyHashable(model.agent.id)
         case .remoteAgent(let hostID, let model): AnyHashable(RemoteAgentRef(hostID: hostID, agentID: model.agent.id))
         case .notice(let hostID, _): AnyHashable(SidebarRowKey.notice(hostID))
+        case .noLocalSpaces: AnyHashable(SidebarRowKey.noLocalSpaces)
         case .remoteAutomations(let header): AnyHashable(SidebarRowKey.remoteAutomations(header.hostID))
         case .remoteAutomation(let row): AnyHashable(row.key)
         }
@@ -134,6 +138,7 @@ private enum SidebarRowKey: Hashable {
     case machine(UUID?)
     case remoteSpace(UUID, SpaceID)
     case notice(UUID)
+    case noLocalSpaces
     case remoteAutomations(UUID)
 }
 
@@ -194,6 +199,8 @@ private struct SidebarItemRow: View, Equatable {
                 RemoteAgentRow(vm: vm, zone: zone, hostID: hostID, model: model)
             case .notice(let hostID, let phase):
                 HostNoticeRow(vm: vm, hostID: hostID, phase: phase)
+            case .noLocalSpaces:
+                NWSidebarNoticeRow(.idle, text: "No spaces", actionTitle: "New space…") { vm.addSpaceFromPanel() }
             case .remoteAutomations(let header):
                 RemoteAutomationsRow(vm: vm, header: header)
             case .remoteAutomation(let row):
@@ -214,6 +221,7 @@ extension ShepherdViewModel {
                                             hoverHint: hosts.isEmpty ? nil : machineKeycap(forHost: nil), canAddSpace: true)))
         if !localMachineCollapsed {
             let groups = spaceTree
+            if groups.isEmpty, !hosts.isEmpty { tree.append(.noLocalSpaces) }
             // A space whose next row is deeper has nested projects drawn beneath it.
             let parents = Set(groups.indices.dropLast().filter { groups[$0 + 1].depth > groups[$0].depth }.map { groups[$0].space.id })
             let badges = sidebarShortcutBadges
@@ -561,18 +569,19 @@ private struct AutomationsFooter: View {
                 VStack(alignment: .leading, spacing: AppLayout.sidebarRowSpacing) {
                     ForEach(automations) { automation in
                         let agent = vm.automationAgent(automation)
-                        AutomationRow(automation: automation, agent: agent,
+                        let run = vm.automationRun(automation, agent: agent)
+                        AutomationRow(automation: automation, agent: agent, run: run,
                                       turnFailed: agent.map { vm.failedTurns.contains($0.id) } ?? false,
                                       selected: agent != nil && vm.selectedAgentID == agent?.id) {
                             if let agent { vm.selectAgent(agent.id) }
                         }
                         .contextMenu {
                             // A settled run reads done and runs again, replacing it; only a
-                            // live one stops.
-                            if AutomationRow.isLive(agent) {
+                            // live one (starting included) stops.
+                            if AutomationRow.isLive(agent, run: run) {
                                 Button("Stop") { vm.stopAutomation(automation.id) }
                             } else {
-                                Button("Run Now") { Task { @MainActor in try? await vm.startAutomation(automation.id) } }
+                                Button("Run Now") { vm.runAutomationNow(automation.id) }
                             }
                             Divider()
                             Button("Delete Automation", role: .destructive) { vm.deleteAutomation(automation.id) }
@@ -592,33 +601,38 @@ struct AutomationRow: View {
     let automation: Automation
     /// The agent currently running this automation, nil when stopped.
     let agent: Agent?
+    /// The run log's open run of that agent (nil while unknown).
+    let run: AutomationRun?
     /// The run's last turn ended in an error.
     let turnFailed: Bool
     let selected: Bool
     let action: () -> Void
 
-    private var stateWord: String { Self.stateWord(agent, turnFailed: turnFailed) }
-    private var state: AgentState { Self.state(agent, turnFailed: turnFailed) }
+    private var stateWord: String { Self.stateWord(agent, run: run, turnFailed: turnFailed) }
+    private var state: AgentState { Self.state(agent, run: run, turnFailed: turnFailed) }
 
-    /// A run that has ended reads done, or failed when its last turn ended in an error.
-    static func stateWord(_ agent: Agent?, turnFailed: Bool) -> String {
+    /// A run still starting (idle before its first turn settled) reads running; one that has
+    /// settled reads done, or failed when its last turn ended in an error.
+    static func stateWord(_ agent: Agent?, run: AutomationRun?, turnFailed: Bool) -> String {
         guard let agent else { return "stopped" }
         return switch agent.status {
-        case .working: "running"
         case .blocked: "needs you"
-        case .idle, .done: turnFailed && agent.status == .done ? "failed" : "done"
+        case .working, .idle, .done:
+            if isLive(agent, run: run) { "running" } else { turnFailed && agent.status == .done ? "failed" : "done" }
         }
     }
 
-    /// Its run reads running or needs you: the menu offers Stop rather than Run Now.
-    static func isLive(_ agent: Agent?) -> Bool {
-        agent?.status == .working || agent?.status == .blocked
+    /// Its run is going (`AutomationRun.isLive`, the rule the host refuses Run Now by): the
+    /// menu offers Stop rather than Run Now.
+    static func isLive(_ agent: Agent?, run: AutomationRun?) -> Bool {
+        agent.map { AutomationRun.isLive(agentStatus: $0.status, run: run) } ?? false
     }
 
-    static func state(_ agent: Agent?, turnFailed: Bool) -> AgentState {
+    static func state(_ agent: Agent?, run: AutomationRun?, turnFailed: Bool) -> AgentState {
         guard let agent else { return .idle }
-        if turnFailed && agent.status == .done { return .failed }
-        return agent.status == .idle ? .done : AgentState(agent.status)
+        if agent.status == .blocked { return .attention }
+        if isLive(agent, run: run) { return .running }
+        return turnFailed && agent.status == .done ? .failed : .done
     }
 
     var body: some View {

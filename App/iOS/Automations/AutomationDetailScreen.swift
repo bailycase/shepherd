@@ -28,8 +28,6 @@ struct AutomationDetailContent: View {
     let pad: Bool
     @Environment(MobileHosts.self) private var hosts
     @Environment(MobileNavigator.self) private var navigator
-    @State private var confirmingDelete = false
-    @State private var confirmingStop = false
 
     var body: some View {
         let store = AutomationsStore.of(hosts)
@@ -46,7 +44,7 @@ struct AutomationDetailContent: View {
         let busy = store.busy.contains(key)
         return ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-                if pad { header(row, on: store.isOn(row)) }
+                if pad { header(row, on: store.isOn(row), store: store) }
                 if let failure = store.failure, !pad {
                     NWBanner(.failed, title: failure.message) {
                         Button("OK") { store.failure = nil }.buttonStyle(.nw(.secondary))
@@ -80,10 +78,44 @@ struct AutomationDetailContent: View {
         .safeAreaInset(edge: .bottom) { actions(row, busy: busy, store: store) }
         .toolbar {
             if !pad {
-                ToolbarItem(placement: .primaryAction) { menu(row) }
+                ToolbarItem(placement: .primaryAction) { menu(row, store: store) }
             }
         }
-        .confirmationDialog("Delete \(row.name)?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+    }
+
+    /// Whether `kind` is being asked about here, for a confirmation dialog anchored on the
+    /// control that asks (a popover's arrow points at it on iPad and wide iPhones).
+    private func confirming(_ kind: AutomationsStore.Confirmation.Kind, store: AutomationsStore) -> Binding<Bool> {
+        let asked = AutomationsStore.Confirmation(key: key, kind: kind)
+        return Binding(get: { store.confirming == asked },
+                       set: { if $0 { store.confirming = asked } else if store.confirming == asked { store.confirming = nil } })
+    }
+
+    /// iPad: the name, its On or Off, and the ••• menu (iPadAutomations' detail header).
+    private func header(_ row: AutomationListRow, on: Bool, store: AutomationsStore) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
+            Text(row.name).nwText(.title).foregroundStyle(Color.nw.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            NWStatusPill(on ? .done : .idle, label: on ? "On" : "Off")
+            Spacer(minLength: NW.Space.s)
+            menu(row, store: store)
+        }
+    }
+
+    private func menu(_ row: AutomationListRow, store: AutomationsStore) -> some View {
+        Menu {
+            if let run = row.run {
+                Button("Open Run", systemImage: "text.bubble") { navigator.open(.thread(AgentRef(host: run.host, agent: run.agent))) }
+            }
+            Button("Edit", systemImage: "pencil") { edit() }.disabled(!row.abilities.edit)
+            Button("Delete Automation", systemImage: "trash", role: .destructive) { store.confirming = .init(key: key, kind: .delete) }
+                .disabled(!row.abilities.edit)
+        } label: {
+            Image(systemName: "ellipsis")
+                .nwTouchTarget(height: NW.Height.controlS, width: NW.Height.controlS)
+        }
+        .accessibilityLabel("More for \(row.name)")
+        .confirmationDialog("Delete \(row.name)?", isPresented: confirming(.delete, store: store), titleVisibility: .visible) {
             Button("Delete Automation", role: .destructive) {
                 // The iPhone's detail closes once the host has removed it; the list stays.
                 let detail = MobileRoute.automations(.detail(host: key.host, automation: key.automation))
@@ -92,37 +124,6 @@ struct AutomationDetailContent: View {
         } message: {
             Text("It stops its run and is removed from \(row.hostName). Its runs are forgotten.")
         }
-        .confirmationDialog("Stop the run?", isPresented: $confirmingStop, titleVisibility: .visible) {
-            Button("Stop Run", role: .destructive) { store.stop(key) }
-        } message: {
-            Text("Its thread on \(row.hostName) is deleted. The automation stays.")
-        }
-    }
-
-    /// iPad: the name, its On or Off, and the ••• menu (iPadAutomations' detail header).
-    private func header(_ row: AutomationListRow, on: Bool) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-            Text(row.name).nwText(.title).foregroundStyle(Color.nw.textPrimary)
-                .accessibilityAddTraits(.isHeader)
-            NWStatusPill(on ? .done : .idle, label: on ? "On" : "Off")
-            Spacer(minLength: NW.Space.s)
-            menu(row)
-        }
-    }
-
-    private func menu(_ row: AutomationListRow) -> some View {
-        Menu {
-            if let run = row.run {
-                Button("Open Run", systemImage: "text.bubble") { navigator.open(.thread(AgentRef(host: run.host, agent: run.agent))) }
-            }
-            Button("Edit", systemImage: "pencil") { edit() }.disabled(!row.abilities.edit)
-            Button("Delete Automation", systemImage: "trash", role: .destructive) { confirmingDelete = true }
-                .disabled(!row.abilities.edit)
-        } label: {
-            Image(systemName: "ellipsis")
-                .nwTouchTarget(height: NW.Height.controlS, width: NW.Height.controlS)
-        }
-        .accessibilityLabel("More for \(row.name)")
     }
 
     @ViewBuilder
@@ -172,9 +173,14 @@ struct AutomationDetailContent: View {
                 .disabled(!row.abilities.edit)
             Spacer(minLength: NW.Space.s)
             if row.live, let run = row.run {
-                Button("Stop") { confirmingStop = true }
+                Button("Stop") { store.confirming = .init(key: key, kind: .stop) }
                     .buttonStyle(.nw(.secondary, size: .l))
                     .disabled(!row.abilities.stop || busy)
+                    .confirmationDialog("Stop the run?", isPresented: confirming(.stop, store: store), titleVisibility: .visible) {
+                        Button("Stop Run", role: .destructive) { store.stop(key) }
+                    } message: {
+                        Text("Its thread on \(row.hostName) is deleted. The automation stays.")
+                    }
                 Button("Open run") { navigator.open(.thread(AgentRef(host: run.host, agent: run.agent))) }
                     .buttonStyle(.nw(.primary, size: .l))
             } else {
