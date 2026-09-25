@@ -41,6 +41,11 @@ extension FixtureCatalog {
                 await ReviewFixture.until { store.filesArePR && !store.loading }
             }),
             FixtureScreen(name: "review-empty", hosts: ReviewFixture.hosts(files: []), routes: [thread, changes]),
+            FixtureScreen(name: "review-error", hosts: ReviewFixture.hosts(reviewError: ReviewFixture.loadError), routes: [thread, changes],
+                          prepare: { _ in
+                              let store = ReviewStores.shared.store(for: ref)
+                              await ReviewFixture.until { store.loadError != nil && !store.loading }
+                          }),
             FixtureScreen(name: "review-worktree", hosts: ReviewFixture.hosts(worktree: true), routes: [thread, changes],
                           prepare: ReviewFixture.annotate),
             FixtureScreen(name: "finalize", hosts: ReviewFixture.hosts(worktree: true), routes: [thread, changes],
@@ -186,6 +191,9 @@ enum ReviewFixture {
                                         deleteLocalBranch: true, autoMergePR: false, mergeMethod: "squash"),
         generateDescription: true, fingerprint: "fixture")
 
+    /// What a host says when the agent's directory is no longer a repository.
+    static let loadError = "git diff HEAD failed (128): fatal: not a git repository (or any of the parent directories): .git"
+
     static let operationID = UUID(uuidString: "5E0A0000-0000-4000-8000-0000000000F1")!
     static let running = RemoteWorktreeOperation(id: operationID, progress: [
         "commit remaining work: committed", "push branch to origin: pushed", "create pull request: working…",
@@ -199,7 +207,7 @@ enum ReviewFixture {
 
     /// The shared hosts, with Studio answering the review's reads for the preview agent.
     static func hosts(files: [DiffFile] = files, worktree: Bool = false, checksPass: Bool = true,
-                      operation: RemoteWorktreeOperation? = nil) -> [FixtureHostData] {
+                      operation: RemoteWorktreeOperation? = nil, reviewError: String? = nil) -> [FixtureHostData] {
         var hosts = FixtureData.hosts()
         if worktree, let index = hosts[0].state.agents.firstIndex(where: { $0.id == FixtureData.preview }) {
             hosts[0].state.agents[index].worktreeBranch = branch
@@ -209,6 +217,7 @@ enum ReviewFixture {
         let pr = (try? JSONEncoder().encode(files.isEmpty ? [] : prFiles)) ?? Data("[]".utf8)
         hosts[0].reply = { request in
             guard case .agentQuery(let id, let agentID, let query) = request, agentID == FixtureData.preview else { return nil }
+            if case .review = query, let reviewError { return .error(id: id, code: "failed", message: reviewError) }
             let result: RemoteAgentResult
             switch query {
             case .review(let pullRequest):
