@@ -36,7 +36,7 @@ enum MobileRoute: Hashable, Codable {
         switch self {
         case .subagents(let route): route.thread
         case .review(let route): route.thread
-        case .thread, .home, .newThread, .search, .settings: nil
+        case .thread, .home, .newThread, .search, .settings, .automations: nil
         }
     }
 
