@@ -84,6 +84,30 @@ struct SubagentRunsTests {
         #expect(summary.question == "Which base?")
     }
 
+    @Test func theCallInFlightIsTheCardsLineAndTheTranscriptsTail() {
+        var run = Self.run("w", role: "worker")
+        run.currentTool = "bash"
+        run.lastActivity = ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "sleep 25", at: Self.start)
+        #expect(nativeRunSummary(run).detail == "bash sleep 25")
+        #expect(nativeRunWorking(run) == "Running bash sleep 25…")
+    }
+
+    /// A finished call never names the one running now: an older host reports finished calls only.
+    @Test(arguments: [
+        (nil, nil, nil, "Thinking…"),
+        (true, "bash", ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "sleep 25", at: 1), "Pause requested"),
+        (nil, "bash", ChildActivity(tool: "bash", preview: "swift build", at: 1), "Running bash…"),
+        (nil, "bash", nil, "Running bash…"),
+        (nil, "edit", ChildActivity(kind: ChildActivity.runningKind, tool: "read", preview: "A.swift", at: 1), "Running edit…"),
+        (nil, "edit", ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "Sources/App/ThreadView.swift", at: 1), "Running edit ThreadView.swift…"),
+    ] as [(Bool?, String?, ChildActivity?, String)])
+    func aLiveRunsTailNamesOnlyTheCallInFlight(paused: Bool?, tool: String?, activity: ChildActivity?, line: String) {
+        var run = Self.run("w", paused: paused)
+        run.currentTool = tool
+        run.lastActivity = activity
+        #expect(nativeRunWorking(run) == line)
+    }
+
     @Test func aFinishedRunShowsItsFirstSentenceDiffAndMeta() {
         var run = Self.run("t", state: "complete", role: "tests", startedAt: Self.start, endedAt: Self.start + 242_000)
         run.summary = "Added 6 **presentation** tests. All 14 pass."
@@ -240,6 +264,23 @@ struct SubagentRunsTests {
     @Test func anOlderPageGoesInFrontWithoutRepeats() {
         let page = NativeSubagentTranscript(runID: "r", messages: ["a", "b", "c"].map(Self.message))
         #expect(nativeTranscriptPrepend(["c", "d"].map(Self.message), older: page).map(\.entryID) == ["a", "b", "c", "d"])
+    }
+
+    static func user(_ id: String, origin: NativeMessageOrigin? = nil) -> NativeThreadMessage {
+        NativeThreadMessage(entryID: id, role: "user", blocks: [NativeThreadBlock(kind: .text, text: id)], origin: origin)
+    }
+
+    /// Only a turn the user wrote throughout drops "from parent"; an older host marks nothing.
+    @Test(arguments: [
+        ([user("a", origin: .user)], true),
+        ([user("a", origin: .user), user("b", origin: .user)], true),
+        ([user("a")], false),
+        ([user("a"), user("b", origin: .user)], false),
+        ([user("a", origin: .steered)], false),
+        ([], false),
+    ] as [([NativeThreadMessage], Bool)])
+    func aTurnIsTheUsersOnlyWhenTheUserWroteAllOfIt(messages: [NativeThreadMessage], users: Bool) {
+        #expect(nativeTranscriptTurnIsTheUsers(messages) == users)
     }
 
     @Test func aTranscriptCopiesAsRoleAndToolText() {

@@ -378,6 +378,74 @@ struct ReviewCommitTests {
         #expect(try status(sandbox).isEmpty)
     }
 
+    /// What a poll made while the host was still taking the commit (the sheet polls as soon as
+    /// the commit has an id).
+    @MainActor final class EarlyPolls {
+        var hostKnew: [Bool] = []
+        var finished: [Bool] = []
+        var errors: [String?] = []
+
+        func poll(_ store: ReviewCommitStore, host: ShepherdViewModel, agentID: AgentID) async {
+            guard store.submitting, let id = store.operationID else { return }
+            let known = try? await host.handleReviewCommit(agentID, query: .worktreeStatus(operationID: id))
+            hostKnew.append(known != nil)
+            finished.append(await store.pollOnce())
+            errors.append(store.error)
+        }
+    }
+
+    @Test func aPollWhileTheHostTakesTheCommitWaitsForItInsteadOfCallingItUnknown() async throws {
+        let harness = try AppHarness()
+        let sandbox = try WorktreeSandbox(origin: true)
+        defer { harness.stop(); sandbox.remove() }
+        try write("changed\n", "README.md", in: sandbox)
+        let space = Fixture.space("proj", path: sandbox.repo.path)
+        let agent = Fixture.agent(in: space)
+        harness.settings.worktreeGeneratePRDescription = false
+        let vm = try await harness.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        let runner = Runner()
+        vm.reviewCommitRunner = runner.closure
+        vm.selectAgent(agent.agent.id)
+        vm.openUserReview()
+        let session = try #require(vm.reviewSessions.values.first)
+        try await eventuallyOnMain("the diff to load") { !session.isLoading }
+        let store = try #require(vm.reviewCommitStore(for: session))
+        await store.begin()
+        store.push = false
+        let early = EarlyPolls()
+        let agentID = agent.agent.id
+        // The host checks the checkout before it takes the commit: poll from inside that check.
+        vm.reviewCommitRunner = { [weak vm] script, cwd in
+            if let vm { await early.poll(store, host: vm, agentID: agentID) }
+            return Runner.run(script, cwd: cwd)
+        }
+
+        await store.commit()
+
+        #expect(early.hostKnew.first == false, "the host had not taken the commit yet")
+        #expect(!early.finished.isEmpty && early.finished.allSatisfy { !$0 })
+        #expect(early.errors.allSatisfy { $0 == nil }, "a poll before the host answered never reads as unknown")
+        #expect(store.error == nil && store.outcome == .running)
+        try await eventuallyAsync("the commit to finish", timeout: .seconds(20)) { await store.pollOnce() }
+        #expect(store.outcome == .succeeded(prURL: nil) && store.error == nil)
+    }
+
+    @Test func anOperationTheHostNeverTookStillSaysItsOutcomeIsUnknown() async throws {
+        let harness = try AppHarness()
+        defer { harness.stop() }
+        let vm = try await harness.start()
+        let agentID = AgentID()
+        let store = ReviewCommitStore { try await vm.handleReviewCommit(agentID, query: $0) }
+        // As after a host restart: the sheet holds an operation the host has never heard of.
+        store.adopt(RemoteWorktreeOperation(id: UUID(), progress: ["check the checkout: working…"]))
+
+        #expect(await store.pollOnce() == false)
+
+        #expect(store.error == "Operation is unknown. It may predate a host restart. "
+            + "Check the repository before committing again. Don't commit again.")
+        #expect(store.outcome == .running, "the sheet keeps the operation rather than inviting a second commit")
+    }
+
     @Test func aLocalReviewCommitsTheDirectoryItsDiffCameFromAndReloads() async throws {
         let harness = try AppHarness()
         let sandbox = try WorktreeSandbox(origin: true)

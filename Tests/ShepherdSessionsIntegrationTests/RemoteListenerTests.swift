@@ -248,7 +248,7 @@ struct RemoteListenerTests {
         let stateArrived = DispatchSemaphore(value: 0)
         let r = try RemoteHost(modelCatalog: {
             _ = stateArrived.wait(timeout: .now() + 30)
-            return (["stand-in/model"], "stand-in/model")
+            return ModelListing(models: ["stand-in/model"], defaultModel: "stand-in/model")
         })
         defer { r.stop() }
         let client = try await r.raw()
@@ -260,5 +260,21 @@ struct RemoteListenerTests {
         #expect(!beforeListing.contains { if case .models = $0 { true } else { false } })
         let listing = try await client.frames(until: { if case .models = $0 { true } else { false } })
         #expect(listing.last == .models(id: 1, models: ["stand-in/model"], defaultModel: "stand-in/model"))
+    }
+
+    /// A listing says which of the host's models take no thinking level, so a client offers the
+    /// thinking control only where pi uses it, and its default is one of its own models.
+    @Test func aModelListingSaysWhichModelsTakeNoThinkingLevel() async throws {
+        let r = try RemoteHost(modelCatalog: {
+            ModelListing(entries: [PiModelCatalog.Entry(id: "qa/plain", reasoning: false),
+                                   PiModelCatalog.Entry(id: "qa/deep", reasoning: true)],
+                         defaultModel: "qa/plain")
+        })
+        defer { r.stop() }
+        let client = try await r.typed()
+        defer { client.disconnect() }
+        let listing = try await client.listModels()
+        #expect(listing == ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]))
+        #expect(!listing.takesThinking(nil) && listing.takesThinking("qa/deep"))
     }
 }

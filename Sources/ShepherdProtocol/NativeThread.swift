@@ -171,16 +171,22 @@ public enum NativeQueueAction: Codable, Hashable, Sendable {
 public enum NativeMessageOrigin: Codable, Hashable, Sendable {
     case steered
     case queue(parts: [NativeQueuePart])
+    /// In a subagent's transcript: the user wrote it (a steer or an answer from its card or
+    /// inspector), not the parent agent. Older hosts mark nothing, and clients read every later
+    /// message as the parent's.
+    case user
     /// From a newer host.
     case unknown
 
-    private enum CodingKeys: String, CodingKey { case steered, queue }
+    private enum CodingKeys: String, CodingKey { case steered, queue, user }
     private enum QueueKeys: String, CodingKey { case parts }
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         if values.contains(.steered) {
             self = .steered
+        } else if values.contains(.user) {
+            self = .user
         } else if values.contains(.queue) {
             let queue = try values.nestedContainer(keyedBy: QueueKeys.self, forKey: .queue)
             self = .queue(parts: try queue.decode([NativeQueuePart].self, forKey: .parts))
@@ -194,6 +200,8 @@ public enum NativeMessageOrigin: Codable, Hashable, Sendable {
         switch self {
         case .steered:
             _ = values.nestedContainer(keyedBy: QueueKeys.self, forKey: .steered)
+        case .user:
+            _ = values.nestedContainer(keyedBy: QueueKeys.self, forKey: .user)
         case .queue(let parts):
             var queue = values.nestedContainer(keyedBy: QueueKeys.self, forKey: .queue)
             try queue.encode(parts, forKey: .parts)

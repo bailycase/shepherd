@@ -111,6 +111,9 @@ struct NativeThreadWireTests {
             runID: "native-1", messages: [NativeThreadMessage(entryID: "c:1", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "task")])],
             olderCursor: "c:1", earlierCount: 72
         )),
+        .transcript(value: NativeSubagentTranscript(
+            runID: "native-1", messages: [NativeThreadMessage(entryID: "c:2", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "also")], origin: .user)]
+        )),
         .snapshot(value: NativeThreadSnapshot(
             piSessionID: "s", generation: "g", revision: 5, running: true, supportedActions: ["send", "queue"], dialogsSupported: true,
             dialogs: [],
@@ -242,6 +245,8 @@ struct NativeThreadWireTests {
         #expect(Wire.caseName(NativeQueueAction.clear) == "clear")
         let steered = try Wire.object(NativeThreadMessage(entryID: "e", role: "user", blocks: [], origin: .steered))
         #expect((steered["origin"] as? [String: Any])?.keys.sorted() == ["steered"])
+        let user = try Wire.object(NativeThreadMessage(entryID: "e", role: "user", blocks: [], origin: .user))
+        #expect((user["origin"] as? [String: Any])?.keys.sorted() == ["user"])
     }
 
     @Test func aQueuedPartDefaultsToNoImages() throws {

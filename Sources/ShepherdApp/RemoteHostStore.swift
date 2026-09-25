@@ -374,7 +374,7 @@ final class RemoteHostStore {
     }
 
     /// The host's pi model ids and default (remote model picker).
-    func listModels(hostID: UUID) async throws -> (models: [String], defaultModel: String?) {
+    func listModels(hostID: UUID) async throws -> ModelListing {
         guard let client = connections.first(where: { $0.id == hostID })?.client else {
             throw RemoteHostClientError.disconnected
         }

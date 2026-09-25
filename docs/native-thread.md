@@ -175,7 +175,9 @@ events come out on stdout, one record per LF.
   images; see The queue), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
   `subagentCommand` (message, cancel, resume, pause, continue; routed to the children
   extension's control connection, never the parent model), `subagentTranscript` (one page of a
-  child's session file, read from its last 8 MiB), and `queue` (`NativeQueueAction`).
+  child's session file, read from its last 8 MiB; a message the user sent the child, recorded
+  in `user-messages.jsonl` beside the session, carries `origin: .user`), and `queue`
+  (`NativeQueueAction`).
   - Every mutating request carries an operation ID and the expected session and generation.
     Replaying an ID returns the recorded result; reusing it with a different payload gets
     `operation_conflict`. A session mismatch gets `stale_session`.
@@ -282,6 +284,9 @@ transport differs.
 - **Remote capabilities:** remote model, thinking, and image requests need the host's
   `native.thread.v2` capability, and `queue` requests its `native.queue.v1`
   (`RemoteHostClient` refuses them against an older host with `update_required`).
+- **Models:** `listModels` answers the host's catalog as "provider/id", its default in the same
+  form, and `withoutThinking`, the models that take no thinking level (`ModelListing`). A host
+  from before that field sends none, and clients then keep the thinking control for every model.
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
     agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps

@@ -94,6 +94,30 @@ public struct RemoteCreationOptions: Codable, Hashable, Sendable {
     }
 }
 
+/// A machine's pi models as a picker offers them (`listModels`): "provider/id" in catalog order,
+/// the one pi starts a session with when none is passed, and the ones that take no thinking level.
+public struct ModelListing: Hashable, Sendable {
+    public var models: [String]
+    public var defaultModel: String?
+    /// nil when the host does not say (a Shepherd before this field): every model then keeps the
+    /// thinking control, as it did.
+    public var withoutThinking: [String]?
+
+    public init(models: [String], defaultModel: String?, withoutThinking: [String]? = nil) {
+        self.models = models
+        self.defaultModel = defaultModel
+        self.withoutThinking = withoutThinking
+    }
+
+    /// Whether `model` (blank: the default) takes a thinking level. A model the listing does not
+    /// say otherwise about does, so an unknown one keeps the control.
+    public func takesThinking(_ model: String?) -> Bool {
+        let trimmed = model?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard let id = trimmed.isEmpty ? defaultModel : trimmed, let withoutThinking else { return true }
+        return !withoutThinking.contains(id)
+    }
+}
+
 public enum RemoteAgentAction: Codable, Hashable, Sendable {
     case rename(name: String)
     /// Retires the agent only. A worktree checkout and branch are kept.
@@ -571,8 +595,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case sessionExited(sessionID: SessionID, code: Int32?)
     /// Subdirectories of a host directory, for the remote pickers.
     case dirListing(id: Int, path: String, parent: String?, dirs: [String])
-    /// The host's pi model ids (may be empty) and configured default.
-    case models(id: Int, models: [String], defaultModel: String?)
+    /// The host's pi models as "provider/id" (may be empty), its configured default, and the ones
+    /// that take no thinking level (absent from a host that does not say; see `ModelListing`).
+    case models(id: Int, models: [String], defaultModel: String?, withoutThinking: [String]? = nil)
     /// Space created on the host (the state push carries the full snapshot).
     case spaceAdded(id: Int, spaceID: SpaceID)
     /// Agent created and its pi process spawned on the host.
@@ -584,7 +609,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case result
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
-        case path, parent, dirs, models, defaultModel, attachment, options
+        case path, parent, dirs, models, defaultModel, withoutThinking, attachment, options
     }
 
     private enum Kind: String, Codable {
@@ -670,7 +695,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             self = .models(
                 id: try c.decode(Int.self, forKey: .id),
                 models: try c.decode([String].self, forKey: .models),
-                defaultModel: try c.decodeIfPresent(String.self, forKey: .defaultModel)
+                defaultModel: try c.decodeIfPresent(String.self, forKey: .defaultModel),
+                withoutThinking: try c.decodeIfPresent([String].self, forKey: .withoutThinking)
             )
         case .spaceAdded:
             self = .spaceAdded(
@@ -751,11 +777,12 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(path, forKey: .path)
             try c.encodeIfPresent(parent, forKey: .parent)
             try c.encode(dirs, forKey: .dirs)
-        case .models(let id, let models, let defaultModel):
+        case .models(let id, let models, let defaultModel, let withoutThinking):
             try c.encode(Kind.models, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(models, forKey: .models)
             try c.encodeIfPresent(defaultModel, forKey: .defaultModel)
+            try c.encodeIfPresent(withoutThinking, forKey: .withoutThinking)
         case .spaceAdded(let id, let spaceID):
             try c.encode(Kind.spaceAdded, forKey: .type)
             try c.encode(id, forKey: .id)
