@@ -79,15 +79,18 @@ public struct NWAutomationRow: View, Equatable {
                 content
             }
             if let isOn {
-                Toggle(isOn: Binding(get: { isOn }, set: { toggle?($0) })) {
-                    Text(title)
+                let binding = Binding(get: { isOn }, set: { toggle?($0) })
+                // One button over the drawn switch, so the whole touch target flips it once.
+                Button { toggle?(!isOn) } label: {
+                    Toggle(title, isOn: binding)
+                        .toggleStyle(.nwSwitch)
+                        .labelsHidden()
+                        .allowsHitTesting(false)
+                        .nwTouchTarget(height: NWAutomationMetrics.switchSize.height, width: NWAutomationMetrics.switchSize.width)
                 }
-                .toggleStyle(.nwSwitch)
-                .labelsHidden()
+                .buttonStyle(.plain)
                 .disabled(!switchEnabled || toggle == nil)
-                .nwTouchTarget(height: NWAutomationMetrics.switchSize.height, width: NWAutomationMetrics.switchSize.width)
-                .onTapGesture { if switchEnabled { toggle?(!isOn) } }
-                .accessibilityLabel(title)
+                .accessibilityRepresentation { Toggle(title, isOn: binding) }
                 .accessibilityHint("Starts a run when Shepherd starts")
                 .padding(.trailing, NW.Space.l)
             }
@@ -164,21 +167,19 @@ public struct NWAutomationRow: View, Equatable {
 }
 
 /// A fact about an automation: a label, then its value ("Runs on  build-01 · a new thread
-/// each run"), with a hairline under it. At accessibility sizes the value drops under the label.
-public struct NWFactRow: View {
+/// each run") or a control (its switch), with a hairline under it. At accessibility sizes the
+/// value drops under the label.
+public struct NWFactRow<Value: View>: View {
     let label: String
-    let value: String
-    let mono: Bool
+    let value: Value
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    public init(_ label: String, value: String, mono: Bool = false) {
+    public init(_ label: String, @ViewBuilder value: () -> Value) {
         self.label = label
-        self.value = value
-        self.mono = mono
+        self.value = value()
     }
 
     public var body: some View {
-        let nw = Color.nw
         let layout = typeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: NW.Space.xxs))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: NW.Space.l))
@@ -186,19 +187,40 @@ public struct NWFactRow: View {
             layout {
                 Text(label)
                     .font(.nw(.caption))
-                    .foregroundStyle(nw.textSecondary)
+                    .foregroundStyle(Color.nw.textSecondary)
                     .frame(width: typeSize.isAccessibilitySize ? nil : NWAutomationMetrics.factLabelWidth, alignment: .leading)
-                Text(value)
-                    .font(mono ? .nw(.mono) : .nw(.ui, weight: .regular))
-                    .foregroundStyle(nw.textPrimary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                value
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, NW.Space.m)
             NWHairline()
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+extension NWFactRow where Value == NWFactText {
+    public init(_ label: String, value: String, mono: Bool = false) {
+        self.init(label) { NWFactText(value, mono: mono) }
+    }
+}
+
+/// A fact's value as text: sans, or mono for a host, a path or a model.
+public struct NWFactText: View {
+    let text: String
+    let mono: Bool
+
+    public init(_ text: String, mono: Bool = false) {
+        self.text = text
+        self.mono = mono
+    }
+
+    public var body: some View {
+        Text(text)
+            .font(mono ? .nw(.mono) : .nw(.ui, weight: .regular))
+            .foregroundStyle(Color.nw.textPrimary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
