@@ -153,6 +153,19 @@ enum RemoteSamples {
             AddedSuggestion(id: op, line: "- Prefer table-driven tests in Go.", file: .agents, sourceName: "Ledger cleanup",
                             addedAt: 1_700_000_100),
         ])
+
+    static let hostSettings = HostSettings(
+        shepherdVersion: "0.4.2", piVersion: "0.87.1", defaultModel: "anthropic/claude-opus", defaultThinking: .high,
+        queueDelivery: .oneAtATime, worktreeBase: .head, fetchBeforeCreating: false, mergePRAutomatically: true, mergeMethod: .rebase,
+        bundledExtensions: [HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
+                            HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: false)],
+        installedExtensions: ["npm:@example/pi-tools@1.0.0"], updatePiDaily: true)
+    static let hostSettingChanges: [HostSettingChange] = [
+        .defaultModel("openai/gpt-5"), .defaultModel(nil), .defaultThinking(.low), .queueDelivery(.all),
+        .worktreeBase(.fresh), .fetchBeforeCreating(true), .commitRemainingWork(false), .generatePRDescriptions(false),
+        .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
+        .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
+    ]
 }
 
 @Suite("Remote requests")
@@ -165,11 +178,11 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions:
+             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 22
+    static let caseCount = 23
 
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
@@ -197,6 +210,7 @@ struct RemoteRequestTests {
         .automation(id: 21, automationID: S.automation, request: .setEnabled(enabled: false)),
         .instructions(id: 23, request: .save(file: .appendSystem, content: "Never force-push.\n", origin: "studio", sync: true)),
         .suggestions(id: 25, request: .add(id: S.op, line: "- Ask for join keys first.", file: nil)),
+        .hostSettings(id: 27, request: .change(.bundledExtension(id: "review", on: true))),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -253,6 +267,13 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(message) == message)
     }
 
+    @Test(arguments: RemoteSamples.hostSettingChanges)
+    func everyHostSettingChangeRoundTrips(_ change: HostSettingChange) throws {
+        let message = RemoteRequest.hostSettings(id: 1, request: .change(change))
+        #expect(try Wire.roundTrip(message) == message)
+        #expect(try Wire.roundTrip(RemoteRequest.hostSettings(id: 2, request: .fetch)) == .hostSettings(id: 2, request: .fetch))
+    }
+
     @Test func anAutomationRequestNamesItsAutomation() throws {
         let object = try Wire.object(RemoteRequest.automation(id: 1, automationID: S.automation, request: .run))
         #expect(object["automationID"] as? String == "automation")
@@ -299,11 +320,11 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions, .suggestions:
+             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 20
+    static let caseCount = 21
 
     static let samples: [RemoteReply] = [
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
@@ -328,6 +349,7 @@ struct RemoteReplyTests {
         .automationResult(id: 22, result: .runs(S.runs)),
         .instructions(id: 24, snapshot: S.instructions),
         .suggestions(id: 26, snapshot: S.suggestions),
+        .hostSettings(id: 28, settings: S.hostSettings),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -362,6 +384,25 @@ struct RemoteReplyTests {
         #expect(snapshot.lastSaved(.appendSystem) == 1_700_000_100)
         #expect(InstructionsSnapshot(directory: "/i/").path(of: .appendSystem) == "/i/APPEND_SYSTEM.md")
         #expect(InstructionsSnapshot(directory: "/i").lastSaved(.agents) == nil)
+    }
+
+    /// A change applies to the one setting it names; a bundled extension the host doesn't have
+    /// changes nothing.
+    @Test func aHostSettingChangeAppliesToItsSettingAlone() {
+        var settings = RemoteSamples.hostSettings
+        settings.apply(.bundledExtension(id: "review", on: true))
+        #expect(settings.bundledExtensions.map(\.on) == [true, true])
+        settings.apply(.bundledExtension(id: "nothing", on: false))
+        #expect(settings.bundledExtensions.map(\.on) == [true, true])
+        settings.apply(.defaultModel(nil))
+        #expect(settings.defaultModel == nil)
+        settings.apply(.mergeMethod(.merge))
+        #expect(settings.mergeMethod == .merge)
+        var expected = RemoteSamples.hostSettings
+        expected.bundledExtensions[1].on = true
+        expected.defaultModel = nil
+        expected.mergeMethod = .merge
+        #expect(settings == expected)
     }
 
     /// An agent may suggest only while the experiment is on, only when its kind learns, and only

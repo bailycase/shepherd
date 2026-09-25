@@ -239,6 +239,10 @@ public final class SessionServer: @unchecked Sendable {
     public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentAction: ((AgentID, RemoteAgentAction, @escaping (Result<Void, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client reads or changes this host's settings (`RemoteRequest.hostSettings`): the
+    /// GUI owns them, so a server without it (headless, tests) rejects the request. Called on the
+    /// main actor.
+    public var onRemoteHostSettings: ((RemoteHostSettingsRequest, @escaping (Result<HostSettings, RemoteCreateAgentError>) -> Void) -> Void)?
     /// A remote client saved or restored this host's root instructions: the GUI's Settings page
     /// follows. Delivered on the main actor.
     public var onInstructionsChanged: ((InstructionsSnapshot) -> Void)?
@@ -1034,6 +1038,23 @@ public final class SessionServer: @unchecked Sendable {
             remoteInstructions(id: id, request: request, client: client)
         case .suggestions(let id, let request):
             remoteSuggestions(id: id, request: request, client: client)
+        case .hostSettings(let id, let request):
+            guard let handler = onRemoteHostSettings else {
+                send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
+                return
+            }
+            hopToMain { [weak self] in
+                handler(request) { result in
+                    guard let self else { return }
+                    self.queue.async {
+                        guard self.clients[client.fd] === client else { return }
+                        switch result {
+                        case .success(let settings): self.send(.hostSettings(id: id, settings: settings), to: client)
+                        case .failure(let error): self.send(.error(id: id, code: "settings_failed", message: error.message), to: client)
+                        }
+                    }
+                }
+            }
         case .stateFetch(let id):
             send(.state(id: id, state: store.state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):

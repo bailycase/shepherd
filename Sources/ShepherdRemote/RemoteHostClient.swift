@@ -510,6 +510,24 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Reads or changes one of the host's settings (Settings on the iPhone and the iPad), and
+    /// answers with its settings as they are afterwards. A host without `hostSettingsCapability`
+    /// shares none: this throws `update_required` before sending anything.
+    @discardableResult
+    public func hostSettings(_ request: RemoteHostSettingsRequest = .fetch) async throws -> HostSettings {
+        guard capabilities.contains(RemoteProtocol.hostSettingsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to see its settings from here."
+            )
+        }
+        let reply = try await self.request { .hostSettings(id: $0, request: request) }
+        switch reply {
+        case .hostSettings(_, let settings): return settings
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected settings reply")
+        }
+    }
+
     public func detach(sessionID: SessionID) {
         queue.async { self.sendRequest(.detach(sessionID: sessionID)) }
     }
@@ -768,7 +786,7 @@ public final class RemoteHostClient: @unchecked Sendable {
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _),
              .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _),
-             .suggestions(let id, _):
+             .suggestions(let id, _), .hostSettings(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)

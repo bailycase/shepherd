@@ -52,7 +52,10 @@ public enum RemoteProtocol {
     /// instructions (the experiment's settings, the lines waiting, and those added). Older hosts
     /// have no experiments.
     public static let suggestionsCapability = "suggestions.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, instructionsCapability, suggestionsCapability]
+    /// The host serves `RemoteRequest.hostSettings`: what its Settings ▸ Agents, Worktrees and Pi
+    /// set, its Shepherd and pi versions, and one change at a time. Older hosts show none.
+    public static let hostSettingsCapability = "hostSettings.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -350,6 +353,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case instructions(id: Int, request: RemoteInstructionsRequest)
     /// Read or act on the host's suggested instructions (`RemoteProtocol.suggestionsCapability`).
     case suggestions(id: Int, request: RemoteSuggestionsRequest)
+    /// Read or change the host's settings (`RemoteProtocol.hostSettingsCapability`).
+    case hostSettings(id: Int, request: RemoteHostSettingsRequest)
 
     private enum CodingKeys: String, CodingKey {
         case request
@@ -366,7 +371,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
         case automation
-        case instructions, suggestions
+        case instructions, suggestions, hostSettings
     }
 
     public init(from decoder: Decoder) throws {
@@ -384,6 +389,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .suggestions:
             self = .suggestions(id: try c.decode(Int.self, forKey: .id),
                                 request: try c.decode(RemoteSuggestionsRequest.self, forKey: .request))
+        case .hostSettings:
+            self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
+                                 request: try c.decode(RemoteHostSettingsRequest.self, forKey: .request))
         case .hello:
             self = .hello(
                 id: try c.decode(Int.self, forKey: .id),
@@ -532,6 +540,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.suggestions, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .hostSettings(let id, let request):
+            try c.encode(Kind.hostSettings, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -642,13 +654,15 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case instructions(id: Int, snapshot: InstructionsSnapshot)
     /// The host's suggested instructions after a suggestions request (`RemoteRequest.suggestions`).
     case suggestions(id: Int, snapshot: SuggestionsSnapshot)
+    /// The host's settings after a settings request (`RemoteRequest.hostSettings`).
+    case hostSettings(id: Int, settings: HostSettings)
 
     private enum CodingKeys: String, CodingKey {
         case result
         case type, id, protocolVersion, capabilities, code, message, state
         case sessionID, data, exitCode, spaceID, agentID, paneID
         case path, parent, dirs, models, defaultModel, withoutThinking, attachment, options
-        case snapshot
+        case snapshot, settings
     }
 
     private enum Kind: String, Codable {
@@ -656,7 +670,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
-        case instructions, suggestions
+        case instructions, suggestions, hostSettings
     }
 
     public init(from decoder: Decoder) throws {
@@ -686,6 +700,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .suggestions:
             self = .suggestions(id: try c.decode(Int.self, forKey: .id),
                                 snapshot: try c.decode(SuggestionsSnapshot.self, forKey: .snapshot))
+        case .hostSettings:
+            self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
+                                 settings: try c.decode(HostSettings.self, forKey: .settings))
         case .ok:
             self = .ok(id: try c.decode(Int.self, forKey: .id))
         case .paneOpened:
@@ -793,6 +810,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.suggestions, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(snapshot, forKey: .snapshot)
+        case .hostSettings(let id, let settings):
+            try c.encode(Kind.hostSettings, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(settings, forKey: .settings)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

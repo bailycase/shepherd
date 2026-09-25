@@ -36,7 +36,7 @@ Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI
 | Module | Owns | Depends on |
 | --- | --- | --- |
 | `ShepherdCore` | Codable workspace models (`Space`, `Tab`, `Agent`, `Automation`, `ShepherdState`), typed IDs, the `PaneNode` split tree, `AgentStatus` and its transition table, `ThinkingLevel`, and structural validation | nothing |
-| `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), `ShepherdPaths`, `ShepherdEdition` (Shepherd or Shepherd Nightly), Settings ▸ Instructions' files and requests (`Instructions.swift`), and Settings ▸ Experiments ▸ Suggested instructions (`Suggestions.swift`) | Core |
+| `ShepherdProtocol` | Wire contracts: `ExtensionMessage`/`ExtensionReply` (extension socket), `RemoteRequest`/`RemoteReply` and `RemoteProtocol` (version, capabilities), the native thread contract (`NativeThreadRequest`/`Result`/`Snapshot`), pi's RPC wire types (`RPCWire`, decoded leniently), NDJSON framing (1 MiB frame cap), `ShepherdPaths`, `ShepherdEdition` (Shepherd or Shepherd Nightly), Settings ▸ Instructions' files and requests (`Instructions.swift`), Settings ▸ Experiments ▸ Suggested instructions (`Suggestions.swift`), and a host's settings as a client sees them (`HostSettings.swift`) | Core |
 | `ShepherdRemote` | `RemoteHostClient` (TCP client: handshake, reconnect, bounded writes), `NativeThreadStore` (the `@Observable` thread client used by local, remote, and iOS views; it derives the rows a thread draws once per change), the pure derivations (`NativeThreadPresentation`, `NativeTurnPresentation` for a turn's items, `NativeActivity` for activity lines and the changes card, `InstructionsText` and `InstructionsPresentation` for Settings ▸ Instructions, `SuggestionsPresentation` for its experiment), and `ShepherdLog` | Core, Protocol |
 | `ShepherdUI` | Night Watch, the design system, in its own local package (`Packages/ShepherdUI`, macOS 26 and iOS 27): `ThemeDefinition` and Night Watch, `ThemeStore` (with the resolved `NWPalette` and `NWTypeRamp`), `Color.nw`, `Font.nw` and the bundled Geist faces, the `NW` scales, motion, elevation, `AgentState`, and the shared SwiftUI components by domain (Controls, Status, Containers, Navigation, Thread, Composer, Agents, Review, Dialogs). SwiftUI only; no app state | nothing |
 | `ShepherdPTYSpawn` | `shepherd_forkpty_exec`: the PTY child side in C (reset signal dispositions and mask, close stray descriptors, exec), so no Swift runs between fork and exec | nothing |
@@ -251,6 +251,8 @@ The protocol is NDJSON (`RemoteMessage.swift`):
 - automations, and Settings ▸ Instructions' files (`instructions.v1`: fetch, save, restore)
 - Settings ▸ Experiments ▸ Suggested instructions (`suggestions.v1`: fetch, configure, add, add all,
   dismiss, undo)
+- the host's settings (`hostSettings.v1`: Settings ▸ Agents, Worktrees and Pi, the pi packages it
+  loads, its versions; one change at a time)
 
 Capabilities gate newer features. A client falls back (raw bracketed paste) or refuses (pane
 control) against an older host. Output frames are chunked at 256 KiB to stay under the frame cap.
@@ -260,7 +262,8 @@ control) against an older host. Output frames are chunked at 256 KiB to stay und
   reports from unattached clients are ignored.
 - **Host-side handlers:** remote pane and agent-creation requests go through
   `onRemotePaneRequest` and `onRemoteCreateAgent`, with the same authorization as local
-  requests. A server without the GUI rejects them.
+  requests, and host settings through `onRemoteHostSettings`. A server without the GUI rejects
+  them.
 - **Detaching** a remote pane never kills the host's session.
 - **Client side:** `RemoteHostStore` persists host configurations, including tokens, in
   UserDefaults (`shepherd.remote.hosts`). It keeps one `RemoteHostClient` per host, reconnecting
