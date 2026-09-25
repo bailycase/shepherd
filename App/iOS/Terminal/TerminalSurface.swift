@@ -43,7 +43,6 @@ final class TerminalSurfaceView: TerminalView, TerminalViewDelegate {
         backgroundColor = .clear
         isOpaque = false
         applyFont()
-        if let canned = session.canned { feed(canned) }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -114,6 +113,11 @@ final class TerminalSurfaceView: TerminalView, TerminalViewDelegate {
     // MARK: TerminalViewDelegate
 
     func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+        // A canned screen (fixtures) is drawn again at each grid, as the host's replay would be.
+        if let canned = session?.canned {
+            reset()
+            feed(canned)
+        }
         session?.noteGrid(cols: newCols, rows: newRows)
     }
 

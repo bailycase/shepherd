@@ -18,8 +18,11 @@ extension View {
 /// poll, draft and scroll stay) and the panel takes the column until it is restored.
 private struct ThreadTerminalPanel: ViewModifier {
     let ref: AgentRef
+    @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @State private var columnHeight: CGFloat = 0
+    @State private var visible = false
 
     func body(content: Content) -> some View {
         let terminals = MobileTerminals.shared
@@ -46,6 +49,22 @@ private struct ThreadTerminalPanel: ViewModifier {
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { if columnHeight != $0 { columnHeight = $0 } }
         .nwAnimation(.pane, value: shows)
         .nwAnimation(.pane, value: maximized)
+        .onAppear { visible = true }
+        .onDisappear { visible = false }
+        // The tabs' states and the header toggle's dot, while the thread is on screen (iPad).
+        .task(id: ActivityKey(session: hosts.host(ref.host)?.session, watching: visible && scenePhase == .active && sizeClass == .regular)) {
+            guard visible, sizeClass == .regular, let client = hosts.host(ref.host)?.connectedClient else { return }
+            await watch(client)
+        }
+    }
+
+    private struct ActivityKey: Equatable {
+        var session: UUID?
+        var watching: Bool
+    }
+
+    private func watch(_ client: RemoteHostClient) async {
+        await MobileTerminals.shared.watchActivity(ref, client: client)
     }
 }
 
@@ -58,10 +77,13 @@ private struct TerminalPanelHost: View {
 
     var body: some View {
         let terminals = MobileTerminals.shared
-        let model = TerminalModel.resolve(ref, hosts: hosts, terminals: terminals)
+        let model = TerminalModel.resolve(ref, hosts: hosts, terminals: terminals, onScreen: true)
         TerminalPanelView(model: model, columnHeight: columnHeight, problem: terminals.problem)
             .onChange(of: liveSessions, initial: true) { _, live in
                 if hosts.host(ref.host)?.phase.isConnected == true { terminals.prune(host: ref.host, live: live) }
+            }
+            .onChange(of: model.onScreenOutput, initial: true) {
+                terminals.markSeen(ref, sessions: model.onScreenSessions)
             }
     }
 

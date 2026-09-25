@@ -67,15 +67,19 @@ struct TerminalToolbarButton: View {
     @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        let shown = MobileTerminals.shared.panel(thread).shown
+        let terminals = MobileTerminals.shared
+        let shown = terminals.panel(thread).shown
+        let news = !shown && TerminalModel.resolve(thread, hosts: hosts, terminals: terminals, onScreen: false).hasNews
         Button {
             TerminalHooks.toggle(thread: thread, navigator: navigator)
         } label: {
             Image(systemName: "terminal")
         }
         .buttonStyle(.nwIcon(isOn: shown))
+        .overlay(alignment: .topTrailing) { NWToggleBadge(visible: news) }
         .disabled(!shown && hosts.host(thread.host)?.connectedClient == nil)
         .accessibilityLabel(shown ? "Hide terminal" : "Show terminal")
+        .accessibilityValue(news ? "New output" : "")
         .accessibilityAddTraits(shown ? .isSelected : [])
     }
 }

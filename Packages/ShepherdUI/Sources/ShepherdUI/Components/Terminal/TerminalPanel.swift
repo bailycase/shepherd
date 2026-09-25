@@ -107,8 +107,11 @@ public struct NWTerminalTabBar<Trailing: View>: View {
                 .buttonStyle(.nwIcon(size: NWTerminalMetrics.buttonSize))
         }
         .padding(.horizontal, NW.Space.m)
-        .frame(height: NWTerminalMetrics.tabBarHeight)
+        .frame(minHeight: NWTerminalMetrics.tabBarHeight)
         .frame(maxWidth: .infinity)
+        // A strip of chrome over the terminal: it grows with Dynamic Type, but not past a size
+        // that leaves room for the terminal under it.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .background(Color.nw.bgWindow)
         .overlay(alignment: .top) { NWHairline(color: .nw.lineStrong) }
         .overlay(alignment: .bottom) { NWHairline() }
@@ -118,7 +121,7 @@ public struct NWTerminalTabBar<Trailing: View>: View {
 }
 
 /// A tab: the terminal glyph (a spinner while a command runs), the title in mono, the host of a
-/// remote tab, a running-blue dot for output you have not seen, and the selected tab's close.
+/// selected remote tab, a running-blue dot for output you have not seen, and the selected tab's close.
 public struct NWTerminalTabView: View {
     let tab: NWTerminalTab
     let isSelected: Bool
@@ -148,7 +151,8 @@ public struct NWTerminalTabView: View {
                             .font(.nw(.micro, weight: .regular))
                             .foregroundStyle(nw.textTertiary)
                     }
-                    if let host = tab.host {
+                    // The selected tab names its host (TerminalTab · states); the rest share it.
+                    if isSelected, let host = tab.host {
                         Label(host, systemImage: "desktopcomputer")
                             .labelStyle(NWTerminalHostLabelStyle())
                             .font(.nw(.micro, weight: .regular))
@@ -161,7 +165,7 @@ public struct NWTerminalTabView: View {
                 }
                 .padding(.leading, NW.Space.m)
                 .padding(.trailing, isSelected && close != nil ? NW.Space.xs : NW.Space.m)
-                .frame(height: NWTerminalMetrics.tabHeight)
+                .frame(minHeight: NWTerminalMetrics.tabHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -175,7 +179,8 @@ public struct NWTerminalTabView: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(nw.textTertiary)
-                        .frame(width: NWTerminalMetrics.tabHeight * 0.75, height: NWTerminalMetrics.tabHeight)
+                        .frame(width: NWTerminalMetrics.tabHeight * 0.75)
+                        .frame(minHeight: NWTerminalMetrics.tabHeight)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -284,6 +289,7 @@ public struct NWTerminalKeyRow: View {
         }
         .scrollIndicators(.hidden)
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(.vertical, NW.Space.m)
         .frame(maxWidth: .infinity)
         .background(Color.nw.bgWindow)

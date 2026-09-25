@@ -10,10 +10,16 @@ struct TerminalScreen: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
     @State private var closing: TerminalPanelTab?
+    @Environment(\.scenePhase) private var scenePhase
+
+    private struct ActivityKey: Equatable {
+        var session: UUID?
+        var active: Bool
+    }
 
     var body: some View {
         let terminals = MobileTerminals.shared
-        let model = TerminalModel.resolve(ref, hosts: hosts, terminals: terminals)
+        let model = TerminalModel.resolve(ref, hosts: hosts, terminals: terminals, onScreen: true)
         let selected = model.selected
         let focusedPane = selected.map { TerminalPanel.focusedPane(in: $0, focused: model.panel.focusedPane) }
         let focusedSession = selected?.panes.first { $0.id == focusedPane }?.sessionID
@@ -56,6 +62,11 @@ struct TerminalScreen: View {
             }
         }
         .background(Color.nw.bgWindow)
+        .onChange(of: model.onScreenOutput, initial: true) { terminals.markSeen(ref, sessions: model.onScreenSessions) }
+        .task(id: ActivityKey(session: hosts.host(ref.host)?.session, active: scenePhase == .active)) {
+            guard scenePhase == .active, let client = hosts.host(ref.host)?.connectedClient else { return }
+            await terminals.watchActivity(ref, client: client)
+        }
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Terminal")
         .navigationBarTitleDisplayMode(.inline)
