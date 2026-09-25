@@ -12,6 +12,7 @@
 		15000000000000000000B202 /* ShepherdProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C002 /* ShepherdProtocol */; };
 		15000000000000000000B203 /* ShepherdRemote in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C003 /* ShepherdRemote */; };
 		15000000000000000000B204 /* ShepherdUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C004 /* ShepherdUI */; };
+		15000000000000000000B205 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C005 /* SwiftTerm */; };
 		5E000000000000000000B001 /* ShepherdLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A001 /* ShepherdLauncher.swift */; };
 		5E000000000000000000B002 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
 		5E000000000000000000B003 /* AppIconNightly.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A005 /* AppIconNightly.icon */; };
@@ -77,6 +78,7 @@
 				15000000000000000000B202 /* ShepherdProtocol in Frameworks */,
 				15000000000000000000B203 /* ShepherdRemote in Frameworks */,
 				15000000000000000000B204 /* ShepherdUI in Frameworks */,
+				15000000000000000000B205 /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -149,6 +151,7 @@
 				15000000000000000000C002 /* ShepherdProtocol */,
 				15000000000000000000C003 /* ShepherdRemote */,
 				15000000000000000000C004 /* ShepherdUI */,
+				15000000000000000000C005 /* SwiftTerm */,
 			);
 			productName = "Shepherd iOS";
 			productReference = 15000000000000000000A201 /* Shepherd iOS.app */;
@@ -205,6 +208,7 @@
 			preferredProjectObjectVersion = 77;
 			packageReferences = (
 				5E000000000000000000F200 /* XCLocalSwiftPackageReference "." */,
+				15000000000000000000F201 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 			);
 			productRefGroup = 5E000000000000000000D005 /* Products */;
 			projectDirPath = "";
@@ -592,6 +596,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		15000000000000000000F201 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.18.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		15000000000000000000C001 /* ShepherdCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -608,6 +623,11 @@
 		15000000000000000000C004 /* ShepherdUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ShepherdUI;
+		};
+		15000000000000000000C005 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 15000000000000000000F201 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
 		};
 		5E000000000000000000C001 /* ShepherdApp */ = {
 			isa = XCSwiftPackageProductDependency;
