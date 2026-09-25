@@ -196,7 +196,7 @@ public struct NWSplitDiffRow: View, Equatable {
     public var body: some View {
         HStack(spacing: 0) {
             side(old)
-            Rectangle().fill(Color.nw.lineSubtle).frame(width: 1)
+            NWHairline(.vertical)
             side(new)
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -233,7 +233,7 @@ public struct NWSplitFoldRow: View {
         let fold = NWTouchFoldRow(count: count, kind: kind, range: range, leading: NWTouchDiffMetrics.annotationLeading(gutters: 1), action: action)
         HStack(spacing: 0) {
             if side == .new { blank } else { fold }
-            Rectangle().fill(Color.nw.lineSubtle).frame(width: 1)
+            NWHairline(.vertical)
             if side == .old { blank } else if side == .new { fold } else { blank }
         }
         .fixedSize(horizontal: false, vertical: true)

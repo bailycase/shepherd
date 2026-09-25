@@ -185,7 +185,7 @@ private struct NWReviewBarButton: View {
             .background(primary ? nw.lantern.mix(with: .black, by: configuration.isPressed ? 0.1 : 0) : configuration.isPressed ? nw.bgSelected : nw.bgRaised,
                         in: shape)
             .nwBorder(primary ? .clear : nw.lineStrong, radius: NW.Radius.l)
-            .opacity(enabled ? 1 : 0.4)
+            .opacity(enabled ? 1 : NWControlMetrics.disabledOpacity)
             .contentShape(shape)
     }
 }

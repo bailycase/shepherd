@@ -3,7 +3,7 @@ import SwiftUI
 /// Commenting on a selected diff line from the bottom of the phone's diff reader (MobileDiff
 /// board): "line 16 selected", Delete while the line already has a comment, and Done to clear
 /// the selection, over a 44pt capsule field ("Comment on line 16…") with a lantern send button
-/// that dims until there is text. Sending a blank comment removes the line's comment.
+/// that dims until there is text. Delete removes the line's comment.
 public struct NWLineCommentBar: View {
     let lineLabel: String
     @Binding var text: String
