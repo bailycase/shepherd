@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 import ShepherdSessions
 import ShepherdUI
 import ShepherdTestSupport
@@ -40,6 +41,32 @@ struct SettingsPreviewTests {
         workspace.vm.settingsSection = .remote
         try await Preview.render("settings-remote-hosts", size: CGSize(width: 1280, height: 1000)) {
             SettingsView(vm: workspace.vm)
+        }
+    }
+
+    /// A host for each way a connection fails (nothing listening, a refused token, another
+    /// protocol): the word says which, and the sentence under it says what to do.
+    @Test func settingsRemoteHostFailures() async throws {
+        let failures: [(String, RemoteHostClientError)] = [
+            ("horizon", .system(call: "connect", errno: ECONNREFUSED)),
+            ("studio", .rejected(code: RemoteProtocol.unauthorizedCode, message: "bad token")),
+            ("build-01", .rejected(code: RemoteProtocol.versionMismatchCode, message: "host speaks protocol \(RemoteProtocol.version + 1)")),
+        ]
+        let connections = failures.map { name, error in
+            let connection = RemoteHostStore.Connection(config: .init(name: name, host: "\(name).internal", port: 7433, token: "x"))
+            connection.phase = .failed(RemoteHostFailure(error))
+            return connection
+        }
+        let size = CGSize(width: AppLayout.settingsContentWidth + 2 * AppLayout.settingsGutter, height: 360)
+        try await Preview.render("settings-remote-host-failures", size: size) {
+            SettingsGroup(title: "Hosts") {
+                ForEach(connections) { connection in
+                    RemoteHostRow(connection: connection, remove: {}, reconnect: {}, edit: {})
+                }
+            }
+            .padding(AppLayout.settingsGutter)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgWindow)
         }
     }
 

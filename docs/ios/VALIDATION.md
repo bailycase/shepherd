@@ -43,7 +43,8 @@ temporary directory, then builds and runs three programs:
   preferences domain, against real TCP listeners. It covers migrating the first client's single
   host and its token (and a token that waits for a locked Keychain), records saved without tokens, a new host needing a token, several hosts
   at once (one live, one refusing), pushed state, backgrounding and foregrounding with a new
-  session, retry and stop, renaming without reconnecting, and forgetting.
+  session, retry and stop, renaming without reconnecting, forgetting, and a host that refuses the
+  token waiting for Retry instead of retrying on its own.
 - **`ThreadStoreCheck`:** `NativeThreadStore`. It covers revisions, merging history with live
   entries, stale sessions, acceptance, drafts, unknown outcomes with no automatic resend,
   questions, abort, and stop and reconnect.

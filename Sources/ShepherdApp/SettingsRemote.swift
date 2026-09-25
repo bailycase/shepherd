@@ -2,6 +2,7 @@ import SwiftUI
 import ShepherdUI
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // MARK: Remote hosts
 
@@ -127,7 +128,9 @@ enum RemoteSettingsDefaults {
 }
 
 /// "horizon" over "horizon.internal:7433 · connected · 5 agents", with Edit, Reconnect, Remove.
-private struct RemoteHostRow: View {
+/// A failed connection's word says why ("unreachable", "token refused"), its sentence sits
+/// under it as the row's problem, and the client's own reason is the problem's tooltip.
+struct RemoteHostRow: View {
     var connection: RemoteHostStore.Connection
     let remove: () -> Void
     let reconnect: () -> Void
@@ -137,7 +140,7 @@ private struct RemoteHostRow: View {
         switch connection.phase {
         case .connected: ("connected", .done)
         case .connecting: ("connecting…", .running)
-        case .failed(let reason): ("unreachable · \(reason)", .failed)
+        case .failed(let failure): (failure.headline.lowercased(), .failed)
         case .disconnected: ("disconnected", .idle)
         }
     }
@@ -159,7 +162,16 @@ private struct RemoteHostRow: View {
                 }
                 // Connecting… → connected · 5 agents, or unreachable: the word and dot fade.
                 .nwComponentAnimation(.content, value: state)
+                if let failure = connection.phase.failure {
+                    Text(failure.message(host: config.name))
+                        .font(.nw(.caption))
+                        .foregroundStyle(Color.nw.failed)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help(failure.detail)
+                }
             }
+            // A new reason discloses under the status line and the row grows with it.
+            .nwAnimation(.disclosure, value: connection.phase.failure?.kind)
             .accessibilityElement(children: .combine)
         } actions: {
             Button("Edit", action: edit).buttonStyle(.nw(.secondary, size: .s))
@@ -169,5 +181,13 @@ private struct RemoteHostRow: View {
             Button("Remove", action: remove).buttonStyle(.nw(.danger, size: .s))
                 .accessibilityLabel("Remove \(config.name)")
         }
+    }
+}
+
+extension RemoteHostStore.Phase {
+    /// Why the connection failed, while it has.
+    var failure: RemoteHostFailure? {
+        if case .failed(let failure) = self { return failure }
+        return nil
     }
 }

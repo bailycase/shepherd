@@ -164,7 +164,7 @@ struct FleetTests {
 
     @Test func onlyConnectedHostsAskAndOfflineRowsAreTheirLastKnownState() {
         let model = FleetModel(hosts: [
-            Self.host(Self.studio, "Studio", .failed("refused"), agents: [Self.agent("dock", .blocked), Self.agent("run", .working)]),
+            Self.host(Self.studio, "Studio", .failed(RemoteHostFailure(kind: .unreachable, detail: "refused")), agents: [Self.agent("dock", .blocked), Self.agent("run", .working)]),
         ], digests: [:])
         #expect(model.needsYou.isEmpty)
         #expect(model.running.isEmpty)
@@ -250,7 +250,10 @@ struct FleetTests {
         (.connected, [agent("a", .idle)], "1 thread · none running", false),
         (.connected, [], "No threads yet", false),
         (.connecting, [agent("a", .idle)], "Connecting…", false),
-        (.failed("Connection refused"), [], "Connection refused", true),
+        (.failed(RemoteHostFailure(kind: .unreachable, detail: "connect failed: Connection refused (errno 61)")), [],
+         "Shepherd isn't running on Studio, or it can't be reached.", true),
+        (.failed(RemoteHostFailure(kind: .tokenRefused, detail: "unauthorized: bad token")), [],
+         "Studio refused the token. Edit the host to paste its current token.", true),
         (.disconnected, [], "Not connected", true),
     ] as [(RemoteHostPhase, [Agent], String, Bool)])
     func aHostCardSummarizesItsThreadsOrWhyItIsOffline(phase: RemoteHostPhase, agents: [Agent], summary: String, retry: Bool) throws {
@@ -267,7 +270,7 @@ struct FleetTests {
                                                      Self.agent("run", .working, space: Self.hidden)],
                       automations: [Automation(id: AutomationID(rawValue: "nightly"), name: "Nightly", prompt: "go",
                                                cwd: "/", agentID: AgentID(rawValue: "run"))]),
-            Self.host(Self.build, "build-01", .failed("down"), agents: []),
+            Self.host(Self.build, "build-01", .failed(RemoteHostFailure(kind: .lost, detail: "down")), agents: []),
         ], digests: [:])
         // Running counts what the overview's Running now lists: threads and automation runs.
         #expect(model.runningCount == 2)

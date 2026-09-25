@@ -88,7 +88,7 @@ public enum RemoteHostPhase: Equatable, Sendable {
     case disconnected
     case connecting
     case connected
-    case failed(String)
+    case failed(RemoteHostFailure)
 
     public var isConnected: Bool { self == .connected }
 
@@ -102,7 +102,7 @@ public enum RemoteHostPhase: Equatable, Sendable {
     }
 
     /// Why it is offline, when a connection failed.
-    public var failure: String? {
+    public var failure: RemoteHostFailure? {
         if case .failed(let reason) = self { return reason }
         return nil
     }

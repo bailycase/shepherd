@@ -450,7 +450,7 @@ public struct FleetModel: Equatable, Sendable {
     static func hostSummary(_ host: FleetHost, running: Int) -> String {
         switch host.phase {
         case .connecting: return "Connecting…"
-        case .failed(let reason): return reason
+        case .failed(let failure): return failure.message(host: host.name)
         case .disconnected: return "Not connected"
         case .connected: break
         }

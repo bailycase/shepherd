@@ -186,6 +186,25 @@ extension PreviewTests {
         }
     }
 
+    /// The row that stands in for a host's spaces while it is not connected, for each way it
+    /// fails: Unreachable, Token refused, Update needed, and Connecting….
+    @Test func sidebarHostNotices() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let phases: [RemoteHostStore.Phase.Kind] = [.failed(.unreachable), .failed(.tokenRefused),
+                                                   .failed(.versionMismatch(hostNewer: true)), .connecting]
+        try await Preview.render("sidebar-host-notices", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 160)) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(phases.enumerated()), id: \.offset) { _, phase in
+                    HostNoticeRow(vm: workspace.vm, hostID: UUID(), phase: phase)
+                }
+            }
+            .padding(AppLayout.sidebarPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color.nw.bgBase)
+        }
+    }
+
     /// The window with the sidebar hidden: the toolbar runs under the window controls.
     @Test func sidebarHiddenHeader() async throws {
         let workspace = try PreviewWorkspace()

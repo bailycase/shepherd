@@ -70,6 +70,8 @@ final class FixtureHost: @unchecked Sendable {
                 guard let request = try? NDJSON.decode(RemoteRequest.self, from: Data(line)) else { continue }
                 for reply in answer(request) {
                     guard let encoded = try? NDJSON.encode(reply), write(fd, encoded) else { return }
+                    // A refused hello is a final reply, as on a real host.
+                    if case .error(_, RemoteProtocol.unauthorizedCode, _) = reply { return }
                 }
             }
         }
@@ -107,7 +109,9 @@ final class FixtureHost: @unchecked Sendable {
         switch request {
         case .hello(let id, let token, _, _, _):
             note("hello")
-            guard token == FixtureHostData.token else { return [.error(id: id, code: "unauthorized", message: "bad token")] }
+            guard token == FixtureHostData.token, !data.refusesToken else {
+                return [.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token")]
+            }
             return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: RemoteProtocol.capabilities)]
         case .stateFetch(let id):
             note("stateFetch")

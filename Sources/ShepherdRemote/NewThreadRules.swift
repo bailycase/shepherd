@@ -105,7 +105,7 @@ public enum NewThreadRows {
     private static func detail(_ host: NewThreadHostInput, status: NewThreadHostRow.Status) -> String {
         switch status {
         case .connecting: return "connecting…"
-        case .offline: return "unreachable"
+        case .offline: return host.phase.failure?.headline.lowercased() ?? "unreachable"
         case .connected:
             let hidden = Set(host.state.spaces.filter(\.hidden).map(\.id))
             let visible = host.state.agents.filter { !hidden.contains($0.spaceID) }

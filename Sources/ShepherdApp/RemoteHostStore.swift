@@ -19,7 +19,8 @@ struct RemoteAgentRef: Hashable {
 /// shell panes' terminals over the wire.
 ///
 /// Reconnects with backoff while a host is unreachable — a laptop that slept
-/// picks its hosts back up without any UI action.
+/// picks its hosts back up without any UI action. A host that refuses the token
+/// or speaks another protocol waits for Edit or Reconnect instead.
 @MainActor
 @Observable
 final class RemoteHostStore {
@@ -35,7 +36,7 @@ final class RemoteHostStore {
         case disconnected
         case connecting
         case connected
-        case failed(String)
+        case failed(RemoteHostFailure)
     }
 
     /// One host's connection. Views observe its config, phase, pushed state and child runs;
@@ -57,6 +58,8 @@ final class RemoteHostStore {
         @ObservationIgnored fileprivate var client: RemoteHostClient?
         @ObservationIgnored fileprivate var reconnectTask: Task<Void, Never>?
         @ObservationIgnored fileprivate var reconnectDelay: Duration = .seconds(1)
+        /// A reconnect waits out its backoff.
+        @ObservationIgnored fileprivate(set) var retryPending = false
         /// Panes attached through this connection, keyed by the host-side
         /// session id. Weak-held by the pane views' lifetime: detach removes.
         @ObservationIgnored fileprivate var panes: [SessionID: RemotePaneSession] = [:]
@@ -201,6 +204,7 @@ final class RemoteHostStore {
 
     private func connect(_ connection: Connection) {
         guard connections.contains(where: { $0 === connection }) else { return }
+        connection.retryPending = false
         connection.onProjectionChanged = { [weak self] in self?.onProjectionChanged?() }
         connection.transportID = UUID()
         connection.phase = .connecting
@@ -235,8 +239,9 @@ final class RemoteHostStore {
                 }
                 client.disconnect()
                 guard !Task.isCancelled else { return }
-                connection.phase = .failed(String(describing: error))
-                self.scheduleReconnect(connection)
+                let failure = RemoteHostFailure(error)
+                connection.phase = .failed(failure)
+                if failure.retries { self.scheduleReconnect(connection) }
             }
         }
     }
@@ -270,7 +275,6 @@ final class RemoteHostStore {
         client.onDisconnected = { [weak self, weak connection] reason in
             guard let self, let connection,
                   connection.client.map(ObjectIdentifier.init) == clientID else { return }
-            if case .connecting = connection.phase { return }
             connection.client = nil
             connection.stopChildRefresh()
             for pane in connection.panes.values {
@@ -278,7 +282,7 @@ final class RemoteHostStore {
             }
             connection.panes.removeAll()
             if self.connections.contains(where: { $0 === connection }) {
-                connection.phase = .failed(reason)
+                connection.phase = .failed(RemoteHostFailure(disconnect: reason))
                 self.scheduleReconnect(connection)
             }
         }
@@ -288,6 +292,7 @@ final class RemoteHostStore {
         let delay = connection.reconnectDelay
         // Exponential backoff, capped at 30s. Reset on successful connect.
         connection.reconnectDelay = min(.seconds(30), delay * 2)
+        connection.retryPending = true
         connection.reconnectTask = Task { [weak self, weak connection] in
             try? await Task.sleep(for: delay)
             guard !Task.isCancelled, let self, let connection else { return }
