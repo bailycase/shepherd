@@ -17,6 +17,9 @@ extension FixtureCatalog {
             FixtureScreen(name: "thread", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)]),
             // A turn the user stopped mid-command: "stopped" on its line and a quiet note, no error.
             FixtureScreen(name: "stopped", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.stopped()), routes: [.thread(preview)]),
+            // Thinking the model kept back: a plain "Thought for 10s" line, then thinking it shared.
+            FixtureScreen(name: "thinking-unshared", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.unsharedThinking()),
+                          routes: [.thread(preview)]),
             // MobileApproval: a running command's live output, Stop, "Queue a follow-up…".
             FixtureScreen(name: "running", hosts: ThreadFixtures.hosts(), routes: [.thread(running)]),
             // MobileQuestion, iPadQuestion: numbered answers, Recommended, one chosen on iPad.
@@ -162,6 +165,22 @@ enum ThreadFixtures {
             F.user("s1", "Use the bash tool to run `sleep 40`, then reply with exactly: slept"),
             F.tool("s2", "bash", args: #"{"command":"sleep 40"}"#, output: "Command aborted", error: true, status: "aborted", at: 9_500),
             F.assistant("s3", "", at: 9_600, status: "aborted"),
+        ]))
+    }
+
+    /// A turn whose model shared none of its first stretch's thinking (timed: a plain line) and
+    /// some of the second's (the disclosure).
+    static func unsharedThinking() -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        return rpc(F.snapshot([
+            F.user("k1", "Why does the sidebar jump when an agent finishes?"),
+            F.assistant("k2", "Looking at how the sidebar orders its rows.", thinking: "", seconds: 10, at: 11_000),
+            F.tool("k3", "read", args: #"{"path":"Sources/ShepherdApp/SidebarView.swift"}"#, output: "line", at: 12_000),
+            F.assistant("k4", "", thinking: "Finished agents sort by their last activity, so a status change moves the row.", seconds: 4,
+                        at: 17_000),
+            F.tool("k5", "grep", args: #"{"pattern":"lastActivity","path":"Sources/"}"#, output: "Sources/A.swift:12", at: 18_000),
+            F.assistant("k6", "The row moves because finished agents sort by their last activity. Sorting by creation keeps it still.",
+                        at: 20_000),
         ]))
     }
 
