@@ -16,7 +16,7 @@ import Testing
 extension PreviewTests {
     /// The automations the host serves: one running, one with two weeks of nightly runs, one
     /// whose run finished (its thread still open to read), and one off.
-    private struct AutomationHostFixture {
+    struct AutomationHostFixture {
         let server: ScratchServer
         let port: UInt16
         let token: String
@@ -84,9 +84,9 @@ extension PreviewTests {
 
         /// Connects the workspace's view model to this host.
         @MainActor
-        func connect(_ workspace: PreviewWorkspace) async throws -> RemoteHostStore.Connection {
+        func connect(_ workspace: PreviewWorkspace, name: String = "build-01") async throws -> RemoteHostStore.Connection {
             let vm = workspace.vm
-            vm.remoteHosts.addHost(name: "build-01", host: "127.0.0.1", port: port, token: token)
+            vm.remoteHosts.addHost(name: name, host: "127.0.0.1", port: port, token: token)
             let connection = try #require(vm.remoteHosts.connections.last)
             let host = server.server
             try await eventuallyOnMain("the host to connect", timeout: .seconds(30)) {
