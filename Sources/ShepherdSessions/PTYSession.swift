@@ -121,13 +121,15 @@ final class PTYSession: @unchecked Sendable {
     }
 
     /// A line editor (zsh's ZLE, readline, fish) has the terminal: it takes it out of canonical
-    /// mode while it reads, and echoes what it reads itself. Until then the terminal echoes
-    /// input as it arrives. Must run under the session's queue hierarchy.
+    /// mode and turns the terminal's echo off while it reads, and echoes what it reads itself.
+    /// Until then the terminal echoes input as it arrives. A startup script that leaves canonical
+    /// mode with echo still on (a terminal query) is not a line editor. Must run under the
+    /// session's queue hierarchy.
     var lineEditorReading: Bool {
         guard isAlive, !masterClosed else { return false }
         var attributes = termios()
         guard tcgetattr(masterFD, &attributes) == 0 else { return false }
-        return attributes.c_lflag & tcflag_t(ICANON) == 0
+        return attributes.c_lflag & tcflag_t(ICANON | ECHO) == 0
     }
 
     private static func argv0(pid: pid_t) -> String? {

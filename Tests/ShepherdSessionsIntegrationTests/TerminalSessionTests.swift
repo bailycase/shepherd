@@ -163,10 +163,16 @@ struct TerminalSessionTests {
     /// Typed before the shell reads, the terminal would echo the command above the prompt and
     /// the line editor would show it again. Here a slow-starting "shell" reads with a line
     /// editor of its own: out of canonical mode, no terminal echo, and it shows what it read.
-    @Test func aCommandTypedIntoAFreshShellWaitsForItsLineEditor() async throws {
+    /// The second leaves canonical mode with the echo still on first (as a startup script's
+    /// terminal query does), which is not yet a line editor.
+    @Test(arguments: [
+        "sleep 0.3; stty -icanon -echo",
+        "sleep 0.3; stty -icanon; sleep 0.5; stty -echo",
+    ])
+    func aCommandTypedIntoAFreshShellWaitsForItsLineEditor(startup: String) async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
-        let info = try await h.shell(#"sleep 0.3; stty -icanon -echo; printf 'PROMPT> '; IFS= read -r line; printf '%s\ndone\n' "$line"; sleep 30"#)
+        let info = try await h.shell(startup + #"; printf 'PROMPT> '; IFS= read -r line; printf '%s\ndone\n' "$line"; sleep 30"#)
         h.server.typeCommand("echo marker", sessionID: info.id)
         try await h.waitForScreen(info.id, toContain: "done")
         let lines = await h.screen(info.id).split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }

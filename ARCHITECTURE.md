@@ -172,7 +172,7 @@ shell process
   lost when a surface is replaced.
 - **A command for a fresh shell** (a pane opened with a command, `gh auth login`) goes through
   `SessionServer.typeCommand`, which waits until the shell's line editor has the terminal (the
-  pty has left canonical mode) and then types it. Written sooner, the terminal echoes it above the
+  pty has left canonical mode and turned its echo off) and then types it. Written sooner, the terminal echoes it above the
   prompt and the line editor shows it again. A shell with no line editor gets it after 5 s.
 - **Dead sessions** stay attachable until their consumer calls `retireSession(sessionID:)`.
 - **Exit and shutdown:** exit delivery waits for buffered output. Shutdown cancels queued
