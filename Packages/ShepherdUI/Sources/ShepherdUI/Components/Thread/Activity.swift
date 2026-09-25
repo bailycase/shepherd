@@ -26,6 +26,8 @@ public struct NWActivityLine: View {
     let isExpanded: Bool
     let accessibilityText: String
     let action: (() -> Void)?
+    /// At the accessibility text sizes (iOS) the label wraps rather than widening the thread.
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// `action` toggles the calls; nil for a line with nothing behind it.
     public init(kind: Kind, label: String, meta: String, status: Status = .done, isExpanded: Bool = false,
@@ -84,8 +86,8 @@ public struct NWActivityLine: View {
                 Text(label)
                     .font(.nw(.ui, weight: .regular))
                     .foregroundStyle(failed ? nw.failed : nw.textSecondary)
-                    .lineLimit(1)
-                    .fixedSize()
+                    .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                    .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
                     .layoutPriority(1)
                     .nwContentTransition(.numeric())
                 if !meta.isEmpty {
@@ -120,7 +122,9 @@ public struct NWActivityLine: View {
         let nw = Color.nw
         return HStack(spacing: NW.Space.m) {
             ProgressView().progressViewStyle(.nwSpinner(size: NWThreadMetrics.activityIcon))
-            Text(label).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary).lineLimit(1).fixedSize()
+            Text(label).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
+                .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
                 .layoutPriority(1)
             if !meta.isEmpty {
                 Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
