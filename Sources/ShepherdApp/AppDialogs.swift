@@ -265,7 +265,7 @@ struct PeerDeleteDialog: View {
                     .truncationMode(.tail)
             }
             DialogBanner(title: "Stops the agent and everything it started",
-                         message: "Its pi session ends mid-turn and its terminal panes close."
+                         message: "Its session ends mid-turn and its terminal panes close."
                              + (branch == nil ? "" : " Its worktree and branch are kept."))
         }
     }

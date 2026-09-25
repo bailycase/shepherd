@@ -55,11 +55,10 @@ import SwiftUI
             NWThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
             NWThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
             NWThinking("Thought for 6s", text: "I'll keep it a minimum, not a fixed height, so large text sizes still fit.", isExpanded: .constant(true))
-            NWThinking(liveSince: Date().addingTimeInterval(-4))
+            NWThinking.live()
             NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                          revealed: true)
             NWTurnError("Model overloaded — the turn stopped after 6 tool calls.", retry: {})
-            NWWorkingRow("Working…")
             NWJumpToLatest {}
         }
         .frame(width: 480)
@@ -69,15 +68,12 @@ import SwiftUI
 #Preview("Activity lines") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.s) {
-            NWActivityLine(kind: .work, label: "Worked for 6m 40s", meta: "explored 13 files · edited 15 files · ran 22 commands · 5 failed") {}
-            NWActivityLine(kind: .work, label: "Worked for 1m 42s", meta: "explored 7 files · edited 3 files", isExpanded: true) {}
-            NWActivityRail {
-                NWActivityLine(kind: .explore, label: "Explored 7 files", meta: "read 5 · search 2 · 0.9s") {}
-            }
+            NWActivityLine(kind: .explore, label: "Explored 7 files", meta: "read 5 · search 2 · 0.9s") {}
             NWActivityLine(kind: .edit, label: "Edited 3 files", meta: "+67 −46", isExpanded: true) {}
             NWActivityCalls([
                 NWActivityCallRow(id: "1", label: "edit", detail: "Sources/ShepherdApp/DesktopNativeThreadView.swift", isPath: true, stat: "+58 −41"),
                 NWActivityCallRow(id: "2", label: "edit", detail: "App/iOS/ThreadView.swift", isPath: true, stat: "+0 −4"),
+                NWActivityCallRow(id: "3", label: "edit", detail: "Tests/ShepherdAppTests/NativePresentationTests.swift", isPath: true, stat: "+9 −1"),
             ], onSelect: { _ in }, onShowAll: { _ in })
             NWActivityLine(kind: .run, label: "Ran tests", meta: "swift test · exit 1 · 8.4s", status: .failed) {}
             NWActivityLine(kind: .run, label: "Building", meta: "xcodebuild -scheme 'Shepherd (Dev)' build",

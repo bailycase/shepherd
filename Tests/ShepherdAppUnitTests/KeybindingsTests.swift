@@ -66,14 +66,14 @@ struct KeybindingsTests {
     @Test func theQueuesFixedKeysMatchTheBoard() {
         let keys = KeybindingsStore(store: Fixture.defaults())
         #expect(FixedChord.allCases.map(\.title) == ["Edit the last queued message", "Move the focused message",
-                                                     "Delete the focused message", "Stop pi"])
+                                                     "Delete the focused message", "Stop the agent"])
         #expect(FixedChord.allCases.map(\.keys) == [["↑"], ["⌥", "↑ ↓"], ["⌫"], ["Esc"]])
         #expect(keys.display(.deleteQueued) == "⌫")
         #expect(keys.display(.moveQueued) == "⌥↑ ⌥↓")
         #expect(keys.sendDisplay == "↩")
     }
 
-    /// Settings ▸ Keyboard's While pi is working group is the board's Keyboard card, in its
+    /// Settings ▸ Keyboard's While the agent is working group is the board's Keyboard card, in its
     /// order; ↩ and the alternate send say what they do under the Return setting.
     @Test(arguments: [
         (ReturnWhileWorking.queue, ["Send, queued", "Send and steer now"]),
@@ -82,7 +82,7 @@ struct KeybindingsTests {
     func whileWorkingKeysFollowTheBoardAndTheReturnSetting(setting: ReturnWhileWorking, sendTitles: [String]) {
         #expect(WhileWorkingKey.all.map { $0.title(setting) } == sendTitles + [
             "Edit the last queued message", "Move the focused message", "Delete the focused message",
-            "Steer the focused message", "Stop pi",
+            "Steer the focused message", "Stop the agent",
         ])
     }
 

@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // One window: no tab bar, and no "Show Tab Bar" menu items.
         NSWindow.allowsAutomaticWindowTabbing = false
         do {
-            _ = try ShepherdPiTheme.installedPath(for: ThemeManager.shared.current)
+            try ShepherdThemeMarker.install(for: ThemeManager.shared.current)
         } catch {
             NSLog("Shepherd: initial theme install failed: \(error)")
         }

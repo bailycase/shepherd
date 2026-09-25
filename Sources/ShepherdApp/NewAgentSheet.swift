@@ -31,7 +31,7 @@ private struct ModelField: View {
     }
 
     var body: some View {
-        TextField("Model", text: $model, prompt: Text("pi's default").foregroundStyle(Color.nw.textTertiary))
+        TextField("Model", text: $model, prompt: Text("The agent's default").foregroundStyle(Color.nw.textTertiary))
             .focused($focused)
             .nwField(focused: focused, mono: true)
             .onChange(of: focused) { showSuggestions = focused && !options.isEmpty }
@@ -232,7 +232,7 @@ struct NewAgentSheet: View {
 
     var body: some View {
         NWDialog("New agent",
-                 message: "Starts pi as a native thread that runs until Shepherd quits. Pi names the agent from your first prompt.",
+                 message: "Starts the agent as a native thread that runs until Shepherd quits. The agent names itself from your first prompt.",
                  width: AppLayout.newAgentSheetWidth) {
             if !connectedHosts.isEmpty {
                 SheetRow("Machine") {
