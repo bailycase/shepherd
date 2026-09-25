@@ -162,12 +162,12 @@ keep the version for real breaks.
   the width and the sidebar slides over it. Portrait is the window's shape, never what the
   keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
   overview: Needs you, Running now and Finished.
-- **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ pi/swiftui-previews", or
-  "Needs you · ⌂ your checkout" when pi works in the space's own checkout; on iPad the branch chip
+- **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ agent/swiftui-previews", or
+  "Needs you · ⌂ your checkout" when the agent works in the space's own checkout; on iPad the branch chip
   with its changed files, and the host when there are several, then a status pill with the running
   turn's clock), Stop while the agent
-  runs, user bubbles with their times, thinking, prose, work groups folded into one line with
-  their calls, the running call's live output, notes, errors with Retry, the "Edited N files"
+  runs, user bubbles with their times, thinking, prose, activity lines (one per burst of work) with
+  their calls, the running call's live line and output ("Thinking…" between tools), notes, errors with Retry, the "Edited N files"
   card (the first three files, then "N more"; Review opens the review scoped to that turn, Undo
   puts the turn's edits back in the working tree and Redo reapplies them, from the host's record
   of the turn, `NativeThreadSnapshot.turnChanges`; an older host's card comes from the turn's edit

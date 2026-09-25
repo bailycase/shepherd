@@ -59,7 +59,7 @@ struct AgentTurnActions {
     var redo: ((UUID) -> Void)?
 }
 
-/// One agent turn (MobileThread board): thinking, prose, work groups, subagent cards where their
+/// One agent turn (MobileThread board): thinking, prose, activity lines, subagent cards where their
 /// spawn calls were, notes and errors, then, once finished, the changes card and the footer.
 /// Everything it draws was derived once per turn change (`NativeTurnPresentation`).
 struct AgentTurnView: View, Equatable {
@@ -69,8 +69,9 @@ struct AgentTurnView: View, Equatable {
     var subagents = NativeSubagentPlacement()
     /// Timestamp (ms) of the user message that opened this turn: the footer's time and duration.
     var startedAt: Double?
-    /// The streaming turn's tail row ("Working…").
-    var working: String?
+    /// The live turn is between tools (`NativeThreadStore.showsThinking`): it ends in the live
+    /// "Thinking…" (LiveText).
+    var thinking = false
     /// The "Edited N files" card, once the turn is over.
     var changes: NativeChangesCard?
     /// Its Undo or Redo is on its way to the host.
@@ -80,7 +81,7 @@ struct AgentTurnView: View, Equatable {
 
     static func == (lhs: AgentTurnView, rhs: AgentTurnView) -> Bool {
         lhs.thread == rhs.thread && lhs.presentation == rhs.presentation && lhs.live == rhs.live
-            && lhs.subagents == rhs.subagents && lhs.startedAt == rhs.startedAt && lhs.working == rhs.working
+            && lhs.subagents == rhs.subagents && lhs.startedAt == rhs.startedAt && lhs.thinking == rhs.thinking
             && lhs.changes == rhs.changes && lhs.changesBusy == rhs.changesBusy
             && (lhs.actions.undo == nil) == (rhs.actions.undo == nil)
             && (lhs.actions.retry == nil) == (rhs.actions.retry == nil)
@@ -100,7 +101,7 @@ struct AgentTurnView: View, Equatable {
                 SubagentCards(thread: thread, runs: subagents.byToolCall.isEmpty ? subagents.all : subagents.trailing,
                               turnLive: live)
             }
-            if let working { NWWorkingRow(working) }
+            if thinking { NWThinking.live() }
             if !live, !presentation.items.isEmpty {
                 if let changes { changesCard(changes) }
                 footer
@@ -112,17 +113,17 @@ struct AgentTurnView: View, Equatable {
 
     @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
         switch item {
-        case .thinking(let id, let text, let seconds, let live, let since):
+        case .thinking(let id, let text, let seconds, let live, _):
             live
-                ? NWThinking(liveSince: since.map { Date(timeIntervalSince1970: $0 / 1000) }, seconds: seconds)
+                ? NWThinking.live()
                 : NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
                     get: { openThinking.contains(id) },
                     set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }),
                     spokenTitle: nativeThoughtSpokenText(seconds))
         case .prose(_, _, let blocks, _):
             ProseView(blocks: blocks).equatable()
-        case .work(let group):
-            WorkGroupView(group: group, review: actions.review).equatable()
+        case .activity(_, let bursts):
+            ActivityLinesView(bursts: bursts, review: actions.review).equatable()
         case .subagents(_, let callIDs, let all):
             SubagentCards(thread: thread, runs: all ? subagents.all : callIDs.flatMap { subagents.byToolCall[$0] ?? [] },
                           turnLive: subagents.all.contains { !$0.isTerminal })
@@ -220,41 +221,21 @@ struct ProseView: View, Equatable {
     }
 }
 
-/// A stretch of tool work: two or more finished lines fold into one summary line that expands
-/// to them on a rail; running calls stand below, live.
-struct WorkGroupView: View, Equatable {
-    let group: NativeWorkGroup
+/// Consecutive activity lines (MobileThread: one line per burst of work), each expanding to its
+/// calls. The running call's line is the thread's live indicator (LiveText).
+struct ActivityLinesView: View, Equatable {
+    let bursts: [NativeActivityBurst]
     var review: ((String) -> Void)?
-    @State private var expanded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    static func == (lhs: WorkGroupView, rhs: WorkGroupView) -> Bool {
-        lhs.group == rhs.group && (lhs.review == nil) == (rhs.review == nil)
+    static func == (lhs: ActivityLinesView, rhs: ActivityLinesView) -> Bool {
+        lhs.bursts == rhs.bursts && (lhs.review == nil) == (rhs.review == nil)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: MobileLayout.activitySpacing) {
-            if let summary = group.summary {
-                NWActivityLine(kind: .work, label: summary.label, meta: summary.meta, status: summary.failed ? .failed : .done,
-                               isExpanded: expanded, accessibilityLabel: summary.accessibilityLabel) {
-                    withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
-                }
-                if expanded {
-                    NWActivityRail {
-                        VStack(alignment: .leading, spacing: MobileLayout.activitySpacing) { lines(group.finished) }
-                    }
-                    .nwTransition(.disclosure)
-                }
-            } else {
-                lines(group.finished)
+            ForEach(bursts) { burst in
+                ActivityLineView(burst: burst, review: review).equatable()
             }
-            lines(group.running)
-        }
-    }
-
-    private func lines(_ bursts: [NativeActivityBurst]) -> some View {
-        ForEach(bursts) { burst in
-            ActivityLineView(burst: burst, review: review).equatable()
         }
     }
 }
@@ -373,7 +354,7 @@ struct ToolOutputSheet: View {
             }
             .safeAreaInset(edge: .bottom) {
                 if output.truncated {
-                    Text("The host clipped this output; the full text is in pi's session file.")
+                    Text("The host clipped this output; the full text is in the agent's session file.")
                         .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(MobileLayout.gutter)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.nw.bgWindow)

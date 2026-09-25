@@ -16,10 +16,6 @@ struct PiSettings: View {
                             subtitle: "Titles each new agent from its first prompt using the cheapest authed model. A rename you type is always final.") {
                     SettingsSwitch(label: "Name agents automatically", isOn: $settings.autoNameAgents)
                 }
-                SettingsRow(title: "Sync pi theme",
-                            subtitle: "Use Shepherd's palette when you run pi by hand in a shell, and follow theme changes.") {
-                    SettingsSwitch(label: "Sync pi theme", isOn: $settings.piThemeExtension)
-                }
                 SettingsRow(title: "Panes and agent tools",
                             subtitle: "Let agents control panes, message or spawn agents, manage automations and send notifications.") {
                     SettingsSwitch(label: "Panes and agent tools", isOn: $settings.piPanesExtension)

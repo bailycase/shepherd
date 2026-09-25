@@ -214,12 +214,12 @@ extension NWEmptyState where Actions == EmptyView {
 }
 
 extension View {
-    /// Loading placeholders pulse (use with `.redacted(reason: .placeholder)`); static under
-    /// Reduce Motion.
-    public func nwShimmer() -> some View { modifier(NWShimmer()) }
+    /// Loading placeholders pulse (use with `.redacted(reason: .placeholder)`; NWStatus), the
+    /// `pulse` motion; static under Reduce Motion. Live text shimmers with `nwShimmer(active:)`.
+    public func nwShimmer() -> some View { modifier(NWPulse()) }
 }
 
-private struct NWShimmer: ViewModifier {
+private struct NWPulse: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.nwMotionPaused) private var motionPaused
     @State private var onScreen = false
@@ -229,8 +229,8 @@ private struct NWShimmer: ViewModifier {
             content
         } else {
             TimelineView(.animation(minimumInterval: nil, paused: motionPaused || !onScreen)) { context in
-                let _ = NWRenderProbe.tick("ui.shimmerFrame")
-                content.opacity(NWPhase.shimmerOpacity(context.date))
+                let _ = NWRenderProbe.tick("ui.pulseFrame")
+                content.opacity(NWPhase.pulseOpacity(context.date))
             }
             .onAppear { onScreen = true }
             .onDisappear { onScreen = false }
