@@ -1514,7 +1514,8 @@ components first), with these differences for touch:
   sits 8pt above the composer, drawn as on the Mac with a 44pt hit area.
 - **A paused queue** has no hover to reveal a row's Send now or the header's tooltip: its header
   shows Send now (secondary, small; the ••• menu's Send all now) between "Paused" and the •••,
-  and the reason is its VoiceOver hint.
+  and the reason is its VoiceOver hint. At accessibility text sizes Send now takes a row of its
+  own under the title, and "Jump to latest" grows with its text.
 - **Windows (iPad; iPadSplitView, iPadPalette boards):** each window is a whole Shepherd, with
   its own sidebar and thread, over the same hosts and drafts. "Open in new window"
   (`macwindow.badge.plus`) sits in a thread's options menu and in the sidebar's and the palette's
