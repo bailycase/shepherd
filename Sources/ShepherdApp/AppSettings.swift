@@ -103,6 +103,10 @@ final class AppSettings {
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
             worktreeMergeMethod,
         ]
+
+        /// What Reset settings clears: everything but Remote's listener, which only its own
+        /// switch turns on or off (a reset must not stop serving at the next launch).
+        static let resettable = all.filter { $0 != remoteListenerEnabled && $0 != remoteListenerPort }
     }
 
     enum Defaults {
@@ -440,7 +444,7 @@ final class AppSettings {
         worktreeMergeMethod = .squash
         // Then clear the store, so an unset preference reads as "never
         // configured" and follows a future change of default.
-        for key in Key.all {
+        for key in Key.resettable {
             store.removeObject(forKey: key)
         }
     }

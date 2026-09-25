@@ -166,9 +166,24 @@ struct AppSettingsTests {
         #expect(settings.uiDensity == 1 && settings.uiTextScale == 1)
         #expect(settings.sidebarWidth == AppSettings.defaultSidebarWidth)
         #expect(!settings.worktreeAutoMergePR && settings.childConcurrency == 4)
-        for key in AppSettings.Key.all {
+        for key in AppSettings.Key.resettable {
             #expect(store.object(forKey: key) == nil, "\(key) survived reset")
         }
+    }
+
+    /// Serve this Mac is Remote's own switch: a reset leaves the listener as it is, now and at
+    /// the next launch.
+    @Test func resetLeavesTheListenerServing() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        settings.remoteListenerEnabled = true
+
+        settings.resetToDefaults()
+
+        #expect(settings.remoteListenerEnabled)
+        #expect(AppSettings(store: store).remoteListenerEnabled)
+        #expect(Set(AppSettings.Key.all).subtracting(AppSettings.Key.resettable)
+                == [AppSettings.Key.remoteListenerEnabled, AppSettings.Key.remoteListenerPort])
     }
 
     /// An empty model launches pi without `--model` rather than with an empty argument.
