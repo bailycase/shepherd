@@ -8,16 +8,14 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// Subagent surfaces in motion, recorded from off-screen windows (`MotionProbe`): a card's
-/// question and a spawned card nudge in where they land (and only fade under Reduce Motion)
-/// while the card takes its new size at once, the inspector steps to a sibling from the side it
-/// sits on, and its transcript grows without leaving the tail.
+/// Subagent surfaces in motion, recorded from off-screen windows (`MotionProbe`): the tray
+/// arriving above the composer leaves the followed thread at its tail, the inspector steps to a
+/// sibling from the side it sits on, and its transcript grows without leaving the tail.
 @Suite("Subagent motion", .mainActorExclusive, .timingSensitive)
 @MainActor
 struct SubagentMotionTests {
     @MainActor @Observable
     final class Model {
-        var card = NWSubagentRun(id: "reviewer", name: "reviewer", state: .attention, detail: "waiting on your answer")
         var runs: [ChildRun]
         var runID: String
 
@@ -35,139 +33,6 @@ struct SubagentMotionTests {
         ChildRun(runID: "run-\(index)", label: "worker \(index)", state: state, startedAt: 1_000 + Double(index), role: "worker \(index)",
                  turns: 3 + index, tokens: 40_000, lastActivity: ChildActivity(tool: "edit", preview: "Sources/File\(index).swift", at: 1_000),
                  task: "Restyle part \(index) of the thread.")
-    }
-
-    // MARK: Cards
-
-    /// The top of what `change` added in `column`, and the frames caught drawing above it: a
-    /// nudge from the top draws there before it lands, a cross-fade never does.
-    private func framesAbove(_ recording: MotionRecording) throws -> (rest: Int, above: Int) {
-        let rest = try #require(recording.settled.firstRow(differingFrom: recording.before), "the change shows")
-        let above = recording.inBetween.filter { ($0.firstRow(differingFrom: recording.settled) ?? .max) < rest }
-        return (rest, above.count)
-    }
-
-    @Test(arguments: [false, true])
-    func aQuestionOpensInItsCardAndOnlyFadesUnderReduceMotion(reduceMotion: Bool) async throws {
-        let model = Model()
-        let window = OffscreenWindow(size: CGSize(width: Self.width, height: Self.column.height), dark: false,
-                                     CardHost(model: model).environment(\._accessibilityReduceMotion, reduceMotion))
-        defer { window.close() }
-
-        let recording = await MotionProbe.record(window, region: Self.column) {
-            model.card.question = NWSubagentQuestion(text: "Rename the new tokens, or replace the old ones?", options: ["Rename"])
-        }
-
-        #expect(!recording.inBetween.isEmpty, "the question arrives over time")
-        let (rest, above) = try framesAbove(recording)
-        if reduceMotion {
-            #expect(above == 0, "the question fades in where it rests (\(rest))")
-        } else {
-            #expect(above > 0, "the question nudges down into place (\(rest))")
-        }
-    }
-
-    @Test(arguments: [false, true])
-    func aSpawnedRunsCardNudgesIntoItsGroupAndOnlyFadesUnderReduceMotion(reduceMotion: Bool) async throws {
-        let model = Model(runs: [Self.run(0), Self.run(1)])
-        let window = OffscreenWindow(size: CGSize(width: Self.width, height: Self.column.height), dark: false,
-                                     GroupHost(model: model).environment(\._accessibilityReduceMotion, reduceMotion))
-        defer { window.close() }
-
-        let recording = await MotionProbe.record(window, region: Self.column) { model.runs.append(Self.run(2)) }
-
-        #expect(!recording.inBetween.isEmpty, "the card arrives over time")
-        let (rest, above) = try framesAbove(recording)
-        if reduceMotion {
-            #expect(above == 0, "the card fades in where it rests (\(rest))")
-        } else {
-            #expect(above > 0, "the card nudges down into place (\(rest))")
-        }
-    }
-
-    /// In a thread each spawn's card is its own stack among its turn's parts, and those parts
-    /// (the next card, "Working…") take their new places at once. So a card reshaping for a
-    /// question takes its new size at once too: easing it would open a gap above the card below
-    /// as it grows, and draw it under that card as it shrinks.
-    @Test(arguments: [true, false])
-    func aCardReshapingForAQuestionNeverMovesAgainstTheCardBelow(opening: Bool) async throws {
-        let asking: ChildRun = {
-            var run = Self.run(0)
-            run.needsAttention = true
-            run.question = ChildQuestion(text: "Rename the new tokens, or replace the old ones everywhere?", options: ["Rename", "Replace"])
-            return run
-        }()
-        let model = Model(runs: [opening ? Self.run(0) : asking, Self.run(1)])
-        let window = OffscreenWindow(size: CGSize(width: Self.width, height: Self.column.height), dark: false, SpawnsHost(model: model))
-        defer { window.close() }
-        _ = await MotionProbe.record(window, region: Self.column, timeout: 0.5) {}
-
-        let recording = await MotionProbe.record(window, region: Self.column) { model.runs[0] = opening ? asking : Self.run(0) }
-
-        // The cards' fill sits close to the window's, so the column finds their 1px lines: the
-        // last two rows drawn are the lower card's, the one before them the first card's foot.
-        let empty = (x: 0, y: Int(Self.column.height) - 1)
-        func foot(_ frame: MotionRecording.Frame) -> (foot: Int, next: Int)? {
-            let lines = frame.drawnRuns(over: empty)
-            guard lines.count >= 3 else { return nil }
-            return (lines[lines.count - 3].upperBound, lines[lines.count - 2].lowerBound)
-        }
-        let settled = try #require(foot(recording.settled), "two cards")
-        #expect(settled.foot != foot(recording.before)?.foot, "the first card changed size")
-        // The first card's foot, the gap, and the top of the card below; only the first card's
-        // line may change there, and only its color.
-        let seam = [(settled.foot - 4)...(settled.foot - 1), (settled.foot + 1)...(settled.next + 2)]
-        let moving = recording.frames.dropFirst().filter { frame in seam.contains { !frame.matches(recording.settled, inRows: $0) } }
-        #expect(moving.isEmpty, "the seam between the cards moves in \(moving.count) frames (rows \(seam))")
-        if opening {
-            #expect(!recording.inBetween.isEmpty, "the question fades in")
-        }
-    }
-
-    private struct SpawnsHost: View {
-        let model: Model
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
-                ForEach(model.runs, id: \.id) { run in
-                    SubagentStack(runs: [run], turnLive: true,
-                                  actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(NW.Space.l)
-            .frame(width: SubagentMotionTests.width, height: SubagentMotionTests.column.height, alignment: .top)
-            .background(Color.nw.bgWindow)
-        }
-    }
-
-    private struct CardHost: View {
-        let model: Model
-
-        var body: some View {
-            VStack(spacing: 0) {
-                NWSubagentCard(model.card, inspect: {}, answer: { _ in }).equatable()
-                Spacer(minLength: 0)
-            }
-            .padding(NW.Space.l)
-            .frame(width: SubagentMotionTests.width, height: SubagentMotionTests.column.height, alignment: .top)
-            .background(Color.nw.bgWindow)
-        }
-    }
-
-    private struct GroupHost: View {
-        let model: Model
-
-        var body: some View {
-            VStack(spacing: 0) {
-                SubagentStack(runs: model.runs, turnLive: true,
-                              actions: SubagentActions(inspect: { _ in }, command: { _, _, _, _ in }))
-                Spacer(minLength: 0)
-            }
-            .padding(NW.Space.l)
-            .frame(width: SubagentMotionTests.width, height: SubagentMotionTests.column.height, alignment: .top)
-            .background(Color.nw.bgWindow)
-        }
     }
 
     // MARK: Inspector
@@ -275,15 +140,15 @@ struct SubagentMotionTests {
                                     provisional: [], clipped: false, subagents: runs)
     }
 
-    /// Rule 4 of the motion pass: a card easing open at the tail never leaves the followed
-    /// thread short of it.
-    @Test func aCardOpeningItsQuestionKeepsTheFollowedThreadAtItsTail() async throws {
-        var runs = (0..<3).map { index in
+    /// Rule 4 of the motion pass: the tray arriving above the composer (the thread's inset
+    /// grows under it) never leaves the followed thread short of its tail.
+    @Test func theTrayArrivingKeepsTheFollowedThreadAtItsTail() async throws {
+        let runs = (0..<3).map { index in
             var run = Self.run(index)
             run.toolCallID = "spawn-\(index)"
             return run
         }
-        var snapshot = Self.threadSnapshot(runs: runs, revision: 1)
+        var snapshot = Self.threadSnapshot(runs: [], revision: 1)
         let store = NativeThreadStore()
         let request: NativeThreadStore.Request = { _ in .snapshot(value: snapshot) }
         let window = OffscreenWindow(size: CGSize(width: 800, height: 600), dark: false,
@@ -307,16 +172,13 @@ struct SubagentMotionTests {
         }
         try await eventuallyOnMain("the thread to load") { store.ready }
         let tail = try await settled()
-        let height = scroll.documentView?.bounds.height ?? 0
         #expect(abs(tail) < 2, "opens at its tail: \(tail)")
 
-        runs[2].needsAttention = true
-        runs[2].question = ChildQuestion(text: "Rename the new tokens, or replace the old ones everywhere?", options: ["Rename", "Replace"])
         snapshot = Self.threadSnapshot(runs: runs, revision: 2)
         await store.refresh()
+        try await eventuallyOnMain("the tray to show") { store.tray != nil }
 
         let after = try await settled()
-        #expect((scroll.documentView?.bounds.height ?? 0) > height + 40, "the card grew its question")
         #expect(abs(after - tail) < 2, "still at the tail: \(after), was \(tail)")
     }
 

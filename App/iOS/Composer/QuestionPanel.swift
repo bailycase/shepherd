@@ -14,6 +14,10 @@ struct QuestionPanel: View {
     let enabled: Bool
     /// On a phone the panel docks to the bottom edge; on iPad it is a card in the column.
     let docked: Bool
+    /// Who asks ("Agent is asking", "reviewer is asking"), and what the panel's way out says:
+    /// Dismiss cancels pi's question; a subagent's is only hidden (Hide).
+    var title = "Agent is asking"
+    var dismissTitle = "Dismiss"
     let answer: (NativeDialogAnswer) -> Void
     @Environment(\.composerMaxHeight) private var maxHeight
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -23,7 +27,10 @@ struct QuestionPanel: View {
     @State private var width: CGFloat = 0
     private let options: [NativeQuestionOption]
 
-    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, docked: Bool = false, answer: @escaping (NativeDialogAnswer) -> Void) {
+    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, docked: Bool = false, title: String = "Agent is asking",
+         dismissTitle: String = "Dismiss", answer: @escaping (NativeDialogAnswer) -> Void) {
+        self.title = title
+        self.dismissTitle = dismissTitle
         self.dialog = dialog
         self.count = count
         self.enabled = enabled
@@ -37,7 +44,7 @@ struct QuestionPanel: View {
     var body: some View {
         let nw = Color.nw
         let blocked = !enabled || dialog.unavailable != nil
-        NWQuestionCard(docked: docked, count: count) {
+        NWQuestionCard(docked: docked, count: count, title: title) {
             // The question and its answers scroll inside a panel too tall for the screen (a
             // long message, a large text size); the actions stay in reach under them.
             VStack(alignment: .leading, spacing: NW.Space.l) {
@@ -141,7 +148,7 @@ struct QuestionPanel: View {
     private func actions(primary: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         HStack(spacing: NW.Space.m) {
             if !docked { Spacer(minLength: 0) }
-            Button("Dismiss") { answer(.cancel) }
+            Button(dismissTitle) { answer(.cancel) }
                 .buttonStyle(.nw(.ghost, size: .l))
             Button(action: action) { Text(primary).frame(maxWidth: docked ? .infinity : nil) }
                 .buttonStyle(.nw(.primary, size: .l))
@@ -150,7 +157,7 @@ struct QuestionPanel: View {
     }
 
     private var dismissButton: some View {
-        Button { answer(.cancel) } label: { Text("Dismiss").frame(maxWidth: .infinity) }
+        Button { answer(.cancel) } label: { Text(dismissTitle).frame(maxWidth: .infinity) }
             .buttonStyle(.nw(.ghost, size: .l))
     }
 }

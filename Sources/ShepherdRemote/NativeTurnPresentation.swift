@@ -1,32 +1,30 @@
 import Foundation
 import ShepherdProtocol
 
-/// Where a turn's subagent cards replace their spawn calls: the spawn call ids that have
-/// cards, and whether the group folds into one stack (a strip or the ledger) at the first one.
+/// Where a turn's subagents show in its thread: the spawn call ids the record stands for (they
+/// and the parent's bookkeeping calls leave no activity line), and the record itself ("Started
+/// 3 subagents", then "3 subagents finished").
 public struct NativeCardLayout: Equatable, Hashable, Sendable {
     public var callIDs: Set<String>
-    public var folds: Bool
+    public var record: NativeSubagentRecord?
 
-    public init(callIDs: Set<String> = [], folds: Bool = false) {
+    public init(callIDs: Set<String> = [], record: NativeSubagentRecord? = nil) {
         self.callIDs = callIDs
-        self.folds = folds
+        self.record = record
     }
 
     public static let none = NativeCardLayout()
 
-    /// A turn's placement as the thread lays it out: the group folds once it has more than
-    /// the strip threshold of runs or every run has finished.
+    /// A turn's placement as its thread records it.
     public init(_ placement: NativeSubagentPlacement?) {
-        guard let placement, !placement.byToolCall.isEmpty else { self.init(); return }
-        let all = placement.all
-        self.init(callIDs: Set(placement.byToolCall.keys),
-                  folds: all.count > NativeRunsStrip.collapseThreshold || nativeSubagentGroupIsTerminal(all))
+        guard let placement, !placement.isEmpty else { self.init(); return }
+        self.init(callIDs: Set(placement.byToolCall.keys), record: NativeSubagentRecord(placement.all))
     }
 }
 
 /// An agent turn as the thread draws it (NWThread board): thinking, prose, activity lines,
-/// subagent cards where their spawn calls were, notes and errors, then the changes card and
-/// the footer. Built once per turn change; views only read it.
+/// the subagent record (where they started and where they finished), notes and errors, then
+/// the changes card and the footer. Built once per turn change; views only read it.
 public struct NativeTurnPresentation: Equatable, Sendable {
     public enum Item: Equatable, Sendable, Identifiable {
         /// Thinking for one stretch of work (merged between prose), or the live block. `text` is
@@ -36,11 +34,13 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// `openFence`: the text ends inside a fence still open (the block a reply is writing).
         case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
         /// Consecutive activity lines, one per burst of work (NWThread: "one quiet line per
-        /// burst"), between prose, notes, errors, steers and cards. `id` follows the first burst.
+        /// burst"), between prose, notes, errors, steers and the subagent record. `id` follows
+        /// the first burst.
         case activity(id: String, bursts: [NativeActivityBurst])
-        /// Subagent cards at a spawn position: `callIDs` look up the placement; `all` is a
-        /// folded group (every run of the turn in one stack).
-        case subagents(id: String, callIDs: [String], all: Bool)
+        /// The turn's subagent record: where they started, and where they finished. Both lines
+        /// are one item while nothing came between them, so they sit together as activity
+        /// lines do (SubagentsDone).
+        case subagents(id: String, lines: [NativeSubagentRecordLine])
         case note(id: String, text: String)
         /// A failed provider request; `final` when it ended the turn.
         case error(id: String, text: String, count: Int, final: Bool)
@@ -50,7 +50,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 
         public var id: String {
             switch self {
-            case .thinking(let id, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _, _), .note(let id, _), .error(let id, _, _, _),
+            case .thinking(let id, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _), .note(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _), .activity(let id, _): id
             }
         }
@@ -81,7 +81,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
 }
 
 /// Builds a turn's presentation. Consecutive calls of one kind merge into activity lines, one per
-/// burst; prose and cards split them. Thinking between prose blocks folds into one "Thought for Ns" at the
+/// burst; prose and the subagent record split them. Thinking between prose blocks folds into one "Thought for Ns" at the
 /// start of its stretch, so a thinking model's per-call reasoning does not break every line
 /// in two; the block still streaming stays last, live. `call` builds a call from its message
 /// (the store passes a memoised one).
@@ -100,7 +100,10 @@ public func nativeTurnPresentation(
     }
 
     var raw: [Raw] = []
+    // When each raw item's message landed (ms), for where the subagents' finished line goes.
+    var times: [Double?] = []
     for message in messages {
+        defer { while times.count < raw.count { times.append(message.timestamp) } }
         if message.role == "user" {
             let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
             raw.append(.steer(text, message.timestamp, message.blocks.count { $0.kind == .unsupportedImage }))
@@ -137,9 +140,12 @@ public func nativeTurnPresentation(
 
     // The block still streaming is the turn's live thinking; everything else folds.
     var liveThinking: Raw?
-    if live, case .thinking? = raw.last { liveThinking = raw.removeLast() }
-    // Only one thing moves at a time: a running call (even one a card or the tray stands for),
-    // thinking, or the reply being written. With none of them, pi is between tools.
+    if live, case .thinking? = raw.last {
+        liveThinking = raw.removeLast()
+        times.removeLast()
+    }
+    // Only one thing moves at a time: a running call (even one the tray stands for), thinking,
+    // or the reply being written. With none of them, pi is between tools.
     let callRunning = messages.contains { message in
         (message.toolName != nil || message.role == "toolResult") && message.isError != true
             && (message.status == "running" || message.status == "streaming")
@@ -153,7 +159,8 @@ public func nativeTurnPresentation(
     var toolCalls = 0
     var copy: [String] = []
     var ordinal = 0
-    var placedFold = false
+    var placedStart = false
+    var placedFinish = false
     let hasCards = !cards.callIDs.isEmpty
 
     func nextID(_ kind: String) -> String {
@@ -191,29 +198,41 @@ public func nativeTurnPresentation(
         stretchItems = []
     }
 
-    for item in raw {
+    /// The record's lines: "Started" once, at the first spawn; "finished" once, after it.
+    func placeStart() {
+        guard let record = cards.record, !placedStart else { return }
+        flushCalls()
+        stretchItems.append(.subagents(id: "subagents:started", lines: [record.started]))
+        placedStart = true
+    }
+    func placeFinish() {
+        guard placedStart, !placedFinish, let finished = cards.record?.finished else { return }
+        flushCalls()
+        if case .subagents(let id, let lines)? = stretchItems.last, id == "subagents:started" {
+            stretchItems[stretchItems.count - 1] = .subagents(id: id, lines: lines + [finished])
+        } else {
+            stretchItems.append(.subagents(id: "subagents:finished", lines: [finished]))
+        }
+        placedFinish = true
+    }
+
+    for (index, item) in raw.enumerated() {
+        // They finished before this landed.
+        if placedStart, !placedFinish, let finishedAt = cards.record?.finishedAt, let time = times[index], time > finishedAt {
+            placeFinish()
+        }
         switch item {
         case .thinking(let text, let seconds, let message, _):
             stretchThinking.append((text, seconds, message))
         case .tool(let message):
             toolCalls += 1
-            // Once cards stand for a turn's children, their bookkeeping calls have no second
+            // The record stands for the turn's children: their bookkeeping calls have no second
             // surface; unassociated calls stay visible so errors are not hidden.
             if hasCards, ["shepherd_child_wait", "shepherd_child_result"].contains(message.toolName ?? "") { continue }
             if let id = message.toolCallID, cards.callIDs.contains(id) {
                 toolCalls -= 1
-                // A spawn after the folded stack was placed leaves no mark: the work around it
-                // stays one group.
-                if cards.folds {
-                    if !placedFold {
-                        flushCalls()
-                        stretchItems.append(.subagents(id: "cards:" + id, callIDs: [], all: true))
-                        placedFold = true
-                    }
-                } else {
-                    flushCalls()
-                    stretchItems.append(.subagents(id: "cards:" + id, callIDs: [id], all: false))
-                }
+                // Later spawns leave no mark: the work around them stays one group.
+                placeStart()
                 continue
             }
             let value = call(message)
@@ -235,6 +254,10 @@ public func nativeTurnPresentation(
             items.append(.steer(id: nextID("steer"), text: text, sentAt: sentAt, images: images))
         }
     }
+    // Runs with no spawn call in this turn (older publishes, paged-out history) are recorded
+    // at its end, as are runs that finished after its last word.
+    placeStart()
+    placeFinish()
     flushStretch()
     if case .thinking(let text, let seconds, _, let since)? = liveThinking {
         items.append(.thinking(id: nextID("thinking"), text: nativeThinkingIsReadable(text) ? text : "", seconds: seconds,

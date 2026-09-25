@@ -156,8 +156,11 @@ public struct NWQueueNumber: View {
 /// then one row per message with a hairline between. A collapsed stack is its header alone.
 /// Past `expandedMaxRows` rows it scrolls inside, so it never takes the thread's room. Rows keep
 /// to the card's rounded corners, but a lifted row floats over the card and past its edges.
+/// Unframed, it draws no card of its own: it is Up next's section of the dock (`NWDockStack`),
+/// under the subagents.
 public struct NWQueueStack<Rows: View, Options: View>: View {
     let count: Int
+    let framed: Bool
     let paused: String?
     let collapsed: Bool
     let scrolls: Bool
@@ -171,9 +174,10 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
     /// scrolls them, keeping the last row ("Show fewer") below.
     /// `drop` draws a drag's lantern drop line at the top of that row's slot, under the lifted
     /// row.
-    public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil,
+    public init(count: Int, paused: String? = nil, collapsed: Bool, scrolls: Bool = false, drop: Int? = nil, framed: Bool = true,
                 onToggle: @escaping () -> Void, @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
         self.count = count
+        self.framed = framed
         self.paused = paused
         self.collapsed = collapsed
         self.scrolls = scrolls
@@ -208,8 +212,8 @@ public struct NWQueueStack<Rows: View, Options: View>: View {
                 .nwTransition(.disclosure)
             }
         }
-        .background(nw.bgRaised, in: shape)
-        .nwBorder(nw.lineStrong, radius: NW.Radius.m)
+        .background(framed ? nw.bgRaised : .clear, in: shape)
+        .nwBorder(framed ? nw.lineStrong : .clear, radius: NW.Radius.m)
         .accessibilityElement(children: .contain)
     }
 

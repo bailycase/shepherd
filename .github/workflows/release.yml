@@ -8,13 +8,17 @@ name: Release
 #   push to nightly     → Shepherd Nightly   (appcast-shepherd-nightly.xml)
 #   tag vX.Y.Z-rc.N     → nothing: release candidates are retired
 #   manual run          → as above for its ref; any branch but nightly builds nothing
+#   manual run on nightly with testflight=true
+#                       → Shepherd iOS to TestFlight internal testing, and no Mac build
+#                         (gh workflow run release.yml --ref nightly -f testflight=true)
 #
-# A push to nightly also uploads the iOS client (Shepherd iOS) to TestFlight for
-# internal testing, in its own job on an Xcode 27 runner. The Mac job never waits
-# on it or fails with it, and it is skipped with a notice when the App Store
-# Connect key below is not configured. Beta and stable tags upload nothing yet.
-# After a successful upload, retire-testflight expires every older TestFlight
-# build, so only the newest stays installable.
+# No push uploads the iOS client (Shepherd iOS): Apple caps TestFlight uploads per
+# day (ITMS-90382), so only a manual TestFlight run does, in its own job on an
+# Xcode 27 runner. It is skipped with a notice when the App Store Connect key
+# below is not configured, and refused on a re-run (the build number would
+# repeat). Beta and stable tags upload nothing yet. After a successful upload,
+# retire-testflight expires every older TestFlight build, so only the newest
+# stays installable.
 #
 # Shepherd Nightly is its own app (com.bailycase.shepherd.nightly, Shepherd
 # Nightly.app, Shepherd-Nightly.dmg), so it installs beside Shepherd and only
@@ -42,14 +46,22 @@ on:
     tags: ["v*"]
     branches: [nightly]
   workflow_dispatch:
+    inputs:
+      testflight:
+        description: Upload the iOS client to TestFlight instead of building Shepherd Nightly
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
-# A newer nightly push supersedes a queued/running one; tags never cancel.
+# Runs queue and never cancel: a push waits for the running release to finish, and a newer push
+# replaces only the one still waiting, so every started run completes and the newest commit ships next.
+# A TestFlight run queues apart: sharing the pushes' group, it would replace a waiting push (whose
+# commit then never reaches Shepherd Nightly) or be replaced by one (and never upload).
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: release-${{ github.ref }}${{ inputs.testflight && '-testflight' || '' }}
+  cancel-in-progress: false
 
 jobs:
   plan:
@@ -83,8 +95,10 @@ jobs:
             published=$(git ls-remote --tags origin 'refs/tags/nightly-*' \
               | awk -v sha="$GITHUB_SHA" '$1 == sha { sub("refs/tags/", "", $2); print $2; exit }')
           fi
+          # Only a manual run asks for TestFlight; every push plans without it.
           plan=$(python3 scripts/release.py plan "$GITHUB_REF" "$(date -u +%Y%m%d%H%M)" \
-            "$GITHUB_RUN_ATTEMPT" "$published" ${{ steps.asc.outputs.flag }})
+            "$GITHUB_RUN_ATTEMPT" "$published" ${{ steps.asc.outputs.flag }} \
+            ${{ github.event_name == 'workflow_dispatch' && inputs.testflight && '--testflight' || '' }})
           echo "$plan" >> "$GITHUB_OUTPUT"
           jq -r 'if .build then "\(.title): \(.scheme), \(.configuration), \(.dmg)" else "::notice::\(.reason)" end' <<<"${plan#plan=}"
           jq -r 'if .ios then "TestFlight: \(.ios_scheme), \(.ios_configuration), \(.ios_testing) testing" else "::notice title=TestFlight::\(.ios_reason)" end' <<<"${plan#plan=}"
@@ -379,9 +393,9 @@ jobs:
       CONFIGURATION: ${{ fromJSON(needs.plan.outputs.plan).ios_configuration }}
       PRODUCT: ${{ fromJSON(needs.plan.outputs.plan).ios_product }}
       EXPORT_OPTIONS: ${{ fromJSON(needs.plan.outputs.plan).ios_export_options }}
-      # Shared with Shepherd Nightly, so a TestFlight build names the Mac build
-      # from the same commit. The marketing version stays the project's: the
-      # Mac nightly's 0.0.0-nightly.<stamp> is not a valid iOS version.
+      # The run number: each TestFlight run has its own, and a re-run (which
+      # keeps it) is refused by the plan. The marketing version stays the
+      # project's: the Mac nightly's 0.0.0-nightly.<stamp> is not a valid iOS version.
       BUILD: ${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4

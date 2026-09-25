@@ -157,10 +157,8 @@ And the rules that follow from them:
 | TerminalTab · states: an exited tab stays, its output kept ("exited with an error; the output stays") | On the Mac a shell that exits closes its pane, so its tab goes at once; iOS shows the exited state until the host closes it | A process that exits on its own closes its pane (AGENTS.md › Sessions and views are separate) |
 | iPadTerminal: the key row reads esc, tab, ctrl, ⌥, ↑ ↓ ← →, `\|`, `~`, `/` | esc, tab, ctrl, ⌥, `\|`, `~`, `/`, `-`, then the arrows | A row that wraps in two on a phone keeps the arrows together (`TerminalKey`); `-` for flags |
 | Earlier boards, no longer on the canvas: a compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither comes back. The Search (⌘K) and Hide sidebar buttons today's boards draw there are the spec (Sidebar › Top bar, not built yet) | ⌘N (or a space's hover `+`) starts an agent, and the palette is a button, not a field |
-| Subagents, SubagentsDone and SubagentCards (the macOS page boards; the side-pane boards PaneStates, PaneBrowser, PaneArtifacts, PaneArtifactEdit and PaneFiles draw the same way): radius 10 cards and panes, 52pt toolbars and 48–52pt pane headers, 40pt card headers, 26–30pt buttons at radius 6–7, 13–14pt text, a 36pt ledger header with 8pt square steps | The Night Watch boards' components (NWAgents): radius 8, 44pt headers, `s` (24pt) buttons, `ui` 12.5 text, a 32pt ledger header with 3pt bars | The NW boards are the system; the radius, height and type scales, and Details on hover |
-| Subagents, SubagentCards: the pill carries the time ("Running · 37m 21s", "Done · 4m 02s"), a mode tag ("background", "async"), a stats row ("step 1 / 1", "78 turns · 82 tools · 922k tok") and the last call's diff and age ("+31 · 4s ago") | NWAgents' card: a plain pill; one mono line (the call by file name, the wait, or what it did with "26 tools · 12m") and the context bar; no mode anywhere | The card never grows while it runs; step, turns and tokens live in the inspector |
-| SubagentCards: a running card's row of Inspect ⌘I, Steer…, Pause and Stop; a done card's files, diff, tokens and Open transcript; a failed card folded to one row with Retry and Transcript. Subagents: a done card folded to one row (its summary, diff and time) | Clicking the card inspects it; Pause/Continue, Stop and Re-run in its context menu and the inspector (which has the Steer field); a done card keeps its header and one mono line; a failed card keeps NWAgents' Open replay and Re-run | One target per card; NWAgents' labels |
-| SubagentsDone: the ledger header's "45m wall · 1.5m tok · +318 −64 · 7 files"; rows with tools and questions ("1 question · 26 tools · 12m") and a glyph; the inspector's "async · claude-sonnet · 11 turns · 19 tools · 118k tok"; "Fork as new agent" | NWAgents: "all done · 45m" and the combined diff; rows "5 files · 41m" with a state dot; "claude-sonnet · 11 turns · done 11:02"; "Fork" (its tooltip says the rest) | The NWAgents board |
+| Subagents, SubagentsDone and SubagentsQueue (the macOS page boards; the side-pane boards PaneStates, PaneBrowser, PaneArtifacts, PaneArtifactEdit and PaneFiles draw the same way): radius 10 cards and panes, 52pt toolbars and 48–52pt pane headers, 40pt card headers, 36pt file headers and 26pt file chips, 26–30pt buttons at radius 6–7, 13–14pt text, a 20pt `running` comment `+` and avatar, a comment's Edit at rest | The Night Watch boards' components (NWAgents, NWReview): radius 8, 44pt headers, 32pt file headers and 24pt chips, `s` (24pt) buttons, `ui` 12.5 text, a lantern avatar and an 18pt lantern `+` to match it, Edit and Delete on hover | The NW boards are the system; the radius, height and type scales, and Details on hover |
+| SubagentsDone: the inspector's "async · claude-sonnet · 11 turns · 19 tools · 118k tok"; "Fork as new agent" | NWAgents: "claude-sonnet · 11 turns · done 11:02"; "Fork" (its tooltip says the rest) | The NWAgents board |
 | Subagents, MobileSubagent: the transcript's live call "Building swift build --target ShepherdRemote 11s" with the output's tail | The live line with its verb, command and clock ("Building swift build --target ShepherdRemote 11s"), with no output lines | A run's session file holds only finished calls, and the run reports its call in flight but not its output |
 | PaneStates widths: the thread keeps 520pt, 760pt default for Files, double-click the divider for half the window, ⇧⌘O pops the pane into a window | 380pt minimum and 600 default as drawn, at most half the column, and the layout keeps 400; no double-click and no pop-out | The Navigation board's 400pt thread (`RightPaneSplit`); Files is not built; one window (Window and adaptive layout) |
 | PaneStates' ⋯ menu (`SidePaneOptions`): Split below, Open pane in its own window ⇧⌘O, Reset width, then Show tabs with a check per tab | Changes' own items (Maximize Pane, Expand All Files, Collapse All Files, Copy Review as Text), then Reset Width | With Changes the only tab, a split has nothing to show below it, Show tabs nothing to hide, and a window of its own would break the one-window rule and host the review a second time: none is offered until it works (never a dead item) |
@@ -666,13 +664,14 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
 runs, 2,000 folders).
 
 - **Anything that can outgrow a screen is lazy.** The sidebar tree, the palette's results, the
-  thread and the inspector's transcript, the review's diff and file strip, the run ledger, and
-  the directory and model lists are `LazyVStack`s or `LazyHStack`s with stable ids. Eager stacks
+  thread and the inspector's transcript, the review's diff and file strip, an open subagent
+  tray, and the directory and model lists are `LazyVStack`s or `LazyHStack`s with stable ids. Eager stacks
   are for lists bounded by design (Settings rows, a dialog's checklist, a composer menu). A lazy
   stack in a height-capped, fixed-size scroll view still hugs a short list (the palette does).
-  A list inside one of the thread's own rows is measured before it is nested: the run ledger
-  builds lazily (about 6 ms a scroll step, against one 150 ms build for 200 runs), while a
-  300-file changes card cost 20 ms a step nested and stays eager (one 250 ms build).
+  A list inside one of the thread's own rows is measured before it is nested: a 300-file changes
+  card cost 20 ms a step nested and stays eager (one 250 ms build). A workflow of 200 subagents
+  shows four tray rows at rest and two record lines in its turn; opened, the tray builds only
+  the rows in view.
 - **One view per row.** In a lazy `ForEach`, each element makes exactly one view: wrap an `if` or
   a `switch` in a container. A row that could be nothing (`if … else if …` with no `else`) makes
   SwiftUI build every row to count them, on every update: a 500-turn thread built 1,000 rows per
@@ -729,7 +728,7 @@ NWFoundations heights are their 100% values:
 - **Density** (`AppSettings.uiDensity`): a slider from 80 to 150% in 5% steps, default 100%,
   captioned "Row heights across the sidebar and chrome. Lower fits more agents." It multiplies
   every row height (`NW.Height.row…`, so the sidebar and palette rows above too), the Settings
-  rows and nav, the ledger rows, and the diff's lines and fold rows, rounded to whole points.
+  rows and nav, and the diff's lines and fold rows, rounded to whole points.
   Control heights never scale.
 
 Text size, beside them, scales type only (Typography).
@@ -881,8 +880,8 @@ are built, and each row is a plain value compared before it redraws.
   3. elapsed time while working ("4m", counting live in mono 10 `textTertiary`). The board draws a
      running row's sparkline here (28×12, `running`); Shepherd shows the time instead (see Where
      Shepherd departs from the boards).
-- **Subagents have no rows.** They live in their agent's thread (cards, the runs strip, the
-  ledger, and the inspector; see Subagents below) and in the palette. A subagent waiting on you
+- **Subagents have no rows.** They live in their agent's tray above the composer, the thread's
+  record lines, and the inspector (see Subagents below), and in the palette. A subagent waiting on you
   surfaces through its agent's row, which takes the needs-you dot and "ASK", and counts toward
   its space's and host's needs-you counts, so the row to click is always marked. Live and
   finished subagents leave the agent's row as it is.
@@ -1284,7 +1283,7 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
   in a thread narrower than the column and both gutters, 884pt; `AppLayout.threadGutter`). User
   bubbles are at most 600pt and agent prose keeps a 640pt measure inside it; there are no speaker
   labels. 28pt top margin, 28pt between turns, 14pt between a turn's parts, 10pt between blocks
-  inside one part (subagent cards in a stack, "From the queue" above its bubbles), 6pt between
+  inside one part ("From the queue" above its bubbles), 6pt between
   one turn's bubbles, and 4pt between consecutive activity lines (the app uses 6pt today).
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
@@ -1440,8 +1439,9 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     a row): the turn ends in live thinking, "› Thinking…" shimmering. When pi's thinking streams
     it is the same line, and it settles into "Thought for Ns".
   - Replying: the text being written is the indicator; no line joins it.
-  - A running call a subagent card or the tray stands for (`shepherd_child_wait`) still counts
-    as moving: the parent waiting on its subagents shows nothing of its own.
+  - A running call the subagent record or the tray stands for (`shepherd_child_wait`) still
+    counts as moving: the parent waiting on its subagents shows nothing of its own. What moves
+    then is in the tray: a running row's words shimmer beside its still dot (Subagents › A row).
   - A pending question replaces all of it with the composer's question panel. Waiting isn't
     working: a steering message in Up next waits still (Up next).
   - A counting timer is motion enough: the running call's clock ticks beside its shimmer in
@@ -1778,8 +1778,13 @@ what pi found, and the question holds only the question, its answers, and yours.
 composer card, and the control row stays under it with Send disabled ("Answer the question
 first"):
 
-- the attention glyph (13pt) and the title in `ui`, then "1 / N" in micro tertiary when several
-  wait
+- the head (`NWQuestionHead`, QuestionAsk), shared with a subagent's question dock: 26pt tall,
+  its parts 7pt apart: a 13pt `questionmark.circle` and "Agent is asking" in Geist 12 semibold
+  (`.nwSans(12, .semibold)`), both `lanternText`; "1 / N" in micro tertiary when several wait;
+  and, trailing, Hide the question, a 26pt round `.nwIcon` (transparent, a 14pt `chevron.down` in
+  `textSecondary`). VoiceOver reads the head as one header, "Agent is asking", and the button as
+  "Hide the question"
+- the question's title in `ui`
 - the message in mono on `bgSunken` (radius 8, a `lineSubtle` line, scrolling past 140pt)
 - a select's options as buttons that answer on click (the first primary), a confirm's Yes
   (primary) and No (y/n while the panel has focus), or an input's or editor's field (mono and
@@ -1789,6 +1794,13 @@ first"):
   show here" when it cannot be answered here
 - 10pt between its parts (`AppLayout.questionSpacing`); the card eases to the panel's height
   (`disclosure`), and the panel fades in (`content`)
+- **Hidden** (QuestionStates › hidden): Hide the question shrinks the panel to one line in the
+  card (`NWQuestionHiddenLine`), so you can read the thread. It still holds the composer's place,
+  because pi is still waiting: a 14pt glyph in `lanternText`, the title in `headline` (13.5
+  semibold, truncating), a small secondary **Answer** (24pt) and a 26pt Show the question
+  (`chevron.up`), 10pt apart; either button brings the panel back. Only that question stays
+  hidden: the next one pi asks arrives open (`QuestionHiding`). Esc does not hide it yet (see
+  Keyboard)
 - once answered, the panel goes and the field returns; nothing in the thread records the
   question (QuestionAnswered's record is not built), except the asking tool's own activity line
   when a tool asked. A select, confirm, input or editor dialog from an extension leaves no trace
@@ -1814,7 +1826,8 @@ composer card, not just its field. Its rules (QuestionStates › Rules):
 - **The dock** (`QuestionDock(question:options:recommended:)` on the board): `bgRaised`, radius
   12, a 1px `lantern` line inside a 3pt `lanternTint` ring, 12pt above and below and 14pt at the
   sides, 12pt between its parts, as wide as the composer card:
-  - a 26pt header: a 13pt question-mark glyph and "Agent is asking" in Geist 12 semibold, both
+  - a 26pt header (built: `NWQuestionHead`, on today's panel and a subagent's dock): a 13pt
+    question-mark glyph and "Agent is asking" in Geist 12 semibold, both
     `lanternText`, 7pt apart; trailing, a 26pt icon button, Hide the question (a 14pt chevron,
     `textSecondary`)
   - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.nwSans(16, .semibold)`; the
@@ -2109,104 +2122,107 @@ the tool call pi is running now").
 
 ### Subagents
 
-A subagent is a turn inside a turn (NWAgents; Subagents, SubagentsDone, SubagentCards). Its spawn
-call renders as a card where the call was, and raw wait or status dumps never appear. Subagents
-live in their agent's thread and the palette; they have no sidebar rows, and one waiting on you
-marks its agent's row instead (see Sidebar). Finished runs stay browsable: the ledger keeps every
-run, and the inspector opens any of them. Behavior is specified in
+Subagents live in a **tray above the composer** while they run (SubagentTray, NWAgents;
+Subagents, SubagentsDone, SubagentsQueue): one row each, answered, steered, stopped or opened
+from there, in the same card as Up next. The thread keeps two quiet lines for them, where they
+started and where they finished, and both open the inspector, so finished runs stay browsable.
+Raw wait or status dumps never appear. Subagents have no sidebar rows; one waiting on you marks
+its agent's row instead (see Sidebar). Behavior is specified in
 [native-subagents.md](docs/native-subagents.md).
 
-The NWAgents board is the authority for these components. The macOS page boards (Subagents,
-SubagentsDone, SubagentCards) draw an earlier version with more on each card; where they disagree
-with NWAgents, Shepherd follows NWAgents, and the table in "Where Shepherd departs from the
-boards" lists each difference.
+The components are ShepherdUI's Agents set (`Components/Agents/SubagentTray.swift`,
+`SubagentQuestionDock.swift`). `NativeSubagentTray` (ShepherdRemote, shared with iOS) derives the
+tray's header and rows once per change on the thread store (`NativeThreadStore.tray`), and the
+turn's record (`NativeSubagentRecord`) with its presentation; `SubagentPresentation` maps them onto
+the components' values, and `Thread/Subagents.swift` lays out the tray. State always comes from
+`AgentState` (a queued run and a run paused before its next model request both draw as `queued`).
 
-The components are ShepherdUI's Agents set (`Components/Agents`); `SubagentPresentation`
-(`Thread/SubagentPresentation.swift`) maps a `ChildRun` onto their values, `Thread/Subagents.swift`
-lays them out, and state always comes from `AgentState` (a queued run and a run paused before its
-next model request both draw as `queued`).
-
-- **Layout per turn** (`SubagentPresentation.layout`): cards for up to three sibling runs
-  (`NativeRunsStrip.collapseThreshold`); a runs strip plus the cards that need you for more; a
-  ledger once every run in the group has finished and none still asks. Siblings sit in spawn
-  order, 8pt apart (`AppLayout.subagentStackSpacing`), as are the strip and the cards under it.
-  Once cards stand for a turn's children, the parent's `shepherd_child_wait` and
-  `shepherd_child_result` calls no longer show as activity, and nothing else names them: no raw
-  wait or status call shows anywhere (SubagentCards: never a raw "subagent_wait" dump).
-- **Changing shape:** the group reshapes at once, because the rest of its turn (the next card,
-  the live line) moves at once too. What arrives while the group is on screen (a strip, the ledger in
-  place of the cards, a card that needs you, the cards the strip shows) fades in where it lands
-  (`nwRunArrival`); a card keeps its identity when the group folds into the strip.
-- **`NWSubagentCard`** (NWAgents): `bgRaised`, padding 10×12 (the board's 10pt vertical inset),
-  8pt between its lines, radius 8, a 1px `lineSubtle` line (`lantern` while it needs you).
-  Clicking anywhere on the card opens the run in the inspector; the inspected card wears a
-  `running` line and a 3pt `runningTint` ring outside it. Only the line's color and the ring
-  ease; the card's size changes at once.
-  - **Header** (8pt gaps): `NWBranchGlyph` at 13pt in the state's color, the name in `ui`
-    semibold, a role `NWTag` (18pt, Geist 11 on `bgSelected`, radius 4) when it differs from the
-    name, the model as a mono `NWTag` (Geist Mono 10.5; the last path part, "claude-sonnet" from
-    "anthropic/claude-sonnet"), and the `NWStatusPill` (20pt) trailing. In a narrow thread the
-    tags give way (the model first) before the name truncates, at once.
-  - **One mono line** under the header (Geist Mono 11, `textSecondary`): the detail truncates at
-    its tail and anything after it (" · 26 tools · 12m", a live wait) stays whole. Then per state:
-    - **Running:** the latest call, a path shortened to its file name ("edit ThreadView.swift",
-      "bash swift test"; "working" before the first). Under it the context window used: a 4pt
-      `.nwBar` (`running` on `lineSubtle`, radius 2) and its percent in Geist Mono 10
-      `textTertiary` ("62%"), with "Context window used" as its tooltip and VoiceOver label. The
-      card never grows while it runs.
-    - **Queued / Paused:** an outlined pill ("Queued", or "Paused" for a run paused before its
-      next model request) and "waiting to start" or "paused before its next model request".
-    - **Needs you:** "waiting on your answer · 2m" (the wait counts from the child's
-      `shepherd_parent_message` call, or shows no figure). Under it the question box:
-      `lanternTint`, radius 6, padding 8×10, 6pt gaps; the question as inline Markdown in `ui`
-      (code spans Geist Mono 11.5 on `bgHover`, links `running`, selectable); then its answers as
-      `s` buttons, the first primary and the rest secondary, and Reply… (ghost; secondary when
-      there are no answers). The buttons wrap to a column when a row does not fit. Reply… opens
-      a field ("Reply to <name>…") with a secondary `m` Send; ⏎ sends and the field closes.
-    - **Done:** what it did, the first sentence of its summary (else its output) without its
-      final period ("finished" without either), then " · 26 tools · 12m".
-    - **Failed:** the exit reason, then Open replay (secondary `s`, the inspector) and Re-run
-      (ghost `s`).
-  - **Not built yet: several questions at once** (SubagentCards). A run with more than one
-    pending question shows the first, with "1 / 2" in Geist Mono 11 `textTertiary` trailing its
-    answers; answering one shows the next. `ChildRun` carries one question today, so the
-    protocol must carry a list first.
-  - **Live controls** sit in the card's context menu and its accessibility actions, and the
-    inspector shows them: Inspect; while live, Pause (or Continue) for a running or queued run,
-    with the tooltip "Pause before the next model request; current tools finish normally", and
-    Stop (destructive); for a failed run, Re-run. They are disabled while the thread can't take
-    commands (its agent is off screen, or its host has no subagent control). Only elapsed text
-    re-renders on a clock (`NWElapsedText`, ticking exactly when its text changes, anchored to
-    when it counts from, static once finished).
-- **`NWRunsStrip`** (SubagentCards, in NWAgents' form): more than three sibling runs fold into one
-  row in the ledger header's form: a 32pt `bgSunken` row, radius 8, a 1px `lineSubtle` line,
-  10pt gaps, 12pt side padding. In it: the glyph (needs you, else running, else queued, else
-  failed, else done), "12 subagents" in `ui` semibold, one step per run in spawn order (8pt wide,
-  3pt tall, 3pt apart, radius 2; queued and paused steps are filled `lineStrong`), the tally in
-  Geist Mono 10.5 `textTertiary` ("7 done · 3 running · 1 queued · 1 paused · 1 needs you · 1
-  failed", in that order, each run counted as its step draws it), tokens ("581k tok") and the
-  group's elapsed time, and a 9pt chevron that turns down while the cards show.
-  - Each step is its own button: clicking it opens that run in the inspector, as its card does.
-    Its target is the step plus half the gap on each side, the row's full height, so steps tile
-    with no dead gap. Its tooltip names the run and its state ("worker, running"), and a hovered
-    step thickens to 5pt; at rest the strip is unchanged. A click anywhere else on the row shows
-    or hides every card.
-  - When the row runs out of room the totals give way (tokens first) before the tally truncates.
-  - Runs that need you keep their own card under the strip.
-- **`NWRunLedger`** (NWAgents, SubagentsDone): once every run in the group has finished, the
-  cards are replaced in place by a permanent ledger on `bgWindow`, radius 8, a 1px `lineSubtle`
-  line. It is lazy, so a workflow of hundreds of runs builds only the rows on screen.
-  - A 32pt `bgSunken` header (10pt gaps): the glyph (`done`, or `failed` when any run failed),
-    "3 subagents" in `ui` semibold, one step per run (14pt wide, 3pt tall), "all done · 45m" (or
-    "2 done · 1 failed · 45m") in Geist Mono 10.5 `textTertiary`, and trailing the combined diff
-    stat in Geist Mono 11 when there is one.
-  - One row per run in spawn order, a hairline above each (`rowComfortable`, 36pt × density, 12pt
-    side padding, 10pt gaps): the 6pt state dot, the name in `ui` semibold in a 70pt column
-    (scaled with the text size), a one-line summary in `ui` `textSecondary` (the exit reason in
-    `failed` for a failed run), "5 files · 41m" in Geist Mono 10.5 `textTertiary` (files only
-    when there are some), and a 9pt chevron.
-  - A row opens the run in the inspector (again closes it). Hover is `bgHover`; the open row is
-    `runningTint` with a 2pt `running` rule on its trailing (pane) side and a `running` chevron.
+- **When the tray shows** (`nativeTrayRuns`): the runs of the newest turn that spawned any, with
+  any run still live from an earlier one, while any of them is live; once every run has finished
+  it stays, reading "all done", until your next message (a message sent after the last run
+  ended), then it folds into the thread's record (SubagentsDone). It sits above the composer card
+  in the composer's column, grows upward as Up next does, and the thread keeps its tail in view as
+  the composer grows (`SubagentMotionTests`).
+- **One card with Up next** (`NWDockStack`, SubagentsQueue, NWAgents › NWDockStack): when both
+  show, one card holds the subagents, then Up next: one `bgRaised` fill, one 1px `lineStrong`
+  line, radius `NW.Radius.m` (8), and a `lineStrong` rule between the two sections. Each section
+  draws only its contents (`NWQueueStack(framed: false)`), and each collapses on its own. Up next
+  keeps every behavior it has alone (steer, edit, move, delete with Undo, paused, Send now; see Up
+  next); the card rounds only the tray's corners, so a lifted queue row still floats past its
+  edges. Alone, either one is its own card.
+- **Header** (32pt, 12pt leading, 6pt trailing, items 8pt apart): `NWBranchGlyph` at 12pt in
+  `textTertiary`, "3 subagents" in `.nwSans(12, .semibold)` `textSecondary`, one 6pt cell per run
+  (radius 2, 2pt apart, in the state's color; queued and paused cells are `lineStrong`; at most
+  twelve, in row order), then the tally in `.nwMono(11)`: "1 needs you" in `lanternText`, "1
+  running" in `running`, "1 done" in `textTertiary`, "1 failed" in `failed`, in that order (with
+  "queued" and "paused" after running), joined by " · "; "all done" once every run finished well.
+  A spacer, then Collapse (`chevron.down`, a 24pt circular icon button; it turns to point right
+  while collapsed). Collapsed, the tray is its header alone: the cells and counts still say who
+  needs you (SubagentTray · collapsed). The header's hairline is the first row's.
+- **A row** (`NWSubagentTrayRow`; 36pt minimum, 12pt leading, 6pt trailing, items 9pt apart, a
+  hairline above): the state in a 13pt slot (a 7pt `NWStatusDot`, glowing while it needs you; a
+  `done` checkmark or a `failed` cross once finished), the name in `.nwMono(12, .semibold)` in a
+  72pt column, then what it is doing in `.nwSans(12.5)`, truncated at the tail, then its diff
+  stat (`NWDiffStat`, Geist Mono 11) and its time (`NWElapsedText`, Geist Mono 11 `textTertiary`),
+  then a 24pt trailing slot. Per state:
+  - **Running:** its call in flight in the present tense in `textSecondary`, then what it acts on
+    in `.nwMono(11.5)` `textPrimary` (a path shortened to its file name, a command's deciding
+    part): "Editing NativeThreadPresentation.swift", "Running tests swift test", "Building",
+    "Reading", "Searching", "Writing", "Listing"; the words shimmer (LiveText) while the call runs.
+    Between calls the last call reads in the past ("Edited B.swift"), still; before any call,
+    "Starting". Its diff so far and its time since it started ("37m").
+  - **Queued / paused:** "Waiting to start", or "Paused before its next model request".
+  - **Needs you:** the row on `lanternTint`; "asks: " and the question's asking sentence in
+    `lanternText`; its wait since the child asked (`shepherd_parent_message`; no figure without
+    one); then **Answer** (lantern `s` button) in the trailing slot.
+  - **Done:** the first sentence of what it did, without its final period, in `textSecondary`;
+    its diff and its duration ("41m").
+  - **Failed:** why, in `failed`, without the exit code it leads with ("context limit reached
+    after 41 turns").
+  - **Hover** (a live run, on the Mac): `bgHover`, and Steer (`arrow.turn.down.right`), Stop
+    (`stop.fill`) and Open (`chevron.right`), 24pt circular icon buttons, take the trailing slot.
+    At rest, and on a finished run, the slot holds a 10pt `chevron.right` in `textTertiary`.
+  - **Selected** (its run open in the inspector): `bgSelected` with a 2pt rule on its leading
+    edge, `running` (`lantern` on a row that needs you, which keeps its tint and shows the
+    chevron in place of Answer, since the inspector shows the question).
+- **Order and length** (SubagentTray · 8 subagents): up to four runs keep spawn order (the
+  boards' worker · reviewer · tests); a longer tray sorts the runs that need you first, then live
+  ones, then failed, then done, and shows four rows and "Show 4 more" (a 30pt row, Geist 12
+  `textSecondary`, 34pt leading inset; "Show fewer" once open). Open, a tray of more than eight
+  rows scrolls inside a lazy stack eight rows tall (`AppLayout.trayExpandedMaxRows`).
+- **What a row does:** a click opens its run in the inspector (again closes it); Steer opens it
+  with its Steer field focused; Stop stops the run; Answer opens its question. Its context menu
+  and accessibility actions carry Open (or Close the Inspector), Answer…, and the run's controls
+  (Pause or Continue and Stop while live, Re-run once finished). Controls are disabled while the
+  thread can't take commands (its agent is off screen, or its host has no subagent control).
+- **Answer → the question dock** (SubagentTray › Answer → question dock;
+  `NWSubagentQuestionDock`): the run's question takes over the composer area, the tray and Up
+  next with it, until it is answered or hidden. `bgRaised`, radius 12, a 1px `lantern` line and a
+  3pt `lanternTint` ring, padding 10×12, 12pt gaps: the shared 26pt head (`NWQuestionHead`, as on
+  pi's own question, with a 13pt `lanternText` branch glyph and "reviewer is asking"; Hide the
+  question closes the dock), the question in Geist 13.5 semibold (inline Markdown), then its answers as
+  numbered cards 6pt apart (padding 8×10, radius 8, `bgWindow` with a `lineSubtle` line; a 20pt
+  number box at radius 5 in `lineStrong`, `.nwMono(11)`; the title in `ui` semibold and the lines
+  after it in `caption` `textSecondary`; "Recommended" on `lanternTint` in Geist 11 semibold when
+  the run marked the answer so). A chosen card takes `lanternTint` and a `lantern` line, its
+  number filled. Under a hairline, Answer (lantern `m`, ↩) sends the chosen answer to that run
+  only, before its next turn; a question with no answers takes a reply field instead ("Reply to
+  reviewer…").
+- **In the thread** (`NWSubagentRecordLine`, SubagentTray › SubagentRecord): an activity line in
+  look (26pt, 12.5 `textSecondary`, the meta in `.nwMono(11)` `textTertiary`, a 13pt branch glyph
+  and a 10pt chevron; a real button with the row hover). "Started 3 subagents · worker · reviewer
+  · tests" (at most six names, then "+2 more") takes the first spawn call's place; later spawns
+  and the parent's `shepherd_child_wait` and `shepherd_child_result` calls leave no line, and the
+  activity lines around them run on as one (a burst of one kind still merges across them). Once every run has finished, "3 subagents finished · 45m ·
+  7 files · +318 −64" (the span from the first start to the last end, "1 failed" when any did,
+  the files touched, the combined diff) sits where they finished: before the first part of the
+  turn that landed after the last run ended, else at the turn's end; with nothing between them the
+  two lines sit 2pt apart, as activity lines do (SubagentsDone). Runs whose spawn call is in
+  no loaded turn are recorded at the end of the last reply. Both lines open the first run in the
+  inspector, whose ‹ › browse the rest; the footer's "3 subagents" does the same.
+- **Not built yet: a queued message addressed to a subagent** (SubagentsQueue, SubagentTray ›
+  DockStack: a queued row's "worker" tag). The queue carries no recipient, and no board draws how
+  one is chosen.
 
 ### Mission components (not built yet)
 
@@ -2245,7 +2261,9 @@ height, and the dock rule measures the main column, never the thread's own pane.
 adaptive rule are in "Window and adaptive layout" above. It shows only the tabs Shepherd has:
 **Changes**, the Changes pane. Browser, Artifacts and Files are specified below and are not built, so
 they have no tab and no placeholder (the user's decision, 2026-09-25: "dont show browser,
-artifacts, files, etc, only show the things we have"); each joins `SidePaneTab` when it is.
+artifacts, files, etc, only show the things we have"); each joins `SidePaneTab` when it is. A tray row, a record
+line, and the footer's "3 subagents" open the inspector; the tray's Steer opens it with its
+Steer field focused.
 
 - **Showing and hiding:** ⇧⌘B, the header's side-pane button, or View › Show Side Pane / Hide Side
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
@@ -2315,8 +2333,8 @@ artifacts, files, etc, only show the things we have"); each joins `SidePaneTab` 
   live one ends in what the run is doing now (LiveText; `nativeRunLive`, `RunLiveTail`): its call
   in flight as a live activity line ("Building swift build --target ShepherdRemote 11s", from the
   call the run reports; its session file holds only finished calls, so there are no output
-  lines), or "› Thinking…" between tools, and nothing while it asks or once a requested pause has
-  no call left to finish. It continues the last turn, under its lines at their spacing
+  lines). Between calls nothing shows (no "Thinking…" there, and no "Pause requested"), nor while
+  it asks or once it has ended. It continues the last turn, under its lines at their spacing
   (`RunLiveTail.gap`), not a turn apart. Its transcript's own thinking is never live. Turns that arrive while it
   follows fade in where they land. With nothing yet it says "No transcript yet." (or "This run is
   no longer listed.") in `caption` `textTertiary`.
@@ -3570,7 +3588,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Navigation | `NWSidebar`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
 | Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
 | Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`; the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QueueStack.swift` |
-| Agents | `NWSubagentCard` (`NWSubagentRun`, `NWSubagentQuestion`), `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (`NWRunCard`, `NWRunGroupCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
+| Agents | `NWSubagentTray` (`NWSubagentTrayRun`, `NWSubagentTraySummary`, `NWSubagentTrayRow`, `NWSubagentTrayMoreRow`), `NWDockStack`, `NWSubagentRecordLine`, `NWSubagentQuestionDock`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (the tray's `.pad` and `.phone` sizes, `NWRunCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | The Changes pane: `NWScopeButton`, `NWViewedPill`, `NWCompareRow`, `NWFileStrip`, `NWFileHeader`, `NWViewedCheckbox`, `NWDiffView` over `NWChangesRow`s (`NWDiffLine`, `NWSplitDiffLine`, `NWDiffHatch`, `NWDiffFoldRow`), `NWInlineComment`, `NWCommentEditor`, `NWReviewSendBar`, `NWChangesFileList`, the menus (`NWChangesMenu`, `NWChangesMenuRow`, `NWChangesMenuToggle`, `NWChangesMenuSearch`), `NWDiffMetrics`, `NWChangesMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, `NWReviewComposer`, …) | `DiffReviewView.swift`, `ChangesMenus.swift`, `ChangesRows.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
 | Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics` | `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
@@ -3736,13 +3754,12 @@ changes only colors.
   Core Animation (Motion) and static under Reduce Motion.
 - **Bar** (`ProgressView(value:).progressViewStyle(.nwBar)`, `.nwBar(tint:)`): steps and budget.
   4pt, radius 2, on a `lineSubtle` track; the fill is `running` unless tinted with a state's
-  color (the board shows running, lantern, and done fills). VoiceOver reads a percentage. The
-  subagent card's context bar, the iOS run cards, and the iOS review's progress (tinted `done`)
-  use it.
+  color (the board shows running, lantern, and done fills). VoiceOver reads a percentage. The iOS
+  run cards and the iOS review's progress (tinted `done`) use it.
 - **Step strip** (`NWStepStrip`): one 3pt segment per step, 3pt apart, radius 2, each at least
   14pt and sharing the row. Done, running, and needs-you steps take their colors; pending,
   queued, and idle steps are `lineStrong`. The board draws a mission's steps; the app draws
-  subagent runs with it (the runs strip, the ledger, iOS run cards). VoiceOver reads "n of m
+  subagent runs with it (iOS run cards). VoiceOver reads "n of m
   steps done".
 - **Sparkline** (`NWSparkline`): tool calls per minute over the last 10 minutes, 36×12, a
   1.2pt `running` line. The board puts it on running sidebar rows; the app shows elapsed time
@@ -3884,8 +3901,10 @@ The Changes pane's keys are listed with the pane (Side pane › Changes).
   - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
     and the hint "Shows the calls"; the live line: "Pushing, git push origin main, running"; live
     thinking: "Thinking"; call rows: "edit, Sources/A.swift, +58 −41"
-  - subagent cards: "name, role, state, detail", with the context bar as the value; ledger rows:
-    "name, state, summary"; runs strip steps: "name, state — open"
+  - the subagent tray's header: "3 subagents, 1 needs you, 1 running, 1 done"; its rows: "name,
+    state, what it is doing" ("worker, Running, Editing NativeThreadPresentation.swift"), with
+    Open, Answer and the run's controls as actions; the thread's record lines: "Started 3
+    subagents, worker · reviewer · tests"
   - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
     modified, 10 added, 54 removed, viewed"
 - **Resizing:** the sidebar edge and the side pane's handle are adjustable elements that read
@@ -3936,9 +3955,9 @@ below collects the rest, and the places those sentences point here.
 - **Agents and review:**
   - A review from an older host (no `changes.v1`) keeps two scopes (Uncommitted and Pull request)
     and compares the working tree against HEAD, or the PR's merge base, the old way.
-  - The Agents and Review components pad and space in 10pt where their boards do (the subagent
-    card's and the brief's vertical padding, the action bar, a comment's sides, the changes card's
-    head, the toolbar's gaps, the ledger's gaps, a file header's leading inset,
+  - The Agents and Review components pad and space in 10pt where their boards do (the brief's
+    vertical padding, the subagent question dock's, the action bar, a comment's sides, the changes
+    card's head, the toolbar's gaps, a file header's leading inset,
     `AppLayout.steerTopInset`), which is not a step on the space scale ("Padding and gaps use only
     these steps").
 - **The Changes pane: open, waiting on the user's call** (not decided departures; each either
@@ -4221,7 +4240,7 @@ screen from these parts; the sections after this one give each board's specifics
   `NWHostBadge`, `NWAttentionCard`, `NWHostCard`, `NWWrapStack` (Fleet); `NWCapsuleComposer`,
   `NWComposerActionButton`, `NWTouchCommandList`, `NWTouchQueueCard`, `NWTouchQueueRow`,
   `NWQuestionCard`, `NWQuestionOptionCard`, `NWSelectorChip` (Composer); `NWRunCard`,
-  `NWRunGroupCard`, `NWRunHistoryList`, `NWRunGoal`, `NWRunQuestion`, `NWSteerField` (Agents);
+  `NWRunHistoryList`, `NWRunGoal`, `NWRunQuestion`, `NWSteerField` (Agents);
   `NWReviewFileRow`, `NWTouchDiffLine`, `NWLineCommentBar`, `NWInlineComment`, `.nwReviewBar`
   (Review); `NWTouchSearchField`, `NWSearchResultRow` (Navigation); `NWChoiceRow`, `NWGroupCard`,
   `NWCardRow` (Containers); `NWAutomationRow`, `NWAutomationSwitch` (Automations). Their measures
@@ -4443,18 +4462,26 @@ differs.
 
 ### iPhone: Subagents (MobileSteer, MobileSubagents, MobileSubagent)
 
-`Subagents/`. The runs are the Mac's (Subagents); the phone shows them as cards, a list and a screen
-per run.
+`Subagents/`. The runs are the Mac's (Subagents): a tray above the composer, the thread's two
+record lines, a list, and a screen per run.
 
-- **In the thread** (MobileSteer; `NWRunGroupCard`): several runs are one card where the turn
-  spawned them: `bgRaised`, 1px `lineSubtle`, 12pt corners, 8×14 padding. Its head (a rule under
-  it): a 14pt branch glyph, "3 subagents" (14/600), then "Open" (13 `running`) and a chevron, which
-  opens the runs list. A 36pt row per run: the state glyph in a 14pt column (a `running` spinner, a
-  glowing 7pt `lantern` dot, a `done` check), the name in mono 600 in a 72pt column, the detail at
-  14 `textSecondary` ("step 1 of 3 · restyling ThreadView", "14 of 14 pass"; "needs you: rename or
-  replace?" in `lanternText`), and its time in mono 11 `textTertiary`. A row opens its run. While
-  the turn waits, "Waiting on worker and reviewer" (14, a 13pt `running` spinner) follows the card.
-  One run is an `NWRunCard` instead; a group becomes the finished ledger once every run ends.
+- **The tray** (MobileSteer, SubagentTray › iPhone; `SubagentTraySection`, `NWSubagentTray` at
+  `.phone` size): the Mac's tray at touch sizes, in one card with Up next above the composer
+  (`bgRaised`, a 1px `lineStrong` line, radius 12). A 38pt header (14pt leading, a 13pt glyph,
+  "3 subagents" at 13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt
+  leading, 10pt apart): the state in a 14pt slot, the name in mono 13.5/600 in a 68pt column,
+  what it is doing at 14 (the subject in mono 13), its time in mono 11, and a chevron in a 34pt
+  slot; the diff stat drops. A run that needs you shows Answer (lantern `m`) in the slot. Tapping
+  a row pushes its run's screen; touch and hold for Open, Answer, and the run's controls. Past
+  four runs, "Show N more"; open, the rows scroll inside, never more than a share of the
+  composer's room. The tray's rules (when it shows, the order, what each state says) are the
+  Mac's.
+- **Answer** opens the run's question in the composer's place, docked to the bottom edge as pi's
+  own questions are (`QuestionPanel` titled "reviewer is asking"): its answers as numbered cards,
+  or a reply field; Answer sends it to that run only, and Hide returns to the tray.
+- **In the thread** (MobileSteer): "Started 3 subagents · worker · reviewer · tests" where the
+  turn spawned them (32pt, 14), and "3 subagents finished · 45m · 7 files · +318 −64" once they
+  have; both, and the footer's "3 subagents", open the runs list.
 - **The runs list** (MobileSubagents; `SubagentListScreen`): "Subagents" over "1 running · 1 needs
   you" in the state's color, on `bgBase` with 14pt padding. "This turn" with its count heads the
   live runs as cards (`NWRunCard`; 12×14 padding, 8pt inside):
@@ -4477,9 +4504,10 @@ per run.
   - The goal (`NWRunGoal`): `bgSunken`, 1px `lineSubtle`, 12pt corners, 12×14 padding: "GOAL · FROM
     THE PARENT" (`.nwSectionLabel()`), then the goal at 14/1.45. The app adds "step 1 of 3 · 34%".
   - Its transcript: prose at 15/1.5, activity lines 32pt tall at 14; the running call live with its
-    verb ("Building") and command shimmering and its elapsed seconds, as in the thread, and
-    "› Thinking…" between tools (LiveText). The app draws the live call without the board's output
-    tail: the child's session holds no streamed output (Where Shepherd departs from the boards).
+    verb ("Building") and command shimmering and its elapsed seconds, as in the thread; nothing
+    shows between calls (LiveText's "› Thinking…" is the thread's alone). The app draws the live
+    call without the board's output tail: the child's session holds no streamed output (Where
+    Shepherd departs from the boards).
   - Its question, while it waits on you, on `lanternTint` with its answers.
   - The steer field (`NWSteerField`) at the bottom: a 44pt capsule, "Steer worker…", Send inside it,
     and under it "to: worker · not the parent · lands before its next turn" (mono 11 `textTertiary`,
@@ -4891,7 +4919,8 @@ selected thread, or the Overview when none is. Other screens push over the detai
 #### Up next and steering (iPadQueue, iPadSteer)
 
 Up next follows iOS (and Composer › Up next); on iPad it is a card above the composer card,
-8pt apart, as wide as it.
+8pt apart, as wide as it. While subagents show, it is the lower section of the tray's card
+(iPadSteer; Subagents below), under a `lineStrong` rule, with no card of its own.
 
 - **Card:** `bgRaised`, a 1px `lineStrong` line, radius 14.
 - **Head** (38pt, 14pt leading inset, a hairline under it): the queue glyph (13, `textTertiary`),
@@ -4988,23 +5017,20 @@ iPadSubagents and 400pt on iPadSteer (the app lets it range 340–480, 400 ideal
 `lineStrong` leading edge on `bgWindow`. Closing it returns to the thread as it was. With no run
 chosen (All subagents) it lists the thread's runs under a "Subagents" head with their tally.
 
-- **A live group** in the thread (iPadSteer): a `bgRaised` card, a 1px `lineSubtle` line, radius
-  12, 12×14 inset. Its head: a 15pt glyph and "3 subagents" at 14.5/600. A 32pt row per run
-  (radius 6, 12.5): its state glyph (a spinner running, a glowing 7pt `lantern` dot asking, a
-  check done), the name in mono semibold in a 128pt column, what it does in `textSecondary`
-  ("step 1 of 3 · restyling ThreadView"; "needs you: rename or replace?" in `lanternText`), and
-  its time in mono 11 `textTertiary`. The run the inspector shows takes `bgSelected`. Under the
-  card, while the spawning turn is live: "Waiting on worker and reviewer" with a `running`
-  glyph, at 14.5 `textPrimary`.
-- **A finished group** becomes the ledger (iPadSubagents): `bgWindow`, a 1px `lineSubtle` line,
-  radius 12. Its head (at least 44pt, on `bgSunken`): a 16pt `done` glyph, "3 subagents" at
-  14/600, an 8pt square per run at radius 2 in its state color, and "all done · 45m" in mono 11
-  `textSecondary`. Rows at least 52pt (6×12 inset, hairlines between): the state glyph (14), the
-  name at 14/600 with its meta in mono 11 `textTertiary` ("5 files · 41m"; "1 question · 12m"
-  for a run that asked; the app shows the files and the time only), the result at 13
-  `textSecondary`, and a chevron. The run the inspector shows takes `runningTint` with a 3pt
-  `running` bar on its trailing edge and a `running` chevron. The turn's footer adds "· 3
-  subagents" as a link.
+- **The tray** (iPadSteer, iPadSubagents, iPadSplitView, SubagentTray › iPad;
+  `SubagentTraySection`, `NWSubagentTray` at `.pad` size): above the composer, in one card with
+  Up next (radius 12). A 40pt header (14pt leading, 4pt trailing, a 13pt glyph, "3 subagents" at
+  13/600, the cells and tally, Collapse as a 34pt circle); 44pt rows (14pt leading, 4pt
+  trailing, 10pt apart): the state in a 14pt slot, the name in mono 13/600 in an 80pt column,
+  what it is doing at 13.5 (the subject in mono 12.5), its diff stat and time in mono 11, then
+  Answer (lantern `m`) for a run that needs you, else a chevron in a 34pt slot. The run the
+  inspector shows is selected: `bgSelected` (the needs-you tint kept) with a 2pt leading rule,
+  `running`, or `lantern` on a run that needs you, whose Answer gives way to the chevron. A row
+  opens its run in the inspector; touch and hold for Open, Answer and the run's controls. It
+  stays until your next message once every run finished ("all done"; iPadSubagents).
+- **In the thread:** "Started 3 subagents · worker · reviewer · tests" and, once they finished,
+  "3 subagents finished · 45m · 7 files · +318 −64" (34pt, 14); both, and the turn's footer "·
+  3 subagents", open the runs.
 - **Inspector head, one run** (the bar's height, 14pt leading inset): its state glyph (16), the
   name at 15/600 with "· 3 of 3" at 400 `textSecondary`, and its meta in mono 11 `textTertiary`
   ("claude-sonnet · 11 turns · done 11:02", the finish in `done`); Previous subagent and Close
@@ -7308,7 +7334,9 @@ Build them on what exists: the activity line, `NWValueSlider`, `NWSegmentedPicke
     a draft (Stop outlined beside Send), a Steering row under a steered message, the editor with
     a Deleted row and the Send menu, every row and stack state, and "From the queue" and
     "Steered" in the thread
-  - subagent cards, the ledger, and the inspector
+  - the subagent tray (every state, one card with Up next, the question dock, the record
+    lines, and its iPad and iPhone sizes), a thread with it live, finished, and with a queue,
+    and the inspector
   - the review pane, and its Commit… sheet in every state
   - the palette, the toolbar, the sidebar at each row density, and the window at its minimum
   - the terminal panel: two tabs under the thread, the first split, and maximized
@@ -7364,8 +7392,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | ChangesLastTurn | Side pane › Changes (a turn's compare row, the comment editor) | Built |
 | ChangesWide | Side pane › Changes (maximized, file list) | Partial |
 | Subagents | Subagents; Side pane › Subagent inspector | Partial |
-| SubagentsDone | Subagents (`NWRunLedger`); Side pane › Subagent inspector | Partial |
-| SubagentCards | Subagents (`NWSubagentCard`, `NWRunsStrip`) | Partial |
+| SubagentsDone | Subagents; Side pane › Subagent inspector | Partial |
+| SubagentsQueue | Subagents (One card with Up next); Up next (the queue) | Partial |
 | SettingsAppearance | Settings › Appearance; Density and row settings | Built |
 | SettingsAgents | Settings › Agents | Built |
 | SettingsWorktrees | Settings › Worktrees | Built |
@@ -7527,11 +7555,12 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWControls, NWControlsLight | Components › Controls | Partial |
 | NWStatus, NWStatusLight | Components › Status and feedback; Status language | Partial |
 | NWThread, NWThreadLight | Thread | Partial |
-| LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still) | Built |
+| LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
 | NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Sidebar destinations, Needs you, and Recents; Toolbar | Partial |
 | NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Partial |
 | ChangesStates | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
+| SubagentTray | Subagents; iPhone: Subagents; iOS: iPad › Subagents | Partial |
 | NWSwift, NWSwiftLight | Theme model › Building on ShepherdUI | Partial |
 | MXVocab, MXVocabLight | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | Missions (Missions: shared parts and the screens that use them) | Not built yet |

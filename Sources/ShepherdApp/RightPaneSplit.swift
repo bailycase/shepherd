@@ -18,6 +18,9 @@ final class RightPaneState {
     var news: [SidePaneOwner: Set<SidePaneTab>] = [:]
     /// Panes over their whole layout (ChangesWide), the thread hidden under them.
     var maximized: Set<SidePaneOwner> = []
+    /// A run whose Steer field takes focus when its inspector shows it (the tray's Steer),
+    /// until it does.
+    var steerRun: String?
     /// Zero until the user resizes: the pane then takes the 600pt default.
     var width: CGFloat {
         didSet { UserDefaults.standard.set(Double(width), forKey: Self.widthKey) }
