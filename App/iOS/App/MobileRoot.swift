@@ -1,15 +1,26 @@
 import SwiftUI
 import ShepherdUI
 
-/// The window's content: the phone shell or the iPad split view by width, the app's state in
-/// the environment, the chosen appearance, and hosts connected while the app is in front.
+/// A window's content: the phone shell or the iPad split view by width, the app's state and the
+/// window's own navigator in the environment, the chosen appearance, and hosts connected while
+/// any window is in front (`MobileWindows`).
 struct MobileRoot: View {
     let app: MobileApp
+    let navigator: MobileNavigator
+    let window: MobileWindowSeed
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
 
+    /// A window with its own navigator (`MobileWindowRoot`), or, without one, the app's
+    /// `navigator` (a single-window root, as the fixture harness makes).
+    init(app: MobileApp, navigator: MobileNavigator? = nil, window: MobileWindowSeed = .lone) {
+        self.app = app
+        self.navigator = navigator ?? app.navigator
+        self.window = window
+    }
+
     var body: some View {
-        @Bindable var navigator = app.navigator
+        @Bindable var navigator = navigator
         let layout: MobileNavigator.Layout = sizeClass == .regular ? .pad : .phone
         Group {
             switch layout {
@@ -21,17 +32,20 @@ struct MobileRoot: View {
             NavigationStack {
                 presented.route.destination.mobileDestinations()
             }
-            .mobileEnvironment(app)
+            .mobileEnvironment(app, navigator: navigator, window: window)
             .preferredColorScheme(app.appearance.mode.colorScheme)
         }
-        .mobileEnvironment(app)
+        .mobileEnvironment(app, navigator: navigator, window: window)
+        .focusedSceneValue(\.mobileNavigator, navigator)
         .tint(Color.nw.lantern)
         .preferredColorScheme(app.appearance.mode.colorScheme)
-        .onChange(of: layout, initial: true) { _, layout in app.navigator.adopt(layout) }
+        .onChange(of: layout, initial: true) { _, layout in navigator.adopt(layout) }
+        .onAppear { app.windows.register(window, navigator: navigator) }
+        .onDisappear { app.windows.unregister(window.id, hosts: app.hosts) }
         .onChange(of: scenePhase, initial: true) { _, phase in
-            // Inactive includes system alerts and the app switcher; only the background drops sockets.
-            if phase == .active { app.hosts.setForeground(true) }
-            if phase == .background { app.hosts.setForeground(false) }
+            // The first phase can arrive before onAppear: the window counts only once registered.
+            app.windows.register(window, navigator: navigator)
+            app.windows.setPhase(window.id, phase, hosts: app.hosts)
         }
     }
 }
