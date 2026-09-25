@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import ShepherdUI
+import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 import ShepherdSessions
@@ -93,6 +94,22 @@ struct ThreadPreviewTests {
             fixture.store.starting
         }) {
             fixture.thread(title: "New agent").environment(\.threadStartingDelay, .seconds(3600))
+        }
+    }
+
+    /// A new agent created with a prompt, while its pi boots: the prompt shows at once as the
+    /// pending row the host's first snapshot will carry, not the empty state.
+    @Test func threadStartingWithItsPrompt() async throws {
+        let fixture = ThreadFixture(Threads.empty)
+        fixture.starting = true
+        defer { fixture.store.stop() }
+        let prompt = try #require(OpeningPrompt("Do these steps in order. 1) Read tally.py and its tests. 2) Fix mean([]) so it returns 0. 3) Reply with what you changed.",
+                                                agentID: AgentID()))
+        fixture.store.preview(prompt.preview(PiSessionPreview.empty(sessionID: "fixture", model: "anthropic/claude-opus-4-5", thinking: "high")))
+        try await Preview.render("thread-starting-prompt", size: CGSize(width: 1180, height: 700), ready: {
+            fixture.store.starting && !fixture.store.rows.isEmpty
+        }) {
+            fixture.thread(title: "Do these steps in order…").environment(\.threadStartingDelay, .seconds(3600))
         }
     }
 

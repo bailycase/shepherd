@@ -2329,6 +2329,13 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.sessions[sessionID]?.info }
     }
 
+    /// Hands a new agent's pi (an RPC session) its opening prompt: held until the thread serves,
+    /// then sent before the thread answers any request, so every client's first snapshot shows
+    /// it. Its pending row is `OpeningPrompt`'s, which a client can draw while pi starts.
+    public func sendOpeningPrompt(_ prompt: OpeningPrompt, sessionID: SessionID) async {
+        await enqueueValue { self.sessions[sessionID]?.thread?.sendOpeningPrompt(prompt.text, id: prompt.operationID) }
+    }
+
     /// Whether an RPC session's thread serves yet, bound to an agent or not (for tests).
     func threadServes(sessionID: SessionID) async -> Bool {
         await enqueueValue { self.sessions[sessionID]?.thread?.isServable == true }

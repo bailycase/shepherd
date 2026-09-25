@@ -49,6 +49,37 @@ struct ThreadStartupTests {
         #expect(ready.piSessionID == "stub-session")
     }
 
+    /// A new agent's opening prompt waits on the host while pi starts and goes the moment pi
+    /// serves: the first snapshot any client gets already shows it, as the row `OpeningPrompt`
+    /// previews, and it lands as one user message, never two.
+    @Test func theOpeningPromptIsInTheFirstSnapshotAndLandsOnce() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h, env: ["STUB_PI_STARTUP_GATE": Self.gate])
+        let opening = try #require(OpeningPrompt("tools:0 Fix the build", agentID: pi.agent.id))
+        await h.server.sendOpeningPrompt(opening, sessionID: pi.sessionID)
+        #expect(try await pi.request(.snapshot()).failureCode == NativeThreadCode.starting)
+
+        FileManager.default.createFile(atPath: h.dir.appendingPathComponent(Self.gate).path, contents: nil)
+        var first: NativeThreadSnapshot?
+        try await eventually("pi to serve its thread") {
+            first = try await pi.request(.snapshot()).snapshotValue
+            return first != nil
+        }
+        let shown = try #require(first).messages + (first?.provisional ?? [])
+        let row = try #require(shown.first { $0.role == "user" && $0.operationID == opening.operationID }, "the first snapshot shows the prompt")
+        #expect(row.blocks.map(\.text) == [opening.text])
+        if row.status == "pending" { #expect(row.entryID == opening.pendingRow(at: 0).entryID) }
+
+        let settled = try await pi.snapshot("the opening turn to settle") { s in
+            !s.running && s.provisional.isEmpty && s.messages.contains { $0.role == "assistant" && $0.blocks.contains { $0.text == "Reply to \(opening.text)" } }
+        }
+        let landed = settled.messages.filter { $0.role == "user" && $0.blocks.map(\.text) == [opening.text] }
+        #expect(landed.count == 1)
+        #expect(landed.first?.operationID == opening.operationID, "the row keeps its identity as pi's message")
+        #expect(pi.stdin("prompt").count == 1)
+    }
+
     /// The server tells the app the moment an agent's pi serves its thread, once, whether the
     /// agent's pane was bound to that pi before it served or only after.
     @Test(arguments: [true, false])
