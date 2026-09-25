@@ -337,7 +337,28 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     assert.equal(doneCard.summary, mod.summarize(doneCard.output)); assert.equal(doneCard.cwd, fs.realpathSync(dir)); assert.equal(doneCard.files, undefined);
     assert.equal(doneCard.sessionID, JSON.parse(fs.readFileSync(pair[0].sessionFile, "utf8").split("\n")[0]).id);
     assert(requests.every((r) => !r.tools?.some((t) => ["bash", "write", "edit", "shepherd_child_start"].includes(t.function.name))));
-    assert.equal(h.messages.length, 2); assert(h.messages.every((m) => m.options.triggerTurn && m.options.deliverAs === "followUp"));
+    // The pair's completions were the wait's result, so neither wakes the parent for another turn.
+    assert.equal(h.messages.length, 0, JSON.stringify(h.messages));
+    // A completion nobody waits for wakes the parent.
+    const unwaited = await h.call("start", { task: "nobody waits", role: "scout" });
+    await until(() => h.messages.length === 1);
+    assert(h.messages[0].options.triggerTurn && h.messages[0].options.deliverAs === "followUp");
+    assert(h.messages[0].message.content.startsWith(`Child ${unwaited.id} (scout): complete`));
+    // A wait that ends before the child does leaves its completion to wake the parent.
+    const early = await h.call("start", { task: "SLOW left early", role: "scout" });
+    const leave = new AbortController();
+    const leaving = h.call("wait", { ids: [early.id], timeoutSeconds: 30 }, leave.signal);
+    leave.abort();
+    await assert.rejects(leaving);
+    await until(() => h.messages.length === 2);
+    assert(h.messages[1].message.content.startsWith(`Child ${early.id} (scout): complete`));
+    // A wait cancelled after the child finished, before it could answer, hands the completion back.
+    const late = await h.call("start", { task: "SLOW cancelled late", role: "scout" });
+    const lateState = () => h.projections.at(-1).children.find((c) => c.runID === late.id)?.state;
+    await assert.rejects(h.call("wait", { ids: [late.id], timeoutSeconds: 30 }, { throwIfAborted() { if (lateState() === "complete") throw Error("cancelled"); } }), /cancelled/);
+    assert.equal(h.messages.length, 3);
+    assert(h.messages[2].message.content.startsWith(`Child ${late.id} (scout): complete`));
+    h.messages.length = 0;
     const firstFile = pair[0].sessionFile;
     await h.call("resume", { id: pair[0].id, message: "continued" });
     await assert.rejects(h.call("resume", { id: pair[0].id, message: "double writer" }), /already active/);
@@ -399,6 +420,12 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => askStatus().controlRequestID === "second-answer" && askStatus().controlNotice === "reply accepted or queued");
     await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 });
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("second inspector answer"));
+    // What the user sent (a card, the inspector, the fleet view) is recorded beside the session;
+    // what the parent sent through its tools is not.
+    const userSent = (file) => fs.readFileSync(path.join(path.dirname(file), "user-messages.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(userSent(asked.sessionFile).map((r) => r.text), ["card answer", "inspector answer", "second inspector answer"]);
+    assert(userSent(asked.sessionFile).every((r) => Number.isFinite(r.at)));
+    assert.deepEqual(userSent(firstFile).map((r) => r.text), ["fleet answer"], "the parent's resume is not the user's");
     const leaseDir = path.join(askDir, "writer"); fs.mkdirSync(leaseDir);
     fs.writeFileSync(path.join(leaseDir, "owner.json"), JSON.stringify({pid:process.pid,token:"fixture"}));
     await assert.rejects(fleet.runtime.send(ask.id, "lease must reject", "steer"), /Child session already has a live writer/);
@@ -416,6 +443,9 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => fs.existsSync(path.join(dir, "env"))); assert.equal(fs.readFileSync(path.join(dir, "env"), "utf8"), "::1");
     const shellCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
     assert.equal(shellCard.currentTool, "bash"); assert.equal(shellCard.state, "running");
+    // The card names the call in flight, not only its tool.
+    assert.equal(shellCard.lastActivity.kind, "running"); assert.equal(shellCard.lastActivity.tool, "bash");
+    assert.match(shellCard.lastActivity.preview, /^printf '%s'/);
     // A resumed (restored) run ticks again while it works: a publish a second with no events.
     assert.equal(ticks.active.size, 1);
     const published = h.projections.length;
@@ -429,6 +459,7 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     const cancelled = (await h.call("wait", { ids: [shell.id], timeoutSeconds: 30 }))[0]; assert.equal(cancelled.state, "stopped");
     const stoppedCard = h.projections.at(-1).children.find((c) => c.runID === shell.id);
     assert.equal(stoppedCard.lastActivity.tool, "bash"); assert.match(stoppedCard.lastActivity.preview, /^printf/); assert.equal(stoppedCard.toolCalls, 1);
+    assert.equal(stoppedCard.lastActivity.kind, "tool", "a finished call is no longer in flight");
     const stopStatus = () => JSON.parse(fs.readFileSync(path.join(runDir, "status.json")));
     await until(() => stopStatus().controlRequestID === "stop-fixture");
     assert.equal(stopStatus().controlNotice, "stop accepted · stopped");

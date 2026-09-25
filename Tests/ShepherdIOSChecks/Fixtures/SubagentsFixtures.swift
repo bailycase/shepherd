@@ -91,10 +91,10 @@ enum SubagentFixtures {
     static func liveRuns() -> [NativeSubagent] {
         let now = now
         return [
-            ChildRun(runID: worker, label: "worker: restyle", state: "running", startedAt: now - 37 * 60_000, role: "worker",
+            ChildRun(runID: worker, label: "worker: restyle", state: "running", startedAt: now - 37 * 60_000, currentTool: "bash", role: "worker",
                      model: "anthropic/fable-5-1", thinking: "high", context: "background", step: ChildStep(index: 1, total: 3),
                      turns: 78, toolCalls: 82, tokens: 922_000, contextPercent: 34,
-                     lastActivity: ChildActivity(tool: "edit", preview: "Sources/ShepherdRemote/NativeThreadPresentation.swift", at: now - 4_000),
+                     lastActivity: ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "swift build --target ShepherdRemote", at: now - 11_000),
                      toolCallID: "call-m3",
                      task: "Restyle the desktop native thread view and the iOS app to match the spec. No fake affordances; system fonts at spec sizes."),
             ChildRun(runID: reviewer, label: "reviewer: check", state: "running", startedAt: now - 30 * 60_000, needsAttention: true,
@@ -148,7 +148,6 @@ enum SubagentFixtures {
     static func transcript(_ runID: String) -> NativeSubagentTranscript {
         switch runID {
         case worker:
-            let running = now - FixtureData.start - 11_000
             return NativeSubagentTranscript(runID: runID, messages: [
                 FixtureData.user("w1", "Restyle the desktop native thread view and the iOS app to match the spec."),
                 FixtureData.assistant("w2", "Tokens landed. Now moving the tool-row derivations into a shared presentation file so macOS and iOS use the same previews.",
@@ -157,9 +156,7 @@ enum SubagentFixtures {
                                  at: 90_000),
                 FixtureData.tool("w4", "edit", args: #"{"path":"Sources/ShepherdRemote/ToolPreview.swift","oldText":"a\nb","newText":"x"}"#,
                                  output: "Edited", at: 120_000),
-                FixtureData.tool("w5", "bash", args: #"{"command":"swift build --target ShepherdRemote"}"#,
-                                 output: "Compiling ShepherdRemote ToolPreview.swift\nCompiling ShepherdRemote NativeThreadPresentation.swift\n[41/58] Emitting module ShepherdRemote",
-                                 status: "running", at: running),
+                // The build in flight is the run's own last call: a session file holds finished calls only.
             ], earlierCount: 0)
         case reviewer:
             return NativeSubagentTranscript(runID: runID, messages: [
@@ -178,7 +175,12 @@ enum SubagentFixtures {
                                  output: "Edited", at: 150_000),
                 FixtureData.tool("t5", "bash", args: #"{"command":"swift test --filter ToolRowTests"}"#,
                                  output: "✔ Test run with 14 tests in 2 suites passed after 0.3 seconds.", at: 220_000),
-                FixtureData.assistant("t6", "All 14 pass. Running the iPad simulator variant next.", at: 240_000),
+                FixtureData.assistant("t6", "All 14 pass on macOS.", at: 240_000),
+                FixtureData.user("t7", "Run the iOS simulator variant too.", at: 250_000),
+                FixtureData.assistant("t8", "Running them on the iPhone simulator.", at: 260_000),
+                // The user's own steer, from the inspector: not "from parent".
+                { var steer = FixtureData.user("t9", "Include the iPad simulator.", at: 270_000); steer.origin = .user; return steer }(),
+                FixtureData.assistant("t10", "All 14 pass on macOS, the iPhone and the iPad simulators.", at: 300_000),
             ], earlierCount: 0)
         }
     }
