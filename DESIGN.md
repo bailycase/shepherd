@@ -562,8 +562,10 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   still starting included), "ASK", "done", or "stopped" (a hollow dot, not selectable). Live
   follows the host's own rule (`AutomationRun.isLive`, read from the run log's open run), so a
   run reads done only once a turn has settled. The context menu has Stop while the run is live,
-  else Run Now (a done run's thread is replaced by the new run's), and Delete Automation. A
-  refused Run Now shows `ActionErrorDialog`.
+  else Run Now, and Delete Automation. Run Now replaces a done run once the new run exists: a
+  done run on screen hands the workspace straight to the new run's thread, and one off screen
+  leaves the selection alone. A refused Run Now (a run live or still starting) shows
+  `ActionErrorDialog`.
 - **A remote host's automation rows** (`RemoteSidebarSection.swift`) nest one level under its
   Automations disclosure with the same dots and words, plus "off" for one that does not start
   with Shepherd. Clicking a row opens its run's thread, or its details while it has none. The
