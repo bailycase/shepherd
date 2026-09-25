@@ -16,6 +16,8 @@
   "fill"   appends 120 history messages, then agent_start/agent_end
   "newsession" switches sessionId, then agent_start/agent_end
   "refuse" answers the prompt with success: false (pi refusing it)
+  "provider-error" a turn whose reply fails ("529 overloaded"), once the file `fail-turn`
+           appears in the cwd
   "tools:N" a run that behaves like pi's agent loop (below)
   other    a full streaming turn with a U+2028 inside a delta
 
@@ -186,6 +188,21 @@ def streaming_turn(prompt, slow=False):
     emit({"type": "agent_end", "messages": [final], "willRetry": False})
     # CRLF is tolerated by the reader.
     emit({"type": "agent_settled"}, terminator=b"\r\n")
+
+
+def failed_turn(prompt):
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    emit({"type": "message_start", "message": {"role": "assistant", "content": []}})
+    wait_for_file("fail-turn")
+    final = {"role": "assistant", "content": [], "stopReason": "error", "errorMessage": "529 overloaded",
+             "timestamp": now_ms()}
+    emit({"type": "message_end", "message": final})
+    emit({"type": "turn_end", "message": final, "toolResults": []})
+    MESSAGES.extend([{"role": "user", "content": prompt}, final])
+    STATE["messageCount"] = len(MESSAGES)
+    emit({"type": "agent_end", "messages": [final], "willRetry": False})
+    emit({"type": "agent_settled"})
 
 
 def paced_turn(prompt, deltas=40, interval=0.002):
@@ -488,6 +505,10 @@ for raw in sys.stdin.buffer:
             turn_thread.start()
         elif message == "stream":
             turn_thread = threading.Thread(target=paced_turn, args=(message,), daemon=True)
+            turn_thread.start()
+        elif message == "provider-error":
+            turn_aborted = False
+            turn_thread = threading.Thread(target=failed_turn, args=(message,), daemon=True)
             turn_thread.start()
         elif message == "widgets":
             ui("setStatus", statusKey="build", statusText="\x1b[32mgreen\x1b[0m ok")

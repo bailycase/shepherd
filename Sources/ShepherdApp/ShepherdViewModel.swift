@@ -72,6 +72,9 @@ final class ShepherdViewModel {
     /// When each agent entered its current status this run: the sidebar's running elapsed
     /// time. Ephemeral; an agent restored at launch counts from its first report.
     var statusSince: [AgentID: Date] = [:]
+    /// Agents whose last turn ended in an error: done, but their sidebar row reads failed.
+    /// Ephemeral, like the status it qualifies.
+    var failedTurns: Set<AgentID> = []
     /// ⌘⇧S hides the sidebar. Persisted, like the other sidebar disclosure choices.
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
@@ -311,7 +314,7 @@ final class ShepherdViewModel {
     let sidebarDropZone = SidebarDropZone()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = RightPaneState()
-    /// System notifications when an unwatched agent finishes or blocks.
+    /// System notifications when an unwatched agent finishes, fails, or asks, or a subagent asks.
     let notifications = AgentNotifications()
     let settings: AppSettings
     private let sidebarDefaults: UserDefaults
@@ -417,8 +420,8 @@ final class ShepherdViewModel {
                   self.state.tabs[index].layout != layout else { return }
             self.state.tabs[index].layout = layout
         }
-        sessions.onAgentStatus = { [weak self] agentID, status in
-            self?.applyAgentStatus(agentID, status)
+        sessions.onAgentStatus = { [weak self] agentID, status, failure in
+            self?.applyAgentStatus(agentID, status, failure: failure)
         }
         // A thread on screen shows pi's history the moment pi serves it, not at its next poll.
         sessions.onThreadServable = { [weak self] agentID in
@@ -738,16 +741,20 @@ final class ShepherdViewModel {
         planMounting()
     }
 
-    private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus) {
+    private func applyAgentStatus(_ id: AgentID, _ status: AgentStatus, failure: TurnFailure?) {
         if let index = state.agents.firstIndex(where: { $0.id == id }) {
             let old = state.agents[index].status
             // A repeated report must not invalidate every view that reads the workspace.
             if old != status { state.agents[index].status = status }
             if old != status || statusSince[id] == nil { statusSince[id] = Date() }
+            let failed = status == .done && failure != nil
+            if failed != failedTurns.contains(id) {
+                if failed { failedTurns.insert(id) } else { failedTurns.remove(id) }
+            }
             // Visible means the workspace is actually showing this agent's
             // layout — not a remote agent.
             let visible = selectedAgentID == id && selectedRemoteAgent == nil
-            notifications.agentStatusChanged(state.agents[index], from: old, isAgentVisible: visible)
+            notifications.agentStatusChanged(state.agents[index], from: old, failure: failure, isAgentVisible: visible)
         }
     }
 
@@ -779,6 +786,10 @@ final class ShepherdViewModel {
         // publisher's timestamp, which no view reads, so it goes to the unobserved storage.
         if updated.rows == childRuns.rows { _childRuns = updated } else { childRuns = updated }
         syncChildSweepTimer()
+        if let agent = state.agents.first(where: { $0.id == agentID }) {
+            let visible = selectedAgentID == agentID && selectedRemoteAgent == nil
+            notifications.subagentsChanged(agent, children: children, isAgentVisible: visible)
+        }
     }
 
     /// One agent's published child runs: its sidebar row asks while one waits on you, and a

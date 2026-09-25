@@ -147,6 +147,8 @@ final class RPCThreadState {
     var projectionClipped = false
     /// The last assistant message of the current run ended in a provider error.
     var runFailed = false
+    /// That error's message, when pi gave one.
+    private var runError: String?
     /// The user stopped this run: pi ends a run stopped mid-tool-call with an error reply,
     /// which is not a turn that failed.
     var stopRequested = false
@@ -231,6 +233,7 @@ final class RPCThreadState {
         case .agentStart:
             running = true
             runFailed = false
+            runError = nil
             stopRequested = false
             settleAwaitingSteers = false
             doneHeld = false
@@ -272,6 +275,7 @@ final class RPCThreadState {
             upsertAssistant(message, ended: true)
             currentAssistant = nil
             runFailed = message.stopReason == "error"
+            runError = runFailed ? message.errorMessage : nil
         case .toolExecutionStart(let id, let name, let args):
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial):
@@ -288,6 +292,11 @@ final class RPCThreadState {
             break
         }
         commit()
+    }
+
+    /// The run ended in a provider error the user did not cause by stopping it.
+    var turnFailure: TurnFailure? {
+        runFailed && !stopRequested ? TurnFailure(message: runError) : nil
     }
 
     /// Server queue: full replacement from a setAgentChildren publish.
@@ -542,7 +551,10 @@ final class RPCThreadState {
                 self.running = streaming
                 // A settle this thread did not see (it came before the bootstrap) still lets the
                 // queue go.
-                if !streaming { self.drainIfReady() }
+                if !streaming {
+                    self.drainIfReady()
+                    self.idleAfterQueue()
+                }
             }
             self.commit()
             self.announceIfServable()
