@@ -364,11 +364,15 @@ Sources/
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
       SidebarView, RemoteSidebarSection, ThreadHeader, WorkspaceView, WorkspaceSelection,
       RightPaneSplit, AppCommands (menus, MenuState), AppDialogs (every sheet)
-    AppLayout (+Navigation, +Thread, +Agents, +Settings; ShellLayout's adaptive rules live in
-      +Navigation), AgentStateMapping (app lifecycles → AgentState)
+    AppLayout (+Navigation, +Thread, +Agents, +Settings, +Pages; ShellLayout's adaptive rules live
+      in +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
-      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal), RemoteAutomationSheet
+      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +Pages),
+      RemoteAutomationSheet
+    Pages/             the sidebar destinations' pages: AutomationsPage and HostsPage (views over
+                       AutomationsPageModel and HostsPageModel, derived per change), their
+                       destinations (PageDestinations: runs read, sheets), AutomationEditorSheet
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
       TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
@@ -610,10 +614,11 @@ from ShepherdUI (Night Watch) or `AppLayout`:
 - a Mac screen's own dimensions from `AppLayout`, in the file for its domain:
   `AppLayout+Navigation.swift` (window, sidebar, toolbar, right pane, palette),
   `AppLayout+Thread.swift` (thread, composer), `AppLayout+Agents.swift` (subagent stack,
-  inspector), `AppLayout+Settings.swift` (Settings, sheet sizes), and `AppLayout.swift` for
-  anything else. A component's own measures stay with it in ShepherdUI (`NWThreadMetrics`,
-  `NWComposerMetrics`, `NWSidebarMetrics`, `NWToolbarMetrics`, `NWPaletteMetrics`,
-  `NWDiffMetrics`, `NWDialogMetrics`).
+  inspector), `AppLayout+Settings.swift` (Settings, sheet sizes), `AppLayout+Pages.swift` (the
+  Automations and Hosts pages), and `AppLayout.swift` for anything else. A component's own
+  measures stay with it in ShepherdUI (`NWThreadMetrics`, `NWComposerMetrics`,
+  `NWSidebarMetrics`, `NWToolbarMetrics`, `NWPaletteMetrics`, `NWDiffMetrics`,
+  `NWDialogMetrics`, `NWPageMetrics`).
 
 Use a shared component before hand-rolling chrome. A reusable part goes in the package, under
 `Components/<Domain>/` with a `#Preview` in both appearances; composition that knows about agents

@@ -129,7 +129,8 @@ And the rules that follow from them:
 | Controls: `.pickerStyle(.nwSegmented)`, `.pickerStyle(.nwPopup)`, `Stepper(…).nwStyle()`, `Slider(…).tint(.nw.lantern)` | Views: `NWSegmentedPicker`, `NWPopupMenu` (a native `Menu` with an `NWPopupLabel`), `NWStepper`, `NWValueSlider` (its value in mono beside it) | SwiftUI has no public custom picker, stepper, or slider style; each represents itself to accessibility as the native control |
 | Controls: keycaps in menus and the palette only | Also Settings ▸ Keyboard, search fields (the board's own ⌘F), and empty states (the workspace's New agent, the terminal panel's New Terminal); never under the composer still holds | Those places teach a chord; Components and Empty workspace record the rule |
 | Status & feedback: no modal alerts for agent events | One: an agent asking to delete another opens `PeerDeleteDialog` | Only the user deletes an agent, by a click (AGENTS.md › Agents never delete each other on their own) |
-| NavAutomations: an Automations page with a table (When, Starts, Host, Last run, Next), filters, and New automation | The sidebar's Automations footer for this Mac; a remote host's Automations disclosure and its Details and Runs sheet | Shepherd's automations have no schedule or trigger: one is on (it starts a run when Shepherd launches) or run by hand, and nothing on the Mac creates one yet but an agent's `automation_*` tools |
+| NavAutomations: When and Next columns, Scheduled and On an event tabs, a schedule or trigger per automation ("Every day · 02:00"), a run's outcome ("passed", "1 PR failed CI"), a "mission" kind, and Repos | The table without When and Next and with no tabs; the run's word and time ("finished · 6h ago"), every run starting a thread, and Folder in place of Repos (Automations page) | The user's decision, 2026-09-25: "Automations = table + detail with name, host, last run, prompt, runs, Run now (no schedules, triggers or next-run column)". Automations have no schedule or trigger, and a run's result is its thread |
+| NavHosts: daemon hosts ("Shepherd daemon · Linux"), Load, worktree disk use, Open in Finder, Open terminal and Logs, and missions in the explainer | This Mac and each remote host with Running, Worktrees (a count), Repos and Address, or Waiting, Last seen and Address while unreachable; Retry and Remove (Hosts page) | The user's decision, 2026-09-25: "Hosts = This Mac and each remote host's card with status, address, threads, Retry, Remove, Add host". Shepherd has no daemon, and nothing measures load or disk use |
 | MobileAutomations, iPadAutomations: a schedule or trigger per automation ("Every day 02:00", "New issue in checkout-svc", "When CI goes green on #24"), its model and repos, a run's outcome ("Passed · 3 migrations, all reversible", "1 PR failed CI"), a CI-checks bar on a running card, and a "mission" kind | "When Shepherd starts · folder" or "By hand", an On switch and a folder on the host, the run's status word with its time ("Finished · 12h ago"), and "Running · 4m" | As NavAutomations: the host has no schedules, triggers, models, repo lists or check tracking, and a run's result is its thread (iOS: Automations) |
 | MobileThread, MobileQueue, and the iPad boards (iPadThread, iPadPortrait, iPadReview, iPadSubagents, iPadQueue): each finished activity line on its own row | Two or more fold into one work-group line ("Worked for 42s · explored 7 files · edited 3 files") | Thread › Work groups: a long turn never reads as a wall of lines |
 | MobileCommit: the sheet's title "Commit" | "Commit n files", as the Mac's commit sheet | The phone and the Mac share the commit form's parts |
@@ -1056,8 +1057,9 @@ what an empty main column shows is part of that work.
 
 ### Destination pages
 
-**Not built yet.** Each sidebar destination opens a page in the main column, in place of a thread
-(NavNewThread, NavMissions, NavDesigns, NavAutomations, NavHosts). The pages share one frame:
+Each sidebar destination opens a page in the main column, in place of a thread (NavNewThread,
+NavMissions, NavDesigns, NavAutomations, NavHosts). Automations and Hosts are built; Missions and
+Designs are not. The pages share one frame (ShepherdUI's Pages components, `NWPageMetrics`):
 
 - **Page header:** 52pt (the thread toolbar is 44) on `bgWindow`, with a hairline beneath, 24pt
   leading and 16pt trailing padding, and 12pt between items. It holds the page title in `title`
@@ -1066,9 +1068,9 @@ what an empty main column shows is part of that work.
   6, padded 10pt, a 1pt `lineSubtle` border and no fill, a 12pt `textTertiary` magnifying glass 8pt
   before a 12pt `textTertiary` placeholder); and the page's one primary button (`.nw(.primary)`,
   28pt, radius 6, padded 10pt, a 13pt `plus` 6pt before the label in 12.5 semibold: "New mission",
-  "New design", "New automation", "Add host"). Build the field on `NWSearchField`, whose chrome
-  today is heavier than the board's (13pt glass, 12.5 text, the field border).
-- **State tabs** (Missions, Automations), under the header, padded 16pt above, 12pt below, and 24pt
+  "New design", "New automation", "Add host"). The field is `NWPageFilterField`, lighter than
+  `NWSearchField` as the board draws it; the header is `NWPageHeader`.
+- **State tabs** (Missions; the Automations page has none, since automations have no schedule), under the header, padded 16pt above, 12pt below, and 24pt
   at the sides. They are 28pt tall, padded 10pt at the sides, radius 6, and 2pt apart. Each is the
   label in 12.5 and its count in mono 10.5 `textTertiary`. The selected tab is `bgSelected`,
   `textPrimary` and semibold; the others are `textSecondary`.
@@ -1143,75 +1145,90 @@ are specified with the rest of the design tool, under Design tool › Designs.
 
 ### Automations page
 
-**Not built yet** (NavAutomations; "schedules and event triggers, with runs"). Today this Mac's
-automations are the sidebar's footer rows, and a host's are a disclosure under its section with the
-Details and Runs sheet (Sidebar). Shepherd's automations have no schedule or trigger, so the page's
-When and Next columns and its Scheduled and On an event tabs don't apply while that holds (see Where
-Shepherd departs from the boards).
+NavAutomations, as `AutomationsPage` (`Sources/ShepherdApp/Pages/`), from the sidebar's
+Automations destination. One table holds every host's automations, This Mac's first
+(`AutomationsPageModel`, derived per change from `AutomationsModel`, the presentation the iOS
+client shares, with This Mac as one more host). Shepherd's automations have no schedule or
+trigger: one is on (it starts a run when Shepherd starts on its host) or run by hand. So the
+board's When and Next columns and its Scheduled and On an event tabs are left out (the user's
+decision, 2026-09-25: "Automations = table + detail with name, host, last run, prompt, runs, Run
+now (no schedules, triggers or next-run column)").
 
-- **Header:** "Automations", "Filter automations", and **New automation**. **Not built yet** on the
-  Mac: nothing on the Mac creates or edits an automation (the iOS client's form has Name, Prompt,
-  Where it runs, and Starts with Shepherd; iOS: Automations).
-- **Tabs:** All · Scheduled · On an event, with counts.
-- **Table**, columns Automation · When · Starts · Host · Last run · Next (2fr · 1.25fr · 76pt · 76pt
-  · 1.15fr · 64pt, 16pt gaps). Rows are padded 12pt above and below.
-  - **Automation:** its switch (`.nwSwitch`, 30×18: `lantern` on, `lineStrong` off), 10pt before the
-    name in 13 semibold, truncating.
-  - **When:** a 12pt glyph (a clock for a schedule, a bolt for an event) and the rule in 12
-    `textSecondary` ("Every day · 02:00", "When CI goes green on #24").
-  - **Starts:** a glyph and "thread" (a speech bubble) or "mission" (a map) in 12 `textSecondary`.
-  - **Host:** mono 11 `textSecondary`.
-  - **Last run:** a 6pt dot and the outcome with its age in 12, colored by outcome: `done` ("passed
-    · 6h ago", "merged · 5h ago"), `lanternText` with a `lantern` dot ("asked you · 1h ago"),
-    `failed` ("1 PR failed CI · 3d ago"), or a hollow `textTertiary` dot ("paused · host offline").
-  - **Next:** mono 11 `textTertiary` ("in 17h", "on event", "finished", "paused").
-- **Detail pane:** 360pt at the trailing edge with a hairline on its leading side, for the selected
-  row. The sections under its header are padded 14pt above and below and 18pt at the sides, with
-  a hairline between them.
-  - **Header,** padded 16pt above and below and 18pt at the sides: the name in 15 semibold over
-    "Starts a thread on build-01 every night" in 12 `textTertiary`.
-  - **Prompt:** "PROMPT" in mono 10.5 caps `textTertiary`, 8pt above the prompt in 12.5 at 1.55 line
-    height, padded 10pt above and below and 12pt at the sides, radius 8, on `bgSunken` with a
-    `lineSubtle` border (`NWAutomationPrompt`).
-  - **Facts:** When, Host, Repos, Model (`NWFactRow`, a 90pt label column in `textSecondary`, values
-    mono except When, 6pt apart).
-  - **Recent runs:** "RECENT RUNS", then 28pt rows in 12, each a 6pt dot by outcome, the date in
-    mono `textSecondary` ("Sep 24 02:00"), the outcome in `textTertiary` ("3 migrations · all
-    reversible", "lock timeout on orders_idx"), and the duration trailing in mono 10.5
-    `textTertiary`.
+- **Header** (`NWPageHeader`): "Automations", "Filter automations" (`NWPageFilterField`: name,
+  host or prompt), and **New automation**.
+- **Table**, columns Automation · Starts · Host · Last run (`2fr · 76pt · 76pt · 1.15fr`,
+  `NWTableColumns`, 16pt gaps), under its labels (`NWTableHead`, 16pt below the header). Each row
+  is an `NWAutomationTableRow`, padded 12pt above and below with a hairline above, `bgSelected`
+  when selected; a click selects it.
+  - **Automation:** its switch (`NWAutomationSwitch`, 30×18), 10pt before the name in 13
+    semibold. The switch turns it on or off on its host, disabled while the host can't take it.
+  - **Starts:** a speech bubble and "thread" in 12 `textSecondary`: every run starts a thread.
+  - **Host:** "This Mac" or the host's name, mono 11 `textSecondary`.
+  - **Last run:** a 6pt dot and the run's word with its time in 12, colored by how it went
+    (`NWRunOutcomeLabel`): "running · 4m" `running`, "asked you · 1h ago" `lanternText` with a
+    glowing `lantern` dot, "finished · 6h ago" `done`, "interrupted · 3d ago" `failed`, and quiet
+    (a hollow `textTertiary` dot, `textTertiary` words) for stopped, "not run yet", "off" and
+    "host offline". Empty until the host's runs are read.
+  - **Context menu:** Open Run while its run's thread exists, Stop while the run is live else Run
+    Now, Edit…, and Delete Automation (it stops the run too), each disabled where the host can't
+    take it. These are the actions the sidebar's Automations rows had.
+  - **Empty:** "No automations yet. …" or "No automations match “…”." in the table's place.
+- **Detail pane:** 360pt at the trailing edge with a hairline on its leading side, for the
+  selected row (the first row while none is chosen). Sections are padded 14pt above and below and
+  18pt at the sides, with a hairline between them.
+  - **Header,** padded 16pt: the name in `title` over "Starts a thread on build-01 when Shepherd
+    starts" (or "when you run it") in 12 `textTertiary`.
+  - **Prompt:** "PROMPT" (`NWPageSectionLabel`), 8pt above the prompt on `bgSunken` with a
+    `lineSubtle` border, radius 8 (`NWPageQuote`).
+  - **Facts** (`NWPageFact`, a 90pt label column in `textSecondary`, 6pt apart): When ("When
+    Shepherd starts" or "By hand"), Host (mono), Folder (mono, in place of the board's Repos: an
+    automation has one folder), and Model (mono) only where its run's thread says which.
+  - **Recent runs:** "RECENT RUNS", then every run the host kept, newest first, in 28pt rows
+    (`NWAutomationRunLine`): the dot, the start in mono 12 `textSecondary` ("Sep 24 02:00"), the
+    word in 12 `textTertiary`, and how long it took in mono 10.5 `textTertiary`. A run whose thread
+    still exists opens it. Before the runs arrive: "Reading runs…"; with none: "No runs yet."; from
+    a host that can't list them: "Runs aren't available from this host."
   - **Footer** pinned under a hairline, padded 12pt above and below and 14pt at the sides: **Run
-    now** (secondary, small, a play glyph), a spacer, and **Edit** (ghost, small).
-- **This Mac's automations** have no details view yet. Their footer rows open their run's thread
-  (live or finished) and do nothing without one.
+    now** (secondary, small, a play glyph; **Stop** while a run is live), why nothing can change
+    here when the host is offline or too old, a spacer, and **Edit** (ghost, small).
+- **New automation and Edit** open `AutomationEditorSheet`: Host (for a new one, when a connected
+  host serves automations), Name, Folder (with Choose…, the directory browser on that host),
+  Prompt, and On. Saving never starts a run. This Mac saves through its server; a host through
+  `RemoteAutomationRequest.create`/`.update`, the fields the iOS form has.
+- The page reads every automation's runs when it opens and whenever a run starts, settles or ends
+  (this Mac's run log, each connected host's `runs`).
 
 ### Hosts page
 
-**Not built yet** (NavHosts; More ▸ Hosts, "where agents run"). Today hosts are managed in Settings
-▸ Remote (add, edit, reconnect, remove) and shown as sidebar sections with their status rows
-(Sidebar).
+NavHosts, as `HostsPage` (`Sources/ShepherdApp/Pages/`), from More ▸ Hosts: This Mac and each
+remote host as a card with the facts Shepherd has (`HostsPageModel`). Shepherd has no daemon and
+nothing measures load or worktree disk use, so the board's daemon facts, Load, worktree sizes,
+Open in Finder, Open terminal and Logs are left out (the user's decision, 2026-09-25: "Hosts =
+This Mac and each remote host's card with status, address, threads, Retry, Remove, Add host").
+Hosts are still added and edited in Settings ▸ Remote.
 
-- **Header:** "Hosts", the subtitle "3 hosts · 1 offline", and **Add host**. There is no filter.
+- **Header:** "Hosts", the subtitle "3 hosts · 1 offline" (This Mac counts; the offline part only
+  while one is), and **Add host**, which opens Settings ▸ Remote's host form. There is no filter.
 - **Explainer:** one paragraph in 12.5 `textSecondary`, at most 720pt wide: "Where agents run.
-  Threads run on the host you pick when you start them; missions run on a daemon so they survive
-  your laptop sleeping. Remote threads show the host's name as a tag in Recents." The missions and
-  daemon parts wait on Missions and daemon hosts; Shepherd has no daemon (AGENTS.md).
-- **Host cards,** 14pt under the explainer, three columns with 16pt gaps, each a 1pt `lineSubtle`
-  border at radius 10. The board draws the middle card's border in `lineStrong` and doesn't say
-  which state that is.
-  - **Head,** padded 14pt above and below and 16pt at the sides, with a hairline beneath and 10pt
-    gaps: a 30pt tile (radius 8, `bgSunken`, `lineSubtle` border) with a 15pt display glyph; the
-    name in mono 14 semibold over what runs there in 11.5 `textTertiary` ("Shepherd app · Pi 0.8.2",
-    "Shepherd daemon · Linux · Pi 0.8.2", "daemon · macOS · offline 3h"); and the state trailing in
-    12 with a 6pt dot: "Connected" in `done`, "Unreachable" in `failed`.
-  - **Facts,** padded 10pt above and below and 16pt at the sides: rows at least 26pt tall, a 110pt
-    label column in 12.5 `textSecondary`, and values in mono 11.5 `textPrimary`. A connected host
-    shows Running ("2 threads", "2 missions · 5 stations"), Worktrees with their disk use ("11 · 3.2
-    GB"), and Repos ("shepherd, dashboard-web") or, for a daemon, Load ("6 of 16 cores"). An
-    unreachable host shows Waiting ("2 threads, 1 automation"), Last seen ("Sep 24 07:12"), and
-    Address ("horizon.local:7040").
+  Threads run on the host you pick when you start them. Remote threads show the host's name as a
+  tag in Recents." The board's missions sentence waits on Missions.
+- **Host cards** (`NWHostPageCard`), 14pt under the explainer, three to a row with 16pt gaps,
+  equal heights, each a 1pt `lineSubtle` border at radius 10.
+  - **Head,** padded 14pt above and below and 16pt at the sides, with a hairline beneath: the 30pt
+    tile with a display glyph; the name in mono 14 semibold over "Shepherd app · agent 0.8.2"
+    (pi's version, This Mac only) or "Shepherd app", plus "· offline 3h" once a host has dropped;
+    and the connection trailing in 12 with a 6pt dot: "Connected" `done`, "Connecting" `running`,
+    "Not connected" `idle`, or the failure's word in `failed` ("Unreachable", "Token refused",
+    "Update needed").
+  - **Facts** (`NWPageFact`, 110pt labels, mono 11.5 values, rows at least 26pt): a connected host
+    shows Running ("2 threads", or "none"), Worktrees (how many threads work on one, when any),
+    Repos (its projects), and, for a remote host, Address. An unreachable one shows Waiting from
+    its last state ("2 threads, 1 automation"), Last seen ("Sep 24 07:12", when it dropped this
+    launch), and Address. A failure that retrying won't fix (a refused token, another version)
+    adds its sentence under the facts; this is where the sidebar's host notices went.
   - **Actions** under a hairline, padded 10pt above and below and 14pt at the sides, 8pt apart,
-    small: This Mac has Open in Finder (ghost); a daemon has Open terminal and Logs (ghost); an
-    unreachable host has Retry (secondary, with an `arrow.clockwise`) and Remove (ghost).
+    small, remote hosts only: Retry (secondary, `arrow.clockwise`) while neither connected nor
+    connecting, and Remove (ghost), which asks first ("Remove build-01?"). This Mac has none.
 
 ### Thread
 
@@ -3442,7 +3459,8 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Agents | `NWSubagentCard` (`NWSubagentRun`, `NWSubagentQuestion`), `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (`NWRunCard`, `NWRunGroupCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer`, `NWDiffMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, …) | `DiffReviewView.swift`, `ReviewCommitSheet.swift`; the iOS client |
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
-| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics` | `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
+| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`, `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
+| Pages | `NWPageHeader`, `NWPageFilterField`, `NWTableColumns` and `NWTableHead`, `.nwPageCard()`, `NWPageFact`, `NWPageSectionLabel`, `NWPageQuote`, `NWPageMetrics`; `NWHostPageCard` and `NWHostFact` (`NWHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
 | Design tool (not built yet; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField`, and `NWActivityLine`'s `.drew` and `.checked` kinds (see Design tool) | nothing yet |
 | Missions map (not built yet; `Components/MissionMap/`) | `NWMissionMap`, `NWStation`, `NWTerminus`, `NWFlowWire`, `NWDataWire`, `NWForkBar`, `NWJoinBar`, `NWOutcomeChip`, `NWPinRow`, `NWLane`, `NWFog`, `NWFrontierChip` (see Missions: the map) | nothing yet |
 | Mission screens (not built yet; `Components/Missions/`) | `NWMissionHeader`, `NWPhaseBar`, `NWBudgetMeter`, `NWHostChip`, `NWChoiceCard`, the mission question card, `NWPlannerNote`, `NWAttemptRow`, `NWCheckpointRow`, `NWSpendBar`, `NWTrainCard`, `NWTrainGateRow`, `NWTrainRuleRow`, `NWRepoTimeline`, `NWPathLockRow`, `NWContractRow`, `NWDiffAnnotation`, `NWTraceSpan`, `NWMergeActions`, `NWRollbackRow`, `NWTemplateInput`; iPhone: `NWMissionLiveActivity`, `NWMissionNotification`, `NWLaneStrip`; in `Components/Agents`: `NWMissionNode`, `NWInboxItem`, `NWClaimRow` (see Missions: motion, keyboard and parts to build; Mission components) | nothing yet |
