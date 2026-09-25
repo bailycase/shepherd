@@ -18,6 +18,12 @@ public enum NWSearchMetrics {
     public static let chevronSize: CGFloat = 12
     /// The status dot in the icon column.
     public static let statusDot: CGFloat = 8
+    /// How far the clear button's touch target reaches past its glyph on each side.
+    #if os(iOS)
+    public static let clearTargetOverhang: CGFloat = max(0, (NW.Height.touch - iconSize) / 2)
+    #else
+    public static let clearTargetOverhang: CGFloat = 0
+    #endif
 }
 
 /// A run of text, and whether it matched the query.
@@ -205,7 +211,9 @@ public struct NWTouchSearchField: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: NWSearchMetrics.iconSize, weight: .regular))
                         .foregroundStyle(nw.textTertiary)
-                        .nwTouchTarget(height: NWSearchMetrics.iconSize, width: NWSearchMetrics.iconSize)
+                        // A 44pt target that reaches past the glyph without growing the field,
+                        // so typing the first letter never makes the field jump.
+                        .contentShape(Rectangle().inset(by: -NWSearchMetrics.clearTargetOverhang))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
