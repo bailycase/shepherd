@@ -51,7 +51,7 @@ import SwiftUI
     NWPreviewBoth {
         VStack(spacing: NW.Space.l) {
             NWHostCard(name: "Studio", address: "studio.local:7433", state: .done, status: "Connected",
-                       summary: "2 threads running · Shepherd, horizon") { EmptyView() }
+                       summary: "2 threads running · Shepherd, horizon", openLabel: "Edit Studio", open: {}) { EmptyView() }
             NWHostCard(name: "MacBook Air", address: "10.0.0.24:7433", state: .failed, status: "Offline",
                        summary: "Connection refused", summaryTone: .failed) {
                 Button("Retry", systemImage: "arrow.clockwise") {}.buttonStyle(.nw(.secondary))
