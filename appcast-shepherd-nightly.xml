@@ -3,36 +3,36 @@
     <channel>
         <title>Shepherd Nightly</title>
         <item>
+            <title>0.0.0-nightly.202609252053</title>
+            <pubDate>Fri, 25 Sep 2026 21:06:19 +0000</pubDate>
+            <link>https://github.com/bailycase/shepherd</link>
+            <sparkle:version>92</sparkle:version>
+            <sparkle:shortVersionString>0.0.0-nightly.202609252053</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252053/Shepherd-Nightly.dmg" length="31764249" type="application/octet-stream" sparkle:edSignature="ab5gCiAZN40TyWtaOIXtzpQ+8h4/bSIlOwmefqp+pDPDa1P5BGf9DuVCDeb5hl5/eXb83AjXItryXXTqowhAAA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252053/Shepherd-Nightly92-91.delta" sparkle:deltaFrom="91" length="2663370" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="6pOuig1z2ZAdk6hVcw8jkiavK9Ip+kNEvSQa6diqpouMRAQTWC1pg2Y7P/HnZpzjPFdP42BtMA8LDZZnBkNvBg=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252053/Shepherd-Nightly92-90.delta" sparkle:deltaFrom="90" length="2843234" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="g2/EX/FgugvjJY5IxWrolPcniaYscuiMHRM+ihUycxneqFSXk/1SPUvUIFlyO553MMQXA1RnYw7RmHzesPqhCA=="/>
+                <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252053/Shepherd-Nightly92-89.delta" sparkle:deltaFrom="89" length="2841758" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="WvZk1UrvtbAmyqrjZYR8DeMTpTC9/Ndc47jDC775ZVvF793IsO7cGY3Fa67FnxwjZ6Ix38ZSrA+0V1XW2sejBQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
+            <title>0.0.0-nightly.202609252036</title>
+            <pubDate>Fri, 25 Sep 2026 21:06:20 +0000</pubDate>
+            <link>https://github.com/bailycase/shepherd</link>
+            <sparkle:version>91</sparkle:version>
+            <sparkle:shortVersionString>0.0.0-nightly.202609252036</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252036/Shepherd-Nightly.dmg" length="31641244" type="application/octet-stream" sparkle:edSignature="um0mw0FCNn+8z5ddbkIJnZVQD5LwOGXfJWG9inDqe1BkSSwf6cgaBek9uIqwmPkgf9FmVd29Q6FmJn4XXow+CA=="/>
+        </item>
+        <item>
             <title>0.0.0-nightly.202609252017</title>
-            <pubDate>Fri, 25 Sep 2026 20:27:09 +0000</pubDate>
+            <pubDate>Fri, 25 Sep 2026 21:06:24 +0000</pubDate>
             <link>https://github.com/bailycase/shepherd</link>
             <sparkle:version>90</sparkle:version>
             <sparkle:shortVersionString>0.0.0-nightly.202609252017</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252017/Shepherd-Nightly.dmg" length="31614181" type="application/octet-stream" sparkle:edSignature="PPjrpRQThz6uKQ6ETe18dnLp4M48iYMxYi0rlgQNTC4hrjx9NF3jkETWEySObActAehUvmt0l0mhDAafrA5cDg=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252017/Shepherd-Nightly90-89.delta" sparkle:deltaFrom="89" length="33058" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="UgqHnHoyfP2wvxymfBJVUKhizvwn2GFK70PaNZseRB3SsEy6N0UQbkLr3i2oy4NO2Sx0yByL+pR2Hi+mjqj5CA=="/>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252017/Shepherd-Nightly90-88.delta" sparkle:deltaFrom="88" length="33150" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="H2gNLzFmF2O6+t8JFN5jH25IDZTP0wMgPqFu3g0YYBs5wTl9Szb9VT38bJ6k7YCHTiXaHmx0eScRihf0lrgcAA=="/>
-                <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609252017/Shepherd-Nightly90-87.delta" sparkle:deltaFrom="87" length="1267570" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Al8H2d8U59Vy7mL20zEuoS87IWeJGdw2mMAX57UeSfg2kBN235l9iURrFD+RzCXF82+Aq7zBav6fPDOuZ892Bw=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>0.0.0-nightly.202609251910</title>
-            <pubDate>Fri, 25 Sep 2026 20:27:11 +0000</pubDate>
-            <link>https://github.com/bailycase/shepherd</link>
-            <sparkle:version>89</sparkle:version>
-            <sparkle:shortVersionString>0.0.0-nightly.202609251910</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609251910/Shepherd-Nightly.dmg" length="31632450" type="application/octet-stream" sparkle:edSignature="Fo72rmaZ2sFuysNSFR4fk6OGMgGRk96ZROsjKIFYycFHUSAnp7QN6gtd0CFl7+JTVv6ac8OfKdLMEgmKY/UIAw=="/>
-        </item>
-        <item>
-            <title>0.0.0-nightly.202609251837</title>
-            <pubDate>Fri, 25 Sep 2026 20:27:13 +0000</pubDate>
-            <link>https://github.com/bailycase/shepherd</link>
-            <sparkle:version>88</sparkle:version>
-            <sparkle:shortVersionString>0.0.0-nightly.202609251837</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/bailycase/shepherd/releases/download/nightly-202609251837/Shepherd-Nightly.dmg" length="31614413" type="application/octet-stream" sparkle:edSignature="ahWP21rLLXrU6iKmZ2JCZlNGR82nQ58wrxpvGX66SFDN72PrNFV3MfCWPs3F+RnPiAkvgiTSAqdciLCQ2oiUCQ=="/>
         </item>
     </channel>
 </rss>
