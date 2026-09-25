@@ -15,6 +15,8 @@ extension FixtureCatalog {
         return [
             FixtureScreen(name: "commit", hosts: CommitFixture.hosts(), routes: [thread, changes], presented: .review(.commit(ref)),
                           prepare: CommitFixture.drafted),
+            FixtureScreen(name: "commit-written", hosts: CommitFixture.hosts(drafts: false), routes: [thread, changes],
+                          presented: .review(.commit(ref)), prepare: CommitFixture.writtenWithOneUnticked),
             FixtureScreen(name: "commit-working", hosts: CommitFixture.hosts(working: true), routes: [thread, changes],
                           presented: .review(.commit(ref)), prepare: CommitFixture.drafted),
             FixtureScreen(name: "commit-running", hosts: CommitFixture.hosts(operation: CommitFixture.running), routes: [thread, changes],
@@ -39,10 +41,10 @@ enum CommitFixture {
         RemoteCommitFile(path: "Tests/ShepherdAppTests/NativePresentationTests.swift", status: "A", added: 30, removed: 0, fingerprint: "c"),
     ]
 
-    static func info(working: Bool = false) -> RemoteCommitInfo {
+    static func info(working: Bool = false, drafts: Bool = true) -> RemoteCommitInfo {
         let plain = reviewCommitFallbackMessage(files)
         return RemoteCommitInfo(repository: "/Users/dev/Shepherd", branch: "main", head: "abc", upstream: "origin/main", pushRemote: "origin",
-                                defaultBranch: "main", files: files, title: plain.title, body: plain.body, draftsMessage: true,
+                                defaultBranch: "main", files: files, title: plain.title, body: plain.body, draftsMessage: drafts,
                                 agentWorking: working, blocked: nil)
     }
 
@@ -58,14 +60,14 @@ enum CommitFixture {
     ])
 
     /// The review's hosts, with Studio also answering the commit's reads for the preview agent.
-    static func hosts(working: Bool = false, operation: RemoteWorktreeOperation? = nil) -> [FixtureHostData] {
+    static func hosts(working: Bool = false, drafts: Bool = true, operation: RemoteWorktreeOperation? = nil) -> [FixtureHostData] {
         var hosts = ReviewFixture.hosts()
         let review = hosts[0].reply
         hosts[0].reply = { request in
             guard case .agentQuery(let id, let agentID, let query) = request, agentID == FixtureData.preview else { return review?(request) }
             switch query {
             case .commitInfo:
-                return .agentResult(id: id, result: .commitInfo(info(working: working)))
+                return .agentResult(id: id, result: .commitInfo(info(working: working, drafts: drafts)))
             case .commitMessage:
                 return .agentResult(id: id, result: .commitMessage(title: title, body: body, drafted: true))
             case .worktreeStatus(let requested) where requested == operation?.id:
@@ -85,6 +87,14 @@ enum CommitFixture {
     @MainActor static func drafted(_ app: MobileApp) async {
         let store = store(app)
         await ReviewFixture.until { store.stage == .form && store.drafted && !store.drafting }
+    }
+
+    /// A host that drafts nothing: the message written from the file list, following the ticked
+    /// files once one is unticked.
+    @MainActor static func writtenWithOneUnticked(_ app: MobileApp) async {
+        let store = store(app)
+        await ReviewFixture.until { store.stage == .form }
+        store.toggle("App/iOS/FleetView.swift")
     }
 
     /// The commit on screen, then `operation` as the host reports it.

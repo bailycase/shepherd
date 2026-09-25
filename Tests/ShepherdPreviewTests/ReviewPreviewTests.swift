@@ -78,11 +78,13 @@ struct ReviewPreviewTests {
     }
 
     /// The Commit… sheet (derived from the iPadCommit board): the drafted message, three files
-    /// with one left out, and the options; drafting; an agent still working; a checkout it
-    /// refuses; then the host's steps running, done with a pull request, and stopped at a push.
-    @Test(arguments: ["form", "drafting", "working", "blocked", "pr-default", "running", "done", "failed"])
+    /// with one left out, and the options; the message written from the file list, following the
+    /// ticked files; drafting; an agent still working; a checkout it
+    /// refuses; then the host's steps running, done with a pull request, stopped at a push, and
+    /// a commit the host no longer knows (after a restart).
+    @Test(arguments: ["form", "written", "drafting", "working", "blocked", "pr-default", "running", "done", "failed", "unknown"])
     func commitSheet(_ state: String) async throws {
-        let store = CommitBoard.store(state)
+        let store = await CommitBoard.store(state)
         try await Preview.render("sheet-commit-\(state)", size: CGSize(width: AppLayout.commitSheetWidth, height: 720)) {
             ReviewCommitSheet(store: store, askAgent: {}, close: {}, staged: true)
                 .frame(maxHeight: .infinity, alignment: .top)
@@ -311,10 +313,13 @@ enum CommitBoard {
     static let title = "Show commands and paths in tool rows"
     static let body = "Tool rows now preview the command or path instead of \u{201C}complete\u{201D}. Adds NativePresentationTests to cover the preview text on macOS and iOS."
 
-    static func store(_ state: String) -> ReviewCommitStore {
+    static func store(_ state: String) async -> ReviewCommitStore {
         let store = ReviewCommitStore()
         let operationID = UUID()
         switch state {
+        case "written":
+            store.stage(info())
+            store.toggle("App/iOS/FleetView.swift")
         case "drafting": store.stage(info(), drafting: true)
         case "working": store.stage(info(working: true), title: title, body: body, drafted: true)
         case "blocked": store.stage(info(blocked: "A rebase is in progress in this checkout. Finish or abort it first."))
@@ -344,6 +349,15 @@ enum CommitBoard {
                                                 error: "Committed 1a2b3c4 on feat/tool-rows; the push failed. Nothing else changed.",
                                                 progress: ["check the checkout: on feat/tool-rows", "commit 3 files: committed 1a2b3c4",
                                                            "push to origin/feat/tool-rows: failed: \(rejected)"]))
+        case "unknown":
+            store.stage(info(), title: title, body: body, drafted: true)
+            store.adopt(RemoteWorktreeOperation(id: operationID, progress: ["check the checkout: on feat/tool-rows", "commit 3 files: working…"]))
+            // The Mac host's answer for an operation it never took, read as the sheet reads it.
+            store.query = { _ in
+                throw ReviewCommitRefusal("Operation is unknown. It may predate a host restart. Check the repository before committing again.")
+            }
+            await store.pollOnce()
+            store.query = nil
         default:
             store.stage(info(), title: title, body: body, drafted: true)
             store.toggle("App/iOS/FleetView.swift")
