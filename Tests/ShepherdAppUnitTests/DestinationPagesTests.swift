@@ -217,8 +217,11 @@ struct HostsPageTests {
         (.failed(RemoteHostFailure(kind: .lost, detail: "")), "Unreachable", true, false),
     ])
     func eachConnectionStateSaysItselfAndWhetherItCanRetry(phase: RemoteHostStore.Phase, status: String, retry: Bool, note: Bool) {
-        let card = HostsPageModel.make(local: ShepherdState(), agentVersion: nil, remotes: [remote("horizon", phase: phase)]).cards[1]
+        let model = HostsPageModel.make(local: ShepherdState(), agentVersion: nil, remotes: [remote("horizon", phase: phase)])
+        let card = model.cards[1]
         #expect(card.status == status)
+        #expect(model.offlineCount == (phase == .connecting ? 0 : 1), "a host still connecting isn't offline")
+        #expect(HostsPageModel.isOffline(phase) == (model.offlineCount == 1), "More ▸ Hosts counts as the page does")
         #expect(card.canRetry == retry)
         #expect((card.note != nil) == note)
         #expect(card.facts == [NWHostFact("Address", "horizon.local:7433")], "nothing known waits there, and it was never seen")

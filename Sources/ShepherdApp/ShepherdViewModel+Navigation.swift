@@ -106,14 +106,9 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Hosts neither connected nor connecting: More ▸ Hosts says how many.
+    /// Hosts neither connected nor connecting: More ▸ Hosts says how many, as the Hosts page does.
     var offlineHostCount: Int {
-        remoteHosts.connections.count { connection in
-            switch connection.phase {
-            case .connected, .connecting: false
-            case .disconnected, .failed: true
-            }
-        }
+        remoteHosts.connections.count { HostsPageModel.isOffline($0.phase) }
     }
 
     // MARK: Destinations
