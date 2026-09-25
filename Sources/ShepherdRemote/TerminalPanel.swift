@@ -239,6 +239,8 @@ public struct RemoteTerminalLink: Equatable, Sendable {
     private var wanted = false
     /// The grid the host last had from this viewer.
     private var sent: Grid?
+    /// How long a refused attach waits before it is tried again, while the link is wanted.
+    private var retries = RemoteReconnectBackoff()
 
     public init() {}
 
@@ -280,14 +282,28 @@ public struct RemoteTerminalLink: Equatable, Sendable {
 
     /// The host accepted attach number `attempt`.
     public mutating func attached(attempt: Int) {
-        if phase == .attaching, attempt == self.attempt { phase = .live }
+        guard phase == .attaching, attempt == self.attempt else { return }
+        phase = .live
+        retries.reset()
     }
 
-    /// The host refused attach number `attempt`, or its request failed.
-    public mutating func attachFailed(_ reason: String, attempt: Int) {
-        guard phase == .attaching, attempt == self.attempt else { return }
+    /// The host refused attach number `attempt`, or its request failed. While the link is still
+    /// wanted, returns how long to wait before `retry(attempt:)`: a host that just relaunched may
+    /// not serve the session yet, and nothing else would ask again while the view stays up.
+    @discardableResult
+    public mutating func attachFailed(_ reason: String, attempt: Int) -> Duration? {
+        guard phase == .attaching, attempt == self.attempt else { return nil }
         phase = .failed(reason)
         sent = nil
+        return wanted ? retries.next() : nil
+    }
+
+    /// Tries a refused attach again, unless something has happened since (a newer attach, the
+    /// view left, the session exited).
+    public mutating func retry(attempt: Int) -> [Command] {
+        guard case .failed = phase, wanted, attempt == self.attempt else { return [] }
+        phase = .detached
+        return attachIfReady()
     }
 
     /// The session's process exited; its last screen stays.
