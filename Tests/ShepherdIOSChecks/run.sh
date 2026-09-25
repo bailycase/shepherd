@@ -14,7 +14,7 @@ for module in ShepherdCore ShepherdProtocol ShepherdRemote; do
         Sources/"$module"/*.swift -o "$build/lib$module.dylib"
 done
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
-    App/iOS/HostConnection.swift Tests/ShepherdIOSChecks/HostConnectionCheck.swift \
+    App/iOS/Hosts/HostConnection.swift Tests/ShepherdIOSChecks/HostConnectionCheck.swift \
     -o "$build/check"
 DYLD_LIBRARY_PATH="$build" "$build/check"
 

@@ -21,7 +21,7 @@ PLIST
 xcrun swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
     -target arm64-apple-ios27.0-simulator -swift-version 5 -I "$products" \
     "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" \
-    App/iOS/HostConnection.swift App/iOS/MobileTokens.swift App/iOS/Thread*.swift App/iOS/FleetView.swift App/iOS/HostSettingsView.swift \
+    App/iOS/Hosts/HostConnection.swift App/iOS/Hosts/HostSettingsView.swift App/iOS/Support/MobileTokens.swift App/iOS/Thread/*.swift App/iOS/Composer/*.swift App/iOS/Home/FleetView.swift \
     Tests/ShepherdIOSChecks/ThreadSimulatorFixture.swift \
     -o "$fixture/ThreadFixture.app/ThreadFixture"
 python3 - "$device" "$fixture/ThreadFixture.app" <<'PY'
