@@ -93,6 +93,8 @@ final class Callbacks: @unchecked Sendable {
     let deliveries = Locked<[SessionID: Int]>([:])
     let exits = Locked<[SessionID: Int32?]>([:])
     let statuses = Locked<[(AgentID, AgentStatus)]>([])
+    /// Each `done` report, with the failure of a turn that ended in an error.
+    let dones = Locked<[(AgentID, TurnFailure?)]>([])
 
     init(_ server: SessionServer) {
         server.onOutput = { [output, deliveries] id, data in
@@ -100,7 +102,10 @@ final class Callbacks: @unchecked Sendable {
             deliveries.withValue { $0[id, default: 0] += 1 }
         }
         server.onSessionExited = { [exits] id, code in exits.withValue { $0[id] = code } }
-        server.onAgentStatus = { [statuses] id, status in statuses.withValue { $0.append((id, status)) } }
+        server.onAgentStatus = { [statuses, dones] id, status, failure in
+            statuses.withValue { $0.append((id, status)) }
+            if status == .done { dones.withValue { $0.append((id, failure)) } }
+        }
     }
 
     func text(_ id: SessionID) -> String { String(decoding: output.current[id] ?? Data(), as: UTF8.self) }

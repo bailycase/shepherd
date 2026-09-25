@@ -383,11 +383,14 @@ struct SidebarAgentRowModel: Equatable {
     var statusSince: Date?
     /// One of the agent's subagents is waiting on your answer.
     var subagentNeedsYou: Bool
+    /// The agent's last turn ended in an error.
+    var turnFailed: Bool
     var dimmed: Bool
 
     init(agent: Agent, selected: Bool, depth: Int, badge: Int? = nil, statusSince: Date? = nil,
-         children: [ChildRun] = [], dimmed: Bool = false) {
+         children: [ChildRun] = [], turnFailed: Bool = false, dimmed: Bool = false) {
         self.agent = agent
+        self.turnFailed = turnFailed
         self.selected = selected
         self.depth = depth
         self.badge = badge
@@ -399,8 +402,11 @@ struct SidebarAgentRowModel: Equatable {
     /// A question waits on the user: the agent's own, or one of its subagents'.
     var needsYou: Bool { agent.status == .blocked || subagentNeedsYou }
 
+    /// A finished agent whose turn ended in an error reads failed, not done.
+    private var failed: Bool { turnFailed && agent.status == .done }
+
     /// The dot: needs you wins over the agent's own status.
-    var state: AgentState { needsYou ? .attention : AgentState(agent.status) }
+    var state: AgentState { needsYou ? .attention : failed ? .failed : AgentState(agent.status) }
 
     /// The agent row's trailing slot, in priority order: the ⌘-digit hint while ⌘ is held,
     /// needs you, then elapsed time while working.
@@ -413,7 +419,8 @@ struct SidebarAgentRowModel: Equatable {
 
     /// "Fix the login, worktree, running".
     var accessibilityLabel: String {
-        "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(needsYou ? "needs you" : AgentRow.statusWord(agent.status))"
+        let word = needsYou ? "needs you" : failed ? "failed" : AgentRow.statusWord(agent.status)
+        return "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(word)"
     }
 }
 
@@ -437,7 +444,8 @@ extension ShepherdViewModel {
     func sidebarRowModel(for agent: Agent, depth: Int, badge: Int?) -> SidebarAgentRowModel {
         SidebarAgentRowModel(
             agent: agent, selected: selectedAgentID == agent.id && selectedRemoteAgent == nil, depth: depth,
-            badge: badge, statusSince: statusSince[agent.id], children: children(of: agent.id)
+            badge: badge, statusSince: statusSince[agent.id], children: children(of: agent.id),
+            turnFailed: failedTurns.contains(agent.id)
         )
     }
 
