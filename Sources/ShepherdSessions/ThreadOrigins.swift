@@ -103,7 +103,7 @@ final class ThreadOriginStore: @unchecked Sendable {
         }
     }
 
-    /// Waits for every write queued so far (tests).
+    /// Waits for every write queued so far: the server stopping, so a relaunch reads them, and tests.
     func flush() {
         writes.sync {}
     }
