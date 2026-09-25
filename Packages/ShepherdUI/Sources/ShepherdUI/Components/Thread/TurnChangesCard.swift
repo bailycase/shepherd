@@ -87,45 +87,20 @@ public struct NWTurnChangesCard: View, Equatable {
         .accessibilityElement(children: .contain)
     }
 
+    /// The head on one line while it fits, else the title over the actions (a narrow column,
+    /// the accessibility sizes), so neither the title nor Undo truncates.
     private var head: some View {
-        let nw = Color.nw
-        let stacked = typeSize.isAccessibilitySize
-        let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: NW.Space.m)) : AnyLayout(HStackLayout(spacing: NW.Space.m + NW.Space.xxs))
-        return layout {
-            HStack(spacing: NW.Space.m + NW.Space.xxs) {
-                Image(systemName: "plus.forwardslash.minus")
-                    .font(.nw(.ui))
-                    .foregroundStyle(nw.textSecondary)
-                    .frame(width: NWTurnChangesCard.tile, height: NWTurnChangesCard.tile)
-                    .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-                    .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                    Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary)
-                        .lineLimit(stacked ? nil : 1)
-                    NWDiffStat(added: added, removed: removed, font: .nw(.mono))
-                }
-                .accessibilityElement(children: .combine)
-            }
-            if !stacked { Spacer(minLength: 0) }
-            HStack(spacing: NW.Space.xs) {
-                if let onUndo {
-                    Button(action: onUndo) {
-                        HStack(spacing: NW.Space.xs + 1) {
-                            Text("Undo")
-                            Image(systemName: "arrow.uturn.backward").imageScale(.small)
-                        }
+        Group {
+            if typeSize.isAccessibilitySize {
+                stackedHead
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: NW.Space.m + NW.Space.xxs) {
+                        summary.fixedSize()
+                        Spacer(minLength: 0)
+                        actions
                     }
-                    .buttonStyle(.nw(.ghost, size: .l))
-                    .disabled(busy)
-                    .accessibilityLabel("Undo the agent’s edits")
-                    .accessibilityHint("Puts back the files this turn changed, in the working tree")
-                }
-                if let onReview {
-                    Button("Review", action: onReview)
-                        .buttonStyle(.nw(.secondary, size: .m))
-                        .nwTouchTarget(height: NW.Height.controlM)
-                        .accessibilityLabel("Review \(title)")
+                    stackedHead
                 }
             }
         }
@@ -133,6 +108,56 @@ public struct NWTurnChangesCard: View, Equatable {
         .padding(.leading, NW.Space.l)
         .padding(.trailing, NW.Space.m + NW.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var stackedHead: some View {
+        VStack(alignment: .leading, spacing: NW.Space.m) {
+            summary
+            actions
+        }
+    }
+
+    private var summary: some View {
+        let nw = Color.nw
+        return HStack(spacing: NW.Space.m + NW.Space.xxs) {
+            Image(systemName: "plus.forwardslash.minus")
+                .font(.nw(.ui))
+                .foregroundStyle(nw.textSecondary)
+                .frame(width: NWTurnChangesCard.tile, height: NWTurnChangesCard.tile)
+                .background(nw.bgSunken, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+                .nwBorder(nw.lineSubtle, radius: NW.Radius.m)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                Text(title).font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                NWDiffStat(added: added, removed: removed, font: .nw(.mono))
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: NW.Space.xs) {
+            if let onUndo {
+                Button(action: onUndo) {
+                    HStack(spacing: NW.Space.xs + 1) {
+                        Text("Undo")
+                        Image(systemName: "arrow.uturn.backward").imageScale(.small)
+                    }
+                }
+                .buttonStyle(.nw(.ghost, size: .l))
+                .disabled(busy)
+                .accessibilityLabel("Undo the agent\u{2019}s edits")
+                .accessibilityHint("Puts back the files this turn changed, in the working tree")
+            }
+            if let onReview {
+                Button("Review", action: onReview)
+                    .buttonStyle(.nw(.secondary, size: .m))
+                    .nwTouchTarget(height: NW.Height.controlM)
+                    .accessibilityLabel("Review \(title)")
+            }
+        }
+        .fixedSize()
     }
 
     @ViewBuilder private func row(_ file: File) -> some View {
