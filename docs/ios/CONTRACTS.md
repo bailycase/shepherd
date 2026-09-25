@@ -21,7 +21,7 @@ Never commit a `project.pbxproj` change for a new file.
 
 | Track | Owns | Builds |
 | --- | --- | --- |
-| Foundation | `App/`, `Support/`, `Hosts/MobileHosts.swift`, `Hosts/HostTokens.swift`, `Thread/ThreadStores.swift`, `Tests/ShepherdIOSChecks/{run.sh,run-simulator.sh,ThreadSimulatorFixture.swift,FixtureHost.swift,Fixtures/FixtureData.swift}`, this page | the shell, navigation, hosts store, fixtures harness |
+| Foundation | `App/`, `Support/`, `Hosts/MobileHosts.swift`, `Hosts/HostTokens.swift`, `Thread/ThreadStores.swift`, `Tests/ShepherdIOSChecks/{run.sh,run-simulator.sh,MobileHostsCheck.swift,ThreadSimulatorFixture.swift,FixtureHost.swift,Fixtures/FixtureData.swift}`, this page | the shell, navigation, hosts store, fixtures harness |
 | A. Home & hosts | `Home/`, `Settings/`, `Hosts/` (UI files), `Fixtures/HomeFixtures.swift`, `Fixtures/SettingsFixtures.swift` | Home, Needs you, Recents, the iPad sidebar and overview, Settings, the hosts list and form |
 | B. Thread & composer | `Thread/` (not `ThreadStores.swift`), `Composer/`, `Fixtures/ThreadFixtures.swift` | the thread screen, composer, queue and steer, model and thinking, images, slash commands, the question panel |
 | C. New thread | `NewThread/`, `Fixtures/NewThreadFixtures.swift` | the creation flow and Where it runs |
@@ -122,8 +122,9 @@ is out in portrait too.
 | Settings root | `Settings/SettingsScreen.swift` (A) | `PhoneShell` | `SettingsScreen()` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
-the owning track replaces the body. Keep the signature. A hook view compares equal on its plain
-inputs (`Equatable`), so a streamed chunk never redraws it unless its values changed.
+the owning track replaces the body. Keep the signature. A hook drawn inside a turn
+(`SubagentCards`) compares equal on its plain inputs (`Equatable`), so a streamed chunk never
+redraws it unless its values changed; keep it that way.
 
 ## Rules every track follows
 
@@ -166,6 +167,7 @@ extension FixtureCatalog {
 - A host answers `hello`, `stateFetch`, `nativeThread` snapshots and `listModels` by itself.
   Anything else (agent queries, transcripts, creation options) comes from its `reply` closure:
   return a `RemoteReply` for the requests your screen makes, or nil to fall through.
-- The fixture host refuses every request that would change a host, and the harness fails a
-  screen that sends one. Screenshots must never depend on a mutation.
+- The fixture host refuses every request that would change a host, before a `reply` closure
+  sees it, and the harness fails a screen that sends one. Screenshots must never depend on a
+  mutation.
 - Screen names are unique across tracks: prefix yours when in doubt (`review-empty`).

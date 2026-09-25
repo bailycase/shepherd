@@ -41,7 +41,7 @@ temporary directory, then builds and runs three programs:
 
 - **`MobileHostsCheck`:** `App/iOS/Hosts/MobileHosts.swift` with tokens in memory and a scratch
   preferences domain, against real TCP listeners. It covers migrating the first client's single
-  host and its token, records saved without tokens, a new host needing a token, several hosts
+  host and its token (and a token that waits for a locked Keychain), records saved without tokens, a new host needing a token, several hosts
   at once (one live, one refusing), pushed state, backgrounding and foregrounding with a new
   session, retry and stop, renaming without reconnecting, and forgetting.
 - **`ThreadStoreCheck`:** `NativeThreadStore`. It covers revisions, merging history with live
