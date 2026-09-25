@@ -50,13 +50,34 @@ struct AutomationPresentationTests {
         let row = try #require(model.rows.first)
         #expect(row.status == word && row.tone == tone)
         #expect(row.run == FleetRef(host: Self.studio, agent: AgentID(rawValue: "run")))
-        #expect(row.abilities.stop && !row.abilities.run && row.abilities.toggle)
+        // A settled run waits only to be read: it can be run again (replacing it), not stopped.
+        #expect(row.abilities.stop == (tone != .done) && row.abilities.run == (tone == .done) && row.abilities.toggle)
         switch status {
         case .working, .idle: #expect(row.clock == .elapsed(since: Date(timeIntervalSince1970: Self.t0)))
         case .done: #expect(row.clock == .ago(Date(timeIntervalSince1970: Self.t0 + 43)))
         case .blocked: #expect(row.clock == nil)
         }
         #expect(model.live.map(\.key) == (tone == .done ? [] : [Self.key("a")]))
+    }
+
+    /// pi reports idle both while it starts and after `/new`: a run that has settled once stays
+    /// finished, and one whose runs are not read yet counts as live until they are.
+    @Test(arguments: [
+        (AgentStatus.idle, 43.0 as Double?, true, "Finished", AutomationTone.done),
+        (.idle, nil, true, "Running", .running),
+        (.idle, nil, false, "Running", .running),
+        (.working, 43, true, "Running", .running),
+        (.done, nil, false, "Finished", .done),
+    ])
+    func anIdleRunIsLiveOnlyUntilItSettles(_ status: AgentStatus, took: Double?, runsRead: Bool, word: String,
+                                           tone: AutomationTone) throws {
+        let runs = runsRead ? [Self.key("a"): [Self.run(0, .running, took: took, agent: "run")]] : [:]
+        let model = AutomationsModel(hosts: [Self.host([Self.automation("a", agent: "run")], agents: [("run", status)])], runs: runs)
+        let row = try #require(model.rows.first)
+        #expect(row.status == word && row.tone == tone)
+        #expect(row.abilities.run == (tone == .done) && row.abilities.stop == (tone != .done))
+        #expect(row.run != nil, "a settled run still opens its thread")
+        #expect(AutomationRun.isLive(agentStatus: status, run: runs[Self.key("a")]?.last) == row.live)
     }
 
     @Test(arguments: [
