@@ -99,7 +99,7 @@ struct ChangesPreviewTests {
         }
     }
 
-    /// Loading, no changes, a scope that can't be compared, and a legacy review (an older host)
+    /// Loading, no changes, a scope with nothing to compare, and a legacy review (an older host)
     /// side by side at the pane's minimum width.
     @Test func changesStates() async throws {
         let none = ChangesBoard.listed([], scope: .uncommitted, comparison: ChangesComparison(head: "Working tree", base: "HEAD"))
@@ -111,6 +111,7 @@ struct ChangesPreviewTests {
         let failed = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp", reference: nil, loadError: "No turn yet.")
         failed.engine = loading.engine
         failed.scope = .lastTurn
+        failed.loadErrorIsNotice = true
         let legacy = Reviews.session()
         try await Preview.render("changes-states", size: CGSize(width: 4 * AppLayout.paneMinWidth, height: 520)) {
             HStack(spacing: 0) {

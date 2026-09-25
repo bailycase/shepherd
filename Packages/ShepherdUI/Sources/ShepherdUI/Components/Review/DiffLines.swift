@@ -303,7 +303,8 @@ private struct NWDiffCode: View {
             .foregroundStyle(Color.nw.textPrimary)
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Takes what the row leaves, however long the line: its width never pushes the row.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .clipped()
             .help(line.source)
     }

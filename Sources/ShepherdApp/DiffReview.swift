@@ -62,6 +62,9 @@ final class ReviewSession: Identifiable {
     private(set) var addedCount = 0
     private(set) var removedCount = 0
     var loadError: String?
+    /// The load found nothing to compare rather than failing ("No turn yet.", not a repository):
+    /// the pane says so quietly.
+    var loadErrorIsNotice = false
     /// True until the diff arrives; the pane opens immediately and fills in when it does.
     var isLoading: Bool
     var comments: [ReviewComment] {

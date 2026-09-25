@@ -270,15 +270,15 @@ private struct ChangesToolbar: View, Equatable {
                     .nwContentTransition(.crossFade)
             }
             Spacer(minLength: NW.Space.m)
-            if files > 0 {
-                NWViewedPill(viewed: session.viewed.intersection(session.files.map(\.id)).count, total: files)
+            // A narrow pane drops the viewed count, then Commit…'s label.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    if files > 0 { viewedPill(files) }
+                    commitButton(label: true)
+                }
+                commitButton(label: true)
+                commitButton(label: false)
             }
-            Button { commit() } label: {
-                Label("Commit…", systemImage: "smallcircle.filled.circle")
-            }
-            .buttonStyle(.nw(.secondary, size: .s))
-            .disabled(!canCommit)
-            .help(canCommit ? "Commit these changes" : "Commit works on the working tree: pick Uncommitted or Branch")
             HStack(spacing: NW.Space.xxs) {
                 Button { model.actions.refresh() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.nwIcon(size: NWChangesMetrics.toolbarIcon))
@@ -310,6 +310,25 @@ private struct ChangesToolbar: View, Equatable {
         .frame(height: NWChangesMetrics.toolbarHeight)
         .background(Color.nw.bgWindow)
         .overlay(alignment: .bottom) { NWHairline() }
+    }
+
+    private func viewedPill(_ files: Int) -> some View {
+        NWViewedPill(viewed: session.viewed.intersection(session.files.map(\.id)).count, total: files)
+    }
+
+    @ViewBuilder private func commitButton(label: Bool) -> some View {
+        Button { commit() } label: {
+            if label {
+                Label("Commit…", systemImage: "smallcircle.filled.circle")
+            } else {
+                Image(systemName: "smallcircle.filled.circle")
+            }
+        }
+        .buttonStyle(.nw(.secondary, size: .s))
+        .fixedSize()
+        .disabled(!canCommit)
+        .help(canCommit ? "Commit these changes" : "Commit works on the working tree: pick Uncommitted or Branch")
+        .accessibilityLabel("Commit…")
     }
 
     private var canCommit: Bool {
@@ -505,7 +524,7 @@ private struct ReviewBody: View, Equatable {
         ZStack {
             switch Content(session) {
             case .error:
-                ChangesErrorView(message: session.loadError ?? "")
+                ChangesErrorView(message: session.loadError ?? "", notice: session.loadErrorIsNotice ? ChangesText.scopeButton(session) : nil)
                     .nwTransition(.content)
             case .loading:
                 HStack(spacing: NW.Space.m) {
@@ -532,11 +551,18 @@ private struct ReviewBody: View, Equatable {
 /// note, anything else as a failed banner.
 private struct ChangesErrorView: View {
     let message: String
+    /// The scope's name when there is nothing to compare rather than a failure.
+    let notice: String?
 
     var body: some View {
-        NWBanner(.failed, title: message)
-            .padding(NW.Space.l)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        if let notice {
+            NWEmptyState(Text("Nothing to compare"), message: "\(notice): \(message)", showsMark: false)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            NWBanner(.failed, title: message)
+                .padding(NW.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        }
     }
 }
 

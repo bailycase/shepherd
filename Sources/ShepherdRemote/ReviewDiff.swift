@@ -73,7 +73,9 @@ public func formatReview(fileIDs: [String], comments: [ReviewComment], summary: 
     } else {
         for (index, comment) in orderedComments.enumerated() {
             if index > 0 { output.append("") }
-            output.append("\(comment.filePath):\(comment.lineNumber) [\(comment.marker) \(comment.content)]")
+            // A comment on the whole file (the Changes pane's file header) quotes no line.
+            output.append(comment.lineID < 0 ? "\(comment.filePath) (the whole file)"
+                                             : "\(comment.filePath):\(comment.lineNumber) [\(comment.marker) \(comment.content)]")
             output.append(contentsOf: comment.text
                 .split(separator: "\n", omittingEmptySubsequences: false)
                 .map { "  \($0)" }
