@@ -26,7 +26,7 @@ extension ShepherdViewModel {
         return target
     }
 
-    private var unreconciledTerminalTarget: TerminalTarget? {
+    var unreconciledTerminalTarget: TerminalTarget? {
         if let remote = selectedRemoteAgent {
             guard remoteInspectingAgent != remote,
                   let connection = remoteHosts.connections.first(where: { $0.id == remote.hostID }),

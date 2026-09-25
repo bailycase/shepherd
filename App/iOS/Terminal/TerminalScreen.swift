@@ -62,7 +62,7 @@ struct TerminalScreen: View {
             }
         }
         .background(Color.nw.bgWindow)
-        .onChange(of: model.onScreenOutput, initial: true) { terminals.markSeen(ref, sessions: model.onScreenSessions) }
+        .onChange(of: model.seenMark, initial: true) { _, mark in terminals.markSeen(ref, sessions: mark.sessions) }
         // Sessions the host no longer lists let go of their screens, as the iPad panel's do.
         .onChange(of: liveSessions, initial: true) { _, live in
             if hosts.host(ref.host)?.phase.isConnected == true { terminals.prune(host: ref.host, live: live) }
