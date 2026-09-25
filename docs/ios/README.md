@@ -161,7 +161,11 @@ keep the version for real breaks.
   their calls, the running call's live output, notes, errors with Retry, the changes card
   (Review opens all of the turn's changes), and the turn footer (time, duration, tool calls,
   Copy, Retry). It polls its host only while on screen and the app is active (500 ms while the
-  agent runs).
+  agent runs). It follows its tail as the Mac's thread does (`NativeScrollFollower`): only a
+  finger dragging it up detaches, while replies, the composer or keyboard resizing, and rows
+  re-wrapping beside a docked review keep the last turn above the composer. Detached while the
+  agent runs or new output arrived, "↓ Jump to latest" (`NWJumpToLatest`) sits above the
+  composer.
 - **Composer (`ThreadComposer`, `Composer/`):** on iPhone a paperclip beside a capsule field,
   with the commands, model and thinking chips above it while it is in use; on iPad the Mac's
   card with that row under the field. Send queues while pi works (hold it to Steer now). Up

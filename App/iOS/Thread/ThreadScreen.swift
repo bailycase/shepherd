@@ -111,7 +111,10 @@ private struct ThreadTranscript: View {
     let banner: String?
     @Environment(MobileNavigator.self) private var navigator
     @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var nearBottom = true
+    /// Follows the tail until the reader drags away from it (DESIGN.md › Thread › Following).
+    @State private var follower = NativeScrollFollower()
+    /// Set on send: once the echoed turn is in the thread, land on the tail.
+    @State private var scrollToTurnPending = false
 
     private static let bottomID = "thread-bottom"
 
@@ -156,20 +159,68 @@ private struct ThreadTranscript: View {
                 .padding(.vertical, MobileLayout.gutter)
                 .frame(maxWidth: .infinity)
             }
-            // Open at the tail and stay pinned while streamed text grows; scrolling up detaches.
+            // Open at the tail and stay pinned while it grows; only the reader's own drag
+            // detaches, and sending re-attaches.
             .defaultScrollAnchor(.bottom, for: .initialOffset)
-            .defaultScrollAnchor(nearBottom ? .bottom : nil, for: .sizeChanges)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentSize.height - geometry.contentOffset.y - geometry.containerSize.height - geometry.contentInsets.top < 120
-            } action: { _, value in
-                if nearBottom != value { nearBottom = value }
+            .defaultScrollAnchor(follower.sticky ? .bottom : nil, for: .sizeChanges)
+            .onScrollGeometryChange(for: NativeScrollProbe.self, of: Self.probe) { old, new in
+                // The size-change anchor follows neither the composer's nor the keyboard's inset,
+                // nor rows re-wrapping beside a docked review: while stuck, every layout change
+                // lands on the tail, above the composer.
+                if follow({ $0.observe(from: old, to: new, gesture: $0.userScrolling) }) {
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                }
+            }
+            .onScrollPhaseChange { _, phase, context in
+                // Only a finger on the thread is intent; momentum and programmatic scrolls are
+                // not, and a drag that ends near the bottom re-sticks where it lands.
+                follow { follower in
+                    follower.userScrolling = phase == .interacting
+                    if phase == .idle { follower.observe(distanceFromBottom: Self.probe(context.geometry).distance) }
+                    return false
+                }
             }
             .onChange(of: store.sentCount) { _, _ in
-                nearBottom = true
+                follow { $0.jumpToLatest(); return false }
+                scrollToTurnPending = true
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
+            }
+            .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
+                // The echoed turn joins once pi takes it: land on it, even if the reader had
+                // scrolled up meanwhile.
+                guard scrollToTurnPending, id != nil else { return }
+                scrollToTurnPending = false
+                Task { @MainActor in
+                    await Task.yield()
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                }
+            }
+            // Laid out in the thread's safe area, so it sits on the composer; the margin of its
+            // 44pt hit area draws the capsule 8pt above it.
+            .overlay(alignment: .bottom) {
+                NWJumpToLatest(action: follower.showsJump(running: running) ? {
+                    follow { $0.jumpToLatest(); return false }
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                } : nil)
             }
             .scrollDismissesKeyboard(.interactively)
         }
+    }
+
+    /// Applies a change to the follower, writing it back only when it changed, so a scroll frame
+    /// that changes nothing redraws nothing. Returns what the change returned.
+    @discardableResult
+    private func follow(_ change: (inout NativeScrollFollower) -> Bool) -> Bool {
+        var next = follower
+        let result = change(&next)
+        if next != follower { follower = next }
+        return result
+    }
+
+    private static func probe(_ geometry: ScrollGeometry) -> NativeScrollProbe {
+        NativeScrollProbe(content: geometry.contentSize.height, offset: geometry.contentOffset.y,
+                          container: geometry.containerSize.height, insetTop: geometry.contentInsets.top,
+                          insetBottom: geometry.contentInsets.bottom)
     }
 
     @ViewBuilder private func turn(_ row: NativeThreadRow, running: Bool, working: String?) -> some View {
