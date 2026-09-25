@@ -49,6 +49,7 @@ enum RemoteSamples {
         .inspectorPane(tabID: tab, action: .close(paneID: pane)),
         .inspectorPane(tabID: tab, action: .resize(split: split, ratio: 0.6)),
         .search(query: "prompt"),
+        .terminals,
     ]
 
     static let agentResults: [RemoteAgentResult] = [
@@ -73,6 +74,9 @@ enum RemoteSamples {
         .inspectorFocus(pane),
         .search(snippet: "matched text"),
         .search(snippet: nil),
+        .terminals([RemoteTerminalActivity(paneID: pane, sessionID: SessionID(), process: "make", command: "make dev", outputSequence: 42),
+                    RemoteTerminalActivity(paneID: PaneID(), sessionID: SessionID(), process: nil, command: nil, outputSequence: 0)]),
+        .terminals([]),
     ]
 }
 
@@ -295,6 +299,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
             RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeSetupCapability,
             RemoteProtocol.uploadCapability, RemoteProtocol.creationOptionsCapability,
+            RemoteProtocol.terminalActivityCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -309,6 +314,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.pasteCapability == "session.paste.v1")
         #expect(RemoteProtocol.paneControlCapability == "pane.control.v1")
         #expect(RemoteProtocol.uploadCapability == "session.upload.v1")
+        #expect(RemoteProtocol.terminalActivityCapability == "terminal.activity.v1")
     }
 
     @Test func aFullUploadChunkFitsInOneFrameAfterBase64() throws {
