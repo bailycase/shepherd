@@ -271,6 +271,8 @@ struct RemoteReplyTests {
         .dirListing(id: 8, path: "/Users/demo", parent: "/Users", dirs: ["Developer", "Documents"]),
         .models(id: 10, models: ["anthropic/claude-4", "openai/gpt-5"], defaultModel: "anthropic/claude-4",
                 withoutThinking: ["openai/gpt-5"]),
+        .models(id: 12, models: ["anthropic/claude-4", "openai/gpt-5"], defaultModel: nil, withoutThinking: [],
+                thinkingLevels: ["anthropic/claude-4": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]]),
         .spaceAdded(id: 6, spaceID: S.space),
         .agentCreated(id: 7, agentID: S.agent),
         .automationResult(id: 22, result: .runs(S.runs)),
@@ -367,6 +369,27 @@ struct RemoteReplyTests {
         #expect(listing.takesThinking(model) == expected)
     }
 
+    /// Before a session starts, a reasoning model is offered the standard levels, or the ones
+    /// the host's configuration names; a model without reasoning none.
+    @Test(arguments: [
+        ("qa/deep" as String?, ["off", "minimal", "low", "medium", "high"]),
+        ("qa/max", ["off", "minimal", "low", "medium", "high", "xhigh", "max"]),
+        ("qa/plain", []),
+        (nil, []),
+        ("typed/other", ["off", "minimal", "low", "medium", "high"]),
+    ])
+    func aModelIsOfferedTheLevelsItTakes(_ model: String?, _ expected: [String]) {
+        let listing = ModelListing(models: ["qa/plain", "qa/deep", "qa/max"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"],
+                                   thinkingLevels: ["qa/max": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]])
+        #expect(listing.offeredThinkingLevels(model).map(\.rawValue) == expected)
+    }
+
+    /// A host that does not know a level a newer client sends creates the agent at its default.
+    @Test func aCreateAgentWithAnUnknownLevelDecodesWithoutOne() throws {
+        let request = try Wire.decode(RemoteRequest.self, #"{"type":"createAgent","id":7,"spaceID":"space","thinking":"ultra"}"#)
+        #expect(request == .createAgent(id: 7, spaceID: S.space, cwd: nil, model: nil, thinking: nil, initialPrompt: nil))
+    }
+
     /// Older hosts replied with a bare session id; the attachment's grid is then unknown (0).
     @Test func anAttachedReplyFromAnOlderHostDecodesWithAZeroGrid() throws {
         #expect(try Wire.decode(RemoteReply.self, #"{"type":"attached","id":5,"sessionID":"session"}"#)
@@ -413,6 +436,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.automationsCapability,
             RemoteProtocol.terminalActivityCapability,
             RemoteProtocol.reviewCommitCapability,
+            RemoteProtocol.thinkingLevelsCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -430,6 +454,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.terminalActivityCapability == "terminal.activity.v1")
         #expect(RemoteProtocol.reviewCommitCapability == "review.commit.v1")
         #expect(RemoteProtocol.automationsCapability == "automations.v1")
+        #expect(RemoteProtocol.thinkingLevelsCapability == "thinking.levels.v1")
     }
 
     /// Commit info from a host that sends only some fields still reads, with defaults.

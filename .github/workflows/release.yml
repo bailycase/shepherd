@@ -13,6 +13,8 @@ name: Release
 # internal testing, in its own job on an Xcode 27 runner. The Mac job never waits
 # on it or fails with it, and it is skipped with a notice when the App Store
 # Connect key below is not configured. Beta and stable tags upload nothing yet.
+# After a successful upload, retire-testflight expires every older TestFlight
+# build, so only the newest stays installable.
 #
 # Shepherd Nightly is its own app (com.bailycase.shepherd.nightly, Shepherd
 # Nightly.app, Shepherd-Nightly.dmg), so it installs beside Shepherd and only
@@ -452,6 +454,66 @@ jobs:
             -authenticationKeyIssuerID "$ISSUER_ID"
           plutil -p "$RUNNER_TEMP/export/DistributionSummary.plist" 2>/dev/null || true
           echo "::notice title=TestFlight::Uploaded $SCHEME build $BUILD for internal testing."
+
+      - name: Remove the App Store Connect key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
+
+  # Keeps only the newest Shepherd iOS build installable in TestFlight. It waits
+  # for Apple to process the build the testflight job just uploaded (up to 45
+  # minutes; then it gives up and expires nothing) and expires every older one.
+  # release.py retire-testflight holds the rules (tested in Tests/Release).
+  retire-testflight:
+    name: Retire older TestFlight builds
+    needs: [plan, testflight]
+    if: >-
+      github.event_name != 'pull_request' && fromJSON(needs.plan.outputs.plan).ios &&
+      needs.testflight.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    # Two runs never race over the same builds: a later one waits its turn.
+    concurrency:
+      group: testflight-retire
+      cancel-in-progress: false
+    env:
+      # The build number the testflight job uploaded.
+      BUILD: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Secrets cannot appear in `if:`, so only whether all three are set
+      # leaves this step.
+      - name: Write the App Store Connect key
+        id: key
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY_P8: ${{ secrets.APP_STORE_CONNECT_KEY_P8 }}
+        run: |
+          if [[ -z "$KEY_ID" || -z "$ISSUER_ID" || -z "$KEY_P8" ]]; then
+            echo "::notice title=TestFlight::The APP_STORE_CONNECT_* secrets are not all set; nothing to retire."
+            exit 0
+          fi
+          umask 077
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s\n' "$KEY_P8" > "$RUNNER_TEMP/asc/AuthKey.p8"
+          if ! grep -q 'BEGIN PRIVATE KEY' "$RUNNER_TEMP/asc/AuthKey.p8"; then
+            echo "::error::APP_STORE_CONNECT_KEY_P8 must be the .p8 file's text as-is, not base64." && exit 1
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Expire older builds
+        if: steps.key.outputs.ready == 'true'
+        env:
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: |
+          python3 scripts/release.py retire-testflight --key-file "$RUNNER_TEMP/asc/AuthKey.p8" \
+            --timeout 2700 --interval 45 --wait-for-build "$BUILD"
 
       - name: Remove the App Store Connect key
         if: always()
