@@ -305,8 +305,18 @@ final class PalettePreviewStore {
         var note: String?
     }
 
+    /// A thread's preview and the snapshot it came from, so a refresh of a thread that hasn't
+    /// moved is the host's small `unchanged` answer rather than its history again.
+    struct Cached {
+        var preview: ThreadPreview
+        var piSessionID: String
+        var generation: String
+        /// Nil asks the host for the whole snapshot again.
+        var revision: UInt64?
+    }
+
     private(set) var state = State()
-    @ObservationIgnored private var cache: [AgentRef: ThreadPreview] = [:]
+    @ObservationIgnored private var cache: [AgentRef: Cached] = [:]
     static let refresh: Duration = .seconds(3)
     static let settle: Duration = .milliseconds(120)
 
@@ -330,9 +340,19 @@ final class PalettePreviewStore {
                 return
             }
             do {
-                let result = try await client.nativeThread(agentID: ref.agent, request: .snapshot())
+                let known = cache[ref]
+                let result = try await client.nativeThread(agentID: ref.agent, request: .snapshot(afterRevision: known?.revision))
                 guard !Task.isCancelled else { return }
-                if case .snapshot(let snapshot) = result { cache[ref] = ThreadPreview(snapshot) }
+                switch result {
+                case .snapshot(let snapshot):
+                    cache[ref] = Cached(preview: ThreadPreview(snapshot), piSessionID: snapshot.piSessionID,
+                                        generation: snapshot.generation, revision: snapshot.revision)
+                case .unchanged(let session, let generation, _):
+                    // Another pi session with the same revision: ask again for all of it.
+                    if known?.piSessionID != session || known?.generation != generation { cache[ref]?.revision = nil }
+                default:
+                    break
+                }
                 show(ref, hosts: hosts, loading: false)
             } catch {
                 guard !Task.isCancelled else { return }
@@ -346,7 +366,7 @@ final class PalettePreviewStore {
         guard let host = hosts.host(ref.host) else { return set(State()) }
         let agent = host.agent(ref.agent)
         let space = agent.flatMap { agent in host.state.spaces.first { $0.id == agent.spaceID }?.name }
-        let preview = cache[ref]
+        let preview = cache[ref]?.preview
         let model = preview?.model.map { $0.split(separator: "/").last.map(String.init) ?? $0 }
         let thread = Thread(title: agent?.name ?? "Thread", state: AgentState(agent?.status ?? .idle),
                             meta: [host.name, space, model].compactMap { $0 }.joined(separator: " · "))
