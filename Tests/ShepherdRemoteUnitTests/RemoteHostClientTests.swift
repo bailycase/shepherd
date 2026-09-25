@@ -48,6 +48,14 @@ struct RemoteHostClientTests {
         #expect(RemoteHostClient.availabilityCode(code, legacyHost: legacyHost) == read)
     }
 
+    /// An older host shows its automations read-only: nothing is sent to it.
+    @Test(arguments: [RemoteAutomationRequest.setEnabled(enabled: true), .run, .stop, .runs, .delete,
+                      .create(draft: RemoteAutomationDraft(name: "n", prompt: "p", cwd: "/", enabled: true))])
+    func automationsNeedAHostThatAdvertisesThem(_ request: RemoteAutomationRequest) async {
+        let client = RemoteHostClient()
+        #expect(await code { try await client.automation(AutomationID(), request: request) } == "update_required")
+    }
+
     @Test(arguments: [
         NativeThreadRequest.snapshot(),
         .setModel(expectedSessionID: "s", generation: "g", operationID: UUID(), model: "p/m"),
