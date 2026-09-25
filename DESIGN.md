@@ -1299,7 +1299,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Agents | `NWSubagentCard`, `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup` | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift` |
 | Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer` | `DiffReviewView.swift` |
 | Dialogs | `NWDialog`, `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `SettingsView.swift` |
-| Automations | `NWAutomationRow` (a row with its switch), `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics` | `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
+| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics` | `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
 
 Rules for the controls:
 
@@ -1440,7 +1440,15 @@ or the iPad sidebar's.
   footer is Edit and Run now, or Stop (confirmed: it deletes the run's thread) and Open run.
   The ••• menu has Open Run, Edit and Delete Automation (confirmed).
 - **Form:** Name, Prompt, Where it runs (Host when adding and more than one can take it, then
-  Folder from the host's spaces), and Starts with Shepherd. Save waits for the host.
+  Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new
+  automation keeps one id for the life of the form, so saving again after an answer that never
+  came back can never save it twice.
+- **Switches** (`NWAutomationSwitch`) flip from their whole 44pt target, caption included, and
+  read as toggles to VoiceOver.
+- **When a change does not come back ok:** a refusal shows a banner with the host's reason
+  ("Couldn't start the run: …"). A timeout or a dropped connection says the change may have
+  happened and to check before trying again; nothing is ever resent on its own. Delete closes
+  the iPhone's detail only once the host has removed the automation.
 
 ## Verifying visuals
 
