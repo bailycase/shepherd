@@ -625,7 +625,7 @@ private final class MotionThread {
 
         var body: some View {
             ThreadView(store: store, active: visibility.active, isFocused: false, request: request, commandKey: "motion",
-                       listModels: { models })
+                       listModels: { ModelCatalog(models) })
         }
     }
 
