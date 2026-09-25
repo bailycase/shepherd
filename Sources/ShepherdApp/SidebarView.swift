@@ -92,6 +92,9 @@ enum SidebarItem: Identifiable, Equatable {
     case remoteAgent(hostID: UUID, model: SidebarAgentRowModel)
     /// A host that isn't connected: one status row stands in for its spaces.
     case notice(hostID: UUID, phase: RemoteHostStore.Phase.Kind)
+    /// This Mac has no spaces while a host's section follows: a quiet row says so under its
+    /// header and offers New space….
+    case noLocalSpaces
     /// A connected host's Automations disclosure, under its spaces.
     case remoteAutomations(SidebarRemoteAutomations)
     case remoteAutomation(SidebarRemoteAutomation)
@@ -106,6 +109,7 @@ enum SidebarItem: Identifiable, Equatable {
         case .agent(let model): AnyHashable(model.agent.id)
         case .remoteAgent(let hostID, let model): AnyHashable(RemoteAgentRef(hostID: hostID, agentID: model.agent.id))
         case .notice(let hostID, _): AnyHashable(SidebarRowKey.notice(hostID))
+        case .noLocalSpaces: AnyHashable(SidebarRowKey.noLocalSpaces)
         case .remoteAutomations(let header): AnyHashable(SidebarRowKey.remoteAutomations(header.hostID))
         case .remoteAutomation(let row): AnyHashable(row.key)
         }
@@ -134,6 +138,7 @@ private enum SidebarRowKey: Hashable {
     case machine(UUID?)
     case remoteSpace(UUID, SpaceID)
     case notice(UUID)
+    case noLocalSpaces
     case remoteAutomations(UUID)
 }
 
@@ -194,6 +199,8 @@ private struct SidebarItemRow: View, Equatable {
                 RemoteAgentRow(vm: vm, zone: zone, hostID: hostID, model: model)
             case .notice(let hostID, let phase):
                 HostNoticeRow(vm: vm, hostID: hostID, phase: phase)
+            case .noLocalSpaces:
+                NWSidebarNoticeRow(.idle, text: "No spaces", actionTitle: "New space…") { vm.addSpaceFromPanel() }
             case .remoteAutomations(let header):
                 RemoteAutomationsRow(vm: vm, header: header)
             case .remoteAutomation(let row):
@@ -214,6 +221,7 @@ extension ShepherdViewModel {
                                             hoverHint: hosts.isEmpty ? nil : machineKeycap(forHost: nil), canAddSpace: true)))
         if !localMachineCollapsed {
             let groups = spaceTree
+            if groups.isEmpty, !hosts.isEmpty { tree.append(.noLocalSpaces) }
             // A space whose next row is deeper has nested projects drawn beneath it.
             let parents = Set(groups.indices.dropLast().filter { groups[$0 + 1].depth > groups[$0].depth }.map { groups[$0].space.id })
             let badges = sidebarShortcutBadges
