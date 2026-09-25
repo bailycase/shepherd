@@ -354,7 +354,7 @@ struct ToolOutputSheet: View {
             }
             .safeAreaInset(edge: .bottom) {
                 if output.truncated {
-                    Text("The host clipped this output; the full text is in pi's session file.")
+                    Text("The host clipped this output; the full text is in the agent's session file.")
                         .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary).padding(MobileLayout.gutter)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.nw.bgWindow)

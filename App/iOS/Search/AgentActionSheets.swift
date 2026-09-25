@@ -34,7 +34,7 @@ struct RenameAgentSheet: View {
                         Text(error).foregroundStyle(Color.nw.failed)
                     }
                     if let host {
-                        Text(agent == nil ? "This agent is no longer on \(host.name)." : "On \(host.name). The new name replaces the one pi chose.")
+                        Text(agent == nil ? "This agent is no longer on \(host.name)." : "On \(host.name). The new name replaces the one the agent chose.")
                     }
                 }
                 .font(.nw(.caption))

@@ -35,7 +35,7 @@ private enum RunTouchSamples {
         NWRunGroupRow(id: "tests", name: "tests", state: .failed, detail: "exit 1 · 3 snapshot tests fail", meta: "4m"),
     ]
     static let history = [
-        NWRunHistoryRow(id: "a", name: "claude-header-path", state: .done, summary: "Fix Pi model selection",
+        NWRunHistoryRow(id: "a", name: "claude-header-path", state: .done, summary: "Fix agent model selection",
                         finishedAt: now.addingTimeInterval(-3600), added: 12, removed: 4),
         NWRunHistoryRow(id: "b", name: "spec-audit", state: .done, summary: "Listed 11 spec gaps", finishedAt: now.addingTimeInterval(-7200)),
     ]
