@@ -75,6 +75,18 @@ enum ListPerf {
         return result == 0 ? Double(info.ri_instructions) / 1e6 : 0
     }
 
+    /// The layers in the window that cast a shadow, and how many layers each one's subtree
+    /// holds. Core Animation draws a shadow without a path from the whole subtree's alpha, again
+    /// whenever anything in it changes.
+    static func shadowedLayers(in window: OffscreenWindow) -> [(layer: CALayer, subtree: Int)] {
+        func size(_ layer: CALayer) -> Int { 1 + (layer.sublayers ?? []).reduce(0) { $0 + size($1) } }
+        func walk(_ layer: CALayer) -> [(layer: CALayer, subtree: Int)] {
+            let own = layer.shadowOpacity > 0 ? [(layer: layer, subtree: size(layer))] : []
+            return own + (layer.sublayers ?? []).flatMap(walk)
+        }
+        return window.host.layer.map(walk) ?? []
+    }
+
     /// One pass of scrolling: each step's milliseconds.
     struct Scroll {
         /// Each step's instructions, in millions (the whole process: the main thread's work).
