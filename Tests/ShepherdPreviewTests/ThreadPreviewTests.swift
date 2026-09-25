@@ -66,21 +66,34 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// A long stretch of work (asking, exploring, editing, commands that failed along the way)
-    /// folded into one "Worked for …" line between the prose around it.
+    /// A long stretch of work (asking, exploring, editing, commands that failed along the way):
+    /// one quiet line per burst between the prose around it, the failures red and visible.
     @Test func threadActivityLong() async throws {
         try await render("thread-activity-long", ActivityThreads.long)
     }
 
-    /// Running board: a finished commit line, the live push with its last output lines, and
-    /// the working row.
+    /// Running board, LiveText's "A tool is running": a finished commit line, then the live
+    /// push, its verb and command shimmering beside its clock, with its last output lines.
+    /// Nothing under it.
     @Test func threadActivityRunning() async throws {
-        try await render("thread-activity-running", ActivityThreads.running(thinking: false))
+        try await render("thread-activity-running", ActivityThreads.running(.call))
     }
 
-    /// The model thinking at the tail: "Thinking… 4s" instead of the working row.
+    /// The model thinking at the tail: "› Thinking…" shimmering, the thread's one live line.
     @Test func threadActivityThinking() async throws {
-        try await render("thread-activity-thinking", ActivityThreads.running(thinking: true))
+        try await render("thread-activity-thinking", ActivityThreads.running(.thinking))
+    }
+
+    /// LiveText's "Between tools": the commit finished and nothing streams yet, so the turn ends
+    /// in "› Thinking…".
+    @Test func threadActivityBetweenTools() async throws {
+        try await render("thread-activity-between-tools", ActivityThreads.running(.between))
+    }
+
+    /// Thinking the model kept back: a plain "Thought for 10s" line with no chevron, above the
+    /// disclosure of thinking it shared.
+    @Test func threadThinkingUnshared() async throws {
+        try await render("thread-thinking-unshared", ActivityThreads.unsharedThinking, size: CGSize(width: 1180, height: 640))
     }
 
     /// A new agent from its first frame, while its pi boots: the framed empty state and a complete
@@ -113,7 +126,7 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// The same agent once its pi has kept it waiting past the delay: "Starting pi…" beside Send,
+    /// The same agent once its pi has kept it waiting past the delay: "Starting…" beside Send,
     /// no banner, and Send offered for a typed draft.
     @Test func threadStarting() async throws {
         let fixture = ThreadFixture(Threads.empty)
@@ -153,7 +166,7 @@ struct ThreadPreviewTests {
     }
 
     /// A relaunched agent's thread read from pi's session file while its pi boots: the history
-    /// as pi will show it, and "Starting pi…" beside Send once pi keeps it waiting.
+    /// as pi will show it, and "Starting…" beside Send once pi keeps it waiting.
     @Test func threadRestoring() async throws {
         let fixture = ThreadFixture(ActivityThreads.idle)
         fixture.starting = true
@@ -213,30 +226,25 @@ struct ThreadPreviewTests {
         try await render("thread-prose", snapshot, ready: { fences.allSatisfy { CodeHighlightCache.cached($0) != nil } })
     }
 
-    /// The "Activity line states" board: a stretch folded and expanded, done lines (one
-    /// expanded into calls), failed with its output expanded, and live.
+    /// The "Activity line states" board (ToolRows): done lines (the edit expanded into its
+    /// calls), a failed line, and a live one; one quiet line per burst, nothing folding them.
     @Test func activityLineStates() async throws {
         let turn = nativeTurnPresentation(ActivityThreads.stateMessages, live: false)
         let bursts = turn.items.flatMap { item -> [NativeActivityBurst] in
-            if case .work(let group) = item { return group.finished + group.running }
+            if case .activity(_, let bursts) = item { return bursts }
             return []
         }
-        let stretch = try #require(nativeWorkGroup(ActivityThreads.longMessages.compactMap { $0.toolName == nil ? nil : NativeActivityCall($0) }))
-        let short = try #require(nativeWorkGroup(ActivityThreads.stateMessages.prefix(10).map(NativeActivityCall.init)))
         let live = nativeActivityBurst([NativeActivityCall(ActivityThreads.liveBuild)])
         let failed = try #require(bursts.first { $0.state == .failed })
-        let size = CGSize(width: 760, height: 780)
+        let size = CGSize(width: 760, height: 520)
         try await Preview.render("activity-line-states", size: size) {
             VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
-                Text("STRETCH").nwSectionLabel()
-                WorkGroupView(group: stretch, review: { _ in })
-                WorkGroupView(group: short, review: { _ in }, expanded: true)
-                Text("DONE").nwSectionLabel().padding(.top, NW.Space.s)
+                Text("DONE").nwSectionLabel()
                 ForEach(bursts.filter { $0.state == .done }) { burst in
                     ActivityLineView(burst: burst, review: { _ in }, expanded: burst.kind == .edit)
                 }
                 Text("FAILED").nwSectionLabel().padding(.top, NW.Space.s)
-                ActivityLineView(burst: failed, expanded: true, expandedCalls: Set(failed.calls.map(\.id)))
+                ActivityLineView(burst: failed)
                 Text("LIVE").nwSectionLabel().padding(.top, NW.Space.s)
                 ActivityLineView(burst: live)
                 Spacer(minLength: 0)
@@ -268,7 +276,9 @@ struct ThreadPreviewTests {
                 }
                 NWThinking("Thought for 6s", text: "The tool summary row is 28pt elsewhere. I’ll keep it a minimum, not a fixed height, so large text sizes still fit.",
                            isExpanded: .constant(true))
-                NWThinking(liveSince: Date().addingTimeInterval(-4))
+                NWThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
+                NWThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
+                NWThinking.live()
                 changes
                 NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                              revealed: true)
@@ -306,7 +316,7 @@ struct ThreadPreviewTests {
             Text(text).font(.nw(.body)).foregroundStyle(placeholder ? Color.nw.textTertiary : Color.nw.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        let size = CGSize(width: 1260, height: 760)
+        let size = CGSize(width: 1320, height: 760)
         try await Preview.render("composer-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 24) {
@@ -319,29 +329,15 @@ struct ThreadPreviewTests {
                 }
                 .frame(width: 600)
                 VStack(alignment: .leading, spacing: 24) {
-                    NWSlashMenu(commands: [
-                        NWSlashCommand(name: "review", description: "Open the review pane on working-tree changes"),
-                        NWSlashCommand(name: "resume", description: "Pick a previous session to continue", arguments: "[session]"),
-                        NWSlashCommand(name: "reload", description: "Reload extensions, skills and prompts"),
-                        NWSlashCommand(name: "release-notes", description: "Draft release notes since the last tag", arguments: "[tag]", tag: "prompt"),
-                    ], total: 23, query: "re", selection: .constant(0)) { _ in }
+                    NWSlashMenu(commands: Self.slashCommands, total: 23, query: "re", selection: .constant(0)) { _ in }
                     HStack(alignment: .top, spacing: 24) {
-                        NWModelPicker(query: .constant(""), sections: [
-                            NWModelSection(title: "Recent", options: [
-                                NWModelOption(id: "anthropic/claude-opus", title: "claude-opus", isCurrent: true),
-                                NWModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", note: "fast"),
-                            ]),
-                            NWModelSection(title: "Anthropic", options: [
-                                NWModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1"),
-                                NWModelOption(id: "anthropic/claude-haiku", title: "claude-haiku"),
-                            ]),
-                        ], selection: .constant(0), onChoose: { _ in }, onClose: {})
-                        NWThinkingMenu(options: [
-                            NWThinkingOption(id: "off", title: "Off"), NWThinkingOption(id: "low", title: "Low", note: "quick"),
-                            NWThinkingOption(id: "medium", title: "Medium", note: "default"), NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
-                        ], current: "medium", onChoose: { _ in }, onClose: {})
+                        NWModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
+                                      onChoose: { _ in }, onClose: {})
+                        NWThinkingMenu(options: Self.thinkingOptions(["off", "low", "medium", "high"]), current: "medium",
+                                       onChoose: { _ in }, onClose: {})
                     }
                 }
+                .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.thinkingMenuWidth)
                 Spacer(minLength: 0)
             }
             .padding(32)
@@ -492,9 +488,29 @@ enum ActivityThreads {
 
     static var idle: NativeThreadSnapshot { snapshot(idleMessages) }
 
-    /// The Running board: the previous turn, the new prompt, a commit, and a live push (or live
-    /// thinking) at the tail.
-    static func running(thinking: Bool) -> NativeThreadSnapshot {
+    /// A turn whose model shared some of its thinking: none for the first stretch (timed, a
+    /// plain line), some for the second (the disclosure, folding in a blank block).
+    static var unsharedThinking: NativeThreadSnapshot {
+        let t0 = now - 5 * 60_000
+        return snapshot([
+            user("u1", "Why does the sidebar jump when an agent finishes?", at: t0),
+            assistant("a1", "Looking at how the sidebar orders its rows.", thinking: "", seconds: 10, at: t0 + 11_000),
+            tool("r1", "read", ["path": "Sources/ShepherdApp/SidebarView.swift"], output: "line", start: t0 + 12_000, end: t0 + 12_100),
+            tool("r2", "read", ["path": "Sources/ShepherdCore/Reorder.swift"], output: "line", start: t0 + 12_200, end: t0 + 12_300),
+            assistant("a2", "", thinking: "Finished agents sort by their last activity, so a status change moves the row.", seconds: 4,
+                      at: t0 + 17_000),
+            tool("g1", "grep", ["pattern": "lastActivity", "path": "Sources/"], output: "Sources/A.swift:12", start: t0 + 17_100, end: t0 + 17_200),
+            assistant("a3", "The row moves because finished agents sort by their last activity. Sorting by creation keeps it still.",
+                      thinking: " ", at: t0 + 20_000),
+        ])
+    }
+
+    /// What the Running board's turn is doing at its tail (LiveText's moments).
+    enum Tail { case call, thinking, between }
+
+    /// The Running board: the previous turn, the new prompt, a commit, and at the tail a live
+    /// push, live thinking, or nothing yet (pi between tools).
+    static func running(_ tail: Tail) -> NativeThreadSnapshot {
         let t0 = now - 60_000
         var messages = idleMessages
         messages += [
@@ -505,11 +521,14 @@ enum ActivityThreads {
                  output: "[main 4f2a9c1] Remove speaker labels\n 3 files changed, 67 insertions(+), 46 deletions(-)", start: t0 + 5_000, end: t0 + 5_400),
         ]
         var provisional: [NativeThreadMessage] = []
-        if thinking {
+        switch tail {
+        case .between:
+            break
+        case .thinking:
             provisional.append(NativeThreadMessage(entryID: "provisional:assistant:9", role: "assistant",
                                                    blocks: [NativeThreadBlock(kind: .thinking, text: "Push, then check CI.")],
                                                    status: "streaming", timestamp: now - 4_000, thinkingSeconds: 4))
-        } else {
+        case .call:
             provisional.append(tool("p1", "bash", ["command": "git push origin main"],
                                     output: "Enumerating objects: 14, done.\nCounting objects: 100% (14/14), done.\nWriting objects: 100% (8/8), 2.31 KiB | 2.31 MiB/s\nremote: Resolving deltas: 0% (0/5)",
                                     start: now - 3_000, end: nil, status: "running"))

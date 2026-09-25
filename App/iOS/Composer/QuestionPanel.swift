@@ -59,7 +59,7 @@ struct QuestionPanel: View {
                 }
                 choices.disabled(blocked)
                 if dialog.timeout != nil {
-                    Text("pi may stop waiting for this answer").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
+                    Text("The agent may stop waiting for this answer").font(.nw(.caption)).foregroundStyle(nw.textTertiary)
                 }
             }
             .fittedScroll(maxHeight: maxHeight * MobileLayout.questionScrollShare)

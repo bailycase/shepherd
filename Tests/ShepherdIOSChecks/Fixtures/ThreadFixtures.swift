@@ -15,8 +15,19 @@ extension FixtureCatalog {
         return [
             // MobileThread, iPadThread: a finished turn, tokens in the header, the changes card.
             FixtureScreen(name: "thread", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)]),
+            // Rich content in prose: the reported reply's table, then task and nested lists,
+            // images, a disclosure and footnotes, then a table wider than the phone and fences.
+            FixtureScreen(name: "thread-table", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.toolsReply)),
+                          routes: [.thread(preview)]),
+            FixtureScreen(name: "thread-rich", hosts: ThreadFixtures.hosts(
+                preview: ThreadFixtures.reply(MarkdownFixtures.structureReply(image: "docs/thread-table.png"))), routes: [.thread(preview)]),
+            FixtureScreen(name: "thread-wide", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.reply(MarkdownFixtures.wideReply)),
+                          routes: [.thread(preview)]),
             // A turn the user stopped mid-command: "stopped" on its line and a quiet note, no error.
             FixtureScreen(name: "stopped", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.stopped()), routes: [.thread(preview)]),
+            // Thinking the model kept back: a plain "Thought for 10s" line, then thinking it shared.
+            FixtureScreen(name: "thinking-unshared", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.unsharedThinking()),
+                          routes: [.thread(preview)]),
             // MobileApproval: a running command's live output, Stop, "Queue a follow-up…".
             FixtureScreen(name: "running", hosts: ThreadFixtures.hosts(), routes: [.thread(running)]),
             // MobileQuestion, iPadQuestion: numbered answers, Recommended, one chosen on iPad.
@@ -76,8 +87,8 @@ extension FixtureCatalog {
             // the turn with no second tap.
             FixtureScreen(name: "composer-focus-rotate", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FollowFixture.focusRotateAndCheck),
-            // The model picker, from the host's catalog.
-            FixtureScreen(name: "models", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
+            // The model picker, from the host's catalog: each model's thinking levels under its name.
+            FixtureScreen(name: "models", hosts: ThreadFixtures.levels(ThreadFixtures.hosts()), routes: [.thread(preview)],
                           prepare: { _ in ComposerStates.shared.state(for: preview).choosingModel = true }),
         ]
     }
@@ -106,6 +117,15 @@ enum ThreadFixtures {
     static func plainModel(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
         var hosts = hosts
         hosts[0].withoutThinking = ["anthropic/claude-opus"]
+        return hosts
+    }
+
+    /// Studio's catalog with a model that takes no thinking level and one models.json gives
+    /// Extra high and Max.
+    static func levels(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
+        var hosts = hosts
+        hosts[0].withoutThinking = ["anthropic/claude-haiku"]
+        hosts[0].thinkingLevels = ["anthropic/claude-sonnet": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]]
         return hosts
     }
 
@@ -154,6 +174,15 @@ enum ThreadFixtures {
         ]))
     }
 
+    /// A question and an answer in rich Markdown (MarkdownFixtures).
+    static func reply(_ text: String) -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        return rpc(F.snapshot([
+            F.user("m1", "Which tools does Shepherd expose to its agents?"),
+            F.assistant("m2", text, at: 9_000),
+        ]))
+    }
+
     /// The user stopped a long command: pi failed the call and ended the run with an error reply,
     /// which the host projects as `aborted`.
     static func stopped() -> NativeThreadSnapshot {
@@ -162,6 +191,22 @@ enum ThreadFixtures {
             F.user("s1", "Use the bash tool to run `sleep 40`, then reply with exactly: slept"),
             F.tool("s2", "bash", args: #"{"command":"sleep 40"}"#, output: "Command aborted", error: true, status: "aborted", at: 9_500),
             F.assistant("s3", "", at: 9_600, status: "aborted"),
+        ]))
+    }
+
+    /// A turn whose model shared none of its first stretch's thinking (timed: a plain line) and
+    /// some of the second's (the disclosure).
+    static func unsharedThinking() -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        return rpc(F.snapshot([
+            F.user("k1", "Why does the sidebar jump when an agent finishes?"),
+            F.assistant("k2", "Looking at how the sidebar orders its rows.", thinking: "", seconds: 10, at: 11_000),
+            F.tool("k3", "read", args: #"{"path":"Sources/ShepherdApp/SidebarView.swift"}"#, output: "line", at: 12_000),
+            F.assistant("k4", "", thinking: "Finished agents sort by their last activity, so a status change moves the row.", seconds: 4,
+                        at: 17_000),
+            F.tool("k5", "grep", args: #"{"pattern":"lastActivity","path":"Sources/"}"#, output: "Sources/A.swift:12", at: 18_000),
+            F.assistant("k6", "The row moves because finished agents sort by their last activity. Sorting by creation keeps it still.",
+                        at: 20_000),
         ]))
     }
 

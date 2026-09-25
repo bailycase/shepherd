@@ -90,7 +90,9 @@ struct ThreadComposer: View {
             if store.thinking != nil && store.supportedActions.contains("setThinking") { await state.loadModels(host: host) }
         }
         .sheet(isPresented: Binding(get: { state.choosingModel }, set: { state.choosingModel = $0 })) {
-            ModelPickerSheet(host: host, current: store.model) { model in Task { await store.setModel(model) } }
+            ModelPickerSheet(host: host, current: store.model, currentLevels: { store.snapshot?.thinkingLevels }) { model in
+                Task { await store.setModel(model) }
+            }
         }
     }
 
@@ -179,15 +181,15 @@ struct ThreadComposer: View {
             ModelChip(model: store.model, canChange: live && store.supportedActions.contains("setModel")) { state.choosingModel = true }
         }
         if NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
-                                       listing: state.models) {
-            ThinkingChip(level: store.thinking, enabled: live) { level in Task { await store.setThinking(level) } }
+                                       listing: state.models, levels: store.thinkingLevels) {
+            ThinkingChip(level: store.thinking, levels: store.thinkingLevels, enabled: live) { level in Task { await store.setThinking(level) } }
         }
     }
 
     private func hasChips(_ store: NativeThreadStore, state: ComposerState) -> Bool {
         !store.commands.isEmpty || store.model != nil || store.supportedActions.contains("setModel")
             || NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
-                                           listing: state.models)
+                                           listing: state.models, levels: store.thinkingLevels)
     }
 
     private func acceptsImages(_ store: NativeThreadStore) -> Bool {
@@ -209,7 +211,7 @@ struct ThreadComposer: View {
                 }
             }
             .accessibilityLabel(running ? "Queue message" : "Send")
-            .accessibilityHint(running ? "Goes when pi finishes this turn" : "")
+            .accessibilityHint(running ? "Goes when the agent finishes this turn" : "")
             .accessibilityActions {
                 if running, enabled {
                     Button("Steer now") { send(.steer, store: store, state: state) }

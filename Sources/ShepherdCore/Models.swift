@@ -93,7 +93,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// last working in rather than the original conversation.
     public var piSessionID: String?
     /// Set when the agent was created on a git worktree Shepherd made for it
-    /// (the branch name, e.g. "worktree/calm-stone-3831"). Display-only
+    /// (the branch name, e.g. "agent/calm-stone-3831"). Display-only
     /// identity — the sidebar renders such agents as worktrees of their
     /// space. Decodes nil from older state files.
     public var worktreeBranch: String?
@@ -155,7 +155,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         paneID = try c.decodeIfPresent(PaneID.self, forKey: .paneID)
         status = try c.decode(AgentStatus.self, forKey: .status)
         model = try c.decodeIfPresent(String.self, forKey: .model)
-        thinkingLevel = try c.decodeIfPresent(ThinkingLevel.self, forKey: .thinkingLevel)
+        // A level this build does not know (a newer build's) reads as none: pi's default.
+        thinkingLevel = (try? c.decodeIfPresent(ThinkingLevel.self, forKey: .thinkingLevel)) ?? nil
         // Absent in pre-autoname state.json files; those names were picked by a
         // human (or the old name generator) and must not be overwritten.
         nameIsFinal = try c.decodeIfPresent(Bool.self, forKey: .nameIsFinal) ?? true
@@ -253,5 +254,23 @@ public struct ShepherdState: Codable, Hashable, Sendable {
         // `subagents` in older state.json files is ignored: agents now nest
         // their children inside their own pi process (pi-subagents), so
         // Shepherd has no separate entity to track.
+    }
+}
+
+extension ShepherdState {
+    /// Whether every agent's level is one a client from before minimal, xhigh and max decodes.
+    public var usesOnlyLegacyThinkingLevels: Bool {
+        agents.allSatisfy { $0.thinkingLevel.map(ThinkingLevel.legacy.contains) ?? true }
+    }
+
+    /// The state as such a client can decode it: each agent's level clamped to
+    /// `ThinkingLevel.legacy` (only a fresh session starts with it, and pi clamps it anyway).
+    public func legacyThinkingLevels() -> ShepherdState {
+        guard !usesOnlyLegacyThinkingLevels else { return self }
+        var state = self
+        for index in state.agents.indices {
+            state.agents[index].thinkingLevel = state.agents[index].thinkingLevel?.clamped(to: ThinkingLevel.legacy)
+        }
+        return state
     }
 }

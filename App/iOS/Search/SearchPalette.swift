@@ -230,7 +230,7 @@ private struct PalettePreviewPane: View {
     private static func caption(_ entry: SearchEntry) -> [NWHighlightRun]? {
         switch entry.action {
         case .open: entry.snippet == nil ? nil : entry.detail
-        case .rename: [NWHighlightRun("Give this thread a name of your own. The host keeps it; pi won’t rename it again.")]
+        case .rename: [NWHighlightRun("Give this thread a name of your own. The host keeps it; the agent won’t rename it again.")]
         case .move(_, let direction): [NWHighlightRun("Moves this thread one place \(direction == .up ? "up" : "down") in its space on every device.")]
         case .delete: [NWHighlightRun("Stops the agent and closes its thread. You confirm on the next screen.")]
         case .newThread: [NWHighlightRun("Start an agent on any connected host.")]
