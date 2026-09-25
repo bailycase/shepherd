@@ -233,7 +233,8 @@ keep the version for real breaks.
   `RemoteAgentQuery.terminals` (`terminal.activity.v1`). Closing a tab asks, then asks the host
   to close its panes; the host keeps the Mac's rules (never the agent's own pane, never the last
   pane). A host without pane control (`pane.control.v1`) shows its terminals but offers no +,
-  split or close.
+  split or close. A terminal's screen is in one iPad window at a time: another window showing the
+  same thread says "open in another window" until the first lets it go.
 
 ## Not in the first release
 

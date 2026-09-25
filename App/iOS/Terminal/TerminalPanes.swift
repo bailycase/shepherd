@@ -127,6 +127,8 @@ struct TerminalPaneView: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.scenePhase) private var scenePhase
     @State private var visible = false
+    /// This view, as the one window a session's screen may be in (`MobileTerminalSession.viewer`).
+    @State private var viewer = UUID()
 
     private struct HoldKey: Equatable {
         var connection: UUID?
@@ -141,13 +143,20 @@ struct TerminalPaneView: View {
                 NWTerminalNotice("review open on \(host?.name ?? "the host")")
             } else if let id = pane.sessionID {
                 let session = terminals.session(host: ref.host, id: id)
+                let shown = session.viewer == viewer
                 let key = HoldKey(connection: host?.connectedClient == nil ? nil : host?.session,
-                                  active: visible && scenePhase == .active)
+                                  active: visible && shown && scenePhase == .active)
                 ZStack(alignment: .topLeading) {
-                    TerminalSurface(session: session)
-                        .padding(NWTerminalMetrics.contentPadding)
-                        .accessibilityLabel("Terminal on \(host?.name ?? "the host")")
-                    if let notice = Self.notice(session.phase, canned: session.isCanned, connected: key.connection != nil) {
+                    // SwiftTerm's view is in one window at a time: another iPad window showing
+                    // this thread says so instead of taking the screen from it.
+                    if shown {
+                        TerminalSurface(session: session)
+                            .padding(NWTerminalMetrics.contentPadding)
+                            .accessibilityLabel("Terminal on \(host?.name ?? "the host")")
+                    } else if session.viewer != nil {
+                        NWTerminalNotice("open in another window")
+                    }
+                    if shown, let notice = Self.notice(session.phase, canned: session.isCanned, connected: key.connection != nil) {
                         NWTerminalNotice(notice)
                             .background(Color.nw.bgWindow.opacity(session.phase == .attaching ? 0 : 0.9))
                             .allowsHitTesting(false)
@@ -159,6 +168,10 @@ struct TerminalPaneView: View {
                     guard key.active, key.connection != nil, let client = host?.connectedClient else { return }
                     await session.hold(client)
                 }
+                .onAppear { session.claim(viewer) }
+                .onDisappear { session.letGo(viewer) }
+                // The window that had it let go: this one takes it if it is on screen.
+                .onChange(of: session.viewer) { if session.viewer == nil, visible { session.claim(viewer) } }
             } else {
                 NWTerminalNotice("starting session…")
             }
