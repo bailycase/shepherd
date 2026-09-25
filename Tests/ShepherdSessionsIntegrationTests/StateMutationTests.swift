@@ -167,6 +167,7 @@ struct StateMutationTests {
 
         try await h.server.addSpace(Fixture.space("added"))
         #expect(try h.persisted().agents.first?.checkout == checkout)
+        await drainMainQueue()
         h.broadcasts.withValue { $0.removeAll() }
 
         await h.server.setAgentCheckout(worker.agent.id, nil)
