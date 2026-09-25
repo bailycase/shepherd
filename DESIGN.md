@@ -51,6 +51,13 @@ agents at once?"
   and no Terminal/Native switch.
 - **Words:** an agent's conversation is its *thread*, made of *turns* (yours and the agent's)
   and *messages* (Main, Running: "Copy response", "Retry turn", "17 turns · 42k ctx").
+- **The agent, not pi:** copy calls the process it supervises "the agent" or "Agent" ("Agent is
+  asking", "Goes when the agent finishes this turn", "the agent's session file"), and a version
+  shown to people reads "agent 0.87.1". pi appears in exactly three places, all under Settings:
+  the Settings ▸ Pi page itself (with the Settings footer's "pi 0.87.1" while it is open), its
+  "Pi" item in the settings navigation, and the real `~/.pi/…` paths on Settings ▸
+  Instructions. Code, logs, command lines, extension prompts, and these docs still name pi, the
+  program.
 - **Not built yet.** The Main and Running boards give the sidebar destinations beside the
   agents, among them **Missions** (one map from a goal to merged pull requests, across every
   repository it touches) and **Designs** (HTML mockups on a canvas, drawn and refined with a
@@ -116,15 +123,14 @@ And the rules that follow from them:
 | `NWStatusDot` pulsing with a SwiftUI `.animation(….repeatForever())` started in `onAppear` (NWSwift) | The glow and the spinner are Core Animation layers started at a shared clock's phase (`NWLayerGlowDot`, `NWLayerSpinner`), same look and timing | A SwiftUI-driven spinner redrew its window every display frame (Motion, Performance) |
 | Running sidebar rows draw a sparkline | Running rows show elapsed time; `NWSparkline` exists but nothing uses it | Nothing records an agent's tool calls per minute |
 | The thread toolbar's status pill beside the title ("Running · 0:31", "Needs you", "Idle"; NWNavigation) | No pill: the title, then the counters | The thread, the composer and the sidebar row already say what the agent is doing (Principle 5; `NWThreadToolbar` has no status slot) |
-| Queue & steer: Steer "lands after the tool call pi is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | "Lands once pi's current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
+| Queue & steer: Steer "lands after the tool call the agent is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | "Lands once the agent’s current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
 | Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5, the Send menu at 10 | 8 (the composer's), 6, 4, and the popover's 12 | The radius scale |
 | Queue & steer: 5px gaps (the Steering pill, "Steered", "From the queue", a compact chip); 1px lines outside each 40px row, the 32px header and the card | 6 in the pill, 4 elsewhere; lines drawn inside, so three rows make a 152pt stack (the board's 157) | The space scale's 4pt steps; every card and list in the app draws its lines inside (`nwBorder`, `NWHairline` overlays) |
 | Queue & steer: a custom 280pt QueueOptions popover; tooltips with keycaps | The native ••• menu (`NWOptionsMenu`); system tooltips (`.nwHelp`) | As every other ••• and tooltip in the app |
 | Queue & steer: the Send menu beside the card, highlighted in `bgSelected` | Beside the card where the thread has room for it; in a narrower thread above Send, trailing edges aligned, over the trailing end of Up next while it is open; the composer menus' `runningTint` highlight | The app's column is 820pt (the boards' 620), so the room beside it runs out; the menus' one anatomy |
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
-| "Pi" in board copy: Queue & steer, the question boards ("Pi is asking", "Pi asked:"; MobileQuestion, iPadQuestion), Settings ▸ Agents and the Instructions boards ("While Pi is working", "How Pi reads them", "Pi prompt") | "pi" ("pi is asking", "pi asked:"; the Settings nav's page name stays "Pi") | The app's spelling, until the rest of that redesign lands |
-| Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While pi is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
+| Queue & steer: the queue's keys are "shown in menus and tooltips only" | Also listed under Settings ▸ Keyboard ▸ While the agent is working, in the Keyboard card's order | Settings ▸ Keyboard lists every chord the app answers, and ⌘↩ is rebound there; nothing is written in or under the composer |
 | Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn, fails one, or is blocked on a question, or one of its subagents asks, while you aren't watching it (`AgentNotifications`; see Notifications and Live Activities) | Reaches you outside the app |
 | Missions: the Missions page, the mission map, evidence review | Not built; specified in full under Missions, each part marked Not built yet | Out of scope for this pass |
 | NWAgents, NWSwift: `NWInboxItem`, mission control's inbox item with a leading rule in the state's color | Not built. The Mac has no inbox (its Needs you section is not built yet; Sidebar destinations, Needs you, and Recents); iPhone and iPad list Needs you as `NWAttentionCard`s (MobileInbox, iPadInbox), with no leading rule and no missions | Out of scope for this pass |
@@ -201,7 +207,7 @@ Additions the boards don't have:
 - **The terminal panel's empty state** ("No terminals in this thread yet." and New Terminal).
 - **Thread additions** no board draws (Thread; Composer, questions, and menus): "↓ Jump to
   latest" while detached from the tail; turn jumps (⌥⌘↑ ⌥⌘↓); "Load older messages" and the
-  degraded-state notices; quiet starting and resuming ("Starting pi…" only when pi is slow, history
+  degraded-state notices; quiet starting and resuming ("Starting…" only when pi is slow, history
   read from pi's session file); the framed empty thread ("New agent in `~/path`"); the "Stopped"
   note; a call's output sheet and context menu (Show Call, Review <file>, Open Output, Copy
   Output); extension widgets above the composer; the Stop all confirmation; the "Lost connection
@@ -959,10 +965,10 @@ first and Compact in parentheses; the boards draw no Comfortable sample.
   3. **Designs**: a pen-nib glyph. It opens the Designs page.
   4. **Automations**: a `bolt`. It opens the Automations page.
   5. **More**: a chevron in `textTertiary`, pointing right while closed and down while open. It
-     discloses Hosts (a display glyph), Design systems (a palette), Pi extensions (a puzzle piece),
+     discloses Hosts (a display glyph), Design systems (a palette), Extensions (a puzzle piece),
      and Archive (an archive box). These are the same rows indented to 22pt leading padding. Hosts
      carries "n offline" in mono 10 `failed` while a host is unreachable (NavHosts: "1 offline").
-     Design systems, Pi extensions and Archive are pages no board draws yet.
+     Design systems, Extensions and Archive are pages no board draws yet.
 - **Needs you** (`NWSidebarSection(.needsYou, count:)`): it appears only while something waits on
   you, of any kind (a thread's question, a subagent asking, a mission's question, an automation run
   that asked). The header is "Needs you" in Geist 11.5 medium `lanternText` with the count trailing
@@ -1221,8 +1227,8 @@ Shepherd departs from the boards).
   which state that is.
   - **Head,** padded 14pt above and below and 16pt at the sides, with a hairline beneath and 10pt
     gaps: a 30pt tile (radius 8, `bgSunken`, `lineSubtle` border) with a 15pt display glyph; the
-    name in mono 14 semibold over what runs there in 11.5 `textTertiary` ("Shepherd app · Pi 0.8.2",
-    "Shepherd daemon · Linux · Pi 0.8.2", "daemon · macOS · offline 3h"); and the state trailing in
+    name in mono 14 semibold over what runs there in 11.5 `textTertiary` ("Shepherd app · agent 0.8.2",
+    "Shepherd daemon · Linux · agent 0.8.2", "daemon · macOS · offline 3h"); and the state trailing in
     12 with a 6pt dot: "Connected" in `done`, "Unreachable" in `failed`.
   - **Facts,** padded 10pt above and below and 16pt at the sides: rows at least 26pt tall, a 110pt
     label column in 12.5 `textSecondary`, and values in mono 11.5 `textPrimary`. A connected host
@@ -1275,7 +1281,7 @@ NWThread, ToolRows and LiveText, one line per burst, are the rule.
 - **History:** "Load older messages" (a small ghost button, centered) heads a thread that has
   older pages. It reads "Loading history…" while a page loads, and acts only once pi is ready.
 - **Notices** above the thread explain degraded states in caption tertiary: "Last known thread ·
-  refreshing before enabling actions", "This host's pi cannot answer questions here · update
+  refreshing before enabling actions", "This host's agent cannot answer questions here · update
   Shepherd on the host", "Some earlier output is clipped".
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
   ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
@@ -1508,7 +1514,7 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
     output the host clipped), a link, opens the whole output in a sheet.
   - The output sheet (`ToolOutputSheet`): the call's name and command in mono medium with Copy
     (secondary) and Done (primary) in its header, the output in mono 12 scrolling both ways, and
-    "The host clipped this output; the full text is in pi's session file." beneath it when the
+    "The host clipped this output; the full text is in the agent's session file." beneath it when the
     host clipped it.
   - ⌥-click or the context menu's Show Call opens the raw arguments; the menu also has
     Review <file>, Open Output, and Copy Output.
@@ -1651,7 +1657,7 @@ it (the palette's New agent with options…, New space on <host>…, and "PR #24
   ("Medium") in `textPrimary` medium, and the chevron. It is hidden when the model has no
   reasoning control, as pi's levels for it (only Off), this Mac's catalog, or the host's
   `listModels` says; an unknown model keeps it.
-- a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
+- a spacer, then "Starting…" only while a slow pi keeps the thread waiting (see States),
   then the action, a 28pt circle: **Send** (a 14pt `arrow.up` in `textOnLantern` on `lantern`,
   at 35% until there is something to send) or **Stop** (a small rounded `stop.fill` square in
   `textOnFailed` on `failed`). While pi works with a draft, Stop steps aside **outlined** (a
@@ -1665,7 +1671,7 @@ Chips (`.nwComposerChip(active:)`) are 26pt ghost buttons with 8pt side padding 
 Geist 12 `textSecondary`, their parts 6pt apart, filled with `bgHover` on hover, on press, or
 while their menu is open. A new model or level cross-fades in its chip (`content`); typing and
 width changes stay instant. In a narrow thread (a docked right pane) the chips drop their words
-("/" alone, the level without "Thinking") rather than truncate, once "Starting pi…" has dropped
+("/" alone, the level without "Thinking") rather than truncate, once "Starting…" has dropped
 its own.
 
 **States:**
@@ -1676,12 +1682,12 @@ its own.
   field keeps the idle placeholder (NWComposer's "Queue a follow-up — sent when the turn ends" is
   a departure; see the table). Send's tooltip names both ways, the Return setting's first:
   "Queue (↩) · Steer now (⌘↩)".
-- **Accepting:** a spinner ("Waiting for pi") takes the button's place.
+- **Accepting:** a spinner ("Waiting for the agent") takes the button's place.
 - **Starting:** Send is offered from the first frame, before pi has answered anything. A
   message sent while pi boots waits behind the spinner, still in the field, and goes once pi
   answers, as the field has it then (edited, or not at all once cleared). Once pi has kept the
   thread waiting for two seconds (`AppLayout.startingIndicatorDelay`; half a second over a thread
-  with nothing to show, `AppLayout.blankStartingIndicatorDelay`), "Starting pi…" in
+  with nothing to show, `AppLayout.blankStartingIndicatorDelay`), "Starting…" in
   caption `textTertiary` with a 10pt `textTertiary` spinner sits in the control row just before
   the action (its spinner gives way to the action's own while a message waits). It lives in a
   row that is always there, so it never changes the composer's height or moves the thread; it
@@ -1715,8 +1721,8 @@ corner nearest Send. Nothing about the choice is written under the composer.
 - 268pt on the menus' popover, 6pt padding, rows 2pt apart; each row top-aligned with 8×10
   padding and the `runningTint` highlight: a 14pt glyph in `textSecondary`, the title in Geist
   13 medium with its description in caption tertiary beneath, and its keys as `NWKeycap`s.
-- **Queue** (the queue glyph): "Goes when pi finishes this turn." **Steer now**
-  (`arrow.turn.down.right`): "Lands once pi's current tool calls finish, before its next step."
+- **Queue** (the queue glyph): "Goes when the agent finishes this turn." **Steer now**
+  (`arrow.turn.down.right`): "Lands once the agent’s current tool calls finish, before its next step."
 - ↩'s cap sits on the Return setting's row, which is highlighted when the menu opens, and ⌘↩'s
   on the other. ↑↓ move, ↩ chooses, Esc closes, and a click outside closes it. While it is open
   Send wears a 3pt `lanternTint` ring (`hover`).
@@ -1745,7 +1751,7 @@ first"):
 - a select's options as buttons that answer on click (the first primary), a confirm's Yes
   (primary) and No (y/n while the panel has focus), or an input's or editor's field (mono and
   5–12 lines for an editor) with Submit; each with a ghost Dismiss that cancels
-- "pi may stop waiting for this answer" in micro tertiary when the question has a timeout; "An
+- "The agent may stop waiting for this answer" in micro tertiary when the question has a timeout; "An
   external editor is open · finish it before answering here" or "This question is too large to
   show here" when it cannot be answered here
 - 10pt between its parts (`AppLayout.questionSpacing`); the card eases to the panel's height
@@ -1775,7 +1781,7 @@ composer card, not just its field. Its rules (QuestionStates › Rules):
 - **The dock** (`QuestionDock(question:options:recommended:)` on the board): `bgRaised`, radius
   12, a 1px `lantern` line inside a 3pt `lanternTint` ring, 12pt above and below and 14pt at the
   sides, 12pt between its parts, as wide as the composer card:
-  - a 26pt header: a 13pt question-mark glyph and "pi is asking" in Geist 12 semibold, both
+  - a 26pt header: a 13pt question-mark glyph and "Agent is asking" in Geist 12 semibold, both
     `lanternText`, 7pt apart; trailing, a 26pt icon button, Hide the question (a 14pt chevron,
     `textSecondary`)
   - the question in Geist 16 semibold at 1.35, tracked -0.5% (`Font.nwSans(16, .semibold)`; the
@@ -1817,7 +1823,7 @@ composer card, not just its field. Its rules (QuestionStates › Rules):
   question in 13.5 semibold (truncating), a small secondary **Answer** (24pt), and a 26pt Show
   the question button. Esc or Show the question brings the dock back.
 - **The record** (QuestionAnswered; `QuestionRecord` on the board): where pi asked, the thread
-  keeps one line in Geist 12.5 `textTertiary` (a 12pt glyph, "pi asked:", and the question in
+  keeps one line in Geist 12.5 `textTertiary` (a 12pt glyph, "Agent asked:", and the question in
   `textSecondary` medium, 7pt apart) and, 8pt below, your answer as a user bubble: the option's
   title in semibold with your note under it, 4pt apart, and "2:51 PM · answered" in mono 10.5
   tertiary beneath (on hover, like every bubble's time). pi's turn carries on under it.
@@ -1979,7 +1985,7 @@ the tool call pi is running now").
   working, so nothing on it moves), the text, `NWStatusPill(.running, label: "Steering", symbol:
   "arrow.turn.down.right")`, and Back to the queue (`arrow.uturn.backward`, a 26pt icon button 4pt
   after the pill), both shown at rest, not only on hover. Back to the queue returns it to the queue
-  as #1 until pi reads it; if pi has already read it, the host refuses ("pi has already read that
+  as #1 until pi reads it; if pi has already read it, the host refuses ("The agent has already read that
   message." as the composer's notice) and the message lands in the thread where pi read it. It has
   no grip, number, Edit, or Delete, its text is not a click target, and nothing drops above it.
   Stop also returns every Steering row to the queue (Composer › States).
@@ -2031,7 +2037,7 @@ the tool call pi is running now").
   starts with "/" goes alone, and one delivery carries at most 4 images and 64 KiB
   (`NativeQueueRules.batchCount`).
 - **Keys** (QueueStates · Keyboard; shown in menus and tooltips and listed under Settings ▸ Keyboard
-  ▸ While pi is working, never written in or under the composer): ↩ sends queued and ⌘↩ sends and
+  ▸ While the agent is working, never written in or under the composer): ↩ sends queued and ⌘↩ sends and
   steers now (swapped when the Return setting is Steer; Composer › Sending while pi works); ↑ in an
   empty composer edits the last queued message; ⌥↑ ⌥↓ move the focused message; ⌫ deletes it; ⌘↩
   steers it (sends it now while pi is idle); Esc in the composer stops pi. With keyboard navigation
@@ -2039,8 +2045,8 @@ the tool call pi is running now").
   field), ↩ edits, and Esc or ⇥ return to the field. Deleting a focused row hands focus to the next
   row, else the previous, else the field. On a focused Steering row only ↑ ↓, Esc, and ⇥ do
   anything.
-- **Settings** (QueueStates · Settings › Agents · While pi is working; see Settings): two rows, each
-  an `NWSegmentedPicker`. "Return while pi is working", subtitle "⌘↩ always does the other one."
+- **Settings** (QueueStates · Settings › Agents · While the agent is working; see Settings): two rows, each
+  an `NWSegmentedPicker`. "Return while the agent is working", subtitle "⌘↩ always does the other one."
   (the chord as `KeybindingsStore` shows it): **Queue** (the default) or Steer. "When a turn ends,
   send the queue", subtitle "All at once arrives as one turn, in order.": One per turn or **All at
   once** (the default); it is the host's default for its agents, and each agent's ••• menu overrides
@@ -2064,7 +2070,7 @@ the tool call pi is running now").
   with the reason in the header's tooltip.
 - **Accessibility:** the header reads "Up next, 3 messages". A queued row reads "Queued 2 of 3:
   <text>" with the actions Steer now (or Send now), Edit, Delete, Move up, and Move down; a Steering
-  row reads "Steering: <text>, waiting for pi's current tool calls" with Back to the queue; the
+  row reads "Steering: <text>, waiting for the agent's current tool calls" with Back to the queue; the
   editor's field is "Edit queued message 2"; an Undo row reads "Deleted: <text>" (or "Cleared 3
   queued messages") with Undo. The glyph, the grip, and the number are hidden from VoiceOver.
 
@@ -2415,7 +2421,7 @@ tiles and rows) with a 48pt tab bar beside a 52pt toolbar. This section gives th
 as drawn and maps radii onto the radius scale (8 for cards, panes and tiles, 6 for rows and
 controls, 12 for popovers), as the departures table records for the page boards; the tab bar
 takes the 44pt header height of every right-pane header, so it lines up with the toolbar.
-Confirm both when building. Board strings say "Pi"; the app spells it "pi" (see departures).
+Confirm both when building.
 
 - **One pane per window, four tabs** (`SidePaneTabs`, PaneStates): Changes (the review, with its
   count of changed files), Browser, Artifacts (with its count of new artifacts), Files. The tab
@@ -2426,11 +2432,11 @@ Confirm both when building. Board strings say "Pi"; the app spells it "pi" (see 
   ⌃1–⌃4 switch tabs; ⇧⌘B shows or hides the pane. The review's header content (scope and counts,
   Local | PR) moves into the Changes tab under the bar; where its Expand/Collapse All Files and
   Copy Review as Text go is not on the boards: decide when building.
-- **pi opened something:** a 6pt `running` dot after the tab's label, and a brief popover under the
-  tab ("Pi opened localhost:5173/checkout" with the URL in mono, its age in `textTertiary`; Geist
+- **The agent opened something:** a 6pt `running` dot after the tab's label, and a brief popover under the
+  tab ("Agent opened localhost:5173/checkout" with the URL in mono, its age in `textTertiary`; Geist
   12, a 12pt glyph). The pane never switches tabs on its own while you are reading. With the pane
   closed, its toolbar toggle takes an 8pt `running` dot at its top trailing corner (a 2pt `bgWindow`
-  ring) and the popover reads "Pi opened a page in Browser" with the ⇧⌘B keycaps; nothing opens by
+  ring) and the popover reads "Agent opened a page in Browser" with the ⇧⌘B keycaps; nothing opens by
   itself (see departures: an agent's `review_diff` still opens the review).
 - **Narrow:** under 480pt the labels drop (padding 0×9); glyphs, counts and dots stay.
 - **The ⋯ menu** (`SidePaneOptions`, `NWOptionsMenu`): Split below, Open pane in its own window
@@ -2463,14 +2469,14 @@ else, and it reaches the thread's host through Shepherd's tunnel, which forwards
   reads "Search or enter a URL" in `textTertiary`. Select an element, while on, is
   `lanternTint` with a `lanternText` glyph; a menu's button is `bgSelected` while its menu is
   open.
-- **pi is using it:** pi drives the same page you see. A 2pt `running` ring insets the page, a
+- **The agent is using it:** the agent drives the same page you see. A 2pt `running` ring insets the page, a
   pointer glyph (18pt, `running`) shows where pi points, and a floating card 12pt from the
   pane's sides under the toolbar (`bgRaised`, radius 12, a `running` line, the popover shadow;
-  padding 8, 12 on the leading side) says "Pi is clicking through checkout" (`ui`, a 12pt
+  padding 8, 12 on the leading side) says "Agent is clicking through checkout" (`ui`, a 12pt
   `running` glyph) with Take over (secondary `s`, with a glyph). Click anywhere or Take over to
   get the page back; pi carries on in the thread.
 - **Nothing open:** centered, 14pt apart: a 44pt `bgSelected` circle with a 20pt `textSecondary`
-  glyph, "No page open" (Geist 14 semibold), and "Pi opens pages here when it starts a dev
+  glyph, "No page open" (Geist 14 semibold), and "The agent opens pages here when it starts a dev
   server. Ports on remote hosts are forwarded for you." (`ui` `textSecondary`, at most 330pt,
   centered). Then cards (`bgRaised`, `lineSubtle`, radius 8, padding 10×12) for the dev servers
   found in the repo ("pnpm dev" in Geist Mono 12 over "from package.json · acme-web" in Geist 11
@@ -2522,7 +2528,7 @@ pi. Open one from the thread or the list; edit it in place.
   their own background with 18pt padding.
 - **Versions** (`ArtifactVersions`, a 280pt popover): the file's name in `caption` semibold
   `textSecondary`, then one 38pt row per version, newest first: a check on the one shown, "v4"
-  over "You · 2 lines" (or "Pi · open question added") in Geist 11 `textTertiary`, and its age
+  over "You · 2 lines" (or "Agent · open question added") in Geist 11 `textTertiary`, and its age
   trailing in Geist Mono 11. Then Compare v3 with v4 and Restore v3. Restoring makes a new version.
 - **Editing in place** (PaneArtifactEdit; the board widens the pane to 640pt): the bar becomes an
   editing bar on `lanternTint` (44pt, padding 0/10/0/12): a 14pt `lanternText` pencil, "Editing
@@ -2554,7 +2560,7 @@ before building it (as iOS: iPad › Side pane says).
   in Geist Mono 10.5 semibold `lanternText` for a changed file and an 11pt `running` pencil for a
   file pi is editing now.
 - **Its context menu:** Mention in message (a file chip in the composer), Show in Changes, Show
-  history (subtitle "3 commits · 1 by Pi"), a divider, Copy path, Open in your editor.
+  history (subtitle "3 commits · 1 by the agent"), a divider, Copy path, Open in your editor.
 - **Go to file** (⌘P, a 300pt popover): a 34pt field on `bgSunken` (radius 6, a 13pt glyph, the
   query in Geist Mono 13, a `lantern` caret, the ⌘P keycaps), then 38pt results: a file glyph,
   the name in `ui` over its directory in Geist 11 `textTertiary`, and its status letter trailing.
@@ -2570,17 +2576,17 @@ before building it (as iOS: iPad › Side pane says).
   `textTertiary`, 8pt right padding), a 3pt change bar and 10pt gap, syntax colors from the theme.
   The bar is `lantern` for your unsaved lines (which sit on `lanternTint`) and `running` for lines
   pi changed. A 28pt status bar (a hairline above, Geist 11 `textTertiary`) keys them ("yours,
-  unsaved", "changed by Pi") and ends with "Ln 94, Col 48 · TSX · Spaces: 2" in mono.
-- **pi changed your file:** an attention banner under the path bar (`lanternTint`, padding 10×12):
-  "Pi changed Checkout.tsx while you had unsaved edits." with Compare and Keep mine (secondary
-  `s`) and Use Pi's (ghost `s`). Your unsaved edits are never overwritten; Keep mine saves over
+  unsaved", "changed by the agent") and ends with "Ln 94, Col 48 · TSX · Spaces: 2" in mono.
+- **The agent changed your file:** an attention banner under the path bar (`lanternTint`, padding 10×12):
+  "Agent changed Checkout.tsx while you had unsaved edits." with Compare and Keep mine (secondary
+  `s`) and Use the agent’s (ghost `s`). Your unsaved edits are never overwritten; Keep mine saves over
   pi's change and tells pi in the thread.
 
 ### Terminal panes
 
 A terminal pane is a real PTY: libghostty on the Mac (`AppTerminalView`, through
 `TerminalHost.swift`), SwiftTerm on iOS (`TerminalSurface`). Each one is a real shell and nothing in
-it is pi's (TerminalStates: "Each tab is a real shell; nothing here is Pi's"). The chrome never
+it is pi's (TerminalStates: "Each tab is a real shell; nothing here is the agent’s"). The chrome never
 parses or restyles terminal output, and the thread pane itself never has a terminal.
 
 - **Surface:** the theme's terminal colors (`TerminalColors`), on `bgWindow` (the boards draw
@@ -2714,7 +2720,7 @@ splits.
   The focused pane's glyph, title and host name are `textPrimary` (its host glyph stays
   `textTertiary`); the others' header is `textTertiary`. A tab of one pane has no header
   (TerminalSplit): the tab names it.
-- **Send output to pi** (TerminalPane; TerminalStates: "anything you select can go to Pi"). **Not
+- **Send output to the agent** (TerminalPane; TerminalStates: "anything you select can go to the agent"). **Not
   built yet.** Selecting text in a terminal shows a floating bar beside the selection: `bgRaised`
   with a 1px `lineStrong` border, radius 9 on the board, 4pt padding and 4pt gaps, and the popover's
   shadow. It holds **Add to message** (primary, 24pt: a `lantern` fill, a 13pt `plus` and the label
@@ -2730,13 +2736,13 @@ splits.
   row sits on `bgSelected`. Two-line rows are at least 36pt, with a detail in 11pt `textTertiary`
   under the title; one-line rows are 30pt. In order:
   - "New terminal in the worktree", detail "<space> on <host>" (`terminal`), with the new-terminal
-    chord: "New tabs start in the thread's worktree on its host, so the terminal sees what Pi sees."
+    chord: "New tabs start in the thread's worktree on its host, so the terminal sees what the agent sees."
   - "New terminal on This Mac", detail the folder it opens in (`desktopcomputer`), for a remote
     thread.
   - "Split right" (`rectangle.split.2x1`), with its chord.
   - "Rename tab" (`pencil`).
   - "Kill process" (`xmark`).
-- **Run in terminal** (TerminalStates). **Not built yet.** "Any command line from Pi can be opened
+- **Run in terminal** (TerminalStates). **Not built yet.** "Any command line from the agent can be opened
   in a new tab, typed out but not run." The board puts a Run in terminal button (secondary, small:
   24pt, a 13pt `terminal` glyph and the label in 12pt medium `textPrimary`) at the trailing end of a
   Run (bash) activity line. It opens a new tab in the thread's worktree on its host with the command
@@ -2831,14 +2837,14 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     filters at once
   - the pages, one `NWSettingsNavRow` each, `NW.Space.xxs` apart, in this order: Appearance
     (`circle.lefthalf.filled`) · Terminal (`terminal`) · Agents (`person.2`) · Worktrees
-    (`arrow.branch`) · Pi (`pi`) · Instructions (`doc.text`) · Remote
+    (`arrow.branch`) · Pi (`pi`) · Instructions (`doc.text`) · Skills (`graduationcap`) · Remote
     (`dot.radiowaves.left.and.right`) · Keyboard (`keyboard`) · Advanced (`gearshape`) ·
     Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, with
     `NW.Space.m` side padding: a 15pt medium icon in `textSecondary` (`textPrimary` when selected),
     then, `NW.Space.m` after it, the name in Geist 13 `textPrimary`. The selected page sits on
     `bgSelected` with its name at medium (500) weight; hover is `bgHover`
     (`NWSettingsNavMetrics`).
-  - "Shepherd x.y.z · pi x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
+  - "Shepherd x.y.z · agent x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there.
 - **Search:** typing narrows the nav to pages with a match (a row's title, or a keyword such as
   "dark" for Mode or "tailscale" for Hosts) and lists the matching rows as buttons under their page
@@ -2883,7 +2889,7 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     chosen segment on `bgSelected` with a `lineStrong` ring in semibold `textPrimary`, the others in
     `textSecondary`
   - `NWPopupMenu` (at least 200pt, 28pt, radius `s`, `bgRaised`) for longer lists: the value in mono
-    when it is an id (a model, a shell path), in Geist when it is a word ("Use pi's default · …",
+    when it is an id (a model, a shell path), in Geist when it is a word ("Use the agent’s default · …",
     "Inherit parent", "System font"); a fallback, where there is one, comes first, then a divider,
     then the choices
   - the lantern switch (`SettingsSwitch`, `.nwSwitch`, 30×18) for booleans; the row's title is its
@@ -2953,16 +2959,16 @@ shell they run."
 settings." The chord is read from `KeybindingsStore`, so a rebind never leaves the copy wrong.
 
 - **New agents:**
-  - Default model, "Preselected in the New Agent sheet. “Use pi's default” passes no `--model` at
-    all.": a popup whose first item is "Use pi's default · <pi's own default model>", then a divider
+  - Default model, "Preselected in the New Agent sheet. “Use the agent’s default” passes no `--model` at
+    all.": a popup whose first item is "Use the agent’s default · <pi's own default model>", then a divider
     and the catalog's model ids. The catalog and pi's default load in a task, never in `body`.
   - Default thinking level, "Can be changed per agent from the composer.": Off · Minimal · Low ·
     Medium · High · Extra high · Max, default Medium (pi uses the nearest level a model has).
-- **While pi is working** (the queue's settings; QueueStates' card holds this copy, "Same two
+- **While the agent is working** (the queue's settings; QueueStates' card holds this copy, "Same two
   choices on every platform"):
-  - Return while pi is working, "⌘↩ always does the other one.": Queue · Steer, default Queue. The
+  - Return while the agent is working, "⌘↩ always does the other one.": Queue · Steer, default Queue. The
     chord is the store's alternate send. SettingsAgents also explains each choice ("Queue waits for
-    the turn to end. Steer lands after the tool call Pi is running."); QueueStates' card drops that
+    the turn to end. Steer lands after the tool call the agent is running."); QueueStates' card drops that
     sentence, and its Steer half is retired (Where Shepherd departs from the boards).
   - When a turn ends, send the queue, "All at once arrives as one turn, in order." (SettingsAgents:
     "…in the order you queued it."): One per turn · All at once, default All at once. It is the
@@ -3089,9 +3095,9 @@ automated step of the worktree flows can be turned off here.
     is changed.
 - **Every rebindable action is listed**, in the menu bar's groups: the app adds Delete agent ⇧⌘W to
   Agents, a Thread group (Stop agent, Model picker, Previous turn, Next turn, Inspect subagent),
-  While pi is working (QueueStates' Keyboard card, in its order: ↩ and ⌘↩ named for what they do
+  While the agent is working (QueueStates' Keyboard card, in its order: ↩ and ⌘↩ named for what they do
   under the Return setting, "Send, queued" or "Send and steer now"; Edit the last queued message ↑;
-  Move the focused message ⌥↑↓; Delete the focused message ⌫; Steer the focused message ⌘↩; Stop pi
+  Move the focused message ⌥↑↓; Delete the focused message ⌫; Steer the focused message ⌘↩; Stop the agent
   Esc; only ⌘↩ records), a Window group (Show or hide the sidebar, the right pane), and Show or hide
   terminal ⌘J and Maximize or restore terminal ⇧⌘↩ in Panes. Its Fixed group has the footnote
   "Changes apply immediately, everywhere a shortcut is shown."
@@ -3101,7 +3107,7 @@ automated step of the worktree flows can be turned off here.
 "Files, resets and app updates. Quitting Shepherd stops every agent."
 
 - **Files:** Workspace state, "Spaces, agents and pane layouts restored on relaunch.", and Extension
-  socket, "Where each pi process reports status and pane requests.": `PathRow`s, the file's name in
+  socket, "Where each agent process reports status and pane requests.": `PathRow`s, the file's name in
   mono `textSecondary` (`state.json`, `shepherd.sock`; the full path as its tooltip) and Reveal,
   which selects it in Finder.
 - **Updates:** Check for updates automatically, a switch; Update channel, "Stable: tagged releases.
@@ -3133,15 +3139,15 @@ not cards; only Instructions' reading order uses small cards.
 #### Instructions (SettingsInstructions)
 
 The page (`SettingsInstructions.swift`, `InstructionsModel`) edits the two root instruction files
-Shepherd hands every pi it starts: `AGENTS.md` ("how you work") and `APPEND_SYSTEM.md` ("rules that
-override everything else"). They are Shepherd's own copies, never pi's: they live in
+Shepherd hands every agent it starts: `AGENTS.md` ("how you work") and `APPEND_SYSTEM.md` ("rules
+that override everything else"). They are Shepherd's own copies, never pi's: they live in
 `instructions/` in Shepherd's support directory (`ShepherdPaths.instructionsDirectory`), and the
 instructions extension (`shepherd-instructions.ts`) adds them to each session Shepherd starts, so
 `~/.pi/agent` is never written, and pi run by hand in a terminal doesn't read them. The page sits
-between Pi and Remote in the nav, with `doc.text`. Header: "Instructions", then "Root files for
-every pi session Shepherd starts: `AGENTS.md` for how you work, `APPEND_SYSTEM.md` for rules that
-override everything else. Repos can still add their own AGENTS.md." (file names in mono; see the
-departures).
+between Pi and Skills in the nav, with `doc.text`. Header: "Instructions", then "The agent’s root
+files, read at the start of every session Shepherd starts: `AGENTS.md` for how you work,
+`APPEND_SYSTEM.md` for rules that override everything else. Repos can still add their own
+AGENTS.md." (file names in mono; see the departures).
 
 - **Same on every host:** a flat card (`NWGroupCard` on `bgWindow`) holding one settings row: "Same
   on every host", under it "Save once; Shepherd writes both files to every host. Offline hosts
@@ -3197,11 +3203,11 @@ departures).
     a Shepherd from before Instructions. Update it there to edit its files from here.", "Reading
     horizon's files…" over a spinner, or "Couldn't read horizon's files: …" with Try again.
   - A save, copy or restore that fails says so under the card (`NWInlineProblem`).
-- **How pi reads them** (the side column, 330pt): five steps in order, each a small card (radius
+- **How the agent reads them** (the side column, 330pt): five steps in order, each a small card (radius
   `m`, a `lineSubtle` line, `bgRaised`, 8pt × 10pt padding) joined by a 10pt connector (a 1.5pt
   `lineStrong` line 17pt in, under the number column): the step number in mono 10.5 `textTertiary`
   (16pt wide), a title in mono 11.5 semibold (truncating) over a note in Geist 11 `textTertiary`:
-  1. "pi's system prompt", "built in"
+  1. "Agent’s system prompt", "built in"
   2. "Shepherd's AGENTS.md", "this file · every repo"
   3. "AGENTS.md in parent folders", "if any"
   4. "the repo's AGENTS.md", "most specific context"
@@ -3475,7 +3481,7 @@ Components › Status and feedback.
 | Agent done | `done` | green dot | Send |
 | Agent done, its turn failed | `failed` | red dot | Send |
 | Agent idle | `idle` | hollow ring | Send |
-| pi starting | `idle` | hollow ring | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting pi…" beside it |
+| pi starting | `idle` | hollow ring | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting…" beside it |
 | Connection lost | `failed` | — | Send, plus a `failed` banner with Reconnect |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
@@ -4335,7 +4341,7 @@ differs.
 - **Question** (MobileQuestion; `NWQuestionCard`, docked): the panel takes the composer's place,
   full width, docked to the bottom: `bgRaised`, 18pt top corners, a 1px `lantern` line along its
   top, the thread's content shadowed under its edge, 12pt top, 14pt sides, 34pt bottom, 10pt between
-  parts. A 36×5 `lineStrong` grabber, then a 26pt head: a 13pt question glyph and "pi is asking"
+  parts. A 36×5 `lineStrong` grabber, then a 26pt head: a 13pt question glyph and "Agent is asking"
   (13/600 `lanternText`; "1 / N" in mono when several wait). The question at 18/600, 1.3 line
   height; the asker's message, if any, as code on `bgSunken`. The options: 6pt apart, each a card on
   `bgWindow` with a 1px `lineSubtle` line and 8pt corners, 11×12 padding: a 24pt number in a
@@ -4514,7 +4520,7 @@ keyboard is up while the query is empty.
 
 - **Hosts:** the head "Hosts" with "Add host" (13 `running`) trailing, then a card per host
   (`NWHostCard`; 12×14 padding, 6pt apart, 10pt between cards):
-  - A 15pt display glyph in `textSecondary`, the name (mono 15/600), what it is ("Shepherd app · Pi
+  - A 15pt display glyph in `textSecondary`, the name (mono 15/600), what it is ("Shepherd app · agent
     0.87", 12 `textTertiary`), and the connection trailing (a 7pt dot and "Connected" in `done`,
     "Unreachable" in `failed`, 12). The app shows the address and port where the board has what it
     is, and says "Offline".
@@ -4529,9 +4535,10 @@ keyboard is up while the query is empty.
   the host's magic packet and then retries; a host's kind and pi version and its last-seen time,
   which need the host to report them.
 - **Not built yet:** under the hosts, a card of 52pt rows: Design systems ("2 · acme-web, Night
-  Watch", a palette glyph), Pi extensions ("6 installed", a puzzle glyph), and Archive ("41
-  threads", a box glyph), each pushing its list. Design systems and Archive wait for the Mac; Pi
-  extensions opens Settings ▸ Pi extensions (built: a host's bundled and installed extensions).
+  Watch", a palette glyph), Extensions ("6 installed", a puzzle glyph), and Archive ("41
+  threads", a box glyph), each pushing its list. Design systems and Archive wait for the Mac;
+  Extensions opens Settings ▸ Extensions (built: the bundled and installed pi extensions each host
+  loads).
 
 ### iPhone: Settings (MobileSettings)
 
@@ -4542,23 +4549,23 @@ keyboard is up while the query is empty.
 - **First card** (no head): Appearance (a palette glyph; "System", "Light" or "Dark"), then
   Notifications (a bell; "Needs you").
 - **Agents:** Defaults (a sparkle; the default model, "claude-opus"), Instructions (a page;
-  "AGENTS.md, APPEND"), Pi extensions (a puzzle; "6").
+  "AGENTS.md, APPEND"), Extensions (a puzzle; "6").
 - **Machines:** Hosts (a display; "1 offline", or the count), then Worktrees (a branch).
 - **A card of its own:** Experiments (a flask; "1 on").
 - **About:** a 24pt Shepherd icon (the crook in `lantern` on `textOnLantern`'s dark, 6pt corners),
-  "Shepherd 0.1.0", and "pi 0.87.1" (mono 13 `textTertiary`) trailing.
+  "Shepherd 0.1.0", and "agent 0.87.1" (mono 13 `textTertiary`) trailing.
 - **In the app** the screen is `bgWindow` with 16pt sides, a value is 12 (`.caption`), Hosts shows
   "1 offline" as a problem (mono `failed`) or the host count ("None" with no hosts), and
   Appearance keeps the half-filled circle the Mac's Settings uses. A value shows once a host has
-  answered (`SettingsStore`): Defaults, Pi extensions and About's pi are the settings host's (the
+  answered (`SettingsStore`): Defaults, Extensions and About's agent are the settings host's (the
   one their pages last showed, else the first that serves its settings), Instructions the first
   host whose files read, and Experiments "1 on" or "Off" once any host serves suggestions. About
-  says "build N" until a host reports its pi. Every Settings screen reads every host as it
+  says "build N" until a host reports its agent's version. Every Settings screen reads every host as it
   appears, again as a host connects, and on pull to refresh.
 - **Not built yet:** Notifications (which events notify: Needs you by default; it waits for push
   notifications; see Settings ▸ Notifications).
 
-#### A host's settings (Defaults, Worktrees, Pi extensions)
+#### A host's settings (Defaults, Worktrees, Extensions)
 
 No board draws these pages: they are the Mac's Settings ▸ Agents, Worktrees and Pi (SettingsAgents,
 SettingsWorktrees, SettingsPi) as a host keeps them (`hostSettings.v1`), in iOS Settings' anatomy
@@ -4570,16 +4577,17 @@ beside up-down chevrons.
 
 - **Which host:** with several hosts, a first card, Host, whose menu lists them ("horizon ·
   offline"); the three pages share the choice. With one host there is no card.
-- **Defaults:** New threads: Model (a menu of "pi's default", then the host's catalog, keeping the
-  current model when the catalog lacks it; mono) and Thinking (Off … Max). While pi is working:
+- **Defaults:** New threads: Model (a menu of "Use the agent’s default", then the host's catalog,
+  keeping the current model when the catalog lacks it; mono) and Thinking (Off … Max). While the
+  agent is working:
   When a turn ends, send the queue (One per turn, All at once).
 - **Worktrees:** New worktrees: Base branch (Remote default, Current branch) and Fetch before
   creating. Finalize: Commit remaining work, Generate PR descriptions, Delete local branch, Merge PR
   automatically and, while that is on, Merge method (Squash, Merge, Rebase), over "Shepherd never
   deletes the remote branch: merging the PR cleans it up on GitHub."
-- **Pi extensions:** Bundled with Shepherd: a switch for each extension the host bundles, with its
-  note. Installed with pi: the host's own packages and extensions in mono ("None yet…" without).
-  Updates: Update pi daily and Update extensions daily, over "<host> runs pi 0.87.1."
+- **Extensions:** Bundled with Shepherd: a switch for each extension the host bundles, with its
+  note. Installed on <host>: the host's own packages and extensions in mono ("None yet…" without).
+  Updates: Update the agent daily and Update extensions daily, over "<host> runs agent 0.87.1."
 - **States:** a spinner while the host answers; offline, "<host> is offline. Its settings show here
   once it's back."; a Shepherd from before `hostSettings.v1`, "…is too old to share its settings.
   Update it to change them here."; a failed read, its reason in `failed`. A change shows at once
@@ -4593,7 +4601,7 @@ host keeps Shepherd's own copies in its support folder and serves them over `ins
 `ClientInstructions` (ShepherdRemote) holds every rule.
 
 - **The page** (MobileInstructions): "‹ Settings", the large title "Instructions", on `bgBase` with
-  14pt sides and 10pt apart. "Pi reads these at the start of every session, on every host."
+  14pt sides and 10pt apart. "The agent reads these at the start of every session, on every host."
   (13.5/1.5 `textSecondary`, 4pt sides). A card with one 60pt row: "Same on every host" (15) over
   "Save once, written to each host's ~/.pi/agent/" (12.5 `textTertiary`), and its switch, on.
 - **Files:** a card of 64pt rows: a 17pt page glyph, the file (mono 15/600) over what it is and its
@@ -4728,7 +4736,7 @@ selected thread, or the Overview when none is. Other screens push over the detai
 - **Not built yet: Missions and Designs** sit between New thread and Automations (a map glyph and
   a diamond glyph). They wait for the Mac's Missions and Designs.
 - **Not built yet: More expands in place** (iPadHosts): its sub-rows indent to 24pt, Hosts (with
-  "1 offline" in mono 10 `failed`), Design systems, Pi extensions and Archive, each a destination
+  "1 offline" in mono 10 `failed`), Design systems, Extensions and Archive, each a destination
   of its own. Today More opens one page of host cards (see Hosts and More).
 - **Section heads** (14pt above, 10pt inset, 4pt under): 13/500. "Needs you" in `lanternText`
   with its count in mono 10.5 `lanternText`, a 44pt target that opens Needs you; "Recents" in
@@ -4864,8 +4872,7 @@ header's pill turns "Needs you" (attention, glowing).
 
 - **Card:** `bgRaised`, a 1px `lantern` line, radius 16, a 3pt `lanternTint` ring outside it;
   14×18 inset (16 at the bottom), parts 12pt apart.
-- **Head** (26pt): a 13pt glyph and "pi is asking" at 13/600, both `lanternText` ("Pi is asking"
-  on the board; see Where Shepherd departs); **not built yet:** Hide the question (a 40pt
+- **Head** (26pt): a 13pt glyph and "Agent is asking" at 13/600, both `lanternText`; **not built yet:** Hide the question (a 40pt
   circle, trailing), which folds the card to read the thread and never answers it.
 - **The question:** 19/600/1.35.
 - **Answers,** numbered, side by side in two columns when each gets at least 220pt, 8pt apart;
@@ -4887,7 +4894,7 @@ header's pill turns "Needs you" (attention, glowing).
   adds Dismiss, which cancels the question (the board has none). A confirm shows Yes and No; an
   input or editor question a field and "Send answer".
 - **The app's additions:** "1 / N" (mono `textTertiary`) in the head when several questions
-  wait; the asker's longer message in mono on `bgSunken` under the question; "pi may stop
+  wait; the asker's longer message in mono on `bgSunken` under the question; "The agent may stop
   waiting for this answer" under an answer with a timeout; and, for a question it cannot show,
   "An external editor is open on the host · finish it there" or "This question is too large
   to show here · answer it on the host".
@@ -4916,7 +4923,7 @@ shadow, the window dimmed behind it.
 - **Chip popovers** open under their chips. "Run on" (the host's): 300pt wide on the board,
   radius 14, its title at 13/600 (12×14 inset), then a row per host, at least 60pt with a
   hairline above: an 8pt status dot (`done` connected, `failed` unreachable), the name in mono
-  14.5/600, what it is at 12 `textTertiary` ("Shepherd app · Pi 0.87"), what it carries at 11.5
+  14.5/600, what it is at 12 `textTertiary` ("Shepherd app · agent 0.87"), what it carries at 11.5
   `textSecondary` ("2 threads · load low"), and a `running` check on the chosen one. An
   unreachable host dims to 55% and reads "unreachable since 07:12" with Retry (13, `running`).
   Built: the dot, the name, the connection and its running threads ("connected · 1 thread
@@ -5185,7 +5192,7 @@ VPN only: the connection has no TLS."
     with hairlines between (13): the state glyph, the name in mono semibold, what it belongs to
     in `textSecondary`, the repo and the tokens used in mono 11.5 `textTertiary` ("612k", "—").
   - A Worktrees card ("14 · 22 GB" at 15/600, "6 older than 7 days"), a version card (the
-    host's Shepherd and pi versions and uptime; the board's "shepherd-d 0.4.2 · up 6 days · Pi
+    host's Shepherd and pi versions and uptime; the board's "shepherd-d 0.4.2 · up 6 days · agent
     0.87.1"), and "LOG": the host's recent events in mono 11/1.6 `textSecondary` on `bgSunken`
     (a 1px `lineSubtle` line, radius 8, 10×12 inset), each line led by its time.
 - The remote protocol carries none of this yet: no load, no per-host list, no worktree
@@ -5195,7 +5202,7 @@ VPN only: the connection has no TLS."
 - The board's **Clean worktrees** (secondary, in the header) would remove worktrees, which
   Shepherd never does on its own (AGENTS.md › Only these paths mutate repositories). It needs
   that rule changed before it is built.
-- **Not built yet: More's other pages:** Design systems, Pi extensions (the host's bundled
+- **Not built yet: More's other pages:** Design systems, Extensions (the host's bundled
   extensions, as Settings ▸ Pi shows them on the Mac), and Archive.
 
 #### Command palette (iPadPalette)
@@ -5269,10 +5276,10 @@ Instructions, SettingsInstructions; `Settings/InstructionsScreens.swift`):
   least 26pt in mono 14/26 in `textSecondary`, numbered in a 34pt column (mono 10.5
   `textTertiary`), the edited line on `lanternTint`; at least 250pt tall.
 - **Read order:** "READ IN THIS ORDER · LATER WINS", then mono 11 chips (4×8 inset, radius 6, a
-  1px `lineSubtle` line, `textSecondary`) joined by "→": pi prompt → root AGENTS.md → parent
+  1px `lineSubtle` line, `textSecondary`) joined by "→": System prompt → root AGENTS.md → parent
   folders → repo AGENTS.md → APPEND_SYSTEM.md (the last on `lanternTint` with a `lanternText`
   line, in `textPrimary`). Under it at 12.5/1.5 `textTertiary`: "APPEND_SYSTEM.md is added to the
-  end of pi's system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
+  end of the agent’s system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
 - **In the app** the bar holds the title, and History and Save (NW buttons at `l`) end the page's
   first row, after the scope control and its state, dropping under them where the row is too
   narrow. The state names every host ("Studio, build-01 synced · horizon when it's back", "…
@@ -5346,7 +5353,7 @@ and three more, so the docked review becomes its Changes tab.
     `textTertiary`), each with a 3pt change bar: `lantern` for your unsaved lines (on
     `lanternTint`), `running` for lines pi changed; a `lantern` caret.
   - A 28pt status bar (a hairline above, 11 `textTertiary`): the legend ("yours, unsaved" beside
-    a 3×11 `lantern` bar, "changed by Pi" beside a `running` one) and, trailing, "Ln 94, Col 48
+    a 3×11 `lantern` bar, "changed by the agent" beside a `running` one) and, trailing, "Ln 94, Col 48
     · TSX · Spaces: 2" in mono.
 - Saving and reverting here would change a repository on the host, which only the paths in
   AGENTS.md › Only these paths mutate repositories may do; Files needs a new one decided first.
@@ -5875,9 +5882,7 @@ What exists today is data, not UI:
   ([docs/worktrees.md](docs/worktrees.md)), and the review gate is drawn with the review pane's
   parts (`NWFileHeader`, `NWDiffView`, `NWHunkHeader`, `NWInlineComment`).
 
-Strings in this section are the boards' own, except "Pi" ("own Pi session"): the app spells it "pi"
-today (the Queue & steer departure records that for its redesign; confirm it for missions before
-building). The boards place every mission on a host "daemon"; Shepherd has no daemon today
+Strings in this section are the boards' own. The boards place every mission on a host "daemon"; Shepherd has no daemon today
 (AGENTS.md), so where a mission runs is still to be decided.
 
 ### Missions: how a mission runs
@@ -5885,7 +5890,7 @@ building). The boards place every mission on a host "daemon"; Shepherd has no da
 A mission moves through four phases, Goal → Map → Run → Done (`NWPhaseBar`). MXFlow draws its steps
 top to bottom in stages (Start, Describe, Draft, Review, Clear the fog, Launch, Run, Verify, Review,
 Land, Done) and four actors, drawn as columns: **You** ("you decide, answer, approve"), **Shepherd**
-("planner + validator, on the daemon"), **Workers** ("one Pi session per station"), and **Repos &
+("planner + validator, on the daemon"), **Workers** ("one agent session per station"), and **Repos &
 CI** ("branches, checks, PRs"). Lantern marks the only steps where you act; everything else runs on
 the host without you.
 
@@ -6324,7 +6329,7 @@ beside the inspector.
 - The canvas shows the frontier chip, and at its bottom-right an ask field: 440pt, 40pt tall, radius
   8, `bgRaised`, a `lineStrong` border and the popover shadow, a 13pt symbol, "Ask the planner to
   change the map…" in 13 `textTertiary`, and a 28pt Send.
-- **The station inspector**: Goal (13/1.55); Runs as (Session "own Pi session"; Model and Host as
+- **The station inspector**: Goal (13/1.55); Runs as (Session "own agent session"; Model and Host as
   `NWPopupMenu`s in mono 12, "claude-fable-5-1", "build-01"; Worktree in mono 11.5 `textSecondary`,
   "orders-svc @ mission/anl-214"); Inputs ("data wires in") and Outputs ("data wires out") as pin
   rows; Exits ("flow wires out"): rows 28pt, an 18×8 arrow in `textTertiary`, an outcome chip
@@ -6539,7 +6544,7 @@ budget"; the tokens meter is full in `failed`, time in `lantern`; Resume is disa
 
 - **The left column**: the mini-map (checkpointed stations with a `lantern` border); **Stopped at a
   checkpoint** ("2 stations") as checkpoint rows, then "Stations stop at their next turn and commit
-  to their worktree. Nothing is cut off mid-edit, and resuming picks up the same Pi session."
+  to their worktree. Nothing is cut off mid-edit, and resuming picks up the same agent session."
   (12/1.5 `textTertiary`).
 - **The inspector**: "Out of budget", "paused 12:31" in `lanternText`, "6.0M of 6M tokens · 2h31 of
   4h · nothing is running"; What happened; **Spend vs plan** ("6.0M total") as spend bars with their
@@ -6855,7 +6860,7 @@ tool work reads as activity lines.
   destination between Missions and Automations, in its 44pt rows at 15, and design rows in
   Recents with their board count ("4 boards").
 - **More ▸ Design systems** (NavHosts, iPadHosts, MobileMore): on the Mac and iPad a row "Design
-  systems" nested under More, beside Pi extensions; on iPhone a More row "Design systems" over
+  systems" nested under More, beside Extensions; on iPhone a More row "Design systems" over
   "2 · acme-web, Night Watch".
 - **New thread** (NavNewThread): the last of the suggestion cards under the prompt, "Need a
   mockup first?" (a 12pt nib in `textSecondary`, the words in 11.5 `textTertiary`), "Start a

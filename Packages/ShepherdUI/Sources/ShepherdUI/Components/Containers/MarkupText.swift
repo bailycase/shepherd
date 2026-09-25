@@ -160,7 +160,7 @@ struct NWInlineCodeRenderer: TextRenderer {
 #Preview("Inline markup") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWMarkupText("Preselected in the New Agent sheet. “Use pi's default” passes no `--model` at all.")
+            NWMarkupText("Preselected in the New Agent sheet. “Use the agent’s default” passes no `--model` at all.")
             NWMarkupText("**Remote default** starts clean from origin's default branch. **Current branch** stacks on your checkout's in-progress work.")
             NWMarkupText("Runs `pi update --extensions` once a day.")
         }

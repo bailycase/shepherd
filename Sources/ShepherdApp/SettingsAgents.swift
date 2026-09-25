@@ -11,16 +11,19 @@ struct AgentSettings: View {
     private var keys: KeybindingsStore { .shared }
     @State private var modelOptions: [String] = []
     /// pi's own default from its settings.json, read with the catalog (never in `body`).
-    @State private var piDefaultModel = "pi's own default"
+    @State private var piDefaultModel: String?
+
+    /// "Use the agent’s default · gpt-6-astra", or without the model while it is unknown.
+    private var agentDefault: String { "Use the agent’s default" + (piDefaultModel.map { " · \($0)" } ?? "") }
 
     var body: some View {
         SettingsPage(title: "Agents", explanation: Self.explanation(keys)) {
             SettingsGroup(title: "New agents") {
                 SettingsRow(title: "Default model",
-                            subtitle: "Preselected in the New Agent sheet. “Use pi's default” passes no `--model` at all.") {
-                    NWPopupMenu(settings.defaultModel.isEmpty ? "Use pi's default · \(piDefaultModel)" : settings.defaultModel,
+                            subtitle: "Preselected in the New Agent sheet. “Use the agent’s default” passes no `--model` at all.") {
+                    NWPopupMenu(settings.defaultModel.isEmpty ? agentDefault : settings.defaultModel,
                                 mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
-                        Button("Use pi's default · \(piDefaultModel)") { settings.defaultModel = "" }
+                        Button(agentDefault) { settings.defaultModel = "" }
                         Divider()
                         ForEach(modelOptions, id: \.self) { id in
                             Button(id) { settings.defaultModel = id }
@@ -33,9 +36,9 @@ struct AgentSettings: View {
                                       options: ThinkingLevel.allCases.map { ($0, $0.title) })
                 }
             }
-            SettingsGroup(title: "While pi is working") {
-                SettingsRow(title: "Return while pi is working", subtitle: "\(keys.display(.alternateSend)) always does the other one.") {
-                    NWSegmentedPicker("Return while pi is working", selection: $settings.returnWhileWorking,
+            SettingsGroup(title: "While the agent is working") {
+                SettingsRow(title: "Return while the agent is working", subtitle: "\(keys.display(.alternateSend)) always does the other one.") {
+                    NWSegmentedPicker("Return while the agent is working", selection: $settings.returnWhileWorking,
                                       options: [(.queue, "Queue"), (.steer, "Steer")])
                 }
                 SettingsRow(title: "When a turn ends, send the queue", subtitle: "All at once arrives as one turn, in order.") {

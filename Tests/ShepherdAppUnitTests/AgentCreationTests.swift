@@ -175,7 +175,7 @@ struct AgentCreationTests {
 
     @Test func generatedBranchesAreReadableAndDisposable() {
         let branch = GitWorktree.generatedBranch()
-        #expect(branch.wholeMatch(of: /worktree\/[a-z]+-[a-z]+-\d{4}/) != nil, "\(branch)")
+        #expect(branch.wholeMatch(of: /agent\/[a-z]+-[a-z]+-\d{4}/) != nil, "\(branch)")
     }
 }
 
