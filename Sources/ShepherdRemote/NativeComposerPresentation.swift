@@ -128,6 +128,14 @@ public enum NativeQueueStack {
         return rows + pending.map(placeholder)
     }
 
+    /// What a paused queue's header says about why it waits (the Mac's tooltip, the touch
+    /// header's hint): the host's reason, or what resumes it. nil while the queue goes on its own.
+    public static func pausedReason(paused: Bool, notice: String?) -> String? {
+        paused ? notice ?? pausedHelp : nil
+    }
+
+    public static let pausedHelp = "The queue waits for you: send it, steer it in, or send a new message."
+
     /// A queued row's first action: Steer now while pi works, Send now while it is idle (a
     /// paused queue).
     public static func steerLabel(running: Bool) -> String {

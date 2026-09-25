@@ -264,7 +264,7 @@ struct Composer: View {
                 LinearGradient(colors: [Color.nw.bgWindow.opacity(0), Color.nw.bgWindow], startPoint: .top, endPoint: .bottom)
                     .frame(height: AppLayout.composerFade).offset(y: -AppLayout.composerFade).allowsHitTesting(false)
                 // Over the fade, under the card and its menus.
-                JumpToLatestPill(action: jumpToLatest)
+                NWJumpToLatest(action: jumpToLatest)
                     .offset(y: -(NW.Height.controlM + NW.Space.m))
             }
         }
