@@ -263,6 +263,9 @@ extension ShepherdViewModel {
                 session.loadError = String(describing: error)
             }
             session.isLoading = false
+            // The header's count follows what the review just read (a commit or a revert
+            // reloads it too).
+            checkouts?.refresh(session.agentID)
         }
     }
 
