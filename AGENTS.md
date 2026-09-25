@@ -238,10 +238,11 @@ pointing at the installed pi package. They isolate `HOME` and use a local fake p
 `Tests/ShepherdIOSChecks` holds the iOS client's scripts ([docs/ios/VALIDATION.md](docs/ios/VALIDATION.md)).
 
 **Release rules** (`Tests/Release/test_release.py`, Python's `unittest`, stdlib only) test
-`scripts/release.py`: what each trigger builds, which feeds each release lands in, the legacy
-aliases, and `verify-app`. They also read the Xcode project, `App/Info.plist`,
-`ShepherdEdition.swift`, and `AppUpdater.swift`, so a bundle id or feed name that drifts from
-the script fails before a release builds.
+`scripts/release.py`: what each trigger builds (the iOS TestFlight upload included), which feeds
+each release lands in, the legacy aliases, `verify-app`, and `verify-ios`. They also read the
+Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`, and
+`AppUpdater.swift`, so a bundle id, feed name or signing setting that drifts from the script
+fails before a release builds.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
 
@@ -734,7 +735,7 @@ Nightly build. CI runs the tests on pull requests and on `master`.
 
 ## Releases
 
-One workflow (`.github/workflows/release.yml`) ships two apps. Its rules live in
+One workflow (`.github/workflows/release.yml`) ships two Mac apps and the iOS client's nightly. Its rules live in
 `scripts/release.py` (tested in `Tests/Release`); the YAML only runs them. A `plan` job decides
 from the pushed ref what to build, and the build job is skipped when the answer is nothing.
 Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
@@ -744,12 +745,19 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 | Shepherd | stable (default) | tag `vX.Y.Z` | `appcast.xml` | stable | `Shepherd.dmg` |
 | Shepherd | beta | tag `vX.Y.Z-beta.N` | `appcast-beta.xml` | beta + stable | `Shepherd.dmg` |
 | Shepherd Nightly | nightly | push to `nightly` | `appcast-shepherd-nightly.xml` | Shepherd Nightly builds | `Shepherd-Nightly.dmg` |
+| Shepherd iOS | TestFlight internal | push to `nightly` | none (App Store Connect) | Shepherd iOS builds | none |
 
 - **Release candidates are retired.** A `vX.Y.Z-rc.N` tag builds nothing (the plan job says
   why), and old rc releases land in no feed.
 - **Only `nightly` ships Shepherd Nightly.** A manual run (`workflow_dispatch`) plans like a
   push of its ref, so on any other branch it builds nothing rather than shipping that branch to
   every Shepherd Nightly.
+- **The iOS client rides the nightly lane.** The same push uploads `Shepherd iOS` to TestFlight
+  internal testing, in its own `testflight` job. It runs on the `xcode-27` runner, archives
+  unsigned, and cloud-signs at export with the `APP_STORE_CONNECT_*` key. The Mac job never waits
+  on it, and without the key it is skipped with a notice. Its version is the project's
+  `MARKETING_VERSION`, and its build number is the run number. Beta tags (external testing) and
+  stable tags (the App Store) upload nothing yet ([docs/ios](docs/ios/README.md#distribution)).
 - **One build number, one release.** A re-run keeps `github.run_number`, the build number.
   `generate_appcast` refuses a feed directory holding two archives of one build, and that fails
   every feed's update until one ages out. So a nightly re-run whose commit already carries a
@@ -811,6 +819,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   - `scripts/sign-app.sh` signs inside-out, never with `--deep`: every nested item first, then
     the app with `App/Shepherd.entitlements` (both apps). Only nested apps and XPC services keep
     their own entitlements.
+  - The iOS client is archived unsigned and signed only at export, with the team's
+    cloud-managed Apple Distribution certificate through the `APP_STORE_CONNECT_*` API key
+    (`-allowProvisioningUpdates`). There is no `.p12` and no keychain.
   - Developer ID items get the hardened runtime and a secure timestamp, and both the app and the
     DMG are notarized and stapled. Ad-hoc builds skip the runtime, because library validation
     rejects ad-hoc frameworks, which have no Team ID.

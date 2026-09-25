@@ -128,6 +128,65 @@ class PlanTests(unittest.TestCase):
                 self.assertNotEqual(main[key], nightly[key])
 
 
+class IOSPlanTests(unittest.TestCase):
+    """Only a push to nightly uploads the iOS client, to TestFlight internal testing."""
+
+    def test_a_push_to_nightly_with_the_key_uploads_to_testflight_internal(self):
+        p = release.plan("refs/heads/nightly", STAMP, asc_key=True)
+        self.assertTrue(p["build"])
+        self.assertTrue(p["ios"])
+        self.assertEqual((p["ios_scheme"], p["ios_configuration"], p["ios_product"]),
+                         ("Shepherd iOS", "Release", "Shepherd iOS.app"))
+        self.assertEqual(p["ios_bundle_id"], "com.bailycase.shepherd.ios")
+        self.assertEqual(p["ios_export_options"], "App/iOS/ExportOptions.plist")
+        self.assertEqual(p["ios_testing"], "internal")
+
+    def test_without_the_key_the_upload_is_skipped_and_the_mac_nightly_still_builds(self):
+        p = release.plan("refs/heads/nightly", STAMP)
+        self.assertTrue(p["build"])
+        self.assertFalse(p["ios"])
+        for secret in release.IOS_SECRETS:
+            self.assertIn(secret, p["ios_reason"])
+        self.assertEqual({k: v for k, v in p.items() if not k.startswith("ios")},
+                         {k: v for k, v in release.plan("refs/heads/nightly", STAMP, asc_key=True).items()
+                          if not k.startswith("ios")})
+
+    def test_no_other_trigger_uploads_the_ios_client_yet(self):
+        # Beta tags (external testing) and stable tags (the App Store) are later lanes.
+        for ref in ("refs/tags/v1.2.3", "refs/tags/v1.3.0-beta.2", "refs/tags/v1.3.0-rc.1", "refs/tags/vnext",
+                    "refs/heads/master", "refs/heads/feat/native-redesign", "refs/heads/nightly-old",
+                    "refs/pull/32/merge"):
+            with self.subTest(ref=ref):
+                p = release.plan(ref, STAMP, asc_key=True)
+                self.assertFalse(p["ios"])
+                self.assertTrue(p["ios_reason"])
+
+    def test_a_rerun_that_already_published_its_nightly_uploads_nothing(self):
+        # The re-run would reuse the build number, which TestFlight refuses as a redundant binary.
+        p = release.plan("refs/heads/nightly", STAMP, 2, "nightly-202609232159", asc_key=True)
+        self.assertFalse(p["ios"])
+        self.assertIn("nightly-202609232159", p["ios_reason"])
+
+    def test_the_plan_command_takes_the_key_flag_anywhere(self):
+        for args, ios in ((["refs/heads/nightly", STAMP], False),
+                          (["refs/heads/nightly", STAMP, "--asc-key"], True),
+                          (["refs/heads/nightly", STAMP, "1", "", "--asc-key"], True),
+                          (["--asc-key", "refs/heads/nightly", STAMP, "1", ""], True),
+                          (["refs/tags/v1.2.3", STAMP, "1", "", "--asc-key"], False)):
+            with self.subTest(args=args):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    self.assertEqual(release.main(["plan", *args]), 0)
+                self.assertEqual(json.loads(out.getvalue().strip().removeprefix("plan="))["ios"], ios)
+
+    def test_the_ios_client_shares_no_identity_with_the_mac_apps(self):
+        for app in release.APPS.values():
+            with self.subTest(app=app.key):
+                self.assertNotEqual(release.IOS.bundle_id, app.bundle_id)
+                self.assertNotEqual(release.IOS.product, app.product)
+                self.assertNotEqual(release.IOS.scheme, app.scheme)
+
+
 class RouteTests(unittest.TestCase):
     """Which feeds each published release lands in when the appcasts are rebuilt."""
 
@@ -310,6 +369,58 @@ class VerifyAppTests(unittest.TestCase):
             self.assertTrue(release.verify_app(path, "main"))
 
 
+class VerifyIOSTests(unittest.TestCase):
+    def make_app(self, root, product="Shepherd iOS.app", privacy=True, **overrides):
+        path = os.path.join(root, product)
+        os.makedirs(path)
+        info = {
+            "CFBundleIdentifier": "com.bailycase.shepherd.ios",
+            "CFBundleExecutable": "Shepherd iOS",
+            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleVersion": "321",
+            "ITSAppUsesNonExemptEncryption": False,
+        }
+        info.update(overrides)
+        info = {k: v for k, v in info.items() if v is not None}
+        if info.get("CFBundleExecutable"):
+            open(os.path.join(path, info["CFBundleExecutable"]), "w").close()
+        if privacy:
+            open(os.path.join(path, "PrivacyInfo.xcprivacy"), "w").close()
+        with open(os.path.join(path, "Info.plist"), "wb") as f:
+            plistlib.dump(info, f)
+        return path
+
+    def test_an_archived_nightly_build_is_ready_to_upload(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(release.verify_ios(self.make_app(root), "321"), [])
+
+    def test_what_app_store_connect_or_testers_would_trip_on_is_refused(self):
+        cases = {
+            "another app": {"CFBundleIdentifier": "com.bailycase.shepherd.nightly"},
+            "another build number": {"CFBundleVersion": "1"},
+            "a mac nightly version": {"CFBundleShortVersionString": "0.0.0-nightly.202609232100"},
+            "four version parts": {"CFBundleShortVersionString": "1.2.3.4"},
+            "no compliance answer": {"ITSAppUsesNonExemptEncryption": None},
+            "non-exempt encryption": {"ITSAppUsesNonExemptEncryption": True},
+            "no executable": {"CFBundleExecutable": None},
+        }
+        for name, overrides in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as root:
+                self.assertEqual(len(release.verify_ios(self.make_app(root, **overrides), "321")), 1)
+
+    def test_a_wrong_bundle_name_or_missing_privacy_manifest_is_refused(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertTrue(release.verify_ios(self.make_app(root, product="Shepherd.app"), "321"))
+        with tempfile.TemporaryDirectory() as root:
+            self.assertTrue(release.verify_ios(self.make_app(root, privacy=False), "321"))
+
+    def test_the_version_rule_takes_one_to_three_integers(self):
+        for version, ok in (("1", True), ("0.1", True), ("0.1.0", True), ("10.20.30", True),
+                            ("1.2.3.4", False), ("1.2.3-beta.1", False), ("v1.2.3", False), ("", False)):
+            with self.subTest(version=version):
+                self.assertEqual(bool(release.VERSION_STRING.match(version)), ok)
+
+
 class ContractTests(unittest.TestCase):
     """Bundle ids, names and feeds are a contract between the Xcode project, the apps' Swift
     code and this script. Read the sources so drift fails here, before a release builds."""
@@ -354,6 +465,59 @@ class ContractTests(unittest.TestCase):
     def test_info_plist_takes_the_feed_from_the_configuration(self):
         info = plistlib.loads(self.read("App", "Info.plist").encode())
         self.assertEqual(info["SUFeedURL"], release.REPOSITORY_PAGES + "$(SHEPHERD_APPCAST)")
+
+    def ios_configurations(self):
+        project = self.read("Shepherd.xcodeproj", "project.pbxproj")
+        blocks = re.findall(r"/\* \w+ \*/ = \{\n\t\t\tisa = XCBuildConfiguration;\n(.*?)\n\t\t\};", project, re.S)
+        ios = [b for b in blocks if f"PRODUCT_BUNDLE_IDENTIFIER = {release.IOS.bundle_id};" in b]
+        self.assertEqual(len(ios), 3, "Debug, Release and Nightly iOS configurations")
+        return ios
+
+    def test_every_ios_configuration_is_ready_for_cloud_signing_and_testflight(self):
+        export = plistlib.loads(self.read(*release.IOS.export_options.split("/")).encode())
+        for block in self.ios_configurations():
+            with self.subTest(configuration=self.setting(block, "name")):
+                self.assertEqual(self.setting(block, "CODE_SIGN_STYLE"), "Automatic")
+                self.assertEqual(self.setting(block, "DEVELOPMENT_TEAM"), export["teamID"])
+                self.assertEqual(self.setting(block, "GENERATE_INFOPLIST_FILE"), "YES")
+                self.assertEqual(self.setting(block, "INFOPLIST_KEY_ITSAppUsesNonExemptEncryption"), "NO")
+                self.assertEqual(self.setting(block, "PRODUCT_NAME"), "$(TARGET_NAME)")
+                # Automatic signing picks these; a pinned one breaks the cloud-signed export.
+                for pinned in ("CODE_SIGN_IDENTITY", "PROVISIONING_PROFILE_SPECIFIER", "CODE_SIGN_ENTITLEMENTS"):
+                    self.assertNotIn(pinned, block)
+                # The Mac target is found by its INFOPLIST_FILE; the iOS target must not share it.
+                self.assertNotRegex(block, r"\bINFOPLIST_FILE = ")
+
+    def test_every_ios_marketing_version_is_one_testflight_accepts(self):
+        for block in self.ios_configurations():
+            self.assertRegex(self.setting(block, "MARKETING_VERSION"), release.VERSION_STRING)
+
+    def test_the_ios_scheme_archives_the_planned_configuration(self):
+        scheme = self.read("Shepherd.xcodeproj", "xcshareddata", "xcschemes", f"{release.IOS.scheme}.xcscheme")
+        self.assertIn(f'<ArchiveAction\n      buildConfiguration = "{release.IOS.configuration}"', scheme)
+        self.assertIn(f'BuildableName = "{release.IOS.product}"', scheme)
+
+    def test_the_ios_client_ships_its_privacy_manifest(self):
+        project = self.read("Shepherd.xcodeproj", "project.pbxproj")
+        self.assertIn("/* PrivacyInfo.xcprivacy in Resources */,", project)
+        manifest = plistlib.loads(self.read("App", "iOS", "PrivacyInfo.xcprivacy").encode())
+        self.assertFalse(manifest["NSPrivacyTracking"])
+        reasons = {t["NSPrivacyAccessedAPIType"]: t["NSPrivacyAccessedAPITypeReasons"]
+                   for t in manifest["NSPrivacyAccessedAPITypes"]}
+        self.assertEqual(reasons, {"NSPrivacyAccessedAPICategoryUserDefaults": ["CA92.1"]})
+
+    def test_the_export_uploads_a_cloud_signed_internal_testflight_build(self):
+        export = plistlib.loads(self.read(*release.IOS.export_options.split("/")).encode())
+        self.assertEqual(export, {
+            "method": "app-store-connect",
+            "destination": "upload",
+            "signingStyle": "automatic",
+            "teamID": "4J6D7M7D79",
+            # Keeps CFBundleVersion the workflow's run number.
+            "manageAppVersionAndBuildNumber": False,
+            "uploadSymbols": True,
+            "testFlightInternalTestingOnly": release.IOS.testing == "internal",
+        })
 
     def test_the_apps_know_the_same_bundle_ids_and_feeds(self):
         edition = self.read("Sources", "ShepherdProtocol", "ShepherdEdition.swift")
