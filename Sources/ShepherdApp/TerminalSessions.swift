@@ -992,6 +992,7 @@ final class TerminalSessionStore {
             namerExtensionPath: settings.autoNameAgents ? try NamerExtension.installedPath() : nil,
             needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
             isAutomation: isAutomation,
+            instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
             model: sessionIsFresh ? agent.model : nil,
             thinking: sessionIsFresh ? agent.thinkingLevel : nil
         )

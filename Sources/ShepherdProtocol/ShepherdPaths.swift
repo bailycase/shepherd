@@ -54,5 +54,14 @@ public enum ShepherdPaths {
     ) -> URL {
         supportDirectory(environment: environment).appendingPathComponent("remote-token")
     }
+
+    /// Shepherd's root instructions for pi (Settings ▸ Instructions): `AGENTS.md`,
+    /// `APPEND_SYSTEM.md` and their history. The instructions extension reads them from here, so
+    /// pi's own `~/.pi/agent` is never written.
+    public static func instructionsDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment).appendingPathComponent("instructions", isDirectory: true)
+    }
 }
 

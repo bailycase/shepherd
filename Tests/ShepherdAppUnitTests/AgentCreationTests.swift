@@ -238,6 +238,21 @@ struct AgentLaunchCommandTests {
         #expect(command(enabled: [], needsName: true).env["SHEPHERD_NEEDS_NAME"] == nil)
     }
 
+    /// Settings ▸ Instructions reach pi through their extension, loaded right after status, and
+    /// the directory it reads them from.
+    @Test func instructionsAddTheirExtensionAndDirectory() {
+        let launch = StatusExtension.command(
+            agentID: AgentID(rawValue: "agent-id"), piSessionID: "current-session",
+            socketPath: "/tmp/shepherd.sock", extensionPath: "/tmp/status.ts",
+            panesExtensionPath: "/tmp/panes.ts", reviewExtensionPath: nil, subagentsExtensionPath: nil,
+            instructions: ("/tmp/instructions.ts", "/tmp/support/instructions"),
+            model: nil, thinking: nil
+        )
+        #expect(launch.argv[3] == "exec pi --mode rpc --session-id 'current-session' -e '/tmp/status.ts' -e '/tmp/instructions.ts' -e '/tmp/panes.ts'")
+        #expect(launch.env["SHEPHERD_INSTRUCTIONS_DIR"] == "/tmp/support/instructions")
+        #expect(command().env["SHEPHERD_INSTRUCTIONS_DIR"] == nil)
+    }
+
     /// Watchers must never create watchers.
     @Test func automationAgentsAreMarked() {
         #expect(command(isAutomation: true).env["SHEPHERD_AUTOMATION"] == "1")
