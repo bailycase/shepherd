@@ -137,6 +137,8 @@ final class ShepherdViewModel {
     let remoteHosts: RemoteHostStore
     /// Settings ▸ Instructions: pi's root instructions here and on every host, and their sync.
     let instructions: InstructionsModel
+    /// Settings ▸ Experiments ▸ Suggested instructions: what this Mac's agents suggested.
+    let suggestions: SuggestionsModel
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
@@ -400,7 +402,9 @@ final class ShepherdViewModel {
         self.themeManager = themeManager ?? .shared
         let hosts = remoteHosts ?? RemoteHostStore()
         self.remoteHosts = hosts
-        self.instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
+        let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
+        self.instructions = instructions
+        self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
         self.installPiTheme = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
         self.selectedSpaceID = nil
@@ -434,6 +438,9 @@ final class ShepherdViewModel {
         }
         hosts.onHostConnected = { [weak instructions = self.instructions] hostID in
             instructions?.hostConnected(hostID)
+        }
+        server.onSuggestionsChanged = { [weak suggestions = self.suggestions] snapshot in
+            MainActor.assumeIsolated { suggestions?.serverChanged(snapshot) }
         }
         sessions.onTabLayoutChanged = { [weak self] tabID, layout in
             guard let self, let index = self.state.tabs.firstIndex(where: { $0.id == tabID }),

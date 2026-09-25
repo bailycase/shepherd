@@ -6,7 +6,7 @@ import ShepherdProtocol
 
 /// Settings replaces the window content in place. A 232pt nav on `bgBase` (Back to Shepherd,
 /// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column, or
-/// a wide page (Instructions) that fills the detail area.
+/// a wide page (Instructions, Experiments) that fills the detail area.
 ///
 /// Everything here is wired: a row exists only if changing it changes the app.
 struct SettingsView: View {
@@ -150,6 +150,8 @@ struct SettingsView: View {
         case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
+        case .experiments:
+            ExperimentsSettings(model: vm.suggestions, instructions: vm.instructions) { vm.settingsSection = .instructions }
         }
     }
 
@@ -210,7 +212,7 @@ private struct SettingsSearchHit: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, worktrees, pi, instructions, remote, keyboard, advanced
+    case appearance, terminal, agents, worktrees, pi, instructions, remote, keyboard, advanced, experiments
 
     var id: String { rawValue }
 
@@ -225,6 +227,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
+        case .experiments: return "Experiments"
         }
     }
 
@@ -240,6 +243,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
+        case .experiments: ["Suggested instructions", "Learn from", "Can suggest for", "Waiting for you", "Added from suggestions"]
         }
     }
 
@@ -258,6 +262,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord"]]
         case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
+        case .experiments: ["Suggested instructions": ["lessons", "learned"], "Learn from": ["threads", "automations"]]
         }
     }
 
@@ -283,9 +288,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .remote: return "dot.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
+        case .experiments: return "flask"
         }
     }
 
     /// A wide page fills the detail area instead of the 720pt column.
-    var isWide: Bool { self == .instructions }
+    var isWide: Bool { self == .instructions || self == .experiments }
 }

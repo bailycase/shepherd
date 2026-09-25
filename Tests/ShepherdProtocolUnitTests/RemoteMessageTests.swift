@@ -129,6 +129,30 @@ enum RemoteSamples {
             InstructionHistoryEntry(id: op, file: .appendSystem, savedAt: 1_700_000_100, summary: "Synced from studio", origin: "studio"),
             InstructionHistoryEntry(id: op, file: .agents, savedAt: 1_700_000_000, summary: "Added “Prefer small commits.”"),
         ])
+
+    static let suggestionSettings = SuggestedInstructionsSettings(enabled: true, since: 1_700_000_000, sources: [.automation],
+                                                                  files: [.agents, .appendSystem])
+    static let suggestionsRequests: [RemoteSuggestionsRequest] = [
+        .fetch,
+        .configure(suggestionSettings),
+        .configure(SuggestedInstructionsSettings()),
+        .add(id: op, line: nil, file: nil),
+        .add(id: op, line: "- Ask for \"join keys\" first.", file: .appendSystem),
+        .addAll,
+        .dismiss(id: op),
+        .undo(id: op),
+    ]
+    static let suggestions = SuggestionsSnapshot(
+        settings: suggestionSettings,
+        waiting: [
+            InstructionSuggestion(id: op, line: "- Run `go mod tidy` with any dependency bump.", reason: "CI failed twice on a stale go.sum.",
+                                  file: .agents, source: SuggestionSource(kind: .automation, name: "Nightly dependency bump"),
+                                  suggestedAt: 1_700_000_200),
+        ],
+        added: [
+            AddedSuggestion(id: op, line: "- Prefer table-driven tests in Go.", file: .agents, sourceName: "Ledger cleanup",
+                            addedAt: 1_700_000_100),
+        ])
 }
 
 @Suite("Remote requests")
@@ -141,11 +165,11 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation, .instructions:
+             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 21
+    static let caseCount = 22
 
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
@@ -172,6 +196,7 @@ struct RemoteRequestTests {
         .agentAction(id: 20, agentID: S.agent, action: .rename(name: "new \"name\"")),
         .automation(id: 21, automationID: S.automation, request: .setEnabled(enabled: false)),
         .instructions(id: 23, request: .save(file: .appendSystem, content: "Never force-push.\n", origin: "studio", sync: true)),
+        .suggestions(id: 25, request: .add(id: S.op, line: "- Ask for join keys first.", file: nil)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -222,6 +247,12 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(message) == message)
     }
 
+    @Test(arguments: RemoteSamples.suggestionsRequests)
+    func everySuggestionsRequestRoundTrips(_ request: RemoteSuggestionsRequest) throws {
+        let message = RemoteRequest.suggestions(id: 1, request: request)
+        #expect(try Wire.roundTrip(message) == message)
+    }
+
     @Test func anAutomationRequestNamesItsAutomation() throws {
         let object = try Wire.object(RemoteRequest.automation(id: 1, automationID: S.automation, request: .run))
         #expect(object["automationID"] as? String == "automation")
@@ -268,11 +299,11 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions:
+             .agentCreated, .automationResult, .instructions, .suggestions:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 19
+    static let caseCount = 20
 
     static let samples: [RemoteReply] = [
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
@@ -296,6 +327,7 @@ struct RemoteReplyTests {
         .agentCreated(id: 7, agentID: S.agent),
         .automationResult(id: 22, result: .runs(S.runs)),
         .instructions(id: 24, snapshot: S.instructions),
+        .suggestions(id: 26, snapshot: S.suggestions),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -330,6 +362,19 @@ struct RemoteReplyTests {
         #expect(snapshot.lastSaved(.appendSystem) == 1_700_000_100)
         #expect(InstructionsSnapshot(directory: "/i/").path(of: .appendSystem) == "/i/APPEND_SYSTEM.md")
         #expect(InstructionsSnapshot(directory: "/i").lastSaved(.agents) == nil)
+    }
+
+    /// An agent may suggest only while the experiment is on, only when its kind learns, and only
+    /// for the files the user allows, in file order.
+    @Test func suggestionSettingsSayWhichFilesAnAgentMaySuggestFor() {
+        var settings = SuggestedInstructionsSettings()
+        #expect(settings.files(for: .thread).isEmpty)
+        settings.enabled = true
+        #expect(settings.files(for: .thread) == [.agents])
+        settings.files = [.appendSystem, .agents]
+        #expect(settings.files(for: .automation) == [.agents, .appendSystem])
+        settings.sources = [.thread]
+        #expect(settings.files(for: .automation).isEmpty)
     }
 
     /// A run a newer host reports with a result this build does not know reads as stopped;

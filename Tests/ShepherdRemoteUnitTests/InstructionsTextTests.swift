@@ -90,4 +90,50 @@ struct InstructionsTextTests {
     func theEditorHighlightsHeadingsBulletsAndCode(line: String, spans: [InstructionsSpan]) {
         #expect(InstructionsText.highlight(line: line) == spans)
     }
+
+    // MARK: Suggested lines
+
+    @Test(arguments: [
+        ("Never force-push.", "- Never force-push."),
+        ("  - Ask for join keys first.  ", "- Ask for join keys first."),
+        ("* Prefer the standard library.", "* Prefer the standard library."),
+        ("1. Run the linter.", "1. Run the linter."),
+    ])
+    func aSuggestedLineBecomesAListItem(line: String, item: String) {
+        #expect(InstructionsText.listItem(line) == item)
+    }
+
+    @Test func aSuggestionIsOneShortLine() {
+        #expect(InstructionsText.suggestionProblem("- Never force-push.") == nil)
+        #expect(InstructionsText.suggestionProblem("  \n ") == "Suggest the line to add.")
+        #expect(InstructionsText.suggestionProblem("- One.\n- Two.") == "Suggest one line at a time.")
+        #expect(InstructionsText.suggestionProblem(String(repeating: "a", count: 301)) == "Keep the line under 300 characters.")
+    }
+
+    @Test func theSameLessonMatchesHoweverItIsWritten() {
+        #expect(InstructionsText.lineKey("- Never force-push.") == InstructionsText.lineKey("never  force-push"))
+        #expect(InstructionsText.lineKey("1. Never force-push!") == "never force-push")
+        #expect(InstructionsText.holds("Never force-push", in: "# Rules\n* never force-push.\n"))
+        #expect(!InstructionsText.holds("Never rebase", in: "# Rules\n* never force-push.\n"))
+    }
+
+    @Test func anAddedLineGoesLastAndUndoTakesItBackOut() {
+        #expect(InstructionsText.appending("- b", to: "") == "- b\n")
+        #expect(InstructionsText.appending("- b", to: "- a") == "- a\n- b\n")
+        #expect(InstructionsText.appending("- b", to: "- a\n") == "- a\n- b\n")
+        #expect(InstructionsText.removing("- b", from: "- a\n- b\n") == "- a\n")
+        // The last copy goes, however it was written.
+        #expect(InstructionsText.removing("- B.", from: "- b\n- a\n- b\n") == "- b\n- a\n")
+        #expect(InstructionsText.removing("- c", from: "- a\n") == nil)
+    }
+
+    /// A suggestion added while the file is being edited stays when the draft is saved.
+    @Test func aDraftKeepsALineAddedUnderIt() {
+        #expect(InstructionsText.rebased("- a\n- edited\n", from: "- a\n", to: "- a\n- added\n") == "- a\n- edited\n- added\n")
+        #expect(InstructionsText.rebased("- a\n- edited", from: "- a\n", to: "- a\n- added\n") == "- a\n- edited\n- added\n")
+        #expect(InstructionsText.rebased("- b\n", from: "", to: "- added\n") == "- b\n- added\n")
+        // Anything but lines added at the end leaves the draft alone.
+        #expect(InstructionsText.rebased("- edited\n", from: "- a\n- b\n", to: "- a\n") == "- edited\n")
+        #expect(InstructionsText.rebased("- edited\n", from: "- a", to: "- ab\n") == "- edited\n")
+    }
 }

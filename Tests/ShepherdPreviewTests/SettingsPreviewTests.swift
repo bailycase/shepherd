@@ -100,6 +100,38 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Experiments with Suggested instructions on: three lines waiting (a thread's, an
+    /// automation's for APPEND_SYSTEM.md, and one being edited first) and one already added.
+    @Test func settingsExperimentsWithSuggestions() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let store = workspace.server.suggestions
+        try store.configure(SuggestedInstructionsSettings(enabled: true, files: [.agents, .appendSystem]))
+        let now = Date().timeIntervalSince1970
+        for (line, reason, file, source, ago) in [
+            ("Prefer table-driven tests in Go.", "Three tests repeated one setup.", InstructionFile.agents,
+             SuggestionSource(kind: .thread, name: "Ledger cleanup"), 200_000.0),
+            ("Don't skip or retry a flaky test; find the race.", "You corrected the agent after it added t.Skip().", .agents,
+             SuggestionSource(kind: .thread, name: "Fix flaky ledger test"), 90_000),
+            ("Run `go mod tidy` and commit go.sum with any dependency bump.", "CI failed twice on a stale go.sum.", .appendSystem,
+             SuggestionSource(kind: .automation, name: "Nightly dependency bump"), 7_200),
+            ("Ask for join keys before adding an event.", "A missing checkout_id made two services re-run their steps.", .agents,
+             SuggestionSource(kind: .thread, name: "Checkout funnel events"), 600),
+        ] {
+            _ = try store.suggest(line: line, reason: reason, file: file, source: source, now: Date(timeIntervalSince1970: now - ago))
+        }
+        let oldest = try #require(store.snapshot().waiting.last)
+        try store.add(oldest.id)
+        let model = workspace.vm.suggestions
+        await model.refresh()
+        let editing = try #require(model.snapshot.waiting.first)
+        model.edit(editing)
+        workspace.vm.settingsSection = .experiments
+        try await Preview.render("settings-experiments-suggestions", size: CGSize(width: 1440, height: 900)) {
+            SettingsView(vm: workspace.vm)
+        }
+    }
+
     /// Settings ▸ Advanced ▸ Updates as each app shows it. Sparkle only runs in a bundled app,
     /// so the Advanced page above renders without this group.
     @Test func updateChannelRows() async throws {

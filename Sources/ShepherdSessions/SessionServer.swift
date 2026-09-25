@@ -247,6 +247,13 @@ public final class SessionServer: @unchecked Sendable {
     /// `instructions/`): remote clients read and save them through the server, and the Mac's
     /// Settings page through this store directly.
     public let instructions: InstructionsStore
+    /// Settings ▸ Experiments ▸ Suggested instructions on this host (`instructions/suggestions.json`):
+    /// agents suggest through the extension socket, remote clients act through the server, and
+    /// the Mac's Settings page through this store directly.
+    public let suggestions: SuggestionsStore
+    /// An agent suggested a line, or a remote client acted on the suggestions: the GUI's
+    /// Experiments page follows. Delivered on the main actor.
+    public var onSuggestionsChanged: ((SuggestionsSnapshot) -> Void)?
 
     private let queue = DispatchQueue(label: "shepherd.sessions")
     private let socketPath: String
@@ -430,7 +437,9 @@ public final class SessionServer: @unchecked Sendable {
         self.modelCatalog = modelCatalog
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
         self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
-        self.instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
+        let instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
+        self.instructions = instructions
+        self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
     }
 
     /// The queue mode of every agent that has not chosen its own (`NativeQueueAction.setMode`).
@@ -1023,6 +1032,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteAutomation(id: id, automationID: automationID, request: request, client: client)
         case .instructions(let id, let request):
             remoteInstructions(id: id, request: request, client: client)
+        case .suggestions(let id, let request):
+            remoteSuggestions(id: id, request: request, client: client)
         case .stateFetch(let id):
             send(.state(id: id, state: store.state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -1235,6 +1246,73 @@ public final class SessionServer: @unchecked Sendable {
 
     private func announceInstructions(_ snapshot: InstructionsSnapshot) {
         guard let handler = onInstructionsChanged else { return }
+        hopToMain { handler(snapshot) }
+    }
+
+    private func remoteSuggestions(id: Int, request: RemoteSuggestionsRequest, client: ExtensionConnection) {
+        do {
+            let snapshot: SuggestionsSnapshot
+            switch request {
+            case .fetch:
+                snapshot = suggestions.snapshot()
+            case .configure(let settings):
+                snapshot = try suggestions.configure(settings)
+            case .add(let suggestionID, let line, let file):
+                if let line, let problem = InstructionsText.suggestionProblem(line) {
+                    send(.error(id: id, code: "invalid", message: problem), to: client)
+                    return
+                }
+                snapshot = try suggestions.add(suggestionID, line: line, file: file)
+                announceInstructions(instructions.snapshot())
+            case .addAll:
+                snapshot = try suggestions.addAll()
+                announceInstructions(instructions.snapshot())
+            case .dismiss(let suggestionID):
+                snapshot = try suggestions.dismiss(suggestionID)
+            case .undo(let addedID):
+                snapshot = try suggestions.undo(addedID)
+                announceInstructions(instructions.snapshot())
+            }
+            if request != .fetch { announceSuggestions(snapshot) }
+            send(.suggestions(id: id, snapshot: snapshot), to: client)
+        } catch SuggestionsStore.StoreError.noSuchSuggestion {
+            send(.error(id: id, code: "no_such_suggestion", message: SuggestionsStore.StoreError.noSuchSuggestion.description), to: client)
+        } catch {
+            send(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+        }
+    }
+
+    /// An agent's `suggest_instruction`: taken only while the experiment is on for its kind of
+    /// agent and the file, and answered with what became of the line.
+    private func suggestInstruction(id: Int, agentID: AgentID, line: String, reason: String, file: InstructionFile?,
+                                    client: ExtensionConnection) {
+        guard let agent = store.state.agents.first(where: { $0.id == agentID }) else {
+            reply(.error(id: id, code: "no_such_agent", message: "no such agent"), to: client)
+            return
+        }
+        let kind: SuggestionSource.Kind = Self.automationRunAgentIDs(in: store.state).contains(agentID) ? .automation : .thread
+        let file = file ?? .agents
+        guard suggestions.snapshot().settings.files(for: kind).contains(file) else {
+            reply(.error(id: id, code: "suggestions_off",
+                         message: "The user hasn't turned on suggestions for \(file.fileName) from this agent."), to: client)
+            return
+        }
+        if let problem = InstructionsText.suggestionProblem(line) {
+            reply(.error(id: id, code: "invalid", message: problem), to: client)
+            return
+        }
+        do {
+            let result = try suggestions.suggest(line: line, reason: String(reason.prefix(600)), file: file,
+                                                 source: SuggestionSource(kind: kind, name: agent.name))
+            if result.outcome == .waiting { announceSuggestions(result.snapshot) }
+            reply(.suggestion(id: id, outcome: result.outcome), to: client)
+        } catch {
+            reply(.error(id: id, code: "write_failed", message: String(describing: error)), to: client)
+        }
+    }
+
+    private func announceSuggestions(_ snapshot: SuggestionsSnapshot) {
+        guard let handler = onSuggestionsChanged else { return }
         hopToMain { handler(snapshot) }
     }
 
@@ -1665,6 +1743,8 @@ public final class SessionServer: @unchecked Sendable {
             routePaneRequest(.read(agentID: agentID, paneID: paneID), requestID: id, client: client)
         case .requestReview(let id, let agentID, let cwd, let reference):
             routeReviewRequest(.start(agentID: agentID, cwd: cwd, reference: reference), requestID: id, client: client)
+        case .suggestInstruction(let id, let agentID, let line, let reason, let file):
+            suggestInstruction(id: id, agentID: agentID, line: line, reason: reason, file: file, client: client)
         }
     }
 
