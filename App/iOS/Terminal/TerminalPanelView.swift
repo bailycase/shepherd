@@ -151,13 +151,13 @@ struct TerminalPanelView: View {
         .background(Color.nw.bgWindow)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Terminal")
-        .confirmationDialog(closing.map { "Close \(title($0))?" } ?? "", isPresented: closingShown, titleVisibility: .visible) {
+        .confirmationDialog(closeConfirmation?.title ?? "", isPresented: closingShown, titleVisibility: .visible) {
             if let tab = closing {
                 Button("Close Terminal", role: .destructive) { close(tab) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Its shell on \(model.hostName) stops.")
+            Text(closeConfirmation?.message ?? "")
         }
     }
 
@@ -220,8 +220,8 @@ struct TerminalPanelView: View {
         Binding(get: { closing != nil }, set: { if !$0 { closing = nil } })
     }
 
-    private func title(_ tab: TerminalPanelTab) -> String {
-        model.items.first { $0.id == tab.id.rawValue }?.title ?? "terminal"
+    private var closeConfirmation: TerminalCloseConfirmation? {
+        closing.map { model.closeConfirmation($0) }
     }
 
     private func select(_ id: String) {

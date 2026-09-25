@@ -74,7 +74,7 @@ struct TerminalScreen: View {
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Terminal")
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog(closing.map { tab in "Close \(model.items.first { $0.id == tab.id.rawValue }?.title ?? "terminal")?" } ?? "",
+        .confirmationDialog(closing.map { model.closeConfirmation($0).title } ?? "",
                             isPresented: Binding(get: { closing != nil }, set: { if !$0 { closing = nil } }),
                             titleVisibility: .visible) {
             if let tab = closing {
@@ -86,7 +86,7 @@ struct TerminalScreen: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Its shell on \(model.hostName) stops.")
+            Text(closing.map { model.closeConfirmation($0).message } ?? "")
         }
     }
 

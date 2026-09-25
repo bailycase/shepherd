@@ -244,9 +244,9 @@ keep the version for real breaks.
   ctrl, ⌥, `|`, `~`, `/`, `-`, arrows; two rows on a phone in portrait) sits under the terminal
   while it has the keyboard, and a hardware keyboard types directly. Tabs name what
   runs in them and show a spinner or a dot for new output where the host answers
-  `RemoteAgentQuery.terminals` (`terminal.activity.v1`). Closing a tab asks, then asks the host
-  to close its panes; the host keeps the Mac's rules (never the agent's own pane, never the last
-  pane). A host without pane control (`pane.control.v1`) shows its terminals but offers no +,
+  `RemoteAgentQuery.terminals` (`terminal.activity.v1`). Closing a tab asks (naming how many
+  shells stop, and the tab's place when another tab has its title), then asks the host to close
+  its panes; the host keeps the Mac's rules (never the agent's own pane, never the last pane). A host without pane control (`pane.control.v1`) shows its terminals but offers no +,
   split or close. A terminal's screen is in one iPad window at a time: another window showing the
   same thread says "open in another window" until the first lets it go.
 

@@ -1562,7 +1562,9 @@ components first), with these differences for touch:
   scroll, with its scroll bar showing. On iPhone the thread's options open the panes full screen
   with the same strip and key row. The terminal is SwiftTerm's view on Night Watch's terminal
   palette in Geist Mono at the code size, following Dynamic Type to 20pt; the strip and key row
-  stop growing at xxxLarge. Closing a tab asks first ("Its shell on <host> stops.").
+  stop growing at xxxLarge. Closing a tab asks first, saying how many shells stop ("Its shell on
+  <host> stops.", "Its 3 shells on <host> stop."); a title another tab shares adds the tab's
+  place ("Close zsh (tab 2)?").
 - **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
   iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
   (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &
