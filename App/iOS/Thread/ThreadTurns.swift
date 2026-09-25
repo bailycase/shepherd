@@ -108,7 +108,8 @@ struct AgentTurnView: View, Equatable {
                 ? NWThinking.live()
                 : NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
                     get: { openThinking.contains(id) },
-                    set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }))
+                    set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }),
+                    spokenTitle: nativeThoughtSpokenText(seconds))
         case .prose(_, _, let blocks, _):
             ProseView(blocks: blocks).equatable()
         case .activity(_, let bursts):

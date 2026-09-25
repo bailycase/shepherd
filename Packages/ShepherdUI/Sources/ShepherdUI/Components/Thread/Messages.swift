@@ -312,16 +312,20 @@ struct NWCopyGlyph: View {
 /// The model's thinking (NWThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
 /// italic 12. Expanded: the text in italic 12.5 on a 2pt rule. Live (LiveText): "› Thinking…"
 /// shimmering on a 26pt line, the thread's live indicator between tools, settling into "Thought
-/// for Ns" when it ends.
+/// for Ns" when it ends. With no text (the model kept its reasoning back), finished thinking is
+/// the plain line, not a control.
 public struct NWThinking: View {
     let title: String
+    let spokenTitle: String
     let text: String
     @Binding var isExpanded: Bool
     let live: Bool
 
-    /// Finished thinking: `title` is "Thought for 4s".
-    public init(_ title: String, text: String, isExpanded: Binding<Bool>) {
+    /// Finished thinking: `title` is "Thought for 4s", `spokenTitle` how VoiceOver says it
+    /// ("Thought for 4 seconds"). An empty `text` draws the plain line.
+    public init(_ title: String, text: String, isExpanded: Binding<Bool>, spokenTitle: String? = nil) {
         self.title = title
+        self.spokenTitle = spokenTitle ?? title
         self.text = text
         _isExpanded = isExpanded
         live = false
@@ -329,6 +333,7 @@ public struct NWThinking: View {
 
     private init() {
         title = "Thinking…"
+        spokenTitle = "Thinking"
         text = ""
         _isExpanded = .constant(false)
         live = true
@@ -345,10 +350,12 @@ public struct NWThinking: View {
         let nw = Color.nw
         VStack(alignment: .leading, spacing: NW.Space.m) {
             ZStack(alignment: .leading) {
-                if live { liveHeader.nwTransition(.content) } else { toggle.nwTransition(.content) }
+                if live { liveHeader.nwTransition(.content) }
+                else if text.isEmpty { plainLine.nwTransition(.content) }
+                else { toggle.nwTransition(.content) }
             }
             .nwAnimation(.content, value: live)
-            if isExpanded, !live {
+            if isExpanded, !live, !text.isEmpty {
                 Text(text)
                     .font(.nwSans(12.5)).italic()
                     .lineSpacing(NWTextStyle.caption.lineSpacing + 2)
@@ -376,7 +383,22 @@ public struct NWThinking: View {
         }
         .frame(minHeight: NWThreadMetrics.liveHeight)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Thinking")
+        .accessibilityLabel(spokenTitle)
+    }
+
+    /// Thinking the model did not share: the collapsed row's words alone, with nothing to open.
+    private var plainLine: some View {
+        let note = "\(spokenTitle). The model didn't share its reasoning."
+        return Text(title).font(.nwSans(12)).italic()
+            .nwContentTransition(.numeric())
+            .nwAnimation(.content, value: title)
+            .foregroundStyle(Color.nw.textSecondary)
+            #if os(iOS)
+            .frame(minHeight: NW.Height.touch)
+            #endif
+            .nwHelp(note)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(note)
     }
 
     private var toggle: some View {
@@ -398,7 +420,7 @@ public struct NWThinking: View {
         }
         .buttonStyle(.plain)
         .nwFocusRing(radius: NW.Radius.xs)
-        .accessibilityLabel(title)
+        .accessibilityLabel(spokenTitle)
         .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
         .accessibilityHint("Shows the model's thinking")
     }

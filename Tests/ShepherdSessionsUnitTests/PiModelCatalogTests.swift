@@ -59,6 +59,16 @@ struct ModelListingTests {
         #expect(listing.entries == entries)
     }
 
+    /// models.json's `thinkingLevelMap`s name a reasoning model's levels in the listing (xhigh and
+    /// max where mapped, a level mapped to null left out); a model without reasoning gets none.
+    @Test func configuredLevelMapsNameAModelsLevels() {
+        let entries = [PiModelCatalog.Entry(id: "qa/plain", reasoning: false), PiModelCatalog.Entry(id: "qa/deep"),
+                       PiModelCatalog.Entry(id: "qa/max")]
+        let maps: [String: [String: String?]] = ["qa/max": ["xhigh": "xhigh", "max": "max", "minimal": nil], "qa/plain": ["max": "max"]]
+        let listing = ModelListing(entries: entries, defaultModel: nil, levelMaps: maps)
+        #expect(listing.thinkingLevels == ["qa/max": ["off", "low", "medium", "high", "xhigh", "max"]])
+    }
+
     @Test func anOlderHostsListingReadsAsModelsThatReason() {
         #expect(ModelListing(models: ["a/b"], defaultModel: "a/b").entries == [PiModelCatalog.Entry(id: "a/b", reasoning: true)])
     }
