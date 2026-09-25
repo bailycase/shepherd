@@ -108,6 +108,31 @@ struct StateMutationTests {
 
     // MARK: - Status reports
 
+    /// A turn starting or ending moves the agent up Recents (`lastActiveAt`); asking inside the
+    /// turn and a repeated report don't.
+    @Test func turnsStartingAndEndingTimeTheAgentForRecents() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let space = Fixture.space()
+        var worker = Fixture.agent(in: space)
+        worker.agent.lastActiveAt = 1
+        try await h.seed(Fixture.workspace([worker], space: space))
+        let client = try ExtensionClient(path: h.socketPath)
+        func report(_ status: AgentStatus) async throws -> Double? {
+            try client.send(.setAgentStatus(agentID: worker.agent.id, status: status))
+            try await eventually("the \(status) report") { h.server.state.agents.first?.status == status }
+            return h.server.state.agents.first?.lastActiveAt
+        }
+
+        let started = try #require(try await report(.working))
+        #expect(started > 1, "a turn starting moves it")
+        #expect(try await report(.blocked) == started, "asking is inside the turn")
+        #expect(try await report(.working) == started, "so is being answered")
+        let ended = try #require(try await report(.done))
+        #expect(ended >= started)
+        #expect(try await report(.done) == ended, "a repeated report moves nothing")
+    }
+
     /// Two reports a turn stay in memory: broadcast and readable, but state.json is not touched
     /// until a structural mutation writes the status along with its own change.
     @Test func aStatusReportIsLiveStateThatTheNextMutationWrites() async throws {

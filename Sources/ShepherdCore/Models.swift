@@ -104,6 +104,17 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
     /// The actual checkout path. Shepherd-created worktrees can derive it
     /// from repo + branch; imported worktrees may use any directory name.
     public var worktreePath: String?
+    /// When the agent last started or finished a turn or was sent a message (ms since 1970):
+    /// the order of the sidebar's Recents, which a streamed token or a repeated status report
+    /// never moves. Live state, set by the host (and by the app when it creates the agent) and
+    /// broadcast; written to state.json only along with another change. Nil from older hosts
+    /// and state files.
+    public var lastActiveAt: Double?
+    /// What the agent is waiting on you for: the title of the question pi is asking in its
+    /// thread. Live state, set by the host while a question is open and broadcast, so the
+    /// sidebar's Needs you can say why without reading the thread. Never written to state.json
+    /// (`ShepherdState.persisted`). Nil when nothing is asked, and from older hosts.
+    public var waitingOn: String?
 
     public init(
         id: AgentID = AgentID(),
@@ -118,7 +129,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         piSessionID: String? = nil,
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
-        worktreePath: String? = nil
+        worktreePath: String? = nil,
+        lastActiveAt: Double? = nil,
+        waitingOn: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -133,6 +146,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         self.worktreeBranch = worktreeBranch
         self.worktreeBase = worktreeBase
         self.worktreePath = worktreePath
+        self.lastActiveAt = lastActiveAt
+        self.waitingOn = waitingOn
     }
 
     /// The pi session to launch this agent with. Falls back to the agent's id,
@@ -143,7 +158,7 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, spaceID, tabID, paneID, status, model, thinkingLevel, nameIsFinal
-        case piSessionID, worktreeBranch, worktreeBase, worktreePath, runtime
+        case piSessionID, worktreeBranch, worktreeBase, worktreePath, lastActiveAt, waitingOn, runtime
     }
 
     public init(from decoder: Decoder) throws {
@@ -167,6 +182,9 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         worktreeBranch = try c.decodeIfPresent(String.self, forKey: .worktreeBranch)
         worktreeBase = try c.decodeIfPresent(String.self, forKey: .worktreeBase)
         worktreePath = try c.decodeIfPresent(String.self, forKey: .worktreePath)
+        // Absent before Recents, and from hosts that don't report them.
+        lastActiveAt = try c.decodeIfPresent(Double.self, forKey: .lastActiveAt)
+        waitingOn = try c.decodeIfPresent(String.self, forKey: .waitingOn)
         // `runtime` is ignored: agents from the terminal era ("terminal") relaunch over RPC in
         // the same pi session, which is the whole migration.
     }
@@ -186,6 +204,8 @@ public struct Agent: Codable, Hashable, Sendable, Identifiable {
         try c.encodeIfPresent(worktreeBranch, forKey: .worktreeBranch)
         try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
         try c.encodeIfPresent(worktreePath, forKey: .worktreePath)
+        try c.encodeIfPresent(lastActiveAt, forKey: .lastActiveAt)
+        try c.encodeIfPresent(waitingOn, forKey: .waitingOn)
         // Older remote clients default a missing runtime to terminal and would try to attach a
         // PTY that does not exist.
         try c.encode(SessionRuntime.rpc, forKey: .runtime)
@@ -258,6 +278,15 @@ public struct ShepherdState: Codable, Hashable, Sendable {
 }
 
 extension ShepherdState {
+    /// The state as state.json keeps it: without what only a running host knows (the question
+    /// each agent waits on).
+    public var persisted: ShepherdState {
+        guard agents.contains(where: { $0.waitingOn != nil }) else { return self }
+        var state = self
+        for index in state.agents.indices { state.agents[index].waitingOn = nil }
+        return state
+    }
+
     /// Whether every agent's level is one a client from before minimal, xhigh and max decodes.
     public var usesOnlyLegacyThinkingLevels: Bool {
         agents.allSatisfy { $0.thinkingLevel.map(ThinkingLevel.legacy.contains) ?? true }
