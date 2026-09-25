@@ -222,6 +222,22 @@ struct ClientSkillsTests {
         #expect(model.owes(hosts[2].id))
     }
 
+    /// A skill on skills.sh reads as the hosts have it: Install, Installed, or Update while a
+    /// newer commit waits.
+    @Test func aDirectorySkillSaysWhereItStands() async {
+        let first = FakeSkillsClient([Self.skill("docx", source: Self.anthropic),
+                                      Self.skill("pdf", source: Self.anthropic, update: SkillUpdate(commit: "new", filesChanged: 1))])
+        let hosts = [Self.host("This Mac", first)]
+        let model = ClientSkills(defaults: ScratchDefaults())
+        await model.refresh(hosts)
+        func state(_ slug: String) -> SkillResultState {
+            SkillResultState(DirectorySkill(slug: slug, name: slug, source: "anthropics/skills", installs: 1), model: model, hosts: hosts)
+        }
+        #expect(state("pdf") == .update)
+        #expect(state("docx") == .installed)
+        #expect(state("xlsx") == .install)
+    }
+
     @Test func aHostThatRefusesAnInstallSaysWhy() async throws {
         let first = FakeSkillsClient()
         first.refusesInstalls = true
@@ -303,6 +319,19 @@ struct SkillsPresentationTests {
         #expect(SkillsPresentation.slashOption("pdf") == "Only when I type /skill:pdf")
         #expect(SkillsPresentation.mobileSummary(InstalledSkill(name: "go", summary: "House style.", invocation: .slashOnly, updatedAt: 0))
             == "/skill only · House style.")
+    }
+
+    @Test func thePhoneSaysWhichHostsAreAwayAndWhatASearchFound() {
+        let studio = SkillsHost(id: UUID(), name: "Studio", client: FakeSkillsClient(), serves: true)
+        let horizon = SkillsHost(id: UUID(), name: "horizon", client: nil, serves: true)
+        let laptop = SkillsHost(id: UUID(), name: "MacBook Air", client: nil, serves: true)
+        #expect(SkillsPresentation.offlineNote([studio]) == nil)
+        #expect(SkillsPresentation.offlineNote([studio, horizon]) == "horizon is offline. It gets changes when it’s back.")
+        #expect(SkillsPresentation.offlineNote([horizon, laptop]) == "horizon, MacBook Air are offline. They get changes when they’re back.")
+        #expect(SkillsPresentation.results(1, for: " pdf ") == "1 skill for “pdf”")
+        #expect(SkillsPresentation.results(12, for: "react") == "12 skills for “react”")
+        #expect(SkillsPresentation.resultMeta(DirectorySkill(slug: "pdf", name: "pdf", source: "anthropics/skills", installs: 71_000))
+            == "anthropics/skills · 71K installs")
     }
 
     @Test func installsSayWhereTheyGo() {

@@ -57,6 +57,27 @@ struct SkillsDirectoryTests {
         #expect(DirectoryPresentation.matches(of: " ", in: name).isEmpty)
     }
 
+    /// A preview reads the SKILL.md wherever skills.sh puts it, and lists the skill's files.
+    @Test func aPreviewReadsTheSkillsDescriptionAndFiles() {
+        let skill = DirectorySkill(slug: "pdf", name: "pdf", source: "anthropics/skills", installs: 71_000)
+        let text = "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n\n# PDF\n"
+        let preview = DirectoryPreview(skill: skill, files: [DirectoryFile(path: "skills/pdf/SKILL.md", contents: text),
+                                                             DirectoryFile(path: "scripts/fill.py", contents: "")])
+        #expect(preview.summary == "Read, fill, merge and split PDFs.")
+        #expect(preview.instructions == text)
+        #expect(preview.tokens == SkillsText.tokens(text))
+        #expect(preview.entries.map(\.name) == ["scripts", "skills"])
+        let empty = DirectoryPreview(skill: skill, files: [])
+        #expect(empty.summary == nil && empty.tokens == 0 && empty.entries.isEmpty)
+    }
+
+    /// A result rides a route to its preview, so it survives encoding.
+    @Test func aDirectorySkillSurvivesEncoding() throws {
+        let skill = DirectorySkill(slug: "find-skills", name: "find-skills", source: "vercel-labs/skills", installs: 3_600_000,
+                                   official: true)
+        #expect(try JSONDecoder().decode(DirectorySkill.self, from: JSONEncoder().encode(skill)) == skill)
+    }
+
     @Test func aSkillsPageIsItsRepositoryAndName() {
         let skill = DirectorySkill(slug: "pdf", name: "pdf", source: "anthropics/skills", installs: 1)
         #expect(SkillsDirectory.page(of: skill).absoluteString == "https://skills.sh/anthropics/skills/pdf")

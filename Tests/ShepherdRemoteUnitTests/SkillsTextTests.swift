@@ -124,6 +124,16 @@ struct SkillsTextTests {
         #expect(SkillsText.reference(input) == nil)
     }
 
+    /// A skill's files as its chips show them: SKILL.md first, then files by name, then folders
+    /// with how many files each holds; hidden ones left out.
+    @Test func aSkillsEntriesPutSkillMDFirstThenFilesThenFolders() {
+        let entries = SkillsText.entries(paths: ["scripts/fill.py", "reference.md", "SKILL.md", "scripts/lib/merge.py", ".git/HEAD",
+                                                 "assets/logo.png", "forms.md"])
+        #expect(entries.map(\.name) == ["SKILL.md", "forms.md", "reference.md", "assets", "scripts"])
+        #expect(entries.map(\.isDirectory) == [false, false, false, true, true])
+        #expect(entries.map(\.fileCount) == [1, 1, 1, 1, 2])
+    }
+
     @Test func whatChangedOpensGitHubsComparison() {
         #expect(SkillsText.compareURL(repo: "anthropics/skills", from: "3f2a91c", to: "8c04e1d")?.absoluteString
             == "https://github.com/anthropics/skills/compare/3f2a91c...8c04e1d")

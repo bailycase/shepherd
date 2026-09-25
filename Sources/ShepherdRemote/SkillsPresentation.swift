@@ -97,6 +97,26 @@ public enum SkillsPresentation {
         skill.invocation == .slashOnly ? "/skill only · \(skill.summary)" : skill.summary
     }
 
+    /// Under the phone's list, while hosts are away: "horizon is offline. It gets changes when
+    /// it’s back.", or for several "horizon, build-02 are offline. They get changes when they’re
+    /// back."; nil with every host online.
+    public static func offlineNote(_ hosts: [SkillsHost]) -> String? {
+        let away = hosts.filter { !$0.isConnected }.map(\.name)
+        guard let first = away.first else { return nil }
+        return away.count == 1 ? "\(first) is offline. It gets changes when it’s back."
+            : "\(list(away)) are offline. They get changes when they’re back."
+    }
+
+    /// A search's line over its results: "12 skills for “pdf”".
+    public static func results(_ count: Int, for query: String) -> String {
+        "\(count) \(count == 1 ? "skill" : "skills") for “\(query.trimmingCharacters(in: .whitespaces))”"
+    }
+
+    /// A result's line under its name on the phone: "anthropics/skills · 71K installs".
+    public static func resultMeta(_ skill: DirectorySkill) -> String {
+        "\(skill.source) · \(DirectoryPresentation.meta(skill))"
+    }
+
     /// An install's headline: "Installing · 1 of 3 hosts", "Installed on 3 hosts", "Installed ·
     /// horizon when it's back".
     public static func installLine(_ install: SkillInstall) -> String {
