@@ -205,7 +205,7 @@ private struct SubagentTurnItem: View {
                            spokenTitle: nativeThoughtSpokenText(seconds))
             }
         case .prose(_, _, let blocks, _):
-            NWAgentProse(SubagentProse.blocks(blocks))
+            NWAgentProse(ProseView.proseBlocks(blocks))
         case .work(let group):
             VStack(alignment: .leading, spacing: MobileLayout.activitySpacing) {
                 ForEach(group.finished + group.running) { burst in
@@ -263,33 +263,5 @@ private struct SubagentActivityLine: View {
         case .failed: .failed
         case .running: .live(since: burst.startedAt.map { Date(timeIntervalSince1970: $0 / 1000) }, tail: burst.tail)
         }
-    }
-}
-
-/// A child's Markdown for `NWAgentProse`, inline runs styled once per text.
-@MainActor
-enum SubagentProse {
-    private static var cache: [String: AttributedString] = [:]
-
-    static func blocks(_ blocks: [NativeMarkdownBlock]) -> [NWProseBlock] {
-        blocks.map { block in
-            switch block {
-            case .heading(let level, let text): .heading(level: level, text: inline(text))
-            case .paragraph(let text): .paragraph(inline(text))
-            case .quote(let text): .quote(inline(text))
-            case .code(let text, let language): .code(text, language: language)
-            case .rule: .rule
-            case .list(let ordered, let start, let items):
-                .list(ordered: ordered, start: start, items: items.map { NWProseListItem(text: inline($0.text), children: self.blocks($0.children)) })
-            }
-        }
-    }
-
-    static func inline(_ text: String) -> AttributedString {
-        if let cached = cache[text] { return cached }
-        let value = NWInlineMarkup.attributed(text, codeSize: NWTextStyle.code.size)
-        if cache.count > 1024 { cache.removeAll(keepingCapacity: true) }
-        cache[text] = value
-        return value
     }
 }
