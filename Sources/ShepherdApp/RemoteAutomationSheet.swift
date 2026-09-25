@@ -75,7 +75,7 @@ struct RemoteAutomationSheet: View {
             Text("No runs yet.").nwText(.caption).foregroundStyle(Color.nw.textTertiary)
         } else {
             NWRunBars(detail.bars.map { NWRunBars.Bar(id: $0.id.uuidString, height: $0.height, state: AgentState($0.tone), label: $0.label) },
-                      first: detail.runs.last?.started, summary: detail.chartSummary, last: detail.runs.first?.started)
+                      first: detail.chartStart, summary: detail.chartSummary, last: detail.chartEnd)
             VStack(alignment: .leading, spacing: NW.Space.xs) {
                 NWSectionHeader("Recent runs", count: detail.runs.count)
                 ScrollView {

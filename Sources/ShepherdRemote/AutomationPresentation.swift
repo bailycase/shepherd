@@ -138,6 +138,9 @@ public struct AutomationDetail: Equatable, Sendable {
     public var bars: [AutomationRunBar]
     /// "stopped: 1 · asked: 1", what went other than finished among the bars; nil when all finished.
     public var chartSummary: String?
+    /// When the first and the last charted runs started, under the chart's ends.
+    public var chartStart: String?
+    public var chartEnd: String?
     public var lastRun: AutomationRunRow?
     /// The runs have been read from the host (else they are still loading, or unavailable).
     public var runsKnown: Bool
@@ -240,6 +243,8 @@ public struct AutomationsModel: Equatable, Sendable {
         if let run = runs?.last { last?.started = Self.dayTime(Date(timeIntervalSince1970: run.startedAt), now: now, timeZone: timeZone, locale: locale) }
         return AutomationDetail(row: row, runs: rows, bars: bars,
                                 chartSummary: counts.isEmpty ? nil : counts.map { "\($0.0): \($0.1)" }.joined(separator: " · "),
+                                chartStart: charted.first.map { Self.stamp(Date(timeIntervalSince1970: $0.startedAt), timeZone: timeZone, locale: locale) },
+                                chartEnd: charted.last.map { Self.stamp(Date(timeIntervalSince1970: $0.startedAt), timeZone: timeZone, locale: locale) },
                                 lastRun: last, runsKnown: runs != nil)
     }
 
