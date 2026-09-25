@@ -12,8 +12,8 @@ import ShepherdRemote
 /// `SubagentHooks.list` for the footer's "N subagents", `ReviewHooks.open` for the changes card
 /// and edit lines, `AgentActionsMenu` (Search/) in the options menu, the windows' hooks
 /// (Windows/): Open in new window, a turn's Send to… and drag, and text dropped on the composer,
-/// and the terminal (Terminal/): `threadTerminal` under the thread, `TerminalToolbarButton`,
-/// `TerminalMenuItems`.
+/// and the terminal (Terminal/): `threadTerminal` under the thread and `TerminalMenuItems` in the
+/// options menu (no header button: the terminal is only a toggle, DESIGN.md › Terminal panel).
 struct ThreadScreen: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
@@ -40,6 +40,8 @@ struct ThreadScreen: View {
         let supported = host?.supports(RemoteProtocol.nativeThreadCapability) == true
         let key = RunKey(ref: ref, session: supported && agent != nil ? host?.session : nil, active: visible && scenePhase == .active)
         let status = ThreadTitle.Status(store: store, agent: agent)
+        // Where the agent works (the branch chip); the host is named once there is more than one.
+        let branch = agent.flatMap { AgentBranchLabel(agent: $0, host: hosts.hosts.count > 1 ? host?.name : nil) }
         ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if agent != nil {
@@ -62,16 +64,10 @@ struct ThreadScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    ThreadTitle(name: agent?.name ?? "Thread", status: status, wide: sizeClass == .regular)
+                    ThreadTitle(name: agent?.name ?? "Thread", status: status, branch: branch, wide: sizeClass == .regular)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if sizeClass == .regular {
-                        ThreadCounters(status: status)
-                    }
                     if agent != nil {
-                        if sizeClass == .regular {
-                            TerminalToolbarButton(thread: ref)
-                        }
                         ThreadStopButton(store: store, enabled: key.session != nil)
                         ThreadOptionsMenu(ref: ref, store: store, enabled: key.session != nil)
                     }
@@ -253,17 +249,15 @@ private struct ThreadTranscript: View {
     }
 }
 
-/// The title and status line (MobileThread, MobileApproval, iPadThread boards). On a phone,
-/// the name over "Idle · 17 turns · 42k", or "Running · 21s" while a turn runs. On iPad, the name
-/// and a status pill on one line, with the counters ("17 turns · 42k ctx") trailing
-/// (`ThreadCounters`).
+/// The title and status line (MobileThread, MobileQueue, MobileQuestion, iPadThread boards). On a
+/// phone, the name over "● Idle · ⧉ pi/swiftui-previews": the status word and the worktree's
+/// branch, or "⌂ your checkout" in lantern when pi works in the space's own checkout.
+/// On iPad, the name, the branch chip (`NWBranchChip`: the files changed, and the host when there
+/// are several), and a status pill with the running turn's time, on one line.
 struct ThreadTitle: View {
     struct Status: Equatable {
         var state: AgentState
         var label: String
-        /// Exact only once the whole history is loaded.
-        var turns: Int?
-        var contextTokens: Int?
         /// When the running turn's prompt was sent (ms); nil at rest.
         var runningSince: Double?
 
@@ -273,83 +267,74 @@ struct ThreadTitle: View {
             else if store.running { state = .running; label = AgentState.running.label }
             else if let agent { state = AgentState(agent.status); label = state.label }
             else { state = .idle; label = AgentState.idle.label }
-            turns = store.olderCursor == nil && store.snapshot != nil ? store.userTurnCount : nil
-            contextTokens = store.stats?.contextTokens
             runningSince = store.running && store.dialogs.isEmpty ? store.lastPromptAt : nil
         }
 
         func meta(now: Date) -> NativeThreadMeta {
-            NativeThreadMeta(turns: turns, contextTokens: contextTokens, runningSince: runningSince,
-                             now: now.timeIntervalSince1970 * 1000)
+            NativeThreadMeta(runningSince: runningSince, now: now.timeIntervalSince1970 * 1000)
         }
     }
 
     let name: String
     let status: Status
-    /// iPad: the name and a pill on one line.
+    var branch: AgentBranchLabel?
+    /// iPad: the name, the chip and a pill on one line.
     var wide = false
 
     var body: some View {
         Group {
-            // Only a running turn's clock ticks.
-            if status.runningSince != nil {
-                TimelineView(.periodic(from: .now, by: 1)) { context in content(status.meta(now: context.date)) }
+            // Only a running turn's clock ticks, and only the iPad pill shows it.
+            if wide, status.runningSince != nil {
+                TimelineView(.periodic(from: .now, by: 1)) { context in pill(status.meta(now: context.date)) }
+            } else if wide {
+                pill(status.meta(now: .distantPast))
             } else {
-                content(status.meta(now: .distantPast))
+                compact
             }
         }
         .accessibilityElement(children: .combine)
     }
 
-    @ViewBuilder private func content(_ meta: NativeThreadMeta) -> some View {
-        if wide { pill(meta) } else { compact(meta) }
-    }
-
-    private func compact(_ meta: NativeThreadMeta) -> some View {
+    private var compact: some View {
         VStack(spacing: NW.Space.xxs) {
             Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
-            // The whole line when it fits; otherwise the counters go (a large text size would
-            // only show them as "1…"), then the running clock, and the status word stays whole.
-            ViewThatFits(in: .horizontal) {
-                statusLine(meta.compact).fixedSize()
-                statusLine(meta.elapsed.map { [$0] } ?? []).fixedSize()
-                statusLine([]).fixedSize(horizontal: false, vertical: true)
+            // The branch truncates in the middle; the status word stays whole.
+            HStack(spacing: NW.Space.s) {
+                NWStatusDot(status.state)
+                Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).fixedSize()
+                // A worktree names its branch; your own checkout says so in lantern (MobileQuestion).
+                if let branch {
+                    let checkout = branch.kind == .checkout
+                    let tint = checkout ? Color.nw.lanternText : Color.nw.textTertiary
+                    Text("·").foregroundStyle(tint)
+                    Image(systemName: checkout ? "house" : "square.on.square")
+                        .imageScale(.small)
+                        .foregroundStyle(tint)
+                    if checkout {
+                        Text("your checkout").fontWeight(.medium).foregroundStyle(tint)
+                    } else {
+                        Text(branch.branch)
+                            .font(.nw(.mono))
+                            .foregroundStyle(tint)
+                            .truncationMode(.middle)
+                    }
+                }
             }
             .font(.nw(.caption))
             .lineLimit(1)
         }
     }
 
-    private func statusLine(_ parts: [String]) -> some View {
-        HStack(spacing: NW.Space.s) {
-            NWStatusDot(status.state)
-            Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor)
-            ForEach(parts, id: \.self) { part in
-                Text("· " + part).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
-            }
-        }
-    }
-
     private func pill(_ meta: NativeThreadMeta) -> some View {
         HStack(spacing: NW.Space.m) {
             Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
+            if let branch {
+                NWBranchChip(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
+                             changedFiles: branch.changedFiles, host: branch.host, showsChevron: false)
+                    .layoutPriority(-1)
+            }
             NWStatusPill(status.state, label: meta.elapsed.map { "\(status.label) · \($0)" } ?? status.label)
                 .fixedSize()
-        }
-    }
-}
-
-/// iPad's trailing counters: "17 turns · 42k ctx".
-struct ThreadCounters: View {
-    let status: ThreadTitle.Status
-
-    var body: some View {
-        let counters = status.meta(now: .distantPast).counters
-        if !counters.isEmpty {
-            Text(counters.joined(separator: " · "))
-                .font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary).lineLimit(1)
-                .fixedSize()
-                .accessibilityLabel(counters.joined(separator: ", "))
         }
     }
 }

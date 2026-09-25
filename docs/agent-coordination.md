@@ -38,7 +38,7 @@ decisions), `PeerDeleteDialog` in `AppDialogs.swift`, and `ShepherdViewModel+Rev
   per-connection ID, so a reconnect under the same session still fails). Cancelling it stops
   the polling, not the target.
 - **`agent_delete`**: asks you, in Shepherd, to delete another agent (below).
-- **`review_diff`**: opens the agent's review beside its thread (below).
+- **`review_diff`**: readies the agent's review in its side pane's Changes tab (below).
 
 `agent_send`, `agent_steer`, and `agent_interrupt` report that dispatch was requested, never
 that the target accepted or acted on it.
@@ -92,18 +92,20 @@ warns that the agent's pi session and every process it started will stop.
 
 ## Reviews an agent opens
 
-`review_diff` opens the agent's review, docked in its right pane beside the agent's layout
-([DESIGN.md](../DESIGN.md), Review). It returns at once; the user's review arrives later as a
-message.
+`review_diff` readies the agent's review in the Changes tab of its side pane, docked beside the
+agent's layout ([DESIGN.md](../DESIGN.md), Side pane). The pane never opens by itself: the tab
+takes a dot, and with the pane closed so does the header's side-pane button; the user opens it
+(⇧⌘B, ⌃1). A request while a subagent is inspected leaves the inspector in front. It returns at
+once; the user's review arrives later as a message.
 
 - `cwd` reviews another repository or worktree, for example `{"cwd":"~/src/project-worktree"}`.
   It never changes the agent's own directory. Without `cwd`, the review shows the agent's
-  directory, even when the open review points somewhere else. The review's header, and the
+  directory, even when the open review points somewhere else. The Changes tab's bar, and the
   confirmation for a file's Revert, name the directory it shows.
 - `reference` reviews a commit, branch, or range; without it, working-tree changes against
   HEAD.
-- An agent has one review. Asking again reloads it and brings it back in front of an inspected
-  subagent, without changing what the user has selected.
+- An agent has one review. Asking again reloads it in place, without opening the pane, taking it
+  from an inspected subagent, or changing what the user has selected.
 - Pointing it at a different directory starts the review over: comments, the summary, viewed
   marks, and the pane's folds belonged to the old diff. The same directory keeps them.
 
