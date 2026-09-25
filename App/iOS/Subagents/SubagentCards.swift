@@ -44,8 +44,11 @@ struct SubagentCards: View, Equatable {
                 SubagentControlItems(run: run, commands: commands)
             }
             .accessibilityActions {
-                ForEach(nativeRunControls(run), id: \.self) { control in
-                    Button(control.title) { commands.control(run.runID, control) }
+                // As on the Mac, VoiceOver offers only the controls that would act.
+                if commands.enabled {
+                    ForEach(nativeRunControls(run), id: \.self) { control in
+                        Button(control.title) { commands.control(run.runID, control) }
+                    }
                 }
             }
     }
