@@ -68,7 +68,10 @@ Routes today:
 | `.newThread(.compose(host: UUID?))` | New thread (presented modally) |
 | `.subagents(.list(AgentRef) / .run(AgentRef, runID:))` | a thread's runs, one run |
 | `.review(.changes(AgentRef, file: String?) / .diff(AgentRef, path:))` | changes, one file's diff |
-| `.search(.search(query:))` | search |
+| `.search(.search(query:))` | search (iPhone, pushed) |
+| `.search(.palette(query:))` | the ⌘K palette (iPad, presented) |
+| `.search(.rename(AgentRef) / .delete(AgentRef))` | rename, delete or Delete Worktree Agent (presented) |
+| `.search(.problem(title:message:))` | an agent action from a menu that failed (presented) |
 | `.settings(.root / .hosts / .host(UUID?) / .appearance)` | Settings, hosts, a host's form (nil adds one), appearance |
 
 Screens reach each other only through `MobileNavigator` (in the environment):
@@ -116,7 +119,8 @@ is out in portrait too.
 | Subagent routes | `Subagents/SubagentsRoute.swift` (D) | the turn footer's "N subagents", the thread's options menu | `SubagentHooks.list(thread:) -> MobileRoute`, `SubagentHooks.run(thread:runID:) -> MobileRoute` |
 | Open review | `Review/ReviewRoute.swift` (E) | the changes card's Review and files, an edit line | `ReviewHooks.open(thread: AgentRef, file: String?, navigator: MobileNavigator)` |
 | Agent actions | `Search/AgentActionsMenu.swift` (F) | the thread's options menu (menu items only) | `AgentActionsMenu(thread: AgentRef)` |
-| Open search | `Search/SearchRoute.swift` (F) | Home, the iPad sidebar | `SearchHooks.open(query: String = "", navigator:)` |
+| Open search | `Search/SearchRoute.swift` (F) | Home, the iPad sidebar (the palette on iPad, search on iPhone) | `SearchHooks.open(query: String = "", navigator:)` |
+| ⌘K | `Search/SearchRoute.swift` (F) | `ShepherdIOSApp`'s scene | `.commands { SearchCommands(navigator:) }` |
 | Start a thread | `NewThread/NewThreadRoute.swift` (C) | Home, the iPad sidebar and overview | `NewThreadHooks.open(host: UUID? = nil, navigator:)` |
 | Home roots | `Home/` (A) | `PhoneShell`, `PadShell` | `HomeScreen()`, `PadSidebar()`, `PadOverview()` |
 | Settings root | `Settings/SettingsScreen.swift` (A) | `PhoneShell` | `SettingsScreen()` |
