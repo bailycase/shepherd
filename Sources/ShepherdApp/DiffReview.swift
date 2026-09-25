@@ -5,39 +5,6 @@ import ShepherdProtocol
 import ShepherdSessions
 import ShepherdRemote
 
-struct ReviewComment: Identifiable, Hashable {
-    let fileID: String
-    let lineID: Int
-    let filePath: String
-    let lineNumber: Int
-    let marker: String
-    let content: String
-    var text: String
-    var createdAt = Date()
-
-    var id: String { "\(fileID):\(lineID)" }
-    var path: String { filePath }
-    var line: Int { lineNumber }
-
-    init(
-        fileID: String,
-        lineID: Int,
-        filePath: String,
-        lineNumber: Int,
-        marker: String = " ",
-        content: String = "",
-        text: String
-    ) {
-        self.fileID = fileID
-        self.lineID = lineID
-        self.filePath = filePath
-        self.lineNumber = lineNumber
-        self.marker = marker
-        self.content = content
-        self.text = text
-    }
-}
-
 @MainActor
 @Observable
 final class ReviewSession: Identifiable {
@@ -157,49 +124,7 @@ final class ReviewSession: Identifiable {
     }
 }
 
-func formatReview(files: [DiffFile], comments: [ReviewComment], summary: String, reference: String? = nil) -> String {
-    var output = ["Diff review (\(reference ?? "working tree vs HEAD")):", ""]
-    let fileOrder = Dictionary(uniqueKeysWithValues: files.enumerated().map { ($0.element.id, $0.offset) })
-    let orderedComments = comments.filter {
-        !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }.sorted { lhs, rhs in
-        let leftFile = fileOrder[lhs.fileID] ?? Int.max
-        let rightFile = fileOrder[rhs.fileID] ?? Int.max
-        if leftFile != rightFile { return leftFile < rightFile }
-        if lhs.lineNumber != rhs.lineNumber { return lhs.lineNumber < rhs.lineNumber }
-        return lhs.lineID < rhs.lineID
-    }
-
-    if orderedComments.isEmpty {
-        output.append("No line comments.")
-    } else {
-        for (index, comment) in orderedComments.enumerated() {
-            if index > 0 { output.append("") }
-            output.append("\(comment.filePath):\(comment.lineNumber) [\(comment.marker) \(comment.content)]")
-            output.append(contentsOf: comment.text
-                .split(separator: "\n", omittingEmptySubsequences: false)
-                .map { "  \($0)" }
-            )
-        }
-    }
-
-    let trimmedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !trimmedSummary.isEmpty {
-        output.append("")
-        output.append("Overall: \(trimmedSummary)")
-    }
-    return output.joined(separator: "\n")
-}
-
 extension DiffLine.Kind {
-    var reviewMarker: String {
-        switch self {
-        case .context: return " "
-        case .added: return "+"
-        case .removed: return "-"
-        }
-    }
-
     var diffKind: NWDiffLineKind {
         switch self {
         case .context: .context
@@ -228,63 +153,6 @@ func reviewCommentAge(_ date: Date, now: Date = Date()) -> String {
 }
 
 // MARK: Rows
-
-/// The diff file `path` names: exact, or either path ending in the other (tool calls report
-/// absolute or cwd-relative paths; diff paths are repository-relative).
-func reviewFile(matching path: String, in files: [DiffFile]) -> DiffFile? {
-    files.first { $0.displayPath == path }
-        ?? files.first { path.hasSuffix("/" + $0.displayPath) || $0.displayPath.hasSuffix("/" + path) }
-}
-
-/// One rendered row of a file's diff.
-struct ReviewRow: Identifiable, Equatable {
-    enum Kind: Equatable {
-        case hunk(String)
-        case line(DiffLine)
-        /// A folded run: its key, how many lines, their kind, and "20–32".
-        case collapsed(key: String, count: Int, kind: DiffLine.Kind, range: String)
-    }
-
-    let id: String
-    let kind: Kind
-}
-
-/// A file's rows with long runs folded (DESIGN.md › Right pane): more than eight same-kind lines
-/// in a row keep a few at each end and fold the middle into one strip. `expandedRuns` nil
-/// expands everything.
-func reviewRows(_ file: DiffFile, expandedRuns: Set<String>?, threshold: Int = AppLayout.diffCollapseThreshold) -> [ReviewRow] {
-    var rows: [ReviewRow] = []
-    for hunk in file.hunks {
-        let hunkKey = "\(file.id)\u{0}\(hunk.id)"
-        rows.append(ReviewRow(id: hunkKey, kind: .hunk(hunk.header)))
-        var index = 0
-        let lines = hunk.lines
-        while index < lines.count {
-            var end = index
-            while end + 1 < lines.count, lines[end + 1].kind == lines[index].kind { end += 1 }
-            let run = index...end
-            let key = "\(hunkKey)\u{0}\(index)"
-            let head = lines[index].kind == .context ? 3 : 5
-            let tail = lines[index].kind == .context ? 3 : 1
-            if run.count > threshold, run.count > head + tail + 1, !(expandedRuns?.contains(key) ?? true) {
-                for i in index..<(index + head) { rows.append(line(hunkKey: hunkKey, lines[i])) }
-                let folded = (index + head)...(end - tail)
-                let numbers = folded.compactMap { lines[$0].newLine ?? lines[$0].oldLine }
-                let range = numbers.first.map { first in "\(first)–\(numbers.last ?? first)" } ?? ""
-                rows.append(ReviewRow(id: key, kind: .collapsed(key: key, count: folded.count, kind: lines[index].kind, range: range)))
-                for i in (end - tail + 1)...end { rows.append(line(hunkKey: hunkKey, lines[i])) }
-            } else {
-                for i in run { rows.append(line(hunkKey: hunkKey, lines[i])) }
-            }
-            index = end + 1
-        }
-    }
-    return rows
-
-    func line(hunkKey: String, _ line: DiffLine) -> ReviewRow {
-        ReviewRow(id: "\(hunkKey)\u{0}l\(line.id)", kind: .line(line))
-    }
-}
 
 /// The drawable rows: `reviewRows` with each line's syntax colors once they have arrived (plain
 /// text until then). Built once per file state, never per render.
