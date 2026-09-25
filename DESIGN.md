@@ -1267,6 +1267,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
   assistant's text, never pi's system prompt, tool definitions, thinking, tool calls or results;
   its rows show a snippet of that text with the match in bold. A host answers a remote client's
   conversation search the same way.
+- **This thread** also carries the Pane menu's terminal commands while a thread with a layout is
+  on screen: Show or Hide terminal (⌘J), New terminal (⌘D, shown while the thread has the
+  keyboard), and Maximize or Restore terminal (⇧⌘↩), named for what they will do, with keycaps
+  from `KeybindingsStore`.
 - **Rows** (`NWPaletteRow`, the sidebar's row height): a stroke icon, the label, dim context, and
   the real shortcut as keycaps. The highlight is `runningTint` with a running icon. Subagent rows
   wear their run's state color.
