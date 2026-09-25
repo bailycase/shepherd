@@ -128,6 +128,10 @@ struct AgentTurnView: View, Equatable {
             NWUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: sentAt.map { nativeClockText($0) },
                          origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+        case .compaction(let row):
+            // The line only; what the agent kept opens on the Mac (the touch sheet comes with iOS's meter).
+            NWCompactionDivider(title: row.title, tokens: row.tokens, tone: row.tone == .warning ? .warning : row.tone == .quiet ? .quiet : .normal,
+                                running: row.running, expanded: nil)
         }
     }
 

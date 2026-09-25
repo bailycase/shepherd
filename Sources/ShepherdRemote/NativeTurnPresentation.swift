@@ -46,12 +46,15 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         /// A message the user steered in, where pi read it (after the tool work before it).
         /// `sentAt` is when it was sent (ms); `images` how many it carried.
         case steer(id: String, text: String, sentAt: Double?, images: Int)
+        /// A compaction where it happened, and what the agent kept.
+        case compaction(NativeCompactionRow)
 
         public var id: String {
             switch self {
             case .thinking(let id, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _, _), .note(let id, _), .error(let id, _, _, _),
                  .steer(let id, _, _, _): id
             case .work(let group): "work:" + group.id
+            case .compaction(let row): "compaction:" + row.id
             }
         }
     }
@@ -104,10 +107,15 @@ public func nativeTurnPresentation(
         case note(String)
         case error(String, Int)
         case steer(String, Double?, Int)
+        case compaction(NativeCompactionRow)
     }
 
     var raw: [Raw] = []
     for message in messages {
+        if let compaction = message.compaction {
+            raw.append(.compaction(NativeCompactionRow(entryID: message.entryID, compaction: compaction)))
+            continue
+        }
         if message.role == "user" {
             let text = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
             raw.append(.steer(text, message.timestamp, message.blocks.count { $0.kind == .unsupportedImage }))
@@ -231,6 +239,9 @@ public func nativeTurnPresentation(
         case .steer(let text, let sentAt, let images):
             flushStretch()
             items.append(.steer(id: nextID("steer"), text: text, sentAt: sentAt, images: images))
+        case .compaction(let row):
+            flushStretch()
+            items.append(.compaction(row))
         }
     }
     flushStretch()
