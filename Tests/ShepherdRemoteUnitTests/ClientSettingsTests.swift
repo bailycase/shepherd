@@ -27,6 +27,11 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     var requests: [String] { lock.withLock { log } }
     var saved: InstructionsSnapshot { lock.withLock { files } }
 
+    /// Settings' pages never ask for skills (ClientSkillsTests has a host that answers them).
+    func skills(_ request: RemoteSkillsRequest) async throws -> RemoteSkillsResult {
+        throw RemoteHostClientError.rejected(code: "unsupported", message: "No skills here.")
+    }
+
     func hostSettings(_ request: RemoteHostSettingsRequest) async throws -> HostSettings {
         try lock.withLock {
             log.append("settings.\(request)")
