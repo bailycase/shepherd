@@ -51,10 +51,14 @@ extension AppLayout {
     static let headerHeight: CGFloat = NWToolbarMetrics.height
     static let headerPadding: CGFloat = NWToolbarMetrics.leadingPadding
 
-    // Right pane (review and subagent inspector share the slot)
+    // Side pane (its tabs, or the subagent inspector over them; PaneStates)
     static let paneDefaultWidth: CGFloat = 600
-    static let paneMinWidth: CGFloat = 480
+    /// Under 480 the tab strip drops its labels (`NWSidePaneMetrics.labelsMinWidth`).
+    static let paneMinWidth: CGFloat = 380
     static let paneMaxFraction: CGFloat = 0.5
+    /// The Changes tab's bar under the pane's tabs: scope and totals, Local | PR (Review board).
+    static let changesBarHeight: CGFloat = 40
+    static let changesBarLeadingPadding: CGFloat = 14
     /// The thread keeps at least this beside a docked pane; narrower, the pane overlays it.
     static let threadMinWidth: CGFloat = 400
     /// Dragging a split's divider leaves each side at least this long (when the split allows).
@@ -120,8 +124,8 @@ enum ShellLayout {
     /// Narrower than this, the pane overlays the thread instead of squeezing it.
     static let paneDockThreshold = AppLayout.threadMinWidth + AppLayout.dividerWidth + AppLayout.paneMinWidth
 
-    /// The right pane in a main column `containerWidth` wide. Docked, it is 600 by default, at
-    /// least 480, at most half the column (480 wins), and the thread keeps 400; below that the
+    /// The side pane in a main column `containerWidth` wide. Docked, it is 600 by default, at
+    /// least 380, at most half the column (380 wins), and the thread keeps 400; below that the
     /// pane overlays the thread and, with its 1pt edge, never exceeds the column. Nothing is
     /// ever negative.
     static func rightPane(containerWidth: CGFloat, preferredWidth: CGFloat?) -> Pane {

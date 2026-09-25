@@ -144,9 +144,15 @@ struct ViewCommands: Commands {
                 .keyboardShortcut(keys.shortcut(.commandPalette))
             Button(menu.sidebarVisible ? "Hide Sidebar" : "Show Sidebar") { later { vm.toggleSidebar() } }
                 .keyboardShortcut(keys.shortcut(.toggleSidebar))
-            Button(menu.rightPaneOpen ? "Close Pane" : "Review Changes") { later { vm.toggleRightPane() } }
+            Button(menu.rightPaneOpen ? "Hide Side Pane" : "Show Side Pane") { later { vm.toggleRightPane() } }
                 .keyboardShortcut(keys.shortcut(.toggleRightPane))
                 .disabled(!menu.hasVisibleThread)
+            // ⌃1–4 pick the side pane's tabs: fixed, like ⌃⇧1–9 (no ⌘, so never rebound).
+            ForEach(SidePaneTab.allCases, id: \.self) { tab in
+                Button(tab.title) { later { vm.selectSidePaneTab(tab) } }
+                    .keyboardShortcut(KeyEquivalent(Character("\(tab.digit)")), modifiers: .control)
+                    .disabled(!menu.hasVisibleThread)
+            }
             #if DEBUG
             Divider()
             Button("Component Gallery") { later { vm.showComponentGallery.toggle() } }
