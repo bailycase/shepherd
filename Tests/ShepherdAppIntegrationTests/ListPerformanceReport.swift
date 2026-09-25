@@ -255,6 +255,35 @@ struct ListPerformanceReport {
         report.add(name, "comment ×5 (open + save): rows", counts: commenting)
     }
 
+    /// The right pane's rendering while it scrolls, docked and floating over the thread: the
+    /// layers that cast a shadow, and the main thread's cost to draw the window's layers on the
+    /// CPU after each step (a stand-in for the render server's work, which the app doesn't see).
+    @Test(arguments: [(CGFloat(1400), "docked"), (800, "floating")])
+    func reviewPaneRendering(width: CGFloat, mode: String) async throws {
+        let name = "review pane rendering (\(mode))"
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        let window = OffscreenWindow(size: CGSize(width: width, height: 800), dark: true,
+                                     RightPaneSplit(state: RightPaneState(), showPane: true) { Color.clear } pane: { ReviewPaneContent(model: model) })
+        defer { window.close() }
+        try await eventuallyOnMain("every file to be highlighted", timeout: .seconds(120)) { model.highlights.count == files.count }
+        ListPerf.settle(window)
+        let shadows = ListPerf.shadowedLayers(in: window)
+        report.add(name, "shadowed layers (subtree sizes)", shadows.isEmpty ? "none" : shadows.map { "\($0.subtree)" }.joined(separator: ", "))
+
+        let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+        var cpu: [Double] = [], instructions: [Double] = []
+        for _ in 0..<150 {
+            _ = ListPerf.scroll(window, scroll, step: 22, steps: 1)
+            let start = ListPerf.threadCPU(), retired = ListPerf.instructions()
+            _ = FrameTimer.capture(window, window.host.bounds)
+            cpu.append(ListPerf.threadCPU() - start)
+            instructions.append(ListPerf.instructions() - retired)
+        }
+        report.add(name, "draw the window after a 22 pt step ×150: CPU mean · instructions mean",
+                   String(format: "%.2f ms · %.1f M", cpu.reduce(0, +) / 150, instructions.reduce(0, +) / 150))
+    }
+
     /// The review docked beside its agent's running thread, as `AgentLayoutView` lays them out.
     private struct ReviewBesideThread: View {
         let store: NativeThreadStore

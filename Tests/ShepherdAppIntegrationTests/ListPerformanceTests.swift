@@ -555,6 +555,21 @@ struct ListPerformanceTests {
         #expect(rows["diff.commentButton", default: 0] == 0, "\(rows)")
     }
 
+    /// The right pane casts its shadow only while it floats over the thread, and from its fill
+    /// alone: a shadow on the pane's content is redrawn from every layer inside it on each
+    /// scroll step, and before this the docked pane still carried a clear one on three layers.
+    @Test(arguments: [(width: CGFloat(1400), floating: false), (width: 800, floating: true)])
+    func theRightPaneCastsItsShadowFromItsFillOnlyWhileFloating(width: CGFloat, floating: Bool) throws {
+        let model = ListFixtures.reviewModel([ListFixtures.diffFile("Big.swift", lines: 200)])
+        let window = OffscreenWindow(size: CGSize(width: width, height: 800), dark: true,
+                                     RightPaneSplit(state: RightPaneState(), showPane: true) { Color.clear } pane: { ReviewPaneContent(model: model) })
+        defer { window.close() }
+        ListPerf.settle(window)
+        let shadows = ListPerf.shadowedLayers(in: window)
+        #expect(shadows.count == (floating ? 1 : 0), "\(shadows.map(\.layer))")
+        #expect(shadows.allSatisfy { $0.subtree == 1 }, "a shadow over the pane's content: \(shadows.map(\.subtree))")
+    }
+
     // MARK: Palette
 
     private func palette(_ items: [PaletteItem], query: String, highlight: PaletteHighlight = PaletteHighlight()) -> OffscreenWindow {
