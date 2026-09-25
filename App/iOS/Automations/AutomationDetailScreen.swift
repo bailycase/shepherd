@@ -22,7 +22,7 @@ struct AutomationDetailScreen: View {
 /// An automation's detail (iPadAutomations' right column, MobileAutomations' pushed screen):
 /// its switch and facts, the prompt, the chart of its latest runs, the last run, and every run
 /// the host kept, each opening as its thread while that thread exists. Edit and Run now (or
-/// Stop) sit at the bottom; Delete is in the ••• menu.
+/// Stop while a run is live) sit at the bottom; Delete is in the ••• menu.
 struct AutomationDetailContent: View {
     let key: AutomationKey
     let pad: Bool
@@ -163,20 +163,25 @@ struct AutomationDetailContent: View {
                  open: run.agent.map { agent in { navigator.open(.thread(AgentRef(host: agent.host, agent: agent.agent))) } })
     }
 
-    /// Edit and Run now, or Stop and Open run while it runs (the boards' footer).
+    /// Edit and Run now (with Open run while the last run's thread is there; running again
+    /// replaces it), or Stop and Open run while a run is live (the boards' footer).
     private func actions(_ row: AutomationListRow, busy: Bool, store: AutomationsStore) -> some View {
         HStack(spacing: NW.Space.m) {
             Button("Edit") { edit() }
                 .buttonStyle(.nw(.secondary, size: .l))
                 .disabled(!row.abilities.edit)
             Spacer(minLength: NW.Space.s)
-            if let run = row.run {
+            if row.live, let run = row.run {
                 Button("Stop") { confirmingStop = true }
                     .buttonStyle(.nw(.secondary, size: .l))
                     .disabled(!row.abilities.stop || busy)
                 Button("Open run") { navigator.open(.thread(AgentRef(host: run.host, agent: run.agent))) }
                     .buttonStyle(.nw(.primary, size: .l))
             } else {
+                if let run = row.run {
+                    Button("Open run") { navigator.open(.thread(AgentRef(host: run.host, agent: run.agent))) }
+                        .buttonStyle(.nw(.secondary, size: .l))
+                }
                 Button("Run now", systemImage: "play.fill") { store.run(key) }
                     .buttonStyle(.nw(.primary, size: .l))
                     .disabled(!row.abilities.run || busy)

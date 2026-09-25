@@ -83,12 +83,16 @@ extension ShepherdViewModel {
 
     /// Start an automation's agent: resolve its cwd to a space (creating one
     /// when no space contains it), spawn a normal agent with the stored
-    /// prompt, and record the link on the automation.
+    /// prompt, and record the link on the automation. A run still going
+    /// refuses; a settled one is replaced (its run stays in the log).
     func startAutomation(_ id: AutomationID) async throws {
-        guard let automation = state.automations.first(where: { $0.id == id }) else {
+        guard let previous = state.automations.first(where: { $0.id == id }) else {
             throw AgentStartFailure(message: "automation no longer exists")
         }
-        guard automation.agentID == nil else { return }
+        if let agentID = previous.agentID {
+            try await replaceSettledRun(of: previous, agentID: agentID)
+        }
+        guard let automation = state.automations.first(where: { $0.id == id }), automation.agentID == nil else { return }
 
         let cwd = (automation.cwd as NSString).expandingTildeInPath
         // Watch agents always live in the reserved hidden space — the
@@ -113,6 +117,19 @@ extension ShepherdViewModel {
         updated.agentID = agentID
         try await server.updateAutomation(updated)
         adoptCanonical()
+    }
+
+    /// Deletes the agent of an automation's settled run so the next can start. A live run
+    /// (`AutomationRun.isLive`) throws instead: running again never cuts one short.
+    private func replaceSettledRun(of automation: Automation, agentID: AgentID) async throws {
+        guard let agent = state.agents.first(where: { $0.id == agentID }) else { return }
+        let run = await server.automationRuns(automation.id).last { $0.agentID == agentID }
+        guard !AutomationRun.isLive(agentStatus: agent.status, run: run) else {
+            throw AgentStartFailure(message: "\(automation.name) is already running")
+        }
+        // Another start may have replaced it while the runs were read.
+        guard state.automations.first(where: { $0.id == automation.id })?.agentID == agentID else { return }
+        try await deleteAgentPersisted(agentID)
     }
 
     /// Stop an automation's run by deleting its agent (the automation itself

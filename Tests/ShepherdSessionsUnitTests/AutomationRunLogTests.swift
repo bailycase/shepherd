@@ -58,6 +58,15 @@ struct AutomationRunLogTests {
         #expect((run.agentID != nil) == (statuses.last! != nil))
     }
 
+    /// The result the log keeps and the rule Run now follows (`AutomationRun.isLive`) agree, so
+    /// a run that reads finished can always be run again and a live one never is.
+    @Test(arguments: [AgentStatus.idle, .working, .blocked, .done], [false, true])
+    func aKeptRunIsLiveExactlyWhenRunNowWaits(_ status: AgentStatus, settled: Bool) {
+        let open = AutomationRun(startedAt: 0, settledAt: settled ? 5 : nil, result: .running)
+        let followed = AutomationRunLog.following(open, status: status, at: 10)
+        #expect(followed.result.isLive == AutomationRun.isLive(agentStatus: status, run: followed))
+    }
+
     @Test func aNewAgentStartsANewRunAndTheLogKeepsTheNewest() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }

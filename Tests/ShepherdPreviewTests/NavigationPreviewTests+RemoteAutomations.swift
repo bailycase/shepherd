@@ -13,12 +13,14 @@ import Testing
 /// A remote host's automations in the sidebar and their details sheet (NavAutomations,
 /// NavHosts), against a real in-process host so the rows show what the protocol carries.
 extension PreviewTests {
-    /// The automations the host serves: one running, one with two weeks of nightly runs, one off.
+    /// The automations the host serves: one running, one with two weeks of nightly runs, one
+    /// whose run finished (its thread still open to read), and one off.
     private struct AutomationHostFixture {
         let server: ScratchServer
         let port: UInt16
         let token: String
         let nightly: Automation
+        let bump: Automation
 
         /// The run log's file, as the host keeps it.
         private struct RunFile: Encodable {
@@ -43,6 +45,12 @@ extension PreviewTests {
                                  cwd: dir.path, enabled: true)
             let merge = Automation(name: "Merge PR #24 after CI", prompt: "Merge PR #24 once CI is green.", cwd: dir.path,
                                    enabled: true, agentID: run.id)
+            let bumpPane = LeafPane(cwd: dir.path)
+            let bumpTab = ShepherdCore.Tab(spaceID: hidden.id, order: 1, layout: .leaf(bumpPane))
+            let bumpRun = Agent(name: "Weekly dependency bump", spaceID: hidden.id, tabID: bumpTab.id, paneID: bumpPane.id,
+                                status: .done, nameIsFinal: true)
+            bump = Automation(name: "Weekly dependency bump", prompt: "Bump every dependency one minor version and run the tests.",
+                              cwd: dir.path, enabled: false, agentID: bumpRun.id)
             let cleanup = Automation(name: "Stale branch cleanup", prompt: "Delete merged branches.", cwd: dir.path, enabled: false)
 
             let today = Calendar.current.startOfDay(for: Date()).addingTimeInterval(2 * 3600).timeIntervalSince1970
@@ -56,12 +64,18 @@ extension PreviewTests {
                     return AutomationRun(startedAt: start, settledAt: start + took, endedAt: start + took + 5, result: .finished)
                 }
             }
-            let file = RunFile(runs: [nightly.id.rawValue: history])
+            // Last week's run; the host opens today's, whose thread is still there, when it adopts the state.
+            let bumped = [
+                AutomationRun(startedAt: today - 7 * 86_400, settledAt: today - 7 * 86_400 + 252, endedAt: today - 7 * 86_400 + 300,
+                              result: .finished),
+            ]
+            let file = RunFile(runs: [nightly.id.rawValue: history, bump.id.rawValue: bumped])
             try JSONEncoder().encode(file).write(to: dir.appendingPathComponent("automation-runs.json"))
 
             server = try ScratchServer(dir: dir)
-            try await server.server.putState(ShepherdState(spaces: [space, hidden], tabs: [workTab, runTab], agents: [work, run],
-                                                           automations: [merge, nightly, cleanup]))
+            try await server.server.putState(ShepherdState(spaces: [space, hidden], tabs: [workTab, runTab, bumpTab],
+                                                           agents: [work, run, bumpRun],
+                                                           automations: [merge, nightly, bump, cleanup]))
             let tokenURL = dir.appendingPathComponent("remote-token")
             port = try server.server.startRemoteListener(port: 0, tokenURL: tokenURL)
             token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -107,6 +121,23 @@ extension PreviewTests {
         #expect(vm.remoteAutomationRuns[key]?.count == 14)
 
         try await Preview.render("sheet-remote-automation", size: CGSize(width: AppLayout.automationSheetWidth, height: 860)) {
+            RemoteAutomationSheet(vm: vm, key: key)
+        }
+    }
+
+    /// A run that finished keeps its thread to read, and the footer offers Run Now again.
+    @Test func remoteAutomationSheetAfterARun() async throws {
+        let workspace = try PreviewWorkspace()
+        let host = try await AutomationHostFixture()
+        defer { workspace.stop(); host.server.stop() }
+        let connection = try await host.connect(workspace)
+        let key = AutomationKey(host: connection.id, automation: host.bump.id)
+        let vm = workspace.vm
+        await vm.loadRemoteAutomationRuns(key)
+        let detail = try #require(vm.remoteAutomationDetail(key))
+        #expect(detail.row.run != nil && !detail.row.live && detail.row.abilities.run)
+
+        try await Preview.render("sheet-remote-automation-settled", size: CGSize(width: AppLayout.automationSheetWidth, height: 620)) {
             RemoteAutomationSheet(vm: vm, key: key)
         }
     }
