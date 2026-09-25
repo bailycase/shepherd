@@ -338,10 +338,13 @@ Sources/
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
-                       the changes card), ShepherdLog. Shared with the iOS client.
+                       the changes card), NativeQueueRules (the queue's rules, host and client),
+                       ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
-                       RPCSession, RPCThreadState, PTYSession, SessionScreen (SwiftTerm), StateStore,
+                       RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
+                       works), ThreadOriginStore (where delivered messages came from, kept per pi
+                       session), PTYSession, SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
@@ -355,7 +358,8 @@ Sources/
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
       +RemoteInspection, +RemoteWorktrees)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
-                       Composer, Subagents, SubagentPresentation, SubagentInspector
+                       Composer, QueueStack ("Up next", the queue above the composer), Subagents,
+                       SubagentPresentation, SubagentInspector
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
@@ -400,7 +404,8 @@ Tests/
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
   ShepherdTestKit/        ScratchDefaults, makeScratchDirectory, Locked, CommandFailure, TestProcess
   ShepherdTestSupport/    ScratchServer, StubPi (+ Resources/stub-pi.py), ExtensionClient,
-                          eventually, recordingErrors, the time-limit and timing-sensitive traits
+                          QueueFixture (a host's queue without pi), eventually, recordingErrors,
+                          the time-limit and timing-sensitive traits
   Extensions/             node tests for the bundled extensions (+ native-thread-wire.json)
   Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
@@ -440,7 +445,10 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 
 `RPCThreadState` projects pi's events into the `NativeThreadSnapshot` that
 `SessionServer.nativeThread` serves locally and, over TCP, remotely
-([docs/native-thread.md](docs/native-thread.md)).
+([docs/native-thread.md](docs/native-thread.md)). Messages sent while pi works wait in a queue
+the host holds (never pi's own, whose modes write the user's pi settings) and go when pi
+settles, or are steered in; a user message joins the thread only when pi starts it
+(docs/native-thread.md › The queue).
 
 **Status reporting.** The status extension reports `setAgentStatus` fire-and-forget:
 
@@ -487,8 +495,9 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   Settings ▸ Remote ▸ Serve this Mac toggles it, and bind failures show there.
 - **Auth:** the first frame must be `hello` with the token from `remote-token` in the support
   directory (32 random bytes as hex, mode 0600, created on first use) and a matching
-  `RemoteProtocol.version`. **There is no TLS.** A VPN or trusted network is the transport
-  boundary. Never describe the listener as internet-safe.
+  `RemoteProtocol.version`, listing what the client understands
+  (`RemoteProtocol.clientCapabilities`; older clients list nothing). **There is no TLS.** A VPN
+  or trusted network is the transport boundary. Never describe the listener as internet-safe.
 - **Protocol** (NDJSON, `RemoteMessage.swift`):
   - state fetch and pushed `stateChanged`
   - native thread requests

@@ -112,6 +112,8 @@ public enum RPCStreamingBehavior: String, Codable, Hashable, Sendable { case ste
 public enum RPCCommand: Encodable, Hashable, Sendable {
     case prompt(message: String, images: [RPCImage] = [], streamingBehavior: RPCStreamingBehavior? = nil)
     case abort
+    /// Empties pi's steering and follow-up queues and answers with their text.
+    case clearQueue
     case getState
     case getMessages
     case getSessionStats
@@ -126,6 +128,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
         switch self {
         case .prompt: return "prompt"
         case .abort: return "abort"
+        case .clearQueue: return "clear_queue"
         case .getState: return "get_state"
         case .getMessages: return "get_messages"
         case .getSessionStats: return "get_session_stats"
@@ -159,7 +162,7 @@ public enum RPCCommand: Encodable, Hashable, Sendable {
             try c.encodeIfPresent(value, forKey: .value)
             try c.encodeIfPresent(confirmed, forKey: .confirmed)
             try c.encodeIfPresent(cancelled, forKey: .cancelled)
-        case .abort, .getState, .getMessages, .getSessionStats, .getCommands, .newSession:
+        case .abort, .clearQueue, .getState, .getMessages, .getSessionStats, .getCommands, .newSession:
             break
         }
     }

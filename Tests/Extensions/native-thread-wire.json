@@ -261,5 +261,160 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 15,
+    "agentID": "agent",
+    "request": {
+      "queue": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000007",
+        "action": {
+          "move": {
+            "id": "00000000-0000-0000-0000-000000000021",
+            "index": 0
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 16,
+    "agentID": "agent",
+    "request": {
+      "queue": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000008",
+        "action": {
+          "setMode": {
+            "mode": "oneAtATime"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 17,
+    "agentID": "agent",
+    "request": {
+      "queue": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000009",
+        "action": {
+          "clear": {}
+        }
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 18,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 9,
+          "running": true,
+          "supportedActions": [
+            "send",
+            "abort",
+            "answer",
+            "setModel",
+            "setThinking",
+            "sendImages",
+            "subagents",
+            "queue"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [
+            {
+              "entryID": "user:1790281445966",
+              "role": "user",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "text": "one\n\ntwo"
+                }
+              ],
+              "truncated": false,
+              "timestamp": 1790281445966,
+              "operationID": "00000000-0000-0000-0000-000000000021",
+              "origin": {
+                "queue": {
+                  "parts": [
+                    {
+                      "id": "00000000-0000-0000-0000-000000000021",
+                      "text": "one",
+                      "sentAt": 1790281440000,
+                      "images": 0
+                    },
+                    {
+                      "id": "00000000-0000-0000-0000-000000000022",
+                      "text": "two",
+                      "sentAt": 1790281441000,
+                      "images": 1
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "entryID": "user:1790281446000",
+              "role": "user",
+              "blocks": [
+                {
+                  "kind": "text",
+                  "text": "turn left"
+                }
+              ],
+              "truncated": false,
+              "timestamp": 1790281446000,
+              "operationID": "00000000-0000-0000-0000-000000000023",
+              "origin": {
+                "steered": {}
+              }
+            }
+          ],
+          "provisional": [],
+          "clipped": false,
+          "runtime": "rpc",
+          "queue": {
+            "items": [
+              {
+                "id": "00000000-0000-0000-0000-000000000024",
+                "text": "instead",
+                "images": [],
+                "sentAt": 1790281447000,
+                "state": "steering",
+                "held": false
+              },
+              {
+                "id": "00000000-0000-0000-0000-000000000025",
+                "text": "then this",
+                "images": [
+                  {
+                    "mimeType": "image/png",
+                    "name": "checkout.png"
+                  }
+                ],
+                "sentAt": 1790281448000,
+                "state": "queued",
+                "held": true
+              }
+            ],
+            "mode": "all",
+            "paused": false
+          }
+        }
+      }
+    }
   }
 ]

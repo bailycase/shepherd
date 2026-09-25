@@ -30,44 +30,71 @@ extension View {
     }
 }
 
-/// The user's turn: one `NWUserBubble` per message, the time beneath the last while the turn
-/// is hovered. A follow-up sent while the agent ran is queued until the turn ends. No speaker
+/// The user's turn: one `NWUserBubble` per message, each with its time beneath while the turn
+/// is hovered. Messages the queue delivered together open with "From the queue · N", one bubble
+/// per message with the time it was sent. A send pi has not read yet stands at 70%. No speaker
 /// label: shape carries the role.
 struct UserTurn: View, Equatable {
-    let messages: [NativeThreadMessage]
-    /// The time: "2:41 PM", or "10:58" in a child's transcript.
-    var caption: String?
-    /// Follows the time and always shows: "from parent" in a child's transcript.
+    /// One bubble as the turn draws it.
+    struct Bubble: Equatable {
+        var text: String
+        var images: Int
+        /// The time: "2:41 PM", or "10:58" in a child's transcript.
+        var caption: String?
+        var pending: Bool
+    }
+
+    let bubbles: [Bubble]
+    /// "From the queue · N" above the bubbles, when the queue delivered them.
+    var fromQueue: Int?
+    /// Follows the last time and always shows: "from parent" in a child's transcript.
     var note: String?
     @State private var hover: MessageHover
 
-    /// `hover` seeds the pointer state, for previews and tests.
+    /// A thread's user turn: each bubble with its own time.
+    init(turn: NativeTurn, hover: MessageHover? = nil) {
+        self.init(bubbles: turn.bubbles.map { bubble in
+            Bubble(text: bubble.text, images: bubble.images, caption: bubble.sentAt.map { nativeClockText($0) }, pending: bubble.pending)
+        }, fromQueue: turn.fromQueue, hover: hover)
+    }
+
+    /// A transcript's turn (the subagent inspector): `caption` under the last message.
     init(messages: [NativeThreadMessage], caption: String? = nil, note: String? = nil, hover: MessageHover? = nil) {
-        self.messages = messages
-        self.caption = caption
+        let bubbles = messages.enumerated().map { index, message in
+            Bubble(text: message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"),
+                   images: message.blocks.count { $0.kind == .unsupportedImage },
+                   caption: index == messages.count - 1 ? caption : nil,
+                   pending: message.status == "pending" || message.status == "queued")
+        }
+        self.init(bubbles: bubbles, note: note, hover: hover)
+    }
+
+    /// `hover` seeds the pointer state, for previews and tests.
+    init(bubbles: [Bubble], fromQueue: Int? = nil, note: String? = nil, hover: MessageHover? = nil) {
+        self.bubbles = bubbles
+        self.fromQueue = fromQueue
         self.note = note
         _hover = State(initialValue: hover ?? MessageHover())
     }
 
     static func == (lhs: UserTurn, rhs: UserTurn) -> Bool {
-        lhs.messages == rhs.messages && lhs.caption == rhs.caption && lhs.note == rhs.note
+        lhs.bubbles == rhs.bubbles && lhs.fromQueue == rhs.fromQueue && lhs.note == rhs.note
     }
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.userTurn")
-        VStack(alignment: .trailing, spacing: AppLayout.activitySpacing) {
-            // By position, not entry: an echo and the message pi saves for it have different
-            // entries, and the bubble must stay one view to settle in place (70% → 100%, queued
-            // → sent).
-            ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
-                let images = message.blocks.count { $0.kind == .unsupportedImage }
-                let last = index == messages.count - 1
-                NWUserBubble(message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n"),
-                             attachments: Array(repeating: "Image", count: images),
-                             timestamp: last ? caption : nil, note: last ? note : nil, revealed: last && hover.hovering,
-                             isQueued: message.status == "queued")
-                    .opacity(message.status == "pending" ? 0.7 : 1)
-                    .nwAnimation(.hover, value: message.status == "pending")
+        VStack(alignment: .trailing, spacing: AppLayout.blockSpacing) {
+            if let fromQueue { NWQueueDivider(count: fromQueue) }
+            VStack(alignment: .trailing, spacing: AppLayout.activitySpacing) {
+                // By position, not entry: an echo and the message pi saves for it have different
+                // entries, and the bubble must stay one view to settle in place (70% → 100%).
+                ForEach(Array(bubbles.enumerated()), id: \.offset) { index, bubble in
+                    let last = index == bubbles.count - 1
+                    NWUserBubble(bubble.text, attachments: Array(repeating: "Image", count: bubble.images),
+                                 timestamp: bubble.caption, note: last ? note : nil, revealed: hover.hovering)
+                        .opacity(bubble.pending ? 0.7 : 1)
+                        .nwAnimation(.hover, value: bubble.pending)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -209,6 +236,9 @@ struct AgentTurn: View, Equatable {
             NWTurnError(final ? nativeTurnErrorText(text, toolCalls: presentation.toolCalls) : text,
                         count: count, retry: final ? retry : nil)
                 .frame(maxWidth: AppLayout.proseMaxWidth, alignment: .leading)
+        case .steer(_, let text, let sentAt, let images):
+            // Where pi read it, inside the turn it steered.
+            SteeredBubble(text: text, images: images, time: sentAt.map { nativeClockText($0) }, hover: hover)
         }
     }
 
@@ -241,6 +271,21 @@ struct AgentTurn: View, Equatable {
                 NSPasteboard.general.setString(copy, forType: .string)
             },
             onRetry: retry)
+    }
+}
+
+/// A message steered into the turn, where pi read it: "Steered" and a running line, and its time
+/// while the turn is hovered. It reads the turn's hover itself, as the footer does.
+private struct SteeredBubble: View {
+    let text: String
+    let images: Int
+    let time: String?
+    let hover: MessageHover
+
+    var body: some View {
+        NWUserBubble(text, attachments: Array(repeating: "Image", count: images), timestamp: time, revealed: hover.hovering,
+                     origin: .steered)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 

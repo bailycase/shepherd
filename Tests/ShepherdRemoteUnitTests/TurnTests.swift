@@ -118,4 +118,55 @@ struct TurnTests {
     @Test func withoutAUserMessageTheWholeHistoryIsTheTurn() {
         #expect(nativeTouchedPaths([F.tool("write", args: #"{"path":"x"}"#)], running: true) == ["x"])
     }
+
+    // MARK: Steers and the queue
+
+    static func steered(_ text: String, id: String) -> NativeThreadMessage {
+        var message = Fixture.user(text, id: id)
+        message.origin = .steered
+        return message
+    }
+
+    /// A steer stays in the reply it steered, where pi read it: the reply keeps its identity,
+    /// one footer, and one changes card.
+    @Test func aSteerStaysInsideTheReplyItSteered() {
+        let read = F.tool("read", id: "r"), steer = Self.steered("use tables", id: "s"), after = F.assistant("Switching.", id: "a")
+        let turns = nativeTurns([F.user(id: "u"), read, steer, after, F.user(id: "u2")])
+        #expect(turns.map(\.id) == ["u", "u/reply", "u2"])
+        #expect(turns[1].messages == [read, steer, after])
+    }
+
+    /// Only the host's mark makes a steer: a tool can end pi's run by itself, so a prompt after
+    /// a tool result is still a new turn.
+    @Test func aUserMessageAfterAToolResultIsANewTurnUnlessMarkedSteered() {
+        #expect(nativeTurns([F.user(id: "u"), F.tool("read"), F.user(id: "u2")]).map(\.id) == ["u", "u/reply", "u2"])
+        #expect(nativeTurns([Self.steered("x", id: "s"), F.assistant("hi")]).map(\.isUser) == [true, false],
+                "with no reply above it, a steer opens a turn")
+    }
+
+    @Test func aSteerDoesNotStartANewTurnForTouchedPaths() {
+        let messages = [F.user(), F.tool("edit", args: #"{"path":"a.swift"}"#), Self.steered("go on", id: "s"),
+                        F.tool("write", args: #"{"path":"b.swift","content":"x"}"#)]
+        #expect(nativeTouchedPaths(messages, running: true) == ["a.swift", "b.swift"])
+    }
+
+    /// A delivery from the queue shows one bubble per queued message, each at the time it was
+    /// sent; a message sent straight to pi is one bubble at pi's time.
+    @Test func aQueueDeliveryShowsEachPartAsItsOwnBubble() {
+        var delivered = F.user("one\n\ntwo", id: "u")
+        delivered.timestamp = 30
+        delivered.origin = .queue(parts: [NativeQueuePart(text: "one", sentAt: 10), NativeQueuePart(text: "two", sentAt: 20, images: 1)])
+        let turn = nativeTurns([delivered])[0]
+        #expect(turn.fromQueue == 2)
+        #expect(turn.bubbles == [
+            NativeUserBubble(id: "u/0", text: "one", sentAt: 10, images: 0, pending: false),
+            NativeUserBubble(id: "u/1", text: "two", sentAt: 20, images: 1, pending: false),
+        ])
+        var direct = F.user("hi", id: "d")
+        direct.timestamp = 5
+        let plain = nativeTurns([direct])[0]
+        #expect(plain.fromQueue == nil)
+        #expect(plain.bubbles == [NativeUserBubble(id: "d", text: "hi", sentAt: 5, images: 0, pending: false)])
+        #expect(nativeTurns([F.user(id: "u0"), F.assistant("r")])[1].bubbles.isEmpty, "a reply has none")
+    }
 }

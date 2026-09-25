@@ -15,7 +15,31 @@
   "select" emits a select extension_ui_request (no timeout) and waits
   "fill"   appends 120 history messages, then agent_start/agent_end
   "newsession" switches sessionId, then agent_start/agent_end
+  "refuse" answers the prompt with success: false (pi refusing it)
+  "tools:N" a run that behaves like pi's agent loop (below)
   other    a full streaming turn with a U+2028 inside a delta
+
+pi's queues, as pi 0.87.1 behaves (docs/rpc-commands.md, and transcripts of the real thing):
+  - While a run streams, `prompt` needs `streamingBehavior`, else pi refuses it ("Agent is
+    already processing..."). `steer` / `followUp` append to that queue, stamped when queued,
+    then pi emits `queue_update` with both queues' text, then answers the prompt.
+  - A "tools:N" run: each model call reads the newest user message; while it has asked for N
+    tool calls and made fewer, it makes one (a bash call that waits for the file `tool-<k>`
+    in the cwd, k counting every call this stub makes), else it replies "Reply to <text>".
+    Steering is taken one at a time: at the start of the run and after each tool batch or
+    reply. A message leaves the queue (`queue_update`) just before its user message_start.
+    Follow-ups are taken one at a time once the run would stop, within the same run.
+    "hold-settle" in the first prompt holds the run between its last look at the queues and
+    agent_end until the file `settle` appears (a steer sent then is stranded, as in pi).
+  - `abort` during a "tools:N" run fails the running call ("Command aborted"), delivers the
+    next steer, ends with an empty error reply, then agent_end, agent_settled, and only then
+    the abort response. Follow-ups stay queued (pi does not clear its queue on abort).
+  - `clear_queue` empties both queues, emits an empty `queue_update`, and answers with their
+    text. A steer with "raced" in it stays queued and unreported, as when pi reads a steer
+    (its tool batch ended) just before a `clear_queue` arrives: it still lands.
+  - Idle, a prompt with a streamingBehavior is a plain prompt.
+$STUB_PI_MESSAGES_FILE, when set, loads the history from that file at start and saves it
+after every "tools:N" run, like pi resuming its session file.
 
 set_model / set_thinking_level update STATE (unknown provider -> error).
 A prompt carrying images also logs {"type": "stub-images", "count": N}.
@@ -34,6 +58,7 @@ on what the client actually wrote.
 """
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -184,6 +209,140 @@ def paced_turn(prompt, deltas=40, interval=0.002):
     emit({"type": "agent_settled"})
 
 
+QUEUE_LOCK = threading.Lock()
+steering = []   # (text, images, timestamp)
+follow_up = []
+RUN = {"active": False, "thread": None, "abort": threading.Event()}
+tool_count = [0]
+messages_file = os.environ.get("STUB_PI_MESSAGES_FILE")
+if messages_file and os.path.exists(messages_file):
+    with open(messages_file) as f:
+        MESSAGES[:] = json.load(f)
+
+
+def now_ms():
+    return int(time.time() * 1000)
+
+
+def queue_update():
+    with QUEUE_LOCK:
+        emit({"type": "queue_update", "steering": [t for t, _, _ in steering], "followUp": [t for t, _, _ in follow_up]})
+
+
+def take(queue):
+    """One-at-a-time mode: the head, removed (with its queue_update) before it is delivered."""
+    with QUEUE_LOCK:
+        if not queue:
+            return []
+        item = queue.pop(0)
+    queue_update()
+    return [item]
+
+
+def user_message(text, images, timestamp):
+    content = [{"type": "text", "text": text}]
+    content += [{"type": "image", "data": i.get("data", ""), "mimeType": i.get("mimeType", "")} for i in images or []]
+    return {"role": "user", "content": content, "timestamp": timestamp}
+
+
+def gate(name):
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline and not os.path.exists(name) and not RUN["abort"].is_set():
+        time.sleep(0.02)
+
+
+def text_of(message):
+    return "".join(b.get("text", "") for b in message["content"] if b.get("type") == "text")
+
+
+def agent_run(first):
+    new = []
+    last = [None]
+
+    def deliver(item):
+        message = user_message(*item)
+        emit({"type": "message_start", "message": message})
+        emit({"type": "message_end", "message": message})
+        new.append(message)
+        last[0] = message
+
+    def say(message):
+        emit({"type": "message_start", "message": dict(message, content=[])})
+        emit({"type": "message_end", "message": message})
+        new.append(message)
+
+    emit({"type": "agent_start"})
+    emit({"type": "turn_start"})
+    deliver(first)
+    pending = take(steering)
+    done = 0
+    aborted = False
+    while True:
+        more = True
+        while more or pending:
+            for item in pending:
+                deliver(item)
+                done = 0
+            pending = []
+            if RUN["abort"].is_set():
+                reply = {"role": "assistant", "content": [], "stopReason": "error", "errorMessage": "Request was aborted",
+                         "timestamp": now_ms()}
+                say(reply)
+                emit({"type": "turn_end", "message": reply, "toolResults": []})
+                aborted = True
+                break
+            text = text_of(last[0])
+            wanted = int(m.group(1)) if (m := re.search(r"tools:(\d+)", text)) else 0
+            if done < wanted:
+                tool_count[0] += 1
+                k = tool_count[0]
+                call = f"call_q{k}"
+                ask = {"role": "assistant", "content": [
+                    {"type": "text", "text": f"Step {done + 1} of {wanted}."},
+                    {"type": "toolCall", "id": call, "name": "bash", "arguments": {"command": f"step {k}"}}],
+                    "stopReason": "toolUse", "timestamp": now_ms()}
+                say(ask)
+                emit({"type": "tool_execution_start", "toolCallId": call, "toolName": "bash", "args": {"command": f"step {k}"}})
+                gate(f"tool-{k}")
+                failed = RUN["abort"].is_set()
+                output = "Command aborted" if failed else f"step {k} done\n"
+                emit({"type": "tool_execution_end", "toolCallId": call, "toolName": "bash",
+                      "result": {"content": [{"type": "text", "text": output}], "details": {}}, "isError": failed})
+                result = {"role": "toolResult", "toolCallId": call, "toolName": "bash",
+                          "content": [{"type": "text", "text": output}], "isError": failed, "timestamp": now_ms()}
+                emit({"type": "message_start", "message": result})
+                emit({"type": "message_end", "message": result})
+                new.append(result)
+                emit({"type": "turn_end", "message": ask, "toolResults": [result]})
+                done += 1
+                more = True
+            else:
+                reply = {"role": "assistant", "content": [{"type": "text", "text": f"Reply to {text}"}],
+                         "stopReason": "stop", "timestamp": now_ms()}
+                say(reply)
+                emit({"type": "turn_end", "message": reply, "toolResults": []})
+                more = False
+            pending = take(steering)
+            if more or pending:
+                emit({"type": "turn_start"})
+        if aborted:
+            break
+        pending = take(follow_up)
+        if not pending:
+            break
+        emit({"type": "turn_start"})
+    if not aborted and "hold-settle" in text_of(new[0]):
+        gate("settle")
+    MESSAGES.extend(new)
+    STATE["messageCount"] = len(MESSAGES)
+    if messages_file:
+        with open(messages_file, "w") as f:
+            json.dump(MESSAGES, f)
+    emit({"type": "agent_end", "messages": new, "willRetry": False})
+    RUN["active"] = False
+    emit({"type": "agent_settled"})
+
+
 def ui(method, **fields):
     emit({"type": "extension_ui_request", "id": f"ui-{method}", "method": method, **fields})
 
@@ -211,6 +370,8 @@ startup()
 
 pending_ui = None
 turn_thread = None
+# An abort ends a "slow" turn as far as pi's state goes (its thread still waits for its files).
+turn_aborted = False
 
 for raw in sys.stdin.buffer:
     line = raw.rstrip(b"\n").rstrip(b"\r")
@@ -225,8 +386,11 @@ for raw in sys.stdin.buffer:
         emit({"type": "response", "command": "parse", "success": False, "error": f"Failed to parse command: {e}"})
         continue
     t = cmd.get("type")
+    streaming = RUN["active"] or (turn_thread is not None and turn_thread.is_alive() and not turn_aborted)
     if t == "get_state":
-        respond(cmd, t, data=STATE)
+        with QUEUE_LOCK:
+            pending_count = len(steering) + len(follow_up)
+        respond(cmd, t, data=dict(STATE, isStreaming=streaming, pendingMessageCount=pending_count))
     elif t == "get_messages":
         respond(cmd, t, data={"messages": MESSAGES})
     elif t == "get_commands":
@@ -243,9 +407,24 @@ for raw in sys.stdin.buffer:
         STATE["thinkingLevel"] = cmd.get("level")
         respond(cmd, t)
     elif t == "abort":
-        respond(cmd, t)
-        emit({"type": "agent_end", "messages": [], "willRetry": False})
-        emit({"type": "agent_settled"})
+        if RUN["active"]:
+            RUN["abort"].set()
+            RUN["thread"].join(timeout=30)
+            RUN["abort"].clear()
+            respond(cmd, t)
+        else:
+            turn_aborted = True
+            respond(cmd, t)
+            emit({"type": "agent_end", "messages": [], "willRetry": False})
+            emit({"type": "agent_settled"})
+    elif t == "clear_queue":
+        with QUEUE_LOCK:
+            raced = [item for item in steering if "raced" in item[0]]
+            cleared = {"steering": [t for t, _, _ in steering if "raced" not in t], "followUp": [t for t, _, _ in follow_up]}
+            steering[:] = raced
+            follow_up.clear()
+        queue_update()
+        respond(cmd, t, data=cleared)
     elif t == "extension_ui_response":
         if pending_ui is not None and cmd.get("id") == pending_ui:
             pending_ui = None
@@ -267,15 +446,31 @@ for raw in sys.stdin.buffer:
             sys.stderr.write("stub-pi: dying\n")
             sys.stderr.flush()
             sys.exit(3)
+        if "refuse" in message:
+            respond(cmd, t, success=False, error="refused by the stub")
+            continue
+        if streaming:
+            behavior = cmd.get("streamingBehavior")
+            if behavior not in ("steer", "followUp"):
+                respond(cmd, t, success=False,
+                        error="Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.")
+                continue
+            with QUEUE_LOCK:
+                (steering if behavior == "steer" else follow_up).append((message, cmd.get("images") or [], now_ms()))
+            queue_update()
+            respond(cmd, t)
+            continue
+        if re.search(r"tools:\d+", message):
+            RUN["active"] = True
+            respond(cmd, t)
+            RUN["thread"] = threading.Thread(target=agent_run, args=((message, cmd.get("images") or [], now_ms()),), daemon=True)
+            RUN["thread"].start()
+            continue
         respond(cmd, t)
         if log_path and cmd.get("images"):
             with open(log_path, "ab") as f:
                 f.write(json.dumps({"type": "stub-images", "count": len(cmd["images"]),
                                     "mimeTypes": [i.get("mimeType") for i in cmd["images"]]}).encode() + b"\n")
-        if turn_thread is not None and turn_thread.is_alive():
-            # A steer/followUp during a running turn is accepted and queued; the
-            # stub simply drops it after acknowledging, like a queue that never drains.
-            continue
         if message == "ask":
             pending_ui = "uuid-2"
             emit({"type": "agent_start"})
@@ -288,6 +483,7 @@ for raw in sys.stdin.buffer:
                   "title": "Pick one", "options": ["Allow", "Deny"]})
         elif message == "slow":
             # Real pi keeps reading stdin during a turn; the paused turn must too.
+            turn_aborted = False
             turn_thread = threading.Thread(target=streaming_turn, args=(message, True), daemon=True)
             turn_thread.start()
         elif message == "stream":

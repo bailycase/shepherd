@@ -101,6 +101,56 @@ final class ThreadFixture {
     }
 }
 
+/// A thread whose host holds a queue (`QueueFixture`), with the composer's "Up next" state
+/// in the test's hands: seed hover, the editor, a drag, or Undo rows through `state`.
+@MainActor
+final class QueueThreadFixture {
+    let store = NativeThreadStore()
+    let host: QueueFixture
+    let state = QueueStackState()
+    let commands = ThreadCommandCenter()
+
+    init(_ snapshot: NativeThreadSnapshot, queue: [NativeQueuedMessage] = [], draft: String = "") {
+        host = QueueFixture(snapshot)
+        host.change(queue)
+        store.draft = draft
+    }
+
+    var request: NativeThreadStore.Request { { [host] value in host.answer(value) } }
+
+    /// Header over thread, the way the workspace composes a native agent.
+    func thread(title: String = "Add refund events") -> some View {
+        VStack(spacing: 0) {
+            ThreadHeader(store: store, project: "payments", title: title)
+            ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview",
+                       agentName: "Add refund events", workingDirectory: "~/Developer/payments", review: { _ in }, queueState: state)
+        }
+        .environment(\.threadCommands, commands)
+    }
+
+    /// The stack alone, fed by its own store.
+    func stack() -> some View {
+        QueueStackHost(state: state, store: store, running: host.snapshot.running)
+            .task { [store, request] in await store.run(request: request) }
+    }
+
+    /// The queued message `index` in the host's queue.
+    func id(_ index: Int) -> UUID { host.queue[index].id }
+}
+
+/// `QueueStackView` with the focus state it needs.
+struct QueueStackHost: View {
+    let state: QueueStackState
+    let store: NativeThreadStore
+    let running: Bool
+    @FocusState private var focused: String?
+
+    var body: some View {
+        QueueStackView(state: state, store: store, running: running, animated: false, focusedRow: $focused, focusComposer: {})
+            .onChange(of: store.queue, initial: true) { _, queue in state.update(queue, images: store.queuedImages) }
+    }
+}
+
 enum Threads {
     private static func decode(_ json: String) -> NativeThreadSnapshot {
         try! JSONDecoder().decode(NativeThreadSnapshot.self, from: Data(json.utf8))

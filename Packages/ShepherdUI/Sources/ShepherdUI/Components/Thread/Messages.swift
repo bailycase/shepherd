@@ -16,40 +16,53 @@ enum NWMessageDetails {
 
 /// The user's turn: right-aligned, at most 600pt, `bgBubble` with a 1px strong line, radius 8.
 /// No avatar and no name; the time sits beneath, shown only while the message is hovered. A
-/// follow-up typed while a turn runs is queued: dashed and quiet until it sends. Its text
+/// message steered into a running turn wears "Steered" above it and a `running` line. Its text
 /// follows `nwProseSize`.
 public struct NWUserBubble: View {
+    /// How the message reached pi.
+    public enum Origin: Sendable {
+        /// Sent, or delivered from the queue.
+        case sent
+        /// Steered into a running turn, where pi read it.
+        case steered
+    }
+
+    /// The "Steered" label's glyph.
+    static let steeredGlyph: CGFloat = 11
+
     let text: String
     let attachments: [String]
     let timestamp: String?
     let note: String?
     let revealed: Bool
-    let isQueued: Bool
-    let onEdit: (() -> Void)?
-    let onSendNow: (() -> Void)?
+    let origin: Origin
     @Environment(\.nwProseSize) private var proseSize
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     /// `attachments` name the images sent with the message. `timestamp` shows only while
     /// `revealed` (the pointer is over the message); `note` follows it and always shows ("from
-    /// parent"). `onEdit` and `onSendNow` add the queued bubble's buttons; pass them only when
-    /// the host can do it.
+    /// parent").
     public init(_ text: String, attachments: [String] = [], timestamp: String? = nil, note: String? = nil,
-                revealed: Bool = false, isQueued: Bool = false,
-                onEdit: (() -> Void)? = nil, onSendNow: (() -> Void)? = nil) {
+                revealed: Bool = false, origin: Origin = .sent) {
         self.text = text
         self.attachments = attachments
         self.timestamp = timestamp
         self.note = note
         self.revealed = revealed
-        self.isQueued = isQueued
-        self.onEdit = onEdit
-        self.onSendNow = onSendNow
+        self.origin = origin
     }
 
     public var body: some View {
         let nw = Color.nw
+        let steered = origin == .steered
         VStack(alignment: .trailing, spacing: 5) {
+            if steered {
+                HStack(spacing: NW.Space.xs) {
+                    Image(systemName: "arrow.turn.down.right").font(.system(size: Self.steeredGlyph, weight: .medium))
+                    Text("Steered").font(.nw(.caption, weight: .medium))
+                }
+                .foregroundStyle(nw.running)
+            }
             VStack(alignment: .leading, spacing: NW.Space.m) {
                 if !attachments.isEmpty {
                     HStack(spacing: NW.Space.s) {
@@ -62,28 +75,20 @@ public struct NWUserBubble: View {
                     Text(text)
                         .font(.nw(.body, size: proseSize))
                         .lineSpacing(max(0, NWTextStyle.body.lineSpacing(proseSize) - 1))
-                        .foregroundStyle(isQueued ? nw.textSecondary : nw.textPrimary)
+                        .foregroundStyle(nw.textPrimary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.vertical, 10)
             .padding(.horizontal, 14)
-            .background(isQueued ? Color.clear : nw.bgBubble, in: RoundedRectangle(cornerRadius: NW.Radius.m))
-            .nwBorder(nw.lineStrong, in: RoundedRectangle(cornerRadius: NW.Radius.m), dash: isQueued ? [3, 3] : [])
+            .background(nw.bgBubble, in: RoundedRectangle(cornerRadius: NW.Radius.m))
+            .nwBorder(steered ? nw.running : nw.lineStrong, radius: NW.Radius.m)
             .frame(maxWidth: NWThreadMetrics.bubbleMaxWidth, alignment: .trailing)
-            if isQueued {
-                HStack(spacing: NW.Space.m) {
-                    Text("queued · sends when the turn ends").font(.nwMono(10.5)).foregroundStyle(nw.textTertiary)
-                    if let onEdit { Button("Edit", action: onEdit).buttonStyle(.nw(.ghost, size: .s)) }
-                    if let onSendNow { Button("Send now", action: onSendNow).buttonStyle(.nw(.ghost, size: .s)) }
-                }
-            } else if timestamp != nil || note != nil {
+            if timestamp != nil || note != nil {
                 caption
             }
         }
-        // A queued follow-up turns into a sent message in place when the turn ends.
-        .nwAnimation(.content, value: isQueued)
         .frame(maxWidth: .infinity, alignment: .trailing)
         .accessibilityElement(children: .combine)
     }

@@ -107,7 +107,7 @@ let package = Package(
         .target(name: "ShepherdTestKit", dependencies: ["ShepherdTestIsolation"], path: "Tests/ShepherdTestKit"),
         .target(
             name: "ShepherdTestSupport",
-            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdSessions", "ShepherdTestKit"],
+            dependencies: ["ShepherdCore", "ShepherdProtocol", "ShepherdRemote", "ShepherdSessions", "ShepherdTestKit"],
             path: "Tests/ShepherdTestSupport",
             resources: [.copy("Resources/stub-pi.py")]
         ),

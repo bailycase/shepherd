@@ -15,11 +15,14 @@ final class FakeHost {
     var action: (NativeThreadRequest) throws -> NativeThreadResult = { _ in .failure(code: "x", message: "unscripted") }
     private(set) var requests: [NativeThreadRequest] = []
     fileprivate var onServed: (() -> Void)?
+    /// Sees each request as it arrives, before it is answered.
+    var onRequest: ((NativeThreadRequest) -> Void)?
 
     init(_ snapshot: NativeThreadSnapshot) { self.snapshot = snapshot }
 
     func handle(_ request: NativeThreadRequest) throws -> NativeThreadResult {
         requests.append(request)
+        onRequest?(request)
         if !next.isEmpty { return try next.removeFirst().get() }
         guard case .snapshot = request else { return try action(request) }
         defer { onServed?(); onServed = nil }
@@ -36,7 +39,8 @@ final class FakeHost {
         action = { request in
             switch request {
             case .send(_, _, let id, _, _, _), .abort(_, _, let id), .answer(_, _, let id, _, _),
-                 .setModel(_, _, let id, _), .setThinking(_, _, let id, _), .subagentCommand(_, _, let id, _, _, _, _):
+                 .setModel(_, _, let id, _), .setThinking(_, _, let id, _), .subagentCommand(_, _, let id, _, _, _, _),
+                 .queue(_, _, let id, _):
                 return .accepted(operationID: id)
             default:
                 return .failure(code: "x", message: "unexpected")

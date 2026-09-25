@@ -77,4 +77,18 @@ struct PiAgent {
     func release(_ pause: Int) {
         FileManager.default.createFile(atPath: host.dir.appendingPathComponent("continue-\(pause)").path, contents: nil)
     }
+
+    /// Lets the stub's `k`-th tool call (of a "tools:N" run) finish.
+    func finishTool(_ k: Int) {
+        FileManager.default.createFile(atPath: host.dir.appendingPathComponent("tool-\(k)").path, contents: nil)
+    }
+
+    /// Lets a "hold-settle" run settle.
+    func releaseSettle() {
+        FileManager.default.createFile(atPath: host.dir.appendingPathComponent("settle").path, contents: nil)
+    }
+
+    func queue(_ action: NativeQueueAction, operationID: UUID = UUID(), from s: NativeThreadSnapshot) async throws -> NativeThreadResult {
+        try await request(.queue(expectedSessionID: s.piSessionID, generation: s.generation, operationID: operationID, action: action))
+    }
 }

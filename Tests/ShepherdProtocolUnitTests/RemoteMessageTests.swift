@@ -95,6 +95,7 @@ struct RemoteRequestTests {
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
         .hello(id: 2, token: "", clientName: "Baily's MacBook \"Pro\"", protocolVersion: 99),
+        .hello(id: 9, token: "t", clientName: "Mac", protocolVersion: 1, capabilities: RemoteProtocol.clientCapabilities),
         .stateFetch(id: 3),
         .attach(id: 4, sessionID: S.session, cols: 120, rows: 40, viewportGeneration: 2),
         .detach(sessionID: S.session),
@@ -166,6 +167,9 @@ struct RemoteRequestTests {
          .resize(sessionID: RemoteSamples.session, cols: 90, rows: 30, viewportGeneration: 0)),
         (#"{"type":"paste","id":2,"sessionID":"session","text":"hi"}"#,
          .paste(id: 2, sessionID: RemoteSamples.session, text: "hi", submit: true)),
+        // Older clients list no capabilities: the host reads them as not knowing its queue.
+        (#"{"type":"hello","id":1,"token":"t","clientName":"old","protocolVersion":1}"#,
+         .hello(id: 1, token: "t", clientName: "old", protocolVersion: 1, capabilities: nil)),
     ])
     func olderClientShapesDecodeWithDefaults(json: String, expected: RemoteRequest) throws {
         #expect(try Wire.decode(RemoteRequest.self, json) == expected)
@@ -286,7 +290,8 @@ struct RemoteProtocolConstantTests {
     @Test func hostAdvertisesEveryNamedCapabilityOnce() {
         let named = [
             RemoteProtocol.nativeThreadCapability, RemoteProtocol.nativeThreadV2Capability,
-            RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
+            RemoteProtocol.nativeThreadStartingCapability, RemoteProtocol.nativeQueueCapability,
+            RemoteProtocol.pasteCapability, RemoteProtocol.paneControlCapability,
             RemoteProtocol.agentActionsCapability, RemoteProtocol.agentInspectionCapability,
             RemoteProtocol.worktreeActionsCapability, RemoteProtocol.worktreeSetupCapability,
             RemoteProtocol.uploadCapability, RemoteProtocol.creationOptionsCapability,
@@ -300,6 +305,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.nativeThreadCapability == "native.thread.v1")
         #expect(RemoteProtocol.nativeThreadV2Capability == "native.thread.v2")
         #expect(RemoteProtocol.nativeThreadStartingCapability == "native.thread.starting.v1")
+        #expect(RemoteProtocol.nativeQueueCapability == "native.queue.v1")
         #expect(RemoteProtocol.pasteCapability == "session.paste.v1")
         #expect(RemoteProtocol.paneControlCapability == "pane.control.v1")
         #expect(RemoteProtocol.uploadCapability == "session.upload.v1")
