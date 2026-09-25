@@ -550,7 +550,7 @@ public struct NativeScrollFollower: Equatable, Sendable {
     public var sticky = true
     /// Set for the duration of a wheel/drag gesture (or shortly after a wheel tick).
     public var userScrolling = false
-    /// Content grew while detached; cleared on re-stick.
+    /// Output arrived while detached (`contentArrived`); cleared on re-stick.
     public var unseen = false
     /// A programmatic jump (previous/next turn) has not left the bottom band yet: its first
     /// frames start at the tail, and those positions are not the reader asking to follow.
@@ -565,16 +565,12 @@ public struct NativeScrollFollower: Equatable, Sendable {
     /// One scroll-geometry observation. Only `userIntent` detaches: the caller passes it when a
     /// live gesture or wheel tick moved the offset up with the layout unchanged. A gesture that
     /// is merely in progress while rows re-measure is layout, not the user (that stranded the
-    /// view detached at the bottom with the jump pill showing). `contentGrew` is the content
-    /// height rising.
-    public mutating func observe(distanceFromBottom: Double, userIntent: Bool = false, contentGrew: Bool = false) {
+    /// view detached at the bottom with the jump pill showing).
+    public mutating func observe(distanceFromBottom: Double, userIntent: Bool = false) {
         if jumping {
             // The jump ends once it leaves the band (it landed on an earlier turn) or the reader
             // scrolls; until then, positions inside the band don't re-stick.
-            guard userIntent || distanceFromBottom > Self.threshold else {
-                if contentGrew { unseen = true }
-                return
-            }
+            guard userIntent || distanceFromBottom > Self.threshold else { return }
             jumping = false
         }
         if distanceFromBottom <= Self.threshold {
@@ -583,7 +579,13 @@ public struct NativeScrollFollower: Equatable, Sendable {
             return
         }
         if userIntent { sticky = false }
-        if !sticky, contentGrew { unseen = true }
+    }
+
+    /// The thread's tail changed: a row arrived, or the last one grew. Detached, that is output
+    /// the reader has not seen. The content height is not this signal: a lazy stack measuring
+    /// the rows a scroll or a turn jump reveals grows it too, and that is nothing new.
+    public mutating func contentArrived() {
+        if !sticky { unseen = true }
     }
 
     /// The user asked for the tail (jump pill, send): stick and forget what was missed.
@@ -618,9 +620,7 @@ public struct NativeScrollFollower: Equatable, Sendable {
     public mutating func observe(from old: NativeScrollProbe, to new: NativeScrollProbe, gesture: Bool) -> Bool {
         let layoutChanged = new.layoutDiffers(from: old)
         let intent = gesture && new.distance > old.distance && !layoutChanged
-        // Content that fits the viewport has a negative distance; growth from there is layout.
-        let grew = new.content > old.content && old.distance > 0
-        observe(distanceFromBottom: new.distance, userIntent: intent, contentGrew: grew)
+        observe(distanceFromBottom: new.distance, userIntent: intent)
         return sticky && layoutChanged && !gesture && new.distance > Self.repinSlack
     }
 }

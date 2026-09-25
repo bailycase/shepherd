@@ -150,6 +150,8 @@ struct ThreadView: View {
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                 }
+                // New output at the tail is what "unseen" means, never the content height.
+                .onChange(of: rows.last) { _, _ in follower.contentArrived() }
                 .modifier(ThreadCommandHandler(key: commandKey, active: active) { command in
                     handle(command, proxy: proxy)
                 })
