@@ -179,7 +179,12 @@ final class AutomationsStore {
         guard let client = hosts.host(key.host)?.connectedClient else { throw RemoteHostClientError.disconnected }
         busy.insert(key)
         defer { busy.remove(key) }
-        try await client.automation(key.automation, request: creating ? .create(draft: draft) : .update(draft: draft))
+        do {
+            try await client.automation(key.automation, request: creating ? .create(draft: draft) : .update(draft: draft))
+        } catch RemoteHostClientError.rejected(let code, _) where creating && code == "conflict" {
+            // The host already has this id, which only this form minted: an earlier save whose
+            // answer never came back landed.
+        }
     }
 
     private func send(_ key: AutomationKey, _ request: RemoteAutomationRequest, done: ((Bool) -> Void)? = nil) {
