@@ -15,6 +15,8 @@ extension FixtureCatalog {
         return [
             // MobileThread, iPadThread: a finished turn, tokens in the header, the changes card.
             FixtureScreen(name: "thread", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)]),
+            // A turn the user stopped mid-command: "stopped" on its line and a quiet note, no error.
+            FixtureScreen(name: "stopped", hosts: ThreadFixtures.hosts(preview: ThreadFixtures.stopped()), routes: [.thread(preview)]),
             // MobileApproval: a running command's live output, Stop, "Queue a follow-up…".
             FixtureScreen(name: "running", hosts: ThreadFixtures.hosts(), routes: [.thread(running)]),
             // MobileQuestion, iPadQuestion: numbered answers, Recommended, one chosen on iPad.
@@ -57,6 +59,14 @@ extension FixtureCatalog {
             // The same thread dragged up from its tail: the turn and its reply arrive below
             // without moving it, and "Jump to latest" sits above the composer.
             FixtureScreen(name: "thread-jump", hosts: FollowFixture.hosts(), routes: [.thread(preview)], prepare: FollowFixture.jump),
+            // The same chips for a model the host says takes no thinking level: no Thinking chip.
+            FixtureScreen(name: "composer-plain-model", hosts: ThreadFixtures.plainModel(ThreadFixtures.hosts()), routes: [.thread(preview)],
+                          prepare: { app in
+                              app.threads.store(for: preview).draft = "Match the spacing in this screenshot"
+                              for _ in 0..<100 where ComposerStates.shared.state(for: preview).models == nil {
+                                  try? await Task.sleep(for: .milliseconds(50))
+                              }
+                          }),
             // The model picker, from the host's catalog.
             FixtureScreen(name: "models", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: { _ in ComposerStates.shared.state(for: preview).choosingModel = true }),
@@ -79,6 +89,14 @@ enum ThreadFixtures {
         hosts[0].threads[FixtureData.dock] = dock
         hosts[0].models = ["anthropic/claude-opus", "anthropic/claude-sonnet", "anthropic/claude-haiku", "openai/gpt-5", "openai/o3",
                            "google/gemini-2.5-pro"]
+        return hosts
+    }
+
+    /// Studio's hosts with the threads' model (and New thread's default) one that takes no
+    /// thinking level.
+    static func plainModel(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
+        var hosts = hosts
+        hosts[0].withoutThinking = ["anthropic/claude-opus"]
         return hosts
     }
 
@@ -124,6 +142,17 @@ enum ThreadFixtures {
             F.tool("m6", "bash", args: #"{"command":"xcodebuild -scheme 'Shepherd (Dev)' build"}"#, output: "** BUILD SUCCEEDED **", at: 180_000),
             F.assistant("m7", "Removed the visible speaker labels and the desktop gutter. User-message fills still distinguish the conversation.\n\nFocused regression test and Mac Dev build passed.",
                         at: 192_000),
+        ]))
+    }
+
+    /// The user stopped a long command: pi failed the call and ended the run with an error reply,
+    /// which the host projects as `aborted`.
+    static func stopped() -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        return rpc(F.snapshot([
+            F.user("s1", "Use the bash tool to run `sleep 40`, then reply with exactly: slept"),
+            F.tool("s2", "bash", args: #"{"command":"sleep 40"}"#, output: "Command aborted", error: true, status: "aborted", at: 9_500),
+            F.assistant("s3", "", at: 9_600, status: "aborted"),
         ]))
     }
 

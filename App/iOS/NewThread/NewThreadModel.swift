@@ -28,6 +28,8 @@ final class NewThreadModel {
     private(set) var spaceID: SpaceID?
     private(set) var defaults = NewThreadDefaults()
     private(set) var modelOptions: [String] = []
+    /// The host's catalog, once it answers: whether the chosen model takes a thinking level.
+    private(set) var models: ModelListing?
     private(set) var modelQuery = ""
     private(set) var modelMatches: [String] = []
     private(set) var worktreeWanted = true
@@ -191,6 +193,10 @@ final class NewThreadModel {
         defaults.edit(model: id)
     }
 
+    /// Thinking is offered only for a model that takes a level (DESIGN › Composer); a catalog
+    /// still loading, or one that does not know the model, keeps it.
+    var offersThinking: Bool { models?.takesThinking(defaults.model) != false }
+
     func setThinking(_ level: ThinkingLevel) {
         defaults.edit(thinking: level)
     }
@@ -217,6 +223,7 @@ final class NewThreadModel {
         // A new attempt replaces the last one's error; what still blocks Start says so itself.
         errorText = nil
         modelOptions = []
+        models = nil
         rankModels()
         guard let client = hosts.host(hostID)?.connectedClient, let spaceID else {
             defaults.fail(requestID: requestID)
@@ -230,6 +237,7 @@ final class NewThreadModel {
                 // A catalog failure leaves the editable defaults usable.
                 if let listing = try? await client.listModels(), defaults.requestID == requestID {
                     modelOptions = listing.models
+                    models = listing
                     rankModels()
                 }
             } catch {
@@ -295,6 +303,10 @@ final class NewThreadModel {
                     initialPrompt: creation.initialPrompt, worktreeBranch: creation.worktreeBranch,
                     worktreeBase: creation.worktreeBase, worktreeFetchFirst: creation.worktreeFetchFirst)
                 let ref = AgentRef(host: hostID, agent: agentID)
+                // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
+                if let opening = OpeningPrompt(creation.initialPrompt, agentID: agentID) {
+                    threads.store(for: ref).preview(opening.preview(model: creation.model, thinking: creation.thinking.rawValue))
+                }
                 if let text = creation.firstSend { sendFirst(text, images: images, to: ref) }
                 navigator.dismissPresented()
                 navigator.open(.thread(ref))

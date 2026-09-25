@@ -168,7 +168,8 @@ keep the version for real breaks.
   composer.
 - **Composer (`ThreadComposer`, `Composer/`):** on iPhone a paperclip beside a capsule field,
   with the commands, model and thinking chips above it while it is in use; on iPad the Mac's
-  card with that row under the field. Send queues while pi works (hold it to Steer now). Up
+  card with that row under the field. The thinking chip, like the Mac's, hides for a model the
+  host's `listModels` says takes no thinking level. Send queues while pi works (hold it to Steer now). Up
   next draws the host's queue: steering messages first with Back to the queue, queued ones
   with swipe (Edit, Delete) and long-press (Steer now, Edit, Move to top, Delete) actions, an
   Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). A
@@ -179,7 +180,8 @@ keep the version for real breaks.
   place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one).
-- **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking. Repo
+- **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking (only
+  for a model that takes a level). Repo
   lists the host's spaces first and other hosts' after (choosing one moves the thread there), and
   Add repo browses the host's folders (`listDir`, `addSpace`). Host shows each one's status and
   running threads. The New worktree switch (on by default) takes a generated branch and a base

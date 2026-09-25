@@ -1022,8 +1022,7 @@ private struct RemoteAgentThreadPane: View {
             inspectedRunID: inspecting,
             review: { path in vm.openRemoteReview(ref, path: path) },
             listModels: {
-                let ids = (try? await vm.remoteHosts.listModels(hostID: ref.hostID).models) ?? []
-                return ids.map { PiModelCatalog.Entry(id: $0) }
+                (try? await vm.remoteHosts.listModels(hostID: ref.hostID).entries) ?? []
             }
         )
     }

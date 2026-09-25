@@ -16,21 +16,48 @@ struct ReviewDiffTests {
     +let b = 3
     """)[0]
 
-    @Test func commitWithoutNotesAsksOnlyForTheCommit() {
-        #expect(formatCommitRequest(files: [Self.file], comments: [], summary: " \n") == "Commit these changes.")
+    static func file(_ path: String, new: Bool = false, deleted: Bool = false, from old: String? = nil) -> DiffFile {
+        DiffFile(oldPath: old ?? path, newPath: path, displayPath: path, isNew: new, isDeleted: deleted,
+                 isRenamed: old != nil, isBinary: false, hunks: [])
     }
 
-    @Test func commitWithNotesCarriesTheReviewFirst() {
+    @Test func commitWithoutNotesNamesEveryFileUnderReview() {
+        let files = [Self.file, Self.file("NOTES.md", new: true), Self.file("old.txt", deleted: true),
+                     Self.file("Sources/b.swift", from: "Sources/a.swift")]
+        #expect(formatCommitRequest(files: files, comments: [], summary: " \n") == """
+        Commit these changes:
+        - a.swift
+        - NOTES.md (new)
+        - old.txt (deleted)
+        - Sources/b.swift (renamed from Sources/a.swift)
+        """)
+    }
+
+    @Test func commitWithNotesNamesTheFilesThenCarriesTheReview() {
         let removed = Self.file.hunks[0].lines[1]
         let comment = ReviewComment(text: " keep b \n", line: removed, in: Self.file)
         #expect(formatCommitRequest(files: [Self.file], comments: [comment].compactMap { $0 }, summary: "") == """
-        Commit these changes. Address the review below first.
+        Commit these changes:
+        - a.swift
+
+        Before committing, address the review below.
 
         Diff review (working tree vs HEAD):
 
         a.swift:2 [- let b = 2]
           keep b
         """)
+    }
+
+    @Test func aLongCommitRequestCountsTheFilesPastItsLimit() {
+        let files = (0..<(reviewCommitRequestFileLimit + 3)).map { Self.file("f\($0).txt") }
+        let lines = formatCommitRequest(files: files, comments: [], summary: "").components(separatedBy: "\n")
+        #expect(lines.count == reviewCommitRequestFileLimit + 2)
+        #expect(lines.last == "- and 3 more")
+    }
+
+    @Test func aCommitRequestWithNoFilesStillAsks() {
+        #expect(formatCommitRequest(files: [], comments: [], summary: "") == "Commit these changes.")
     }
 
     @Test(arguments: [(1, 2, "-"), (2, 2, "+"), (0, 1, " ")])

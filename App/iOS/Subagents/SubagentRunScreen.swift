@@ -160,8 +160,7 @@ struct SubagentRunView: View {
     /// The live run's tail row.
     static func working(_ run: NativeSubagent) -> String? {
         guard !run.isTerminal, !run.needsAttention else { return nil }
-        if run.paused == true { return "Pause requested" }
-        return run.currentTool.map { "Running \($0)…" } ?? "Thinking…"
+        return nativeRunWorking(run)
     }
 
     @ViewBuilder private func footer(_ run: NativeSubagent?) -> some View {

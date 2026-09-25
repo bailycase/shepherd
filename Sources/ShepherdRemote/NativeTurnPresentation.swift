@@ -135,6 +135,8 @@ public func nativeTurnPresentation(
             }
         }
         if message.truncated { raw.append(.note("Output truncated")) }
+        // The user stopped the run (the host's `aborted`): said quietly, never as an error.
+        if message.role == "assistant", message.status == "aborted" { raw.append(.note("Stopped")) }
     }
 
     // The block still streaming is the turn's live thinking; everything else folds.

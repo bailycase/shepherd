@@ -443,7 +443,10 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   pi has none yet.
 - `--model`/`--thinking` go only to a fresh session.
 - Extensions follow Settings ▸ Pi ▸ Bundled extensions.
-- The opening prompt is the first native `send`, not a positional argument.
+- The opening prompt is the first native `send`, not a positional argument. The host holds it
+  (`SessionServer.sendOpeningPrompt`) and sends it the moment pi serves, so every client's first
+  snapshot shows it; the client that created the agent draws the same pending row meanwhile
+  (`OpeningPrompt`, named after the agent).
 - A new agent's pi spawns with its creation. At launch every restored agent's pi starts from
   the first adoption of the workspace, not when its layout mounts, in `AgentStartQueue`'s
   order: the agent on screen first (and any agent selected while it waits), then the rest a
@@ -943,7 +946,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 - **Binding:** `SessionServer.start()` refuses to bind over a live socket (it probes with a
   connect) and replaces stale socket files. The remote listener reports bind failures rather than
   silently serving nothing.
-- **Transcript search** in the palette reads only the last 512 KB of each agent's pi session.
+- **Transcript search** in the palette (and a host's answer to a remote `agentQuery(.search)`)
+  reads only the last 512 KB of each agent's pi session, and matches only user and assistant
+  text (`PaletteContentSearch`), never the system prompt, tools, or JSON around it.
 - **Launching the binary bare** from a terminal starts a background process; the `AppDelegate`
   promotes it to `.regular` and activates it.
 - **Quitting** while agents are working or blocked asks first, in `QuitDialog` on the main

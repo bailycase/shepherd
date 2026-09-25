@@ -90,6 +90,28 @@ struct SubagentTranscriptTests {
         #expect(result.startedAt == 1700000000000)
     }
 
+    /// The children extension records what the user sent beside the session; the parent's
+    /// messages stay unmarked, even one with the same text sent before the user's.
+    @Test func theUsersOwnMessagesAreMarkedAndTheParentsAreNot() throws {
+        let (dir, file) = try sessionFile(pairs: 0, extra: [
+            #"{"type":"message","id":"u0","message":{"role":"user","timestamp":1000,"content":"the task"}}"#,
+            #"{"type":"message","id":"u1","message":{"role":"user","timestamp":2000,"content":[{"type":"text","text":"check the iPad too"}]}}"#,
+            #"{"type":"message","id":"u2","message":{"role":"user","timestamp":9000,"content":[{"type":"text","text":"check the iPad too"}]}}"#,
+            #"{"type":"message","id":"u3","message":{"role":"user","timestamp":12000,"content":[{"type":"text","text":"from the parent"}]}}"#,
+        ])
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let sent = [#"{"text":"check the iPad too","at":8500}"#, #"{"text":"never delivered","at":10000}"#, "not json"]
+        try (sent.joined(separator: "\n") + "\n").write(to: dir.appendingPathComponent(RPCThreadState.userMessagesFile), atomically: true, encoding: .utf8)
+        let value = try page(file)
+        #expect(value.messages.map(\.origin) == [nil, nil, .user, nil])
+    }
+
+    @Test func withoutARecordNoMessageIsTheUsers() throws {
+        let (dir, file) = try sessionFile(pairs: 2)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(try page(file).messages.allSatisfy { $0.origin == nil })
+    }
+
     @Test func anUnreadableFileIsReportedNotThrown() {
         #expect(RPCThreadState.transcript(runID: "r", file: "/nonexistent/child.jsonl", beforeEntryID: nil)
             == .failure(code: "transcript_unavailable", message: "The subagent's session file is not readable."))

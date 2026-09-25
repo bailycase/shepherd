@@ -222,7 +222,11 @@ struct ReviewFlowTests {
 
         try await eventuallyOnMain("the review to close once sent") { vm.reviewSessions.isEmpty }
         let prompt = try #require(AppHarness.prompts(in: log).first)
-        #expect(prompt.hasPrefix("Commit these changes. Address the review below first.\n\nDiff review (working tree vs HEAD):"))
+        // The files under review are named, an untracked one too, so the agent can't decide
+        // nothing is left to commit.
+        let (files, review) = try #require(prompt.firstRange(of: "\n\n").map { (prompt[..<$0.lowerBound], prompt[$0.upperBound...]) })
+        #expect(Set(files.components(separatedBy: "\n")) == ["Commit these changes:", "- file.txt", "- new.txt (new)"])
+        #expect(review.hasPrefix("Before committing, address the review below.\n\nDiff review (working tree vs HEAD):"))
         #expect(prompt.contains("tidy first"))
     }
 

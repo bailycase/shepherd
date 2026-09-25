@@ -54,9 +54,14 @@ a zsh login shell, so the user's `PATH` resolves:
   newly added to pi's settings, and a `PI_OFFLINE` that every extension and subagent inherits
   (pi-subagents then stops finding agents and skills in the global npm root). A slow boot is
   covered instead by the thread drawing at once (below).
-- **The opening prompt** is the first native `send`, delivered once pi's session is ready (the
-  server's servable signal, below, ends the wait). It is not a positional argument, because RPC
-  mode ignores positional messages.
+- **The opening prompt** is the first native `send`. It is not a positional argument, because RPC
+  mode ignores positional messages. The app hands it to the host with the new pi
+  (`SessionServer.sendOpeningPrompt`), which holds it until the thread serves and sends it in
+  the same queue turn, before it answers any request: the first snapshot any client gets shows
+  it, pending until pi starts it, and none shows the thread without it. Its send's operation id
+  is the agent's id (`OpeningPrompt`), so the client that created the agent (the Mac's New
+  Agent, a remote Mac's or iOS's New thread) previews the same pending row while pi starts, and
+  the row keeps its identity when the host's lands and when pi starts the turn.
 
 Quitting the app kills every child. On relaunch each agent respawns in its pi session with its
 history intact. State files from before RPC agents decode unchanged: `Agent` ignores the
@@ -111,7 +116,8 @@ events come out on stdout, one record per LF.
 `RPCThreadState` is the server-side projection of one agent's thread, confined to the same queue.
 
 - **Bootstrap** runs on spawn or resume. It sends `get_state` (session ID, model, thinking
-  level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost), and
+  level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost; a context of 0, pi's
+  estimate before its first reply, is sent as unknown), and
   `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("pi is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
@@ -135,6 +141,13 @@ events come out on stdout, one record per LF.
     settles the ended live rows into history.
   - `queue_update` tells the host which text pi queued for a steer (see The queue).
   - Thinking spans are timed as they stream, so history can show "Thought for Ns".
+  - What a Stop ends reads as stopped, not failed: pi ends a run stopped mid-tool-call with a
+    failed call ("Command aborted") and an error reply ("This operation was aborted"). While the
+    user's stop is in effect, the host projects both with status `aborted` (in history too, for
+    as long as this pi runs), and a reply pi itself marks `aborted` carries no error text.
+    Clients read `aborted` as stopped: the call's line says "stopped" and the turn ends in a
+    quiet "Stopped" note, never an error with Retry. After a relaunch, history read from pi
+    shows such a run as pi recorded it.
   - `turn_*` events are ignored, and so is anything the lenient `RPCWire` decoder doesn't know
     (compaction included).
 - **Session switches** are detected whenever `get_state` reports a new session ID. The
@@ -175,7 +188,9 @@ events come out on stdout, one record per LF.
   images; see The queue), `abort` (see The queue), `answer`, `setModel`, `setThinking`,
   `subagentCommand` (message, cancel, resume, pause, continue; routed to the children
   extension's control connection, never the parent model), `subagentTranscript` (one page of a
-  child's session file, read from its last 8 MiB), and `queue` (`NativeQueueAction`).
+  child's session file, read from its last 8 MiB; a message the user sent the child, recorded
+  in `user-messages.jsonl` beside the session, carries `origin: .user`), and `queue`
+  (`NativeQueueAction`).
   - Every mutating request carries an operation ID and the expected session and generation.
     Replaying an ID returns the recorded result; reusing it with a different payload gets
     `operation_conflict`. A session mismatch gets `stale_session`.
@@ -282,6 +297,9 @@ transport differs.
 - **Remote capabilities:** remote model, thinking, and image requests need the host's
   `native.thread.v2` capability, and `queue` requests its `native.queue.v1`
   (`RemoteHostClient` refuses them against an older host with `update_required`).
+- **Models:** `listModels` answers the host's catalog as "provider/id", its default in the same
+  form, and `withoutThinking`, the models that take no thinking level (`ModelListing`). A host
+  from before that field sends none, and clients then keep the thinking control for every model.
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
     agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
@@ -292,7 +310,7 @@ transport differs.
     whichever comes last), `SessionServer.onNativeThreadServable` tells the local app, once per
     pi, after the state broadcast of the binding. The app hands that agent's thread store a
     pushed revision (`revisionAvailable()`, below), so a thread on screen pulls at once instead
-    of at its next poll. The opening prompt's wait and the launch queue end on the same signal.
+    of at its next poll. The launch queue ends on the same signal.
     Remote clients keep polling; the remote protocol has no push for this.
   - `native_unavailable`, with the reason: the agent no longer exists, its pane runs no pi, or
     its pi exited (with the exit code, also after the app retired the session).
@@ -360,8 +378,9 @@ output grows.
   preview. A message sent then waits behind the composer's spinner, still in the field and with
   nothing dispatched, and the field's text goes once the first snapshot lands; the draft stays
   if the thread stops or fails first. A new agent's store gets a known-empty preview
-  (`PiSessionPreview.empty`, with the model and thinking level its pi launches with) before the
-  agent is selected, so its thread draws complete at once. A pi still
+  (`PiSessionPreview.empty`, with the model and thinking level its pi launches with, and its
+  opening prompt's pending row) before the agent is selected, so its thread draws complete at
+  once, with what the user asked for. A pi still
   starting after `startingLimit` (a minute) becomes a `loadError`, cleared if it answers later.
 - **Preview:** while a local thread has nothing from pi, `run(request:preview:)` reads the
   agent's pi session file alongside the first pull (`PiSessionFile.previewLoader`, off the main

@@ -155,6 +155,27 @@ struct ActivityTests {
         #expect(bursts.map(\.state) == [.done, .failed, .failed, .done])
     }
 
+    /// A call the user's Stop interrupted (the host's `aborted`) reads as stopped, not failed,
+    /// and stands alone so its word stays visible.
+    @Test func aStoppedCallReadsStoppedNotFailed() {
+        let stopped = call("bash", ["command": "sleep 40"], output: "Command aborted", error: true, status: "aborted", start: 1_000, end: 8_500)
+        #expect(!stopped.failed && stopped.stopped && stopped.stat == "stopped")
+        let bursts = nativeActivityBursts([bash("ls"), stopped])
+        #expect(bursts.map(\.state) == [.done, .done])
+        #expect(bursts.map(\.calls.count) == [1, 1])
+        #expect((bursts[1].label, bursts[1].meta) == ("Ran a command", "sleep 40 · stopped · 7.5s"))
+        #expect(bursts[1].accessibilityLabel.hasSuffix("stopped"))
+    }
+
+    /// A stopped build or edit claims nothing it may not have done.
+    @Test func aStoppedCallClaimsNoResult() {
+        let build = call("bash", ["command": "swift build"], output: "Command aborted", error: true, status: "aborted")
+        #expect(build.stat == "stopped")
+        let write = call("write", ["path": "a.swift", "content": "x\n"], error: true, status: "aborted")
+        #expect(write.path == nil && nativeActivityBurst([write]).label == "Write stopped")
+        #expect(nativeTurnChanges([write]) == nil)
+    }
+
     @Test func onlyTheRunningCallIsLiveAndItNamesItsCommand() {
         let bursts = nativeActivityBursts([bash("git commit -m x"), call("bash", ["command": "git push origin main"], output: "a\nb", status: "running", start: 1_000)])
         #expect(bursts.map(\.state) == [.done, .running])
@@ -368,6 +389,22 @@ struct TurnPresentationTests {
         let presentation = nativeTurnPresentation([first, tool("read", "r"), second, tool("read", "s")], live: false)
         guard case .thinking(_, _, let seconds, _, _) = presentation.items.first else { Issue.record("no thinking"); return }
         #expect(seconds == 4.5)
+    }
+
+    /// A turn the user stopped says so quietly: a note, never an error with Retry.
+    @Test func aStoppedTurnEndsInAQuietNote() {
+        let messages = [F.assistant("Sleeping."), tool("bash", "b", status: "aborted", error: true),
+                        F.assistant("", status: "aborted")]
+        let presentation = nativeTurnPresentation(messages, live: false)
+        #expect(kinds(presentation) == ["prose", "work:1", "note"])
+        guard case .note(_, let text) = presentation.items.last else { Issue.record("no note"); return }
+        #expect(text == "Stopped")
+    }
+
+    /// pi's reply to a Stop carries no text, and still ends the turn it stopped.
+    @Test func aStoppedReplyWithNothingToReadStaysInItsTurn() throws {
+        let turns = nativeTurns([F.user("go"), tool("bash", "b", status: "aborted", error: true), F.assistant("", status: "aborted")])
+        #expect(turns.map(\.messages.count) == [1, 2])
     }
 
     @Test func theThinkingStillStreamingStaysLastAndLive() {
