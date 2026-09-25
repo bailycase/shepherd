@@ -329,7 +329,7 @@ The store is `@MainActor @Observable`, and it derives what the thread draws once
 reply's subagent `placements`, and `lastPromptAt` (the current turn's start). Views read those
 stored values, so a keystroke in the composer re-renders only the composer. What the chrome
 draws is cached the same way, one property each (`session`, `dialogs`, `widgets`, `commands`,
-`model`, `thinking`, `stats`, `supportedActions`, `clipped`, `running`, `workingLabel`,
+`model`, `thinking`, `stats`, `supportedActions`, `clipped`, `running`, `showsThinking`,
 `userTurnCount`, …), assigned only when it changes. The snapshot is one value that every
 streamed chunk replaces, so the composer and the toolbar never read it: a chunk
 redraws the thread and its live row, and a poll that moves only the context count redraws only
@@ -415,7 +415,7 @@ output grows.
   `supportsQueue` gates all of it. The queue's properties are chrome (`chromeVersion`), so a
   queue that changed while the thread was hidden lands without motion when it catches up.
 - **Running state:** `settledRunning` keeps `running` true for 400 ms after it drops, so tool
-  boundaries don't flicker the working row or the Stop button.
+  boundaries don't flicker the live "Thinking…" or the Stop button.
 - **Drafts and gating:** `draft` belongs to the store; `send(images:delivery:)` sends with a
   delivery chosen at send time (the Mac composer's ↩, ⌘↩, or its Send menu). `delivery` is kept
   for the iOS client, which still picks one ahead of time.
@@ -459,7 +459,8 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
 - **`ThreadView`:** the scroll view, tail following, turn jumps (⌥⌘↑/↓), notices, and the empty
   thread.
 - **`ThreadTurns`:** the user bubble, the agent turn (its parts, then the changes card and the
-  footer with copy and retry), and the working row. A turn tracks the pointer over it
+  footer with copy and retry), and, between tools, the live "Thinking…" (DESIGN.md › Thread ›
+  Live text). A turn tracks the pointer over it
   (`MessageHover`): its time and footer show only while it is hovered.
 - **`ThreadTools`:** activity lines, their calls, and the sheet for a call's full output or raw
   arguments.

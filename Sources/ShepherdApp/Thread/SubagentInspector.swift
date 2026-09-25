@@ -275,10 +275,9 @@ private struct SubagentRunInspector: View {
                         // lands: the transcript's layout, and so following the tail, changes at once.
                         .nwRunArrival(transcript.arrived.contains(turn.id))
                     }
-                    if let run, !run.isTerminal {
-                        let working = nativeRunWorking(run)
-                        WorkingRow(label: working)
-                            .nwAnimation(.content, value: working)
+                    // What the run is doing now (LiveText): its call in flight, or "Thinking…".
+                    if let live = run.flatMap(nativeRunLive) {
+                        RunLiveTail(live: live).equatable()
                     }
                     Color.clear.frame(height: 1).id(Self.bottomID)
                 }
@@ -577,5 +576,18 @@ final class SubagentTranscriptModel {
         olderCursor = nil
         loaded = false
         setFollowing(true)
+    }
+}
+
+/// The end of a live run's transcript: the call in flight as its live line, or "Thinking…"
+/// between tools. One moves at a time, and nothing spins.
+struct RunLiveTail: View, Equatable {
+    let live: NativeRunLive
+
+    var body: some View {
+        switch live {
+        case .call(let burst): ActivityLineView(burst: burst).equatable()
+        case .thinking: NWThinking.live()
+        }
     }
 }

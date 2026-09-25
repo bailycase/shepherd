@@ -66,21 +66,28 @@ struct ThreadPreviewTests {
         }
     }
 
-    /// A long stretch of work (asking, exploring, editing, commands that failed along the way)
-    /// folded into one "Worked for …" line between the prose around it.
+    /// A long stretch of work (asking, exploring, editing, commands that failed along the way):
+    /// one quiet line per burst between the prose around it, the failures red and visible.
     @Test func threadActivityLong() async throws {
         try await render("thread-activity-long", ActivityThreads.long)
     }
 
-    /// Running board: a finished commit line, the live push with its last output lines, and
-    /// the working row.
+    /// Running board, LiveText's "A tool is running": a finished commit line, then the live
+    /// push, its verb and command shimmering beside its clock, with its last output lines.
+    /// Nothing under it.
     @Test func threadActivityRunning() async throws {
-        try await render("thread-activity-running", ActivityThreads.running(thinking: false))
+        try await render("thread-activity-running", ActivityThreads.running(.call))
     }
 
-    /// The model thinking at the tail: "Thinking… 4s" instead of the working row.
+    /// The model thinking at the tail: "› Thinking…" shimmering, the thread's one live line.
     @Test func threadActivityThinking() async throws {
-        try await render("thread-activity-thinking", ActivityThreads.running(thinking: true))
+        try await render("thread-activity-thinking", ActivityThreads.running(.thinking))
+    }
+
+    /// LiveText's "Between tools": the commit finished and nothing streams yet, so the turn ends
+    /// in "› Thinking…".
+    @Test func threadActivityBetweenTools() async throws {
+        try await render("thread-activity-between-tools", ActivityThreads.running(.between))
     }
 
     /// A new agent from its first frame, while its pi boots: the framed empty state and a complete
@@ -213,30 +220,25 @@ struct ThreadPreviewTests {
         try await render("thread-prose", snapshot, ready: { fences.allSatisfy { CodeHighlightCache.cached($0) != nil } })
     }
 
-    /// The "Activity line states" board: a stretch folded and expanded, done lines (one
-    /// expanded into calls), failed with its output expanded, and live.
+    /// The "Activity line states" board (ToolRows): done lines (the edit expanded into its
+    /// calls), a failed line, and a live one; one quiet line per burst, nothing folding them.
     @Test func activityLineStates() async throws {
         let turn = nativeTurnPresentation(ActivityThreads.stateMessages, live: false)
         let bursts = turn.items.flatMap { item -> [NativeActivityBurst] in
-            if case .work(let group) = item { return group.finished + group.running }
+            if case .activity(_, let bursts) = item { return bursts }
             return []
         }
-        let stretch = try #require(nativeWorkGroup(ActivityThreads.longMessages.compactMap { $0.toolName == nil ? nil : NativeActivityCall($0) }))
-        let short = try #require(nativeWorkGroup(ActivityThreads.stateMessages.prefix(10).map(NativeActivityCall.init)))
         let live = nativeActivityBurst([NativeActivityCall(ActivityThreads.liveBuild)])
         let failed = try #require(bursts.first { $0.state == .failed })
-        let size = CGSize(width: 760, height: 780)
+        let size = CGSize(width: 760, height: 520)
         try await Preview.render("activity-line-states", size: size) {
             VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
-                Text("STRETCH").nwSectionLabel()
-                WorkGroupView(group: stretch, review: { _ in })
-                WorkGroupView(group: short, review: { _ in }, expanded: true)
-                Text("DONE").nwSectionLabel().padding(.top, NW.Space.s)
+                Text("DONE").nwSectionLabel()
                 ForEach(bursts.filter { $0.state == .done }) { burst in
                     ActivityLineView(burst: burst, review: { _ in }, expanded: burst.kind == .edit)
                 }
                 Text("FAILED").nwSectionLabel().padding(.top, NW.Space.s)
-                ActivityLineView(burst: failed, expanded: true, expandedCalls: Set(failed.calls.map(\.id)))
+                ActivityLineView(burst: failed)
                 Text("LIVE").nwSectionLabel().padding(.top, NW.Space.s)
                 ActivityLineView(burst: live)
                 Spacer(minLength: 0)
@@ -268,7 +270,7 @@ struct ThreadPreviewTests {
                 }
                 NWThinking("Thought for 6s", text: "The tool summary row is 28pt elsewhere. I’ll keep it a minimum, not a fixed height, so large text sizes still fit.",
                            isExpanded: .constant(true))
-                NWThinking(liveSince: Date().addingTimeInterval(-4))
+                NWThinking.live()
                 changes
                 NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
                              revealed: true)
@@ -492,9 +494,12 @@ enum ActivityThreads {
 
     static var idle: NativeThreadSnapshot { snapshot(idleMessages) }
 
-    /// The Running board: the previous turn, the new prompt, a commit, and a live push (or live
-    /// thinking) at the tail.
-    static func running(thinking: Bool) -> NativeThreadSnapshot {
+    /// What the Running board's turn is doing at its tail (LiveText's moments).
+    enum Tail { case call, thinking, between }
+
+    /// The Running board: the previous turn, the new prompt, a commit, and at the tail a live
+    /// push, live thinking, or nothing yet (pi between tools).
+    static func running(_ tail: Tail) -> NativeThreadSnapshot {
         let t0 = now - 60_000
         var messages = idleMessages
         messages += [
@@ -505,11 +510,14 @@ enum ActivityThreads {
                  output: "[main 4f2a9c1] Remove speaker labels\n 3 files changed, 67 insertions(+), 46 deletions(-)", start: t0 + 5_000, end: t0 + 5_400),
         ]
         var provisional: [NativeThreadMessage] = []
-        if thinking {
+        switch tail {
+        case .between:
+            break
+        case .thinking:
             provisional.append(NativeThreadMessage(entryID: "provisional:assistant:9", role: "assistant",
                                                    blocks: [NativeThreadBlock(kind: .thinking, text: "Push, then check CI.")],
                                                    status: "streaming", timestamp: now - 4_000, thinkingSeconds: 4))
-        } else {
+        case .call:
             provisional.append(tool("p1", "bash", ["command": "git push origin main"],
                                     output: "Enumerating objects: 14, done.\nCounting objects: 100% (14/14), done.\nWriting objects: 100% (8/8), 2.31 KiB | 2.31 MiB/s\nremote: Resolving deltas: 0% (0/5)",
                                     start: now - 3_000, end: nil, status: "running"))

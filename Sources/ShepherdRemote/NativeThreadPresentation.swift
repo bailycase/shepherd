@@ -382,18 +382,6 @@ public func nativeHeadTruncated(_ path: String, max: Int) -> String {
     return "…" + path.suffix(max - 1)
 }
 
-/// Label for the persistent tail indicator while the agent runs: the running tool wins,
-/// then a thinking block that is still streaming, otherwise plain work.
-public func nativeWorkingLabel(_ provisional: [NativeThreadMessage]) -> String {
-    if let tool = provisional.last(where: { $0.toolName != nil && $0.status == "running" })?.toolName {
-        return "Running \(tool)…"
-    }
-    if let last = provisional.last(where: { $0.role == "assistant" })?.blocks.last, last.kind == .thinking {
-        return "Thinking…"
-    }
-    return "Working…"
-}
-
 // MARK: Subagent cards (DESIGN.md › Subagents)
 
 /// The four card states. `running` covers queued; every non-complete terminal state
