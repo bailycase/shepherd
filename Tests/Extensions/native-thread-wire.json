@@ -465,5 +465,100 @@
         }
       }
     }
+  },
+  {
+    "type": "nativeThread",
+    "id": 20,
+    "agentID": "agent",
+    "request": {
+      "compact": {
+        "expectedSessionID": "session",
+        "generation": "generation",
+        "operationID": "00000000-0000-0000-0000-000000000004",
+        "instructions": "Keep the preview findings"
+      }
+    }
+  },
+  {
+    "type": "nativeThread",
+    "id": 21,
+    "result": {
+      "snapshot": {
+        "value": {
+          "piSessionID": "session",
+          "generation": "generation",
+          "revision": 8,
+          "running": false,
+          "supportedActions": [
+            "send",
+            "compact"
+          ],
+          "dialogsSupported": true,
+          "dialogs": [],
+          "messages": [
+            {
+              "entryID": "compactionSummary:5",
+              "role": "compactionSummary",
+              "blocks": [],
+              "truncated": false,
+              "timestamp": 5,
+              "compaction": {
+                "phase": "done",
+                "reason": "threshold",
+                "tokensBefore": 184000,
+                "tokensAfter": 23000,
+                "summary": "## Goal\nShip it"
+              }
+            }
+          ],
+          "provisional": [
+            {
+              "entryID": "compaction:9",
+              "role": "compaction",
+              "blocks": [],
+              "truncated": false,
+              "compaction": {
+                "phase": "running",
+                "reason": "manual",
+                "tokensBefore": 92000
+              }
+            }
+          ],
+          "clipped": false,
+          "runtime": "rpc",
+          "context": {
+            "tokens": 42000,
+            "window": 200000,
+            "autoCompactAt": 183616,
+            "autoCompact": true,
+            "keepRecent": 20000,
+            "before": 184000,
+            "split": {
+              "system": 6800,
+              "instructions": 1400,
+              "messages": 9100,
+              "toolResults": 24800,
+              "instructionFiles": [
+                "AGENTS.md"
+              ]
+            },
+            "largest": [
+              {
+                "entryID": "t:call_read",
+                "kind": "file",
+                "label": "DesktopNativeThreadView.swift",
+                "tokens": 8200
+              }
+            ],
+            "compacting": {
+              "reason": "manual",
+              "startedAt": 1000,
+              "tokens": 92000
+            },
+            "summaryEntryID": "compactionSummary:5"
+          }
+        }
+      }
+    }
   }
 ]

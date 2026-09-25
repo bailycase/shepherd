@@ -353,23 +353,31 @@ public final class RemoteHostClient: @unchecked Sendable {
         }
     }
 
+    /// Why a host with `capabilities` cannot take `request` (it predates it), or nil.
+    static func missingCapability(_ request: NativeThreadRequest, capabilities: Set<String>) -> String? {
+        switch request {
+        case .setModel, .setThinking:
+            capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to change the model or thinking level."
+        case .queue:
+            capabilities.contains(RemoteProtocol.nativeQueueCapability) ? nil : "Update Shepherd on the host to change its queue."
+        case .compact:
+            capabilities.contains(RemoteProtocol.nativeContextCapability) ? nil : "Update Shepherd on the host to compact the context."
+        case .send where !request.images.isEmpty:
+            capabilities.contains(RemoteProtocol.nativeThreadV2Capability) ? nil : "Update Shepherd on the host to send images."
+        default:
+            nil
+        }
+    }
+
     public func nativeThread(agentID: AgentID, request command: NativeThreadRequest) async throws -> NativeThreadResult {
         guard capabilities.contains(RemoteProtocol.nativeThreadCapability) else {
             throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to view native threads.")
         }
+        if let missing = Self.missingCapability(command, capabilities: capabilities) {
+            throw RemoteHostClientError.rejected(code: "update_required", message: missing)
+        }
         switch command {
-        case .setModel, .setThinking:
-            guard capabilities.contains(RemoteProtocol.nativeThreadV2Capability) else {
-                throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to change the model or thinking level.")
-            }
-        case .queue:
-            guard capabilities.contains(RemoteProtocol.nativeQueueCapability) else {
-                throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to change its queue.")
-            }
         case .send where !command.images.isEmpty:
-            guard capabilities.contains(RemoteProtocol.nativeThreadV2Capability) else {
-                throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to send images.")
-            }
             // One NDJSON frame per request; the host drops anything over the cap.
             if let bytes = try? NDJSON.encode(RemoteRequest.nativeThread(id: 0, agentID: agentID, request: command)).count,
                bytes - 1 > NDJSON.maxPayloadBytes {
