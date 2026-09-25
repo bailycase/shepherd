@@ -31,10 +31,13 @@ public enum RemoteProtocol {
     public static let worktreeActionsCapability = "agent.worktree.v1"
     public static let worktreeSetupCapability = "agent.worktree.setup.v1"
     public static let agentInspectionCapability = "agent.inspection.v1"
+    /// The host commits from review (`RemoteAgentQuery.commitInfo`, `.commitMessage`, `.commit`).
+    /// Older hosts only take Commit as a turn the agent is asked to do.
+    public static let reviewCommitCapability = "review.commit.v1"
     /// The host serves `RemoteRequest.automation`: on and off, Run now and Stop, the runs it
     /// kept, and create, edit and delete. Older hosts show automations read-only.
     public static let automationsCapability = "automations.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, automationsCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -183,6 +186,12 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     case children
     case inspectorPane(tabID: TabID, action: RemoteInspectorPaneAction)
     case search(query: String)
+    /// What a commit from review would take (`reviewCommitCapability`).
+    case commitInfo
+    /// A commit message drafted from the diff of `paths`; slow, so asked for after the info.
+    case commitMessage(paths: [String])
+    /// Commit (then push, or open a pull request), as an operation polled with `worktreeStatus`.
+    case commit(operationID: UUID, options: RemoteCommitOptions)
 }
 
 public enum RemoteAgentResult: Codable, Hashable, Sendable {
@@ -197,6 +206,9 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case inspector(TabID)
     case inspectorFocus(PaneID)
     case search(snippet: String?)
+    case commitInfo(RemoteCommitInfo)
+    /// `drafted` is false when the host fell back to a message written from the file list.
+    case commitMessage(title: String, body: String, drafted: Bool)
 }
 
 /// Client → host. The first message on a connection must be a successful
