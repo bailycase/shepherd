@@ -73,12 +73,12 @@ struct ThreadScreen: View {
             .task(id: key) {
                 // Through the thread's viewers: the same thread may be on screen in another window.
                 let viewers = threads.viewers(for: ref)
-                guard key.active, key.session != nil, let client = host?.connectedClient else {
+                guard key.active, let session = key.session, let client = host?.connectedClient else {
                     viewers.rest(detached: key.session == nil)
                     return
                 }
                 let agentID = ref.agent
-                await viewers.run { request in try await client.nativeThread(agentID: agentID, request: request) }
+                await viewers.run(connection: session) { request in try await client.nativeThread(agentID: agentID, request: request) }
             }
     }
 

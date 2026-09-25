@@ -110,10 +110,11 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
   tied to one connection on `host.session`: it changes with every new connection.
 - Check capabilities with `host.supports(RemoteProtocol.…Capability)` before offering a feature.
-- Run a thread's store through `threads.viewers(for: ref).run { … }`, never `store.run` from a
-  screen: the same thread can be on screen in two windows, and a second `run` ends the first.
-  `viewers.rest(detached:)` is what a screen that can't run it calls (it suspends only once no
-  window runs it).
+- Run a thread's store through `threads.viewers(for: ref).run(connection: host.session) { … }`,
+  never `store.run` from a screen: the same thread can be on screen in two windows, and a
+  second `store.run` ends the first. A view on the connection the loop already runs over joins
+  it. `viewers.rest(detached:)` is what a screen that can't run it calls (it suspends only once
+  no window runs it).
 - `MobileHosts`' API only grows: add members in an extension in your own folder rather than
   editing `MobileHosts.swift`, and ask the foundation to change what exists.
 - A track that needs its own app-lifetime state defines an `@MainActor @Observable` store in its
@@ -168,8 +169,10 @@ WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, se
   window opens its seed's route instead.
 - **Connections:** `MobileWindows` tracks each window's scene phase; the hosts connect while any
   window is active and disconnect once every window is in the background (`WindowPresence`).
-- **One thread in two windows** shares one poll loop (`NativeThreadViewers`): the newest window
-  drives it, and another takes it over when that one leaves.
+- **One thread in two windows** shares one poll loop (`NativeThreadViewers`): a window joins the
+  loop already running over the same connection instead of restarting it (a restart would
+  report the other window's send in flight as unknown), a window on a newer connection takes
+  it over, and another takes it over when the driving one leaves.
 - **Reaching another window:** `OpenInNewWindowButton` brings forward the window already showing
   the thread, or opens one on it. "Send to…" (a turn's context menu) lists the threads other
   windows show and adds the text to that thread's composer, then brings its window forward. A
