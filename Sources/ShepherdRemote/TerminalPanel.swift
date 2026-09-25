@@ -111,7 +111,9 @@ public enum TerminalPanelHeight {
 /// The touch key row over the software keyboard (iPadTerminal board): the keys a shell needs
 /// that the keyboard lacks. Ctrl and ⌥ latch for the next key.
 public enum TerminalKey: String, CaseIterable, Sendable, Identifiable {
-    case escape, tab, control, option, up, down, left, right, pipe, tilde, slash, dash
+    /// In the row's order: the symbols before the arrows, so a row that wraps in two keeps the
+    /// arrows together.
+    case escape, tab, control, option, pipe, tilde, slash, dash, up, down, left, right
 
     public var id: String { rawValue }
 

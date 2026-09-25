@@ -145,6 +145,12 @@ struct TerminalKeyTests {
         #expect(TerminalKey.controlCode(character) == code)
     }
 
+    @Test func theArrowsComeLastSoARowWrappedInTwoKeepsThemTogether() {
+        let keys = TerminalKey.allCases
+        #expect(keys.count == 12)
+        #expect(Array(keys.dropFirst(keys.count / 2)) == [.slash, .dash, .up, .down, .left, .right])
+    }
+
     @Test func everyKeyHasALabelAndASpokenLabel() {
         for key in TerminalKey.allCases {
             #expect(!key.label.isEmpty)

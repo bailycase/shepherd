@@ -251,9 +251,11 @@ public struct NWTerminalKeycap: Equatable, Identifiable, Sendable {
     }
 }
 
-/// The key row over the software keyboard (iPadTerminal board): Esc, Tab, Ctrl, ⌥, the arrows
-/// and the symbols a shell needs, as 34pt keycaps with 44pt hit areas. It scrolls when the row
-/// is wider than the screen (a large text size, a narrow window).
+/// The key row over the software keyboard (iPadTerminal board): Esc, Tab, Ctrl, ⌥, the symbols
+/// a shell needs and the arrows, as 34pt keycaps at least 44 wide with 44pt hit areas. One row
+/// where it fits (iPad, a phone in landscape); on a phone in portrait it wraps into two rows of
+/// equal keys, so every key shows. Only where two rows don't fit either (a large text size in a
+/// narrow window) does it scroll, with its scroll bar showing.
 public struct NWTerminalKeyRow: View {
     let keys: [NWTerminalKeycap]
     let press: (String) -> Void
@@ -264,31 +266,23 @@ public struct NWTerminalKeyRow: View {
     }
 
     public var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: NW.Space.s) {
-                ForEach(keys) { key in
-                    Button { press(key.id) } label: {
-                        Text(key.label)
-                            .font(.nw(.code))
-                            .foregroundStyle(key.isLatched ? Color.nw.lanternText : Color.nw.textPrimary)
-                            .lineLimit(1)
-                            .padding(.horizontal, NW.Space.m)
-                            .frame(minWidth: NWTerminalMetrics.keyMinWidth, minHeight: NWTerminalMetrics.keyHeight)
-                            .background(key.isLatched ? Color.nw.lanternTint : Color.nw.bgRaised,
-                                        in: RoundedRectangle(cornerRadius: NW.Radius.s))
-                            .nwBorder(key.isLatched ? Color.nw.lantern : Color.nw.lineSubtle, radius: NW.Radius.s)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(NWKeycapPressStyle())
-                    .nwTouchTarget(height: NWTerminalMetrics.keyHeight)
-                    .accessibilityLabel(key.spokenLabel)
-                    .accessibilityAddTraits(key.isLatched ? .isSelected : [])
-                }
+        let half = (keys.count + 1) / 2
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: NW.Space.s) { keycaps(keys, fill: false) }
+                .padding(.horizontal, NW.Space.l)
+            VStack(spacing: 0) {
+                HStack(spacing: NW.Space.s) { keycaps(Array(keys.prefix(half)), fill: true) }
+                HStack(spacing: NW.Space.s) { keycaps(Array(keys.dropFirst(half)), fill: true) }
             }
             .padding(.horizontal, NW.Space.l)
+            ScrollView(.horizontal) {
+                HStack(spacing: NW.Space.s) { keycaps(keys, fill: false) }
+                    .padding(.horizontal, NW.Space.l)
+            }
+            .scrollIndicators(.visible)
+            .scrollIndicatorsFlash(onAppear: true)
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         }
-        .scrollIndicators(.hidden)
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(.vertical, NW.Space.m)
         .frame(maxWidth: .infinity)
@@ -296,6 +290,31 @@ public struct NWTerminalKeyRow: View {
         .overlay(alignment: .top) { NWHairline() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Terminal keys")
+    }
+
+    /// `fill`: the keys share their row's width equally (the wrapped rows).
+    private func keycaps(_ keys: [NWTerminalKeycap], fill: Bool) -> some View {
+        ForEach(keys) { key in
+            Button { press(key.id) } label: {
+                Text(key.label)
+                    .font(.nw(.code))
+                    .foregroundStyle(key.isLatched ? Color.nw.lanternText : Color.nw.textPrimary)
+                    .lineLimit(1)
+                    // A key never truncates: where its row can't hold it, the row scrolls instead.
+                    .fixedSize()
+                    .padding(.horizontal, NW.Space.m)
+                    .frame(minWidth: NWTerminalMetrics.keyMinWidth, maxWidth: fill ? .infinity : nil,
+                           minHeight: NWTerminalMetrics.keyHeight)
+                    .background(key.isLatched ? Color.nw.lanternTint : Color.nw.bgRaised,
+                                in: RoundedRectangle(cornerRadius: NW.Radius.s))
+                    .nwBorder(key.isLatched ? Color.nw.lantern : Color.nw.lineSubtle, radius: NW.Radius.s)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(NWKeycapPressStyle())
+            .nwTouchTarget(height: NWTerminalMetrics.keyHeight)
+            .accessibilityLabel(key.spokenLabel)
+            .accessibilityAddTraits(key.isLatched ? .isSelected : [])
+        }
     }
 }
 
