@@ -395,7 +395,7 @@ extension RPCThreadState {
             }
             self.restorePiQueue(steering: remaining, followUp: followUp)
             self.commit()
-            done(returned ? nil : .failure(code: "queue_item_unavailable", message: "pi has already read that message."))
+            done(returned ? nil : .failure(code: "queue_item_unavailable", message: "The agent has already read that message."))
         }
     }
 
@@ -471,7 +471,7 @@ extension RPCThreadState {
         for dispatch in dispatches where dispatch.responded { dropDispatch(dispatch.id) }
         if runFailed, !stopRequested, !items.isEmpty {
             paused = true
-            queueNotice = "pi's turn ended with an error, so the queue is waiting."
+            queueNotice = "The agent's turn ended with an error, so the queue is waiting."
         }
         // A steer pi has not answered may not be in its queue yet: clearing now would miss it.
         guard steersInFlight == 0 else {

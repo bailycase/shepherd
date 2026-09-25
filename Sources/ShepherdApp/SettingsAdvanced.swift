@@ -22,7 +22,7 @@ struct AdvancedSettings: View {
             SettingsGroup(title: "Files") {
                 PathRow(title: "Workspace state", subtitle: "Spaces, agents and pane layouts restored on relaunch.",
                         url: ShepherdPaths.stateURL())
-                PathRow(title: "Extension socket", subtitle: "Where each pi process reports status and pane requests.",
+                PathRow(title: "Extension socket", subtitle: "Where each agent process reports status and pane requests.",
                         url: ShepherdPaths.socketURL())
             }
             SettingsGroup(title: "Updates") {
