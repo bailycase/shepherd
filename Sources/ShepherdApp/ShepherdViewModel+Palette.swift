@@ -62,6 +62,12 @@ extension ShepherdViewModel {
             items.append(PaletteItem(id: "action.reviewPR", kind: .action("reviewPR"), section: .thisThread,
                                      title: "Review PR changes", icon: "arrow.triangle.pull"))
         }
+        if let target = unreconciledTerminalTarget {
+            let panel = terminalPanels.panel(target.key)
+            items += Self.terminalPaletteItems(shown: panel.shown, maximized: panel.shown && panel.maximized,
+                                               threadFocused: target.focused == nil || target.focused == target.thread,
+                                               keys: keys)
+        }
 
         // Subagents, live and recent.
         for (agentID, children) in childRuns.rows {
@@ -105,6 +111,23 @@ extension ShepherdViewModel {
                                      icon: "folder"))
         }
         return items
+    }
+
+    /// The Pane menu's terminal commands, for the thread on screen: Show or Hide, New, and
+    /// Maximize or Restore, named for what they do now. ⌘D opens a terminal only from the thread
+    /// (in a terminal it splits that one), so New shows it only then.
+    static func terminalPaletteItems(shown: Bool, maximized: Bool, threadFocused: Bool, keys: KeybindingsStore) -> [PaletteItem] {
+        [
+            PaletteItem(id: "action.toggleTerminal", kind: .action("toggleTerminal"), section: .thisThread,
+                        title: shown ? "Hide terminal" : "Show terminal", shortcut: keys.display(.toggleTerminal),
+                        icon: "terminal"),
+            PaletteItem(id: "action.newTerminal", kind: .action("newTerminal"), section: .thisThread,
+                        title: "New terminal", shortcut: threadFocused ? keys.display(.splitVertical) : nil,
+                        icon: "plus.rectangle"),
+            PaletteItem(id: "action.maximizeTerminal", kind: .action("maximizeTerminal"), section: .thisThread,
+                        title: maximized ? "Restore terminal" : "Maximize terminal", shortcut: keys.display(.maximizeTerminal),
+                        icon: maximized ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"),
+        ]
     }
 
     /// "Fix remote nightly · running 4m" — the parent thread and the run's state.
@@ -178,6 +201,9 @@ extension ShepherdViewModel {
             case "settings": showSettings = true
             case "reviewDiff": openUserReview()
             case "reviewPR": openUserPRReview()
+            case "toggleTerminal": toggleTerminalPanel()
+            case "newTerminal": newTerminalTab()
+            case "maximizeTerminal": toggleTerminalMaximized()
             default: break
             }
         }
