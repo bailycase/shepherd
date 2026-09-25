@@ -59,11 +59,45 @@ enum ListPerf {
         return views.max { (right($0), $0.frame.height) < (right($1), $1.frame.height) }
     }
 
+    /// The main thread's CPU time so far, in milliseconds. Unlike the wall clock, other
+    /// processes busy on the machine (parallel builds) barely move it.
+    static func threadCPU() -> Double {
+        Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)) / 1e6
+    }
+
+    /// Instructions this process has retired so far, in millions: nearly independent of how busy
+    /// the machine is, so a change's cost compares across runs.
+    static func instructions() -> Double {
+        var info = rusage_info_v4()
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(getpid(), RUSAGE_INFO_V4, $0) }
+        }
+        return result == 0 ? Double(info.ri_instructions) / 1e6 : 0
+    }
+
     /// One pass of scrolling: each step's milliseconds.
     struct Scroll {
+        /// Each step's instructions, in millions (the whole process: the main thread's work).
+        var instructions: [Double] = []
+        var instructionsMean: Double { instructions.isEmpty ? 0 : instructions.reduce(0, +) / Double(instructions.count) }
+        var instructionsP95: Double {
+            guard !instructions.isEmpty else { return 0 }
+            let sorted = instructions.sorted()
+            return sorted[min(sorted.count - 1, Int((Double(sorted.count) * 0.95).rounded(.down)))]
+        }
         var steps: [Double] = []
+        /// Each step's main-thread CPU milliseconds.
+        var cpu: [Double] = []
         /// How far it moved, in points.
         var distance: CGFloat = 0
+
+        var cpuMean: Double { cpu.isEmpty ? 0 : cpu.reduce(0, +) / Double(cpu.count) }
+        var cpuMedian: Double { cpu.isEmpty ? 0 : cpu.sorted()[cpu.count / 2] }
+        var cpuP95: Double {
+            guard !cpu.isEmpty else { return 0 }
+            let sorted = cpu.sorted()
+            return sorted[min(sorted.count - 1, Int((Double(sorted.count) * 0.95).rounded(.down)))]
+        }
 
         var total: Double { steps.reduce(0, +) }
         var mean: Double { steps.isEmpty ? 0 : total / Double(steps.count) }
@@ -84,11 +118,15 @@ enum ListPerf {
         for _ in 0..<steps {
             let before = clip.bounds.origin.y
             let start = ContinuousClock.now
+            let cpu = threadCPU()
+            let retired = instructions()
             let target = NSRect(origin: NSPoint(x: clip.bounds.origin.x, y: before + step), size: clip.bounds.size)
             clip.scroll(to: clip.constrainBoundsRect(target).origin)
             scroll.reflectScrolledClipView(clip)
             settle(window)
             result.steps.append(milliseconds(ContinuousClock.now - start))
+            result.cpu.append(threadCPU() - cpu)
+            result.instructions.append(instructions() - retired)
             let moved = clip.bounds.origin.y - before
             result.distance += abs(moved)
             if abs(moved) < 0.5 { break }
@@ -129,6 +167,9 @@ final class PerfReport {
     func add(_ list: String, scroll: ListPerf.Scroll) {
         add(list, "scroll: steps · mean · p95 · worst",
             String(format: "%d · %.2f ms · %.2f ms · %.2f ms (%.0f pt)", scroll.steps.count, scroll.mean, scroll.p95, scroll.worst, scroll.distance))
+        add(list, "scroll: main-thread CPU mean · p50 · p95",
+            String(format: "%.2f ms · %.2f ms · %.2f ms", scroll.cpuMean, scroll.cpuMedian, scroll.cpuP95))
+        add(list, "scroll: instructions mean · p95", String(format: "%.1f M · %.1f M", scroll.instructionsMean, scroll.instructionsP95))
     }
 
     func add(_ list: String, _ metric: String, counts: [String: Int]) {
