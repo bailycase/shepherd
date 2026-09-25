@@ -11,16 +11,19 @@ struct AgentSettings: View {
     private var keys: KeybindingsStore { .shared }
     @State private var modelOptions: [String] = []
     /// pi's own default from its settings.json, read with the catalog (never in `body`).
-    @State private var piDefaultModel = "its own default"
+    @State private var piDefaultModel: String?
+
+    /// "Use the agent’s default · gpt-6-astra", or without the model while it is unknown.
+    private var agentDefault: String { "Use the agent’s default" + (piDefaultModel.map { " · \($0)" } ?? "") }
 
     var body: some View {
         SettingsPage(title: "Agents", explanation: Self.explanation(keys)) {
             SettingsGroup(title: "New agents") {
                 SettingsRow(title: "Default model",
                             subtitle: "Preselected in the New Agent sheet. “Use the agent’s default” passes no --model at all.") {
-                    NWPopupMenu(settings.defaultModel.isEmpty ? "Use the agent’s default · \(piDefaultModel)" : settings.defaultModel,
+                    NWPopupMenu(settings.defaultModel.isEmpty ? agentDefault : settings.defaultModel,
                                 mono: !settings.defaultModel.isEmpty, minWidth: AppLayout.settingsPopupWidth) {
-                        Button("Use the agent’s default · \(piDefaultModel)") { settings.defaultModel = "" }
+                        Button(agentDefault) { settings.defaultModel = "" }
                         Divider()
                         ForEach(modelOptions, id: \.self) { id in
                             Button(id) { settings.defaultModel = id }
