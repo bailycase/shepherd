@@ -16,6 +16,7 @@ struct QuestionPanel: View {
     let docked: Bool
     let answer: (NativeDialogAnswer) -> Void
     @Environment(\.composerMaxHeight) private var maxHeight
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var text: String
     @State private var chosen: Int?
     /// The panel's width: a wide one (iPad) lays two answers side by side.
@@ -72,7 +73,7 @@ struct QuestionPanel: View {
     @ViewBuilder private var choices: some View {
         switch dialog.kind {
         case .select:
-            if !docked, options.count > 1, width >= 2 * MobileLayout.questionColumn + NW.Space.m {
+            if !docked, options.count > 1, !typeSize.isAccessibilitySize, width >= 2 * MobileLayout.questionColumn + NW.Space.m {
                 Grid(horizontalSpacing: NW.Space.m, verticalSpacing: NW.Space.m) {
                     ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { start in
                         GridRow(alignment: .top) {
