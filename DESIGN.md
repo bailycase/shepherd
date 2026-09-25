@@ -672,6 +672,16 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
   one drop target covers the sidebar (`SidebarDropZone`, fed the frames the rows on screen
   register) instead of one per row, and a control that shows only on hover (a diff line's `+`)
   is built only while hovered, in a slot that is always laid out.
+- **The chrome around a field compares before it redraws.** The composer's control row takes an
+  `Equatable` model of what it draws (`ComposerControls`), so a keystroke past the first
+  character, or the field losing focus to a menu, rebuilds the field and never the chips.
+  `ViewThatFits` builds and measures every alternative it is given, each with its tooltips and
+  accessibility, whenever it is rebuilt, and that was half of a keystroke's main-thread time and
+  a third of a menu's opening. The slash menu's matches are derived once per draft change
+  (`SlashMatchCache`), ⇧⌘M and the thinking menu's command reach the composer without a pass
+  over the thread, and the picker and the thinking menu compare their own inputs, so a composer
+  redraw for something else leaves their rows alone. `ComposerMenuPerformanceTests` pins each
+  as a count.
 - **Motion never scales with the list.** A list's motion watches a small key (a layout count, the
   rows' ids), never the rows themselves, and rows scrolled back into a lazy stack are simply
   there: an entrance plays only for what arrives while the list is on screen (`nwArrival`,
