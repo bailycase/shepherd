@@ -84,15 +84,16 @@ private struct PadRunHeader: View {
     let store: NativeThreadStore
     let runID: String
     let close: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicType
 
     var body: some View {
         let inspection = SubagentInspection.shared
         let siblings = nativeSubagentSiblings(of: runID, in: store.subagents, turns: store.rows.map(\.turn))
         let position = siblings.firstIndex { $0.runID == runID }
         let run = store.subagents.first { $0.runID == runID }
-        // A live group switches between its runs as tabs (iPadSteer); a finished one steps
-        // through them (iPadSubagents).
-        if siblings.count > 1, siblings.count <= MobileLayout.subagentTabsMax, siblings.contains(where: { nativeRunPhase($0).isLive }) {
+        // A live group switches between its runs as tabs (iPadSteer); a finished one, or any
+        // group at accessibility sizes, steps through them (iPadSubagents).
+        if !dynamicType.isAccessibilitySize, siblings.count > 1, siblings.count <= MobileLayout.subagentTabsMax, siblings.contains(where: { nativeRunPhase($0).isLive }) {
             HStack(spacing: NW.Space.m) {
                 NWRunTabs(selection: Binding(get: { runID }, set: { inspection.show(ref, runID: $0) }),
                           tabs: siblings.map { (id: $0.runID, title: nativeRunNames($0).name) })
