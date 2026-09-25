@@ -196,24 +196,9 @@ final class AutomationsStore {
                 try await client.automation(key.automation, request: request)
                 done?(true)
             } catch {
-                failure = Failure(message: Self.failureText(request, error))
+                failure = Failure(message: AutomationsModel.failureText(request, error))
                 done?(false)
             }
         }
-    }
-
-    static func failureText(_ request: RemoteAutomationRequest, _ error: Error) -> String {
-        let reason: String
-        if case RemoteHostClientError.rejected(_, let message) = error { reason = message } else { reason = String(describing: error) }
-        let what: String = switch request {
-        case .run: "start the run"
-        case .stop: "stop the run"
-        case .setEnabled(let on): on ? "turn it on" : "turn it off"
-        case .delete: "delete it"
-        case .create: "save it"
-        case .update: "save the changes"
-        case .runs: "read its runs"
-        }
-        return "Couldn't \(what): \(reason)"
     }
 }

@@ -106,6 +106,22 @@ struct AutomationPresentationTests {
         #expect(two.rows.map(\.key) == [Self.key("a"), Self.key("b", on: Self.build)])
     }
 
+    /// A refusal gives the host's reason; no answer never claims the change failed, since the
+    /// host may have made it.
+    @Test(arguments: [
+        (RemoteAutomationRequest.run, RemoteHostClientError.rejected(code: "no_such_automation", message: "It is gone."),
+         "Couldn't start the run: It is gone."),
+        (.run, .timeout, "The host didn't answer, so the run may have started. Check the automation before trying again."),
+        (.delete, .disconnected, "The host didn't answer, so the automation may have been deleted. Check the automation before trying again."),
+        (.setEnabled(enabled: false), .timeout,
+         "The host didn't answer, so the automation may have been turned off. Check the automation before trying again."),
+        (.runs, .timeout, "Couldn't read the runs: the host didn't answer."),
+    ])
+    func aChangeThatDidNotComeBackSaysWhatMayHaveHappened(_ request: RemoteAutomationRequest, _ error: RemoteHostClientError,
+                                                          _ text: String) {
+        #expect(AutomationsModel.failureText(request, error) == text)
+    }
+
     // MARK: Detail
 
     @Test func theDetailListsRunsNewestFirstAndChartsTheLatest() throws {
