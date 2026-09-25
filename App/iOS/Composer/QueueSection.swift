@@ -36,6 +36,16 @@ struct QueueSection: View {
                 QueueEditorSheet(number: (state.queuedIndex(message.id) ?? 0) + 1, text: Binding(get: { state.editText }, set: { state.editText = $0 }),
                                  save: { closeEditor(save: true) }, cancel: { closeEditor(save: false) })
             }
+            // The host holds the queue while the editor is open and lets a hold lapse after two
+            // minutes: Edit holds it, and this renews the hold for as long as the editor stays open,
+            // as the Mac does.
+            .task(id: state.editing?.id) {
+                guard let id = state.editing?.id else { return }
+                while true {
+                    do { try await Task.sleep(for: MobileLayout.queueHoldRenewal) } catch { return }
+                    await store.holdQueued(id, true)
+                }
+            }
         }
     }
 
