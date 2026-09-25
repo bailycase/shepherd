@@ -202,3 +202,38 @@ public struct NWAttachmentChip: View {
         .accessibilityElement(children: .contain)
     }
 }
+
+/// "↓ Jump to latest": a `bgRaised` capsule above the composer while the thread is detached from
+/// its tail (`action` set). It grows in from the bottom and leaves the same way; its motion is
+/// its own, so the rows behind it never animate with it. On iOS its hit area is the 44pt touch
+/// minimum around the drawn capsule.
+public struct NWJumpToLatest: View {
+    let action: (() -> Void)?
+
+    /// nil hides it.
+    public init(action: (() -> Void)?) {
+        self.action = action
+    }
+
+    public var body: some View {
+        let nw = Color.nw
+        ZStack {
+            if let action {
+                Button(action: action) {
+                    Label("Jump to latest", systemImage: "arrow.down")
+                        .font(Font.nw(.caption, weight: .medium)).foregroundStyle(nw.textSecondary)
+                        // Grows with the text on iOS, whose type scales.
+                        .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.xs)
+                        .frame(minHeight: NW.Height.controlM)
+                        .background(nw.bgRaised, in: Capsule())
+                        .nwBorder(nw.lineStrong, in: Capsule())
+                        .nwTouchTarget(height: NW.Height.controlM)
+                }
+                .buttonStyle(.plain)
+                .nwTransition(.overlay, anchor: .bottom)
+                .accessibilityLabel("Jump to latest")
+            }
+        }
+        .nwAnimation(.overlay, value: action != nil)
+    }
+}

@@ -2,7 +2,7 @@ import SwiftUI
 
 #Preview("Touch queue") {
     NWPreviewBoth {
-        NWTouchQueueCard(count: 3, paused: false) {
+        NWTouchQueueCard(count: 3) {
             VStack(spacing: 0) {
                 NWTouchQueueRow("Don't touch the migrations in this PR.", kind: .steering, back: {})
                 NWTouchQueueRow("Also cover partial refunds in the tests.", kind: .queued(number: 1)).overlay(alignment: .top) { NWHairline() }
@@ -11,6 +11,20 @@ import SwiftUI
             }
         } options: {
             Button("Clear the queue", role: .destructive) {}
+        }
+        .frame(width: 360)
+    }
+}
+
+#Preview("Touch queue, paused") {
+    NWPreviewBoth {
+        NWTouchQueueCard(count: 2, paused: "The queue waits for you: send it, steer it in, or send a new message.", resume: {}) {
+            VStack(spacing: 0) {
+                NWTouchQueueRow("Also cover partial refunds in the tests.", kind: .queued(number: 1))
+                NWTouchQueueRow("Then open a draft PR.", kind: .queued(number: 2)).overlay(alignment: .top) { NWHairline() }
+            }
+        } options: {
+            Button("Send all now") {}
         }
         .frame(width: 360)
     }

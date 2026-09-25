@@ -1,7 +1,9 @@
 import Foundation
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 
 // Thread track's screens (thread and composer). Each one serves the default hosts with the
 // Studio agents' threads replaced by what its board draws; nothing here asks a host to change.
@@ -50,6 +52,13 @@ extension FixtureCatalog {
                               app.threads.store(for: preview).draft = "Match the spacing in this screenshot"
                               Task { await ComposerStates.shared.state(for: preview).attach([(ThreadFixtures.image(), "thread-spacing.png")]) }
                           }),
+            // Following the tail: a long thread gets a turn and then its reply (and changes card)
+            // after the composer shrinks from eight lines to one, and on iPad the review docks
+            // beside it before the reply. The reply must end above the composer.
+            FixtureScreen(name: "thread-follow", hosts: FollowFixture.hosts(), routes: [.thread(preview)], prepare: FollowFixture.follow),
+            // The same thread dragged up from its tail: the turn and its reply arrive below
+            // without moving it, and "Jump to latest" sits above the composer.
+            FixtureScreen(name: "thread-jump", hosts: FollowFixture.hosts(), routes: [.thread(preview)], prepare: FollowFixture.jump),
             // The same chips for a model the host says takes no thinking level: no Thinking chip.
             FixtureScreen(name: "composer-plain-model", hosts: ThreadFixtures.plainModel(ThreadFixtures.hosts()), routes: [.thread(preview)],
                           prepare: { app in
@@ -239,5 +248,134 @@ enum ThreadFixtures {
             UIColor.systemTeal.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
         }
+    }
+}
+
+/// "thread-follow": the host serves a long thread, then, as the screen asks, the same thread with
+/// a new turn (pi took it) and then its reply, as two polls bring them.
+enum FollowFixture {
+    private static let state = FollowState()
+
+    private final class FollowState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func advance() { lock.withLock { value += 1 } }
+        var stage: Int { lock.withLock { value } }
+    }
+
+    static func hosts() -> [FixtureHostData] {
+        var hosts = ReviewFixture.hosts()
+        let review = hosts[0].reply
+        hosts[0].reply = { request in
+            guard case .nativeThread(let id, let agentID, .snapshot) = request, agentID == FixtureData.preview else { return review?(request) }
+            return .nativeThread(id: id, result: .snapshot(value: thread(stage: state.stage)))
+        }
+        return hosts
+    }
+
+    static func thread(stage: Int) -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        var messages: [NativeThreadMessage] = []
+        for turn in 0..<8 {
+            let at = Double(turn) * 60_000
+            messages.append(F.user("f\(turn)u", "Reply with exactly: follow-\(turn)", at: at))
+            messages.append(F.assistant("f\(turn)a", "follow-\(turn)\n\nThe thread keeps growing so it scrolls well past one screen on every device, iPad landscape included.",
+                                        at: at + 3_000))
+        }
+        if stage >= 1 {
+            messages.append(F.user("g1", "Use the edit tool to append a line '# pad' to README.md. Then reply with exactly: pad-done", at: 600_000))
+        }
+        if stage >= 2 {
+            messages.append(F.tool("g2", "edit", args: #"{"path":"README.md","oldText":"a","newText":"a\n# pad"}"#, output: "Edited", at: 603_000))
+            messages.append(F.assistant("g3", "pad-done", at: 605_000))
+        }
+        var snapshot = F.snapshot(messages, running: stage < 2)
+        snapshot.revision = UInt64(stage + 1)
+        return snapshot
+    }
+
+    /// A draft of many lines grows the composer, as the keyboard does; sending clears it, and the
+    /// turn and its reply arrive in two polls. While pi works the reader starts a follow-up, so
+    /// the composer grows again under the thread before the reply lands.
+    @MainActor static func follow(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = app.threads.store(for: ref)
+        let draft = (1...8).map { "Line \($0) of a long message to the agent" }.joined(separator: "\n")
+        store.draft = draft
+        try? await Task.sleep(for: .seconds(1.5))
+        store.draft = ""
+        for stage in 1...2 {
+            // On iPad the review docks beside the thread between the turn and its reply, and
+            // the thread's rows re-wrap narrower.
+            if stage == 2, UIDevice.current.userInterfaceIdiom == .pad { app.navigator.open(.review(.changes(ref, file: nil))) }
+            if stage == 2 {
+                store.draft = draft
+                focusComposer()
+                try? await Task.sleep(for: .seconds(1))
+            }
+            state.advance()
+            await FixtureWindows.wait(seconds: 10) { store.snapshot?.revision == UInt64(stage + 1) }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        check("the reply ends above the composer") { $0 <= MobileLayout.gutter + 1 }
+    }
+
+    /// A finger drags the thread up from its tail (its pan recognizer stepped through a drag, as
+    /// a touch would), then the turn and its reply arrive in two polls.
+    @MainActor static func jump(_ app: MobileApp) async {
+        let store = app.threads.store(for: FixtureData.ref(FixtureData.preview))
+        try? await Task.sleep(for: .seconds(1))
+        guard let scroll = threadScrollView() else { return print("FIXTURE CHECK FAILED: no thread scroll view") }
+        let pan = scroll.panGestureRecognizer
+        pan.state = .began
+        for step in 1...12 {
+            pan.setTranslation(CGPoint(x: 0, y: step * 50), in: scroll)
+            pan.state = .changed
+            scroll.contentOffset.y -= 50
+            try? await Task.sleep(for: .milliseconds(16))
+        }
+        pan.state = .ended
+        for stage in 1...2 {
+            state.advance()
+            await FixtureWindows.wait(seconds: 10) { store.snapshot?.revision == UInt64(stage + 1) }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        check("a thread dragged up stays where the reader left it") { $0 > NativeScrollFollower.threshold }
+    }
+
+    /// Prints whether the thread's tail sits where `holds` wants it: its distance, in points,
+    /// above the end of the content, with the composer's inset counted. At the tail it is the
+    /// thread's bottom padding (the gutter under the bottom marker a scroll lands on).
+    @MainActor private static func check(_ what: String, _ holds: (CGFloat) -> Bool) {
+        guard let scroll = threadScrollView() else { return print("FIXTURE CHECK FAILED: no thread scroll view") }
+        let distance = scroll.contentSize.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y - scroll.bounds.height
+        print("FIXTURE CHECK \(holds(distance) ? "ok" : "FAILED"): \(what) (\(Int(distance.rounded()))pt above the tail)")
+    }
+
+    /// Puts the caret in the composer's field, so the software keyboard (when the simulator
+    /// shows one) raises the composer as a reader's tap would.
+    @MainActor private static func focusComposer() {
+        var fields: [UITextView] = []
+        func walk(_ view: UIView) {
+            if let field = view as? UITextView, field.isEditable { fields.append(field) }
+            view.subviews.forEach(walk)
+        }
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).forEach(walk)
+        fields.last?.becomeFirstResponder()
+    }
+
+    /// The thread's scroll view: the tallest scrolling one that isn't a list (the iPad sidebar)
+    /// or a text view.
+    @MainActor private static func threadScrollView() -> UIScrollView? {
+        var found: [UIScrollView] = []
+        func walk(_ view: UIView) {
+            if let scroll = view as? UIScrollView, !(scroll is UICollectionView), !(scroll is UITextView),
+               scroll.contentSize.height > scroll.bounds.height {
+                found.append(scroll)
+            }
+            view.subviews.forEach(walk)
+        }
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).forEach(walk)
+        return found.max { $0.contentSize.height < $1.contentSize.height }
     }
 }
