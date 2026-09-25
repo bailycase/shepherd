@@ -5,9 +5,9 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-/// Settings over every host (home track): each host's settings, the root instructions and the
-/// suggested ones, held by ShepherdRemote's models (`ClientHostSettings`, `ClientInstructions`,
-/// `ClientSuggestions`), which keep every rule. The store hands them the hosts as the app knows
+/// Settings over every host (home track): each host's settings, the root instructions, the
+/// suggested ones and the agent skills, held by ShepherdRemote's models (`ClientHostSettings`,
+/// `ClientInstructions`, `ClientSuggestions`, `ClientSkills`), which keep every rule. The store hands them the hosts as the app knows
 /// them now and reads every host again whenever one connects while a Settings screen shows.
 /// Screens read the models and call them; they never ask a host themselves.
 @MainActor
@@ -16,6 +16,7 @@ final class SettingsStore {
     let hostSettings = ClientHostSettings()
     let instructions: ClientInstructions
     let suggestions = ClientSuggestions()
+    let skills: ClientSkills
 
     /// The hosts as Settings sees them now.
     private(set) var hosts: [SettingsHost] = []
@@ -51,6 +52,7 @@ final class SettingsStore {
         mobileHosts = hosts
         // Kept beside the hosts; "Synced from iPhone" in a host's history.
         instructions = ClientInstructions(defaults: hosts.defaults, origin: UIDevice.current.model)
+        skills = ClientSkills(defaults: hosts.defaults)
         track()
     }
 
@@ -84,6 +86,15 @@ final class SettingsStore {
         suggestions.hosts(hosts).isEmpty ? nil : HostSettingsPresentation.experimentsValue(on: suggestions.isOn(hosts))
     }
 
+    /// The hosts as Settings ▸ Skills sees them.
+    var skillsHosts: [SkillsHost] { hosts.map(SkillsHost.init) }
+
+    /// Skills' value: how many, and how many have an update ("8 · 2 updates"), once a host says.
+    var skillsValue: String? {
+        let hosts = skillsHosts
+        return skills.reference(in: hosts) == nil ? nil : SkillsPresentation.settingsValue(skills.rows(in: hosts))
+    }
+
     /// About's agent: "agent 0.87.1", from the settings host.
     var agentVersion: String? { HostSettingsPresentation.agentVersion(settings) }
 
@@ -95,12 +106,13 @@ final class SettingsStore {
 
     // MARK: Refreshing
 
-    /// Reads every connected host's settings, instructions and suggestions afresh.
+    /// Reads every connected host's settings, instructions, suggestions and skills afresh.
     func refresh() async {
         let hosts = self.hosts
         await hostSettings.refresh(hosts)
         await instructions.refresh(hosts)
         await suggestions.refresh(hosts)
+        await skills.refresh(hosts.map(SkillsHost.init))
     }
 
     /// While a Settings screen shows: reads every host now, and a host again when it connects.

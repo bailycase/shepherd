@@ -2,7 +2,7 @@ import SwiftUI
 import ShepherdUI
 
 /// Settings' own measures (home track): the boards' MobileSettings, MobileInstructions,
-/// MobileInstructionsEdit, MobileExperiments and iPadSettingsInstructions.
+/// MobileInstructionsEdit, MobileSkills, MobileExperiments and iPadSettingsInstructions.
 extension MobileLayout {
     // MARK: The iPad's list beside the page
 
@@ -78,4 +78,28 @@ extension MobileLayout {
     static let experimentSourceRowHeight: CGFloat = 46
     /// A waiting line, in mono 13.
     static let suggestionLineHeight: CGFloat = 1.45
+
+    // MARK: Skills
+
+    /// A skill's row (MobileSkills): its name in mono 14/600 over its description at 12.5, 3pt
+    /// apart, at least 58pt.
+    static let skillRowHeight: CGFloat = 58
+    static let skillNameSize: CGFloat = 14
+    static let skillSummarySize: CGFloat = 12.5
+    static let skillLineSpacing: CGFloat = 3
+    /// The switch at a row's end (`NWSwitch` is 30pt wide), kept clear of the row's text.
+    static let skillSwitchSlot: CGFloat = 30
+    /// A search result's status at its end: Install, Installed, Update, or "1 of 3 hosts".
+    static let skillStatusSlot: CGFloat = 96
+    /// A skill's name over its detail or its preview.
+    static let skillTitleSize: CGFloat = 17
+    /// A previewed SKILL.md: its first 60 lines in mono 12 on 19pt lines, numbered in a 28pt
+    /// column, under a 36pt header.
+    static let skillPreviewLines = 60
+    static let skillPreviewTextSize: CGFloat = 12
+    static let skillPreviewLineHeight: CGFloat = 19
+    static let skillPreviewGutter: CGFloat = 28
+    static let skillPreviewHeaderHeight: CGFloat = 36
+    /// Add from repo's field.
+    static let skillRepoFieldHeight: CGFloat = 44
 }

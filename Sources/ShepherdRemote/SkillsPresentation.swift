@@ -30,6 +30,11 @@ public enum SkillsPresentation {
         invocation == .automatic ? "Auto" : "/skill only"
     }
 
+    /// How the agent uses a skill, as a picker names it: "Automatically", "Only with /skill".
+    public static func invocationTitle(_ invocation: SkillInvocation) -> String {
+        invocation == .automatic ? "Automatically" : "Only with /skill"
+    }
+
     /// Only with /skill's option in the detail: "Only when I type /skill:pdf".
     public static func slashOption(_ name: String) -> String {
         "Only when I type /skill:\(name)"

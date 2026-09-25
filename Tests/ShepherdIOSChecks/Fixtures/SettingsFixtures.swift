@@ -26,6 +26,12 @@ extension FixtureCatalog {
                           tab: .settings, prepare: { app in await FixtureData.draft(app, .agents, adding: "- Always run `sqlc vet` after a query change.") }),
             FixtureScreen(name: "settings-instructions-differ", hosts: FixtureData.differingBuildBox(), routes: [.settings(.instructions)],
                           tab: .settings),
+            // Agent skills on every host (skills.v1): the list, pdf's detail with its update,
+            // and a repository's skills to pick from.
+            FixtureScreen(name: "settings-skills", routes: [.settings(.skills)], tab: .settings),
+            FixtureScreen(name: "settings-skill", routes: [.settings(.skills), .settings(.skill("pdf"))], tab: .settings),
+            FixtureScreen(name: "settings-skills-repo", hosts: FixtureData.skillsRepoHosts(),
+                          routes: [.settings(.skills), .settings(.skillsRepo("anthropics/skills"))], tab: .settings),
             // Suggested instructions on every host (suggestions.v1).
             FixtureScreen(name: "settings-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.experiments)], tab: .settings),
             FixtureScreen(name: "settings-experiments-off", routes: [.settings(.experiments)], tab: .settings),
@@ -38,6 +44,8 @@ extension FixtureCatalog {
             }),
             FixtureScreen(name: "settings-pad-experiments", hosts: FixtureData.suggestingHosts(), routes: [.settings(.root)], tab: .settings,
                           prepare: { app in SettingsStore.of(app.hosts).page = .experiments }),
+            FixtureScreen(name: "settings-pad-skills", routes: [.settings(.root)], tab: .settings,
+                          prepare: { app in SettingsStore.of(app.hosts).page = .skills }),
         ]
     }
 }

@@ -3,7 +3,7 @@ import Observation
 import ShepherdCore
 import ShepherdProtocol
 
-// Settings on the iPhone and the iPad: a host's settings (Defaults, Worktrees, Pi extensions), its
+// Settings on the iPhone and the iPad: a host's settings (Defaults, Worktrees, Extensions), its
 // root instructions, and its suggested instructions, read and changed over the remote protocol.
 // The models here hold what the screens draw and every rule they follow, so the screens only
 // draw; they take the hosts as the app knows them now (`SettingsHost`).
@@ -49,7 +49,7 @@ func settingsProblem(_ error: Error) -> String {
 
 // MARK: Host settings
 
-/// Each host's settings (Settings ▸ Defaults, Worktrees, Pi extensions). A change shows at once and
+/// Each host's settings (Settings ▸ Defaults, Worktrees, Extensions). A change shows at once and
 /// goes to the host; a host that refuses it puts its own settings back.
 @MainActor
 @Observable

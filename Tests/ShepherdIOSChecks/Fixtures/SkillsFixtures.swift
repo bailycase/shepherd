@@ -2,8 +2,37 @@ import Foundation
 import ShepherdCore
 import ShepherdProtocol
 
-// Settings ▸ Skills (MobileSkills): the skills every fixture host keeps.
+// Settings ▸ Skills (MobileSkills): the skills every fixture host keeps, and a repository's.
 extension FixtureData {
+    /// The usual hosts, with Studio answering Add from repo's look-up of anthropics/skills.
+    static func skillsRepoHosts() -> [FixtureHostData] {
+        hosts().map { host in
+            var host = host
+            if host.id == studio { host.repoSkills = skillsRepo() }
+            return host
+        }
+    }
+
+    /// anthropics/skills as a host finds it: three of its skills already installed (one with an
+    /// update), the rest new.
+    static func skillsRepo() -> RepoSkills {
+        func skill(_ name: String, _ summary: String, _ files: [SkillFileEntry] = [SkillFileEntry(name: "SKILL.md")]) -> RepoSkill {
+            RepoSkill(path: "skills/\(name)", name: name, summary: summary, instructions: "---\nname: \(name)\ndescription: \(summary)\n---\n",
+                      files: files)
+        }
+        return RepoSkills(repo: "anthropics/skills", branch: "main", commit: "8c04e1d5b2a9f06c", skills: [
+            skill("docx", "Create and edit Word documents, with tracked changes and comments."),
+            skill("frontend-design", "Production-grade UI that doesn’t look generic."),
+            skill("mcp-builder", "Build MCP servers that give an agent new tools."),
+            skill("pdf", "Read, fill, merge and split PDFs.",
+                  [SkillFileEntry(name: "SKILL.md"), SkillFileEntry(name: "scripts", isDirectory: true, fileCount: 8)]),
+            skill("pptx", "Build and edit slide decks."),
+            skill("skill-creator", "Write a new skill, and check it before you share it."),
+            skill("webapp-testing", "Tests local web apps with Playwright."),
+            skill("xlsx", "Spreadsheets with formulas, formatting and charts."),
+        ])
+    }
+
     /// The board's eight skills: six from repositories (two with an update waiting), two copied in
     /// by hand and used only through /skill, one of them off.
     static func skills(checkedAgo: TimeInterval = 7_200) -> SkillsSnapshot {
