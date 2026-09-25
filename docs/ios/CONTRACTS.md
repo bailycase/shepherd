@@ -28,6 +28,7 @@ Never commit a `project.pbxproj` change for a new file.
 | D. Subagents | `Subagents/`, `Fixtures/SubagentsFixtures.swift` | the cards in a thread, the list, one run's transcript and steer |
 | E. Review | `Review/`, `Fixtures/ReviewFixtures.swift`, the `DiffFile` move into a shared module | changes, the diff reader, comments, Request changes, Commit as a turn, Finalize, review docked on iPad |
 | F. Search & actions | `Search/`, `Fixtures/SearchFixtures.swift` | search across agents, rename and delete, the iPad ⌘K palette |
+| G. Automations | `Automations/`, `Fixtures/AutomationsFixtures.swift` | the Automations list (Home's `.automations` destination), the iPad list and detail, one automation with its runs, the form |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
 track and are also the Mac's. A track may add to them (a component under
@@ -49,12 +50,13 @@ enum MobileRoute: Hashable, Codable {
     case review(ReviewRoute)              // Review/ReviewRoute.swift
     case search(SearchRoute)              // Search/SearchRoute.swift
     case settings(SettingsRoute)          // Settings/SettingsRoute.swift
+    case automations(AutomationsRoute)    // Automations/AutomationsRoute.swift
 }
 ```
 
 Each track owns its route enum and its destination view (`HomeDestination`,
 `NewThreadDestination`, `SubagentsDestination`, `ReviewDestination`, `SearchDestination`,
-`SettingsDestination`) in its folder. **To add a screen, add a case to your own enum and handle
+`SettingsDestination`, `AutomationsDestination`) in its folder. **To add a screen, add a case to your own enum and handle
 it in your own destination.** The shell never changes. Keep your enum `Hashable` and `Codable`
 (fixtures name routes), and keep `thread` on `SubagentsRoute` and `ReviewRoute`: forgetting a
 host closes the screens of its threads through it.
@@ -74,6 +76,8 @@ Routes today:
 | `.search(.rename(AgentRef) / .delete(AgentRef))` | rename, delete or Delete Worktree Agent (presented) |
 | `.search(.problem(title:message:))` | an agent action from a menu that failed (presented) |
 | `.settings(.root / .hosts / .host(UUID?) / .appearance)` | Settings, hosts, a host's form (nil adds one), appearance |
+| `.automations(.detail(host:automation:))` | one automation, its runs, Run now and Stop (iPhone, pushed; the iPad shows it beside the list) |
+| `.automations(.edit(host:automation:))` | the form: a new automation (both nil, or a host), or an existing one's fields (presented) |
 
 Screens reach each other only through `MobileNavigator` (in the environment):
 
@@ -125,6 +129,8 @@ is out in portrait too.
 | Start a thread | `NewThread/NewThreadRoute.swift` (C) | Home, the iPad sidebar and overview | `NewThreadHooks.open(host: UUID? = nil, navigator:)` |
 | Home roots | `Home/` (A) | `PhoneShell`, `PadShell` | `HomeScreen()`, `PadSidebar()`, `PadOverview()` |
 | Settings root | `Settings/SettingsScreen.swift` (A) | `PhoneShell` | `SettingsScreen()` |
+| Automations root | `Automations/AutomationsScreen.swift` (G) | `HomeDestination` for `.home(.automations)` | `AutomationsScreen()` |
+| Open or add an automation | `Automations/AutomationsRoute.swift` (G) | anything that names one | `AutomationsHooks.open(_ key: AutomationKey, navigator:)`, `AutomationsHooks.create(host: UUID? = nil, navigator:)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
 the owning track replaces the body. Keep the signature. A hook drawn inside a turn
