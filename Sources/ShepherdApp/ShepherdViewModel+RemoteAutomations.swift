@@ -121,23 +121,8 @@ extension ShepherdViewModel {
                     await loadRemoteAutomationRuns(key)
                 }
             } catch {
-                remoteActionError = Self.remoteAutomationFailure(request, error)
+                remoteActionError = AutomationsModel.failureText(request, error)
             }
         }
-    }
-
-    static func remoteAutomationFailure(_ request: RemoteAutomationRequest, _ error: Error) -> String {
-        let reason: String
-        if case RemoteHostClientError.rejected(_, let message) = error { reason = message } else { reason = String(describing: error) }
-        let what: String = switch request {
-        case .run: "start the run"
-        case .stop: "stop the run"
-        case .setEnabled(let on): on ? "turn the automation on" : "turn the automation off"
-        case .delete: "delete the automation"
-        case .create: "save the automation"
-        case .update: "save the changes"
-        case .runs: "read the runs"
-        }
-        return "Couldn't \(what): \(reason)"
     }
 }

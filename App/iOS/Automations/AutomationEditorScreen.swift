@@ -128,7 +128,7 @@ struct AutomationEditorScreen: View {
                 try await store.save(key, draft: draft, creating: automation == nil)
                 navigator.dismissPresented()
             } catch {
-                self.error = AutomationsStore.failureText(automation == nil ? .create(draft: draft) : .update(draft: draft), error)
+                self.error = AutomationsModel.failureText(automation == nil ? .create(draft: draft) : .update(draft: draft), error)
             }
             saving = false
         }

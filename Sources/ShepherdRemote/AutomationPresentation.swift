@@ -248,6 +248,31 @@ public struct AutomationsModel: Equatable, Sendable {
                                 lastRun: last, runsKnown: runs != nil)
     }
 
+    /// What a change that did not come back ok says. A refusal gives the host's reason; a
+    /// timeout or a dropped connection may have happened on the host, so it says to look before
+    /// trying again rather than claiming it failed.
+    public static func failureText(_ request: RemoteAutomationRequest, _ error: Error) -> String {
+        let (what, maybe): (String, String?) = switch request {
+        case .run: ("start the run", "the run may have started")
+        case .stop: ("stop the run", "the run may have stopped")
+        case .setEnabled(let on): (on ? "turn the automation on" : "turn the automation off",
+                                   "the automation may have been turned \(on ? "on" : "off")")
+        case .delete: ("delete the automation", "the automation may have been deleted")
+        case .create: ("save the automation", "the automation may have been saved")
+        case .update: ("save the changes", "the changes may have been saved")
+        case .runs: ("read the runs", nil)
+        }
+        switch error {
+        case RemoteHostClientError.rejected(_, let message):
+            return "Couldn't \(what): \(message)"
+        case RemoteHostClientError.timeout, RemoteHostClientError.disconnected, RemoteHostClientError.outcomeUnknown:
+            guard let maybe else { return "Couldn't \(what): the host didn't answer." }
+            return "The host didn't answer, so \(maybe). Check the automation before trying again."
+        default:
+            return "Couldn't \(what): \(error)"
+        }
+    }
+
     static let minimumBar = 0.08
 
     static func runRow(_ run: AutomationRun, host: UUID, timeZone: TimeZone, locale: Locale) -> AutomationRunRow {
