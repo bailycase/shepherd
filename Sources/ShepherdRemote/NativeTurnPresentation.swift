@@ -91,7 +91,8 @@ public func nativeTurnPresentation(
 ) -> NativeTurnPresentation {
     enum Raw {
         case thinking(String, Double?, message: String, since: Double?)
-        case prose(String)
+        /// `streaming`: the text block a reply is still writing.
+        case prose(String, streaming: Bool)
         case tool(NativeThreadMessage)
         case note(String)
         case error(String, Int)
@@ -115,7 +116,7 @@ public func nativeTurnPresentation(
             else { raw.append(.error(text, 1)) }
             continue
         }
-        for block in message.blocks {
+        for (index, block) in message.blocks.enumerated() {
             switch block.kind {
             case .thinking:
                 raw.append(.thinking(block.text, message.thinkingSeconds, message: message.entryID,
@@ -123,7 +124,7 @@ public func nativeTurnPresentation(
             case .unsupportedImage: raw.append(.note("Image attached"))
             case .text:
                 if message.role == "assistant" || message.role == "user" {
-                    raw.append(.prose(block.text))
+                    raw.append(.prose(block.text, streaming: message.status == "streaming" && index == message.blocks.count - 1))
                 } else {
                     raw.append(.note(message.role == "custom" ? block.text : message.role.replacingOccurrences(of: "_", with: " ") + " · " + block.text))
                 }
@@ -218,9 +219,9 @@ public func nativeTurnPresentation(
             let value = call(message)
             stretchCalls.append(value)
             calls.append(value)
-        case .prose(let text):
+        case .prose(let text, let streaming):
             flushStretch()
-            let parsed = nativeMarkdownParse(text)
+            let parsed = nativeMarkdownParse(text, streaming: live && streaming)
             items.append(.prose(id: nextID("prose"), text: text, blocks: parsed.blocks, openFence: parsed.endsInOpenFence))
             copy.append(text)
         case .note(let text):
