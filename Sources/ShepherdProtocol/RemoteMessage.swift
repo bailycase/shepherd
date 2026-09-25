@@ -206,20 +206,28 @@ public struct RemoteTerminalActivity: Codable, Hashable, Sendable {
     public var process: String?
     /// The running command line ("make dev"), while a command runs; nil at the prompt.
     public var command: String?
-    /// Advances with every read of the session's output; a client compares it with the value it
-    /// last showed.
+    /// Advances with every read of the session's output.
     public var outputSequence: UInt64
+    /// Advances with output that is news, leaving out what the terminal prints to redraw itself
+    /// right after a resize. Nil from hosts that predate it.
+    public var newsSequence: UInt64?
 
-    public init(paneID: PaneID, sessionID: SessionID, process: String?, command: String?, outputSequence: UInt64) {
+    public init(paneID: PaneID, sessionID: SessionID, process: String?, command: String?, outputSequence: UInt64,
+                newsSequence: UInt64? = nil) {
         self.paneID = paneID
         self.sessionID = sessionID
         self.process = process
         self.command = command
         self.outputSequence = outputSequence
+        self.newsSequence = newsSequence
     }
 
     /// A command runs in it.
     public var isRunning: Bool { command != nil }
+
+    /// What a client compares with the value it last showed for the tab's dot: the news
+    /// sequence, or every read of output from an older host.
+    public var news: UInt64 { newsSequence ?? outputSequence }
 }
 
 public enum RemoteInspectorPaneAction: Codable, Hashable, Sendable {
