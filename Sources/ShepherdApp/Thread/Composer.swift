@@ -757,11 +757,13 @@ struct ComposerControls: View, Equatable {
     static func == (a: Self, b: Self) -> Bool { a.model == b.model }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            chips(compact: false, startingLabel: true)
-            // "Starting pi…" gives up its words before the chips do.
-            chips(compact: false, startingLabel: false)
-            chips(compact: true, startingLabel: false)
+        ComposerControlsMinimum {
+            ViewThatFits(in: .horizontal) {
+                chips(compact: false, startingLabel: true)
+                // "Starting pi…" gives up its words before the chips do.
+                chips(compact: false, startingLabel: false)
+                chips(compact: true, startingLabel: false)
+            }
         }
         // A new model or level cross-fades. Only these: typing and width changes stay instant.
         .nwAnimation(.content, value: [model.model, model.thinking])
@@ -881,6 +883,44 @@ struct ComposerControls: View, Equatable {
         .nwAnimation(.content, value: model.busy)
         .nwAnimation(.content, value: beside)
     }
+}
+
+/// Answers the window's minimum-size pass for the control row without measuring it. The window
+/// sizes to its content's minimum (`windowResizability(.contentMinSize)`), so after every change
+/// that could move it (each keystroke in the field, whose text field reports a new intrinsic
+/// size) the scene's hosting view measures the whole view tree from a zero-width proposal: the
+/// row is asked at no width, at the width of its paddings, and again at its own minimum as the
+/// pass places it. At each of those `ViewThatFits` measures every alternative, building the two
+/// it does not show, with their tooltips and accessibility: half of a keystroke's main-thread
+/// time. A real layout never proposes the row less than `AppLayout.composerControlsNarrowest`,
+/// and the row's minimum is never the window's (`AppLayout.windowMinWidth` on the root and the
+/// thread column's `threadMinWidth` are both several times the compact row's width), so a
+/// narrower proposal is answered with no width and the row's height, and every other proposal
+/// reaches the row as it is.
+struct ComposerControlsMinimum: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let row = subviews.first else { return .zero }
+        if let width = proposal.width, width < AppLayout.composerControlsNarrowest {
+            MainActor.assumeIsolated { NWRenderProbe.tick("composer.controlsMinimum") }
+            return CGSize(width: 0, height: NWComposerMetrics.actionSize)
+        }
+        MainActor.assumeIsolated { NWRenderProbe.tick("composer.controlsMeasured") }
+        return row.sizeThatFits(proposal)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size))
+    }
+
+    // The pass asks for the row's alignment guides too, and `Layout`'s own answer places the
+    // subviews to find them, which at those widths measures every alternative after all. The
+    // row sets no explicit guide (its chips use none, and nothing above it aligns to a
+    // baseline), so it aligns by its frame, as the stack it wraps did.
+    func explicitAlignment(of guide: HorizontalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
+                           cache: inout ()) -> CGFloat? { nil }
+
+    func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
+                           cache: inout ()) -> CGFloat? { nil }
 }
 
 /// The slash menu's rows for the draft, derived once per draft and command list (a keystroke,
