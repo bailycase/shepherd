@@ -255,10 +255,12 @@ private struct NewThreadForm: View {
                 }
             }
             .frame(width: MobileLayout.newThreadStartSize, height: MobileLayout.newThreadStartSize)
-            .opacity(enabled || model.starting ? 1 : 0.35)
         }
         .buttonStyle(.nwPressable(height: MobileLayout.newThreadStartSize))
-        .disabled(!enabled)
+        // The style dims a blocked Start; while starting it stays lit with its spinner, and
+        // a second tap does nothing (`start` needs no blocker).
+        .disabled(!enabled && !model.starting)
+        .allowsHitTesting(!model.starting)
         .accessibilityLabel(model.starting ? "Starting thread" : "Start thread")
         .accessibilityHint(model.blocker?.message ?? "")
     }
