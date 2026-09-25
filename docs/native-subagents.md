@@ -21,10 +21,10 @@ both apply when an agent next launches.
   Shepherd loading the runtime; it does not install anything else. If you have installed the
   pi-subagents package yourself, it keeps working as before.
 - **Subagent display** loads `shepherd-subagents.ts`, the only publisher of `setAgentChildren`.
-  It merges native children with pi-subagents reports into the runs behind the thread's cards,
-  runs strip, and ledger, the inspector, the palette's Subagents section, and the needs-you mark
+  It merges native children with pi-subagents reports into the runs behind the subagent tray
+  above the composer, the thread's record lines, the inspector, the palette's Subagents section, and the needs-you mark
   a waiting child puts on its agent's sidebar row. With display off, children still run but none
-  of that UI appears, and card commands fail because the server only accepts runs that were
+  of that UI appears, and tray commands fail because the server only accepts runs that were
   published.
 
 **Native subagent defaults** appear only while Native subagents is on. They apply on the next
@@ -276,38 +276,37 @@ family registers with a `shepherd-` prefix instead (`/shepherd-run`, `/shepherd-
   provider-request boundary, after the current tools finish. It sends no OS signals and never
   replays the task. Stop can still abort a paused child.
 
-**Cards.** [DESIGN.md](../DESIGN.md#subagents) specifies how they look; this is what they do.
+**The tray and the record.** [DESIGN.md](../DESIGN.md#subagents) specifies how they look; this
+is what they do.
 
-- **Placement:** a child's card renders where its `shepherd_child_start` row was, and the spawn
-  call leaves the activity lines. Workflow children (including `/run`) sit at the
-  `shepherd_workflow` row. Children with no tool call (slash commands, pi-subagents rows) trail
-  the last agent turn. Once cards stand for a turn's children, its `shepherd_child_wait` and
-  `shepherd_child_result` calls are hidden too.
-- **Controls by state:** clicking a card inspects the run.
-  - Running: the call in flight (else the last call) and the context window used. The extension
-    reports the call in flight as `lastActivity` with `kind: "running"` from its start, and
-    `kind: "tool"` once it ends. Pause or Continue and Stop are in the card's context menu and
-    accessibility actions, and visible in the inspector.
-  - Queued or paused: an outlined "Queued" or "Paused" pill ("paused before its next model
-    request").
-  - Needs you: the question with the child's options as buttons, plus Reply… for free text.
-  - Failed: Open replay (the inspector) and Re-run (resume with the original task).
-- **Grouping:** more than three siblings fold into a runs strip: one step per run, the tally,
-  tokens, and the group's time. Each step opens its run in the inspector (its tooltip names the
-  run and its state), and the rest of the row shows or hides every card. Needs-you cards stay
-  visible.
-- **Ledger:** once every run in a spawn group has finished and none still asks, the cards become
-  one ledger at the first spawn's position. The header shows one step per run, "all done · 45m"
-  (or "2 done · 1 failed · 45m"), and the combined DiffStat. Below it, one row per child in spawn
-  order: state dot, name, a one-line summary (or the exit reason), and "files · duration". Diff
-  counts come from `edit` calls; `write` lists the file at +0/−0.
+- **The tray:** while a turn's children run, they dock above the composer, one row each, in
+  the same card as Up next (`NativeSubagentTray`, derived by the thread store). It shows the
+  newest spawn group, plus any child still live from an earlier one, and stays once every child
+  has finished until the user's next message.
+- **Rows by state:** clicking a row inspects the run.
+  - Running: the call in flight, from `lastActivity` (`kind: "running"` from its start, `kind:
+    "tool"` once it ends), with its file, the child's diff so far (`files`), and its time. Steer,
+    Stop and Open on hover; Pause or Continue and Stop in the context menu and accessibility
+    actions, and visible in the inspector.
+  - Queued or paused: "Waiting to start", or "Paused before its next model request".
+  - Needs you: "asks:" and its question, with Answer, which opens the question in the
+    composer's place: the child's options to choose from, or a reply. The answer reaches only
+    that child.
+  - Done: the first sentence of its summary, its diff and duration. Failed: why.
+- **The record:** the thread keeps "Started 3 subagents" where the first `shepherd_child_start`
+  row was (workflow children, including `/run`, at the `shepherd_workflow` row; children with no
+  tool call at the end of the last agent turn), and once every child finished, "3 subagents
+  finished" with the span, files and combined diff, where they finished. The spawn calls and the
+  parent's `shepherd_child_wait` and `shepherd_child_result` calls leave no activity lines. Both
+  lines open the first child in the inspector. Diff counts come from `edit` calls; `write` lists
+  the file at +0/−0.
 - **Turn footer:** reads "time · duration · N tool calls · n subagents". The subagent count
   links to the first child. Like the rest of the footer, it shows while the turn is hovered.
 
 **Inspector.** It opens in the right pane beside the thread (`RightPaneSplit`: 600pt by default,
 at least 480pt, at most half the main column, the width remembered; it overlays the thread when
 the column is too narrow). It shares that slot with the review, and the inspector wins when both
-are open. Clicking the inspected card or ledger row again closes it; a palette pick always opens
+are open. Clicking the inspected tray row again closes it; a palette pick always opens
 it.
 
 - **Header:** the name and "k of n", above a line with the model, the thinking level (live runs
@@ -320,11 +319,13 @@ it.
 - **Transcript:** pages the child's session file (its last 8 MiB) 50 entries at a time, using the
   thread's own projection, one type step smaller. "N earlier turns · Show all" loads more.
   Scrolling up stops following a live run. Switching children invalidates pending pages, and
-  Copy Transcript loads every page first.
+  Copy Transcript loads every page first. A live run's transcript ends in its call in flight,
+  drawn as the thread's live line from what the run reports (`nativeRunLive`); nothing shows
+  between calls.
 - **Live runs** end in a Steer composer addressed to the child ("to: worker · not the parent").
   A failed send keeps the draft.
 - **Finished runs** are read-only: messages from the parent are captioned "from parent", and the
-  bottom bar has Re-run, Fork, and Copy transcript. Your own steers and answers (from a card, the
+  bottom bar has Re-run, Fork, and Copy transcript. Your own steers and answers (from the tray, the
   inspector, `shepherd-inspect`, or the fleet view) are not: the extension appends each to
   `user-messages.jsonl` beside the child's session before sending it, and the host marks the
   matching transcript message `origin: .user` (the first unclaimed message with its text, written

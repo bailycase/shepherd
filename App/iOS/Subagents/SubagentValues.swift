@@ -11,8 +11,6 @@ extension MobileLayout {
     static let subagentInspectorMaxWidth: CGFloat = 480
     /// Sibling runs shown as tabs over the inspector; more step with ‹ › instead.
     static let subagentTabsMax = 4
-    /// Rows a group card lists in the thread before "Open" takes over.
-    static let subagentGroupMaxRows = 6
     /// Space between a section's head and its cards.
     static let subagentSectionSpacing: CGFloat = NW.Space.m
 }
@@ -46,13 +44,24 @@ enum SubagentValues {
             added: summary.added, removed: summary.removed)
     }
 
-    static func groupRow(_ summary: NativeRunSummary) -> NWRunGroupRow {
-        let live = summary.phase.isLive
-        return NWRunGroupRow(
-            id: summary.id, name: summary.name, state: AgentState(summary.phase), detail: summary.compactDetail,
-            meta: live ? nil : summary.meta,
-            since: summary.phase == .needsYou ? date(summary.askedAt) : date(summary.startedAt),
-            until: live ? nil : date(summary.endedAt))
+    /// The store's tray as the tray's header and rows draw it.
+    static func tray(_ tray: NativeSubagentTray) -> (summary: NWSubagentTraySummary, rows: [NWSubagentTrayRun]) {
+        let summary = NWSubagentTraySummary(title: tray.title, cells: tray.cells.map(AgentState.init),
+                                            tally: tray.tally.map { NWSubagentTraySummary.Part($0.text, state: $0.phase.map(AgentState.init)) })
+        return (summary, tray.rows.map(trayRow))
+    }
+
+    static func trayRow(_ row: NativeTrayRow) -> NWSubagentTrayRun {
+        let line: NWSubagentTrayRun.Line = switch row.line {
+        case .working(let verb, let subject, let live): .working(verb: verb, subject: subject, live: live)
+        case .waiting(let text): .waiting(text)
+        case .asks(let question): .asks(question)
+        case .result(let text): .result(text)
+        case .failed(let reason): .failed(reason)
+        }
+        return NWSubagentTrayRun(id: row.id, name: row.name, state: AgentState(row.phase), line: line, added: row.added,
+                                 removed: row.removed, since: date(row.since), until: date(row.until),
+                                 accessibilityLabel: row.accessibilityLabel)
     }
 
     static func historyRow(_ summary: NativeRunSummary) -> NWRunHistoryRow {

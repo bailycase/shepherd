@@ -17,6 +17,12 @@ extension ShepherdViewModel {
         subagentInspector.toggle(agentID: agentID, runID: runID)
     }
 
+    /// The tray's Steer: the run's inspector, with its Steer field focused.
+    func steerSubagent(agentID: AgentID, runID: String) {
+        subagentInspector.runByAgent[agentID] = runID
+        subagentInspector.steerRun = runID
+    }
+
     /// "Fork as new agent": copy the finished child's transcript into its cwd's pi session
     /// directory under a fresh id and start an RPC agent on it in the parent's space. The new
     /// agent is named "<role> (fork)" provisionally so the namer can retitle it. Throws with a
