@@ -148,12 +148,22 @@ keep the version for real breaks.
 - **iPad:** a split view. Landscape shows the sidebar beside the selected thread; in portrait the
   thread takes the width and the sidebar slides over it. With no thread selected the detail is
   the overview.
-- **Thread (`ThreadScreen`):** the title with its status line, user bubbles with their times,
-  thinking, prose, work groups folded into one line with their calls, notes, errors with Retry,
-  the changes card (Review), and the turn footer (time, duration, tool calls, Copy, Retry).
-  It polls its host only while on screen and the app is active (500 ms while the agent runs).
-- **Composer:** a field with Send, and Stop while the agent runs; a question from the agent
-  takes its place (select, confirm, input, editor).
+- **Thread (`ThreadScreen`):** the title with its status line ("Idle · 17 turns · 42k", or the
+  running turn's clock; on iPad a status pill with the counters trailing), Stop while the agent
+  runs, user bubbles with their times, thinking, prose, work groups folded into one line with
+  their calls, the running call's live output, notes, errors with Retry, the changes card
+  (Review opens all of the turn's changes), and the turn footer (time, duration, tool calls,
+  Copy, Retry). It polls its host only while on screen and the app is active (500 ms while the
+  agent runs).
+- **Composer (`ThreadComposer`, `Composer/`):** on iPhone a paperclip beside a capsule field,
+  with the commands, model and thinking chips above it while it is in use; on iPad the Mac's
+  card with that row under the field. Send queues while pi works (hold it to Steer now). Up
+  next draws the host's queue: steering messages first with Back to the queue, queued ones
+  with swipe (Edit, Delete) and long-press (Steer now, Edit, Move to top, Delete) actions, an
+  Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). The
+  model picker lists the host's catalog; images come from Photos, resized to the protocol's
+  limits; "/…" lists the snapshot's commands. A question from the agent takes the composer's
+  place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
 - **Settings:** Appearance (System, Light, Dark), the hosts list with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one).
 - **Stubs:** New thread, Subagents, Review, Search, agent actions, and Home's destinations are
