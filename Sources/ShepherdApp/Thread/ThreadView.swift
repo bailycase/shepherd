@@ -36,7 +36,7 @@ struct ThreadView: View {
     /// Opens the review pane at a file (a changed file, the changes card, an edit call).
     var review: ((String) -> Void)? = nil
     /// The models the host offers, for the composer's model picker.
-    var listModels: (() async -> [PiModelCatalog.Entry])? = nil
+    var listModels: (() async -> ModelCatalog)? = nil
     /// The composer's "Up next" state, when a test or preview drives it.
     var queueState: QueueStackState? = nil
     @State private var follower = NativeScrollFollower()

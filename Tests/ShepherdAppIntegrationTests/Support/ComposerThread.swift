@@ -36,7 +36,7 @@ final class ComposerThread {
             }
         }
         hosted = { [store, commands = self.commands] in
-            AnyView(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: Self.key, listModels: { models })
+            AnyView(ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: Self.key, listModels: { ModelCatalog(models) })
                 .environment(\.threadCommands, commands)
                 // Without motion, a change's first frame is all of its work.
                 .transaction { if !animated { $0.disablesAnimations = true } })
