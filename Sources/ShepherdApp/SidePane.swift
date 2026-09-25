@@ -55,7 +55,7 @@ private struct SidePaneTabBar: View {
             // The pane's ⋯ menu: what the tab on screen offers, then the pane's own. Split below,
             // Open in its own window and Show tabs wait for the tabs that need them.
             if tab == .changes, let review {
-                ReviewOptionItems(session: review, model: review.paneModel)
+                ReviewOptionItems(session: review)
                 Divider()
             }
             Button("Reset Width") { vm.subagentInspector.width = 0 }
