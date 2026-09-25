@@ -338,6 +338,7 @@ final class ReviewStore {
             return false
         }
         // Sent: the review closes, as the Mac's does; the next one starts from the new diff.
+        loadedKey = nil
         comments = []
         summary = ""
         viewed = []
