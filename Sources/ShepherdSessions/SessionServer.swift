@@ -2421,7 +2421,9 @@ public final class SessionServer: @unchecked Sendable {
         return tab.layout.leaves.compactMap { leaf in
             guard leaf.id != agent.paneID, leaf.agentID == nil, let sessionID = leaf.sessionID,
                   let pty = sessions[sessionID]?.pty else { return nil }
-            return RemoteTerminalActivity(paneID: leaf.id, sessionID: sessionID, process: pty.foregroundProcessName,
+            // A login shell's argv[0] is "-zsh": the program is "zsh".
+            let process = pty.foregroundProcessName.map { $0.hasPrefix("-") ? String($0.dropFirst()) : $0 }
+            return RemoteTerminalActivity(paneID: leaf.id, sessionID: sessionID, process: process,
                                           command: pty.runningCommandLine,
                                           outputSequence: outputStates[sessionID]?.outputSequence ?? 0)
         }
