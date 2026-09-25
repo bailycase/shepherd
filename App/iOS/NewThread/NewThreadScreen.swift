@@ -37,7 +37,6 @@ struct NewThreadScreen: View {
                 }
             }
         }
-        .newThreadSizing(pad: navigator.layout == .pad)
         .onAppear {
             guard model == nil else { return }
             let model = NewThreadModel(hosts: hosts, threads: threads, navigator: navigator, preferredHost: preferredHost,
@@ -302,10 +301,3 @@ private struct NewThreadForm: View {
     }
 }
 
-private extension View {
-    /// The iPad board's sheet is a form over the thread, which stays in view around it.
-    @ViewBuilder
-    func newThreadSizing(pad: Bool) -> some View {
-        if pad { presentationSizing(.form) } else { self }
-    }
-}

@@ -394,11 +394,14 @@ struct SidebarAgentRowModel: Equatable {
     var statusSince: Date?
     /// One of the agent's subagents is waiting on your answer.
     var subagentNeedsYou: Bool
+    /// The agent's last turn ended in an error.
+    var turnFailed: Bool
     var dimmed: Bool
 
     init(agent: Agent, selected: Bool, depth: Int, badge: Int? = nil, statusSince: Date? = nil,
-         children: [ChildRun] = [], dimmed: Bool = false) {
+         children: [ChildRun] = [], turnFailed: Bool = false, dimmed: Bool = false) {
         self.agent = agent
+        self.turnFailed = turnFailed
         self.selected = selected
         self.depth = depth
         self.badge = badge
@@ -410,8 +413,11 @@ struct SidebarAgentRowModel: Equatable {
     /// A question waits on the user: the agent's own, or one of its subagents'.
     var needsYou: Bool { agent.status == .blocked || subagentNeedsYou }
 
+    /// A finished agent whose turn ended in an error reads failed, not done.
+    private var failed: Bool { turnFailed && agent.status == .done }
+
     /// The dot: needs you wins over the agent's own status.
-    var state: AgentState { needsYou ? .attention : AgentState(agent.status) }
+    var state: AgentState { needsYou ? .attention : failed ? .failed : AgentState(agent.status) }
 
     /// The agent row's trailing slot, in priority order: the ⌘-digit hint while ⌘ is held,
     /// needs you, then elapsed time while working.
@@ -424,7 +430,8 @@ struct SidebarAgentRowModel: Equatable {
 
     /// "Fix the login, worktree, running".
     var accessibilityLabel: String {
-        "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(needsYou ? "needs you" : AgentRow.statusWord(agent.status))"
+        let word = needsYou ? "needs you" : AgentRow.statusWord(agent.status, turnFailed: turnFailed)
+        return "\(agent.name), \(agent.worktreeBranch != nil ? "worktree, " : "")\(word)"
     }
 }
 
@@ -448,7 +455,8 @@ extension ShepherdViewModel {
     func sidebarRowModel(for agent: Agent, depth: Int, badge: Int?) -> SidebarAgentRowModel {
         SidebarAgentRowModel(
             agent: agent, selected: selectedAgentID == agent.id && selectedRemoteAgent == nil, depth: depth,
-            badge: badge, statusSince: statusSince[agent.id], children: children(of: agent.id)
+            badge: badge, statusSince: statusSince[agent.id], children: children(of: agent.id),
+            turnFailed: failedTurns.contains(agent.id)
         )
     }
 
@@ -516,12 +524,13 @@ struct AgentRow: View {
             .accessibilityAddTraits(model.selected ? .isSelected : [])
     }
 
-    static func statusWord(_ status: AgentStatus) -> String {
+    /// The status language's word; a finished agent whose turn ended in an error reads failed.
+    static func statusWord(_ status: AgentStatus, turnFailed: Bool = false) -> String {
         switch status {
         case .working: "running"
         case .blocked: "needs you"
         case .idle: "idle"
-        case .done: "done"
+        case .done: turnFailed ? "failed" : "done"
         }
     }
 }
@@ -553,6 +562,7 @@ private struct AutomationsFooter: View {
                     ForEach(automations) { automation in
                         let agent = vm.automationAgent(automation)
                         AutomationRow(automation: automation, agent: agent,
+                                      turnFailed: agent.map { vm.failedTurns.contains($0.id) } ?? false,
                                       selected: agent != nil && vm.selectedAgentID == agent?.id) {
                             if let agent { vm.selectAgent(agent.id) }
                         }
@@ -580,20 +590,27 @@ struct AutomationRow: View {
     let automation: Automation
     /// The agent currently running this automation, nil when stopped.
     let agent: Agent?
+    /// The run's last turn ended in an error.
+    let turnFailed: Bool
     let selected: Bool
     let action: () -> Void
 
-    private var stateWord: String {
+    private var stateWord: String { Self.stateWord(agent, turnFailed: turnFailed) }
+    private var state: AgentState { Self.state(agent, turnFailed: turnFailed) }
+
+    /// A run that has ended reads done, or failed when its last turn ended in an error.
+    static func stateWord(_ agent: Agent?, turnFailed: Bool) -> String {
         guard let agent else { return "stopped" }
         return switch agent.status {
         case .working: "running"
         case .blocked: "needs you"
-        case .idle, .done: "done"
+        case .idle, .done: turnFailed && agent.status == .done ? "failed" : "done"
         }
     }
 
-    private var state: AgentState {
+    static func state(_ agent: Agent?, turnFailed: Bool) -> AgentState {
         guard let agent else { return .idle }
+        if turnFailed && agent.status == .done { return .failed }
         return agent.status == .idle ? .done : AgentState(agent.status)
     }
 

@@ -186,8 +186,9 @@ public final class SessionServer: @unchecked Sendable {
     /// State was persisted. Every mutation broadcasts, including mutations
     /// initiated by the GUI. Delivered on the main actor.
     public var onStateChanged: ((ShepherdState) -> Void)?
-    /// The pi status extension reported a status. Delivered on the main actor.
-    public var onAgentStatus: ((AgentID, AgentStatus) -> Void)?
+    /// The pi status extension reported a status. A `done` that ends a turn pi failed carries
+    /// the failure; every other report carries nil. Delivered on the main actor.
+    public var onAgentStatus: ((AgentID, AgentStatus, TurnFailure?) -> Void)?
     /// The subagents extension published an agent's live child-run projection
     /// (full replace). Display-only — never persisted, never validated against
     /// state; the GUI owns row lifecycle. Delivered on the main actor.
@@ -874,7 +875,7 @@ public final class SessionServer: @unchecked Sendable {
                 ), to: client)
                 return
             }
-            guard let expected = remoteToken, token == expected else {
+            guard let expected = remoteToken, RemoteToken.matches(token, expected: expected) else {
                 ShepherdLog.warning("remote client '\(clientName)' rejected: bad token (fd \(client.fd))")
                 sendFinal(.error(id: id, code: "unauthorized", message: "bad token"), to: client)
                 return
@@ -1887,11 +1888,16 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     private func applyAgentStatus(agentID: AgentID, status: AgentStatus) {
-        // Between queued turns pi settles for a moment; the agent is not done (and must not
-        // post "Agent finished") while its queue goes next.
-        if status == .done, let thread = rpcThread(forAgent: agentID), thread.continuesAfterSettle {
-            thread.doneHeld = true
-            return
+        var failure: TurnFailure?
+        if status == .done, let thread = rpcThread(forAgent: agentID) {
+            // Between queued turns pi settles for a moment; the agent is not done (and must not
+            // post "Agent finished") while its queue goes next. And the extension's report can
+            // arrive before pi's own settle on stdout, which says how the turn ended: wait for it.
+            if thread.continuesAfterSettle || thread.running {
+                thread.doneHeld = true
+                return
+            }
+            failure = thread.turnFailure
         }
         if let index = store.state.agents.firstIndex(where: { $0.id == agentID }) {
             let current = store.state.agents[index].status
@@ -1899,7 +1905,7 @@ public final class SessionServer: @unchecked Sendable {
                 // Nothing to persist or broadcast (extension reconnects re-send
                 // the current status); the callback still fires so launch UI
                 // learns pi is up.
-                hopToMain { [weak self] in self?.onAgentStatus?(agentID, status) }
+                hopToMain { [weak self] in self?.onAgentStatus?(agentID, status, failure) }
                 return
             }
             if !current.canTransition(to: status) {
@@ -1916,7 +1922,7 @@ public final class SessionServer: @unchecked Sendable {
         let committedState = store.state
         broadcastRemoteState(committedState)
         hopToMain { [weak self] in
-            self?.onAgentStatus?(agentID, status)
+            self?.onAgentStatus?(agentID, status, failure)
             self?.onStateChanged?(committedState)
         }
     }

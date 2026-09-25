@@ -79,11 +79,11 @@ struct SidebarRowModelTests {
     private static let since = Date(timeIntervalSince1970: 10)
 
     private func model(_ status: AgentStatus, badge: Int? = nil, children: [ChildRun] = [],
-                       since: Date? = since) -> SidebarAgentRowModel {
+                       since: Date? = since, turnFailed: Bool = false) -> SidebarAgentRowModel {
         var agent = Fixture.agent("a", in: space).agent
         agent.status = status
         return SidebarAgentRowModel(agent: agent, selected: false, depth: 1, badge: badge, statusSince: since,
-                                    children: children)
+                                    children: children, turnFailed: turnFailed)
     }
 
     /// The ⌘-digit hint, then needs you, then elapsed time while working.
@@ -123,6 +123,20 @@ struct SidebarRowModelTests {
                                                  accessory: NWSidebarRow.Accessory, state: AgentState, word: String) {
         let row = model(status, children: children.runs)
         #expect(row.accessory == accessory)
+        #expect(row.state == state)
+        #expect(row.accessibilityLabel == "a, \(word)")
+    }
+
+    /// A finished agent whose turn ended in an error reads failed; a new turn, or a question
+    /// from one of its subagents, reads as usual.
+    @Test(arguments: [
+        (AgentStatus.done, [ChildRun](), AgentState.failed, "failed"),
+        (.working, [], .running, "running"),
+        (.idle, [], .idle, "idle"),
+        (.done, [Fixture.child("asks", attention: true)], .attention, "needs you"),
+    ])
+    func aFailedTurnReadsFailed(status: AgentStatus, children: [ChildRun], state: AgentState, word: String) {
+        let row = model(status, children: children, turnFailed: true)
         #expect(row.state == state)
         #expect(row.accessibilityLabel == "a, \(word)")
     }
