@@ -143,6 +143,8 @@ enum SkillsSheet: Identifiable, Hashable {
 // MARK: The list
 
 /// The installed skills: a header, then a row per skill; the open one shows its detail below it.
+/// The lazy stack is the scroll view's own content, header included, so opening the page builds
+/// only the rows in view.
 private struct SkillsList: View {
     var vm: ShepherdViewModel
     var model: ClientSkills
@@ -153,7 +155,7 @@ private struct SkillsList: View {
 
     var body: some View {
         let nw = Color.nw
-        VStack(spacing: 0) {
+        LazyVStack(spacing: 0) {
             SkillsListHeader()
             if rows.isEmpty {
                 Text(empty)
@@ -162,16 +164,14 @@ private struct SkillsList: View {
                     .frame(maxWidth: .infinity, minHeight: AppLayout.skillsRowMinHeight)
                     .nwTransition(.disclosure)
             }
-            LazyVStack(spacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                    let open = expanded == row.id
-                    VStack(spacing: 0) {
-                        SkillsListRow(row: row, open: open, first: index == 0, actions: actions(for: row))
-                            .equatable()
-                        if open {
-                            SkillDetail(vm: vm, model: model, hosts: hosts, row: row)
-                                .nwTransition(.disclosure)
-                        }
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                let open = expanded == row.id
+                VStack(spacing: 0) {
+                    SkillsListRow(row: row, open: open, first: index == 0, actions: actions(for: row))
+                        .equatable()
+                    if open {
+                        SkillDetail(vm: vm, model: model, hosts: hosts, row: row)
+                            .nwTransition(.disclosure)
                     }
                 }
             }
