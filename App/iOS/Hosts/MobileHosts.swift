@@ -60,6 +60,9 @@ final class MobileHosts {
     static let recordsKey = "shepherd.ios.hosts"
     /// The first client's one host (`{name, host, port}`).
     static let legacyKey = "shepherd.ios.host"
+    /// The migrated host whose token has not moved yet: the Keychain refuses reads while the
+    /// device is locked, and the app can launch then, so the move is retried until it lands.
+    static let legacyTokenKey = "shepherd.ios.host.pendingToken"
 
     private(set) var hosts: [MobileHost] = []
 
@@ -81,17 +84,31 @@ final class MobileHosts {
         var records = RemoteHostRecord.decodeList(defaults.data(forKey: Self.recordsKey))
         if records.isEmpty, let legacy = RemoteHostRecord.migrating(legacy: defaults.data(forKey: Self.legacyKey), id: UUID()) {
             records = [legacy]
-            migrateLegacyToken(to: legacy.id)
             defaults.set(RemoteHostRecord.encodeList(records), forKey: Self.recordsKey)
+            defaults.set(legacy.id.uuidString, forKey: Self.legacyTokenKey)
         }
         defaults.removeObject(forKey: Self.legacyKey)
         hosts = records.map(MobileHost.init)
+        moveLegacyToken()
     }
 
-    private func migrateLegacyToken(to id: UUID) {
-        // A token that cannot move stays where it is; the host then asks for it again.
-        guard let token = try? tokens.readLegacy(), !token.isEmpty, (try? tokens.save(token, id)) != nil else { return }
-        try? tokens.removeLegacy()
+    /// Moves the first client's token to its migrated host. A read or save that fails (a locked
+    /// device) leaves it pending for the next foreground; a missing token ends the move.
+    private func moveLegacyToken() {
+        guard let pending = defaults.string(forKey: Self.legacyTokenKey) else { return }
+        guard let id = UUID(uuidString: pending), host(id) != nil else {
+            defaults.removeObject(forKey: Self.legacyTokenKey)
+            return
+        }
+        do {
+            if let token = try tokens.readLegacy(), !token.isEmpty, try tokens.read(id) == nil {
+                try tokens.save(token, id)
+            }
+            try? tokens.removeLegacy()
+            defaults.removeObject(forKey: Self.legacyTokenKey)
+        } catch {
+            return
+        }
     }
 
     // MARK: Reading
@@ -137,6 +154,10 @@ final class MobileHosts {
     func forget(_ id: UUID) throws {
         guard let index = hosts.firstIndex(where: { $0.id == id }) else { return }
         try tokens.remove(id)
+        if defaults.string(forKey: Self.legacyTokenKey) == id.uuidString {
+            try? tokens.removeLegacy()
+            defaults.removeObject(forKey: Self.legacyTokenKey)
+        }
         let host = hosts.remove(at: index)
         disconnect(host)
         persist()
@@ -153,6 +174,7 @@ final class MobileHosts {
     func setForeground(_ active: Bool) {
         guard active != foreground else { return }
         foreground = active
+        if active { moveLegacyToken() }
         for host in hosts {
             if active { retry(host.id) } else { disconnect(host) }
         }

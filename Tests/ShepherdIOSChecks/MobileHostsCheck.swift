@@ -10,9 +10,33 @@ import ShepherdRemote
 struct MobileHostsCheck {
     @MainActor
     static func main() async throws {
-        let suite = "shepherd.ios.check.\(UUID())"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        // A suite named by an absolute path is that plist, so nothing lands in ~/Library/Preferences.
+        let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("shepherd-ios-check-\(UUID())")
+        try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: scratch) }
+        func scratchDefaults(_ name: String) -> UserDefaults {
+            let suite = scratch.appendingPathComponent(name).path
+            return UserDefaults(suiteName: suite)!
+        }
+        let defaults = scratchDefaults("defaults")
+
+        // A locked device refuses the Keychain: the record migrates at once, and its token
+        // moves on the first foreground once the Keychain answers.
+        let lockedDefaults = scratchDefaults("locked")
+        lockedDefaults.set(Data(#"{"name":"Old Mac","host":"127.0.0.1","port":1}"#.utf8), forKey: MobileHosts.legacyKey)
+        let memory = HostTokens.memory(legacy: "legacy-token")
+        let locked = Locked()
+        var lockable = memory
+        lockable.readLegacy = { if locked.value { throw CocoaError(.fileReadNoPermission) }; return try memory.readLegacy() }
+        let whileLocked = MobileHosts(defaults: lockedDefaults, tokens: lockable)
+        let lockedID = whileLocked.hosts.first?.id
+        try check(lockedID != nil && memory.read(lockedID!) == nil && memory.readLegacy() == "legacy-token", "a locked Keychain keeps the token pending")
+        check(MobileHosts(defaults: lockedDefaults, tokens: lockable).hosts.map(\.id) == [lockedID!], "the record migrated once")
+        locked.value = false
+        whileLocked.setForeground(true)
+        try check(memory.read(lockedID!) == "legacy-token" && memory.readLegacy() == nil, "the token moves once the Keychain answers")
+        check(lockedDefaults.string(forKey: MobileHosts.legacyTokenKey) == nil, "nothing is left pending")
+        whileLocked.setForeground(false)
 
         // The first client's single host migrates, token and all, and its old key goes.
         defaults.set(Data(#"{"name":"Old Mac","host":"127.0.0.1","port":1}"#.utf8), forKey: MobileHosts.legacyKey)
@@ -89,6 +113,10 @@ struct MobileHostsCheck {
         }
         fatalError("timed out: \(what)")
     }
+}
+
+final class Locked: @unchecked Sendable {
+    var value = true
 }
 
 /// A host that answers hello and the state fetch, pushes one state, and holds the socket until
