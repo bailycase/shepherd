@@ -414,13 +414,17 @@ def retire_plan(builds: list[AppStoreBuild], waiting_for: str | None = None) -> 
     """Which TestFlight builds to expire. The newest VALID build stays, and every unexpired
     build numbered below it that is or may become installable expires. Nothing numbered above
     it is touched, and with no VALID build nothing expires. `waiting_for` names the build just
-    uploaded: until it is VALID nothing expires, and if it failed processing nothing does."""
+    uploaded: until it is VALID nothing expires, and if it failed processing nothing does. A
+    processed build numbered above it supersedes it, so there is nothing left to wait for."""
     live = sorted((b for b in builds if not b.expired and b.number is not None),
                   key=lambda b: b.number, reverse=True)
     if waiting_for is not None:
         target = _build_number(waiting_for)
         if target is None:
             raise ValueError(f"bad build number {waiting_for!r}")
+        if any(b.number > target and b.processing_state == "VALID" for b in live):
+            waiting_for = None
+    if waiting_for is not None:
         awaited = [b for b in live if b.number == target]
         if not awaited:
             return RetirePlan("wait", f"build {waiting_for} has not reached App Store Connect yet")
