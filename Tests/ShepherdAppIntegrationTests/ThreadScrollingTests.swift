@@ -370,6 +370,55 @@ struct ThreadScrollingTests {
         #expect(thread.trailingSpace <= AppLayout.turnSpacing * 2 + 13)
     }
 
+    /// A follow-up sent while pi works waits in Up next. When it goes, after the reader left the
+    /// tail, it is new output like any other: the reader keeps their place and the pill offers
+    /// the way down. It once armed a scroll at the send that fired on its delivery.
+    @Test func aQueuedFollowUpGoingInWhileDetachedKeepsTheReadersPlace() async throws {
+        let thread = ThreadHarness(messages: 24, running: true, paragraphs: 20)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        // A host that holds the queue: the follow-up shows in Up next, not the thread.
+        var running = ThreadHarness.snapshot(count: 24, running: true, revision: 2, paragraphs: 20)
+        running.queue = NativeQueue()
+        await thread.publish(running)
+
+        thread.store.draft = "and then this"
+        await thread.store.send(delivery: .followUp)
+        #expect(thread.store.lastSendQueued && thread.store.rows.last(where: \.isUser)?.id == "m22")
+        try await thread.detach()
+        let detached = thread.distanceFromBottom
+        #expect(detached > NativeScrollFollower.threshold)
+
+        var delivered = ThreadHarness.snapshot(count: 26, running: false, revision: 3, paragraphs: 20)
+        delivered.queue = NativeQueue()
+        delivered.messages[24] = NativeThreadMessage(entryID: "m24", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "and then this")],
+                                                     truncated: false)
+        await thread.publish(delivered)
+        try await eventuallyOnMain("the queued message to join the thread") { thread.store.rows.last(where: \.isUser)?.id == "m24" }
+        try await eventuallyOnMain("the turn to settle") { !thread.store.running }
+        try await thread.settle()
+
+        #expect(thread.distanceFromBottom >= detached - 2, "the queued message's delivery pulled the reader to the tail")
+        try await eventuallyOnMain("the jump pill to show for the new output", poll: .milliseconds(150)) { thread.showsJumpPill }
+    }
+
+    /// ⌥⌘↑ with pi idle: the rows the jump reveals are measured on the way, which grows the
+    /// content, but nothing new arrived, so there is no pill until something does.
+    @Test func aTurnJumpWithPiIdleShowsThePillOnlyForNewOutput() async throws {
+        let thread = ThreadHarness(messages: 30, paragraphs: 20)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+
+        try await thread.detach()
+        #expect(thread.distanceFromBottom > NativeScrollFollower.threshold)
+        thread.command(.previousTurn)
+        try await thread.settle()
+        #expect(!thread.showsJumpPill, "the pill showed with pi idle and nothing new")
+
+        await thread.publish(ThreadHarness.snapshot(count: 32, running: false, revision: 2, paragraphs: 20))
+        try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
+    }
+
     /// A code block scrolls sideways only when its longest line is wider than the column; one
     /// that fits draws its code with no scroll view, at the same place.
     @Test(arguments: [false, true]) func aCodeBlockScrollsSidewaysOnlyWhenItsLinesDoNotFit(wide: Bool) {
