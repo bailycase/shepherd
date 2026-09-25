@@ -18,8 +18,8 @@ There are two entry points:
 
 - **New Worktree…** in a local space's context menu. It appears only when the space is a git
   repository. The sheet has three rows:
-  - **Branch:** generated as `worktree/<adjective>-<noun>-<1000–9999>`, for example
-    `worktree/calm-stone-3831`.
+  - **Branch:** generated as `agent/<adjective>-<noun>-<1000–9999>`, for example
+    `agent/calm-stone-3831`. Branches made before 2026-09-25 keep their `worktree/` names.
   - **Base:** an editable ref, pre-filled from the resolved base (below), with a note
     describing where it came from.
   - **Checkout:** a sibling of the repository, `<parent>/<repo>-<branch with / replaced by ->`.
