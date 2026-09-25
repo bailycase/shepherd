@@ -51,14 +51,18 @@ struct SearchDestination: View {
     }
 }
 
-/// ⌘K, in the menu bar and the keyboard shortcuts overlay (the app's scene adds it).
+/// ⌘K, in the menu bar and the keyboard shortcuts overlay (the app's scene adds it), for the
+/// focused window's navigator; nil (no window focused) disables it.
 struct SearchCommands: Commands {
-    let navigator: MobileNavigator
+    let navigator: MobileNavigator?
 
     var body: some Commands {
         CommandGroup(after: .textEditing) {
-            Button("Search Threads…") { SearchHooks.toggle(navigator: navigator) }
-                .keyboardShortcut("k", modifiers: .command)
+            Button("Search Threads…") {
+                if let navigator { SearchHooks.toggle(navigator: navigator) }
+            }
+            .keyboardShortcut("k", modifiers: .command)
+            .disabled(navigator == nil)
         }
     }
 }

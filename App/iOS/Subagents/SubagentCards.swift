@@ -22,7 +22,7 @@ struct SubagentCards: View, Equatable {
     var body: some View {
         let store = threads.store(for: thread)
         let commands = SubagentCommands(store: store, enabled: store.takesSubagentCommands)
-        let selected = SubagentInspection.shared.selected(in: thread)
+        let selected = SubagentInspection.of(navigator).selected(in: thread)
         VStack(alignment: .leading, spacing: MobileLayout.turnItemSpacing) {
             if runs.count == 1, let run = runs.first {
                 single(run, selected: selected == run.runID, commands: commands)

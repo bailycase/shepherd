@@ -62,7 +62,7 @@ struct SubagentListContent: View {
     var body: some View {
         let key = SubagentList.Key(store)
         let commands = SubagentCommands(store: store, enabled: store.takesSubagentCommands)
-        let selected = SubagentInspection.shared.selected(in: ref)
+        let selected = SubagentInspection.of(navigator).selected(in: ref)
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
             SubagentHostNotice(ref: ref, subject: "runs")
             if let notice = store.notice { Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.failed) }
