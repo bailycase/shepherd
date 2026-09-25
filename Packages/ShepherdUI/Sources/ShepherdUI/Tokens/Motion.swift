@@ -7,13 +7,15 @@ import UIKit
 
 extension NW {
     /// Night Watch motion. The Foundations board's durations are the anchors (hover 120ms, panes
-    /// 180ms, sheets 240ms, the glow 1.6s, the spinner 1s, the skeleton 1.4s); every one-shot
-    /// motion runs on a spring at its anchor, so an interrupted change retargets from where it
-    /// is instead of restarting. Only attention glows and only running work spins.
+    /// 180ms, sheets 240ms, the glow 1.6s, the shimmer 1.8s; the spinner 1s and a placeholder's
+    /// pulse 1.4s); every one-shot motion runs on a spring at its anchor, so an interrupted change
+    /// retargets from where it is instead of restarting. Only attention glows, and live text
+    /// shimmers: nothing in the thread spins (LiveText).
     ///
-    /// Under Reduce Motion nothing moves: the continuous motions are static, anything that
-    /// would slide, grow, or nudge cross-fades (120ms, eased), pops and scrolls are instant, and
-    /// hover and content fades are unchanged because they are fades already.
+    /// Under Reduce Motion nothing moves: the continuous motions are static (live text reads as
+    /// plain secondary text), anything that would slide, grow, or nudge cross-fades (120ms,
+    /// eased), pops and scrolls are instant, and hover and content fades are unchanged because
+    /// they are fades already.
     public enum Motion: CaseIterable, Sendable {
         /// Hover and press fills, focus rings, and color or opacity changes of a control: 120ms.
         case hover
@@ -35,12 +37,16 @@ extension NW {
         case emphasis
         /// A programmatic scroll (turn jumps, revealing a row): 240ms.
         case scroll
-        /// The attention glow: 1.6s ease-in-out, repeating.
+        /// The attention glow: 1.6s ease-in-out, repeating. Attention only.
         case glow
-        /// A running tool or turn: one turn per second, linear.
+        /// Work in progress outside the thread (a sheet's step, a host connecting): one turn per
+        /// second, linear.
         case spin
-        /// A loading placeholder's pulse: 1.4s ease-in-out, repeating.
+        /// Live text (the running tool's line, thinking): a highlight moving across the text,
+        /// 1.8s linear, repeating.
         case shimmer
+        /// A loading placeholder's pulse: 1.4s ease-in-out, repeating.
+        case pulse
 
         /// The board's anchor. For a spring this is its perceptual duration: the change reads as
         /// done by then, and the last fraction of a point settles a little later
@@ -52,12 +58,13 @@ extension NW {
             case .sheet, .emphasis, .scroll: 0.24
             case .glow: 1.6
             case .spin: 1
-            case .shimmer: 1.4
+            case .shimmer: 1.8
+            case .pulse: 1.4
             }
         }
 
         /// Whether the motion loops (and so stops entirely under Reduce Motion).
-        public var isContinuous: Bool { self == .glow || self == .spin || self == .shimmer }
+        public var isContinuous: Bool { self == .glow || self == .spin || self == .shimmer || self == .pulse }
 
         /// The spring behind a one-shot motion; nil for the continuous ones. Anything that moves
         /// layout or slides in from an edge is critically damped (`.smooth`, no overshoot, so a
@@ -68,7 +75,7 @@ extension NW {
             case .hover, .content, .disclosure, .list, .pane, .sheet, .scroll: .smooth(duration: duration)
             case .overlay: .snappy(duration: duration)
             case .emphasis: .bouncy(duration: duration)
-            case .glow, .spin, .shimmer: nil
+            case .glow, .spin, .shimmer, .pulse: nil
             }
         }
 
@@ -77,7 +84,8 @@ extension NW {
             switch self {
             case .glow: return reduceMotion ? nil : .easeInOut(duration: duration).repeatForever(autoreverses: true)
             case .spin: return reduceMotion ? nil : .linear(duration: duration).repeatForever(autoreverses: false)
-            case .shimmer: return reduceMotion ? nil : .easeInOut(duration: duration / 2).repeatForever(autoreverses: true)
+            case .shimmer: return reduceMotion ? nil : .linear(duration: duration).repeatForever(autoreverses: false)
+            case .pulse: return reduceMotion ? nil : .easeInOut(duration: duration / 2).repeatForever(autoreverses: true)
             case .hover, .content: return .smooth(duration: duration)
             case .disclosure, .list, .pane, .sheet:
                 return reduceMotion ? Self.crossFade : .smooth(duration: duration)
@@ -133,7 +141,7 @@ extension NW {
             let edge = edge ?? defaultEdge
             switch self {
             case .hover, .content: return .fade
-            case .glow, .spin, .shimmer, .scroll: return .identity
+            case .glow, .spin, .shimmer, .pulse, .scroll: return .identity
             case .emphasis: return reduceMotion ? .fade : .pop
             case .disclosure, .list: return reduceMotion ? .fade : .nudge(edge)
             case .pane: return reduceMotion ? .fade : .slide(edge)
@@ -367,14 +375,14 @@ enum NWPop {
 extension EnvironmentValues {
     /// True under a subtree that stays mounted but is not on screen (an agent layout the
     /// workspace keeps while another one shows): the continuous motions (the spinner, the glow,
-    /// the shimmer) stop drawing frames there. It changes only when visibility flips.
+    /// the shimmer, the pulse) stop drawing frames there. It changes only when visibility flips.
     @Entry public var nwMotionPaused: Bool = false
 }
 
-/// Time-driven phase for the continuous motions. The spinner and the glow are Core Animation
-/// animations started at the clock's phase (`NWLayerMotion`), so every one on screen moves in
-/// step and costs the app nothing per frame; the shimmer is a timeline that reads the phase each
-/// frame. Either way Reduce Motion can toggle while one is on screen: the animation is removed
+/// Time-driven phase for the continuous motions. The spinner, the glow and the shimmer are Core
+/// Animation animations started at the clock's phase (`NWLayerMotion`), so every one on screen
+/// moves in step and costs the app nothing per frame; the pulse is a timeline that reads the
+/// phase each frame. Either way Reduce Motion can toggle while one is on screen: the animation is removed
 /// or the timeline pauses. Both also stop under `nwMotionPaused`, and the timeline while its view
 /// is off screen (`onDisappear`), so motion no one sees costs nothing.
 enum NWPhase {
@@ -390,9 +398,21 @@ enum NWPhase {
         return 0.35 + 0.65 * (cos(phase * 2 * .pi) + 1) / 2
     }
 
-    /// The shimmer's opacity, 0.55 → 1 → 0.55 over 1.4s, eased.
-    static func shimmerOpacity(_ date: Date) -> Double {
-        let phase = fraction(date, .shimmer)
+    /// The pulse's opacity, 0.55 → 1 → 0.55 over 1.4s, eased.
+    static func pulseOpacity(_ date: Date) -> Double {
+        let phase = fraction(date, .pulse)
         return 0.55 + 0.45 * (1 - cos(phase * 2 * .pi)) / 2
     }
+
+    /// Where the shimmer's highlight is, in widths of its text: from one width before the text
+    /// to one past it (`shimmerStart` … `shimmerEnd`), linear over 1.8s. The highlight fades to
+    /// tertiary one width either side (`shimmerReach`), so the text is plain tertiary at both
+    /// ends of a pass and the loop has no seam.
+    static func shimmerCenter(_ date: Date) -> Double {
+        shimmerStart + (shimmerEnd - shimmerStart) * fraction(date, .shimmer)
+    }
+
+    static let shimmerStart = -1.0
+    static let shimmerEnd = 2.0
+    static let shimmerReach = 1.0
 }

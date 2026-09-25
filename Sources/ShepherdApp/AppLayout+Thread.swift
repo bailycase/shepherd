@@ -31,7 +31,7 @@ extension AppLayout {
     /// The same wait while the thread has nothing to draw yet (a remote agent's, or one whose
     /// session file cannot be read): a blank thread is explained sooner.
     static let blankStartingIndicatorDelay: Duration = .milliseconds(500)
-    /// The composer's "Starting pi…": its spinner, and the gap after it.
+    /// The composer's "Starting…": its spinner, and the gap after it.
     static let startingSpinner: CGFloat = 10
     static let startingSpacing: CGFloat = 6
 
