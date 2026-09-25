@@ -1348,7 +1348,20 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     `lineStrong` rule, at the prose measure. It opens and closes with `disclosure`.
   - Live: a 12pt `textSecondary` spinner, "Thinking…" in italic 12 `textSecondary`, and its
     seconds counting in mono 10.5 tertiary ("4s"), 8pt apart on a 26pt row. When thinking ends
-    it cross-fades in place into "Thought for Ns", collapsed.
+    it cross-fades in place into what the finished row is (below), or leaves.
+  - Finished, by what the stretch carries. Providers often keep their reasoning back
+    (Anthropic's redacted or omitted thinking, OpenAI's encrypted reasoning, a proxy that
+    streams none), and pi keeps that as a thinking block with no text; readable text is
+    anything but whitespace, a summary pi left only in the block's signature included, and a
+    folded row shows only the blocks that have it.
+    1. Readable text: the disclosure above.
+    2. No readable text, timed at half a second or more: "Thought for 10s" as a plain line, the
+       collapsed label's words, type and color with no chevron. It is not a control (no hover,
+       no press, no focus); its tooltip and VoiceOver say "Thought for 10 seconds. The model
+       didn't share its reasoning."
+    3. No readable text and no such time: no row.
+
+    The NWThread board draws only the first; the other two are app states it does not draw.
 - **Notes** ("Image attached", "Output truncated", extension messages) render as caption
   tertiary text on a 2pt rule (three lines, full text on hover).
 - **Errors** (`NWTurnError`): a failed provider request, on `failedTint` with radius 6 and 8×10
