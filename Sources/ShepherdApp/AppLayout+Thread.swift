@@ -63,10 +63,9 @@ extension AppLayout {
     /// An open editor renews its hold on the host this often; the host lets a hold lapse after
     /// two minutes, so a client that went away cannot keep the queue from going.
     static let queueHoldRenewal: Duration = .seconds(60)
-    // The question panel, in the composer card: between its title, message, and answers; its
-    // attention glyph; and the message's height before it scrolls.
+    // The question panel, in the composer card: between its head, title, message, and answers;
+    // and the message's height before it scrolls.
     static let questionSpacing: CGFloat = 10
-    static let questionGlyph: CGFloat = 13
     static let questionMessageMaxHeight: CGFloat = 140
     /// Row height of the directory picker's list (RemoteDirectoryPicker).
     static let menuRowHeight: CGFloat = 36
