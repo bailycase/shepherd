@@ -152,6 +152,11 @@ final class RPCThreadState {
     /// The user stopped this run: pi ends a run stopped mid-tool-call with an error reply,
     /// which is not a turn that failed.
     var stopRequested = false
+    /// What a Stop ended, which projects as `aborted` rather than as a failure: tool calls that
+    /// failed as it aborted them, and the error replies pi ended those runs with (by pi's
+    /// timestamp).
+    private var stoppedCalls: Set<String> = []
+    private var stoppedReplies: Set<Double> = []
 
     // Queue state (RPCThreadState+Queue.swift).
     var items: [QueueItem] = []
@@ -272,16 +277,23 @@ final class RPCThreadState {
                 sequence += 1
                 currentAssistant = sequence
             }
-            upsertAssistant(message, ended: true)
-            currentAssistant = nil
             runFailed = message.stopReason == "error"
             runError = runFailed ? message.errorMessage : nil
+            var ended = message
+            if runFailed, stopRequested {
+                ended.stopReason = "aborted"
+                if let time = message.timestamp { stoppedReplies.insert(time) }
+            }
+            upsertAssistant(ended, ended: true)
+            currentAssistant = nil
         case .toolExecutionStart(let id, let name, let args):
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
         case .toolExecutionEnd(let id, let name, let result, let isError):
-            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: "complete")
+            let stopped = isError && stopRequested
+            if stopped { stoppedCalls.insert(id) }
+            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)
         case .extensionUIRequest(let request):
@@ -572,9 +584,12 @@ final class RPCThreadState {
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success,
                   let messages = response.messages else { return }
-            let history = Self.projectHistory(messages) { value, message in
+            let history = Self.projectHistory(self.markingStopped(messages)) { value, message in
                 if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
                     value.startedAt = started
+                }
+                if let id = message.toolCallId, message.role == "toolResult", self.stoppedCalls.contains(id) {
+                    value.status = "aborted"
                 }
                 if message.role == "assistant", let time = message.timestamp { value.thinkingSeconds = self.thinkingByTimestamp[time] }
                 if message.role == "user" {
@@ -594,11 +609,23 @@ final class RPCThreadState {
             self.live.removeAll { item in
                 switch item.kind {
                 case .assistant, .user: item.ended
-                case .tool: item.value.status == "complete"
+                case .tool: item.value.status == "complete" || item.value.status == "aborted"
                 case .pending: false
                 }
             }
             self.commit()
+        }
+    }
+
+    /// pi's error replies to a Stop, as the stops they were.
+    private func markingStopped(_ messages: [RPCMessage]) -> [RPCMessage] {
+        guard !stoppedReplies.isEmpty else { return messages }
+        return messages.map { message in
+            guard message.role == "assistant", message.stopReason == "error", let time = message.timestamp,
+                  stoppedReplies.contains(time) else { return message }
+            var stopped = message
+            stopped.stopReason = "aborted"
+            return stopped
         }
     }
 
@@ -650,6 +677,8 @@ final class RPCThreadState {
         toolStarts.removeAll()
         thinkingSpans.removeAll()
         thinkingByTimestamp.removeAll()
+        stoppedCalls.removeAll()
+        stoppedReplies.removeAll()
         widgets.removeAll()
         history.removeAll()
         historyVersion += 1
@@ -1262,7 +1291,8 @@ final class RPCThreadState {
                 break
             }
         }
-        if let error = message.errorMessage, !error.isEmpty {
+        // A stopped run's "Request was aborted" says nothing its `aborted` status does not.
+        if let error = message.errorMessage, !error.isEmpty, message.stopReason != "aborted" {
             result.blocks.append(NativeThreadBlock(kind: .text, text: clip(error)))
         }
         if let isError = message.isError { result.isError = isError }

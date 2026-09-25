@@ -310,6 +310,9 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public var subagent: String?
     /// First line of a failed call's output ("no such file"), for its line's meta.
     public var failure: String?
+    /// The user's Stop interrupted it (the host's `aborted`): done, not failed, and it reads
+    /// "stopped".
+    public var stopped: Bool
     public var startedAt: Double?
     public var endedAt: Double?
     /// Saved output (text blocks joined): the source for Copy Output and the full-output sheet.
@@ -344,7 +347,8 @@ extension NativeActivityCall {
             .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         func string(_ key: String) -> String? { (args?[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         let output = message.blocks.filter { $0.kind == .text }.map(\.text).joined(separator: "\n")
-        let failed = message.isError == true
+        let stopped = message.status == "aborted"
+        let failed = message.isError == true && !stopped
         let running = !failed && (message.status == "running" || message.status == "streaming")
         let lines = output.isEmpty ? [] : output.split(separator: "\n", omittingEmptySubsequences: false)
         let lineCount = lines.count
@@ -371,6 +375,7 @@ extension NativeActivityCall {
         self.exitCode = nil
         self.subagent = nil
         self.failure = failed ? (firstLine.isEmpty ? nil : String(firstLine.prefix(60))) : nil
+        self.stopped = stopped
         self.startedAt = message.startedAt
         self.endedAt = running ? nil : message.timestamp
         self.output = output
@@ -479,6 +484,14 @@ extension NativeActivityCall {
             isPath = string("command") == nil && string("path") != nil
         }
         detail = String(detail.prefix(240))
+        if stopped {
+            // What it did before the Stop is unknown: no counts, and no file to review.
+            stat = "stopped"
+            path = nil
+            testsPassed = nil
+            testsFailed = nil
+            filesChanged = nil
+        }
         if stat == nil, !running, let seconds, seconds >= 0.5, kind != .edit, kind != .subagents, !failed {
             stat = nativeDurationText(seconds)
         }
@@ -512,12 +525,12 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
     public var expandable: Bool { state != .running }
 }
 
-/// Merge consecutive calls of one kind into bursts. A failed call and a running call each
-/// stand alone; other tools merge only with the same tool.
+/// Merge consecutive calls of one kind into bursts. A failed, stopped, or running call each
+/// stands alone; other tools merge only with the same tool.
 public func nativeActivityBursts(_ calls: [NativeActivityCall]) -> [NativeActivityBurst] {
     var groups: [[NativeActivityCall]] = []
     for call in calls {
-        if call.state == .done, let last = groups.last?.last, last.state == .done, last.kind == call.kind,
+        if call.state == .done, !call.stopped, let last = groups.last?.last, last.state == .done, !last.stopped, last.kind == call.kind,
            call.kind != .other || last.name == call.name {
             groups[groups.count - 1].append(call)
         } else {
@@ -545,12 +558,17 @@ public func nativeActivityBurst(_ calls: [NativeActivityCall]) -> NativeActivity
             meta = [first.isPath ? (first.detail as NSString).lastPathComponent : first.detail, first.failure ?? "failed"]
         }
         if let seconds = wallSeconds(calls) { meta.append(nativeDurationText(seconds)) }
+    case .done where first.stopped:
+        label = stoppedLabel(first)
+        meta = [first.kind == .run ? first.commandHead ?? first.detail
+                : first.isPath ? (first.detail as NSString).lastPathComponent : first.detail, "stopped"]
+        if let seconds = wallSeconds(calls) { meta.append(nativeDurationText(seconds)) }
     case .done:
         (label, meta) = doneWords(calls)
     }
     meta = meta.filter { !$0.isEmpty }
     let word = switch state {
-    case .done: "done"
+    case .done: first.stopped ? "stopped" : "done"
     case .failed: "failed"
     case .running: "running"
     }
@@ -600,6 +618,29 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
         }
     case .subagents: return "Subagent failed to start"
     case .other: return "\(call.label) failed"
+    }
+}
+
+/// A call the user's Stop interrupted: what it was doing, in the past, without blame.
+private func stoppedLabel(_ call: NativeActivityCall) -> String {
+    switch call.kind {
+    case .explore:
+        switch call.explore {
+        case .search: return "Search stopped"
+        case .list: return "List stopped"
+        default: return "Read stopped"
+        }
+    case .edit: return call.name == "write" ? "Write stopped" : "Edit stopped"
+    case .run:
+        switch call.commandClasses.first ?? .other {
+        case .tests: return "Ran tests"
+        case .build: return "Ran a build"
+        case .commit: return "Commit stopped"
+        case .push: return "Push stopped"
+        case .other: return "Ran a command"
+        }
+    case .subagents: return "Subagent stopped"
+    case .other: return "\(call.label) stopped"
     }
 }
 

@@ -136,6 +136,13 @@ events come out on stdout, one record per LF.
     settles the ended live rows into history.
   - `queue_update` tells the host which text pi queued for a steer (see The queue).
   - Thinking spans are timed as they stream, so history can show "Thought for Ns".
+  - What a Stop ends reads as stopped, not failed: pi ends a run stopped mid-tool-call with a
+    failed call ("Command aborted") and an error reply ("This operation was aborted"). While the
+    user's stop is in effect, the host projects both with status `aborted` (in history too, for
+    as long as this pi runs), and a reply pi itself marks `aborted` carries no error text.
+    Clients read `aborted` as stopped: the call's line says "stopped" and the turn ends in a
+    quiet "Stopped" note, never an error with Retry. After a relaunch, history read from pi
+    shows such a run as pi recorded it.
   - `turn_*` events are ignored, and so is anything the lenient `RPCWire` decoder doesn't know
     (compaction included).
 - **Session switches** are detected whenever `get_state` reports a new session ID. The

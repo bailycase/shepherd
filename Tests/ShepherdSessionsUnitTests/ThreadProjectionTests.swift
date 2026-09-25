@@ -70,6 +70,14 @@ struct ThreadProjectionTests {
         #expect(row.status == "error")
     }
 
+    /// A stopped run's "Request was aborted" is no reply: its `aborted` status says it all.
+    @Test func aStoppedReplyCarriesNoErrorText() throws {
+        let message: RPCMessage = try decode(#"{"role":"assistant","content":[{"type":"text","text":"Half"}],"stopReason":"aborted","errorMessage":"Request was aborted"}"#)
+        let row = RPCThreadState.project(entryID: "m:0", message: message)
+        #expect(row.blocks == [NativeThreadBlock(kind: .text, text: "Half")])
+        #expect(row.status == "aborted")
+    }
+
     @Test func aMissingRoleProjectsAsCustom() throws {
         let message: RPCMessage = try decode(#"{"content":"note"}"#)
         #expect(RPCThreadState.project(entryID: "m:0", message: message).role == "custom")
