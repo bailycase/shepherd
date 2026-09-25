@@ -1,0 +1,125 @@
+name: Swift build
+description: >
+  Restores the dependency and build caches, carries source mtimes over, and runs
+  `swift build --build-tests`. Exports SWIFTPM_FLAGS so later steps call SwiftPM
+  (`swift test --skip-build $SWIFTPM_FLAGS`) exactly as it built.
+
+inputs:
+  clean:
+    description: "'true' skips the build cache and builds from scratch."
+    default: "false"
+  save:
+    description: "'true' saves the dependency cache (on a miss) and the build cache."
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    # Every SwiftPM call must use the same flags, or it replans the build.
+    # --force-resolved-versions skips the network "Updating" pass,
+    # --manifest-cache local keeps evaluated manifests inside .build (cached).
+    # The build cache's keys start with `prefix`. Bump CACHE_EPOCH to make
+    # every cache entry unreachable, build and dependencies (a corrupt
+    # incremental build or checkout).
+    - name: Swift version and flags
+      id: swift
+      shell: bash
+      env:
+        CACHE_EPOCH: "1"
+      run: |
+        flags="--force-resolved-versions --disable-index-store --manifest-cache local"
+        help=$(swift build --help 2>&1)
+        for flag in --force-resolved-versions --disable-index-store --manifest-cache; do
+          grep -q -- "$flag" <<<"$help" || { echo "::error::this toolchain's swift build has no $flag"; exit 1; }
+        done
+        echo "SWIFTPM_FLAGS=$flags" >> "$GITHUB_ENV"
+        # An image update can change the SDK or Xcode build under the same
+        # swiftlang string, so the key covers all three.
+        toolchain=$({ swift --version; xcrun --show-sdk-version; xcodebuild -version; } 2>/dev/null)
+        echo "$toolchain"
+        version=$(shasum -a 256 <<<"$toolchain" | cut -c1-12)
+        echo "prefix=spm-build-$RUNNER_OS-e$CACHE_EPOCH-$version" >> "$GITHUB_OUTPUT"
+        echo "epoch=$CACHE_EPOCH" >> "$GITHUB_OUTPUT"
+
+    # Checked-out dependencies: about 1 GB of git packs that no toolchain change
+    # invalidates, so a build-cache miss never re-clones them.
+    - name: Restore dependency cache
+      id: deps
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          .build/repositories
+          .build/checkouts
+          .build/artifacts
+          .build/workspace-state.json
+        key: spm-deps-${{ runner.os }}-e${{ steps.swift.outputs.epoch }}-${{ hashFiles('Package.resolved') }}
+        restore-keys: |
+          spm-deps-${{ runner.os }}-e${{ steps.swift.outputs.epoch }}-
+    - name: Resolve dependencies
+      if: steps.deps.outputs.cache-hit != 'true' && inputs.save == 'true'
+      shell: bash
+      run: swift package $SWIFTPM_FLAGS resolve
+    - name: Save dependency cache
+      if: steps.deps.outputs.cache-hit != 'true' && inputs.save == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          .build/repositories
+          .build/checkouts
+          .build/artifacts
+          .build/workspace-state.json
+        key: ${{ steps.deps.outputs.cache-primary-key }}
+
+    # Build products, one entry per commit. Restore looks in this ref's scope
+    # first, then the base branch's (nightly, master). `.build/*` rather than
+    # `.build`: actions/cache doesn't expand directories, so the exclusions only
+    # apply to entries the glob names.
+    - name: Restore build cache
+      id: build
+      if: inputs.clean != 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          .build/*
+          !.build/repositories
+          !.build/checkouts
+          !.build/artifacts
+          !.build/workspace-state.json
+        key: ${{ steps.swift.outputs.prefix }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ steps.swift.outputs.prefix }}-${{ hashFiles('Package.resolved') }}-
+          ${{ steps.swift.outputs.prefix }}-
+    - name: Restore source mtimes
+      if: inputs.clean != 'true'
+      shell: bash
+      run: python3 scripts/ci_mtimes.py restore .build/ci-mtimes
+
+    - name: Build
+      shell: bash
+      run: |
+        swift build --build-tests $SWIFTPM_FLAGS
+        # SwiftPM copies binary frameworks (Sparkle) to Products/<config>,
+        # but test-bundle rpaths expect PackageFrameworks; bridge the two
+        # (-n: a restored link must be replaced, not followed).
+        for d in .build/*/debug .build/out/Products/Debug; do
+          [ -d "$d" ] || continue
+          mkdir -p "$d/PackageFrameworks"
+          [ -d "$d/Sparkle.framework" ] && ln -sfn "$PWD/$d/Sparkle.framework" "$d/PackageFrameworks/Sparkle.framework" || true
+        done
+
+    # Saved before any test runs, so a failing or hung run still warms the next push.
+    - name: Record source mtimes
+      if: inputs.save == 'true' && steps.build.outputs.cache-hit != 'true'
+      shell: bash
+      run: python3 scripts/ci_mtimes.py save .build/ci-mtimes
+    - name: Save build cache
+      if: inputs.save == 'true' && steps.build.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          .build/*
+          !.build/repositories
+          !.build/checkouts
+          !.build/artifacts
+          !.build/workspace-state.json
+        key: ${{ steps.swift.outputs.prefix }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}

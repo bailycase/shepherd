@@ -79,7 +79,7 @@ final class RemoteHostStore {
             if !children.isEmpty { children = [:] }
         }
 
-        func startChildRefresh(client: RemoteHostClient) {
+        func startChildRefresh(client: RemoteHostClient, every interval: Duration) {
             stopChildRefresh()
             guard client.capabilities.contains(RemoteProtocol.agentInspectionCapability) else { return }
             childRefreshTask = Task { [weak self, weak client] in
@@ -92,7 +92,7 @@ final class RemoteHostStore {
                             if case .children(let rows) = try await client.agentQuery(agentID: agent.id, query: .children),
                                !Task.isCancelled, self?.client === client,
                                self?.state.agents.contains(where: { $0.id == agent.id }) == true,
-                               // The poll repeats every 3s; an unchanged answer must not republish.
+                               // The poll repeats; an unchanged answer must not republish.
                                self?.children[agent.id] != rows {
                                 self?.children[agent.id] = rows
                             }
@@ -101,7 +101,7 @@ final class RemoteHostStore {
                             if self?.children[agent.id] != nil { self?.children.removeValue(forKey: agent.id) }
                         }
                     }
-                    try? await Task.sleep(for: .seconds(3))
+                    try? await Task.sleep(for: interval)
                 }
             }
         }
@@ -118,13 +118,15 @@ final class RemoteHostStore {
     private(set) var connections: [Connection] = [] { didSet { onProjectionChanged?() } }
 
     private let defaults: UserDefaults
+    private let childRefreshInterval: Duration
 
     var hosts: [HostConfig] {
         connections.map(\.config)
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, childRefreshInterval: Duration = .seconds(3)) {
         self.defaults = defaults
+        self.childRefreshInterval = childRefreshInterval
         if let data = defaults.data(forKey: Self.defaultsKey),
            let configs = try? JSONDecoder().decode([HostConfig].self, from: data) {
             connections = configs.map(Connection.init)
@@ -222,7 +224,7 @@ final class RemoteHostStore {
                     connection.state = state
                 }
                 connection.phase = .connected
-                connection.startChildRefresh(client: client)
+                connection.startChildRefresh(client: client, every: childRefreshInterval)
                 connection.reconnectDelay = .seconds(1)
             } catch {
                 if connection.client === client {
