@@ -37,11 +37,29 @@ struct AutomationsDestination: View {
 enum AutomationsHooks {
     /// Opens one automation: pushed on iPhone; on iPad the list opens with it selected.
     static func open(_ key: AutomationKey, navigator: MobileNavigator) {
-        navigator.open(.automations(.detail(host: key.host, automation: key.automation)))
+        switch navigator.layout {
+        case .phone:
+            navigator.open(.automations(.detail(host: key.host, automation: key.automation)))
+        case .pad:
+            AutomationsStore.choose(key)
+            navigator.open(.home(.automations))
+        }
     }
 
     /// The form for a new automation.
     static func create(host: UUID? = nil, navigator: MobileNavigator) {
         navigator.present(.automations(.edit(host: host, automation: nil)))
+    }
+}
+
+extension MobileNavigator {
+    /// Closes `route` when it is the screen on top of the current stack, leaving the ones under it.
+    func close(_ route: MobileRoute) {
+        switch layout {
+        case .phone:
+            if tab == .home, homePath.last == route { homePath.removeLast() }
+        case .pad:
+            if padPath.last == route { padPath.removeLast() }
+        }
     }
 }
