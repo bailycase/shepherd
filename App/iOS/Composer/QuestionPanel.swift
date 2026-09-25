@@ -18,6 +18,8 @@ struct QuestionPanel: View {
     @Environment(\.composerMaxHeight) private var maxHeight
     @State private var text: String
     @State private var chosen: Int?
+    /// The panel's width: a wide one (iPad) lays two answers side by side.
+    @State private var width: CGFloat = 0
     private let options: [NativeQuestionOption]
 
     init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, docked: Bool = false, answer: @escaping (NativeDialogAnswer) -> Void) {
@@ -62,6 +64,7 @@ struct QuestionPanel: View {
             .fittedScroll(maxHeight: maxHeight * MobileLayout.questionScrollShare)
             footer.disabled(blocked)
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .accessibilityLabel("Question: \(dialog.title)")
     }
 
@@ -69,23 +72,20 @@ struct QuestionPanel: View {
     @ViewBuilder private var choices: some View {
         switch dialog.kind {
         case .select:
-            ViewThatFits(in: .horizontal) {
-                if !docked, options.count > 1 {
-                    Grid(horizontalSpacing: NW.Space.m, verticalSpacing: NW.Space.m) {
-                        ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { start in
-                            GridRow {
-                                optionButton(options[start])
-                                    .frame(minWidth: MobileLayout.questionColumn, maxHeight: .infinity, alignment: .top)
-                                if start + 1 < options.count {
-                                    optionButton(options[start + 1])
-                                        .frame(minWidth: MobileLayout.questionColumn, maxHeight: .infinity, alignment: .top)
-                                } else {
-                                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                                }
+            if !docked, options.count > 1, width >= 2 * MobileLayout.questionColumn + NW.Space.m {
+                Grid(horizontalSpacing: NW.Space.m, verticalSpacing: NW.Space.m) {
+                    ForEach(Array(stride(from: 0, to: options.count, by: 2)), id: \.self) { start in
+                        GridRow(alignment: .top) {
+                            optionButton(options[start]).frame(maxHeight: .infinity, alignment: .top)
+                            if start + 1 < options.count {
+                                optionButton(options[start + 1]).frame(maxHeight: .infinity, alignment: .top)
+                            } else {
+                                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
                             }
                         }
                     }
                 }
+            } else {
                 VStack(spacing: NW.Space.m) {
                     ForEach(options) { optionButton($0) }
                 }

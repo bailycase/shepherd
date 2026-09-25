@@ -9,9 +9,10 @@ extension MobileLayout {
     static let composerSpacing: CGFloat = NW.Space.m
     /// The composer's padding under the field.
     static let composerBottom: CGFloat = NW.Space.m
-    /// The Up next rows' most height before they scroll: three rows at the default text size
-    /// (scaled with Dynamic Type), and never more than `queueShare` of the composer's room.
-    static let queueRowsMaxHeight: CGFloat = CGFloat(NWTouchQueueMetrics.visibleRows) * NWTouchQueueMetrics.rowHeight
+    /// The Up next rows' most height before they scroll: three rows (a steering one included)
+    /// with half of a fourth peeking, at the default text size (scaled with Dynamic Type), and
+    /// never more than `queueShare` of the composer's room.
+    static let queueRowsMaxHeight: CGFloat = (CGFloat(NWTouchQueueMetrics.visibleRows) + 0.5) * NWTouchQueueMetrics.rowHeight
     static let queueShare: CGFloat = 0.45
     /// The share of the composer's room a question's text and answers may take before they
     /// scroll; the rest keeps its actions in reach.
