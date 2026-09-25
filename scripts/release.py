@@ -373,6 +373,8 @@ def verify_ios(path: str, build: str) -> list[str]:
 ASC_API = "https://api.appstoreconnect.apple.com"
 TESTFLIGHT_JOB = "iOS to TestFlight (internal)"   # the testflight job's name in release.yml
 JWT_LIFETIME = 1200   # App Store Connect refuses a token that lives longer than 20 minutes
+# What a token asks for: short of the limit, so a runner clock ahead of Apple's is not refused.
+TOKEN_LIFETIME = 900
 BUILD_NUMBER = re.compile(r"^\d+(\.\d+)*$")
 # A build that is installable, or could become so. FAILED and INVALID builds never reach testers.
 EXPIRABLE = ("VALID", "PROCESSING")
@@ -487,7 +489,7 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
-def app_store_connect_token(key_id: str, issuer_id: str, now: int, sign, lifetime: int = JWT_LIFETIME) -> str:
+def app_store_connect_token(key_id: str, issuer_id: str, now: int, sign, lifetime: int = TOKEN_LIFETIME) -> str:
     """An ES256 JWT for the App Store Connect API. `sign` takes the signing input and returns
     OpenSSL's DER signature over its SHA-256."""
     if not 0 < lifetime <= JWT_LIFETIME:
@@ -520,7 +522,7 @@ def token_source(key_id: str, issuer_id: str, sign, clock=time.time):
         now = int(clock())
         if cached["token"] is None or now >= cached["exp"] - 120:
             cached["token"] = app_store_connect_token(key_id, issuer_id, now, sign)
-            cached["exp"] = now + JWT_LIFETIME
+            cached["exp"] = now + TOKEN_LIFETIME
         return cached["token"]
     return token
 

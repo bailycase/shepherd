@@ -706,7 +706,7 @@ class TokenTests(unittest.TestCase):
         header, payload, signature = token.split(".")
         self.assertEqual(json.loads(b64url_decode(header)), {"alg": "ES256", "kid": "KEY123", "typ": "JWT"})
         self.assertEqual(json.loads(b64url_decode(payload)), {
-            "iss": "issuer-uuid", "iat": 1_800_000_000, "exp": 1_800_001_200, "aud": "appstoreconnect-v1"})
+            "iss": "issuer-uuid", "iat": 1_800_000_000, "exp": 1_800_000_900, "aud": "appstoreconnect-v1"})
         self.assertEqual(signed, [f"{header}.{payload}".encode()])
         self.assertEqual(b64url_decode(signature), r + s)
         self.assertNotIn("=", token)
@@ -715,6 +715,9 @@ class TokenTests(unittest.TestCase):
         for lifetime in (0, 1201, -5):
             with self.subTest(lifetime=lifetime), self.assertRaises(ValueError):
                 release.app_store_connect_token("k", "i", 0, lambda _: b"", lifetime)
+
+    def test_a_token_asks_for_less_than_the_limit_so_clock_skew_is_not_refused(self):
+        self.assertLessEqual(release.TOKEN_LIFETIME, release.JWT_LIFETIME - 60)
 
     def test_the_token_source_renews_a_token_before_it_expires(self):
         now = [1000.0]
@@ -726,9 +729,9 @@ class TokenTests(unittest.TestCase):
 
         token = release.token_source("k", "i", sign, clock=lambda: now[0])
         first = token()
-        now[0] += 600
+        now[0] += 700
         self.assertEqual(token(), first)
-        now[0] += 500   # 1100 s old: inside the two-minute margin
+        now[0] += 100   # 800 s old: inside the two-minute margin of a 900 s token
         self.assertNotEqual(token(), first)
         self.assertEqual(len(calls), 2)
 
@@ -1029,7 +1032,7 @@ class RetireCommandTests(unittest.TestCase):
         self.assertEqual(json.loads(b64url_decode(header)), {"alg": "ES256", "kid": "KEY123", "typ": "JWT"})
         claims = json.loads(b64url_decode(payload))
         self.assertEqual((claims["iss"], claims["aud"], claims["exp"] - claims["iat"]),
-                         ("issuer-uuid", "appstoreconnect-v1", 1200))
+                         ("issuer-uuid", "appstoreconnect-v1", release.TOKEN_LIFETIME))
         self.assertTrue(verify_token(tokens[0].removeprefix("Bearer "), self.public, self.dir))
 
     def test_a_real_run_patches_every_older_build(self):
