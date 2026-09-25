@@ -37,7 +37,7 @@ extension ShepherdViewModel {
     var skillsHosts: [SkillsHost] {
         [SkillsHost(id: Self.thisMacSkills, name: "This Mac", client: localSkills, serves: true)]
             + remoteHosts.connections.map { connection in
-                let connected = connection.phase == .connected ? connection.client : nil
+                let connected = connection.skillsClient
                 return SkillsHost(id: connection.id, name: connection.config.name, client: connected,
                                   serves: connected == nil || connection.supportsSkills)
             }

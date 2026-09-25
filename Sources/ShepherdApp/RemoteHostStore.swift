@@ -86,6 +86,8 @@ final class RemoteHostStore {
         var supportsInstructions: Bool { client?.capabilities.contains(RemoteProtocol.instructionsCapability) == true }
         /// The host serves Settings ▸ Skills (`skills.v1`).
         var supportsSkills: Bool { client?.capabilities.contains(RemoteProtocol.skillsCapability) == true }
+        /// What Settings ▸ Skills reads and changes the host's skills through, while it's connected.
+        var skillsClient: (any SkillsClient)? { phase == .connected ? client : nil }
         /// The host takes every level pi has in `createAgent` (older hosts: Off to High).
         var supportsAllThinkingLevels: Bool { client?.capabilities.contains(RemoteProtocol.thinkingLevelsCapability) == true }
         var supportsWorktreeCreation: Bool {
