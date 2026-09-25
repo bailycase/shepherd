@@ -629,6 +629,8 @@ crook, a title, one sentence, actions):
   sidebar, or start another in <space>.", and the same actions.
 - No spaces at all: "No spaces yet", "A space is a project folder your agents work in.", and a
   primary **New space…** button.
+- The workspace never stands in the hidden automations space with no agent: stopping a
+  selected run moves it to the first visible space.
 - Otherwise: "No agent selected", "Pick one in the sidebar, or start a new one.", and the New
   agent keycaps.
 
