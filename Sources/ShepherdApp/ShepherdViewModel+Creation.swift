@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import ShepherdUI
 import ShepherdCore
+import ShepherdRemote
 import ShepherdSessions
 
 extension ShepherdViewModel {
@@ -337,11 +338,14 @@ extension ShepherdViewModel {
         state = canonical
         // A new agent's thread is known to be empty: it draws at once, ready to type into, while
         // pi boots behind it. A resumed session (a forked transcript) is read from its file.
+        // Its opening prompt shows at once too, as the row the host's first snapshot will carry.
+        let opening = OpeningPrompt(config.initialPrompt, agentID: agentID)
         if config.piSessionID == nil {
-            threadStores.store(for: agentID).preview(PiSessionPreview.empty(
+            let empty = PiSessionPreview.empty(
                 sessionID: agent.effectivePiSessionID,
                 model: config.model ?? PiConfig.defaultModel(),
-                thinking: config.thinking.rawValue))
+                thinking: config.thinking.rawValue)
+            threadStores.store(for: agentID).preview(opening.map { $0.preview(empty) } ?? empty)
         }
 
         // Optimistic switch: the agent's thread appears immediately in its connecting
@@ -356,7 +360,7 @@ extension ShepherdViewModel {
         }
 
         do {
-            try await sessions.createAgentSession(pane: primary, tab: tab, agent: agent, initialPrompt: config.initialPrompt, isAutomation: config.isAutomation)
+            try await sessions.createAgentSession(pane: primary, tab: tab, agent: agent, openingPrompt: opening, isAutomation: config.isAutomation)
         } catch {
             throw AgentStartFailure(message: "session failed: \(error)")
         }

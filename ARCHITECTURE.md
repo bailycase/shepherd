@@ -170,6 +170,10 @@ shell process
   watermark happen in one server-queue turn, for local and remote viewers alike. The viewer drops
   buffered output at or below the watermark and feeds what follows, so nothing is duplicated or
   lost when a surface is replaced.
+- **A command for a fresh shell** (a pane opened with a command, `gh auth login`) goes through
+  `SessionServer.typeCommand`, which waits until the shell's line editor has the terminal (the
+  pty has left canonical mode and turned its echo off) and then types it. Written sooner, the terminal echoes it above the
+  prompt and the line editor shows it again. A shell with no line editor gets it after 5 s.
 - **Dead sessions** stay attachable until their consumer calls `retireSession(sessionID:)`.
 - **Exit and shutdown:** exit delivery waits for buffered output. Shutdown cancels queued
   deliveries, balances suspended sources, and escalates TERM to KILL on each process group, then

@@ -602,8 +602,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
     remote agent's space reads "⌁ host")
   - a spacer
   - counters in micro tertiary: "18 turns · 46k ctx · 3 subagents · 1.6m tok". The turn count
-    appears once the whole history is loaded, and the tooltip has the context window, session
-    tokens, and cost.
+    appears once the whole history is loaded, and the context once pi has measured it (never
+    "0 ctx": a first turn has none until pi's first reply). The tooltip has the context window,
+    session tokens, and cost.
   - the pane toggles, lantern-tinted while their pane is open: subagents
     (`arrow.triangle.branch`, ⌘I, only when the thread has subagents) and review
     (`plus.forwardslash.minus`, ⇧⌘B)
@@ -652,7 +653,10 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   Shepherd on the host", "Some earlier output is clipped".
 - **Starting:** while pi boots (a new agent, or one resuming after a relaunch) the thread is
   ready to use and quiet, never an error: it draws what it knows at once (a new agent's empty
-  state, a resuming agent's history), and a message sent meanwhile waits for pi. Nothing says
+  state, or its opening prompt as a message pi has not read yet, at 70%; a resuming agent's
+  history), and a message sent meanwhile waits for pi. The opening prompt is the row pi's first
+  snapshot carries, so it stays put when pi answers and when pi starts the turn; the device that
+  created the agent draws it, and every other viewer sees it in that first snapshot. Nothing says
   pi is starting unless pi is slow: past two seconds (`AppLayout.startingIndicatorDelay`), well
   beyond a normal start (pi answers about 0.8 s after ⌘N, about 1 s after a relaunch), or past
   half a second (`AppLayout.blankStartingIndicatorDelay`) while the thread has nothing to show
@@ -724,6 +728,10 @@ the turn has finished, the changes card and the footer end it. A running turn ha
 - **Errors** (`NWTurnError`): a failed provider request, on `failedTint` with radius 6: a
   triangle, the message ("Model overloaded — the turn stopped after 6 tool calls."), "×n" when
   repeated, and Retry when it ended the turn. Tool failures stay in their activity lines.
+- **Stopped:** a turn the user stopped is not an error. It ends in the note "Stopped", and the
+  call Stop interrupted keeps its line's usual colors with "stopped" in its meta ("Ran a
+  command · sleep 40 · stopped · 7.5s"), standing alone like a failure, so the word stays
+  visible.
 - **Working row** (`NWWorkingRow`): while the agent runs, the thread ends in one row with a
   spinner and what it is doing in italic 12: "Working…" under a live activity line, "Running
   <tool>…", or "Thinking…". Live thinking carries its own spinner instead, and a pending

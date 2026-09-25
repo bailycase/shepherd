@@ -2334,6 +2334,13 @@ public final class SessionServer: @unchecked Sendable {
         await enqueueValue { self.sessions[sessionID]?.info }
     }
 
+    /// Hands a new agent's pi (an RPC session) its opening prompt: held until the thread serves,
+    /// then sent before the thread answers any request, so every client's first snapshot shows
+    /// it. Its pending row is `OpeningPrompt`'s, which a client can draw while pi starts.
+    public func sendOpeningPrompt(_ prompt: OpeningPrompt, sessionID: SessionID) async {
+        await enqueueValue { self.sessions[sessionID]?.thread?.sendOpeningPrompt(prompt.text, id: prompt.operationID) }
+    }
+
     /// Whether an RPC session's thread serves yet, bound to an agent or not (for tests).
     func threadServes(sessionID: SessionID) async -> Bool {
         await enqueueValue { self.sessions[sessionID]?.thread?.isServable == true }
@@ -2493,6 +2500,30 @@ public final class SessionServer: @unchecked Sendable {
             session.writeInput(data)
         }
     }
+
+    /// Types `command` and Return into a fresh shell once its line editor reads, so the command
+    /// shows once, at the prompt. Written sooner, the terminal echoes it as typeahead before the
+    /// shell draws its prompt, and the line editor then shows it again. A shell with no line
+    /// editor gets it after `timeout`.
+    public func typeCommand(_ command: String, sessionID: SessionID, timeout: TimeInterval = 5) {
+        let data = Data((command + "\n").utf8)
+        let deadline = DispatchTime.now() + timeout
+        queue.async { self.typeWhenLineEditorReads(data, sessionID: sessionID, deadline: deadline) }
+    }
+
+    /// Server queue. Checks the terminal's mode every `lineEditorPoll` until the deadline.
+    private func typeWhenLineEditorReads(_ data: Data, sessionID: SessionID, deadline: DispatchTime) {
+        guard let session = sessions[sessionID]?.pty, session.isAlive else { return }
+        guard session.lineEditorReading || DispatchTime.now() >= deadline else {
+            queue.asyncAfter(deadline: .now() + Self.lineEditorPoll) { [weak self] in
+                self?.typeWhenLineEditorReads(data, sessionID: sessionID, deadline: deadline)
+            }
+            return
+        }
+        session.writeInput(data)
+    }
+
+    private static let lineEditorPoll: DispatchTimeInterval = .milliseconds(20)
 
     /// Visible rows of a session's screen, trailing blank lines trimmed. Lets
     /// an agent read what a pane it opened has printed.

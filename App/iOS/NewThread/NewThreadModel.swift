@@ -303,6 +303,10 @@ final class NewThreadModel {
                     initialPrompt: creation.initialPrompt, worktreeBranch: creation.worktreeBranch,
                     worktreeBase: creation.worktreeBase, worktreeFetchFirst: creation.worktreeFetchFirst)
                 let ref = AgentRef(host: hostID, agent: agentID)
+                // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
+                if let opening = OpeningPrompt(creation.initialPrompt, agentID: agentID) {
+                    threads.store(for: ref).preview(opening.preview(model: creation.model, thinking: creation.thinking.rawValue))
+                }
                 if let text = creation.firstSend { sendFirst(text, images: images, to: ref) }
                 navigator.dismissPresented()
                 navigator.open(.thread(ref))
