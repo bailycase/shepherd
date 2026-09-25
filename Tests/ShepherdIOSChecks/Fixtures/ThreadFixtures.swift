@@ -50,6 +50,14 @@ extension FixtureCatalog {
                               app.threads.store(for: preview).draft = "Match the spacing in this screenshot"
                               Task { await ComposerStates.shared.state(for: preview).attach([(ThreadFixtures.image(), "thread-spacing.png")]) }
                           }),
+            // The same chips for a model the host says takes no thinking level: no Thinking chip.
+            FixtureScreen(name: "composer-plain-model", hosts: ThreadFixtures.plainModel(ThreadFixtures.hosts()), routes: [.thread(preview)],
+                          prepare: { app in
+                              app.threads.store(for: preview).draft = "Match the spacing in this screenshot"
+                              for _ in 0..<100 where ComposerStates.shared.state(for: preview).models == nil {
+                                  try? await Task.sleep(for: .milliseconds(50))
+                              }
+                          }),
             // The model picker, from the host's catalog.
             FixtureScreen(name: "models", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: { _ in ComposerStates.shared.state(for: preview).choosingModel = true }),
@@ -72,6 +80,14 @@ enum ThreadFixtures {
         hosts[0].threads[FixtureData.dock] = dock
         hosts[0].models = ["anthropic/claude-opus", "anthropic/claude-sonnet", "anthropic/claude-haiku", "openai/gpt-5", "openai/o3",
                            "google/gemini-2.5-pro"]
+        return hosts
+    }
+
+    /// Studio's hosts with the threads' model (and New thread's default) one that takes no
+    /// thinking level.
+    static func plainModel(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
+        var hosts = hosts
+        hosts[0].withoutThinking = ["anthropic/claude-opus"]
         return hosts
     }
 

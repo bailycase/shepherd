@@ -24,6 +24,9 @@ struct AgentsPreviewTests {
     /// `shepherd_parent_message` 2m 10s ago.
     private static var cardRuns: [ChildRun] {
         var runs = Threads.liveRuns
+        // The worker is mid-call: its card and the inspector's last line name the command.
+        runs[0].currentTool = "bash"
+        runs[0].lastActivity = ChildActivity(kind: ChildActivity.runningKind, tool: "bash", preview: "swift build --target ShepherdRemote", at: nowMs - 2000)
         runs[1].lastActivity = ChildActivity(tool: "shepherd_parent_message", at: nowMs - 130_000)
         var paused = runs[0]
         paused.runID = "native-docs-paused"

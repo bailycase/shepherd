@@ -32,7 +32,7 @@ struct PiSettings: View {
                     SettingsSwitch(label: "Native subagents", isOn: $settings.piNativeSubagents)
                 }
                 SettingsRow(title: "Subagent display",
-                            subtitle: "Show subagent runs in the sidebar and open their inspector. Off doesn't stop them running.") {
+                            subtitle: "Show subagent runs in their agent's thread, the inspector and the palette. Off doesn't stop them running.") {
                     SettingsSwitch(label: "Subagent display", isOn: $settings.piSubagentsExtension)
                 }
             }

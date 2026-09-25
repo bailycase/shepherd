@@ -27,21 +27,32 @@ public enum PiConfig {
         agentDirectory(environment: environment).appendingPathComponent("sessions", isDirectory: true)
     }
 
-    private static var agentDirectory: URL { agentDirectory() }
-
-    /// Model ids from ~/.pi/agent/models.json; empty when unreadable. Accepts
-    /// arrays of strings or of objects with an "id"/"name", at the top level
-    /// or under common wrapper keys.
-    public static func modelIDs() -> [String] {
-        guard let data = try? Data(contentsOf: agentDirectory.appendingPathComponent("models.json")),
+    /// Models from models.json as "provider/id", the form `--model` and `setModel` take; empty
+    /// when unreadable. pi's own shape (`providers.<name>.models[].id`) names each model's
+    /// provider and whether it reasons (pi's default is no). Other shapes are read leniently:
+    /// arrays of strings or of objects with an "id"/"name", at the top level or under wrapper
+    /// keys, taken as they are and assumed to reason.
+    public static func modelEntries(in directory: URL = agentDirectory()) -> [PiModelCatalog.Entry] {
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("models.json")),
               let root = try? JSONSerialization.jsonObject(with: data) else { return [] }
-        var ids: [String] = []
+        var entries: [PiModelCatalog.Entry] = []
         var seen = Set<String>()
 
-        func add(_ id: String) {
+        func add(_ id: String, reasoning: Bool) {
             let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty, seen.insert(trimmed).inserted else { return }
-            ids.append(trimmed)
+            entries.append(PiModelCatalog.Entry(id: trimmed, reasoning: reasoning))
+        }
+
+        if let providers = (root as? [String: Any])?["providers"] as? [String: Any] {
+            for name in providers.keys.sorted() {
+                guard let models = (providers[name] as? [String: Any])?["models"] as? [Any] else { continue }
+                for case let model as [String: Any] in models {
+                    guard let id = model["id"] as? String, !id.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+                    add("\(name)/\(id.trimmingCharacters(in: .whitespaces))", reasoning: model["reasoning"] as? Bool ?? false)
+                }
+            }
+            return entries
         }
 
         func harvest(_ value: Any, depth: Int) {
@@ -49,10 +60,10 @@ public enum PiConfig {
             if let array = value as? [Any] {
                 for element in array {
                     if let id = element as? String {
-                        add(id)
+                        add(id, reasoning: true)
                     } else if let object = element as? [String: Any],
                               let id = (object["id"] ?? object["name"] ?? object["model"]) as? String {
-                        add(id)
+                        add(id, reasoning: true)
                     }
                 }
             } else if let object = value as? [String: Any] {
@@ -65,27 +76,25 @@ public enum PiConfig {
         }
 
         harvest(root, depth: 0)
-        return ids
+        return entries
     }
 
-    /// defaultModel from ~/.pi/agent/settings.json, if readable.
-    public static func defaultModel() -> String? {
-        guard let object = settings(),
-              let model = object["defaultModel"] as? String,
-              !model.isEmpty else { return nil }
-        return model
+    /// `modelEntries`' ids.
+    public static func modelIDs(in directory: URL = agentDirectory()) -> [String] {
+        modelEntries(in: directory).map(\.id)
     }
 
     /// The model pi starts a new session with when none is passed, as "provider/id" (settings.json's
-    /// defaultProvider and defaultModel), if both are set.
-    public static func defaultModelReference(in directory: URL = agentDirectory()) -> String? {
+    /// defaultProvider and defaultModel), if both are set. Never the bare id: several providers can
+    /// serve one id, and `--model` with a bare id may pick another.
+    public static func defaultModel(in directory: URL = agentDirectory()) -> String? {
         guard let object = settings(in: directory),
               let provider = object["defaultProvider"] as? String, !provider.isEmpty,
               let model = object["defaultModel"] as? String, !model.isEmpty else { return nil }
         return "\(provider)/\(model)"
     }
 
-    private static func settings(in directory: URL = agentDirectory) -> [String: Any]? {
+    private static func settings(in directory: URL) -> [String: Any]? {
         guard let data = try? Data(contentsOf: directory.appendingPathComponent("settings.json")) else { return nil }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
     }

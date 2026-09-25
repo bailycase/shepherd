@@ -83,12 +83,30 @@ public func formatReview(files: [DiffFile], comments: [ReviewComment], summary: 
     return output.joined(separator: "\n")
 }
 
-/// Commit: the agent commits what is under review, addressing the review first when it has notes.
+/// The most files a commit request names; the rest are counted.
+public let reviewCommitRequestFileLimit = 50
+
+/// Commit: the agent commits the files under review, named so it can't decide there is nothing
+/// left (a new file it never staged), addressing the review first when it has notes.
 public func formatCommitRequest(files: [DiffFile], comments: [ReviewComment], summary: String, reference: String? = nil) -> String {
+    var output = files.isEmpty ? ["Commit these changes."] : ["Commit these changes:"]
+    output += files.prefix(reviewCommitRequestFileLimit).map { file in
+        switch ReviewFileStatus(file) {
+        case .added: "- \(file.displayPath) (new)"
+        case .deleted: "- \(file.displayPath) (deleted)"
+        case .renamed: "- \(file.displayPath) (renamed from \(file.oldPath ?? "?"))"
+        case .modified: "- \(file.displayPath)"
+        }
+    }
+    if files.count > reviewCommitRequestFileLimit {
+        output.append("- and \(files.count - reviewCommitRequestFileLimit) more")
+    }
     let hasNotes = !comments.isEmpty || !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    guard hasNotes else { return "Commit these changes." }
-    return "Commit these changes. Address the review below first.\n\n"
-        + formatReview(files: files, comments: comments, summary: summary, reference: reference)
+    if hasNotes {
+        output += ["", "Before committing, address the review below.", "",
+                   formatReview(files: files, comments: comments, summary: summary, reference: reference)]
+    }
+    return output.joined(separator: "\n")
 }
 
 extension DiffLine.Kind {

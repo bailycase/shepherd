@@ -343,7 +343,7 @@ extension ShepherdViewModel {
         if config.piSessionID == nil {
             let empty = PiSessionPreview.empty(
                 sessionID: agent.effectivePiSessionID,
-                model: config.model ?? PiConfig.defaultModelReference(),
+                model: config.model ?? PiConfig.defaultModel(),
                 thinking: config.thinking.rawValue)
             threadStores.store(for: agentID).preview(opening.map { $0.preview(empty) } ?? empty)
         }

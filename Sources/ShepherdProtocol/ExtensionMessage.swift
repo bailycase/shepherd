@@ -600,8 +600,10 @@ public struct ChildDiff: Codable, Hashable, Sendable {
     public init(added: Int, removed: Int) { self.added = added; self.removed = removed }
 }
 
-/// The child's most recent finished tool call.
+/// The child's latest tool call: the one in flight, else its most recent finished call.
 public struct ChildActivity: Codable, Hashable, Sendable {
+    /// "tool" once the call finished, "running" while it runs. Older children extensions
+    /// reported finished calls only.
     public var kind: String
     public var tool: String
     public var preview: String?
@@ -611,6 +613,9 @@ public struct ChildActivity: Codable, Hashable, Sendable {
     public init(kind: String = "tool", tool: String, preview: String? = nil, diff: ChildDiff? = nil, at: Double) {
         self.kind = kind; self.tool = tool; self.preview = preview; self.diff = diff; self.at = at
     }
+
+    public static let runningKind = "running"
+    public var isRunning: Bool { kind == Self.runningKind }
 }
 
 public struct ChildQuestion: Codable, Hashable, Sendable {
