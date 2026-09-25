@@ -1,0 +1,156 @@
+import Darwin
+import Foundation
+import ShepherdCore
+import ShepherdProtocol
+
+/// A Shepherd host for screenshots, inside the fixture app: a real TCP listener on 127.0.0.1
+/// speaking the remote protocol, so the app connects through `MobileHosts` and
+/// `RemoteHostClient` exactly as it would to a Mac. It serves fixed data and changes nothing:
+/// every request that would change the host is refused and reported as a mutation.
+///
+/// Compiled only by run-simulator.sh, never into the shipped app.
+final class FixtureHost: @unchecked Sendable {
+    let data: FixtureHostData
+    private(set) var port: UInt16 = 0
+    private var listener: Int32 = -1
+    private let lock = NSLock()
+    private var seen: [String] = []
+
+    init(_ data: FixtureHostData) {
+        self.data = data
+    }
+
+    /// Request kinds this host received, in order.
+    var requests: [String] { lock.withLock { seen } }
+
+    /// Binds an ephemeral port. An offline host binds and closes one, so connecting is refused.
+    func start() throws {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { throw FixtureError("socket failed") }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = in_addr_t(INADDR_LOOPBACK).bigEndian
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard bound == 0, listen(fd, 8) == 0 else { throw FixtureError("bind failed") }
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
+        }
+        port = UInt16(bigEndian: address.sin_port)
+        guard data.online else {
+            close(fd)
+            return
+        }
+        listener = fd
+        Thread.detachNewThread { [self] in
+            while true {
+                let client = accept(fd, nil, nil)
+                guard client >= 0 else { return }
+                var one: Int32 = 1
+                _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+                Thread.detachNewThread { [self] in serve(client) }
+            }
+        }
+    }
+
+    private func serve(_ fd: Int32) {
+        defer { close(fd) }
+        var buffer = Data()
+        var chunk = [UInt8](repeating: 0, count: 65_536)
+        while true {
+            let count = read(fd, &chunk, chunk.count)
+            guard count > 0 else { return }
+            buffer.append(contentsOf: chunk[0..<count])
+            while let newline = buffer.firstIndex(of: 0x0A) {
+                let line = buffer[buffer.startIndex..<newline]
+                buffer.removeSubrange(buffer.startIndex...newline)
+                guard let request = try? NDJSON.decode(RemoteRequest.self, from: Data(line)) else { continue }
+                for reply in answer(request) {
+                    guard let encoded = try? NDJSON.encode(reply), write(fd, encoded) else { return }
+                }
+            }
+        }
+    }
+
+    private func write(_ fd: Int32, _ data: Data) -> Bool {
+        data.withUnsafeBytes { bytes in
+            var offset = 0
+            while offset < bytes.count {
+                let written = Darwin.write(fd, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+                guard written > 0 else { return false }
+                offset += written
+            }
+            return true
+        }
+    }
+
+    private func note(_ kind: String) {
+        lock.withLock { seen.append(kind) }
+    }
+
+    private func mutation(_ kind: String) {
+        note(kind)
+        print("FIXTURE MUTATION \(data.name) \(kind)")
+        fflush(stdout)
+    }
+
+    private func answer(_ request: RemoteRequest) -> [RemoteReply] {
+        if let reply = data.reply?(request) {
+            note(Self.kind(request))
+            return [reply]
+        }
+        switch request {
+        case .hello(let id, let token, _, _, _):
+            note("hello")
+            guard token == FixtureHostData.token else { return [.error(id: id, code: "unauthorized", message: "bad token")] }
+            return [.helloOk(id: id, protocolVersion: RemoteProtocol.version, capabilities: RemoteProtocol.capabilities)]
+        case .stateFetch(let id):
+            note("stateFetch")
+            return [.state(id: id, state: data.state)]
+        case .nativeThread(let id, let agentID, let command):
+            guard case .snapshot(_, _, let after) = command else {
+                mutation("nativeThread." + Self.kind(command))
+                return [.nativeThread(id: id, result: .failure(code: "fixture", message: "The fixture host changes nothing."))]
+            }
+            note("nativeThread.snapshot")
+            guard let snapshot = data.threads[agentID] else {
+                return [.nativeThread(id: id, result: .failure(code: "agent_not_found", message: "No thread in this fixture."))]
+            }
+            if after == snapshot.revision {
+                return [.nativeThread(id: id, result: .unchanged(piSessionID: snapshot.piSessionID, generation: snapshot.generation,
+                                                                  revision: snapshot.revision))]
+            }
+            return [.nativeThread(id: id, result: .snapshot(value: snapshot))]
+        case .listModels(let id):
+            note("listModels")
+            return [.models(id: id, models: data.models, defaultModel: data.models.first)]
+        case .attach(let id, _, _, _, _), .paste(let id, _, _, _), .openPane(let id, _, _, _), .closePane(let id, _, _),
+             .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _),
+             .agentAction(let id, _, _), .upload(let id, _):
+            mutation(Self.kind(request))
+            return [.error(id: id, code: "fixture", message: "The fixture host changes nothing.")]
+        case .detach, .input, .resize:
+            mutation(Self.kind(request))
+            return []
+        case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _):
+            note(Self.kind(request))
+            return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
+        }
+    }
+
+    static func kind(_ request: RemoteRequest) -> String {
+        String(describing: request).prefix { $0 != "(" }.description
+    }
+
+    static func kind(_ command: NativeThreadRequest) -> String {
+        String(describing: command).prefix { $0 != "(" }.description
+    }
+}
+
+struct FixtureError: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
+}
