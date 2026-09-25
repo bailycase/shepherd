@@ -36,7 +36,7 @@ struct AttachButton: View {
                     let ext = item.supportedContentTypes.first?.preferredFilenameExtension ?? "png"
                     loaded.append((data, picked.count == 1 ? "Photo.\(ext)" : "Photo \(index + 1).\(ext)"))
                 }
-                state.attach(loaded)
+                await state.attach(loaded)
             }
         }
     }

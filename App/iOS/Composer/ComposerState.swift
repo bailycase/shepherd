@@ -42,20 +42,32 @@ final class ComposerState {
 
     var room: Int { NativeImagePreparation.room(attachments.count) }
 
-    /// Adds images the picker loaded, resized for the send; refused ones say why.
-    func attach(_ loaded: [(data: Data, name: String)]) {
+    /// Adds images the picker loaded, resized for the send off the main thread (a camera photo
+    /// takes a moment to decode and re-encode); refused ones say why.
+    func attach(_ loaded: [(data: Data, name: String)]) async {
         attachmentError = nil
         for item in loaded {
             guard room > 0 else {
                 attachmentError = NativeImagePreparation.Failure.full.description
                 break
             }
-            do {
-                let image = try NativeImagePreparation.prepare(item.data, name: item.name)
-                let thumbnail = UIImage(data: image.data)?.preparingThumbnail(of: MobileLayout.attachmentThumbnailPixels)
-                    .map { Image(uiImage: $0) }
-                attachments.append(ComposerAttachment(image: image, thumbnail: thumbnail))
-            } catch {
+            let (data, name) = item
+            let thumbnailPixels = MobileLayout.attachmentThumbnailPixels
+            let prepared = await Task.detached(priority: .userInitiated) { () -> Result<(NativeImage, UIImage?), Error> in
+                Result {
+                    let image = try NativeImagePreparation.prepare(data, name: name)
+                    return (image, UIImage(data: image.data)?.preparingThumbnail(of: thumbnailPixels))
+                }
+            }.value
+            switch prepared {
+            case .success(let (image, thumbnail)):
+                // Another attach may have filled the message meanwhile.
+                guard room > 0 else {
+                    attachmentError = NativeImagePreparation.Failure.full.description
+                    return
+                }
+                attachments.append(ComposerAttachment(image: image, thumbnail: thumbnail.map { Image(uiImage: $0) }))
+            case .failure(let error):
                 attachmentError = String(describing: error)
             }
         }
