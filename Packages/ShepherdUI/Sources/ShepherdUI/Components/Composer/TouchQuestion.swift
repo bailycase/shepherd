@@ -11,7 +11,7 @@ public enum NWTouchQuestionMetrics {
     /// An option card's minimum height.
     public static let optionHeight: CGFloat = 56
     /// The width past which a wide panel lays options side by side (iPad).
-    public static let columnMinWidth: CGFloat = 240
+    public static let columnMinWidth: CGFloat = 220
     /// How far a docked panel's fill and line run past its bottom, under the home indicator and
     /// off the screen.
     public static let dockOverhang: CGFloat = 64
@@ -105,7 +105,8 @@ public struct NWQuestionOptionCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(NW.Space.l)
-        .frame(maxWidth: .infinity, minHeight: NWTouchQuestionMetrics.optionHeight, alignment: .topLeading)
+        // Side by side (iPad), the cards of a row share its height.
+        .frame(maxWidth: .infinity, minHeight: NWTouchQuestionMetrics.optionHeight, maxHeight: .infinity, alignment: .topLeading)
         .background(selected ? nw.lanternTint : nw.bgWindow, in: shape)
         .nwBorder(selected ? nw.lantern : nw.lineStrong, radius: NW.Radius.m)
         .nwAnimation(.hover, value: selected)
