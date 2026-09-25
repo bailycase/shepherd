@@ -170,6 +170,18 @@ final class ShepherdViewModel {
     var automationsExpanded = false {
         didSet { sidebarDefaults.set(automationsExpanded, forKey: "shepherd.automationsExpanded") }
     }
+    /// Hosts whose Automations disclosure is open in the sidebar. Persisted.
+    var expandedRemoteAutomations: Set<UUID> = [] {
+        didSet {
+            sidebarDefaults.set(expandedRemoteAutomations.map(\.uuidString).sorted(), forKey: "shepherd.expandedRemoteAutomations")
+        }
+    }
+    /// The remote automation whose details and runs the sheet shows.
+    var remoteAutomationSheet: AutomationKey?
+    /// Each remote automation's runs as its host last sent them, oldest first (read for the sheet).
+    var remoteAutomationRuns: [AutomationKey: [AutomationRun]] = [:]
+    /// Remote automation changes on their way, so their controls wait.
+    var remoteAutomationsPending: Set<AutomationKey> = []
     /// Remote space disclosure state, keyed by host + space so equal space IDs
     /// on different machines cannot collide. Persisted across relaunches.
     private(set) var collapsedRemoteSpaces: Set<String> = [] {
@@ -387,6 +399,9 @@ final class ShepherdViewModel {
         }
         localMachineCollapsed = defaults.bool(forKey: "shepherd.localMachineCollapsed")
         automationsExpanded = defaults.bool(forKey: "shepherd.automationsExpanded")
+        if let raw = defaults.stringArray(forKey: "shepherd.expandedRemoteAutomations") {
+            expandedRemoteAutomations = Set(raw.compactMap(UUID.init(uuidString:)))
+        }
         sidebarHidden = defaults.bool(forKey: "shepherd.sidebarHidden")
         collapsedRemoteSpaces = Set(defaults.stringArray(forKey: "shepherd.collapsedRemoteSpaces") ?? [])
 
