@@ -438,6 +438,33 @@ public final class RemoteHostClient: @unchecked Sendable {
         try expectOk(reply)
     }
 
+    /// Manages one of the host's automations. A host without `automationsCapability` shows its
+    /// automations read-only: this throws `update_required` before sending anything.
+    @discardableResult
+    public func automation(_ automationID: AutomationID, request: RemoteAutomationRequest) async throws -> RemoteAutomationResult {
+        guard capabilities.contains(RemoteProtocol.automationsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to manage its automations from here."
+            )
+        }
+        // Run now spawns the run's agent on the host, which waits on its GUI, as creating one does.
+        let timeout: TimeInterval = request == .run ? 120 : RemoteHostClient.requestTimeout
+        let reply = try await self.request(timeout: timeout) { .automation(id: $0, automationID: automationID, request: request) }
+        switch reply {
+        case .automationResult(_, let result): return result
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected automation reply")
+        }
+    }
+
+    /// The runs the host kept for an automation, oldest first.
+    public func automationRuns(_ automationID: AutomationID) async throws -> [AutomationRun] {
+        guard case .runs(let runs) = try await automation(automationID, request: .runs) else {
+            throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected automation reply")
+        }
+        return runs
+    }
+
     public func detach(sessionID: SessionID) {
         queue.async { self.sendRequest(.detach(sessionID: sessionID)) }
     }
@@ -695,7 +722,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _),
-             .spaceAdded(let id, _), .agentCreated(let id, _):
+             .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)

@@ -127,7 +127,7 @@ keep the version for real breaks.
   and SwiftTerm (the package the Mac's host screens already use) for terminal panes.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
-  `Review/`, `Commit/`, `Search/`, `Settings/`, `Terminal/`, and `Support/` (`AgentRef`, `MobileLayout`,
+  `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Terminal/`, and `Support/` (`AgentRef`, `MobileLayout`,
   `MobileAppearance`, the `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
   derivations (`NativeTurnPresentation`, `NativeActivity`), host records
@@ -146,7 +146,7 @@ keep the version for real breaks.
   locked then, the token moves on the next foreground. Backgrounding
   disconnects every host; the agents keep running on the Macs.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
-  Automations (read-only) and More (host cards), offline hosts with Retry, Needs you (questions
+  Automations and More (host cards), offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short), and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
@@ -199,6 +199,14 @@ keep the version for real breaks.
   the sheet) and refuses a detached HEAD, a merge or rebase in progress, a file that changed since
   the sheet opened, and an agent still working unless confirmed; the sheet shows each step, and a
   finished commit reloads the changes. Ask agent to commit keeps the old turn.
+- **Automations (`Automations/`):** every host's automations, the running ones first, each
+  with its switch (On starts a run when Shepherd launches on the host) and how its last run went.
+  One automation shows its folder, prompt, the latest fourteen runs as a chart, and every run the
+  host kept, each opening its thread while that thread exists; Run now, Stop (confirmed), Edit
+  and Delete act on the host. `+` saves a new one: a name, a prompt, and one of the host's spaces.
+  The Mac has no schedules or triggers, so neither does the form. On iPad the list sits beside
+  the chosen automation. A host without `automations.v1` shows its automations read-only and
+  says so.
 - **Search and actions (`Search/`):** search across every connected host: title matches at once,
   conversations fanned out to each host (`agentQuery(.search)`), snippets with host tags. A
   thread's options menu renames, moves and deletes its agent; a worktree agent's delete follows
@@ -223,5 +231,5 @@ keep the version for real breaks.
 ## Not in the first release
 
 Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), automations over remote, QR pairing and TLS, multiple iPad windows, and
-everything waiting on the Mac (Missions, Designs, daemon hosts).
+background), QR pairing and TLS, multiple iPad windows, and everything waiting on the Mac
+(Missions, Designs, daemon hosts).
