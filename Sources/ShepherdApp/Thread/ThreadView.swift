@@ -404,27 +404,3 @@ private struct ThreadCommandHandler: ViewModifier {
     }
 }
 
-/// "↓ Jump to latest": grows in from above the composer while the thread is detached from its
-/// tail. The composer draws it over the fade it lays on the thread and under its card and menus.
-/// Its motion is its own: the rows behind it never animate with it.
-struct JumpToLatestPill: View {
-    let action: (() -> Void)?
-
-    var body: some View {
-        ZStack {
-            if let action {
-                Button(action: action) {
-                    Label("Jump to latest", systemImage: "arrow.down")
-                        .font(Font.nw(.caption, weight: .medium)).foregroundStyle(Color.nw.textSecondary)
-                        .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
-                        .background(Color.nw.bgRaised, in: Capsule())
-                        .nwBorder(Color.nw.lineStrong, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .nwTransition(.overlay, anchor: .bottom)
-                .accessibilityLabel("Jump to latest")
-            }
-        }
-        .nwAnimation(.overlay, value: action != nil)
-    }
-}

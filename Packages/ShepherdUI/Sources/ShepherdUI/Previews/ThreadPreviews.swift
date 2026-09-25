@@ -35,6 +35,7 @@ import SwiftUI
                          revealed: true)
             NWTurnError("Model overloaded — the turn stopped after 6 tool calls.", retry: {})
             NWWorkingRow("Working…")
+            NWJumpToLatest {}
         }
         .frame(width: 480)
     }
