@@ -53,14 +53,18 @@ public struct NWCommitMessageEditor: View {
 
     public var body: some View {
         let nw = Color.nw
+        // Both fields take their ideal height: a sheet sized to its content proposes a field the
+        // height it had, so text set from outside (the host's message, a draft) stayed clipped to it.
         VStack(alignment: .leading, spacing: NW.Space.s) {
             TextField("Summary", text: $title, prompt: Text("Summary").foregroundStyle(nw.textTertiary), axis: .vertical)
                 .lineLimit(1...3)
+                .fixedSize(horizontal: false, vertical: true)
                 .font(.nw(.body, weight: .semibold))
                 .foregroundStyle(nw.textPrimary)
                 .accessibilityLabel("Commit summary")
             TextField("Description", text: $message, prompt: Text("Description (optional)").foregroundStyle(nw.textTertiary), axis: .vertical)
                 .lineLimit(1...8)
+                .fixedSize(horizontal: false, vertical: true)
                 .font(.nw(.ui, weight: .regular))
                 .foregroundStyle(nw.textSecondary)
                 .accessibilityLabel("Commit description")
