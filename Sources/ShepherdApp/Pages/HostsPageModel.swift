@@ -68,11 +68,19 @@ struct HostsPageModel: Equatable {
         model.rows = stride(from: 0, to: model.cards.count, by: max(1, columns)).map {
             Array(model.cards[$0..<min($0 + max(1, columns), model.cards.count)])
         }
-        model.offlineCount = remotes.count { $0.phase != .connected }
+        model.offlineCount = remotes.count { isOffline($0.phase) }
         let hosts = model.cards.count
         model.subtitle = "\(hosts) host\(hosts == 1 ? "" : "s")"
             + (model.offlineCount > 0 ? " · \(model.offlineCount) offline" : "")
         return model
+    }
+
+    /// Neither connected nor connecting: the header's "N offline" and More ▸ Hosts' badge count it.
+    static func isOffline(_ phase: RemoteHostStore.Phase) -> Bool {
+        switch phase {
+        case .connected, .connecting: false
+        case .disconnected, .failed: true
+        }
     }
 
     static func card(_ remote: HostsPageRemote, timeZone: TimeZone, locale: Locale) -> HostsPageCard {
