@@ -1,5 +1,6 @@
 import Foundation
 import ShepherdCore
+import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
@@ -214,5 +215,37 @@ struct SidebarRowTests {
     ])
     func statusWordsMatchTheStatusLanguage(status: AgentStatus, word: String) {
         #expect(AgentRow.statusWord(status) == word)
+    }
+
+    /// A failed turn qualifies only a finished agent: the sidebar row, the palette's subtitle,
+    /// and an automation's row all read failed until the next turn starts.
+    @Test(arguments: [
+        (AgentStatus.done, "failed", AgentState.failed),
+        (.working, "running", .running),
+        (.blocked, "needs you", .attention),
+    ])
+    func aFailedTurnReadsFailedEverywhereItsStatusShows(status: AgentStatus, word: String, state: AgentState) {
+        #expect(AgentRow.statusWord(status, turnFailed: true) == word)
+        var agent = Fixture.agent("Nightly run", in: Fixture.space("s")).agent
+        agent.status = status
+        #expect(AutomationRow.stateWord(agent, turnFailed: true) == word)
+        #expect(AutomationRow.state(agent, turnFailed: true) == state)
+    }
+
+    @Test(arguments: [
+        (AgentStatus?.none, "stopped", AgentState.idle),
+        (.working, "running", .running),
+        (.blocked, "needs you", .attention),
+        (.idle, "done", .done),
+        (.done, "done", .done),
+    ])
+    func anAutomationRowReadsItsRunsStatus(status: AgentStatus?, word: String, state: AgentState) {
+        let agent = status.map { status in
+            var agent = Fixture.agent("Nightly run", in: Fixture.space("s")).agent
+            agent.status = status
+            return agent
+        }
+        #expect(AutomationRow.stateWord(agent, turnFailed: false) == word)
+        #expect(AutomationRow.state(agent, turnFailed: false) == state)
     }
 }

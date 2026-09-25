@@ -1298,7 +1298,8 @@ Subagent runs use the same states on their dots, glyphs, pills, and steps: runni
 done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.
 
 A turn fails when pi's last reply is a provider error (not a Stop). The thread shows the error
-(`NWTurnError`), and the agent's row reads failed until its next turn starts.
+(`NWTurnError`), and the agent's row (an automation's too) and its palette subtitle read failed
+until its next turn starts.
 
 **System notifications** (`AgentNotifications`, worded by `AgentBanners`) follow the same
 language, and post only while you aren't watching that agent (it isn't selected, or Shepherd
