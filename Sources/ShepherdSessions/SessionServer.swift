@@ -260,6 +260,16 @@ public final class SessionServer: @unchecked Sendable {
     /// An agent suggested a line, or a remote client acted on the suggestions: the GUI's
     /// Experiments page follows. Delivered on the main actor.
     public var onSuggestionsChanged: ((SuggestionsSnapshot) -> Void)?
+    /// The agent skills on this host (Settings ▸ Skills): ~/.agents/skills, which pi reads, and
+    /// what Shepherd keeps beside it in the support directory's `skills/`. Remote clients change
+    /// them through the server, the Mac's Settings page through this store directly.
+    public let skills: SkillsStore
+    /// A remote client changed this host's skills: the GUI's Skills page follows. Delivered on
+    /// the main actor.
+    public var onSkillsChanged: ((SkillsSnapshot) -> Void)?
+    /// Skills requests fetch from git, so they run here, one at a time, never on the server's
+    /// queue.
+    private let skillsQueue = DispatchQueue(label: "shepherd.skills", qos: .userInitiated)
 
     private let queue = DispatchQueue(label: "shepherd.sessions")
     private let socketPath: String
@@ -438,7 +448,10 @@ public final class SessionServer: @unchecked Sendable {
     public func modelListing() -> ModelListing { modelCatalog() }
 
     /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
-    public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog) {
+    /// `skillsDirectory` is where this host's skills live, ~/.agents/skills unless a test passes
+    /// its own.
+    public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog,
+                skillsDirectory: URL? = nil) {
         self.socketPath = socketPath
         self.store = StateStore(url: stateURL)
         self.modelCatalog = modelCatalog
@@ -447,6 +460,8 @@ public final class SessionServer: @unchecked Sendable {
         let instructions = InstructionsStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("instructions", isDirectory: true))
         self.instructions = instructions
         self.suggestions = SuggestionsStore(url: instructions.directory.appendingPathComponent("suggestions.json"), instructions: instructions)
+        self.skills = SkillsStore(directory: skillsDirectory ?? ShepherdPaths.agentSkillsDirectory(),
+                                  stateDirectory: stateURL.deletingLastPathComponent().appendingPathComponent("skills", isDirectory: true))
     }
 
     /// The queue mode of every agent that has not chosen its own (`NativeQueueAction.setMode`).
@@ -1043,6 +1058,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteInstructions(id: id, request: request, client: client)
         case .suggestions(let id, let request):
             remoteSuggestions(id: id, request: request, client: client)
+        case .skills(let id, let request):
+            remoteSkills(id: id, request: request, client: client)
         case .hostSettings(let id, let request):
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
@@ -1341,6 +1358,34 @@ public final class SessionServer: @unchecked Sendable {
     private func announceSuggestions(_ snapshot: SuggestionsSnapshot) {
         guard let handler = onSuggestionsChanged else { return }
         hopToMain { handler(snapshot) }
+    }
+
+    /// A remote client reading or changing this host's skills. Looking up, installing and
+    /// checking for updates fetch from git, so every request runs on the skills queue and its
+    /// answer comes back here; a change tells the GUI, whose Skills page follows.
+    private func remoteSkills(id: Int, request: RemoteSkillsRequest, client: ExtensionConnection) {
+        let skillsStore = self.skills
+        skillsQueue.async { [weak self] in
+            let result: Result<RemoteSkillsResult, SkillsStore.StoreError>
+            do {
+                result = .success(try skillsStore.perform(request))
+            } catch let error as SkillsStore.StoreError {
+                result = .failure(error)
+            } catch {
+                result = .failure(.writeFailed(error.localizedDescription))
+            }
+            guard let self else { return }
+            self.queue.async {
+                if request.changesSkills, case .success(.skills(let snapshot)) = result, let handler = self.onSkillsChanged {
+                    self.hopToMain { handler(snapshot) }
+                }
+                guard self.clients[client.fd] === client else { return }
+                switch result {
+                case .success(let answer): self.send(.skills(id: id, result: answer), to: client)
+                case .failure(let error): self.send(.error(id: id, code: error.code, message: error.description), to: client)
+                }
+            }
+        }
     }
 
     /// A remote draft as the host would save it: a name and a prompt that are not blank, and a

@@ -16,6 +16,8 @@
 //   pi-agent/ PI_CODING_AGENT_DIR, so the session headers the app seeds and the pi config it
 //             reads are scratch, never ~/.pi/agent. Skipped for the opt-in live-model use case
 //             (SHEPHERD_LIVE_MODEL), which runs the user's real pi with their configuration.
+//   agent-skills/  SHEPHERD_SKILLS_DIR, so Settings ▸ Skills installs, turns off and removes
+//             skills there, never in the user's ~/.agents/skills.
 // The root is removed when the process exits. Variables a Shepherd sets for its agents (a run
 // started by an agent inherits them) are cleared, so nothing can reach the running Shepherd's
 // socket through the environment.
@@ -110,10 +112,11 @@ static void shepherd_test_isolation_install(void) {
     }
     atexit(remove_root);
 
-    char support[600], bin[600], zdotdir[600];
+    char support[600], bin[600], zdotdir[600], skills[600];
     make("support", support, sizeof support);
     make("bin", bin, sizeof bin);
     make("zdotdir", zdotdir, sizeof zdotdir);
+    make("agent-skills", skills, sizeof skills);
 
     const char *path = getenv("PATH");
     if (path == NULL || path[0] == '\0') path = "/usr/bin:/bin";
@@ -123,7 +126,7 @@ static void shepherd_test_isolation_install(void) {
     snprintf(newPath, pathSize, "%s:%s", bin, path);
 
     if (setenv("SHEPHERD_SUPPORT_DIR", support, 1) != 0 || setenv("ZDOTDIR", zdotdir, 1) != 0
-        || setenv("PATH", newPath, 1) != 0) fail("setenv");
+        || setenv("SHEPHERD_SKILLS_DIR", skills, 1) != 0 || setenv("PATH", newPath, 1) != 0) fail("setenv");
     free(newPath);
 
     // zsh reads .zshenv for every shell and .zlogin last for a login shell, after the system files.

@@ -61,7 +61,11 @@ public enum RemoteProtocol {
     /// The host serves `RemoteRequest.hostSettings`: what its Settings ▸ Agents, Worktrees and Pi
     /// set, its Shepherd and pi versions, and one change at a time. Older hosts show none.
     public static let hostSettingsCapability = "hostSettings.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability]
+    /// The host serves `RemoteRequest.skills`: the agent skills in its ~/.agents/skills (on, off,
+    /// how each is used, updates), installs from a repository or a copied folder, and removal
+    /// with undo (Settings ▸ Skills). Older hosts have none to show.
+    public static let skillsCapability = "skills.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, instructionsCapability, suggestionsCapability, hostSettingsCapability, skillsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -379,6 +383,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case suggestions(id: Int, request: RemoteSuggestionsRequest)
     /// Read or change the host's settings (`RemoteProtocol.hostSettingsCapability`).
     case hostSettings(id: Int, request: RemoteHostSettingsRequest)
+    /// Read or change the host's agent skills (`RemoteProtocol.skillsCapability`).
+    case skills(id: Int, request: RemoteSkillsRequest)
 
     private enum CodingKeys: String, CodingKey {
         case request
@@ -395,7 +401,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
         case automation
-        case instructions, suggestions, hostSettings
+        case instructions, suggestions, hostSettings, skills
     }
 
     public init(from decoder: Decoder) throws {
@@ -416,6 +422,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  request: try c.decode(RemoteHostSettingsRequest.self, forKey: .request))
+        case .skills:
+            self = .skills(id: try c.decode(Int.self, forKey: .id),
+                           request: try c.decode(RemoteSkillsRequest.self, forKey: .request))
         case .hello:
             self = .hello(
                 id: try c.decode(Int.self, forKey: .id),
@@ -569,6 +578,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(request, forKey: .request)
+        case .skills(let id, let request):
+            try c.encode(Kind.skills, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(request, forKey: .request)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -682,6 +695,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case suggestions(id: Int, snapshot: SuggestionsSnapshot)
     /// The host's settings after a settings request (`RemoteRequest.hostSettings`).
     case hostSettings(id: Int, settings: HostSettings)
+    /// A skills request's answer (`RemoteRequest.skills`).
+    case skills(id: Int, result: RemoteSkillsResult)
 
     private enum CodingKeys: String, CodingKey {
         case result
@@ -696,7 +711,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
         case automationResult
-        case instructions, suggestions, hostSettings
+        case instructions, suggestions, hostSettings, skills
     }
 
     public init(from decoder: Decoder) throws {
@@ -729,6 +744,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .hostSettings:
             self = .hostSettings(id: try c.decode(Int.self, forKey: .id),
                                  settings: try c.decode(HostSettings.self, forKey: .settings))
+        case .skills:
+            self = .skills(id: try c.decode(Int.self, forKey: .id),
+                           result: try c.decode(RemoteSkillsResult.self, forKey: .result))
         case .ok:
             self = .ok(id: try c.decode(Int.self, forKey: .id))
         case .paneOpened:
@@ -841,6 +859,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(Kind.hostSettings, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(settings, forKey: .settings)
+        case .skills(let id, let result):
+            try c.encode(Kind.skills, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
         case .ok(let id):
             try c.encode(Kind.ok, forKey: .type)
             try c.encode(id, forKey: .id)

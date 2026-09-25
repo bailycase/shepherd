@@ -166,6 +166,41 @@ enum RemoteSamples {
         .deleteLocalBranch(false), .mergePRAutomatically(false), .mergeMethod(.squash),
         .bundledExtension(id: "review", on: true), .updatePiDaily(false), .updateExtensionsDaily(true),
     ]
+
+    static let skillSource = SkillSource(repo: "anthropics/skills", path: "skills/pdf", commit: "3f2a91c0", committedAt: 1_700_000_000)
+    static let skills = SkillsSnapshot(
+        directory: "~/.agents/skills",
+        skills: [
+            InstalledSkill(name: "pdf", summary: "Read, fill, merge and split PDFs.", source: skillSource, updatedAt: 1_700_000_100,
+                           files: [SkillFileEntry(name: "SKILL.md"), SkillFileEntry(name: "scripts", isDirectory: true, fileCount: 8)],
+                           update: SkillUpdate(commit: "8c04e1d0", committedAt: 1_700_000_900, filesChanged: 3)),
+            InstalledSkill(name: "changelog", summary: "Drafts a \"CHANGELOG\" entry.", isOn: false, invocation: .slashOnly,
+                           updatedAt: 1_690_000_000),
+        ],
+        checkedAt: 1_700_000_500, autoUpdate: true)
+    static let repoSkills = RepoSkills(
+        repo: "anthropics/skills", branch: "main", commit: "8c04e1d0",
+        skills: [
+            RepoSkill(path: "skills/docx", name: "docx", summary: "Create and edit Word documents.",
+                      instructions: "---\nname: docx\n---\n# Word documents\n", files: [SkillFileEntry(name: "SKILL.md")]),
+            RepoSkill(path: "", name: "solo", summary: "The repository is the skill."),
+        ])
+    static let skillsRequests: [RemoteSkillsRequest] = [
+        .fetch,
+        .lookUp(repo: "https://github.com/anthropics/skills"),
+        .install(repo: "anthropics/skills", paths: ["skills/docx", "skills/pptx"], commit: "8c04e1d0", invocation: .slashOnly),
+        .install(repo: "acme/platform-skills", paths: [""], commit: nil, invocation: nil),
+        .installFiles(name: "go-table-tests", files: [SkillFile(path: "SKILL.md", contents: Data("---\nname: go-table-tests\n---\n".utf8)),
+                                                      SkillFile(path: "scripts/run.sh", contents: Data([0x23, 0x21]), executable: true)],
+                      invocation: .automatic),
+        .setOn(name: "pdf", on: false),
+        .setInvocation(name: "pdf", invocation: .slashOnly),
+        .remove(name: "pdf"),
+        .restore(name: "pdf"),
+        .checkUpdates,
+        .configure(autoUpdate: true),
+    ]
+    static let skillsResults: [RemoteSkillsResult] = [.skills(skills), .skills(SkillsSnapshot(directory: "~/.agents/skills")), .repo(repoSkills)]
 }
 
 @Suite("Remote requests")
@@ -178,11 +213,11 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings:
+             .creationOptions, .agentQuery, .agentAction, .automation, .instructions, .suggestions, .hostSettings, .skills:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 23
+    static let caseCount = 24
 
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
@@ -211,6 +246,7 @@ struct RemoteRequestTests {
         .instructions(id: 23, request: .save(file: .appendSystem, content: "Never force-push.\n", origin: "studio", sync: true)),
         .suggestions(id: 25, request: .add(id: S.op, line: "- Ask for join keys first.", file: nil)),
         .hostSettings(id: 27, request: .change(.bundledExtension(id: "review", on: true))),
+        .skills(id: 29, request: .install(repo: "anthropics/skills", paths: ["skills/pdf"], commit: nil, invocation: nil)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -274,6 +310,12 @@ struct RemoteRequestTests {
         #expect(try Wire.roundTrip(RemoteRequest.hostSettings(id: 2, request: .fetch)) == .hostSettings(id: 2, request: .fetch))
     }
 
+    @Test(arguments: RemoteSamples.skillsRequests)
+    func everySkillsRequestRoundTrips(_ request: RemoteSkillsRequest) throws {
+        let message = RemoteRequest.skills(id: 1, request: request)
+        #expect(try Wire.roundTrip(message) == message)
+    }
+
     @Test func anAutomationRequestNamesItsAutomation() throws {
         let object = try Wire.object(RemoteRequest.automation(id: 1, automationID: S.automation, request: .run))
         #expect(object["automationID"] as? String == "automation")
@@ -320,11 +362,11 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings:
+             .agentCreated, .automationResult, .instructions, .suggestions, .hostSettings, .skills:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 21
+    static let caseCount = 22
 
     static let samples: [RemoteReply] = [
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
@@ -352,6 +394,7 @@ struct RemoteReplyTests {
         .instructions(id: 24, snapshot: S.instructions),
         .suggestions(id: 26, snapshot: S.suggestions),
         .hostSettings(id: 28, settings: S.hostSettings),
+        .skills(id: 30, result: .skills(S.skills)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -376,6 +419,19 @@ struct RemoteReplyTests {
     @Test(arguments: RemoteSamples.automationResults)
     func everyAutomationResultRoundTrips(_ result: RemoteAutomationResult) throws {
         #expect(try Wire.roundTrip(RemoteReply.automationResult(id: 1, result: result)) == .automationResult(id: 1, result: result))
+    }
+
+    @Test(arguments: RemoteSamples.skillsResults)
+    func everySkillsResultRoundTrips(_ result: RemoteSkillsResult) throws {
+        #expect(try Wire.roundTrip(RemoteReply.skills(id: 1, result: result)) == .skills(id: 1, result: result))
+    }
+
+    /// A host that predates Update automatically sends no `autoUpdate`: it reads as off.
+    @Test func aSkillsSnapshotWithoutAutoUpdateReadsAsOff() throws {
+        let snapshot = try Wire.decode(SkillsSnapshot.self, #"{"directory":"~/.agents/skills","skills":[]}"#)
+        #expect(snapshot == SkillsSnapshot(directory: "~/.agents/skills"))
+        #expect(RemoteSamples.skills.skill("pdf")?.update?.filesChanged == 3)
+        #expect(RemoteSamples.skills.skill("nothing") == nil)
     }
 
     @Test func aSnapshotNamesEachFilesPathAndLastSave() {
@@ -556,7 +612,7 @@ struct RemoteProtocolConstantTests {
             RemoteProtocol.reviewCommitCapability,
             RemoteProtocol.thinkingLevelsCapability,
             RemoteProtocol.instructionsCapability, RemoteProtocol.suggestionsCapability,
-            RemoteProtocol.hostSettingsCapability,
+            RemoteProtocol.hostSettingsCapability, RemoteProtocol.skillsCapability,
         ]
         #expect(Set(RemoteProtocol.capabilities) == Set(named))
         #expect(RemoteProtocol.capabilities.count == named.count)
@@ -578,6 +634,7 @@ struct RemoteProtocolConstantTests {
         #expect(RemoteProtocol.instructionsCapability == "instructions.v1")
         #expect(RemoteProtocol.suggestionsCapability == "suggestions.v1")
         #expect(RemoteProtocol.hostSettingsCapability == "hostSettings.v1")
+        #expect(RemoteProtocol.skillsCapability == "skills.v1")
     }
 
     /// Commit info from a host that sends only some fields still reads, with defaults.

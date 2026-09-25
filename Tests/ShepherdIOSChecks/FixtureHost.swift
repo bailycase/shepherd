@@ -164,8 +164,14 @@ final class FixtureHost: @unchecked Sendable {
         case .suggestions(let id, .fetch) where data.suggestions != nil:
             note("suggestions.fetch")
             return [.suggestions(id: id, snapshot: data.suggestions!)]
+        case .skills(let id, .fetch) where data.skills != nil:
+            note("skills.fetch")
+            return [.skills(id: id, result: .skills(data.skills!))]
+        case .skills(let id, .lookUp) where data.repoSkills != nil:
+            note("skills.lookUp")
+            return [.skills(id: id, result: .repo(data.repoSkills!))]
         case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _),
-             .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _):
+             .instructions(let id, _), .suggestions(let id, _), .hostSettings(let id, _), .skills(let id, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
         default:
@@ -209,6 +215,14 @@ final class FixtureHost: @unchecked Sendable {
             if command == .fetch { return nil }
             mutation("hostSettings.change")
             return [.error(id: id, code: "fixture", message: refused)]
+        case .skills(let id, let command):
+            // Reading the host's skills or looking up a repository changes nothing.
+            switch command {
+            case .fetch, .lookUp: return nil
+            default:
+                mutation("skills." + String(describing: command).prefix { $0 != "(" })
+                return [.error(id: id, code: "fixture", message: refused)]
+            }
         case .detach, .input, .resize:
             mutation(Self.kind(request))
             return []
