@@ -101,10 +101,11 @@ private struct SidebarHeader: View {
     var action: (() -> Void)?
 
     var body: some View {
+        // A touch tall, so Needs you's header is a full target; the text sits on its bottom.
         let header = NWListHeader(title, attention: attention, count: count)
             .padding(.horizontal, NW.Space.m)
-            .padding(.top, NW.Space.xl)
             .padding(.bottom, NW.Space.xs)
+            .frame(minHeight: NW.Height.touch, alignment: .bottom)
         if let action {
             Button(action: action) { header.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
