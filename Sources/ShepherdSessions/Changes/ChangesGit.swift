@@ -22,11 +22,12 @@ struct ChangesGit {
     static let runs = ChangesLocked<[String: Int]>([:])
     #endif
 
-    /// Configuration every call carries, ahead of the command.
+    /// Configuration every call carries, ahead of the command. `core.splitIndex=false` keeps
+    /// the engine's own index whole: a split index would write `sharedindex.*` files into `.git`.
     static let configuration = [
         "-c", "core.quotepath=off", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0",
         "-c", "maintenance.auto=false", "-c", "diff.relative=false", "-c", "color.ui=false",
-        "-c", "core.pager=cat", "-c", "advice.addIgnoredFile=false",
+        "-c", "core.pager=cat", "-c", "advice.addIgnoredFile=false", "-c", "core.splitIndex=false",
     ]
 
     /// Runs git in `directory`. `index` points git at another index file (never the user's, for
