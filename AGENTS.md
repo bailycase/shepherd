@@ -16,7 +16,7 @@ agents.
   over RPC, and every terminal pane respawns a fresh shell.
 - **Remote:** Shepherd can serve its agents to other devices over an authenticated TCP listener
   (off by default). The main use is running projects on one Mac and driving them from another
-  Mac running Shepherd; iOS comes later.
+  Mac running Shepherd. The iPhone and iPad client (`App/iOS`) drives them the same way.
 
 **Read [DESIGN.md](DESIGN.md) before touching any UI.** It is the authority on visuals and
 interaction. [ARCHITECTURE.md](ARCHITECTURE.md) maps modules, ownership, and data flow.
@@ -46,7 +46,8 @@ Sparkle's installer are keyed by bundle id: on a shipped id, every Dev launch wo
 installed app's collapsed spaces and clear its notifications, and a setting changed in Dev
 would change it there. `ShepherdEdition` reads the Dev id as Shepherd, and Debug builds have no
 updater. `Tests/Release` holds the Debug id apart from both shipped apps'. `Shepherd iOS` builds
-the deferred iOS client ([docs/ios](docs/ios/README.md)).
+the iPhone and iPad client ([docs/ios](docs/ios/README.md); who owns which folder, the routes and
+the hooks are in [docs/ios/CONTRACTS.md](docs/ios/CONTRACTS.md)).
 
 **Shepherd Nightly** is the same code built as a second app, so it installs and runs beside
 Shepherd. The `Nightly` configuration is Release plus its identity: bundle id
@@ -323,7 +324,7 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
 
 ```text
 App/
-  ShepherdLauncher.swift   Mac @main shim.   Shepherd.entitlements   iOS/  the deferred iOS client
+  ShepherdLauncher.swift   Mac @main shim.   Shepherd.entitlements   iOS/  the iPhone and iPad client
   Info.plist               names, executable, and feed from build settings
   AppIcon.icon, AppIconNightly.icon   Shepherd's and Shepherd Nightly's icons
 Sources/
@@ -586,9 +587,10 @@ aliases for them.
 `PiUpdateManager`, `AppUpdater`, the worktree models, terminal pane sessions, and `MenuState`
 are `@MainActor @Observable` classes, owned with `@State` and bound with `@Bindable`.
 
-- Don't add `ObservableObject`, `@Published`, `@StateObject`, or `@ObservedObject` to the Mac app.
-  TerminalSurfaceKit's `TerminalSurfaceModel` stays one because GhosttyTerminal's view state is
-  one, and the deferred iOS client still uses them.
+- Don't add `ObservableObject`, `@Published`, `@StateObject`, or `@ObservedObject` to the Mac app
+  or the iOS client. TerminalSurfaceKit's `TerminalSurfaceModel` stays one because
+  GhosttyTerminal's view state is one. The iOS client's stores (`MobileHosts` and its hosts,
+  `MobileNavigator`, `ThreadStores`, `MobileAppearance`) follow the same rules.
 - Observe only what views draw: bookkeeping is `@ObservationIgnored`, and a property is written
   only when its value changes, so a poll or a status report never re-renders a view it didn't
   change.

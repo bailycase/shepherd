@@ -30,7 +30,7 @@ TerminalSurfaceKit ── GhosttyTerminal (Vendor/libghostty-spm)
 ShepherdUI (local package, Packages/ShepherdUI) ── nothing
 
 ShepherdApp ── Core, Protocol, Sessions, ShepherdUI, TerminalSurfaceKit, Sparkle, SwiftTreeSitter
-Shepherd iOS (Xcode target) ── Core, Protocol, Remote
+Shepherd iOS (Xcode target) ── Core, Protocol, Remote, ShepherdUI
 ```
 
 | Module | Owns | Depends on |
@@ -55,7 +55,9 @@ Dependencies point inward:
 - Only TerminalSurfaceKit imports GhosttyTerminal.
 
 The Mac app target is a shim, `App/ShepherdLauncher.swift`, that calls `ShepherdMacApp.main()`.
-The iOS target compiles `App/iOS` against Core, Protocol, and Remote only.
+The iOS target compiles `App/iOS` (one synchronized folder) against Core, Protocol, Remote, and
+ShepherdUI; it never links ShepherdApp. Its folders and hooks are mapped in
+[docs/ios/CONTRACTS.md](docs/ios/CONTRACTS.md).
 
 ## Runtime ownership
 

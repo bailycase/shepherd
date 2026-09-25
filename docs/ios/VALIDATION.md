@@ -1,15 +1,19 @@
 # Checking the iOS client
 
-The iOS app ([README.md](README.md)) is deferred, but it still shares `ShepherdCore`,
-`ShepherdProtocol`, and `ShepherdRemote` with the Mac. Run these checks when you change those
-modules, or when iOS work resumes. Neither script is part of `swift test`.
+The iOS app ([README.md](README.md)) shares `ShepherdCore`, `ShepherdProtocol`,
+`ShepherdRemote` and `ShepherdUI` with the Mac. Run these checks when you change the app or those
+modules. Neither script is part of `swift test`. A change to a shared module also runs the Mac
+build, the touched targets' unit tests, and the Mac preview suites it affects.
 
 ## Compile
 
 ```sh
 xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd iOS' \
-  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+  -destination 'generic/platform=iOS Simulator' -onlyUsePackageVersionsFromResolvedFile \
+  CODE_SIGNING_ALLOWED=NO build
 ```
+
+Build for a simulator you made, iPhone and iPad alike, with `-destination 'id=<udid>'`.
 
 A device archive, as the TestFlight job builds it (unsigned; the job signs at export):
 
@@ -35,39 +39,68 @@ bash Tests/ShepherdIOSChecks/run.sh
 This takes no arguments. It compiles the three shared modules as macOS libraries into a
 temporary directory, then builds and runs three programs:
 
-- **`HostConnectionCheck`:** `App/iOS/HostConnection.swift` with an in-memory token store. It
-  covers port validation, exactly what is saved, live state pushes over real TCP, superseded
-  handshakes, reconnect after backgrounding, failure, retry and cancel, and forgetting the host.
+- **`MobileHostsCheck`:** `App/iOS/Hosts/MobileHosts.swift` with tokens in memory and a scratch
+  preferences domain, against real TCP listeners. It covers migrating the first client's single
+  host and its token, records saved without tokens, a new host needing a token, several hosts
+  at once (one live, one refusing), pushed state, backgrounding and foregrounding with a new
+  session, retry and stop, renaming without reconnecting, and forgetting.
 - **`ThreadStoreCheck`:** `NativeThreadStore`. It covers revisions, merging history with live
   entries, stale sessions, acceptance, drafts, unknown outcomes with no automatic resend,
   questions, abort, and stop and reconnect.
 - **`RemoteConnectCheck`:** checks that cancelling or disconnecting while a socket is still
   opening never sends `hello`.
 
-The token store is a stand-in, so real Keychain behavior is not tested here.
+Real Keychain behavior is not tested here. Pure logic (host records and entries, backoff) has
+unit tests in `ShepherdRemoteUnitTests`.
 
-## Simulator render
+## Screens from fixtures
+
+`run-simulator.sh` renders any screen of the app from fixture data on a simulator, headless, and
+saves a screenshot of each. It never opens Simulator.app and never touches the mouse or
+keyboard.
 
 ```sh
-bash Tests/ShepherdIOSChecks/run-simulator.sh [productsDir] [deviceUDID]
+# Your own simulators, never one someone is using:
+iphone=$(xcrun simctl create "Shepherd shots iPhone" com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+ipad=$(xcrun simctl create "Shepherd shots iPad" com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-12GB com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+
+bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$iphone" -o /tmp/shots home thread question
+bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$ipad" -o /tmp/shots -r landscape -s dark thread
+bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$ipad" -o /tmp/shots --sidebar thread
+bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$iphone" -o /tmp/shots -t accessibility-extra-large all
+bash Tests/ShepherdIOSChecks/run-simulator.sh --list
+
+xcrun simctl shutdown "$iphone" "$ipad" && xcrun simctl delete "$iphone" "$ipad"
 ```
 
-Build the `Shepherd iOS` scheme for the simulator first, with
-`-derivedDataPath /tmp/shepherd-ios-thread-build`. The script expects the products there by
-default. The default simulator UDID is hard-coded in the script, so pass your own.
-
-The script builds a separate fixture app from the production views and an in-memory token
-store. It serves a fixed snapshot from a local Python responder that rejects any state-changing
-request. Then it launches the app, waits, and takes a screenshot. It asserts that the app made no
-terminal `attach`, `input`, or `resize` requests, and that it polled or fetched state.
-
-| Variable | Values |
+| Option | Meaning |
 | --- | --- |
-| `FIXTURE_SCREEN` | `fleet`, or the thread (default) |
-| `FIXTURE_DIALOG` | `none` (idle thread, composer visible), `select`, `input`, or a confirm question (default) |
-| `FIXTURE_UNAVAILABLE` | marks the input question unavailable |
-| `FIXTURE_SCHEME` | `light`, or dark (default) |
-| `FIXTURE_SHOT` | screenshot path (default `/tmp/shepherd-ios-thread-fixture.png`) |
+| `-d <udid>` | the simulator; booted if it is not |
+| `-o <dir>` | where the PNGs go: `<screen>-<device>-<scheme>[-landscape][-sidebar][-<text size>].png` |
+| `-p <products>` | the `Shepherd iOS` scheme's `Debug-iphonesimulator` products; without it the script builds them (into `$SHEPHERD_IOS_DERIVED_DATA`, or a temporary folder) |
+| `-s light\|dark\|both` | the appearance (default both); set on the simulator and in the app |
+| `-r portrait\|landscape` | the orientation (iPad; the shot is turned the way it is seen) |
+| `-t <category>` | a Dynamic Type size (`simctl ui content_size`), reset to large afterwards |
+| `-n <label>` | the device part of file names (default: the simulator's name) |
+| `--sidebar` | opens the iPad sidebar over a portrait thread |
+| `--list` | prints every screen name |
+| screens | names from `Tests/ShepherdIOSChecks/Fixtures`, or `all` |
+
+**How it works.** The script compiles a fixture app from every file in `App/iOS` except
+`App/ShepherdIOSApp.swift`, with `ThreadSimulatorFixture.swift` as its entry point, linking the
+scheme's package objects and copying ShepherdUI's font bundle. The fixture app starts one
+in-process `FixtureHost` per fixture host: a real TCP listener on 127.0.0.1 speaking the remote
+protocol, so the app connects through `MobileHosts` and `RemoteHostClient` exactly as it would to
+a Mac. Tokens live in memory and preferences in a scratch domain. Once the online hosts connect,
+the app opens the screen's routes, waits for a thread's first snapshot, settles, and prints
+`FIXTURE READY <screen>`; the script then takes the screenshot.
+
+**What it checks.** A screen that never becomes ready fails, and so does one that asks a host to
+change anything (a send, an abort, an agent action, a terminal attach or input): the fixture
+host refuses those and prints `FIXTURE MUTATION`. Each run also prints the requests every host
+received (`FIXTURE REQUESTS`).
+
+**Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 
 ## Not yet validated
 
@@ -75,4 +108,4 @@ terminal `attach`, `input`, or `resize` requests, and that it polled or fetched 
 - Physical-device signing, and the TestFlight upload itself. The nightly lane is in place
   ([README.md › Distribution](README.md#distribution)), but only its first real run proves the
   cloud-signed export and upload.
-- iPad layouts, VoiceOver navigation, and large Dynamic Type.
+- VoiceOver navigation end to end (labels are set; no automated pass yet).

@@ -1,8 +1,9 @@
-# Shepherd for iOS (deferred)
+# Shepherd for iOS
 
-`App/iOS` is a remote-only iPhone and iPad client for a Mac running Shepherd. It works, but it is
-**later work**. The current redesign is macOS-only, and iOS has not adopted the design system or
-most of the Mac's thread features. This page describes the app as the code stands today.
+`App/iOS` is a remote-only iPhone and iPad client for Macs running Shepherd. It is being built
+for its first release: a foundation (this page) and six feature tracks, each with its own folder
+([CONTRACTS.md](CONTRACTS.md) is the map). It is built on Night Watch (ShepherdUI) and
+`@Observable` stores, like the Mac.
 
 The client connects to a Mac host over the same bearer-token TCP protocol another Mac uses (see
 [SECURITY.md](../../SECURITY.md)). Use a trusted LAN or VPN. The connection has no TLS, and the
@@ -18,9 +19,9 @@ listener must never be exposed to the internet.
 2. Build the `Shepherd iOS` scheme for an iOS 27 simulator or device. The target uses automatic
    signing with a development team set in the project. To run on your own device, select your
    team.
-3. In the app, open the gear, then enter a name, the Mac's address, the port, and the token.
-   The simulator can use `127.0.0.1` for a host on the same Mac. A phone needs the Mac's LAN or
-   VPN address.
+3. In the app, open Settings ▸ Hosts ▸ Add host, then enter a name, the Mac's address, the port,
+   and the token. Add as many hosts as you like. The simulator can use `127.0.0.1` for a host on
+   the same Mac. A phone needs the Mac's LAN or VPN address.
 4. Open an agent from the list. The phone and the Mac control the same pi process. The phone
    never starts pi itself and never attaches a terminal.
 
@@ -118,76 +119,47 @@ keep the version for real breaks.
 
 ## What it is made of
 
-- **Target:** the `Shepherd iOS` Xcode target (iOS 27, iPhone and iPad) compiles the nine files
-  in `App/iOS`. It links only `ShepherdCore`, `ShepherdProtocol`, and `ShepherdRemote`, not
-  ShepherdUI or `ShepherdApp`.
-- **Shared with the Mac:** `RemoteHostClient` and the `NativeThreadStore` thread client are the
-  same code the Mac uses. The phone draws the `NativeThreadPresentation` derivations (turns, tool
-  rows, pill state); the Mac has moved on to activity lines and the changes card
-  (`NativeTurnPresentation`, `NativeActivity`).
-- **Tokens:** it keeps its own `MobileTokens`: colors, the phone type ramp, and status words.
-  These are not Night Watch and no longer match the Mac.
+- **Target:** the `Shepherd iOS` Xcode target (iOS 27, iPhone and iPad). `App/iOS` is one
+  synchronized folder, so every Swift file under it is compiled without a project edit
+  (`ExportOptions.plist` is excepted; `PrivacyInfo.xcprivacy` ships as a resource). It links
+  `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote` and `ShepherdUI`, never `ShepherdApp`.
+- **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
+  and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
+  `Review/`, `Search/`, `Settings/`, and `Support/` (`AgentRef`, `MobileLayout`,
+  `MobileAppearance`, the `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
+- **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
+  derivations (`NativeTurnPresentation`, `NativeActivity`), host records
+  (`RemoteHostRecord`, `RemoteHostEntry`, `RemoteReconnectBackoff`), and ShepherdUI's
+  components (bubbles, prose, thinking, activity lines, the changes card, the composer). On iOS,
+  ShepherdUI uses the phone boards' type ramp, grows controls' hit areas to 44pt, and shows at
+  rest what the Mac shows on hover.
 
 ## What it does
 
-- **Agents list (`FleetView`):**
-  - The host with a Connected / Connecting / Unreachable pill.
-  - Agent rows showing a status dot, the name, and "state · space"; "Show N more" past five
-    rows.
-  - An Automations section linking to running automations' agents.
-  - When the host is unreachable: a Retry card, with cached rows dimmed.
-- **Thread (`ThreadView`, `ThreadMessageView`):**
-  - User bubbles and agent prose (a lightweight Markdown renderer).
-  - Collapsible thinking.
-  - Consecutive tool calls collapsed into one summary row, which expands to 40pt rows and opens
-    a full-screen output view.
-  - "Load older messages" paging.
-  - Extension text widgets.
-  - A header with the status line, Stop, and a menu for delivery (follow-up or steer) and
-    Refresh.
-- **Composer:** a pill field whose Send button becomes Stop while the agent runs with an empty
-  draft. A "Waiting for you" slot reopens a pending question.
-- **Questions (`ThreadDialogView`):** pi's `select`, `confirm`, `input`, and `editor` questions
-  arrive over RPC like on the Mac. They appear in a bottom sheet and are answered in place. The
-  first answer from any client wins. No pi patch or bridge extension is involved.
-- **Host settings (`HostSettingsView`):**
-  - The connection state with Reconnect, and the name, address, port, and token fields.
-  - A no-TLS warning, and "Forget this host".
-  - One host only. Its name, address, and port are saved in UserDefaults (`shepherd.ios.host`).
-    The token is saved in the Keychain: a generic password, device-only, available when
-    unlocked, never synced.
-- **Lifecycle:**
-  - Backgrounding disconnects; the agents keep running on the Mac.
-  - Returning to the foreground reconnects, with backoff of 1, 2, 4… up to 30 s.
-  - The open thread polls every 500 ms while the agent runs or waits, and every 2 s otherwise.
-  - A request with no answer within 15 s is reported as an unknown outcome and never resent
-    automatically.
+- **Hosts (`MobileHosts`):** several hosts at once, each with its own `RemoteHostClient`,
+  connection state and backoff (1, 2, 4… up to 30 s). Records (name, address, port) are saved in
+  UserDefaults (`shepherd.ios.hosts`); each token is a Keychain generic password per host
+  (device-only, available when unlocked, never synced). The first client's single saved host
+  (`shepherd.ios.host` and its one Keychain item) migrates on first launch. Backgrounding
+  disconnects every host; the agents keep running on the Macs.
+- **iPhone:** two tabs, Home and Settings, each a navigation stack. Home lists each host with its
+  status (Retry when offline) and agents, and links Needs you, Automations and More.
+- **iPad:** a split view. Landscape shows the sidebar beside the selected thread; in portrait the
+  thread takes the width and the sidebar slides over it. With no thread selected the detail is
+  the overview.
+- **Thread (`ThreadScreen`):** the title with its status line, user bubbles with their times,
+  thinking, prose, work groups folded into one line with their calls, notes, errors with Retry,
+  the changes card (Review), and the turn footer (time, duration, tool calls, Copy, Retry).
+  It polls its host only while on screen and the app is active (500 ms while the agent runs).
+- **Composer:** a field with Send, and Stop while the agent runs; a question from the agent
+  takes its place (select, confirm, input, editor).
+- **Settings:** Appearance (System, Light, Dark), the hosts list with Retry, and a host form
+  (add, edit, forget; a blank token keeps the saved one).
+- **Stubs:** New thread, Subagents, Review, Search, agent actions, and Home's destinations are
+  placeholders their tracks fill ([CONTRACTS.md](CONTRACTS.md)).
 
-## What it does not do (yet)
+## Not in the first release
 
-- **Sending:** no image attachments, no model or thinking controls, and no slash-command menu.
-  Messages are sent as literal text.
-- **Subagents:** no cards and no inspector. `snapshot.subagents` is ignored.
-- **Thread detail:** no timestamps, thinking durations, context or stats, or tool durations. The
-  host snapshot carries all of these; the phone does not render them yet. Images in the
-  transcript show as a placeholder.
-- **Workspace actions:** creating agents or spaces, worktrees, review, and terminals are all
-  missing.
-- **Multiple hosts:** only one is supported.
-- **Notifications:** none. The app disconnects in the background.
-- **Design system:** ShepherdUI (Night Watch, [DESIGN.md](../../DESIGN.md)) is not adopted,
-  though the package already builds for iOS 27: its fonts follow Dynamic Type through
-  `relativeTo:`, and icon buttons grow to the 44pt `NW.Height.touch`.
-- **Approval wording:** confirm questions are labeled "Allow once / Deny" and blocked agents
-  "needs approval". [DESIGN.md](../../DESIGN.md#principles) says there is no approval UI, only
-  questions.
-
-## Stale code to clean up when iOS resumes
-
-- `ThreadView` shows "Questions need the pi dialog bridge on your Mac" when a snapshot reports
-  `dialogsSupported == false`. Current hosts always report `true`, so only an older host can
-  trigger it. Several comments still describe that bridge and claim the snapshot has no
-  timestamps or durations; it does.
-- `ThreadDialogView` has an `external-editor` unavailable branch that the RPC host never
-  produces. The host only uses `payload-limit`.
-- `MobileTokens` refers to `NativeTokens` in a comment. That type no longer exists.
+Push notifications and Live Activities (they need a relay: the phone's socket drops in the
+background), automations over remote, QR pairing and TLS, terminal panes, multiple iPad
+windows, and everything waiting on the Mac (Missions, Designs, daemon hosts).
