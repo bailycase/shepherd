@@ -131,6 +131,11 @@ final class MobileNavigator {
                 tab = .home
                 homePath = [.thread(thread)]
             }
+            // The palette is the iPad's; a compact window gets search, pushed like the phone's.
+            if case .search(.palette(let query))? = presented?.route {
+                dismissPresented()
+                open(.search(.search(query: query)))
+            }
         }
     }
 }
