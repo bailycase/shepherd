@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdProtocol
 
 /// The live model catalog, asked from pi itself (`pi --list-models`) — models
 /// are dynamic (catalog updates, auth state), so no config file is the truth.
@@ -90,5 +91,13 @@ public enum PiModelCatalog {
             entries.append(Entry(id: id, context: column("context"), reasoning: column("thinking").map { $0 != "no" } ?? true))
         }
         return entries
+    }
+}
+
+extension ModelListing {
+    /// A catalog as a listing: its ids, `defaultModel`, and the models that take no thinking level.
+    public init(entries: [PiModelCatalog.Entry], defaultModel: String?) {
+        self.init(models: entries.map(\.id), defaultModel: defaultModel,
+                  withoutThinking: entries.filter { !$0.reasoning }.map(\.id))
     }
 }

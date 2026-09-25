@@ -401,12 +401,12 @@ public final class SessionServer: @unchecked Sendable {
 
     /// The models a remote client's `listModels` gets, and the default among them. It blocks
     /// (asking pi shells out), so the server calls it off its queue.
-    public typealias ModelCatalog = @Sendable () -> (models: [String], defaultModel: String?)
+    public typealias ModelCatalog = @Sendable () -> ModelListing
 
     /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default, all
     /// as "provider/id".
     public static let piModelCatalog: ModelCatalog = {
-        (PiModelCatalog.entriesOrConfigured().map(\.id), PiConfig.defaultModel())
+        ModelListing(entries: PiModelCatalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel())
     }
 
     /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
@@ -1055,7 +1055,8 @@ public final class SessionServer: @unchecked Sendable {
                 let listing = catalog()
                 self?.queue.async {
                     guard let self, self.clients[client.fd] === client else { return }
-                    self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel), to: client)
+                    self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
+                                     withoutThinking: listing.withoutThinking), to: client)
                 }
             }
         case .addSpace(let id, let path):
