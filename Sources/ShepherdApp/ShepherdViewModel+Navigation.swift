@@ -270,7 +270,8 @@ extension ShepherdViewModel {
     }
 
     /// Reselect the most recently selected agent that still exists, after
-    /// `dying` goes away. Falls back to no selection (an empty workspace) when history is empty.
+    /// `dying` goes away. Falls back to no selection (an empty workspace) when history is empty,
+    /// leaving a hidden space (a stopped automation run's) for a visible one.
     func selectPreviousAgent(after dying: AgentID) {
         selectionHistory.removeAll { $0 == dying }
         while let candidate = selectionHistory.last {
@@ -281,6 +282,8 @@ extension ShepherdViewModel {
             selectionHistory.removeLast()
         }
         selectedAgentID = nil
+        let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: false, in: state)
+        if standing != selectedSpaceID { selectedSpaceID = standing }
     }
 
     /// The pane to focus when entering `tabID`.

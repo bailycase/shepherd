@@ -7,12 +7,12 @@ import Testing
 @testable import ShepherdApp
 
 /// This Mac's automations in the sidebar, over a real server whose run agent's status arrives
-/// from its extension: a run reads live from the moment it starts, and Run Now never fails
-/// silently.
+/// from its extension: a run reads live from the moment it starts, Run Now never fails
+/// silently, and stopping a selected run leaves the hidden space.
 @Suite("Local automations", .mainActorExclusive)
 @MainActor
 struct LocalAutomationTests {
-    @Test func aStartingRunReadsLiveAndARefusedRunNowSaysSo() async throws {
+    @Test func aStartingRunReadsLiveARefusedRunNowSaysSoAndStopLeavesTheHiddenSpace() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
@@ -46,5 +46,14 @@ struct LocalAutomationTests {
             try await eventuallyOnMain("the run to read \(status)") { vm.automationAgent(automation)?.status == status }
         }
         #expect(!row().live && row().word == "done")
+
+        // Stopping the run on screen moves the workspace to a visible space.
+        vm.selectAgent(run.agent.id)
+        #expect(vm.selectedSpaceID == runs.id)
+        vm.stopAutomation(automation.id)
+        try await eventuallyOnMain("the run to stop") { vm.state.agents.isEmpty }
+        await app.settle()
+        #expect(vm.selectedAgentID == nil)
+        #expect(vm.selectedSpaceID == space.id)
     }
 }

@@ -722,13 +722,8 @@ final class ShepherdViewModel {
         if !collapsedSpaces.isSubset(of: liveSpaces) {
             collapsedSpaces.formIntersection(liveSpaces)
         }
-        if let selected = selectedSpaceID, !state.spaces.contains(where: { $0.id == selected }) {
-            selectedSpaceID = nil
-        }
-        if selectedSpaceID == nil {
-            // Never default into the hidden automations space.
-            selectedSpaceID = visibleSpaces.first?.id
-        }
+        let standing = WorkspaceSelection.standingSpace(selectedSpaceID, agentSelected: selectedAgent != nil, in: state)
+        if standing != selectedSpaceID { selectedSpaceID = standing }
         if selectedAgent == nil {
             selectedAgentID = state.agents.first { $0.spaceID == selectedSpaceID }?.id
         }
