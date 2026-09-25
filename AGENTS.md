@@ -6,9 +6,12 @@ agents.
 - **Agents:** every agent is `pi --mode rpc` on pipes, owned in-process (`RPCSession` and
   `RPCThreadState` in `ShepherdSessions`), and rendered only as a native thread
   (`Sources/ShepherdApp/Thread/`). There are no terminal agents and no Terminal/Native switch.
-- **Terminals:** the only terminals are panes beside a thread, opened by the user with ⌘D or by an
-  agent's `pane_*` tools. They are real PTYs rendered with libghostty. There are no global shells
-  and no space shell workspaces.
+- **Terminals:** the only terminals are panes of an agent's layout, opened by the user with ⌘D or
+  the terminal panel's + or by an agent's `pane_*` tools. The Mac shows them in the terminal panel
+  under the thread (tabs, split, maximize, ⌘J to show or hide; DESIGN.md › Terminal panel), as
+  does the iPad; the iPhone opens them full screen. On the Mac they are real PTYs rendered with
+  libghostty; the iOS client attaches to the host's over the remote protocol and renders them
+  with SwiftTerm. There are no global shells and no space shell workspaces.
 - **Spaces** are plain groups in the sidebar. With no agent selected, the workspace shows an
   empty state.
 - **Lifetime:** there is no daemon. Sessions live and die with the app. On relaunch the workspace
@@ -340,7 +343,8 @@ Sources/
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
                        the changes card), NativeQueueRules (the queue's rules, host and client),
-                       ShepherdLog. Shared with the iOS client.
+                       TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
+                       height, RemoteTerminalLink), ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -357,7 +361,9 @@ Sources/
       +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
-      +RemoteInspection, +RemoteWorktrees)
+      +RemoteInspection, +RemoteWorktrees, +Terminal)
+    TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
+      TerminalPanelLayout (TerminalPanelGeometry, pure), TerminalPanelViews (strip, divider)
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, QueueStack ("Up next", the queue above the composer), Subagents,
                        SubagentPresentation, SubagentInspector
@@ -507,7 +513,8 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions`
   - chunked uploads (32 MiB per file)
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
-    info/setup/finalize/delete
+    info/setup/finalize/delete, and `terminals` (what each terminal pane runs; answered by the
+    server itself, `terminal.activity.v1`)
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.

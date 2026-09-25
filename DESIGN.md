@@ -33,9 +33,10 @@ survive the question "does this help a person supervise ten working agents at on
   own.
 - **Remote hosts:** another Mac serving its agents is a section of the same sidebar, with the
   same rows and the same thread.
-- **Terminals** exist only as panes beside a thread: the user opens one with ⌘D, or an agent
-  opens one with its `pane_*` tools. There are no global shells, no space shell workspaces, no
-  agent rendered as a terminal, and no Terminal/Native switch.
+- **Terminals** exist only as panes of an agent's layout, shown in the terminal panel under its
+  thread: the user opens one with ⌘D or the panel's +, or an agent opens one with its `pane_*`
+  tools. There are no global shells, no space shell workspaces, no agent rendered as a terminal,
+  and no Terminal/Native switch.
 
 ## Principles
 
@@ -93,6 +94,9 @@ And the rules that follow from them:
 | Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn or asks a question while you aren't watching it (`AgentNotifications`) | Reaches you outside the app |
 | Missions, the mission graph, the attention inbox, evidence review (Lab boards) | Not built | Out of scope for this pass |
 | ⌘M opens the model picker (earlier handoff) | **⇧⌘M** | ⌘M is the system Minimize chord |
+| Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; + or ⌘D opens a tab; no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
+| Terminal: the panel's terminal on `bgBase` | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
+| Terminal: rename a tab, Kill process, New terminal on This Mac, Run in terminal, send output to pi | Not built | Out of scope for this pass |
 | A compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither: the tree starts under the window controls | The sidebar is navigation only; ⌘K opens the palette and ⌘N (or a space's hover `+`) starts an agent |
 
 Additions the boards don't have:
@@ -477,7 +481,7 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Size** (`AppLayout+Navigation.swift`): minimum 720×600, default 1440×900.
 - **Layout:** the sidebar sits on `bgBase` and runs behind the window controls; the main column
   sits on `bgWindow`. There is no tab bar and no status line. An agent's layout is its thread
-  plus any terminal panes split beside it. Pane dividers are 1pt `lineSubtle`, tinted
+  with its terminal panel under it (Terminal panel, below). Pane dividers are 1pt `lineSubtle`, tinted
   `focusDivider` where they border the focused pane; dragging one keeps each side at least
   160pt, between 15% and 85%.
 - **Switching agents flips visibility; it never remounts.** Every mounted layout stays in the
@@ -1051,8 +1055,8 @@ next model request both draw as `queued`).
 
 One slot beside the agent's layout (`RightPaneSplit` around the whole layout, in
 `AgentLayoutView`) is shared by the subagent inspector and the review; when both exist, the
-inspector wins. With a terminal pane split beside the thread, the pane still sits at the
-workspace's trailing edge and the dock rule measures the main column, never the thread's own
+inspector wins. It sits at the workspace's trailing edge beside the thread and its terminal
+panel, at its full height, and the dock rule measures the main column, never the thread's own
 pane. Its sizes and adaptive rule are in "Window and adaptive
 layout" above.
 
@@ -1136,10 +1140,47 @@ review back in front of an inspected subagent.
 ### Terminal panes
 
 Terminal panes render through libghostty on the theme's terminal colors, on `bgWindow`, with
-10×8pt padding and the Settings ▸ Terminal font. An agent's layout may hold terminal panes beside
-its thread; the thread pane itself never has a terminal. Pane states are quiet placeholders in
-mono 10.5 tertiary ("starting session…", "session exited (n)", "session unavailable · reason").
-The chrome never parses or restyles terminal output.
+10×8pt padding and the Settings ▸ Terminal font. The thread pane itself never has a terminal.
+Pane states are quiet placeholders in mono 10.5 tertiary ("starting session…", "session exited
+(n)", "session unavailable · reason"). The chrome never parses or restyles terminal output.
+
+### Terminal panel
+
+An agent's terminal panes live in a panel under its thread and composer, across the layout's
+width (TerminalSplit, TerminalStates boards; `TerminalPanelGeometry`, `TerminalPanels`,
+`TerminalPanelViews.swift`). The panel is a view of the agent's layout, which stays the one
+`PaneNode` tree the server persists and agents drive: each largest subtree without the thread is
+a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
+
+- **Strip** (`NWTerminalTabBar`, 38pt on `bgWindow`, a `lineStrong` hairline above): the tabs
+  (26pt, radius 6, mono title, the selected one on `bgSelected` with its close), + for a new
+  tab, then Split right, Maximize or Restore, and Hide (24pt icon buttons).
+- **Tab states** (`NWTerminalTab.Activity`): at rest the program at its prompt ("zsh"); a
+  running command names the tab ("make dev") with a running spinner; output printed while the
+  tab was off screen adds a running-blue dot; an exited session is tertiary (failed if it failed).
+  The selected tab of a remote agent names its host. What each terminal runs comes from
+  `SessionServer.terminalActivity` (a remote agent's host answers `RemoteAgentQuery.terminals`),
+  polled every 2 s while the layout is on screen; an older host leaves plain tabs named for the
+  folder.
+- **Actions:** + splits the thread (a new tab); Split right (⌘D in a terminal) splits the tab's
+  focused pane; ⌘D or ⇧⌘D on the thread opens a new tab; closing a tab closes its panes (as ⌘W
+  does), never the thread's. A terminal that appears (from any of these, or an agent's
+  `pane_open`) opens the panel on its tab.
+- **Show and hide:** ⌘J or the toolbar's terminal toggle (`NWPaneToggle`, lantern while open).
+  Hidden, a running-blue dot on the toggle (`NWToggleBadge`) says a tab printed. Showing gives the
+  keyboard to the selected tab; hiding gives it back to the thread. A layout seen for the first
+  time with terminals shows its panel.
+- **Height:** 330pt by default, persisted app-wide (`shepherd.terminalPanelHeight`). Drag the
+  panel's top edge (9pt hit area, row-resize pointer): it snaps at a third, half and two-thirds
+  of the layout within 12pt, keeps the panel at least 120pt and the thread at least 160pt;
+  double-click resets it. VoiceOver adjusts it in 40pt steps.
+- **Maximized** (⇧⌘↩): the panel takes the layout and the thread folds away at its size, still
+  mounted; Restore brings it back.
+- **Nothing remounts:** every pane is placed whether it shows or not (a hidden tab or panel keeps
+  its size, so its grid never changes), hidden ones are `opacity(0)` and stop rendering. ⌥⌘←/→
+  move only among the panes on screen. A remote agent's panel mounts only its shown panes, so a
+  hidden remote terminal is detached and never counts toward the host's smallest-viewer size.
+- **A layout with no thread** (a host's utility terminal) keeps the plain split tree.
 
 ### Command palette
 
@@ -1318,6 +1359,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘↓ · ⌘↑ | Next · previous agent |
 | ⌘D · ⇧⌘D · ⌘W | Split vertically · horizontally · close pane |
 | ⌥⌘→ · ⌥⌘← | Focus next · previous pane |
+| ⌘J · ⇧⌘↩ | Show or hide the terminal panel · maximize or restore it |
 | ⇧⌘S · ⇧⌘B | Show or hide the sidebar · the right pane |
 | ⇧⌘M | Model picker |
 | ⌘. | Stop the agent |
@@ -1399,6 +1441,16 @@ components first), with these differences for touch:
   the sidebar beside the thread in landscape and over it in portrait.
 - **App measures** come from `MobileLayout` (`App/iOS/Support`), as the Mac's come from
   `AppLayout`.
+- **Terminal** (iPadTerminal board; `App/iOS/Terminal`): on iPad the Mac's panel under the thread
+  and composer (46pt strip, 32pt tabs, 34pt icon buttons hit at 44, 340pt tall), with a
+  grabber on its top edge for the divider (snapping as on the Mac) in place of a pointer
+  handle, and the terminal toggle in the thread's header. While a terminal has the keyboard, a
+  key row sits under it, over the software keyboard: esc, tab, ctrl, ⌥ (latched in lantern
+  until the next key), the arrows, `|`, `~`, `/`, `-` as 34pt keycaps at least 44 wide on
+  `bgRaised`. On iPhone the thread's options open the panes full screen with the same strip and
+  key row. The terminal is SwiftTerm's view on Night Watch's terminal palette in Geist Mono at
+  the code size, following Dynamic Type to 20pt; the strip and key row stop growing at
+  xxxLarge. Closing a tab asks first ("Its shell on <host> stops.").
 
 ## Verifying visuals
 
@@ -1414,6 +1466,7 @@ components first), with these differences for touch:
   - subagent cards, the ledger, and the inspector
   - the review pane
   - the palette, the toolbar, the sidebar at each row density, and the window at its minimum
+  - the terminal panel: two tabs under the thread, the first split, and maximized
   - every Settings page, sheet, and dialog
   - the empty states
 

@@ -23,7 +23,8 @@ listener must never be exposed to the internet.
    and the token. Add as many hosts as you like. The simulator can use `127.0.0.1` for a host on
    the same Mac. A phone needs the Mac's LAN or VPN address.
 4. Open an agent from the list. The phone and the Mac control the same pi process. The phone
-   never starts pi itself and never attaches a terminal.
+   never starts pi itself; it attaches only to the terminal panes of the agent's layout, and
+   only while one is on screen.
 
 Compile-only check, with no signing:
 
@@ -122,10 +123,11 @@ keep the version for real breaks.
 - **Target:** the `Shepherd iOS` Xcode target (iOS 27, iPhone and iPad). `App/iOS` is one
   synchronized folder, so every Swift file under it is compiled without a project edit
   (`ExportOptions.plist` is excepted; `PrivacyInfo.xcprivacy` ships as a resource). It links
-  `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote` and `ShepherdUI`, never `ShepherdApp`.
+  `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote` and `ShepherdUI`, never `ShepherdApp`,
+  and SwiftTerm (the package the Mac's host screens already use) for terminal panes.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
-  `Review/`, `Search/`, `Settings/`, and `Support/` (`AgentRef`, `MobileLayout`,
+  `Review/`, `Search/`, `Settings/`, `Terminal/`, and `Support/` (`AgentRef`, `MobileLayout`,
   `MobileAppearance`, the `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
   derivations (`NativeTurnPresentation`, `NativeActivity`), host records
@@ -195,8 +197,23 @@ keep the version for real breaks.
   the Mac's Delete Worktree Agent (the host's warning, acknowledged, then progress). On iPad
   ⌘K opens a palette over search and actions, with a live preview of the selected thread.
 
+- **Terminal (`Terminal/`):** the terminal panes of an agent's layout on its host. On iPad a
+  panel under the thread (the header's terminal toggle, or the options menu) with the layout's
+  tabs, + (a new pane beside the thread), Split right, Maximize, Hide, and a divider that snaps
+  at a third, half and two-thirds; on iPhone the thread's options open them full screen. Each
+  pane is SwiftTerm's view on Night Watch's terminal palette, attached (`attach`) while it is on
+  screen, the app is active and the host connected, and detached a second after it leaves; the
+  host replays its screen on every attach and sizes the PTY to its smallest viewer. Keys go to
+  the host as `input`; a key row (esc, tab, ctrl, ⌥, arrows, `|`, `~`, `/`, `-`) sits under the
+  terminal while it has the keyboard, and a hardware keyboard types directly. Tabs name what
+  runs in them and show a spinner or a dot for new output where the host answers
+  `RemoteAgentQuery.terminals` (`terminal.activity.v1`). Closing a tab asks, then asks the host
+  to close its panes; the host keeps the Mac's rules (never the agent's own pane, never the last
+  pane). A host without pane control (`pane.control.v1`) shows its terminals but offers no +,
+  split or close.
+
 ## Not in the first release
 
 Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), automations over remote, QR pairing and TLS, terminal panes, multiple iPad
-windows, and everything waiting on the Mac (Missions, Designs, daemon hosts).
+background), automations over remote, QR pairing and TLS, multiple iPad windows, and
+everything waiting on the Mac (Missions, Designs, daemon hosts).
