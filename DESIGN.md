@@ -725,6 +725,10 @@ the turn has finished, the changes card and the footer end it. A running turn ha
 - **Errors** (`NWTurnError`): a failed provider request, on `failedTint` with radius 6: a
   triangle, the message ("Model overloaded — the turn stopped after 6 tool calls."), "×n" when
   repeated, and Retry when it ended the turn. Tool failures stay in their activity lines.
+- **Stopped:** a turn the user stopped is not an error. It ends in the note "Stopped", and the
+  call Stop interrupted keeps its line's usual colors with "stopped" in its meta ("Ran a
+  command · sleep 40 · stopped · 7.5s"), standing alone like a failure, so the word stays
+  visible.
 - **Working row** (`NWWorkingRow`): while the agent runs, the thread ends in one row with a
   spinner and what it is doing in italic 12: "Working…" under a live activity line, "Running
   <tool>…", or "Thinking…". Live thinking carries its own spinner instead, and a pending

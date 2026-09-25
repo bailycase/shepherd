@@ -176,6 +176,12 @@ struct ThreadPreviewTests {
         try await render("thread-activity-failed", ActivityThreads.failed)
     }
 
+    /// A turn the user stopped mid-command: the call reads "stopped" in its usual colors, and the
+    /// turn ends in a quiet "Stopped" note, not an error with Retry.
+    @Test func threadActivityStopped() async throws {
+        try await render("thread-activity-stopped", ActivityThreads.stopped, size: CGSize(width: 1180, height: 600))
+    }
+
     /// Prose, lists, inline code, a link, and a highlighted code block.
     @Test func threadProse() async throws {
         // Code blocks color themselves off the main actor: capture once every fence's colors
@@ -519,6 +525,18 @@ enum ActivityThreads {
                                 status: "error", timestamp: t0 + 40_000),
         ]
         return snapshot(messages)
+    }
+
+    /// The user stopped a long command: pi failed the call and ended the run with an error reply,
+    /// which the host projects as `aborted`.
+    static var stopped: NativeThreadSnapshot {
+        let t0 = now - 60_000
+        return snapshot([
+            user("u1", "Use the bash tool to run `sleep 40`, then reply with exactly: slept", at: t0),
+            tool("s1", "bash", ["command": "sleep 40"], output: "Command aborted", error: true, start: t0 + 2_000, end: t0 + 9_500,
+                 status: "aborted"),
+            NativeThreadMessage(entryID: "stop", role: "assistant", blocks: [], status: "aborted", timestamp: t0 + 9_600),
+        ])
     }
 
     /// The NWThread board's prose sample.
