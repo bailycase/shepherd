@@ -22,17 +22,24 @@ public enum NWTouchQueueMetrics {
 /// The stack's card: `bgRaised`, a `lineStrong` line, the boards' 12pt corners, its header, then
 /// its rows with a hairline above each. The app hands it the rows (inside the scroll container
 /// that carries their swipe actions) and the ••• menu's content.
+///
+/// A paused queue says so in its header, and, with no hover to reveal the Mac's per-row Send now
+/// or tooltip, shows Send now there (the ••• menu's Send all now), its reason as the hint.
 public struct NWTouchQueueCard<Rows: View, Options: View>: View {
     let count: Int
-    let paused: Bool
+    let paused: String?
+    let resume: (() -> Void)?
     @ViewBuilder let rows: () -> Rows
     @ViewBuilder let options: () -> Options
 
-    /// `count` is every message in the queue, steering ones included; `paused` says the queue
-    /// waits for you (pi was stopped, or a turn failed).
-    public init(count: Int, paused: Bool, @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
+    /// `count` is every message in the queue, steering ones included. `paused` says why the
+    /// queue waits (pi was stopped, or a turn failed), nil while it goes on its own; `resume`
+    /// sends what it holds now, shown only while it is paused.
+    public init(count: Int, paused: String? = nil, resume: (() -> Void)? = nil,
+                @ViewBuilder rows: @escaping () -> Rows, @ViewBuilder options: @escaping () -> Options) {
         self.count = count
         self.paused = paused
+        self.resume = resume
         self.rows = rows
         self.options = options
     }
@@ -41,7 +48,7 @@ public struct NWTouchQueueCard<Rows: View, Options: View>: View {
         let nw = Color.nw
         let shape = RoundedRectangle(cornerRadius: NW.Radius.l)
         VStack(spacing: 0) {
-            NWTouchQueueHeader(count: count, paused: paused, options: options)
+            NWTouchQueueHeader(count: count, paused: paused, resume: paused == nil ? nil : resume, options: options)
             rows().overlay(alignment: .top) { NWHairline() }
         }
         .background(nw.bgRaised, in: shape)
@@ -53,7 +60,8 @@ public struct NWTouchQueueCard<Rows: View, Options: View>: View {
 
 private struct NWTouchQueueHeader<Options: View>: View {
     let count: Int
-    let paused: Bool
+    let paused: String?
+    let resume: (() -> Void)?
     @ViewBuilder let options: () -> Options
 
     var body: some View {
@@ -65,15 +73,22 @@ private struct NWTouchQueueHeader<Options: View>: View {
                 Text("\(count)").font(.nw(.mono)).foregroundStyle(nw.textTertiary).monospacedDigit()
                     .nwContentTransition(.numeric())
                     .nwComponentAnimation(.content, value: count)
-                if paused {
+                if paused != nil {
                     Text("Paused").font(.nw(.caption)).foregroundStyle(nw.textTertiary).nwTransition(.content)
                 }
             }
             .lineLimit(1)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Up next, \(count) \(count == 1 ? "message" : "messages")\(paused ? ", paused" : "")")
+            .accessibilityLabel("Up next, \(count) \(count == 1 ? "message" : "messages")\(paused != nil ? ", paused" : "")")
+            .accessibilityHint(paused ?? "")
             .accessibilityAddTraits(.isHeader)
             Spacer(minLength: NW.Space.m)
+            if let resume {
+                Button("Send now", systemImage: "arrow.up", action: resume)
+                    .buttonStyle(.nw(.secondary, size: .s))
+                    .accessibilityHint(paused ?? "")
+                    .nwTransition(.content)
+            }
             Menu(content: options) {
                 Image(systemName: "ellipsis")
                     .font(.nw(.ui, weight: .semibold))
@@ -83,7 +98,7 @@ private struct NWTouchQueueHeader<Options: View>: View {
             }
             .accessibilityLabel("Queue options")
         }
-        .nwComponentAnimation(.content, value: paused)
+        .nwComponentAnimation(.content, value: paused != nil && resume != nil)
         .padding(.leading, NW.Space.l)
         .frame(minHeight: NWTouchQueueMetrics.headerHeight)
     }
