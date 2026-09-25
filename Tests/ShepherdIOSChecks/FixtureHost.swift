@@ -129,7 +129,7 @@ final class FixtureHost: @unchecked Sendable {
         case .listModels(let id):
             note("listModels")
             return [.models(id: id, models: data.models, defaultModel: data.models.first)]
-        case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _):
+        case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _), .automation(let id, _, _):
             note(Self.kind(request))
             return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
         default:
@@ -152,6 +152,11 @@ final class FixtureHost: @unchecked Sendable {
              .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _),
              .agentAction(let id, _, _), .upload(let id, _):
             mutation(Self.kind(request))
+            return [.error(id: id, code: "fixture", message: refused)]
+        case .automation(let id, _, let command):
+            // Reading an automation's runs is the one automation request that changes nothing.
+            if command == .runs { return nil }
+            mutation("automation." + String(describing: command).prefix { $0 != "(" })
             return [.error(id: id, code: "fixture", message: refused)]
         case .detach, .input, .resize:
             mutation(Self.kind(request))
