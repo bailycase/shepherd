@@ -387,7 +387,8 @@ Packages/ShepherdUI/Sources/ShepherdUI/
   `NWPopupMenu`, because SwiftUI has no public custom `PickerStyle`; they present themselves to
   accessibility as the native segmented `Picker` and a native `Menu`.
 - **Status:** `NWStatusPill`, `NWStatusDot`, `.nwSpinner`, `.nwBar`, `NWStepStrip`,
-  `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`. Whatever shows a
+  `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`, and live text's
+  `.nwShimmer(active:)`. Whatever shows a
   state takes an `AgentState` (see One status enum).
 - **Thread:** prose is Markdown; inline markup goes through `AttributedString(markdown:)`
   (inline only, whitespace kept), with blocks split by the thread's own renderer. Consecutive
@@ -559,9 +560,11 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
 
 Shepherd moves the way a native Mac app does: things come from somewhere, go somewhere, and
 never jump, and nothing moves for decoration. `NW.Motion` (`Tokens/Motion.swift`) holds every
-motion. The Foundations board's durations are the anchors (hover 120ms, panes 180ms, sheets
-240ms, the glow 1.6s, the spinner 1s, the skeleton 1.4s), and every one-shot motion runs on a
-SwiftUI spring at its anchor.
+motion (`NW.Motion.glow`, `.spin`, `.hover`, `.pane`, …). The Foundations board's durations are
+the anchors (hover 120ms, panes 180ms, sheets 240ms; the glow 1.6s ease-in-out, attention only;
+the shimmer 1.8s linear, live text only; and the spinner 1s and a placeholder's pulse 1.4s), and
+every one-shot motion runs on a SwiftUI spring at its anchor. Nothing in the thread spins: while
+pi works, its live text shimmers (LiveText).
 
 **Why springs.** A spring keeps its velocity when a change is interrupted, so a hover flicked in
 and out, or a pane toggled twice, retargets from where it is instead of restarting. A spring's
@@ -584,16 +587,19 @@ overshoot as they grow from their anchor) and the confirmation pop (`.bouncy`, 4
 | `emphasis` | 240ms | `.bouncy` | a small confirmation pop (viewed, copied, sent) | popping from 85% | nothing |
 | `scroll` | 240ms | `.smooth` | turn jumps, revealing a row | — | instant |
 | `glow` | 1.6s | ease-in-out, repeating | attention only: the dot's opacity 1 → 0.35 → 1 | — | static |
-| `spin` | 1s | linear, repeating | running work: one turn a second | — | static |
-| `shimmer` | 1.4s | ease-in-out, repeating | loading placeholders: opacity 0.55 → 1 → 0.55 | — | static |
+| `spin` | 1s | linear, repeating | work outside the thread (a sheet's step, a host connecting, "Starting pi…"): one turn a second | — | static |
+| `shimmer` | 1.8s | linear, repeating | live text only (the running tool's line, "Thinking…"): a highlight, `textTertiary` → `textPrimary` → `textTertiary`, moving left to right across the text | — | plain `textSecondary` text |
+| `pulse` | 1.4s | ease-in-out, repeating | loading placeholders (`.nwShimmer()`): opacity 0.55 → 1 → 0.55 | — | static |
 
-The glow, the spinner, and the shimmer are clock-driven (`NWPhase`), so Reduce Motion can change
-while they are on screen. The spinner and the glow are render-server animations: Core Animation
-turns the arc and pulses the dot on their own layers (`NWLayerSpinner`, `NWLayerGlowDot`),
-started at the clock's phase so every one moves in step, and one on screen costs the app no
-frames (drawn by a SwiftUI timeline, a single spinner redrew its window on every display frame;
-in an off-screen test window, whose host also relaid out tens of thousands of times a second,
-that was most of a core in a debug build). The shimmer stays a timeline. None of them
+The glow, the spinner, the shimmer, and the pulse are clock-driven (`NWPhase`), so Reduce Motion
+can change while they are on screen. The spinner, the glow, and the shimmer are render-server
+animations: Core Animation turns the arc, pulses the dot, and slides the shimmer's band on their
+own layers (`NWLayerSpinner`, `NWLayerGlowDot`, `NWLayerShimmer`), started at the clock's phase so
+every one moves in step, and one on screen costs the app no frames (drawn by a SwiftUI timeline,
+a single spinner redrew its window on every display frame; in an off-screen test window, whose
+host also relaid out tens of thousands of times a second, that was most of a core in a debug
+build). The shimmer's band is masked by the text it lights, which SwiftUI draws once in
+`textTertiary` beneath it (`.nwShimmer(active:)`). The pulse stays a timeline. None of them
 moves under `nwMotionPaused` (see Performance). A Reduce Motion cross-fade still eases the
 layout a change moves (the rows under an opening disclosure, a column a pane narrows) over its
 120ms; only what arrives or leaves stops travelling.
@@ -3644,7 +3650,8 @@ Review-pane keys are listed with the review.
   never does. Every Night Watch control style and custom control turns off the system's effect
   (`.focusEffectDisabled()`) and draws `.nwFocusRing()`; a control left in its system style
   keeps the system's ring (NWSwift).
-- **Reduce Motion:** nothing moves (see Motion). The glow, spinners, and shimmer are static;
+- **Reduce Motion:** nothing moves (see Motion). The glow, spinners, and pulse are static, and
+  live text is plain `textSecondary`;
   panes, sheets, overlays, and expanding or arriving rows cross-fade in place (120ms); rolling
   digits and symbol swaps cross-fade; pops, turn jumps, and scroll-to animations are dropped.
   Hover and content fades are unchanged.
