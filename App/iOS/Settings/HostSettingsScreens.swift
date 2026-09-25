@@ -275,7 +275,7 @@ struct SettingsControlRow<Control: View>: View {
                     .foregroundStyle(Color.nw.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let note {
-                    NWInlineMarkup(note, size: MobileLayout.settingsNoteSize, codeSize: MobileLayout.settingsNoteCodeSize)
+                    NWMarkupText(note, size: MobileLayout.settingsNoteSize, codeSize: MobileLayout.settingsNoteCodeSize)
                         .foregroundStyle(Color.nw.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

@@ -6,7 +6,7 @@ import SwiftUI
 /// `textPrimary`). Everything else takes the caller's color.
 ///
 /// The markup is parsed once per string (Settings' copy is static), never per render.
-public struct NWInlineMarkup: View {
+public struct NWMarkupText: View {
     let source: String
     let size: CGFloat
     let codeSize: CGFloat
@@ -22,7 +22,7 @@ public struct NWInlineMarkup: View {
     }
 
     public var body: some View {
-        let pieces = NWInlineMarkupParser.pieces(source)
+        let pieces = NWMarkupTextParser.pieces(source)
         if pieces.contains(where: \.isCode) {
             Self.text(pieces, size: size, codeSize: codeSize)
                 .nwText(size: size, lineHeight: lineHeight)
@@ -35,7 +35,7 @@ public struct NWInlineMarkup: View {
 
     /// The sentence as one `Text`. Code is padded `xs` on each side: the character before it and
     /// its own last character are kerned by the padding, and the renderer fills that room.
-    @MainActor static func text(_ pieces: [NWInlineMarkupParser.Piece], size: CGFloat, codeSize: CGFloat) -> Text {
+    @MainActor static func text(_ pieces: [NWMarkupTextParser.Piece], size: CGFloat, codeSize: CGFloat) -> Text {
         let pad = NWInlineCodeRenderer.padding
         var result = Text(verbatim: "")
         for (index, piece) in pieces.enumerated() {
@@ -71,7 +71,7 @@ public struct NWInlineMarkup: View {
 }
 
 /// Splits inline Markdown into plain, strong and code pieces, and remembers each string's pieces.
-@MainActor enum NWInlineMarkupParser {
+@MainActor enum NWMarkupTextParser {
     enum Piece: Equatable {
         case plain(String)
         case strong(String)
@@ -160,9 +160,9 @@ struct NWInlineCodeRenderer: TextRenderer {
 #Preview("Inline markup") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.l) {
-            NWInlineMarkup("Preselected in the New Agent sheet. “Use pi's default” passes no `--model` at all.")
-            NWInlineMarkup("**Remote default** starts clean from origin's default branch. **Current branch** stacks on your checkout's in-progress work.")
-            NWInlineMarkup("Runs `pi update --extensions` once a day.")
+            NWMarkupText("Preselected in the New Agent sheet. “Use pi's default” passes no `--model` at all.")
+            NWMarkupText("**Remote default** starts clean from origin's default branch. **Current branch** stacks on your checkout's in-progress work.")
+            NWMarkupText("Runs `pi update --extensions` once a day.")
         }
         .foregroundStyle(Color.nw.textSecondary)
         .frame(width: 420, alignment: .leading)

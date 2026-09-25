@@ -5,7 +5,7 @@ import ShepherdUI
 // MARK: Page chrome
 
 /// A settings page: the title in Geist 22/600, a one-line explanation in `body` (it may carry
-/// inline markup, `NWInlineMarkup`), then its groups 28pt apart.
+/// inline markup, `NWMarkupText`), then its groups 28pt apart.
 struct SettingsPage<Content: View>: View {
     let title: String
     let explanation: String
@@ -31,7 +31,7 @@ struct SettingsHeader: View {
                 .tracking(AppLayout.settingsTitleSize * AppLayout.settingsTitleTracking)
                 .foregroundStyle(Color.nw.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            NWInlineMarkup(explanation, size: NWTextStyle.body.size, codeSize: NWTextStyle.code.size,
+            NWMarkupText(explanation, size: NWTextStyle.body.size, codeSize: NWTextStyle.code.size,
                            lineHeight: NWTextStyle.body.lineHeight)
                 .foregroundStyle(Color.nw.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

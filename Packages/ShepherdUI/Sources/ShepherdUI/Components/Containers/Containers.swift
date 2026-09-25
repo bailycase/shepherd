@@ -61,7 +61,7 @@ public enum NWCardRowStyle: Sendable {
     /// control.
     case standard
     /// The Settings boards' row: a 13.5/500 title over a 12.5/1.45 description with inline markup
-    /// (`NWInlineMarkup`), 2pt apart, 24pt before the control, and a problem led by an `xmark`.
+    /// (`NWMarkupText`), 2pt apart, 24pt before the control, and a problem led by an `xmark`.
     case settings
 }
 
@@ -98,7 +98,7 @@ public struct NWCardRow<Control: View>: View {
                 if let description {
                     Group {
                         if settings {
-                            NWInlineMarkup(description, size: NWTextStyle.ui.size,
+                            NWMarkupText(description, size: NWTextStyle.ui.size,
                                            lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
                         } else {
                             Text(description).nwText(.caption)
