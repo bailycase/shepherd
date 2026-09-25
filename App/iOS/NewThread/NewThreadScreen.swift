@@ -268,8 +268,13 @@ private struct NewThreadForm: View {
     private var status: some View {
         if let error = model.errorText {
             NWBanner(.failed, title: "Couldn't start the thread", message: error) {
-                if model.blocker == .defaultsFailed(model.host?.name ?? "") {
+                switch model.blocker {
+                case .defaultsFailed:
                     Button("Try again") { model.loadDefaults() }.buttonStyle(.nw(.secondary, size: .s))
+                case .baseUnresolved:
+                    Button("Resolve") { model.resolveBase(fetch: nil) }.buttonStyle(.nw(.secondary, size: .s))
+                default:
+                    EmptyView()
                 }
             }
         } else if let blocker = model.blocker, blocker != .starting {
