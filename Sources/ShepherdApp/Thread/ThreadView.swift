@@ -104,6 +104,10 @@ struct ThreadView: View {
                     .frame(maxWidth: AppLayout.threadMaxWidth)
                     .padding(.horizontal, gutter)
                     .frame(maxWidth: .infinity)
+                    // A local agent's images draw from its folder; a remote agent's files are not here.
+                    .environment(\.nwProseFileRoot, workingDirectory.map {
+                        URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
+                    })
                 }
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
