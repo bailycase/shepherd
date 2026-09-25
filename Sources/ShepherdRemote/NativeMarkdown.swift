@@ -96,7 +96,9 @@ public func nativeMarkdownParse(_ text: String, streaming: Bool = false) -> (blo
     if streaming, let last = lines.last, nativeMarkdownPendingLine(last) { lines.removeLast() }
     let context = MarkdownContext(streaming: streaming)
     var blocks = parseBlocks(lines, context, atEnd: true)
-    if !context.footnotes.isEmpty || text.contains("[^") { blocks = numberFootnotes(blocks, context.footnotes) }
+    if !context.footnotes.isEmpty || text.contains("[^") {
+        blocks = numberFootnotes(blocks, context.footnotes, streaming: streaming)
+    }
     return (blocks, context.endsInOpenFence)
 }
 
@@ -121,7 +123,12 @@ func nativeMarkdownPendingLine(_ line: String) -> Bool {
         if digits.allSatisfy(\.isNumber) { return true }
     }
     if first == "<", !t.contains(">") { return true }
-    if t.hasPrefix("[^"), !t.contains("]") { return true }
+    // A footnote definition's label, until its colon says it is one.
+    if t.hasPrefix("[^"), !t.contains("]") || t.hasSuffix("]") { return true }
+    // A task item's box still arriving ("- [", "- [x").
+    if "-*+".contains(first) || first.isNumber, let marker = ListMarker(line), ["[", "[x", "[X"].contains(marker.text) {
+        return true
+    }
     if t.hasPrefix("!["), !t.contains(")") { return true }
     return false
 }
@@ -781,8 +788,10 @@ private func parseDetails(_ lines: [String], from start: Int, _ context: Markdow
 
 /// References to defined notes become `[^1]`, `[^2]`, … in the order they are first cited;
 /// references to undefined notes are escaped, so they read as written. The notes follow the
-/// message's last block.
-private func numberFootnotes(_ blocks: [NativeMarkdownBlock], _ definitions: [(label: String, text: String)]) -> [NativeMarkdownBlock] {
+/// message's last block. While a reply streams its notes have usually not arrived yet (they come
+/// last), so every reference is numbered and none flickers through its raw label.
+private func numberFootnotes(_ blocks: [NativeMarkdownBlock], _ definitions: [(label: String, text: String)],
+                             streaming: Bool) -> [NativeMarkdownBlock] {
     var defined: [String: String] = [:]
     for definition in definitions where defined[definition.label] == nil { defined[definition.label] = definition.text }
     var numbers: [String: Int] = [:]
@@ -803,7 +812,7 @@ private func numberFootnotes(_ blocks: [NativeMarkdownBlock], _ definitions: [(l
                     continue
                 }
                 result += rest[..<open.lowerBound]
-                if defined[String(label)] != nil {
+                if defined[String(label)] != nil || streaming {
                     let number = numbers[String(label)] ?? {
                         order.append(String(label))
                         numbers[String(label)] = order.count
@@ -824,9 +833,8 @@ private func numberFootnotes(_ blocks: [NativeMarkdownBlock], _ definitions: [(l
         order.append(definition.label)
         numbers[definition.label] = order.count
     }
-    if !order.isEmpty {
-        result.append(.footnotes(order.map { NativeMarkdownFootnote(number: numbers[$0]!, text: rewrite(defined[$0] ?? "")) }))
-    }
+    let notes = order.compactMap { label in defined[label].map { NativeMarkdownFootnote(number: numbers[label]!, text: rewrite($0)) } }
+    if !notes.isEmpty { result.append(.footnotes(notes)) }
     return result
 }
 

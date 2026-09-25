@@ -167,4 +167,16 @@ struct MarkdownEdgeCaseTests {
             #expect(!"\(blocks)".contains("text: \"Tools:\\n|"), "a table line joined the item at \(prefix.count): \(blocks)")
         }
     }
+
+    @Test(arguments: [
+        // A task box still arriving waits, so an item never shows "[x" before its check.
+        ("Plan\n- [", [NativeMarkdownBlock.paragraph("Plan")]),
+        ("Plan\n- [x", [.paragraph("Plan")]),
+        ("Plan\n- [ ] Ship", [.paragraph("Plan"), .list(ordered: false, start: 1, items: [Item(text: "Ship", task: .open)])]),
+        // A footnote definition's label waits for its colon.
+        ("Text[^1]\n\n[^1]", [.paragraph("Text[^1]")]),
+    ])
+    func streamingHoldsATaskBoxAndANoteLabelUntilTheyAreWhole(text: String, blocks: [NativeMarkdownBlock]) {
+        #expect(nativeMarkdownParse(text, streaming: true).blocks == blocks)
+    }
 }
