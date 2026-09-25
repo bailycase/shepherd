@@ -137,7 +137,7 @@ And the rules that follow from them:
 | iPadSubagents: Fork as new agent on a finished run | Re-run and Copy transcript | Remote agents have no Fork (docs/native-subagents.md) |
 | iPad sidebar footer: the person (avatar, name, "This Mac · build-01") and Settings | The hosts ("2 of 3 offline" and their names, opening Settings ▸ Hosts) and Settings | Shepherd has no accounts, only hosts (docs/ios/README.md › iPad: "a footer with the hosts and Settings") |
 | ModelPicker: ⌘M opens the model picker (the ⌘M hint in its search field) | **⇧⌘M**, the hint the search field shows (from `KeybindingsStore`), and the palette's Choose model… row and the menu bar | ⌘M is the system Minimize chord |
-| ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | "With thinking" or "No thinking" for a model neither current nor recently used | pi's catalog carries no such description (Honest affordances) |
+| ModelPicker: each row's second line describes the model ("Faster, cheaper", "Fastest") | Model rows' second line lists the model's thinking levels instead of the board's notes ("Off · Minimal · Low · Medium · High", or "No thinking"), on the Mac and in the iOS picker | The user's decision, 2026-09-25 (pi has no model descriptions) |
 | NWComposer and Running: while pi runs, the placeholder "Queue a follow-up — sent when the turn ends" | The idle placeholder stays ("Follow up, or / for commands…"), as QueueSteer and QuestionAnswered draw it beside Stop | Dropped with the queue and steer redesign: ↩ queues or steers per Settings ▸ Agents, so "sent when the turn ends" would be wrong under Steer |
 | Terminal: ⌃\` shows the panel, ⌃⇧\` opens a tab, ⌘K clears, ⇧⌘[ ] switch tabs | **⌘J** shows or hides it; + or ⌘D opens a tab; no clear or tab-switch chord | Every rebindable chord needs ⌘, ⌘K is the palette, and a tab is one click away |
 | Terminal: the terminal on `bgBase` (Mac and iPad panels) | On `bgWindow`, the theme's terminal background | Terminal panes keep one surface everywhere |
@@ -1870,13 +1870,17 @@ a docked pane it narrows to the card. They share one anatomy (NWComposer › Men
   (`NWComposerMetrics.modelRowHeight`) with 10pt sides, their parts 10pt apart: a 12pt column
   holding a `running` check on the current model; the model's short name in mono 12.5
   `textPrimary`, truncating in the middle, so a long id keeps its provider prefix and its tail
-  ("~anthropic/claude-o…pus-4-8"), over a second line in caption `textSecondary`: "Current · this
-  thread", "Used 2h ago in “Plan shepherd extensions”" for a recent model (when and in which thread
-  it was picked), else "With thinking" or "No thinking" as the catalog says (ModelPicker's
-  "Faster, cheaper" has no source in pi's catalog; Honest affordances); and, trailing, its context
-  size in mono 11 `textTertiary` ("200K", "1M"). The whole id is the row's tooltip and what
-  VoiceOver reads. A query keeps the models whose id contains it and moves the
-  highlight to the top. While the catalog loads, the list opens with a 12pt spinner and "Loading
+  ("~anthropic/claude-o…pus-4-8"), over a second line in caption `textSecondary` listing the
+  thinking levels the model takes and nothing else, in pi's order and the thinking menu's titles
+  ("Off · Minimal · Low · Medium · High", with "Extra high" and "Max" where the model has them),
+  truncating at its end, or "No thinking" for a model without reasoning (the check already marks
+  the current model). The levels follow the New Agent sheet's rule (the catalog's reasoning flag,
+  and models.json's `thinkingLevelMap` for Extra high and Max; Off to High on a host without
+  `thinking.levels.v1`), except that the thread's current model lists what pi reports for it, which
+  is live (`NativeModelChoices.thinkingLines`). The iOS picker's rows carry the same line under the
+  name. Trailing, the row's context size in mono 11 `textTertiary` ("200K", "1M"). The whole id
+  is the row's tooltip and what VoiceOver reads, with the levels. A query keeps the models whose
+  id contains it and moves the highlight to the top. While the catalog loads, the list opens with a 12pt spinner and "Loading
   models…" in caption tertiary. Choosing sets the model, records it in Recent, and returns focus to
   the field; it picks the model only. A catalog runs to hundreds of models, so the list is lazy
   (only the rows on screen exist), derived once per catalog and query rather than while drawing
