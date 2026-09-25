@@ -409,6 +409,10 @@ public final class SessionServer: @unchecked Sendable {
         ModelListing(entries: PiModelCatalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel())
     }
 
+    /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
+    /// sheet. Blocking (asking pi shells out): call it off the main thread and the server queue.
+    public func modelListing() -> ModelListing { modelCatalog() }
+
     /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
     public init(socketPath: String, stateURL: URL, modelCatalog: @escaping ModelCatalog = SessionServer.piModelCatalog) {
         self.socketPath = socketPath

@@ -1,4 +1,5 @@
 import Testing
+import ShepherdProtocol
 @testable import ShepherdSessions
 
 /// `pi --list-models` prints an aligned table; its format is not a contract, so parsing is lenient.
@@ -44,5 +45,21 @@ struct PiModelCatalogTests {
     @Test(arguments: ["", "provider model\n"])
     func noRowsMeansNoModels(output: String) {
         #expect(PiModelCatalog.parse(output).isEmpty)
+    }
+}
+
+/// A catalog travels to a remote client as a `ModelListing` and comes back as picker rows with
+/// the same thinking: a model a host (or an older one) says nothing about reasons.
+@Suite("Model listings")
+struct ModelListingTests {
+    @Test func aCatalogKeepsWhichModelsReasonThroughAListing() {
+        let entries = [PiModelCatalog.Entry(id: "qa/plain", reasoning: false), PiModelCatalog.Entry(id: "qa/deep")]
+        let listing = ModelListing(entries: entries, defaultModel: "qa/plain")
+        #expect(listing == ModelListing(models: ["qa/plain", "qa/deep"], defaultModel: "qa/plain", withoutThinking: ["qa/plain"]))
+        #expect(listing.entries == entries)
+    }
+
+    @Test func anOlderHostsListingReadsAsModelsThatReason() {
+        #expect(ModelListing(models: ["a/b"], defaultModel: "a/b").entries == [PiModelCatalog.Entry(id: "a/b", reasoning: true)])
     }
 }
