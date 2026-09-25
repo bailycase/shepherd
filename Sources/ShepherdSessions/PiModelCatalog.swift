@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 
 /// The live model catalog, asked from pi itself (`pi --list-models`) — models
@@ -96,9 +97,16 @@ public enum PiModelCatalog {
 
 extension ModelListing {
     /// A catalog as a listing: its ids, `defaultModel`, and the models that take no thinking level.
-    public init(entries: [PiModelCatalog.Entry], defaultModel: String?) {
+    /// `levelMaps` (models.json's `thinkingLevelMap`s) name the levels of the reasoning models
+    /// they cover (`ThinkingLevel.supported`).
+    public init(entries: [PiModelCatalog.Entry], defaultModel: String?, levelMaps: [String: [String: String?]] = [:]) {
+        var levels: [String: [String]] = [:]
+        for entry in entries where entry.reasoning {
+            guard let map = levelMaps[entry.id] else { continue }
+            levels[entry.id] = ThinkingLevel.supported(reasoning: true, levelMap: map).map(\.rawValue)
+        }
         self.init(models: entries.map(\.id), defaultModel: defaultModel,
-                  withoutThinking: entries.filter { !$0.reasoning }.map(\.id))
+                  withoutThinking: entries.filter { !$0.reasoning }.map(\.id), thinkingLevels: levels.isEmpty ? nil : levels)
     }
 
     /// The listing as catalog rows, for a picker and the thinking chip. A model the listing does
