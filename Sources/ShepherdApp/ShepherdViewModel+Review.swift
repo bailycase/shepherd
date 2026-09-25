@@ -165,7 +165,10 @@ extension ShepherdViewModel {
             focusThread: { [weak self] in
                 guard let self else { return }
                 if remote { self.remoteFocusedPaneID = nil } else { self.focusedPaneID = self.activeTab?.layout.firstLeaf.id }
-            }
+            },
+            canCommitDirectly: { [weak self] in self?.reviewCanCommit(session) ?? false },
+            commitStore: { [weak self] in self?.reviewCommitStore(for: session) },
+            commitClosed: { [weak self] in self?.reviewCommitClosed(session) }
         )
     }
 

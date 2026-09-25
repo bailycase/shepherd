@@ -66,6 +66,30 @@ struct ReviewPreviewTests {
         }
     }
 
+    /// A host that commits from review: Commit… beside Ask agent to commit, at the pane's
+    /// narrowest.
+    @Test func reviewPaneWithCommit() async throws {
+        let session = Reviews.session()
+        var actions = Reviews.actions
+        actions.canCommitDirectly = { true }
+        try await Preview.render("review-pane-commit", size: CGSize(width: AppLayout.paneMinWidth, height: 720)) {
+            ReviewPane(session: session, actions: actions)
+        }
+    }
+
+    /// The Commit… sheet (derived from the iPadCommit board): the drafted message, three files
+    /// with one left out, and the options; drafting; an agent still working; a checkout it
+    /// refuses; then the host's steps running, done with a pull request, and stopped at a push.
+    @Test(arguments: ["form", "drafting", "working", "blocked", "pr-default", "running", "done", "failed"])
+    func commitSheet(_ state: String) async throws {
+        let store = CommitBoard.store(state)
+        try await Preview.render("sheet-commit-\(state)", size: CGSize(width: AppLayout.commitSheetWidth, height: 720)) {
+            ReviewCommitSheet(store: store, askAgent: {}, close: {}, staged: true)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(Color.nw.bgWindow)
+        }
+    }
+
     /// The board's parts on their own: the strip (M, A, D, selection, viewed, touched), file
     /// headers, a diff with a fold, a comment and an open editor, and the composer.
     @Test func reviewComponents() async throws {
@@ -264,6 +288,67 @@ private struct ReviewBoard: View {
         .padding(NW.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.nw.bgWindow)
+    }
+}
+
+/// The iPadCommit board's commit: three files, the message drafted from the diff.
+@MainActor
+enum CommitBoard {
+    static let files = [
+        RemoteCommitFile(path: "Sources/ShepherdApp/DesktopNativeThreadView.swift", status: "M", added: 58, removed: 41, fingerprint: "a"),
+        RemoteCommitFile(path: "App/iOS/FleetView.swift", status: "M", added: 9, removed: 7, fingerprint: "b"),
+        RemoteCommitFile(path: "Tests/ShepherdAppTests/NativePresentationTests.swift", status: "A", added: 30, removed: 0, fingerprint: "c"),
+    ]
+
+    static func info(branch: String = "feat/tool-rows", upstream: String? = "origin/feat/tool-rows", working: Bool = false,
+                     blocked: String? = nil) -> RemoteCommitInfo {
+        let plain = reviewCommitFallbackMessage(files)
+        return RemoteCommitInfo(repository: "/Users/ada/Developer/Shepherd", branch: branch, head: "abc", upstream: upstream,
+                                pushRemote: "origin", defaultBranch: "main", files: files, title: plain.title, body: plain.body,
+                                draftsMessage: true, agentWorking: working, blocked: blocked)
+    }
+
+    static let title = "Show commands and paths in tool rows"
+    static let body = "Tool rows now preview the command or path instead of \u{201C}complete\u{201D}. Adds NativePresentationTests to cover the preview text on macOS and iOS."
+
+    static func store(_ state: String) -> ReviewCommitStore {
+        let store = ReviewCommitStore()
+        let operationID = UUID()
+        switch state {
+        case "drafting": store.stage(info(), drafting: true)
+        case "working": store.stage(info(working: true), title: title, body: body, drafted: true)
+        case "blocked": store.stage(info(blocked: "A rebase is in progress in this checkout. Finish or abort it first."))
+        case "pr-default":
+            store.stage(info(branch: "main", upstream: "origin/main"), title: title, body: body, drafted: true)
+            store.pullRequest = true
+        case "running":
+            store.stage(info(), title: title, body: body, drafted: true)
+            store.adopt(RemoteWorktreeOperation(id: operationID, progress: [
+                "check the checkout: on feat/tool-rows", "commit 3 files: committed 1a2b3c4", "push to origin/feat/tool-rows: working…",
+                "open a pull request into main: pending",
+            ]))
+        case "done":
+            store.stage(info(), title: title, body: body, drafted: true)
+            store.adopt(RemoteWorktreeOperation(id: operationID, finished: true, progress: [
+                "check the checkout: on feat/tool-rows", "commit 3 files: committed 1a2b3c4", "push to origin/feat/tool-rows: pushed",
+                "open a pull request into main: https://github.com/ada/shepherd/pull/131",
+            ], prURL: "https://github.com/ada/shepherd/pull/131"))
+        case "failed":
+            store.stage(info(), title: title, body: body, drafted: true)
+            let rejected = WorktreeFinalizer.failureDetail(.init(status: 1, stdout: "", stderr: """
+                To github.com:ada/shepherd.git
+                 ! [rejected]        HEAD -> feat/tool-rows (fetch first)
+                error: failed to push some refs to 'github.com:ada/shepherd.git'
+                """))
+            store.adopt(RemoteWorktreeOperation(id: operationID, finished: true,
+                                                error: "Committed 1a2b3c4 on feat/tool-rows; the push failed. Nothing else changed.",
+                                                progress: ["check the checkout: on feat/tool-rows", "commit 3 files: committed 1a2b3c4",
+                                                           "push to origin/feat/tool-rows: failed: \(rejected)"]))
+        default:
+            store.stage(info(), title: title, body: body, drafted: true)
+            store.toggle("App/iOS/FleetView.swift")
+        }
+        return store
     }
 }
 
