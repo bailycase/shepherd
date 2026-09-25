@@ -70,6 +70,7 @@ struct ChangesReviewPresentationTests {
         ],
         commits: [ChangesCommit(id: "a1", shortID: "a1c9f2e", subject: "Emit refund events", date: 1_000 - 12 * 60),
                   ChangesCommit(id: "c4", shortID: "c40e8b3", subject: "Migration 0042", date: 1_000 - 26 * 60)],
+        commitsBase: "3f2a91c",
         pullRequest: ChangesPullRequest(number: 31, title: "Refunds", isDraft: true, state: "OPEN", base: "main", head: "x", url: "u"))
 
     @Test func theScopeMenuListsEveryScopeInTheBoardsGroups() {
@@ -95,6 +96,17 @@ struct ChangesReviewPresentationTests {
         #expect(options.map(\.title) == ["All commits on the branch", "Emit refund events", "Migration 0042"])
         #expect(options.map(\.detail) == [nil, "a1c9f2e · 12m", "c40e8b3 · 26m"])
         #expect(options.filter(\.selected).map(\.id) == ["a1"])
+    }
+
+    @Test func withoutABaseTheCommitsMenuOffersRecentCommits() {
+        var overview = Self.overview
+        overview.commitsBase = nil
+        #expect(changesCommitOptions(overview, selected: nil, now: Date(timeIntervalSince1970: 1_000)).first?.title == "Recent commits")
+    }
+
+    @Test(arguments: [(30.0, "now"), (12 * 60, "12m"), (3 * 3600, "3h"), (2 * 86_400, "2d")] as [(Double, String)])
+    func aCommitsAgeIsShort(ago: Double, text: String) {
+        #expect(changesAgeText(Date(timeIntervalSince1970: 1_000_000 - ago), now: Date(timeIntervalSince1970: 1_000_000)) == text)
     }
 
     // MARK: The base picker

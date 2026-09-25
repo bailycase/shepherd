@@ -157,8 +157,9 @@ public func changesScopeOptions(_ overview: ChangesOverview, selected: ChangesSc
     }
 }
 
-/// The commits submenu (ChangesStates › CommitsMenu): all of the branch's commits, then each
-/// one, newest first, with its short id and age.
+/// The commits submenu (ChangesStates › CommitsMenu): all of the branch's commits ("Recent
+/// commits" when there is no base to count them from), then each one, newest first, with its
+/// short id and age.
 public struct ChangesCommitOption: Identifiable, Equatable, Sendable {
     public var id: String
     public var scope: ChangesScope
@@ -171,7 +172,7 @@ public struct ChangesCommitOption: Identifiable, Equatable, Sendable {
 public func changesCommitOptions(_ overview: ChangesOverview, selected: ChangesScope?, now: Date = Date()) -> [ChangesCommitOption] {
     guard let newest = overview.commits.first, let oldest = overview.commits.last else { return [] }
     let all = ChangesScope.commits(first: oldest.id, last: newest.id)
-    var options = [ChangesCommitOption(id: "all", scope: all, title: "All commits on the branch", detail: nil,
+    var options = [ChangesCommitOption(id: "all", scope: all, title: overview.commitsBase == nil ? "Recent commits" : "All commits on the branch", detail: nil,
                                        selected: overview.commits.count > 1 && selected == all)]
     for commit in overview.commits {
         let scope = ChangesScope.commits(first: commit.id, last: commit.id)
