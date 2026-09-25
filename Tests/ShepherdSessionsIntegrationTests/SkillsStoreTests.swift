@@ -27,7 +27,10 @@ struct SkillsStoreTests {
                                          "skills/docx/SKILL.md": SkillsStoreTests.docx]) throws {
             repo = try makeScratchRepo(files: files)
             if files["skills/pdf/scripts/run.sh"] != nil {
-                try git(["update-index", "--chmod=+x", "skills/pdf/scripts/run.sh"], in: repo)
+                // Executable on disk too, so a later `git add` keeps the mode.
+                let script = repo.appendingPathComponent("skills/pdf/scripts/run.sh").path
+                try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script)
+                try git(["add", "--", "skills/pdf/scripts/run.sh"], in: repo)
                 try git(["commit", "-qm", "executable"], in: repo)
             }
             let root = try makeScratchDirectory("skills")
@@ -40,10 +43,10 @@ struct SkillsStoreTests {
             try git(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        /// Changes a file in the repository and commits it.
+        /// Changes one file in the repository and commits it alone.
         func commit(_ path: String, _ contents: String) throws {
             try contents.write(to: repo.appendingPathComponent(path), atomically: true, encoding: .utf8)
-            try git(["add", "."], in: repo)
+            try git(["add", "--", path], in: repo)
             try git(["commit", "-qm", "change \(path)"], in: repo)
         }
 
