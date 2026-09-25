@@ -160,6 +160,10 @@ And the rules that follow from them:
 | SettingsPi: Sync pi theme "Use Shepherd's palette in pi and follow theme changes." | "Use Shepherd's palette when you run pi by hand in a shell, and follow theme changes." | Agents run pi over RPC and draw no pi TUI, so the theme reaches only pi run by hand (honest affordances) |
 | SettingsRemote: Token "Delete the file to revoke every client." | "To revoke every client, delete the file and turn the listener off and on." | The listener reads the token when it starts; deleting the file alone revokes no one |
 | SettingsAdvanced: Reset settings "Restores appearance, font, agent and keyboard preferences. Spaces, agents and layouts are untouched." | "Restores appearance, terminal, agent, worktree, pi and keyboard preferences. Spaces, agents, layouts and Remote are untouched." | The reset covers every page but Remote, and the copy names what it touches |
+| SettingsInstructions: pi's own root files, `~/.pi/agent/AGENTS.md` and `~/.pi/agent/APPEND_SYSTEM.md`, in the paths, the steps and the copy ("Pi's root files, read at the start of every session", "writes both files to each host's `~/.pi/agent/`") | Shepherd's own copies in its support directory, added to every session Shepherd starts (`shepherd-instructions.ts`): "Root files for every pi session Shepherd starts", "writes both files to every host", steps named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md", and a note that pi's own files still load just before them | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
+| SettingsInstructions: "new threads, mission stations and automations get this one" | "new agents and automations get this one" | Missions aren't built |
+| SettingsInstructionsHosts: the diff shows the lines around the differences | The whole file as a diff, scrolled to its first difference | Instruction files are short, and nothing hides behind a fold |
+| SettingsInstructionsHosts: every History row offers Restore | The newest row reads "current" | Restoring the file as it is would change nothing (honest affordances) |
 
 Additions the boards don't have:
 
@@ -183,7 +187,8 @@ Additions the boards don't have:
   Merge PR automatically, the Terminal page (no board draws it), Keyboard's Thread, While pi is
   working, and Window groups, the search's hits under each page, Remote's empty "No remote hosts"
   row, its Edit host form, each failed host's reason, and the listener's "Serving on port N" line,
-  and Shepherd Nightly's named Nightly channel.
+  Shepherd Nightly's named Nightly channel, and Instructions' History popover, Sync now for a host
+  that drifted, and the reasons a machine's files can't be shown (with Try again).
 - **The terminal panel's empty state** ("No terminals in this thread yet." and New Terminal).
 - **Thread additions** no board draws (Thread; Composer, questions, and menus): "↓ Jump to
   latest" while detached from the tail; turn jumps (⌥⌘↑ ⌥⌘↓); "Load older messages" and the
@@ -2687,8 +2692,7 @@ Settings replaces the window content in place (`SettingsView.swift`; the boards 
 through SettingsExperiments). ⌘, toggles it, and "Back to Shepherd" or Esc returns; the swap
 cross-fades on the `sheet` motion, and a page picked in the nav cross-fades on `content`. Every row
 is wired: a row exists only if changing it changes the app, and a change applies at once, with no
-Save or Apply (the one exception will be Instructions, not built yet, which edits files and saves
-with ⌘S).
+Save or Apply (the one exception is Instructions, which edits files and saves with ⌘S).
 
 - **Navigation** (the same on every Settings board): a 232pt column on `bgBase` with a `lineSubtle`
   hairline (`NWHairline`) on its trailing edge. Top to bottom:
@@ -2706,8 +2710,7 @@ with ⌘S).
     `NW.Space.m` side padding: a 15pt medium icon in `textSecondary` (`textPrimary` when selected),
     then, `NW.Space.m` after it, the name in Geist 13 `textPrimary`. The selected page sits on
     `bgSelected` with its name at medium (500) weight; hover is `bgHover`
-    (`NWSettingsNavMetrics`). **Not built yet:** Instructions and Experiments; the app's nav has
-    the other eight.
+    (`NWSettingsNavMetrics`). **Not built yet:** Experiments; the app's nav has the other nine.
   - "Shepherd x.y.z · pi x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there.
 - **Search:** typing narrows the nav to pages with a match (a row's title, or a keyword such as
@@ -2993,9 +2996,11 @@ automated step of the worktree flows can be turned off here.
 
 #### Wide pages: Instructions and Experiments
 
-**Not built yet.** These two pages are wider than the 720pt column: the page fills the detail area
-on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at the bottom, with its blocks 20pt apart.
-Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column
+These two pages are wider than the 720pt column (`SettingsSection.isWide`; Experiments is not built
+yet): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
+the bottom, with its blocks 20pt apart (`AppLayout.settingsWide*`). It doesn't scroll as a whole:
+its editor and its side column scroll inside themselves, and the strip at its top still drags the
+window. Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column
 that takes the room and a fixed side column of reference and history (330pt on Instructions, 320pt
 on Experiments), 28pt and 32pt apart. Their section labels sit `NW.Space.xxs` in and `NW.Space.m`
 above what they label, and a label may carry a trailing text action ("Add all"). Lists in the side
@@ -3004,96 +3009,135 @@ not cards; only Instructions' reading order uses small cards.
 
 #### Instructions (SettingsInstructions)
 
-**Not built yet.** The page edits pi's two root instruction files, which every pi session reads at
-its start: `AGENTS.md` ("how you work") and `APPEND_SYSTEM.md` ("rules that override everything
-else"). It sits between Pi and Remote in the nav, with `doc.text`. Header: "Instructions", then
-"Pi's root files, read at the start of every session: `AGENTS.md` for how you work,
-`APPEND_SYSTEM.md` for rules that override everything else. Repos can still add their own
-AGENTS.md." (file names in mono). As everywhere, the app writes the boards' "Pi" in running text
-as "pi" (Where Shepherd departs from the boards).
+The page (`SettingsInstructions.swift`, `InstructionsModel`) edits the two root instruction files
+Shepherd hands every pi it starts: `AGENTS.md` ("how you work") and `APPEND_SYSTEM.md` ("rules that
+override everything else"). They are Shepherd's own copies, never pi's: they live in
+`instructions/` in Shepherd's support directory (`ShepherdPaths.instructionsDirectory`), and the
+instructions extension (`shepherd-instructions.ts`) adds them to each session Shepherd starts, so
+`~/.pi/agent` is never written, and pi run by hand in a terminal doesn't read them. The page sits
+between Pi and Remote in the nav, with `doc.text`. Header: "Instructions", then "Root files for
+every pi session Shepherd starts: `AGENTS.md` for how you work, `APPEND_SYSTEM.md` for rules that
+override everything else. Repos can still add their own AGENTS.md." (file names in mono; see the
+departures).
 
-- **Same on every host:** a card (radius `m`, a `lineSubtle` line, `bgWindow`,
-  `NW.Space.l`/`NW.Space.xl` padding): the title "Same on every host" in the row title style, under
-  it "Save once; Shepherd writes both files to each host's `~/.pi/agent/`. Offline hosts catch up
-  when they're back." in `textSecondary`, and a switch trailing (on in this board).
-- **Host chips** under it, 8pt apart and wrapping: one per machine (This Mac, then each remote
-  host). A chip is 34pt tall, radius `m`, `NW.Space.l` side padding and 8pt gaps: a 13pt
-  `desktopcomputer` glyph in `textSecondary`, the host's name in mono 12.5, a 7pt state dot, and its
-  state word in Geist 11 in the state's color. With Same on every host on, the chips report sync:
-  "synced" and "synced 2m ago" (done), "offline · will sync" (a `textTertiary` dot and word).
-  The host whose copy is open (This Mac) is selected: a 1px `textPrimary` line on `bgSelected`, its
-  name semibold; the others have a `lineStrong` line on no fill, names at 500.
-- **File tabs:** `AGENTS.md` and `APPEND_SYSTEM.md` as underline tabs 22pt apart over a `lineSubtle`
-  rule. A tab is the file name in mono 13 (semibold `textPrimary` and a 2pt `textPrimary` underline
-  when chosen; 500 `textSecondary` otherwise) beside a Geist 11.5 `textTertiary` note of what it is
-  for and its size: "how you work · ~640 tokens", "rules that win · ~90 tokens".
-- **The editor**, 12pt under the tabs, filling the column: a card with a 1px `lineStrong` line,
-  radius `m`, on `bgWindow`.
+- **Same on every host:** a flat card (`NWGroupCard` on `bgWindow`) holding one settings row: "Same
+  on every host", under it "Save once; Shepherd writes both files to every host. Offline hosts
+  catch up when they're back.", and the switch trailing. On by default, and remembered.
+- **Host chips** under it, 8pt apart and wrapping (`InstructionsHostChip`): one per machine, This
+  Mac and then each remote host in the sidebar's order. A chip is at least 34pt, radius `m`,
+  `NW.Space.l` side padding and 8pt gaps: a 13pt `desktopcomputer` glyph in `textSecondary`, the
+  host's name in mono 12.5, a 7pt state dot, and its state word in Geist 11 in the state's color
+  (`InstructionsPresentation.hostChip`). With Same on every host on, the chips report the sync and
+  pick nothing: This Mac says "synced" once every connected host matches ("not synced" in
+  `textTertiary` until then); a host "synced" or "synced 2m ago" (`done`), "differs · 3 lines"
+  (`lanternText`), "offline · will sync" or "offline" (`textTertiary`), "needs update" for a host
+  whose Shepherd predates Instructions (`textTertiary`), "checking…" (`running`), or "couldn't read"
+  (`failed`). The machine whose copy is open (This Mac) is selected: a 1px `textPrimary` line on
+  `bgSelected`, its name semibold; the others have a `lineStrong` line on no fill, names at 500.
+- **A host that drifted** (an addition): with Same on every host on, connected hosts whose files
+  differ from This Mac's (saved there by another client, or kept different before the switch was
+  turned on) are named under the chips in the footnote style ("build-01 differs from This Mac.")
+  beside a small secondary **Sync now**, which writes This Mac's files there. Any save does the
+  same for every host, since it writes both files.
+- **File tabs:** `AGENTS.md` and `APPEND_SYSTEM.md` as underline tabs 22pt apart over a
+  `lineSubtle` rule. A tab is the file name in mono 13 (semibold `textPrimary` and a 2pt
+  `textPrimary` underline when chosen; 500 `textSecondary` otherwise) over a Geist 11.5
+  `textTertiary` note of what it is for and its size, live as you type: "how you work · ~640
+  tokens", "rules that win · ~90 tokens", "… · empty" (`InstructionsText.sizeNote`: about four
+  characters a token, tens past a hundred).
+- **The editor**, 12pt under the tabs, filling the column and never under 180pt: a card with a 1px
+  `lineStrong` line, radius `m`, on `bgWindow`.
   - Its header (`bgSunken`, a `lineSubtle` rule under it, 8pt × 12pt padding): the file's path in
-    mono 12 `textSecondary` (`~/.pi/agent/AGENTS.md`); "● edited" in Geist 11.5 `lanternText` while
-    there are unsaved changes; then trailing, 24pt buttons: History and Revert (ghost, 12/500
-    `textSecondary`), and the primary Save, which names where it writes ("Save to 3 hosts", or
-    "Save" for one host) with its ⌘S in mono 10.5 at 60% inside the button (lantern fill,
-    `textOnLantern`, 12/600). With nothing edited, Save and Revert disable (honest affordances); ⌘S
-    saves while the page is open.
-  - Its body: the file as plain Markdown text, mono 12.5 on 21pt lines, 10pt above and below, with a
-    34pt gutter of line numbers (mono 10.5, `textTertiary`, right-aligned, 12pt before the text).
-    Highlighting is light: heading markers in `textTertiary` and heading text semibold
-    `textPrimary`; list bullets in `lanternText`; code spans in `synString`; everything else
-    `textSecondary`. A line changed since the last save is tinted `lanternTint` across the editor.
-- **How Pi reads them** (the side column, 330pt): five steps in order, each a small card (radius
+    mono 12 `textSecondary`, middle-truncated with the whole path on hover
+    (`~/Library/Application Support/Shepherd/instructions/AGENTS.md`); "● edited" in Geist 11.5
+    `lanternText` while there are unsaved changes; then trailing, 24pt buttons: History and Revert
+    (ghost, 12/500 `textSecondary`), and the primary Save, which names where it writes ("Save to 3
+    hosts", "Save" when This Mac is the only machine, "Save to build-01" per host) with its ⌘S in
+    mono 10.5 at 60% inside the button (lantern fill, `textOnLantern`, 12/600). With nothing
+    edited, Save and Revert disable (honest affordances); ⌘S saves while the page is open. Unsaved
+    edits are kept per machine and file while Shepherd runs, so switching tabs, hosts or pages
+    loses nothing.
+  - **History** (with Same on every host on; per host the side column lists it) opens a popover on
+    `bgRaised`, 380pt wide, scrolling past 340pt: This Mac's saves of the open file as the per-host
+    History list draws them. Restore puts a version back as a new save ("Restored the Sep 19
+    version"), sent to every host with Same on every host on. A machine keeps the newest 30 saves
+    of each file.
+  - Its body (`InstructionsEditor`, a TextKit 1 `NSTextView`): the file as plain Markdown text,
+    mono 12.5 on 21pt lines, 10pt above and below, with a 34pt gutter of line numbers (mono 10.5,
+    `textTertiary`, right-aligned, 12pt before the text), and no smart quotes, dashes or
+    corrections. Highlighting is light (`InstructionsText.highlight`): heading markers in
+    `textTertiary` and heading text semibold `textPrimary`; list bullets and numbers in
+    `lanternText`; code spans in `synString`; everything else `textSecondary`. A line changed since
+    the last save is tinted `lanternTint` across the editor (`InstructionsText.changedLines`).
+  - A machine whose files can't be shown says why in their place, centered in `caption`
+    `textTertiary`: "horizon is offline. Its files show here once it's connected.", "horizon runs
+    a Shepherd from before Instructions. Update it there to edit its files from here.", "Reading
+    horizon's files…" over a spinner, or "Couldn't read horizon's files: …" with Try again.
+  - A save, copy or restore that fails says so under the card (`NWInlineProblem`).
+- **How pi reads them** (the side column, 330pt): five steps in order, each a small card (radius
   `m`, a `lineSubtle` line, `bgRaised`, 8pt × 10pt padding) joined by a 10pt connector (a 1.5pt
-  `lineStrong` line under the number column): the step number in mono 10.5 `textTertiary` (16pt
-  wide), a title in mono 11.5 semibold (truncating) over a note in Geist 11 `textTertiary`:
-  1. "Pi's system prompt", "built in"
-  2. "~/.pi/agent/AGENTS.md", "this file · every repo"
+  `lineStrong` line 17pt in, under the number column): the step number in mono 10.5 `textTertiary`
+  (16pt wide), a title in mono 11.5 semibold (truncating) over a note in Geist 11 `textTertiary`:
+  1. "pi's system prompt", "built in"
+  2. "Shepherd's AGENTS.md", "this file · every repo"
   3. "AGENTS.md in parent folders", "if any"
   4. "the repo's AGENTS.md", "most specific context"
-  5. "~/.pi/agent/APPEND_SYSTEM.md", "appended last · wins"
+  5. "Shepherd's APPEND_SYSTEM.md", "appended last · wins"
 
   The open file's step is marked: a `lanternText` line on `lanternTint` (step 2 for `AGENTS.md`,
-  step 5 for `APPEND_SYSTEM.md`). Under the steps, a 12/1.5 `textTertiary` note: "Later files win.
-  Running sessions keep the version they started with; new threads, mission stations and automations
-  get this one." (Mission stations wait for Missions.)
-- **Where it writes:** the paths shown are the root of the pi Shepherd runs
-  (`PiConfig.agentDirectory`). Before building, settle this page against pi isolation: Shepherd must
-  never write the user's own `~/.pi/agent/`, so with a bundled pi the page edits that pi's home and
-  shows its path. Saving to a remote host needs a write request in the remote protocol; an offline
-  host takes the save when it reconnects.
+  step 5 for `APPEND_SYSTEM.md`, whose note then leads with "this file · " instead). Under the
+  steps, a 12/1.5 `textTertiary` note: "Later files win. pi's own files in ~/.pi/agent still load,
+  each just before Shepherd's. A session reads them when it starts: running agents keep the
+  version they started with, new agents and automations get this one."
+- **Where it writes:** This Mac's files are the server's `InstructionsStore` (`AGENTS.md`,
+  `APPEND_SYSTEM.md` and `history.json` in `instructions/`); a remote host's are its own store,
+  read and saved over the remote protocol (`instructions.v1`: fetch, save, restore). A host that is
+  offline when a save goes out is owed both files and takes them when it connects again
+  (remembered across launches). A save that arrives from another client shows on the page at once.
 
 #### Instructions per host (SettingsInstructionsHosts)
 
-**Not built yet.** With Same on every host off, each machine keeps its own root files and the page
-edits one host at a time. The explanation reads "Per host: each machine keeps its own root files.",
-and the switch's card "Off: each host keeps its own files. Pick a host to edit it."
+With Same on every host off, each machine keeps its own root files and the page edits one machine
+at a time. The explanation reads "Per host: each machine keeps its own root files.", and the
+switch's row "Off: each host keeps its own files. Pick a host to edit it."
 
-- **Host chips** pick the host to edit (the selected chip as above) and report how its files compare
-  with This Mac's: a `done` dot and no word when they match; "differs · 2 lines" (`lanternText`
-  dot and word) when they don't; "offline" (`textTertiary`). This Mac's chip, the reference, shows
-  its dot alone.
+- **Host chips** pick the machine to edit (the selected chip as above; hover `bgHover`) and report
+  how its copy of the open file compares with This Mac's: a `done` dot and no word when they match;
+  "differs · 2 lines" (`lanternText` dot and word) when they don't; "kept different"
+  (`textTertiary`) once kept; "offline" (`textTertiary`). This Mac's chip, the reference, shows its
+  dot alone.
 - **Comparing a host that differs:** the editor card's header reads "build-01 compared with This
   Mac" (both names in mono, "compared with" in `textTertiary`, Geist 12.5), with a small segmented
-  control (`NWSegmentedPicker` s, 20pt) trailing: Diff · build-01's file. Diff shows the file as the
-  review's diff lines do, mono 12 on 22pt lines, a 34pt number gutter and a 14pt sign column:
-  removed lines `−` in `failed` on `failedTint`, added lines `+` in `done` on `doneTint`, context in
-  `textSecondary` with a blank sign. "build-01's file" opens that host's file in the editor.
-- **Resolve** (a section label under the editor): three buttons, 28pt, wrapping: "Copy This Mac's to
-  build-01" and "Copy build-01's to all hosts" (secondary), "Keep build-01 different" (ghost). Under
-  them a 12/1.5 `textTertiary` note ends "Shepherd shows the difference once, then stops asking.":
-  keeping a host different is remembered, and Shepherd stops asking about that difference.
+  control (`NWSegmentedPicker` s, 20pt) trailing: Diff · build-01's file. Diff shows the whole file
+  as a diff from This Mac's copy to the host's, scrolled to its first difference: mono 12 on 22pt
+  lines, a 34pt number gutter 8pt before a 14pt sign column: removed lines `−` in `failed` on
+  `failedTint`, added lines `+` in `done` on `doneTint`, context in `textSecondary` with a blank
+  sign. "build-01's file" opens that host's file in the editor, with "● edited", Revert and "Save
+  to build-01" beside the control.
+- **Resolve** (a section label under the editor): three 28pt buttons, wrapping: "Copy This Mac's to
+  build-01" and "Copy build-01's to all hosts" (secondary; all hosts includes This Mac), "Keep
+  build-01 different" (ghost). Under them a 12/1.5 `textTertiary` note: "A copy replaces AGENTS.md
+  there; the version it replaces stays in that host's history. Keep a host different when a line
+  only makes sense on it: Shepherd shows the difference once, then stops asking." Keeping is
+  remembered by both copies' fingerprint (`InstructionsPresentation.fingerprint`), so a later
+  change on either side is flagged again.
 - **The side column:**
-  - Files on each host: a row per host, at least 48pt, a hairline above each: a 14pt
-    `desktopcomputer` glyph, the name in mono 12.5 semibold over its agent directory in mono 10.5
-    `textTertiary` (`/Users/baily/.pi/agent`, `/home/baily/.pi/agent`); trailing and right-aligned,
-    when it last changed in Geist 11.5 ("edited 2m ago", "edited Sep 19"; "last seen 07:12" for an
-    offline host) over a Geist 11 note: which files it holds ("AGENTS · APPEND", `textTertiary`), "2
-    lines differ" (`lanternText`), or "matched This Mac" (`textTertiary`).
-  - The other file's status in one line under its name as a label ("APPEND_SYSTEM.md", then "Same on
-    all three hosts." in 12.5 `textSecondary`).
-  - History · build-01: the chosen host's saves, newest first, rows at least 30pt with a hairline
-    above each: the date in mono `textTertiary` in a 60pt column ("Sep 19"), what changed in 12
-    `textSecondary` ("Added the Docker socket line", "Synced from This Mac", "Created by Shepherd"),
-    and Restore as a trailing `running` text action.
+  - Files on each host: a row per machine, at least 48pt, a hairline above each: a 14pt
+    `desktopcomputer` glyph, the name in mono 12.5 semibold over its instructions directory in mono
+    10.5 `textTertiary` (middle-truncated); trailing and right-aligned
+    (`InstructionsPresentation.hostRow`), when its files last changed in Geist 11.5 ("edited 2m
+    ago", "edited Sep 19", "no saves yet"; "last seen 07:12" for an offline host) over a Geist 11
+    note: This Mac's files ("AGENTS · APPEND", `textTertiary`), "2 lines differ" (`lanternText`),
+    "matches This Mac" or "kept different" (`textTertiary`), or how an offline host last compared
+    ("matched This Mac", "1 line differed").
+  - The other file's status in one line under its name as a label ("APPEND_SYSTEM.md", then "Same
+    on all three hosts.", "Differs on build-01.", or "Same on This Mac and build-01; horizon isn't
+    connected." in 12.5 `textSecondary`), once there is a remote host.
+  - History · build-01: the chosen machine's saves of the open file, newest first, rows at least
+    30pt with a hairline above each: the date in mono `textTertiary` in a 60pt column ("Sep 19", or
+    the time for a save today, "14:02"), what changed in 12 `textSecondary` ("Added “Never
+    force-push.”", "Synced from This Mac", "Restored the Sep 02 version"), and Restore as a
+    trailing `running` text action; the newest reads "current".
 
 #### Experiments (SettingsExperiments)
 
@@ -3706,7 +3750,7 @@ below collects the rest, and the places those sentences point here.
     `AppLayout.steerTopInset`), which is not a step on the space scale ("Padding and gaps use only
     these steps").
 - **Settings (the boards against `SettingsView.swift` and `SettingsComponents.swift`):**
-  Instructions and Experiments are not built.
+  Experiments is not built.
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalToggle against the
   app):
   - Consecutive activity lines, and a work group's lines on its rail, sit 6pt apart
@@ -4380,8 +4424,9 @@ keyboard is up while the query is empty.
 
 ### iPhone: Instructions (MobileInstructions, MobileInstructionsEdit)
 
-**Not built yet.** Settings ▸ Instructions edits the global instructions pi reads at the start of
-every session. It waits for the Mac's Instructions page (SettingsInstructions).
+**Not built yet.** Settings ▸ Instructions edits the root instructions a host hands every pi
+session it starts. The Mac's page is built (SettingsInstructions); a host serves its files over
+`instructions.v1`, which the phone doesn't use yet.
 
 - **The page** (MobileInstructions): "‹ Settings", the large title "Instructions", on `bgBase` with
   14pt sides and 10pt apart. "Pi reads these at the start of every session, on every host."
@@ -5011,8 +5056,8 @@ trailing edge) headed "Settings"; rows at least 48pt, 12pt inset and gap, radius
 `textSecondary` glyph and the label at 15/500; the open page's row on `bgSelected`, its glyph
 `textPrimary` and label semibold. Pages: Appearance, Agents, Worktrees, Pi, Instructions,
 Notifications, Hosts, Keyboard, Experiments. Agents, Worktrees, Pi and Keyboard are the host's
-settings, as the Mac shows them; Notifications waits for push; Instructions and Experiments wait
-for the Mac.
+settings, as the Mac shows them; Notifications waits for push; Experiments waits for the Mac, and
+Instructions for a client of the host's `instructions.v1`.
 
 **Not built yet: Instructions** (editing the instructions pi reads on every host; the Mac's page
 is Settings › Instructions, SettingsInstructions):
@@ -7079,8 +7124,8 @@ questions, and menus).
 | SettingsRemote | Settings › Remote | Built |
 | SettingsKeyboard | Settings › Keyboard; Keyboard | Built |
 | SettingsAdvanced | Settings › Advanced | Built |
-| SettingsInstructions | Settings › Wide pages, Instructions | Not built yet |
-| SettingsInstructionsHosts | Settings › Instructions per host | Not built yet |
+| SettingsInstructions | Settings › Wide pages, Instructions | Built |
+| SettingsInstructionsHosts | Settings › Instructions per host | Built |
 | SettingsExperiments | Settings › Experiments | Not built yet |
 | NavNewThread | Sidebar destinations, Needs you, and Recents; New thread page | Partial |
 | NavMissions | Missions page; Missions | Not built yet |

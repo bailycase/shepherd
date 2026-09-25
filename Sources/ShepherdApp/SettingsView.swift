@@ -5,7 +5,8 @@ import ShepherdCore
 import ShepherdProtocol
 
 /// Settings replaces the window content in place. A 232pt nav on `bgBase` (Back to Shepherd,
-/// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column.
+/// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column, or
+/// a wide page (Instructions) that fills the detail area.
 ///
 /// Everything here is wired: a row exists only if changing it changes the app.
 struct SettingsView: View {
@@ -138,30 +139,47 @@ struct SettingsView: View {
         return "\(ShepherdEdition.current.displayName) \(app)" + (piUpdates.currentVersion.map { " · pi \($0)" } ?? "")
     }
 
-    private var detail: some View {
-        ScrollView(.vertical) {
-            Group {
-                switch vm.settingsSection {
-                case .appearance: AppearanceSettings(vm: vm)
-                case .terminal: TerminalSettings(vm: vm)
-                case .agents: AgentSettings()
-                case .pi: PiSettings()
-                case .worktrees: WorktreeSettings()
-                case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
-                case .keyboard: KeyboardSettings(vm: vm)
-                case .advanced: AdvancedSettings(vm: vm)
-                }
-            }
-            .nwTransition(.content)
-            .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
-            .padding(.top, AppLayout.settingsTop)
-            .padding(.bottom, AppLayout.settingsBottom)
-            .padding(.horizontal, AppLayout.settingsGutter)
-            .frame(maxWidth: .infinity)
-            // A page picked in the nav cross-fades in place; search switches pages at once.
-            .nwAnimation(.content, value: vm.settingsSection)
+    @ViewBuilder private var page: some View {
+        switch vm.settingsSection {
+        case .appearance: AppearanceSettings(vm: vm)
+        case .terminal: TerminalSettings(vm: vm)
+        case .agents: AgentSettings()
+        case .pi: PiSettings()
+        case .worktrees: WorktreeSettings()
+        case .instructions: InstructionsSettings(model: vm.instructions)
+        case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
+        case .keyboard: KeyboardSettings(vm: vm)
+        case .advanced: AdvancedSettings(vm: vm)
         }
-        .scrollContentBackground(.hidden)
+    }
+
+    private var detail: some View {
+        Group {
+            if vm.settingsSection.isWide {
+                // A wide page fills the area and scrolls inside itself (its editor, its side column).
+                Group { page }
+                    .nwTransition(.content)
+                    .padding(.top, AppLayout.settingsWideTop)
+                    .padding(.horizontal, AppLayout.settingsWideSides)
+                    .padding(.bottom, AppLayout.settingsWideBottom)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                ScrollView(.vertical) {
+                    Group { page }
+                        .nwTransition(.content)
+                        .frame(maxWidth: AppLayout.settingsContentWidth, alignment: .leading)
+                        .padding(.top, AppLayout.settingsTop)
+                        .padding(.bottom, AppLayout.settingsBottom)
+                        .padding(.horizontal, AppLayout.settingsGutter)
+                        .frame(maxWidth: .infinity)
+                        // A page picked in the nav cross-fades in place; search switches pages at once.
+                        .nwAnimation(.content, value: vm.settingsSection)
+                }
+                .scrollContentBackground(.hidden)
+                .nwTransition(.content)
+            }
+        }
+        .nwAnimation(.content, value: vm.settingsSection.isWide)
         .background(Color.nw.bgWindow)
         .overlay(alignment: .top) {
             // The window has no title bar; the strip above the content still drags it.
@@ -192,7 +210,7 @@ private struct SettingsSearchHit: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, worktrees, pi, remote, keyboard, advanced
+    case appearance, terminal, agents, worktrees, pi, instructions, remote, keyboard, advanced
 
     var id: String { rawValue }
 
@@ -203,6 +221,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: return "Agents"
         case .worktrees: return "Worktrees"
         case .pi: return "Pi"
+        case .instructions: return "Instructions"
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
@@ -217,6 +236,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: ["Default model", "Default thinking level", "Return while pi is working", "When a turn ends, send the queue"]
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .pi: ["Name agents automatically", "Sync pi theme", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
+        case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
@@ -233,6 +253,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
                        "When a turn ends, send the queue": ["queue", "follow-up", "one per turn", "all at once"]]
         case .worktrees: ["Base branch": ["git", "origin"], "Merge PR automatically": ["github", "pull request"]]
         case .pi: ["Native subagents": ["children", "workflows"], "Update pi daily": ["version", "upgrade"]]
+        case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
+                             "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord"]]
         case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
@@ -257,9 +279,13 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: return "person.2"
         case .worktrees: return "arrow.branch"
         case .pi: return "pi"
+        case .instructions: return "doc.text"
         case .remote: return "dot.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         }
     }
+
+    /// A wide page fills the detail area instead of the 720pt column.
+    var isWide: Bool { self == .instructions }
 }
