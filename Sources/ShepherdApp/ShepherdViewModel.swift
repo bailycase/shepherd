@@ -173,6 +173,12 @@ final class ShepherdViewModel {
     var remoteAutomationRuns: [AutomationKey: [AutomationRun]] = [:]
     /// Remote automation changes on their way, so their controls wait.
     var remoteAutomationsPending: Set<AutomationKey> = []
+    /// This Mac's automations' runs as the run log kept them, oldest first (read for the
+    /// Automations page).
+    var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// The Automations page's selected row and its filter. Ephemeral.
+    var automationsPageSelection: AutomationKey?
+    var automationsPageFilter = ""
     /// Bumped by every selection that should scroll the sidebar to the
     /// selected row. A counter, not the target value: re-selecting the same
     /// row (⌘3 twice after scrolling away) must scroll back, and a value-diff
