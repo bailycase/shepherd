@@ -216,10 +216,11 @@ final class RawRemote: @unchecked Sendable {
         }
     }
 
-    /// Authenticate and return the host's capabilities.
+    /// Authenticate and return the host's capabilities. `capabilities` are the client's own;
+    /// none, as an older client sends.
     @discardableResult
-    func hello(token: String, id: Int = 1) async throws -> [String] {
-        try send(.hello(id: id, token: token, clientName: "raw", protocolVersion: RemoteProtocol.version))
+    func hello(token: String, id: Int = 1, capabilities: [String]? = nil) async throws -> [String] {
+        try send(.hello(id: id, token: token, clientName: "raw", protocolVersion: RemoteProtocol.version, capabilities: capabilities))
         let reply = try await next()
         guard case .helloOk(_, _, let capabilities) = reply else {
             throw WireError("expected helloOk, got \(reply)")

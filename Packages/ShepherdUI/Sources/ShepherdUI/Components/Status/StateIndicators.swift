@@ -3,18 +3,33 @@ import SwiftUI
 /// The state pill for headers and cards (Status board): a 6pt dot and the state's word on its
 /// tint, radius 4. Queued and idle are outlined. Only attention glows.
 public struct NWStatusPill: View {
+    /// A glyph in place of the dot.
+    static let symbolSize: CGFloat = 11
+    /// The pill's padding after its label, and before a glyph.
+    static let edgePadding: CGFloat = 7
+
     let state: AgentState
     let label: String
+    let symbol: String?
 
-    /// `label` replaces the state's word ("Running · 0:31", "Stuck 14m", "2 subagents need you").
-    public init(_ state: AgentState, label: String? = nil) {
+    /// `label` replaces the state's word ("Running · 0:31", "Stuck 14m", "2 subagents need you");
+    /// `symbol` an SF Symbol in the state's color in place of the dot (the queue's "Steering").
+    public init(_ state: AgentState, label: String? = nil, symbol: String? = nil) {
         self.state = state
         self.label = label ?? state.label
+        self.symbol = symbol
     }
 
     public var body: some View {
         HStack(spacing: NW.Space.s) {
-            NWStatusDot(state)
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.system(size: Self.symbolSize, weight: .medium))
+                    .foregroundStyle(state.textColor)
+                    .accessibilityHidden(true)
+            } else {
+                NWStatusDot(state)
+            }
             Text(label)
                 .font(.nwSans(11.5, .medium))
                 .foregroundStyle(state.textColor)
@@ -22,8 +37,8 @@ public struct NWStatusPill: View {
                 .monospacedDigit()
                 .nwContentTransition(.crossFade)
         }
-        .padding(.leading, NW.Space.s)
-        .padding(.trailing, 7)
+        .padding(.leading, symbol == nil ? NW.Space.s : Self.edgePadding)
+        .padding(.trailing, Self.edgePadding)
         .frame(height: 20)
         .background(state.tint ?? .clear, in: RoundedRectangle(cornerRadius: NW.Radius.xs))
         .nwBorder(state.tint == nil ? Color.nw.lineStrong : .clear, radius: NW.Radius.xs)

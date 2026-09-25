@@ -47,6 +47,9 @@ struct NWMenuRow<Label: View>: View {
     let highlighted: Bool
     /// 10pt between parts; the slash menu's columns sit 12pt apart.
     var spacing: CGFloat = 10
+    /// Two-line rows (the Send menu's) align their parts to the top.
+    var alignment: VerticalAlignment = .center
+    var padding = EdgeInsets(top: 0, leading: NW.Space.m, bottom: 0, trailing: NW.Space.m)
     let action: () -> Void
     let onHover: () -> Void
     @ViewBuilder let label: () -> Label
@@ -55,8 +58,8 @@ struct NWMenuRow<Label: View>: View {
         #if DEBUG
         let _ = NWMenuDiagnostics.rowBodies += 1
         #endif
-        HStack(spacing: spacing) { label() }
-            .padding(.horizontal, NW.Space.m)
+        HStack(alignment: alignment, spacing: spacing) { label() }
+            .padding(padding)
             .frame(minHeight: NWComposerMetrics.menuRowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(highlighted ? Color.nw.runningTint : .clear, in: RoundedRectangle(cornerRadius: NW.Radius.s))
@@ -71,7 +74,7 @@ struct NWMenuRow<Label: View>: View {
 
 /// The popover a menu sits on: its board width, or narrower when that is all the room offered
 /// (a composer beside a docked pane).
-private struct NWMenuSurface: ViewModifier {
+struct NWMenuSurface: ViewModifier {
     let width: CGFloat
 
     func body(content: Content) -> some View {

@@ -28,6 +28,30 @@ struct AppSettingsTests {
         #expect(settings.worktreeMergeMethod == .squash)
         #expect(settings.childConcurrency == 4 && settings.childContext == "fresh" && settings.childScope == "both")
         #expect(settings.childModel.isEmpty && settings.childThinking.isEmpty)
+        #expect(settings.returnWhileWorking == .queue, "↩ queues while pi works")
+        #expect(settings.queueDelivery == .all, "the queue arrives as one turn")
+    }
+
+    /// While pi works: what ↩ does and how the queue goes persist, reset, and a new delivery
+    /// default reaches the server.
+    @Test func theQueueSettingsPersistResetAndReachTheServer() {
+        let store = Fixture.defaults()
+        let settings = AppSettings(store: store)
+        var delivered: [NativeQueueMode] = []
+        settings.onQueueDeliveryChange = { delivered.append($0) }
+        settings.returnWhileWorking = .steer
+        settings.queueDelivery = .oneAtATime
+        settings.queueDelivery = .oneAtATime
+
+        let reloaded = AppSettings(store: store)
+        #expect(reloaded.returnWhileWorking == .steer && reloaded.queueDelivery == .oneAtATime)
+        #expect(delivered == [.oneAtATime], "only a change is handed on")
+
+        settings.resetToDefaults()
+        #expect(settings.returnWhileWorking == .queue && settings.queueDelivery == .all)
+        #expect(delivered == [.oneAtATime, .all])
+        #expect(store.object(forKey: AppSettings.Key.returnWhileWorking) == nil)
+        #expect(store.object(forKey: AppSettings.Key.queueDelivery) == nil)
     }
 
     /// Shepherd Nightly listens one port up, so both apps can serve this Mac at once; a port the

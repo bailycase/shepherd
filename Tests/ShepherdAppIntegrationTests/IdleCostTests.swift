@@ -137,6 +137,31 @@ struct IdleCostTests {
         #expect(shown.turning == shown.all, "\(shown)")
     }
 
+    /// A steering message's spinner in "Up next" rests while its layout is hidden and turns
+    /// again on screen, with the working row's.
+    @Test func aSteeringMessagesSpinnerRestsWhileItsLayoutIsHidden() async throws {
+        var snapshot = ThreadFixture.snapshot(ThreadFixture.history(2) + [ThreadFixture.user("u", "Go")],
+                                              provisional: [ThreadFixture.streaming("Working on it.")], running: true)
+        snapshot.queue = NativeQueue(items: QueueFixture.messages(["Use the staging database", "Then run the tests"], steering: 1), mode: .all)
+        snapshot.supportedActions.append("queue")
+        let thread = FakeThread(snapshot, reduceMotion: false)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        ListPerf.settle(thread.window)
+        let shown = Self.spinners(in: thread.window.host)
+        #expect(shown.all >= 2 && shown.turning == shown.all, "the working row's and the steering row's: \(shown)")
+
+        thread.visibility.motionPaused = true
+        ListPerf.settle(thread.window)
+        let hidden = Self.spinners(in: thread.window.host)
+        #expect(hidden.all == shown.all && hidden.turning == 0, "\(hidden)")
+
+        thread.visibility.motionPaused = false
+        ListPerf.settle(thread.window)
+        let back = Self.spinners(in: thread.window.host)
+        #expect(back.turning == back.all, "\(back)")
+    }
+
     // MARK: Render-server motion
 
     /// A spinner turning and an attention dot glowing, on screen: SwiftUI draws no frame for them

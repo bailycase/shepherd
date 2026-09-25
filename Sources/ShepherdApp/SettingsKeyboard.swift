@@ -27,41 +27,10 @@ struct KeyboardSettings: View {
             ForEach(Self.groups, id: \.title) { group in
                 SettingsGroup(title: group.title) {
                     ForEach(group.actions, id: \.self) { action in
-                        SettingsRow(title: action.sentenceTitle, problem: errorAction == action ? errorText : nil) {
-                            HStack(spacing: NW.Space.m) {
-                                if !keys.isDefault(action) {
-                                    Button("Reset") {
-                                        keys.reset(action)
-                                        vm.rebuildSurfaces()
-                                        clearError()
-                                    }
-                                    .buttonStyle(.nwLink)
-                                    .accessibilityLabel("Reset \(action.sentenceTitle)")
-                                    .nwTransition(.disclosure)
-                                }
-                                ShortcutRecorder(title: action.sentenceTitle, isRecording: recording == action, chordText: keys.display(action)) {
-                                    clearError()
-                                    recording = recording == action ? nil : action
-                                } onChord: { chord in
-                                    recording = nil
-                                    if let error = keys.assign(chord, to: action) {
-                                        errorAction = action
-                                        errorText = "\(chord.display): \(error)"
-                                    } else {
-                                        clearError()
-                                        // Custom chords must fall through focused terminals — rebuild
-                                        // surfaces so ghostty picks up the new unbind list.
-                                        vm.rebuildSurfaces()
-                                    }
-                                }
-                            }
-                            // The recorder swaps its keycap for "Press keys…"; a changed chord
-                            // grows its Reset link. The rest of the row moves along.
-                            .nwComponentAnimation(.hover, value: recording == action)
-                            .nwComponentAnimation(.disclosure, value: keys.isDefault(action))
-                        }
+                        shortcutRow(action, title: action.sentenceTitle)
                     }
                 }
+                if group.title == "Thread" { whileWorking }
             }
 
             SettingsGroup(title: "Fixed", footnote: "Changes apply immediately, everywhere a shortcut is shown.") {
@@ -81,6 +50,64 @@ struct KeyboardSettings: View {
         }
         // A rejected chord's reason discloses under its row.
         .nwAnimation(.disclosure, value: errorText)
+    }
+
+    /// The keys for sending while pi works and for the queue, as the Queue & steer boards'
+    /// Keyboard card lists them: ↩ and the alternate send say what they do under the Return
+    /// setting, and only the alternate send can be rebound.
+    private var whileWorking: some View {
+        let setting = AppSettings.shared.returnWhileWorking
+        return SettingsGroup(title: "While pi is working") {
+            ForEach(WhileWorkingKey.all) { key in
+                switch key {
+                case .send:
+                    SettingsRow(title: key.title(setting)) { NWKeycap(keys.sendDisplay) }
+                case .alternateSend:
+                    shortcutRow(.alternateSend, title: key.title(setting))
+                case .fixed(let chord):
+                    SettingsRow(title: key.title(setting)) { NWKeycap(keys: chord.keys) }
+                case .steerFocused:
+                    SettingsRow(title: key.title(setting)) { NWKeycap(keys.display(.alternateSend)) }
+                }
+            }
+        }
+    }
+
+    /// A rebindable shortcut: its keycap records a new chord, and a changed one offers Reset.
+    private func shortcutRow(_ action: ShortcutAction, title: String) -> some View {
+        SettingsRow(title: title, problem: errorAction == action ? errorText : nil) {
+            HStack(spacing: NW.Space.m) {
+                if !keys.isDefault(action) {
+                    Button("Reset") {
+                        keys.reset(action)
+                        vm.rebuildSurfaces()
+                        clearError()
+                    }
+                    .buttonStyle(.nwLink)
+                    .accessibilityLabel("Reset \(title)")
+                    .nwTransition(.disclosure)
+                }
+                ShortcutRecorder(title: title, isRecording: recording == action, chordText: keys.display(action)) {
+                    clearError()
+                    recording = recording == action ? nil : action
+                } onChord: { chord in
+                    recording = nil
+                    if let error = keys.assign(chord, to: action) {
+                        errorAction = action
+                        errorText = "\(chord.display): \(error)"
+                    } else {
+                        clearError()
+                        // Custom chords must fall through focused terminals — rebuild
+                        // surfaces so ghostty picks up the new unbind list.
+                        vm.rebuildSurfaces()
+                    }
+                }
+            }
+            // The recorder swaps its keycap for "Press keys…"; a changed chord
+            // grows its Reset link. The rest of the row moves along.
+            .nwComponentAnimation(.hover, value: recording == action)
+            .nwComponentAnimation(.disclosure, value: keys.isDefault(action))
+        }
     }
 
     private func clearError() {

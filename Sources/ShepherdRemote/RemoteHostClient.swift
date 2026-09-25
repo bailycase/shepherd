@@ -139,7 +139,8 @@ public final class RemoteHostClient: @unchecked Sendable {
 
             do {
                 let helloReply = try await request(connectionGeneration: attempt) { id in
-                    .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version)
+                    .hello(id: id, token: token, clientName: clientName, protocolVersion: RemoteProtocol.version,
+                           capabilities: RemoteProtocol.clientCapabilities)
                 }
                 guard case .helloOk(_, _, let capabilities) = helloReply else {
                     if case .error(_, let code, let message) = helloReply {
@@ -351,6 +352,10 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .setModel, .setThinking:
             guard capabilities.contains(RemoteProtocol.nativeThreadV2Capability) else {
                 throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to change the model or thinking level.")
+            }
+        case .queue:
+            guard capabilities.contains(RemoteProtocol.nativeQueueCapability) else {
+                throw RemoteHostClientError.rejected(code: "update_required", message: "Update Shepherd on the host to change its queue.")
             }
         case .send where !command.images.isEmpty:
             guard capabilities.contains(RemoteProtocol.nativeThreadV2Capability) else {

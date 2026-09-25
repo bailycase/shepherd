@@ -82,7 +82,14 @@ And the rules that follow from them:
 | A `ShepherdDesign` package | `Packages/ShepherdUI` | Name |
 | `NavigationSplitView` with `.inspector` for the right pane | Shepherd lays the window out itself (`RootView`, `RightPaneSplit`) | Its own adaptive rules (`ShellLayout`) decide what docks and what overlays |
 | Running sidebar rows draw a sparkline | Running rows show elapsed time; `NWSparkline` exists but nothing uses it | Nothing records an agent's tool calls per minute |
-| A queued follow-up has Edit and Send now | The queued bubble shows no actions | Honest affordances |
+| Queue & steer: Steer "lands after the tool call pi is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | "Lands once pi's current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
+| Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5, the Send menu at 10 | 8 (the composer's), 6, 4, and the popover's 12 | The radius scale |
+| Queue & steer: 5px gaps (the Steering pill, "Steered", "From the queue", a compact chip); 1px lines outside each 40px row, the 32px header and the card | 6 in the pill, 4 elsewhere; lines drawn inside, so three rows make a 152pt stack (the board's 157) | The space scale's 4pt steps; every card and list in the app draws its lines inside (`nwBorder`, `NWHairline` overlays) |
+| Queue & steer: a custom 280pt QueueOptions popover; tooltips with keycaps | The native ••• menu (`NWOptionsMenu`); system tooltips (`.nwHelp`) | As every other ••• and tooltip in the app |
+| Queue & steer: the Send menu beside the card, highlighted in `bgSelected` | Beside the card where the thread has room for it; in a narrower thread above Send, trailing edges aligned, over the trailing end of Up next while it is open; the composer menus' `runningTint` highlight | The app's column is 820pt (the boards' 620), so the room beside it runs out; the menus' one anatomy |
+| Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
+| Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
+| Queue & steer: "Pi" | "pi" | The app's spelling, until the rest of that redesign lands |
 | Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn or asks a question while you aren't watching it (`AgentNotifications`) | Reaches you outside the app |
 | Missions, the mission graph, the attention inbox, evidence review (Lab boards) | Not built | Out of scope for this pass |
 | ⌘M opens the model picker (earlier handoff) | **⇧⌘M** | ⌘M is the system Minimize chord |
@@ -90,8 +97,10 @@ And the rules that follow from them:
 
 Additions the boards don't have:
 
-- The composer's **delivery chip** (Follow-up / Steer), shown while a turn runs with a draft,
-  because pi supports both.
+- **A paused queue** (Up next): after Stop, or a turn that failed, the queue waits: "Paused" in
+  its header (why, in the tooltip), and each row's Steer now reads **Send now** (the ••• menu's
+  Send all now) while pi is idle.
+- **Undo for Clear the queue**, as for a single delete.
 - **Transcript search** in the palette ("Found in conversations").
 - A **quit confirmation** while agents are working.
 - A **one-time notice** under the toolbar after an update moved a copy of Shepherd off the
@@ -652,9 +661,19 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   padding, body text. No avatar and no name.
 - The time sits beneath in mono 10.5 tertiary, only while the turn is hovered (see **Details on
   hover** below). Sent images show as attachment chips.
-- A sent message shows at once, at 70% opacity until pi saves it. A follow-up sent while a turn
-  runs is **queued**: a dashed outline with no fill, secondary text, and "queued · sends when the
-  turn ends" beneath.
+- A message sent while pi is idle shows at once, at 70% opacity until pi reads it. One sent
+  while pi works never enters the thread early: it waits in the composer's **Up next** (see
+  Composer) and joins the thread only when pi reads it, where pi read it.
+- **From the queue:** messages the queue delivered together (one turn for pi) open with
+  `NWQueueDivider`, "From the queue · 2" (just "From the queue" for one) in caption tertiary
+  with the queue glyph between two hairlines, then one bubble per message, 6pt apart, each with
+  the time it was sent (on hover, like any bubble's).
+- **Steered:** a message steered into a running turn stands inside that turn where pi read it
+  (after the tool calls it waited on, at the turn's 14pt item spacing), so the turn keeps one
+  footer and one changes card. Its bubble wears "Steered" above it (`arrow.turn.down.right` 11
+  and caption medium, both `running`) and a `running` line instead of `lineStrong`; its time
+  shows on hover. After a relaunch a steer pi read after its final message reads as an ordinary
+  new turn.
 
 **Agent turn** (`AgentTurn`): consecutive assistant messages render as one turn. Its parts are
 thinking, prose, activity lines, subagent cards where their spawn calls were, notes, and errors,
@@ -774,8 +793,9 @@ other tools merge only with the same tool.
 
 ### Composer, questions, and menus
 
-`Composer` (`Thread/Composer.swift`) on `NWComposer`, `NWSlashMenu`, `NWModelPicker`, and
-`NWThinkingMenu`. Sizes are `NWComposerMetrics`.
+`Composer` (`Thread/Composer.swift`) on `NWComposer`, `NWSlashMenu`, `NWModelPicker`,
+`NWThinkingMenu`, and `NWSendMenu`, with Up next above the card (below). Sizes are
+`NWComposerMetrics`.
 
 **The card:**
 
@@ -793,11 +813,12 @@ other tools merge only with the same tool.
 - the model chip (the model in mono 12, with a chevron when it can change)
 - the thinking chip (`lightbulb`, "Thinking", the level; hidden when the model has no reasoning
   control)
-- the delivery chip (Follow-up · after the turn ends / Steer · after the current tools), only
-  while a turn runs with a draft
 - a spacer, then "Starting pi…" only while a slow pi keeps the thread waiting (see States),
-  then the single action: a 28pt circle, **Send** (an arrow on `lantern`, at 35% until there is
-  something to send) or **Stop** (a square on `failed`)
+  then the action, a 28pt circle: **Send** (an arrow on `lantern`, at 35% until there is
+  something to send) or **Stop** (a square on `failed`). While pi works with a draft, Stop steps
+  aside **outlined** (a `lineStrong` hairline, no fill, `bgHover` under the pointer, the square
+  in `failed`) and Send takes the corner, 6pt apart; filled Stop ⇄ outlined Stop + Send
+  cross-fades (`content`).
 
 Chips are 26pt ghost buttons in 12pt `textSecondary`, filled with `bgHover` on hover or while
 their menu is open.
@@ -806,8 +827,9 @@ their menu is open.
 
 - **Idle:** Send. The placeholder is "Follow up, or / for commands…" ("Follow up…" when pi
   reports no commands), or "Describe the task, or / for commands…" on a fresh agent.
-- **Running:** Stop while the field is empty. The field stays editable with "Queue a follow-up —
-  sent when the turn ends".
+- **Running:** Stop while the field is empty; with a draft, Stop outlined and Send. The field
+  keeps the idle placeholder. Send's tooltip names both ways, the Return setting's first:
+  "Queue (↩) · Steer now (⌘↩)".
 - **Accepting:** a spinner ("Waiting for pi") takes the button's place.
 - **Starting:** Send is offered from the first frame, before pi has answered anything. A
   message sent while pi boots waits behind the spinner, still in the field, and goes once pi
@@ -824,7 +846,34 @@ their menu is open.
   that failed, or one that never started.
 
 With more than one live subagent, Stop asks first (`StopAllDialog`): Stop only the agent, or
-Stop all. There is no status text, key hint, or working directory in or under the composer.
+Stop all. Stop (the button, ⌘., or Esc in the composer) takes back what pi was about to read
+before it aborts, so a steering message returns to the queue, and the queue then waits
+(paused) until a new message, Send now, or a steer. There is no status text, key hint, or
+working directory in or under the composer.
+
+**Sending while pi works.** ↩ does what Settings ▸ Agents ▸ Return while pi is working says:
+**Queue** (the default; the message waits in Up next and goes when pi settles) or **Steer**
+(pi reads it once its current tool calls finish, before its next step). ⌘↩
+(`alternateSend`, rebindable) always does the other one, ahead of any key equivalent in the
+window (the review pane's ⌘⏎), and only while the composer or one of its queued messages has
+focus. ⇧↩ inserts a newline; while pi is idle ↩ and ⌘↩ both send. Attachments ride along with a
+queued or steered message.
+
+**Send menu** (`NWSendMenu`): right-clicking Send, or holding it for
+`AppLayout.sendHoldDelay` (500ms), while pi works with a draft, opens the choice at send time
+(`.overlay`): beside the card, 8pt after its trailing edge and bottom-aligned with it, where
+the thread has room for it and its margin (`Composer.sendMenuBeside`), so it covers none of Up
+next; otherwise 8pt above the card with its trailing edge on the card's. It grows from the
+corner nearest Send. Nothing about the choice is written under the composer.
+
+- 268pt on the menus' popover, 6pt padding, rows 2pt apart; each row top-aligned with 8×10
+  padding and the `runningTint` highlight: a 14pt glyph in `textSecondary`, the title in Geist
+  13 medium with its description in caption tertiary beneath, and its keys as `NWKeycap`s.
+- **Queue** (the queue glyph): "Goes when pi finishes this turn." **Steer now**
+  (`arrow.turn.down.right`): "Lands once pi's current tool calls finish, before its next step."
+- ↩'s cap sits on the Return setting's row, which is highlighted when the menu opens, and ⌘↩'s
+  on the other. ↑↓ move, ↩ chooses, Esc closes, and a click outside closes it. While it is open
+  Send wears a 3pt `lanternTint` ring (`hover`).
 
 **Images** attach by drop, paste, or the paperclip (a file importer). They are resized on the
 way in (longest edge 2000px), at most four per message and 2 MiB each, and shown as
@@ -845,8 +894,8 @@ answerable:
 micro caps title and its text. Machine payloads, `setStatus`, and `notify` are not shown.
 Widgets are display-only, and the app chooses every font and color.
 
-**Menus** float over the thread above the card, one at a time: left-aligned with it, 8pt above it,
-and growing from that corner (`.overlay`). They take no room in the composer, so opening one never
+**Menus** float over the thread above the card, one at a time: left-aligned with it (the Send
+menu beside the card, or at its trailing corner), 8pt above it, and growing from that corner (`.overlay`). They take no room in the composer, so opening one never
 changes the composer's height, the thread's inset or scroll position, or any of the thread outside
 the menu (`ComposerMenuTests`). A menu is never taller than the room above the card (it keeps 8pt
 from the thread's top, and its list scrolls inside), and beside a docked pane it narrows to the
@@ -872,6 +921,74 @@ click still lands where it was aimed).
   (`ComposerMenuPerformanceTests`).
 - **Thinking menu** (`NWThinkingMenu`, 220pt): Off, Low ("quick"), Medium ("default"), High
   ("slower, deeper"), with a check on the current level.
+
+### Up next (the queue)
+
+Messages sent while pi works stack in **Up next** (`QueueStackView` in
+`Thread/QueueStack.swift`, on ShepherdUI's `NWQueueStack` and `NWQueueRow`; sizes are
+`NWQueueMetrics`): a card directly above the composer card, in the same column, 8pt above it,
+under any widgets and banners. The host holds the queue ([native-thread.md](docs/native-thread.md)
+› The queue), so every Mac viewing the agent sees and edits the same one. Nothing in it has
+reached pi, except a Steering row.
+
+- **Placement:** it shows while the queue has a row. The card never moves: the stack grows
+  upward, and the thread's inset follows the composer's measured height, so the thread keeps its
+  last turn in view (`QueueStackIntegrationTests`).
+- **The card:** `bgRaised`, a 1px `lineStrong` line, radius 8. A 32pt header (12pt leading, 6pt
+  trailing, a hairline beneath): the queue glyph (`NWQueueGlyph`, 12pt, `textTertiary`), "Up
+  next" in Geist 12 semibold `textSecondary`, the count in mono 11 tertiary (every message,
+  steering ones included; it rolls), "Paused" in caption tertiary while the queue waits (its
+  reason in the tooltip), then the ••• options and Collapse (24pt icon buttons; the chevron
+  turns up while collapsed, and a collapsed stack is its header alone). Rows follow, a hairline
+  above each but the first.
+- **A queued row** (`NWQueueRow`, 40pt, not scaled by Density; 8pt leading, 6pt trailing, 8pt
+  apart): the grip (`NWGripGlyph`, six dots in an 8×14 slot, shown on hover or focus: the only
+  drag handle), its number (mono 10.5 `textSecondary` in an 18pt `lineStrong` ring: the order
+  it goes, not a count, never counting Steering or Deleted rows), the text in Geist 13 on one
+  line (a click edits it), its images as compact chips (22pt, a 16pt thumbnail or a `photo`
+  glyph where the bytes stayed on another Mac), and an 82pt slot that always keeps room for its
+  actions, so hovering never re-truncates the text. The actions are built only while the row is
+  hovered or focused: Steer now (Send now while pi is idle), Edit, Delete, 26pt icon buttons
+  2pt apart with system tooltips naming their keys. Hovered it is `bgHover`; with keyboard focus
+  `bgSelected` with the running focus ring drawn inside it.
+- **A Steering row:** always first, on `runningTint`: a bare 14pt running spinner where a
+  queued row has its number (so its text starts 4pt further left), the text, `NWStatusPill(.running, label: "Steering", symbol: "arrow.turn.down.right")`,
+  and Back to the queue (`arrow.uturn.backward`), which returns it to the queue as #1 until pi
+  reads it. It has no grip, Edit, or Delete.
+- **Editing** (`NWQueueEditor`): the text or the pencil (or ↑ in an empty composer, for the last
+  queued message) opens the row in place: `bgWindow`, 8pt padding (24pt leading, so the number
+  keeps its column), the number top-aligned beside a field of up to six lines (Geist 13 at 1.5,
+  `bgRaised`, radius 6, a `lantern` line inside a 3pt `lanternTint` ring, the caret after the
+  text), and Cancel (ghost) and Save (secondary; disabled while empty). ↩ saves, ⇧↩ adds a line,
+  Esc cancels. The message keeps its place, and the host holds the queue while the editor is
+  open (renewed every minute; a hold lapses after two).
+- **Deleted** (`NWQueueDeletedRow`): the delete goes to the host at once, and an Undo row takes
+  the message's place, cross-fading in the same 40pt (34pt leading): a trash glyph, "Deleted" and
+  the struck-through text in `ui` regular tertiary, and Undo as a link. It closes after
+  `AppLayout.queueUndoWindow` (5s), counting only while the pointer is off it. Clearing the queue
+  leaves one such row, "Cleared 3 messages", that puts them all back.
+- **Long stack:** up to three rows all show; past three, the first two and "Show N more" (a 32pt
+  link row, 34pt leading), which expands the stack in place ("Show fewer"). Expanded past six
+  rows it scrolls inside. An editor opened below the fold expands it.
+- **Reordering:** dragging the grip lifts the row out of the stack onto a floating card
+  (`bgRaised` under `bgHover`, radius 8, a `lineStrong` line, the popover's shadow, a 1° lean),
+  22pt right of its slot and 14pt past the stack's trailing edge (`NWQueueMetrics.liftInset`),
+  over its neighbours, the drop line and the composer card. It follows the pointer at once, up
+  to half a row past the first and last rows; its neighbours step aside (`list`), and a 2pt
+  `lantern` drop line (`NWDropIndicator(color:)`) tops the gap. Nothing drops above a Steering
+  row. ⌥↑ ⌥↓ move a focused row.
+- **The ••• menu** (native): Steer all now (Send all now while pi is idle), "When the turn ends,
+  send" with One message per turn and Everything at once (this agent's choice; Settings sets the
+  host's default), and Clear the queue (destructive, with its Undo row).
+- **Keys on a focused row** (with keyboard navigation on, ⇥ reaches the rows): ↑ ↓ move between
+  rows, ↩ edits, ⌘↩ steers (sends now while pi is idle), ⌥↑ ⌥↓ move it, ⌫ deletes it, and Esc
+  or ⇥ return to the field.
+- **Motion:** the stack comes and goes with `list` from the bottom (the card stays anchored); a
+  queued row rises from the bottom, and a row pi takes leaves toward the thread (`list`) while the
+  numbers roll (`content`); hover fills, the grip, and the actions fade (`hover`) in slots that
+  are always laid out; Steer now and Back to the queue move the row (`list`) while its number and
+  spinner, and its actions and pill, cross-fade (`content`); Show more and Collapse disclose
+  (`disclosure`). No bubble flies from the stack into the thread.
 
 ### Subagents
 
@@ -1080,11 +1197,11 @@ to Shepherd" or Esc returns.
 | --- | --- |
 | **Appearance** | Theme (Night Watch, shown as a name), Mode (System / Light / Dark), Sidebar rows, Density, Text size, Sidebar width |
 | **Terminal** | Pane font family and size, a live preview, the shell |
-| **Agents** | Default model, default thinking level |
+| **Agents** | Default model, default thinking level; while pi is working: what Return does (Queue / Steer; ⌘↩ does the other) and how the queue goes when a turn ends (One per turn / All at once, the host's default for its agents) |
 | **Worktrees** | Base branch (Remote default / Current branch), fetch before creating, and finalize: commit remaining work, generate PR descriptions, delete local branch, merge automatically (+ method) |
 | **Pi** | Bundled extensions (name agents automatically, sync pi theme, panes and agent tools, diff review tool, native subagents, subagent display), native subagent defaults, pi and extension updates |
 | **Remote** | Hosts (edit, reconnect, remove), add or edit a host (name, address, port, token), Serve this Mac (listener, token file) |
-| **Keyboard** | Rebindable shortcuts by group, the fixed chords, and Reset all |
+| **Keyboard** | Rebindable shortcuts by group; While pi is working (the Queue & steer boards' Keyboard card, in its order: ↩ and ⌘↩ named for what they do under the Return setting, the queue's keys, Stop pi); the fixed chords, and Reset all |
 | **Advanced** | Files (workspace state, extension socket), updates and channel (Shepherd: Stable or Beta in a segmented picker; Shepherd Nightly names its one channel, Nightly), reset settings |
 
 ### Dialogs and sheets
@@ -1139,7 +1256,7 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 
 | Lifecycle | `AgentState` | Sidebar | Composer |
 | --- | --- | --- | --- |
-| Agent working | `running` | blue dot; elapsed trailing | Stop; the field queues a follow-up |
+| Agent working | `running` | blue dot; elapsed trailing | Stop (outlined beside Send with a draft); ↩ queues in Up next or steers |
 | Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | the question panel in place of the field |
 | A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | the card's answers and Reply… |
 | Agent done | `done` | green dot | Send |
@@ -1160,11 +1277,11 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Domain | Components | Owned in the app by |
 | --- | --- | --- |
 | Controls | `.buttonStyle(.nw(_:size:))` (primary, secondary, ghost, danger, dangerFill; s 24 · m 28 · l 32), `.nwIcon` (a circle, 28pt; "on" is lantern tint), `.nwLink`, `.nwRow(selected:)`, `.nwRowBackground(selected:hovering:)`; `.toggleStyle(.nwSwitch)` (30×18) and `.nwCheckbox` (14pt); `NWSegmentedPicker` (m 24, s 20), `NWPopupMenu`, `NWValueSlider`, `NWStepper`; `.textFieldStyle(.nw)` (28pt, radius 6), `.nwField(focused:error:mono:)`, `NWSearchField`; `NWKeycap`, `NWCountBadge`, `NWTag`, `.nwHelp(_:shortcut:)` | across the app |
-| Status | `NWStatusPill` (20pt, radius 4), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline`, `.nwToast(item:)`, and `.nwShimmer()` have no app use yet |
+| Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline`, `.nwToast(item:)`, and `.nwShimmer()` have no app use yet |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline` | `SettingsComponents.swift`; hairlines everywhere |
 | Navigation | `NWSidebar`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
-| Thread | `NWUserBubble` (its time shown while `revealed`), `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWWorkingRow` | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
-| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton`, `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu` | `Thread/Composer.swift` |
+| Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWWorkingRow` | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
+| Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`; the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QueueStack.swift` |
 | Agents | `NWSubagentCard`, `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup` | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift` |
 | Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer` | `DiffReviewView.swift` |
 | Dialogs | `NWDialog`, `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `SettingsView.swift` |
@@ -1206,6 +1323,7 @@ in UserDefaults under `shepherd.keybindings`).
 | ⌘. | Stop the agent |
 | ⌥⌘↑ · ⌥⌘↓ | Previous · next turn |
 | ⌘I | Inspect subagent |
+| ⌘↩ | Send the other way while pi works (steer ⇄ queue), and steer a focused queued message; composer only, no menu item |
 
 Fixed chords:
 
@@ -1213,8 +1331,12 @@ Fixed chords:
 - ⌃⇧1–9 jump to machines (this Mac is always ⌃⇧1).
 - ⌘, opens Settings, and ⌘F searches it.
 - ⏎ confirms and ⎋ cancels in sheets.
-- In the composer, ⏎ sends and ⇧⏎ inserts a newline. `/` at the start opens the command list, and
-  Esc closes a menu.
+- In the composer, ↩ sends (while pi works, it queues or steers per Settings) and ⇧↩ inserts a
+  newline. `/` at the start opens the command list, and Esc closes a menu, then the command list,
+  then stops pi while it works.
+- The queue's keys (`FixedChord`, listed with the send keys under Settings ▸ Keyboard ▸ While pi
+  is working, `WhileWorkingKey`): ↑ in an empty composer edits the last queued message; ⌥↑ ⌥↓
+  move the focused message and ⌫ deletes it.
 
 Review-pane and menu keys are listed with their surfaces.
 
@@ -1274,6 +1396,10 @@ to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
     before and after the delay, restoring from disk, a hovered turn, "Jump to latest" over the
     fade, a long stretch folded into one line) and the activity-line states
   - the composer and its menus
+  - the queue (the Queue & steer boards): Up next over a running thread with a hovered row and
+    a draft (Stop outlined beside Send), a Steering row under a steered message, the editor with
+    a Deleted row and the Send menu, every row and stack state, and "From the queue" and
+    "Steered" in the thread
   - subagent cards, the ledger, and the inspector
   - the review pane
   - the palette, the toolbar, the sidebar at each row density, and the window at its minimum

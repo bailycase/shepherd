@@ -5,7 +5,9 @@ import SwiftUI
         VStack(alignment: .leading, spacing: NW.Space.xl) {
             NWUserBubble("Restyle the thread view to the spec and split the work however you like.", timestamp: "2:41 PM",
                          revealed: true)
-            NWUserBubble("Also bump the tool row height to 28.", isQueued: true, onEdit: {}, onSendNow: {})
+            NWQueueDivider(count: 2)
+            NWUserBubble("Also bump the tool row height to 28.", timestamp: "2:44 PM", revealed: true)
+            NWUserBubble("Use table-driven tests, like ledger_test.go.", timestamp: "2:47 PM", revealed: true, origin: .steered)
             HStack(spacing: NW.Space.s) {
                 NWAttachmentChip("Spec.dc.html") {}
                 NWAttachmentChip("screenshot.png", thumbnail: Image(systemName: "photo"))

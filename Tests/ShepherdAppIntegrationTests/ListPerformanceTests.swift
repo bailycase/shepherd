@@ -233,6 +233,69 @@ struct ListPerformanceTests {
         }
     }
 
+    /// A streamed chunk beside "Up next" redraws none of the stack: the composer reads the
+    /// store's queue, which a chunk leaves as it was.
+    @Test func aStreamedChunkRedrawsNoQueueRow() async throws {
+        var snapshot = ThreadFixture.snapshot(ThreadFixture.history(120) + [ThreadFixture.user("u", "Go on")],
+                                              provisional: [ThreadFixture.streaming("Streaming")], running: true)
+        snapshot.queue = NativeQueue(items: QueueFixture.messages(["Then run the tests", "And lint it", "Then open the PR"]), mode: .all)
+        snapshot.supportedActions.append("queue")
+        let thread = FakeThread(snapshot, header: true)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await Task.sleep(for: .milliseconds(200))
+        ListPerf.settle(thread.window)
+        #expect(thread.store.queue.count == 3)
+
+        let rows = try await counting(thread.window) {
+            for index in 1...5 {
+                var next = snapshot
+                next.revision += UInt64(index)
+                next.provisional = [ThreadFixture.streaming("Streaming" + String(repeating: " more words", count: index * 4))]
+                await thread.serve(next)
+                ListPerf.settle(thread.window)
+            }
+        }
+
+        #expect(rows["thread.view", default: 0] >= 5, "the reply streamed: \(rows)")
+        #expect(rows["queue.row", default: 0] == 0, "\(rows)")
+        // See aStreamedChunkRedrawsNoComposerOrToolbar: CI's VM redraws the composer per chunk.
+        withKnownIssue("CI's VM redraws the composer for each streamed chunk", isIntermittent: true) {
+            for key in ["composer.body", "composer.chips"] {
+                #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+            }
+        } when: {
+            !TimingTests.enabled
+        }
+
+        // The control: a queued message edited on the host redraws its row.
+        var edited = snapshot
+        edited.revision += 10
+        edited.queue?.items[1].text = "And lint it, then format"
+        let changed = try await counting(thread.window) { await thread.serve(edited) }
+        #expect(changed["queue.row", default: 0] >= 1, "\(changed)")
+    }
+
+    /// Widening or narrowing the thread redraws its composer only when the Send menu would
+    /// change sides (beside the card, or above it), never for each width a live resize passes.
+    @Test func aWidthThatKeepsTheSendMenusSideRedrawsNoComposer() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(4)), size: CGSize(width: 1800, height: 800))
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+        try await Task.sleep(for: .milliseconds(200))
+        ListPerf.settle(thread.window)
+
+        let frames = 10
+        let rows = try await counting(thread.window) {
+            for step in 1...frames {
+                thread.window.window.setContentSize(NSSize(width: 1800 - CGFloat(step) * 8, height: 800))
+                ListPerf.settle(thread.window)
+            }
+        }
+
+        #expect(rows["composer.body", default: 0] == 0, "\(rows)")
+    }
+
     /// Switching is a visibility flip: hiding a thread and showing it again each rebuild it (and
     /// its composer) once, and the rows on screen, whatever its first pull brings back.
     @Test func aSwitchRebuildsEachThreadOnce() async throws {

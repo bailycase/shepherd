@@ -14,8 +14,11 @@ struct NativeThreadTests {
 
     // MARK: - Sending
 
-    /// An idle agent gets a plain prompt; while it streams, a send carries the delivery mode.
-    @Test func sendsPromptWhenIdleAndQueueWithTheirDeliveryWhileRunning() async throws {
+    /// An idle agent is prompted at once, whatever the delivery (as a follow-up, which pi runs
+    /// as a plain prompt while idle and queues if it has just started a run of its own). While
+    /// it streams, a follow-up waits in the host's queue and never reaches pi; a steer goes to
+    /// pi as a steer.
+    @Test func sendsPromptWhenIdleQueuesFollowUpsAndSteersWhileRunning() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }
         let pi = try await PiAgent.launch(on: h)
@@ -24,13 +27,16 @@ struct NativeThreadTests {
         #expect(try await pi.send("slow", delivery: .steer, from: idle).failureCode == nil)
         let first = try await pi.waitForStdin("prompt")
         #expect(first["message"] as? String == "slow")
-        #expect(first["streamingBehavior"] == nil, "an idle agent is prompted, never steered")
+        #expect(first["streamingBehavior"] as? String == "followUp", "idle, the delivery is not a steer")
 
         let streaming = try await pi.snapshot("the paused turn to stream") { $0.running && !$0.provisional.isEmpty }
         #expect(try await pi.send("follow this up", delivery: .followUp, from: streaming).failureCode == nil)
-        #expect(try await pi.waitForStdin("prompt", count: 2)["streamingBehavior"] as? String == "followUp")
+        let queued = try await pi.snapshot("the follow-up in the host's queue") { $0.queue?.items.count == 1 }
+        #expect(queued.queue?.items.first?.text == "follow this up" && queued.queue?.items.first?.state == .queued)
         #expect(try await pi.send("steer now", delivery: .steer, from: streaming).failureCode == nil)
-        #expect(try await pi.waitForStdin("prompt", count: 3)["streamingBehavior"] as? String == "steer")
+        let steer = try await pi.waitForStdin("prompt", count: 2)
+        #expect(steer["message"] as? String == "steer now" && steer["streamingBehavior"] as? String == "steer")
+        #expect(pi.stdin("prompt").count == 2, "the follow-up stayed with the host")
         pi.release(1)
         pi.release(2)
     }

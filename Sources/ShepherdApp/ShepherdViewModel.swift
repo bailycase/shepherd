@@ -469,6 +469,9 @@ final class ShepherdViewModel {
         // independent of server.start()'s Unix socket, so ordering is safe;
         // the .task call remains as a no-op-if-bound backstop.
         applyRemoteListenerSetting()
+        // Queues go the way Settings ▸ Agents says, unless an agent's own ••• menu chose.
+        server.setDefaultQueueMode(self.settings.queueDelivery)
+        self.settings.onQueueDeliveryChange = { [weak server] mode in server?.setDefaultQueueMode(mode) }
         installRemoteInspection()
         server.onRemoteAgentAction = { [weak self] agentID, action, completion in
             Task { @MainActor in

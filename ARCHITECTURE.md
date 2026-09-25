@@ -127,14 +127,17 @@ pi --mode rpc  (/bin/zsh -l -c, --session-id, -e extensions)
                       requests → RPC commands; each new revision of a thread on screen pushed
                       as onThreadRevision, at most once per frame
   → SessionServer.nativeThread (local, direct)  |  RemoteRequest.nativeThread (TCP)
-  → NativeThreadStore (poll, or pull on a push; page, echo, settle; derive rows, activity lines,
-                      placements)
-  → ThreadView · Composer · Subagents · SubagentInspector
+  → NativeThreadStore (poll, or pull on a push; page, queue, echo, settle; derive rows, activity
+                      lines, placements)
+  → ThreadView · Composer (+ QueueStack, "Up next") · Subagents · SubagentInspector
 ```
 
-- **Requests:** send, answer, abort, model and thinking changes, and subagent commands. Each
-  carries an operation ID plus the expected session and generation, so a stale action can never
-  land in a new pi session.
+- **Requests:** send, answer, abort, model and thinking changes, subagent commands, and queue
+  changes. Each carries an operation ID plus the expected session and generation, so a stale
+  action can never land in a new pi session.
+- **The queue:** messages sent while pi works wait in a queue the host holds (every client sees
+  and edits the same one) and go when pi settles, or are steered in. The composer draws it as
+  "Up next" above its card, where each message can be steered, edited, reordered, or deleted.
 - **One path for every client:** the local GUI and remote clients use the same request path;
   only the transport differs.
 - **Detail:** [docs/native-thread.md](docs/native-thread.md) walks the pipeline, and
@@ -218,7 +221,9 @@ the matching `*Extension.swift` writes to the support directory from an embedded
 
 `SessionServer.startRemoteListener(port:tokenURL:)` binds TCP on all interfaces (default port
 7433, or 7434 in Shepherd Nightly). The first frame must be a `hello` with the shared token from `remote-token`, and the
-protocol version must match `RemoteProtocol.version`. There is no TLS, so a VPN or trusted network
+protocol version must match `RemoteProtocol.version`. The `hello` also lists what the client
+understands (`RemoteProtocol.clientCapabilities`), so the host can serve an older client in a
+way it can still read. There is no TLS, so a VPN or trusted network
 is the transport boundary.
 
 The protocol is NDJSON (`RemoteMessage.swift`):

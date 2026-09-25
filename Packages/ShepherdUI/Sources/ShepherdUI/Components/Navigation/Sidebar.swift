@@ -415,15 +415,19 @@ public struct NWSidebarFooter: View {
     }
 }
 
-/// The 2pt drop line a reorder drag shows at a row's top or bottom edge.
+/// The 2pt drop line a reorder drag shows at a row's top or bottom edge: `running` in the
+/// sidebar, `lantern` in the composer's queue.
 public struct NWDropIndicator: View {
     /// The line's height.
     public static let thickness: CGFloat = 2
 
-    public init() {}
+    let color: Color?
+
+    public init(color: Color? = nil) { self.color = color }
 
     public var body: some View {
-        Rectangle().fill(Color.nw.running).frame(height: Self.thickness).allowsHitTesting(false).accessibilityHidden(true)
+        Rectangle().fill(color ?? Color.nw.running).frame(height: Self.thickness)
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 }
 
