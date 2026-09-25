@@ -38,7 +38,9 @@ public enum RemoteHostClientError: Error, CustomStringConvertible, Sendable {
 /// (hello + initial state fetch); after that the owner reads pushed state and
 /// drives sessions with attach/write/resize. Any socket failure tears the
 /// connection down and fires `onDisconnected` once; the owner reconnects by
-/// making a fresh client.
+/// making a fresh client. A connection that fails during `connect` is reported
+/// only by what `connect` throws: a host refusing the token replies and then
+/// closes, and the close must not stand in for the refusal.
 public final class RemoteHostClient: @unchecked Sendable {
     /// Remote host state pushed after every host-side mutation. Main queue.
     public var onStateChanged: ((ShepherdState) -> Void)?
@@ -46,8 +48,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     public var onOutput: ((SessionID, Data) -> Void)?
     /// An attached session's process exited. Main queue.
     public var onSessionExited: ((SessionID, Int32?) -> Void)?
-    /// The connection died (readable EOF, write failure, or `disconnect`).
-    /// Fired at most once, on the main queue.
+    /// A connection `connect` returned died (readable EOF, write failure, or
+    /// `disconnect`). Fired at most once, on the main queue.
     public var onDisconnected: ((String) -> Void)?
     public private(set) var capabilities: Set<String> = []
 
@@ -63,6 +65,8 @@ public final class RemoteHostClient: @unchecked Sendable {
     private var nextRequestID = 1
     private var pendingReplies: [Int: CheckedContinuation<RemoteReply, Error>] = [:]
     private var disconnectNotified = false
+    /// `connect` returned this connection; until then its failures are thrown, not notified.
+    private var established = false
     private var uploading = false // Client queue owns the one active transfer.
 
     /// Pushed events wait here for the main queue. One hop is in flight at a
@@ -129,6 +133,7 @@ public final class RemoteHostClient: @unchecked Sendable {
                 }
                 self.fd = fd
                 disconnectNotified = false
+                established = false
                 lineBuffer = LineBuffer()
                 let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: queue)
                 source.setEventHandler { [weak self] in self?.handleReadable() }
@@ -149,7 +154,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                     throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected hello reply")
                 }
                 try queue.sync {
-                    guard connectionGeneration == attempt else { throw CancellationError() }
+                    guard connectionGeneration == attempt else {
+                        throw Task.isCancelled ? CancellationError() : RemoteHostClientError.disconnected
+                    }
                     self.capabilities = Set(capabilities)
                 }
                 let stateReply = try await request(connectionGeneration: attempt) { id in .stateFetch(id: id) }
@@ -157,7 +164,9 @@ public final class RemoteHostClient: @unchecked Sendable {
                     throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected state reply")
                 }
                 try queue.sync {
-                    guard !Task.isCancelled, connectionGeneration == attempt else { throw CancellationError() }
+                    guard !Task.isCancelled else { throw CancellationError() }
+                    guard connectionGeneration == attempt else { throw RemoteHostClientError.disconnected }
+                    established = true
                 }
                 return state
             } catch {
@@ -794,10 +803,11 @@ public final class RemoteHostClient: @unchecked Sendable {
             continuation.resume(throwing: RemoteHostClientError.disconnected)
         }
         pendingReplies.removeAll()
-        if !disconnectNotified {
+        if established, !disconnectNotified {
             disconnectNotified = true
             hopToMain { [weak self] in self?.onDisconnected?(reason) }
         }
+        established = false
     }
 
     private func hopToMain(_ body: @escaping () -> Void) {
