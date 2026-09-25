@@ -1237,7 +1237,10 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
 - **Sections** (mono caps headers): Commands, This thread, Subagents, and, once there is a query
   (or in the Agents scope), Agents, Spaces, and Found in conversations. Conversation search
   needs at least 3 characters, runs off the main actor after a short pause, and reads the last
-  512 KB of each agent's pi session; its rows show a snippet with the match in bold.
+  512 KB of each agent's pi session. It matches only what was said, the user's and the
+  assistant's text, never pi's system prompt, tool definitions, thinking, tool calls or results;
+  its rows show a snippet of that text with the match in bold. A host answers a remote client's
+  conversation search the same way.
 - **Rows** (`NWPaletteRow`, the sidebar's row height): a stroke icon, the label, dim context, and
   the real shortcut as keycaps. The highlight is `runningTint` with a running icon. Subagent rows
   wear their run's state color.

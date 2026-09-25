@@ -943,7 +943,9 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
 - **Binding:** `SessionServer.start()` refuses to bind over a live socket (it probes with a
   connect) and replaces stale socket files. The remote listener reports bind failures rather than
   silently serving nothing.
-- **Transcript search** in the palette reads only the last 512 KB of each agent's pi session.
+- **Transcript search** in the palette (and a host's answer to a remote `agentQuery(.search)`)
+  reads only the last 512 KB of each agent's pi session, and matches only user and assistant
+  text (`PaletteContentSearch`), never the system prompt, tools, or JSON around it.
 - **Launching the binary bare** from a terminal starts a background process; the `AppDelegate`
   promotes it to `.regular` and activates it.
 - **Quitting** while agents are working or blocked asks first, in `QuitDialog` on the main
