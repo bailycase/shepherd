@@ -66,7 +66,7 @@ swift test --filter UnitTests                # fast tier: seconds
 swift test --filter IntegrationTests         # real server, stub pi, git, off-screen windows
 SHEPHERD_PREVIEW_DIR=/tmp/shepherd-previews swift test --filter PreviewTests
 swift test                                   # everything (previews skip without SHEPHERD_PREVIEW_DIR)
-CI=true swift test --no-parallel             # as CI runs it: serially, timing-sensitive tests skipped
+CI=true swift test --no-parallel             # what CI runs (in four shards): serially, timing-sensitive tests skipped
 PI_PACKAGE_DIR="$(npm root -g)/@earendil-works/pi-coding-agent" node --test Tests/Extensions/*.test.mjs
 python3 -m unittest discover -s Tests/Release   # the release workflow's rules (scripts/release.py)
 ```
@@ -284,10 +284,40 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   the nightly notice armed once), the support directory and listener port per edition, and the
   release rules (every trigger, feed routing, the legacy aliases).
 
-CI (`.github/workflows/ci.yml`) runs the release rules, `swift build --build-tests`, and
-`swift test --no-parallel` on pull requests and pushes to `master`, skipping the timing-sensitive
-tests. It runs the suite serially: on its shared 3-core runner a parallel run queued tests behind
-one another's main-thread work until their waits ran out.
+CI (`.github/workflows/ci.yml`) runs on pull requests and pushes to `master`, skipping the
+timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
+
+- **Shards:** four `macos-26` jobs each build (`.github/actions/swift-build`) and run
+  `swift test --skip-build --no-parallel` over their share of the suites. W, R and A take the
+  App integration suites their regexes name (`W_RE`, `R_RE`, `A_RE` in the workflow); C `--skip`s
+  all three and runs everything else, so a new or renamed suite always lands in C. Each shard
+  lists its suites' times in the run's summary: when the slowest shard beats the fastest by more
+  than 20 s over two runs, move a suite. A shard that runs no tests fails, and so does a C whose
+  count differs from what `swift test list` leaves after the three regexes (a dead `--skip`).
+- **Serial within a shard:** on the shared 3-core runner, a parallel run queued tests behind one
+  another's main-thread work until their waits ran out. A watchdog samples a test host still
+  running after 10 minutes, then ends the run.
+- **Release rules** run on `ubuntu-latest` (stdlib Python). The `CI` job passes only when every
+  shard and the release rules did; it is the one check to require.
+- **Caches:** dependency checkouts (keyed on `Package.resolved`) and build products (one entry per
+  commit, restored from the nearest earlier one) are cached apart. `scripts/ci_mtimes.py` puts
+  each unchanged source's saved mtime back after checkout, so a restored build compiles only
+  what changed. A push to `nightly` runs no tests: its `warm` job builds from scratch and saves
+  both caches where every PR based on `nightly` can read them. Pull requests save nothing, so
+  every push to one restores that entry and compiles the PR's changes on top; a PR into
+  `master` reads only `master`'s. Master pushes and manual runs save from shard C, before its
+  tests (never on `nightly`, where the warm job saves). Run the workflow by hand with `clean` to
+  ignore the build cache. A corrupt cache: bump `CACHE_EPOCH` in the action to orphan every
+  entry, build and dependencies, or clear one
+  ref's with `gh cache delete --all --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
+- **Checking a CI change:** a pull request's run is cold ("Cache not found") until `nightly`
+  holds an entry for the same toolchain and epoch, and it saves nothing, so it cannot show an
+  incremental build. Before merging, run the workflow by hand on the branch, let it finish (a
+  second run on the same ref cancels the first), push a small source change, and run it again:
+  its shards restore the first run's entry by prefix, "Restore source mtimes" reports about as
+  many new or changed files as the push touched, and the build compiles only their modules. A
+  rerun of an unchanged commit is an exact hit and tests nothing. After the merge, the `warm`
+  job's entry should be what the next push to any PR into `nightly` restores.
 
 ## Source map
 
@@ -375,7 +405,7 @@ Tests/
   Release/                Python tests for scripts/release.py
   ShepherdIOSChecks/      the iOS client's scripts
 scripts/               release.py (the release workflow's rules), sign-app.sh (release
-                       signing), sync-embedded-extension.py
+                       signing), sync-embedded-extension.py, ci_mtimes.py (CI's incremental builds)
 Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
 ```
 
@@ -731,7 +761,8 @@ breaking changes), one logical change per commit, with no AI or attribution line
 
 `nightly` is the integration branch. Feature branches (`feat/…`, `fix/…`) come off it and merge
 back through a PR with a merge commit (`--no-ff`). Every push to `nightly` ships a Shepherd
-Nightly build. CI runs the tests on pull requests and on `master`.
+Nightly build. CI runs the tests on pull requests and on `master`; a push to `nightly` only
+rebuilds CI's caches.
 
 ## Releases
 
