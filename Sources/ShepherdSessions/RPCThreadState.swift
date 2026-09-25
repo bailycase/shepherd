@@ -605,16 +605,24 @@ final class RPCThreadState {
     private func refreshStats(timeout: TimeInterval = 10) {
         session.request(.getSessionStats, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
-            let usage = data["contextUsage"]
-            self.stats = NativeThreadStats(
-                contextTokens: usage?["tokens"]?.doubleValue.map { Int($0) },
-                contextWindow: usage?["contextWindow"]?.doubleValue.map { Int($0) },
-                contextPercent: usage?["percent"]?.doubleValue,
-                totalTokens: data["tokens"]?["total"]?.doubleValue.map { Int($0) },
-                cost: data["cost"]?.doubleValue
-            )
+            self.stats = Self.projectStats(data)
             self.commit()
         }
+    }
+
+    /// get_session_stats → stats. pi estimates the context from the thread's messages, so a
+    /// session with none yet (a first turn before pi's first reply) reports 0: unknown, not a
+    /// figure to show.
+    static func projectStats(_ data: JSONValue) -> NativeThreadStats {
+        let usage = data["contextUsage"]
+        let tokens = usage?["tokens"]?.doubleValue.map { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
+        return NativeThreadStats(
+            contextTokens: tokens,
+            contextWindow: usage?["contextWindow"]?.doubleValue.map { Int($0) },
+            contextPercent: tokens == nil ? nil : usage?["percent"]?.doubleValue,
+            totalTokens: data["tokens"]?["total"]?.doubleValue.map { Int($0) },
+            cost: data["cost"]?.doubleValue
+        )
     }
 
     /// get_commands → capped, byte-limited list. Over-long names are dropped, descriptions clipped.

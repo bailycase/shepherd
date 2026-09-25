@@ -83,10 +83,15 @@ enum ThreadCounters {
     @MainActor static func text(_ store: NativeThreadStore) -> String? {
         let parts = [
             store.olderCursor == nil && store.session != nil ? turns(store) : nil,
-            store.stats?.contextTokens.map { "\(nativeTokenCount($0)) ctx" },
+            context(store.stats?.contextTokens),
             nativeSubagentRollup(store.subagents),
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "46k ctx", once pi has measured the context: an older host reports an unmeasured one as 0.
+    static func context(_ tokens: Int?) -> String? {
+        tokens.flatMap { $0 > 0 ? "\(nativeTokenCount($0)) ctx" : nil }
     }
 
     @MainActor private static func turns(_ store: NativeThreadStore) -> String {
