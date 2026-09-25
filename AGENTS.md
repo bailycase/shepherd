@@ -481,7 +481,7 @@ Vendor/libghostty-spm/ GhosttyTerminal (prebuilt libghostty)
   opt out (`restoresAgentsAtLaunch: false`); their pi starts when a pane's session is asked for.
 - Starting is quiet: a thread draws what it knows at once (a new agent's empty state, a
   resuming agent's history read from pi's session file), accepts a send that waits for pi, and
-  says "Starting pi…" only when pi is slow (DESIGN.md › Thread, Composer).
+  says "Starting…" only when pi is slow (DESIGN.md › Thread, Composer).
 
 `RPCThreadState` projects pi's events into the `NativeThreadSnapshot` that
 `SessionServer.nativeThread` serves locally and, over TCP, remotely

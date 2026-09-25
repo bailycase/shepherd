@@ -673,7 +673,7 @@ struct QueueRowView: View, Equatable {
     private func accessibilityLabel(_ kind: NWQueueRow.Kind, text: String) -> String {
         switch kind {
         case .queued(let number): "Queued \(number) of \(total): \(text)"
-        case .steering: "Steering: \(text), waiting for pi's current tool calls"
+        case .steering: "Steering: \(text), waiting for the agent's current tool calls"
         }
     }
 }

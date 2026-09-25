@@ -121,7 +121,7 @@ events come out on stdout, one record per LF.
   the command leaves them unsaid), `get_state` (session ID, model, thinking level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost; a context of 0, pi's
   estimate before its first reply, is sent as unknown), and
   `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` and
-  `get_messages` have answered, requests fail with `native_starting` ("pi is starting."): pi
+  `get_messages` have answered, requests fail with `native_starting` ("The agent is starting."): pi
   answers `get_state` first, and a thread served before a long history arrives would show a
   resumed agent as a new, empty one. pi reads stdin only once it has started, so a pi slower
   than the 10 s request deadline answers requests already given up on; when `get_state` times
@@ -383,7 +383,7 @@ output grows.
 - **Starting:** `native_starting` sets `starting`, never `loadError`. `awaitingPi` (starting,
   previewing, or no snapshot yet, without an error) is what the composer watches: only after it
   has held for `AppLayout.startingIndicatorDelay` (two seconds, past a normal start of about
-  0.8 s after ⌘N and 1 s after a relaunch) does the control row say "Starting pi…", or for
+  0.8 s after ⌘N and 1 s after a relaunch) does the control row say "Starting…", or for
   `AppLayout.blankStartingIndicatorDelay` (half a second) while the thread has no snapshot to
   draw at all (a remote agent's, or a local one with no readable session file). A normal start
   never shows it. `acceptsSend` offers Send whenever
