@@ -747,7 +747,8 @@ row) shows them.
   details reads it (an agent turn's footer; a user turn, which is just its bubbles), so the
   pointer crossing a thread never re-renders an agent turn's parts, other turns, or the thread.
 - The subagent inspector's transcript follows the same rule; there "from parent" always shows
-  under a message from the parent, and its time fades in beside it.
+  under a message from the parent (never under your own steers and answers), and its time fades
+  in beside it.
 
 **Work groups** (`WorkGroupView` in `Thread/ThreadTools.swift`, `nativeWorkGroup`). A stretch's
 activity lines (between prose, notes, errors and subagent cards) form one group, so a long turn
@@ -1103,7 +1104,7 @@ layout" above.
   delivered before its next turn", "to: <name> · not the parent", and a primary Steer button.
   A failed send keeps the draft.
 - **A finished run is read-only:** messages from the parent are captioned "from parent" ("10:58 ·
-  from parent" while hovered), and `NWRunActions` (Re-run · Fork · Copy transcript) replaces the
+  from parent" while hovered; your own steers are not), and `NWRunActions` (Re-run · Fork · Copy transcript) replaces the
   composer. Remote agents have no Fork.
 
 **Review** (`ReviewPane` in `DiffReviewView.swift`, state in `DiffReview.swift`):

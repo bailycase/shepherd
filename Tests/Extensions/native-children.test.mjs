@@ -420,6 +420,12 @@ test("real Pi RPC lifecycle: parallel, role tools, isolation, messaging, wait, r
     await until(() => askStatus().controlRequestID === "second-answer" && askStatus().controlNotice === "reply accepted or queued");
     await h.call("wait", { ids: [ask.id], timeoutSeconds: 30 });
     assert(fs.readFileSync(asked.sessionFile, "utf8").includes("second inspector answer"));
+    // What the user sent (a card, the inspector, the fleet view) is recorded beside the session;
+    // what the parent sent through its tools is not.
+    const userSent = (file) => fs.readFileSync(path.join(path.dirname(file), "user-messages.jsonl"), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(userSent(asked.sessionFile).map((r) => r.text), ["card answer", "inspector answer", "second inspector answer"]);
+    assert(userSent(asked.sessionFile).every((r) => Number.isFinite(r.at)));
+    assert.deepEqual(userSent(firstFile).map((r) => r.text), ["fleet answer"], "the parent's resume is not the user's");
     const leaseDir = path.join(askDir, "writer"); fs.mkdirSync(leaseDir);
     fs.writeFileSync(path.join(leaseDir, "owner.json"), JSON.stringify({pid:process.pid,token:"fixture"}));
     await assert.rejects(fleet.runtime.send(ask.id, "lease must reject", "steer"), /Child session already has a live writer/);

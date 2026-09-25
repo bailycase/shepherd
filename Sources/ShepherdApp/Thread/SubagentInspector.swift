@@ -263,10 +263,10 @@ private struct SubagentRunInspector: View {
                     ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
                         Group {
                             if turn.isUser {
-                                // In the child's session every user message after the first is the
-                                // parent (a steer or a resume); the first is the task itself.
+                                // The first user message is the task; later ones are the parent's
+                                // steers and resumes, or the user's own.
                                 UserTurn(messages: turn.messages, caption: index > 0 ? parentTime(turn) : nil,
-                                         note: index > 0 ? "from parent" : nil)
+                                         note: index > 0 && !transcript.usersTurns.contains(turn.id) ? "from parent" : nil)
                             } else {
                                 AgentTurn(messages: turn.messages, live: !terminal && run != nil && index == turns.count - 1)
                             }
@@ -459,6 +459,8 @@ final class SubagentTranscriptModel {
 
     private(set) var messages: [NativeThreadMessage] = []
     private(set) var turns: [NativeTurn] = []
+    /// The user turns the user wrote, which are not "from parent".
+    private(set) var usersTurns: Set<String> = []
     private(set) var tail = Tail()
     private(set) var earlierCount = 0
     private(set) var loaded = false
@@ -544,6 +546,8 @@ final class SubagentTranscriptModel {
         let before = Set(turns.map(\.id))
         messages = value
         turns = nativeTurns(value)
+        let users = Set(turns.filter { $0.isUser && nativeTranscriptTurnIsTheUsers($0.messages) }.map(\.id))
+        if users != usersTurns { usersTurns = users }
         let next = Tail(count: value.count, lastEntryID: value.last?.entryID)
         if next != tail { tail = next }
         // A live reload marks the turns it adds (and keeps the last marks when it adds none);

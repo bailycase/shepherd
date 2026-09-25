@@ -417,6 +417,13 @@ public func nativeTranscriptSplice(_ current: [NativeThreadMessage], newest page
     return (page.messages, true)
 }
 
+/// A transcript's user turn that the user wrote (steers and answers sent from the card or the
+/// inspector) rather than the parent, so it is not captioned "from parent". The host marks each
+/// such message; an older host marks none.
+public func nativeTranscriptTurnIsTheUsers(_ messages: [NativeThreadMessage]) -> Bool {
+    !messages.isEmpty && messages.allSatisfy { $0.origin == .user }
+}
+
 /// An older page in front of what is loaded, without entries already shown.
 public func nativeTranscriptPrepend(_ current: [NativeThreadMessage], older page: NativeSubagentTranscript) -> [NativeThreadMessage] {
     let ids = Set(current.map(\.entryID))

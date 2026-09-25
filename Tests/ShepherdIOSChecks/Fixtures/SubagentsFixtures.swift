@@ -175,7 +175,12 @@ enum SubagentFixtures {
                                  output: "Edited", at: 150_000),
                 FixtureData.tool("t5", "bash", args: #"{"command":"swift test --filter ToolRowTests"}"#,
                                  output: "✔ Test run with 14 tests in 2 suites passed after 0.3 seconds.", at: 220_000),
-                FixtureData.assistant("t6", "All 14 pass. Running the iPad simulator variant next.", at: 240_000),
+                FixtureData.assistant("t6", "All 14 pass on macOS.", at: 240_000),
+                FixtureData.user("t7", "Run the iOS simulator variant too.", at: 250_000),
+                FixtureData.assistant("t8", "Running them on the iPhone simulator.", at: 260_000),
+                // The user's own steer, from the inspector: not "from parent".
+                { var steer = FixtureData.user("t9", "Include the iPad simulator.", at: 270_000); steer.origin = .user; return steer }(),
+                FixtureData.assistant("t10", "All 14 pass on macOS, the iPhone and the iPad simulators.", at: 300_000),
             ], earlierCount: 0)
         }
     }

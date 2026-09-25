@@ -299,7 +299,8 @@ enum Threads {
         ], olderCursor: "c:a1", earlierCount: 72)
     }
 
-    /// The finished tests run's whole transcript: its task, the work, a steer from the parent.
+    /// The finished tests run's whole transcript: its task, the work, a steer from the parent,
+    /// and one from the user.
     static var testsTranscript: NativeSubagentTranscript {
         let t0 = Date().timeIntervalSince1970 * 1000 - 8 * 60_000
         func tool(_ id: String, _ name: String, _ args: String, _ output: String) -> NativeThreadMessage {
@@ -313,7 +314,9 @@ enum Threads {
             tool("e1", "edit", #"{"path":"Tests/ShepherdRemoteUnitTests/NativePresentationTests.swift","edits":[{"oldText":"a","newText":"a\nb\nc"}]}"#, "Successfully replaced 1 block(s)"),
             tool("b1", "bash", #"{"command":"swift test --filter NativePresentationTests"}"#, "Test run with 14 tests passed"),
             NativeThreadMessage(entryID: "t:u2", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Run the iOS simulator variant too.")], timestamp: t0 + 3 * 60_000),
-            NativeThreadMessage(entryID: "t:a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "All 14 pass on macOS and the iOS simulator.")]),
+            NativeThreadMessage(entryID: "t:a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Running them on the iOS simulator.")]),
+            NativeThreadMessage(entryID: "t:u3", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Include the iPad simulator.")], timestamp: t0 + 4 * 60_000, origin: .user),
+            NativeThreadMessage(entryID: "t:a3", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "All 14 pass on macOS, the iPhone and the iPad simulators.")]),
         ])
     }
 }
