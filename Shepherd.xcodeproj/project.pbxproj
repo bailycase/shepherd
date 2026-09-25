@@ -3,24 +3,15 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 60;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		15000000000000000000B001 /* ShepherdIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A001 /* ShepherdIOSApp.swift */; };
-		15000000000000000000B002 /* HostConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A002 /* HostConnection.swift */; };
-		15000000000000000000B003 /* HostTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A003 /* HostTokenStore.swift */; };
-		15000000000000000000B004 /* MobileTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A004 /* MobileTokens.swift */; };
-		15000000000000000000B005 /* HostSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A005 /* HostSettingsView.swift */; };
-		15000000000000000000B006 /* FleetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A006 /* FleetView.swift */; };
-		15000000000000000000B007 /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A007 /* ThreadView.swift */; };
-		15000000000000000000B009 /* ThreadMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A009 /* ThreadMessageView.swift */; };
-		15000000000000000000B00A /* ThreadDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A00A /* ThreadDialogView.swift */; };
 		15000000000000000000B101 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
-		15000000000000000000B102 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 15000000000000000000A00B /* PrivacyInfo.xcprivacy */; };
 		15000000000000000000B201 /* ShepherdCore in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C001 /* ShepherdCore */; };
 		15000000000000000000B202 /* ShepherdProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C002 /* ShepherdProtocol */; };
 		15000000000000000000B203 /* ShepherdRemote in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C003 /* ShepherdRemote */; };
+		15000000000000000000B204 /* ShepherdUI in Frameworks */ = {isa = PBXBuildFile; productRef = 15000000000000000000C004 /* ShepherdUI */; };
 		5E000000000000000000B001 /* ShepherdLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A001 /* ShepherdLauncher.swift */; };
 		5E000000000000000000B002 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A003 /* AppIcon.icon */; };
 		5E000000000000000000B003 /* AppIconNightly.icon in Resources */ = {isa = PBXBuildFile; fileRef = 5E000000000000000000A005 /* AppIconNightly.icon */; };
@@ -47,16 +38,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		15000000000000000000A001 /* ShepherdIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShepherdIOSApp.swift; sourceTree = "<group>"; };
-		15000000000000000000A002 /* HostConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostConnection.swift; sourceTree = "<group>"; };
-		15000000000000000000A003 /* HostTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTokenStore.swift; sourceTree = "<group>"; };
-		15000000000000000000A004 /* MobileTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MobileTokens.swift; sourceTree = "<group>"; };
-		15000000000000000000A005 /* HostSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostSettingsView.swift; sourceTree = "<group>"; };
-		15000000000000000000A006 /* FleetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetView.swift; sourceTree = "<group>"; };
-		15000000000000000000A007 /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
-		15000000000000000000A009 /* ThreadMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadMessageView.swift; sourceTree = "<group>"; };
-		15000000000000000000A00A /* ThreadDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadDialogView.swift; sourceTree = "<group>"; };
-		15000000000000000000A00B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		15000000000000000000A201 /* Shepherd iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Shepherd iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		5E000000000000000000A001 /* ShepherdLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShepherdLauncher.swift; sourceTree = "<group>"; };
 		5E000000000000000000A002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -66,6 +47,27 @@
 		5E000000000000000000A201 /* Shepherd.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Shepherd.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		15000000000000000000D1E0 /* Exceptions for "iOS" folder in "Shepherd iOS" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ExportOptions.plist,
+			);
+			target = 15000000000000000000F001 /* Shepherd iOS */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		15000000000000000000D100 /* iOS */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				15000000000000000000D1E0 /* Exceptions for "iOS" folder in "Shepherd iOS" target */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		15000000000000000000E002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -74,6 +76,7 @@
 				15000000000000000000B201 /* ShepherdCore in Frameworks */,
 				15000000000000000000B202 /* ShepherdProtocol in Frameworks */,
 				15000000000000000000B203 /* ShepherdRemote in Frameworks */,
+				15000000000000000000B204 /* ShepherdUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -92,23 +95,6 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		15000000000000000000D001 /* iOS */ = {
-			isa = PBXGroup;
-			children = (
-				15000000000000000000A001 /* ShepherdIOSApp.swift */,
-				15000000000000000000A002 /* HostConnection.swift */,
-				15000000000000000000A003 /* HostTokenStore.swift */,
-				15000000000000000000A004 /* MobileTokens.swift */,
-				15000000000000000000A005 /* HostSettingsView.swift */,
-				15000000000000000000A006 /* FleetView.swift */,
-				15000000000000000000A007 /* ThreadView.swift */,
-				15000000000000000000A00A /* ThreadDialogView.swift */,
-				15000000000000000000A009 /* ThreadMessageView.swift */,
-				15000000000000000000A00B /* PrivacyInfo.xcprivacy */,
-			);
-			path = iOS;
-			sourceTree = "<group>";
-		};
 		5E000000000000000000D001 = {
 			isa = PBXGroup;
 			children = (
@@ -120,7 +106,7 @@
 		5E000000000000000000D002 /* App */ = {
 			isa = PBXGroup;
 			children = (
-				15000000000000000000D001 /* iOS */,
+				15000000000000000000D100 /* iOS */,
 				5E000000000000000000A001 /* ShepherdLauncher.swift */,
 				5E000000000000000000A002 /* Info.plist */,
 				5E000000000000000000A003 /* AppIcon.icon */,
@@ -154,11 +140,15 @@
 			);
 			dependencies = (
 			);
+			fileSystemSynchronizedGroups = (
+				15000000000000000000D100 /* iOS */,
+			);
 			name = "Shepherd iOS";
 			packageProductDependencies = (
 				15000000000000000000C001 /* ShepherdCore */,
 				15000000000000000000C002 /* ShepherdProtocol */,
 				15000000000000000000C003 /* ShepherdRemote */,
+				15000000000000000000C004 /* ShepherdUI */,
 			);
 			productName = "Shepherd iOS";
 			productReference = 15000000000000000000A201 /* Shepherd iOS.app */;
@@ -205,7 +195,6 @@
 				};
 			};
 			buildConfigurationList = 5E000000000000000000F100 /* Build configuration list for PBXProject "Shepherd" */;
-			compatibilityVersion = "Xcode 15.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -213,6 +202,7 @@
 				Base,
 			);
 			mainGroup = 5E000000000000000000D001;
+			preferredProjectObjectVersion = 77;
 			packageReferences = (
 				5E000000000000000000F200 /* XCLocalSwiftPackageReference "." */,
 			);
@@ -232,7 +222,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				15000000000000000000B101 /* AppIcon.icon in Resources */,
-				15000000000000000000B102 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -252,15 +241,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				15000000000000000000B001 /* ShepherdIOSApp.swift in Sources */,
-				15000000000000000000B002 /* HostConnection.swift in Sources */,
-				15000000000000000000B003 /* HostTokenStore.swift in Sources */,
-				15000000000000000000B004 /* MobileTokens.swift in Sources */,
-				15000000000000000000B005 /* HostSettingsView.swift in Sources */,
-				15000000000000000000B006 /* FleetView.swift in Sources */,
-				15000000000000000000B007 /* ThreadView.swift in Sources */,
-				15000000000000000000B00A /* ThreadDialogView.swift in Sources */,
-				15000000000000000000B009 /* ThreadMessageView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -624,6 +604,10 @@
 		15000000000000000000C003 /* ShepherdRemote */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ShepherdRemote;
+		};
+		15000000000000000000C004 /* ShepherdUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ShepherdUI;
 		};
 		5E000000000000000000C001 /* ShepherdApp */ = {
 			isa = XCSwiftPackageProductDependency;

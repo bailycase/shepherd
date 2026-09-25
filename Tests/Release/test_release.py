@@ -498,8 +498,11 @@ class ContractTests(unittest.TestCase):
         self.assertIn(f'BuildableName = "{release.IOS.product}"', scheme)
 
     def test_the_ios_client_ships_its_privacy_manifest(self):
+        # App/iOS is a synchronized folder: every file in it joins the target unless excepted.
         project = self.read("Shepherd.xcodeproj", "project.pbxproj")
-        self.assertIn("/* PrivacyInfo.xcprivacy in Resources */,", project)
+        self.assertRegex(project, r"/\* iOS \*/ = \{\n\t+isa = PBXFileSystemSynchronizedRootGroup;")
+        exceptions = re.search(r"membershipExceptions = \((.*?)\);", project, re.S)
+        self.assertNotIn("PrivacyInfo.xcprivacy", exceptions.group(1) if exceptions else "")
         manifest = plistlib.loads(self.read("App", "iOS", "PrivacyInfo.xcprivacy").encode())
         self.assertFalse(manifest["NSPrivacyTracking"])
         reasons = {t["NSPrivacyAccessedAPIType"]: t["NSPrivacyAccessedAPITypeReasons"]

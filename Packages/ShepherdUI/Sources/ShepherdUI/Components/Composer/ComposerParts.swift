@@ -121,6 +121,7 @@ private struct NWComposerChip: View {
             .contentShape(RoundedRectangle(cornerRadius: NW.Radius.s))
             .onHover { hovering = $0 }
             .nwFocusRing(radius: NW.Radius.s)
+            .nwTouchTarget(height: NWComposerMetrics.chipHeight)
     }
 }
 
@@ -215,5 +216,6 @@ private struct NWComposerActionCircle: View {
             .contentShape(Circle())
             .onHover { hovering = $0 }
             .nwFocusRingCircle()
+            .nwTouchTarget(height: NWComposerMetrics.actionSize, width: NWComposerMetrics.actionSize)
     }
 }

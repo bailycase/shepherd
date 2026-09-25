@@ -76,6 +76,7 @@ private struct NWStyledButton: View {
             .onHover { hovering = $0 }
             .nwAnimation(.hover, value: hovering)
             .nwFocusRing(radius: NW.Radius.s)
+            .nwTouchTarget(height: height)
     }
 
     private var active: Bool { enabled && (hovering || configuration.isPressed) }
@@ -255,12 +256,21 @@ private struct NWRowButton: View {
     var body: some View {
         configuration.label
             .contentShape(RoundedRectangle(cornerRadius: style.radius))
-            .nwRowBackground(selected: style.selected, hovering: hovering, radius: style.radius,
+            .nwRowBackground(selected: style.selected, hovering: hovering || Self.pressed(configuration), radius: style.radius,
                              selectedFill: style.selectedFill, hoverFill: style.hoverFill)
             .onHover { hovering = $0 }
             // Keyed on the pointer only: a selection moved by the keyboard lands at once.
             .nwAnimation(.hover, value: hovering)
             .nwFocusRing(radius: style.radius)
+    }
+
+    /// Touch has no hover, so a row shows its hover fill while pressed instead.
+    private static func pressed(_ configuration: ButtonStyleConfiguration) -> Bool {
+        #if os(iOS)
+        configuration.isPressed
+        #else
+        false
+        #endif
     }
 }
 

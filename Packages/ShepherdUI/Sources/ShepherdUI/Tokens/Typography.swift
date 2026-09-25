@@ -3,7 +3,7 @@ import CoreText
 
 /// The Night Watch type ramp (Foundations board). Geist for prose and chrome, Geist Mono for
 /// anything the agent touched. Sizes are points and scale with Settings ▸ Appearance ▸ Text size;
-/// on iOS they also follow Dynamic Type (`relativeTo:`).
+/// on iOS they follow the phone and iPad boards' larger ramp and Dynamic Type (`relativeTo:`).
 public enum NWTextStyle: Int, CaseIterable, Sendable {
     /// Geist 28/600/1.15: empty states, onboarding.
     case display
@@ -25,6 +25,19 @@ public enum NWTextStyle: Int, CaseIterable, Sendable {
     case micro
 
     public var size: CGFloat {
+        #if os(iOS)
+        // The phone and iPad boards' ramp: rows at 15, prose at 16, meta at 12.
+        switch self {
+        case .display: 28
+        case .title: 16
+        case .headline: 17
+        case .body: 16
+        case .ui: 15
+        case .caption, .mono: 12
+        case .code: 13
+        case .micro: 11
+        }
+        #else
         switch self {
         case .display: 28
         case .title: 15
@@ -34,6 +47,7 @@ public enum NWTextStyle: Int, CaseIterable, Sendable {
         case .code: 12
         case .micro: 10.5
         }
+        #endif
     }
 
     public var weight: Font.Weight {
@@ -50,7 +64,11 @@ public enum NWTextStyle: Int, CaseIterable, Sendable {
         case .display: 1.15
         case .title, .ui, .mono: 1.3
         case .headline, .caption: 1.35
+        #if os(iOS)
+        case .body: 1.5
+        #else
         case .body: 1.6
+        #endif
         case .code: 1.55
         case .micro: 1.2
         }
