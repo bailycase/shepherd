@@ -5,7 +5,7 @@ import ShepherdProtocol
 
 /// An image on its way into a `send`, sized to the protocol's limits the way the Mac's drop is
 /// (AGENTS.md › Dropped images are resized on the way in): the longest edge clamped to
-/// `maxEdge`, JPEG kept as JPEG and everything else re-encoded as PNG, and at most
+/// `maxEdge`, a photo (JPEG or HEIC) sent as JPEG and everything else re-encoded as PNG, and at most
 /// `NativeImage.maxBytes`. pi writes an attached image into its session, so an oversized photo
 /// would be sent again on every later load of the conversation.
 public enum NativeImagePreparation {
@@ -28,6 +28,11 @@ public enum NativeImagePreparation {
         }
     }
 
+    /// A photo (JPEG, or the HEIC a camera takes) goes as a JPEG; PNG would only bloat it.
+    public static func sendsAsJPEG(_ type: UTType) -> Bool {
+        type.conforms(to: .jpeg) || type.conforms(to: .heic) || type.conforms(to: .heif)
+    }
+
     /// How many more images a message holding `count` can take.
     public static func room(_ count: Int) -> Int { max(0, NativeImage.maxPerSend - count) }
 
@@ -37,7 +42,7 @@ public enum NativeImagePreparation {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let type = CGImageSourceGetType(source) as String?,
               CGImageSourceGetCount(source) > 0 else { throw Failure.unreadable(name) }
-        let jpeg = UTType(type)?.conforms(to: .jpeg) == true
+        let jpeg = UTType(type).map(sendsAsJPEG) == true
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
