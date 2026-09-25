@@ -131,7 +131,9 @@ public struct NWQuestionNumber: View {
         let shape = RoundedRectangle(cornerRadius: NW.Radius.xs)
         Text("\(number)").font(.nw(.mono, weight: .medium)).monospacedDigit()
             .foregroundStyle(filled ? nw.textOnLantern : nw.textSecondary)
-            .frame(width: NWTouchQuestionMetrics.numberSize, height: NWTouchQuestionMetrics.numberSize)
+            // Grows with the text at large sizes rather than clipping the number.
+            .padding(NW.Space.xxs)
+            .frame(minWidth: NWTouchQuestionMetrics.numberSize, minHeight: NWTouchQuestionMetrics.numberSize)
             .background(filled ? nw.lantern : Color.clear, in: shape)
             .nwBorder(filled ? nw.lantern : nw.lineStrong, in: shape)
             .accessibilityHidden(true)
