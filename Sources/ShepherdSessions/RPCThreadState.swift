@@ -190,6 +190,14 @@ final class RPCThreadState {
 
     /// Installed by SessionServer: the queue was expected to go when pi settled, and did not.
     var onIdleAfterQueue: (() -> Void)?
+    /// Installed by SessionServer: where a turn starts and ends, for the Changes engine's
+    /// snapshots of the working tree (`ChangesService`). Called on the session queue.
+    var onTurnEvent: ((TurnEvent) -> Void)?
+    /// The agent's recorded turns, as the server last set them (`setTurnChanges`).
+    private(set) var turnChanges: [ChangesTurn]? { didSet { turnChangesHash = turnChanges.hashValue } }
+    private var turnChangesHash = Optional<[ChangesTurn]>.none.hashValue
+    /// Whether the server has set them since the thread started.
+    private(set) var turnChangesSet = false
     /// The server held back a "done" report because the queue was about to go.
     var doneHeld = false
 
@@ -245,6 +253,8 @@ final class RPCThreadState {
     func handle(_ event: RPCEvent) {
         switch event {
         case .agentStart:
+            // A retry's second start is the same turn; the engine tells them apart.
+            onTurnEvent?(.started)
             running = true
             runFailed = false
             runError = nil
@@ -258,7 +268,12 @@ final class RPCThreadState {
         case .agentSettled:
             running = false
             settled()
+            onTurnEvent?(.settled)
         case .messageStart(let message) where message.role == "user":
+            onTurnEvent?(.message(timestamp: message.timestamp, text: message.content.compactMap { block -> String? in
+                if case .text(let text) = block { return text }
+                return nil
+            }.joined()))
             userMessageStarted(message)
         case .messageEnd(let message) where message.role == "user":
             userMessageEnded(message)
@@ -323,6 +338,15 @@ final class RPCThreadState {
     /// Server queue: full replacement from a setAgentChildren publish.
     func setSubagents(_ rows: [ChildRun]) {
         subagents = rows
+        commit()
+    }
+
+    /// Server queue: the agent's turns as the Changes engine recorded them.
+    func setTurnChanges(_ turns: [ChangesTurn]?) {
+        turnChangesSet = true
+        let turns = turns?.isEmpty == true ? nil : turns
+        guard turns != turnChanges else { return }
+        turnChanges = turns
         commit()
     }
 
@@ -1036,6 +1060,7 @@ final class RPCThreadState {
         hasher.combine(stats)
         hasher.combine(commandsHash)
         hasher.combine(subagentsHash)
+        hasher.combine(turnChangesHash)
         hasher.combine(queueHash())
         #if DEBUG
         bytesHashedByLastCommit = bytesHashedSinceCommit
@@ -1098,7 +1123,7 @@ final class RPCThreadState {
             model: model, thinking: thinking, thinkingLevels: thinkingLevels, supportedActions: Self.supportedActions, dialogsSupported: true,
             dialogs: [], widgets: widgets.map(\.value), messages: [], provisional: [],
             clipped: projectionClipped || dialogs.contains { $0.unavailable == "payload-limit" },
-            runtime: "rpc", stats: stats, commands: commands, subagents: subagents
+            runtime: "rpc", stats: stats, commands: commands, subagents: subagents, turnChanges: turnChanges
         )
         // The rest encodes without the queue, which adds `,"queue":` and its cached size.
         let queue = queueValue
@@ -1401,4 +1426,14 @@ final class RPCThreadState {
     private static func json(_ value: JSONValue) -> String {
         (try? argumentEncoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "{}"
     }
+}
+
+/// A turn's edges, as the Changes engine hears them.
+enum TurnEvent: Equatable {
+    /// pi started a run.
+    case started
+    /// A user message joined the thread (the first one names the turn).
+    case message(timestamp: Double?, text: String)
+    /// pi's run settled.
+    case settled
 }

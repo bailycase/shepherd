@@ -20,6 +20,11 @@ extension ShepherdViewModel {
                     do { completion(.success(try await self.handleReviewCommit(agentID, query: query))) }
                     catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
                     return
+                case .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
+                    // The server answers these itself; a handler call is only ever a fallback.
+                    do { completion(.success(try await self.server.changes.answer(query, agentID: agentID))) }
+                    catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
+                    return
                 default: break
                 }
                 guard let agent = self.server.state.agents.first(where: { $0.id == agentID }),
@@ -32,7 +37,8 @@ extension ShepherdViewModel {
                     let result: RemoteAgentResult
                     switch query {
                     case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup, .worktreeCommitCount, .worktreeDescription,
-                         .commitInfo, .commitMessage, .commit:
+                         .commitInfo, .commitMessage, .commit,
+                         .changesOverview, .changesList, .changesFile, .changesBranches, .changesPatch, .changesUndoTurn, .changesRedoTurn:
                         return
                     case .children:
                         result = .children(self.children(of: agentID))
