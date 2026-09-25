@@ -36,12 +36,14 @@ struct RemoteAutomationsTests {
         vm.performRemoteAutomation(key, .setEnabled(enabled: true))
         try await eventuallyOnMain("the host to switch it on") {
             host.state.automations.first?.enabled == true && Self.row(key, in: vm)?.word == "stopped"
+                && !vm.remoteAutomationsPending.contains(key)
         }
         #expect(host.state.agents.isEmpty, "switching on starts nothing until the host launches")
 
         vm.performRemoteAutomation(key, .run)
+        // The host's state can arrive before its answer, and a change waits while one is on its way.
         try await eventuallyOnMain("the run to start on the host and reach the sidebar", timeout: .seconds(30)) {
-            Self.row(key, in: vm)?.run != nil
+            Self.row(key, in: vm)?.run != nil && !vm.remoteAutomationsPending.contains(key)
         }
         let runAgent = try #require(host.state.automations.first?.agentID)
         let hidden = try #require(host.state.spaces.first { $0.hidden })
@@ -53,7 +55,9 @@ struct RemoteAutomationsTests {
         #expect(Self.row(key, in: vm)?.selected == true)
 
         vm.performRemoteAutomation(key, .stop)
-        try await eventuallyOnMain("the run's agent to go") { host.state.agents.isEmpty && Self.row(key, in: vm)?.run == nil }
+        try await eventuallyOnMain("the run's agent to go") {
+            host.state.agents.isEmpty && Self.row(key, in: vm)?.run == nil && !vm.remoteAutomationsPending.contains(key)
+        }
 
         vm.showRemoteAutomation(key)
         try await eventuallyOnMain("the host's runs to arrive") { vm.remoteAutomationRuns[key]?.count == 1 }
