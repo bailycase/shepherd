@@ -102,17 +102,27 @@ final class MobileSearchStore {
     }
 
     /// Starts following `hosts`; `thread` is the thread on screen, for the palette's actions.
+    /// Coming back to search (Back from a thread it opened) asks whatever a detach left
+    /// unanswered.
     func attach(_ hosts: MobileHosts, thread: AgentRef? = nil) {
         self.hosts = hosts
         self.thread = thread
         tracking = UUID()
         observe()
+        derive()
+        if pauseTask == nil { searchConversations() }
     }
 
-    /// Stops following the hosts and cancels every request.
+    /// Stops following the hosts and cancels every request in flight. Answers already in are
+    /// kept, so the results survive a thread pushed over search.
     func detach() {
         tracking = UUID()
-        cancelSearch()
+        generation = UUID()
+        pauseTask?.cancel()
+        pauseTask = nil
+        for task in tasks { task.cancel() }
+        tasks = []
+        asked = Set(outcomes.keys)
         hosts = nil
     }
 
