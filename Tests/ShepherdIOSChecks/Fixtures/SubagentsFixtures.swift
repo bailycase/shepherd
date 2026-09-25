@@ -17,6 +17,9 @@ extension FixtureCatalog {
                           routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.worker))]),
             FixtureScreen(name: "subagent-question", hosts: SubagentFixtures.hosts(),
                           routes: [.thread(live), .subagents(.run(live, runID: SubagentFixtures.reviewer))]),
+            // Opened from Needs you or the palette while another thread is on screen.
+            FixtureScreen(name: "subagent-question-elsewhere", hosts: SubagentFixtures.hosts(),
+                          routes: [.thread(done), .subagents(.run(live, runID: SubagentFixtures.reviewer))]),
             FixtureScreen(name: "subagents-finished", hosts: SubagentFixtures.hosts(), routes: [.thread(done)]),
             FixtureScreen(name: "subagent-finished-run", hosts: SubagentFixtures.hosts(),
                           routes: [.thread(done), .subagents(.run(done, runID: SubagentFixtures.tests))]),

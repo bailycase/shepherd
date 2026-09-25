@@ -52,8 +52,9 @@ final class MobileNavigator {
     private var currentPhonePath: [MobileRoute] { tab == .home ? homePath : settingsPath }
 
     /// Shows `route` the way the current layout does: pushed on the current tab's stack on
-    /// iPhone; on iPad a thread becomes the detail and anything else is pushed over it.
-    /// Settings screens open in the Settings tab on iPhone.
+    /// iPhone; on iPad a thread becomes the detail and anything else is pushed over it, a
+    /// thread's runs or review over that thread. Settings screens open in the Settings tab on
+    /// iPhone.
     func open(_ route: MobileRoute) {
         switch layout {
         case .phone:
@@ -69,6 +70,13 @@ final class MobileNavigator {
             if case .thread(let ref) = route {
                 padSelection = ref
                 if !padPath.isEmpty { padPath = [] }
+                if padSidebarOverlays { padColumns = .detailOnly }
+            } else if let thread = route.thread, thread != padSelection {
+                // A thread's own screen (its runs, its review) opened from elsewhere, such as Needs
+                // you or the palette: its thread becomes the selection under it, so the sidebar
+                // marks it and closing the screen returns to it.
+                padSelection = thread
+                padPath = [route]
                 if padSidebarOverlays { padColumns = .detailOnly }
             } else if padPath.last != route {
                 padPath.append(route)
@@ -122,6 +130,11 @@ final class MobileNavigator {
             if let thread = padSelection, homePath.last != .thread(thread) {
                 tab = .home
                 homePath = [.thread(thread)]
+            }
+            // The palette is the iPad's; a compact window gets search, pushed like the phone's.
+            if case .search(.palette(let query))? = presented?.route {
+                dismissPresented()
+                open(.search(.search(query: query)))
             }
         }
     }
