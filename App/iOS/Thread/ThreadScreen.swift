@@ -195,6 +195,8 @@ private struct ThreadTranscript: View {
                     proxy.scrollTo(Self.bottomID, anchor: .bottom)
                 }
             }
+            // New output at the tail is what "unseen" means, never the content height.
+            .onChange(of: rows.last) { _, _ in follow { $0.contentArrived(); return false } }
             // Laid out in the thread's safe area, so it sits on the composer; the margin of its
             // 44pt hit area draws the capsule 8pt above it.
             .overlay(alignment: .bottom) {

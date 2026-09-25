@@ -115,17 +115,16 @@ struct ScrollFollowerTests {
         var distance: Double
         var intent = false
         var gesture = false
-        var grew = false
         var sticky: Bool
         var unseen: Bool
     }
 
     static let cases: [Case] = [
-        Case(testDescription: "programmatic growth keeps a sticky view sticky", start: .init(), distance: 300, grew: true, sticky: true, unseen: false),
+        Case(testDescription: "programmatic growth keeps a sticky view sticky", start: .init(), distance: 300, sticky: true, unseen: false),
         Case(testDescription: "user intent away from the bottom detaches", start: .init(), distance: 300, intent: true, sticky: false, unseen: false),
         Case(testDescription: "a gesture without an upward move stays stuck", start: .init(), distance: 40, gesture: true, sticky: true, unseen: false),
         Case(testDescription: "layout jitter without intent never detaches", start: .init(), distance: 500, sticky: true, unseen: false),
-        Case(testDescription: "growth while detached marks unseen", start: .init(sticky: false), distance: 300, grew: true, sticky: false, unseen: true),
+        Case(testDescription: "a detached view moving is not output arriving", start: .init(sticky: false), distance: 300, sticky: false, unseen: false),
         Case(testDescription: "returning near the bottom re-sticks and clears unseen", start: .init(sticky: false, unseen: true), distance: 3, sticky: true, unseen: false),
         Case(testDescription: "exactly the threshold counts as the bottom", start: .init(sticky: false, unseen: true), distance: NativeScrollFollower.threshold, sticky: true, unseen: false),
         Case(testDescription: "intent inside the threshold does not detach", start: .init(), distance: 10, intent: true, sticky: true, unseen: false),
@@ -135,7 +134,7 @@ struct ScrollFollowerTests {
     func observation(_ c: Case) {
         var follower = c.start
         follower.userScrolling = c.gesture
-        follower.observe(distanceFromBottom: c.distance, userIntent: c.intent, contentGrew: c.grew)
+        follower.observe(distanceFromBottom: c.distance, userIntent: c.intent)
         #expect(follower.sticky == c.sticky)
         #expect(follower.unseen == c.unseen)
     }

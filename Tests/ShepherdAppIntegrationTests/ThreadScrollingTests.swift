@@ -370,6 +370,23 @@ struct ThreadScrollingTests {
         #expect(thread.trailingSpace <= AppLayout.turnSpacing * 2 + 13)
     }
 
+    /// ⌥⌘↑ with pi idle: the rows the jump reveals are measured on the way, which grows the
+    /// content, but nothing new arrived, so there is no pill until something does.
+    @Test func aTurnJumpWithPiIdleShowsThePillOnlyForNewOutput() async throws {
+        let thread = ThreadHarness(messages: 30, paragraphs: 20)
+        defer { thread.close() }
+        try await thread.waitUntilReady()
+
+        try await thread.detach()
+        #expect(thread.distanceFromBottom > NativeScrollFollower.threshold)
+        thread.command(.previousTurn)
+        try await thread.settle()
+        #expect(!thread.showsJumpPill, "the pill showed with pi idle and nothing new")
+
+        await thread.publish(ThreadHarness.snapshot(count: 32, running: false, revision: 2, paragraphs: 20))
+        try await eventuallyOnMain("the jump pill to show for the new turn", poll: .milliseconds(150)) { thread.showsJumpPill }
+    }
+
     /// A code block scrolls sideways only when its longest line is wider than the column; one
     /// that fits draws its code with no scroll view, at the same place.
     @Test(arguments: [false, true]) func aCodeBlockScrollsSidewaysOnlyWhenItsLinesDoNotFit(wide: Bool) {
