@@ -42,37 +42,41 @@ The iOS client ships through TestFlight, following the Mac's channels:
 
 | Trigger | iOS lane | Status |
 | --- | --- | --- |
-| push to `nightly` | TestFlight, internal testing | done |
+| manual run on `nightly` (`gh workflow run release.yml --ref nightly -f testflight=true`) | TestFlight, internal testing | done |
 | tag `vX.Y.Z-beta.N` | TestFlight, external testing | later |
 | tag `vX.Y.Z` (the beta's commit re-tagged) | App Store | later |
 
-**How the nightly lane works:**
+**How the TestFlight lane works:**
 
-- **Job:** every push to `nightly` runs the `testflight` job in `.github/workflows/release.yml`
-  beside the Shepherd Nightly build. `scripts/release.py plan` decides it (`ios`), and
-  `Tests/Release` tests the rule.
+- **Trigger:** only a manual run uploads. Apple caps TestFlight uploads per day, and a build per
+  push to `nightly` hit it (ITMS-90382, 2026-09-25). Run
+  `gh workflow run release.yml --ref nightly -f testflight=true` (or Actions ▸ Release ▸ Run
+  workflow on `nightly` with the testflight box ticked). That run builds no Mac app. Pushes and a
+  plain manual run build Shepherd Nightly as before and upload nothing.
+- **Job:** the manual run's `testflight` job in `.github/workflows/release.yml`.
+  `scripts/release.py plan --testflight` decides it (`ios`), and `Tests/Release` tests the rule.
 - **Build:** the job runs on the `xcode-27` runner, because the target needs the iOS 27 SDK.
   It archives `Shepherd iOS` unsigned, and `release.py verify-ios` checks the app.
 - **Signing and upload:** `xcodebuild -exportArchive` with `App/iOS/ExportOptions.plist`,
   `-allowProvisioningUpdates`, and the App Store Connect key. It signs with the team's
   cloud-managed Apple Distribution certificate and uploads the build. No certificate is
   exported and no keychain is involved.
-- **Versions:** the build number is the workflow's run number, the same one as the Shepherd
-  Nightly build from that commit. The version is the project's `MARKETING_VERSION`. The Mac
+- **Versions:** the build number is the workflow's run number, a numbering the Shepherd Nightly
+  builds share, so it only grows. The version is the project's `MARKETING_VERSION`. The Mac
   nightly's `0.0.0-nightly.<stamp>` is not a valid iOS version.
-- **Missing secrets:** the job is skipped with a notice, and the Mac release is unaffected. It
-  never runs for pull requests, tags, or other branches.
+- **Missing secrets:** the job is skipped with a notice. It never runs for pushes, pull
+  requests, tags, or other branches.
 - **Expiry:** Apple processes each build (usually minutes). The Nightly group's testers get it
   automatically. Once it has processed, the Release workflow's `retire-testflight` job expires
   every older build, so only the newest stays installable (otherwise each lasts 90 days). The
-  first nightly push after that job landed also clears the builds already there. It has no
+  first TestFlight run after that job landed also clears the builds already there. It has no
   manual run: a dry run (`release.py retire-testflight --dry-run`) works only locally, with the
   App Store Connect key.
-- **Re-runs:** a re-run keeps the run number, so it keeps the build number. Once the Mac
-  nightly has published, re-running the whole workflow skips both builds. To retry only the
-  upload, use "Re-run failed jobs". If only the Mac job failed, also use "Re-run failed jobs":
-  re-running everything would upload the same build number again, which App Store Connect
-  refuses. Or push again.
+- **Re-runs:** a re-run keeps the run number, so it keeps the build number, which App Store
+  Connect refuses a second time. So re-running all jobs uploads nothing: start a new TestFlight
+  run instead. "Re-run failed jobs" reuses the first attempt's plan and retries the upload with
+  the same build number, which works only when the failed attempt never reached App Store
+  Connect (a runner, archive or signing failure).
 
 **One-time setup, in order:**
 
@@ -97,8 +101,8 @@ The iOS client ships through TestFlight, following the Mac's channels:
 6. In the app's TestFlight ▸ Internal Testing ▸ +, create a group (for example "Nightly"), check
    **Enable automatic distribution**, and add testers. Testers are App Store Connect users,
    up to 100.
-7. Testers install TestFlight with the same Apple Account and accept the invite. The next push
-   to `nightly` uploads a build.
+7. Testers install TestFlight with the same Apple Account and accept the invite. The next
+   TestFlight run uploads a build.
 
 The first upload is also the first real test of the unsigned-archive, cloud-signed-export path.
 The export step prints `DistributionSummary.plist` when there is one, which shows the signing
