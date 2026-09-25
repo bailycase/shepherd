@@ -1,108 +1,136 @@
 #!/bin/bash
+# Renders iOS screens from fixture data on a simulator, headless, and saves a screenshot of each.
+# See docs/ios/VALIDATION.md.
+#
+#   run-simulator.sh -d <udid> -o <dir> [options] <screen>...
+#
+#   -d <udid>        the simulator (create your own: xcrun simctl create "Shepherd <label>" …)
+#   -o <dir>         where the PNGs go: <screen>-<device>-<scheme>[-landscape][-sidebar][-<text size>].png
+#   -p <products>    Debug-iphonesimulator products of the 'Shepherd iOS' scheme; built here when absent
+#   -s <scheme>      light, dark, or both (default both)
+#   -r <orientation> portrait (default) or landscape
+#   -t <size>        a Dynamic Type category for simctl ui content_size (e.g. extra-extra-large)
+#   -n <label>       the device part of file names (default: the simulator's name)
+#   --sidebar        open the iPad sidebar over a portrait thread
+#   --list           print the screen names and exit
+#
+# Screens: any name in Tests/ShepherdIOSChecks/Fixtures (home, thread, question, newthread, …), or "all".
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-# Build the iOS scheme first. This separate fixture app never saves a real credential.
-products=${1:-/tmp/shepherd-ios-thread-build/Build/Products/Debug-iphonesimulator}
-device=${2:-95546A5A-7C50-42F4-A978-77C99A3CE6A4}
-fixture=$(mktemp -d /tmp/shepherd-thread-fixture.XXXXXX)
-trap 'rm -rf "$fixture"' EXIT
-mkdir "$fixture/ThreadFixture.app"
-cat > "$fixture/ThreadFixture.app/Info.plist" <<'PLIST'
+root=$PWD
+
+device="" out="" products="" schemes="both" orientation="portrait" text_size="" label="" sidebar="" list=""
+screens=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -d) device=$2; shift 2 ;;
+        -o) out=$2; shift 2 ;;
+        -p) products=$2; shift 2 ;;
+        -s) schemes=$2; shift 2 ;;
+        -r) orientation=$2; shift 2 ;;
+        -t) text_size=$2; shift 2 ;;
+        -n) label=$2; shift 2 ;;
+        --sidebar) sidebar=shown; shift ;;
+        --list) list=1; shift ;;
+        -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+        *) screens+=("$1"); shift ;;
+    esac
+done
+if [[ -n "$list" ]]; then
+    grep -ho 'FixtureScreen(name: "[^"]*"' Tests/ShepherdIOSChecks/Fixtures/*.swift | sed 's/.*"\(.*\)"/\1/'
+    exit 0
+fi
+[[ -n "$device" && -n "$out" && ${#screens[@]} -gt 0 ]] || { sed -n '2,20p' "$0"; exit 64; }
+if [[ "${screens[0]}" == all ]]; then
+    screens=($(grep -ho 'FixtureScreen(name: "[^"]*"' Tests/ShepherdIOSChecks/Fixtures/*.swift | sed 's/.*"\(.*\)"/\1/'))
+fi
+case "$schemes" in both) schemes=(light dark) ;; light|dark) schemes=("$schemes") ;; *) echo "bad scheme $schemes"; exit 64 ;; esac
+mkdir -p "$out"
+out=$(cd "$out" && pwd)
+
+name=$(xcrun simctl list devices -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next((x['name'] for v in d.values() for x in v if x['udid']=='$device'), ''))")
+[[ -n "$name" ]] || { echo "no simulator $device"; exit 66; }
+[[ -n "$label" ]] || label=$(echo "$name" | tr 'A-Z' 'a-z' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/shepherd-ios-fixture.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+if [[ -z "$products" ]]; then
+    derived=${SHEPHERD_IOS_DERIVED_DATA:-${TMPDIR:-/tmp}/shepherd-ios-fixture-dd}
+    echo "Building Shepherd iOS into $derived"
+    xcodebuild -project Shepherd.xcodeproj -scheme 'Shepherd iOS' -destination 'generic/platform=iOS Simulator' \
+        -derivedDataPath "$derived" -skipPackagePluginValidation -skipMacroValidation \
+        -onlyUsePackageVersionsFromResolvedFile CODE_SIGNING_ALLOWED=NO build -quiet
+    products="$derived/Build/Products/Debug-iphonesimulator"
+fi
+
+# The fixture app: the production views and stores, with the fixture entry point and hosts.
+app="$work/ShepherdFixture.app"
+mkdir "$app"
+cat > "$app/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.shepherd.thread-fixture</string>
-<key>CFBundleExecutable</key><string>ThreadFixture</string>
-<key>CFBundleName</key><string>Thread Fixture</string>
+<key>CFBundleIdentifier</key><string>com.shepherd.ios-fixture</string>
+<key>CFBundleExecutable</key><string>ShepherdFixture</string>
+<key>CFBundleName</key><string>Shepherd Fixture</string>
+<key>CFBundleShortVersionString</key><string>0.0.0</string>
 <key>CFBundleVersion</key><string>1</string>
 <key>CFBundlePackageType</key><string>APPL</string>
+<key>MinimumOSVersion</key><string>27.0</string>
 <key>UILaunchScreen</key><dict/>
 <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+<key>UIRequiresFullScreen</key><true/>
+<key>UIApplicationSceneManifest</key><dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+<key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+<key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 </dict></plist>
 PLIST
-xcrun swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
-    -target arm64-apple-ios27.0-simulator -swift-version 5 -I "$products" \
-    "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" \
-    App/iOS/HostConnection.swift App/iOS/MobileTokens.swift App/iOS/Thread*.swift App/iOS/FleetView.swift App/iOS/HostSettingsView.swift \
-    Tests/ShepherdIOSChecks/ThreadSimulatorFixture.swift \
-    -o "$fixture/ThreadFixture.app/ThreadFixture"
-python3 - "$device" "$fixture/ThreadFixture.app" <<'PY'
-import json, os, socket, subprocess, sys, threading, time
+sources=()
+while IFS= read -r file; do sources+=("$file"); done < <(find App/iOS -name '*.swift' ! -path 'App/iOS/App/ShepherdIOSApp.swift' | sort)
+xcrun --sdk iphonesimulator swiftc -sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)" -target arm64-apple-ios27.0-simulator -swift-version 5 \
+    -Onone -I "$products" \
+    "$products/ShepherdCore.o" "$products/ShepherdProtocol.o" "$products/ShepherdRemote.o" "$products/ShepherdUI.o" \
+    "${sources[@]}" Tests/ShepherdIOSChecks/ThreadSimulatorFixture.swift Tests/ShepherdIOSChecks/FixtureHost.swift \
+    Tests/ShepherdIOSChecks/Fixtures/*.swift \
+    -o "$app/ShepherdFixture"
+cp -R "$products/ShepherdUI_ShepherdUI.bundle" "$app/"
+codesign --force --sign - "$app" >/dev/null 2>&1
 
-device, app = sys.argv[1:]
-listener = socket.socket()
-listener.bind(('127.0.0.1', 0))
-listener.listen()
-listener.settimeout(20)
-errors, seen = [], []
+xcrun simctl bootstatus "$device" -b >/dev/null
+xcrun simctl install "$device" "$app"
+[[ -n "$text_size" ]] && xcrun simctl ui "$device" content_size "$text_size"
 
-def serve():
-    try:
-        conn, _ = listener.accept()
-        conn.settimeout(20)
-        with conn, conn.makefile('r') as stream:
-            for line in stream:
-                request = json.loads(line)
-                kind, rid = request['type'], request.get('id')
-                seen.append(kind)
-                if kind == 'hello':
-                    assert request['token'] == 'fixture-only'
-                    reply = dict(type='helloOk', id=rid, protocolVersion=1, capabilities=['native.thread.v1'])
-                elif kind == 'stateFetch':
-                    agents = [dict(id='fixture-agent', name='verify native thread', spaceID='fixture-space', tabID='fixture-tab', status='blocked')]
-                    if os.environ.get('FIXTURE_SCREEN') == 'fleet':
-                        agents += [dict(id='a%d' % i, name=n, spaceID='fixture-space', tabID='t%d' % i, status=st) for i, (n, st) in enumerate([
-                            ('Plan shepherd extensions', 'working'), ('Dock review pane', 'working'), ('Fix remote subagent deletion', 'idle'),
-                            ('Fix terminal output buffer', 'idle'), ('Fix agent deletion workflow', 'done'), ('Investigate SwiftUI live preview', 'idle')])]
-                    reply = dict(type='state', id=rid, state=dict(spaces=[dict(id='fixture-space', name='Shepherd', path='/tmp', order=0)], tabs=[], agents=agents,
-                                                                 automations=[dict(id='auto1', name='Merge PR #24 after CI', prompt='watch', cwd='/tmp', enabled=False)]))
-                elif kind == 'nativeThread':
-                    action = request['request']
-                    assert 'snapshot' in action, 'fixture unexpectedly mutated'
-                    # FIXTURE_DIALOG=none renders an idle thread with no sheet (composer and body visible).
-                    snap = dict(piSessionID='fixture-session', generation='fixture-generation', revision=1,
-                                running=os.environ.get('FIXTURE_DIALOG') != 'none',
-                                supportedActions=['send', 'abort', 'answer'], dialogsSupported=True,
-                                dialogs=[] if os.environ.get('FIXTURE_DIALOG') == 'none' else [{
-                                    'select': dict(id='q1', kind='select', title='Which suite first?', options=['ShepherdIOSChecks', 'ShepherdProtocolTests', 'Everything']),
-                                    'input': dict(id='q1', kind='input', title='Name the release tag', placeholder='v0.3.0-beta.1', unavailable=os.environ.get('FIXTURE_UNAVAILABLE')),
-                                }.get(os.environ.get('FIXTURE_DIALOG'), dict(id='q1', kind='confirm', title='Run the focused checks?', message='The host is waiting for your answer.'))],
-                                widgets=[dict(namespace='fixture.build', key='status', kind='status', title='Build status', text='Focused checks passed'),
-                                         dict(namespace='fixture.review', key='notes', kind='text', title='Review notes', text='Plain text only: **not bold**\nNo callbacks or controls.')],
-                                messages=[
-                                    dict(entryID='m1', role='user', blocks=[dict(kind='text', text='Check the reconnect fix.')], truncated=False),
-                                    dict(entryID='m2', role='assistant', blocks=[dict(kind='thinking', text='Inspect the pending connection before authenticating.'), dict(kind='text', text='Cancelled socket opens now close without sending hello. I traced `RemoteHostClient.open` and the **cancel path** returns before the handshake.\n\n```swift\nguard !cancelled else { socket.close(); return }\n```')], truncated=False),
-                                    dict(entryID='m3', role='toolResult', toolName='bash', status='complete', blocks=[dict(kind='text', text='PASS: stale hello blocked')], truncated=False),
-                                    dict(entryID='m4', role='toolResult', toolName='read', status='complete', isError=True, blocks=[dict(kind='text', text='ENOENT: Sources/ShepherdRemote/Missing.swift')], truncated=False),
-                                    dict(entryID='m5', role='user', blocks=[dict(kind='text', text='Run the focused checks and summarize.')], truncated=False),
-                                    dict(entryID='m6', role='assistant', blocks=[dict(kind='text', text='## Summary\n\nThree checks cover the change:\n\n- `RemoteConnectCheck` for cancelled handshakes\n- `ThreadStoreCheck` for stale sessions\n- `HostConnectionCheck` for reconnect backoff\n\nWant me to run them now?')], truncated=False),
-                                ], provisional=[], clipped=False)
-                    result = {'snapshot': {'value': snap}}
-                    if 'afterRevision' in action['snapshot']:
-                        result = {'unchanged': dict(piSessionID='fixture-session', generation='fixture-generation', revision=1)}
-                    reply = dict(type='nativeThread', id=rid, result=result)
-                else:
-                    raise AssertionError('Unexpected transport request: ' + kind)
-                conn.sendall((json.dumps(reply) + '\n').encode())
-    except Exception as error:
-        errors.append(str(error))
-
-thread = threading.Thread(target=serve)
-thread.start()
-try:
-    subprocess.run(['xcrun', 'simctl', 'install', device, app], check=True)
-    env = dict(os.environ, SIMCTL_CHILD_FIXTURE_PORT=str(listener.getsockname()[1]), SIMCTL_CHILD_FIXTURE_SCHEME=os.environ.get('FIXTURE_SCHEME', 'dark'), SIMCTL_CHILD_FIXTURE_SCREEN=os.environ.get('FIXTURE_SCREEN', 'thread'))
-    subprocess.run(['xcrun', 'simctl', 'launch', device, 'com.shepherd.thread-fixture'], env=env, check=True)
-    time.sleep(6)
-    subprocess.run(['xcrun', 'simctl', 'io', device, 'screenshot', os.environ.get('FIXTURE_SHOT', '/tmp/shepherd-ios-thread-fixture.png')], check=True)
-finally:
-    subprocess.run(['xcrun', 'simctl', 'terminate', device, 'com.shepherd.thread-fixture'], check=False)
-    listener.close()
-    thread.join(timeout=22)
-assert not errors, errors
-assert not any(kind in seen for kind in ['attach', 'input', 'resize']), seen
-if os.environ.get('FIXTURE_SCREEN') == 'fleet':
-    assert 'stateFetch' in seen, seen
-    print('PASS: simulator rendered the agents list over real TCP')
-else:
-    assert seen.count('nativeThread') >= 2, seen
-    print('PASS: simulator rendered native thread over real TCP and polled without terminal attachment')
-PY
+status=0
+for screen in "${screens[@]}"; do
+    for scheme in "${schemes[@]}"; do
+        suffix="$scheme"
+        [[ "$orientation" == landscape ]] && suffix+="-landscape"
+        [[ -n "$sidebar" ]] && suffix+="-sidebar"
+        [[ -n "$text_size" ]] && suffix+="-$text_size"
+        shot="$out/$screen-$label-$suffix.png"
+        log="$work/$screen-$scheme.log"
+        xcrun simctl ui "$device" appearance "$scheme"
+        SIMCTL_CHILD_FIXTURE_SCREEN="$screen" SIMCTL_CHILD_FIXTURE_SCHEME="$scheme" \
+        SIMCTL_CHILD_FIXTURE_ORIENTATION="$orientation" SIMCTL_CHILD_FIXTURE_SIDEBAR="$sidebar" \
+            xcrun simctl launch --console --terminate-running-process "$device" com.shepherd.ios-fixture >"$log" 2>&1 &
+        console=$!
+        for _ in $(seq 1 300); do
+            grep -q "^FIXTURE \(READY\|FAILED\)" "$log" 2>/dev/null && break
+            sleep 0.2
+        done
+        if grep -q "^FIXTURE READY" "$log" 2>/dev/null; then
+            xcrun simctl io "$device" screenshot "$shot" >/dev/null 2>&1
+            # The framebuffer stays portrait; turn a landscape shot the way it is seen.
+            [[ "$orientation" == landscape ]] && sips -r 270 "$shot" >/dev/null
+            echo "$shot"
+        else
+            echo "FAIL: $screen ($scheme) never became ready"; tail -20 "$log" 2>/dev/null; status=1
+        fi
+        if grep -q "^FIXTURE MUTATION" "$log" 2>/dev/null; then
+            echo "FAIL: $screen ($scheme) asked a host to change something:"; grep "^FIXTURE MUTATION" "$log"; status=1
+        fi
+        xcrun simctl terminate "$device" com.shepherd.ios-fixture >/dev/null 2>&1 || true
+        wait "$console" 2>/dev/null || true
+    done
+done
+[[ -n "$text_size" ]] && xcrun simctl ui "$device" content_size large
+exit $status

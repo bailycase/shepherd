@@ -1384,10 +1384,21 @@ the empty thread's path).
 
 ## iOS
 
-The iOS client (`App/iOS`, [docs/ios](docs/ios/README.md)) is deferred. It predates Night Watch,
-does not link ShepherdUI, and keeps its own `MobileTokens`. It will adopt ShepherdUI (which
-already builds for iOS 27: fonts follow Dynamic Type through `relativeTo:`, and icon buttons grow
-to `NW.Height.touch`, 44pt) later, with navigation instead of the sidebar.
+The iOS client (`App/iOS`, [docs/ios](docs/ios/README.md)) is built on Night Watch, with the
+phone and iPad boards as its authority. The same rules hold as on the Mac (tokens only, shared
+components first), with these differences for touch:
+
+- **Type:** the phone and iPad boards' ramp (rows at 15, prose at 16 with 1.5 line height, meta
+  at 12), following Dynamic Type through `relativeTo:`.
+- **Touch targets:** 44pt (`NW.Height.touch`). Controls keep their drawn size and grow their hit
+  area (`.nwTouchTarget(height:)`); rows people tap are at least 44pt tall.
+- **No hover:** `NWPlatform.showsHoverDetails` shows at rest what the Mac reveals on hover (a
+  message's time, a turn's footer, a code block's Copy, a comment's actions); a pressed row
+  shows the hover fill.
+- **Navigation:** iPhone has two tabs, Home and Settings, each a stack; iPad a split view with
+  the sidebar beside the thread in landscape and over it in portrait.
+- **App measures** come from `MobileLayout` (`App/iOS/Support`), as the Mac's come from
+  `AppLayout`.
 
 ## Verifying visuals
 
