@@ -444,8 +444,8 @@ The pure derivations live in ShepherdRemote:
 
 - **`NativeTurnPresentation`:** a reply's items, built once per turn change, in the order they
   happened: thinking (folded into one block at the start of each stretch of work between
-  prose), prose (Markdown parsed once), activity lines, the positions of subagent cards (a spawn
-  call with a card leaves the activity), notes, errors, and steers (`.steer`: a message the user
+  prose), prose (Markdown parsed once), activity lines, the subagent record lines (the spawn
+  calls they stand for leave the activity), notes, errors, and steers (`.steer`: a message the user
   steered in, where pi read it). It also carries the changes card, the countable tool calls, and
   the copy text.
 - **Turns** (`nativeTurns`): a user message the host marks `.steered` stays inside the reply
@@ -489,8 +489,8 @@ components ([DESIGN.md](../DESIGN.md) specifies their look):
   - the Send menu, and the keys that send while pi works (↩ per Settings, ⌘↩ the other)
   - the slash menu, fed from pi's command registry
   - the question panel and extension widgets
-- **`Subagents`** and **`SubagentPresentation`:** cards, the runs strip, and the ledger, with
-  child runs mapped onto the components' values.
+- **`Subagents`** and **`SubagentPresentation`:** the tray above the composer, with the store's
+  tray (`NativeSubagentTray`) mapped onto the components' values.
 - **`SubagentInspector`:** the inspector, hosted with the review in the right pane
   (`RightPaneSplit`).
 

@@ -65,57 +65,17 @@ struct AgentComponentTests {
         #expect(spans.map(\.0).joined() == text)
     }
 
-    @Test func aCardReadsAsNameRoleStateAndDetail() {
-        let run = NWSubagentRun(id: "d", name: "desktop", role: "worker", state: .running, detail: "edit ThreadView.swift")
-        #expect(run.accessibilityLabel == "desktop, worker, Running, edit ThreadView.swift")
-        let paused = NWSubagentRun(id: "p", name: "docs", state: .queued, stateLabel: "Paused", detail: "")
-        #expect(paused.accessibilityLabel == "docs, Paused")
-        let done = NWSubagentRun(id: "r", name: "reviewer", state: .done, detail: "2 spec deviations fixed", detailMeta: "26 tools · 12m")
-        #expect(done.accessibilityLabel == "reviewer, Done, 2 spec deviations fixed, 26 tools · 12m")
+    @Test func aTrayHeaderReadsAsItsTitleThenItsTally() {
+        let summary = NWSubagentTraySummary(title: "3 subagents", cells: [.running, .attention, .done],
+                                            tally: [.init("1 needs you", state: .attention), .init("1 running", state: .running), .init("1 done")])
+        #expect(summary.accessibilityLabel == "3 subagents, 1 needs you, 1 running, 1 done")
     }
 
-    @Test func aCardSpeaksItsProgressAsAValue() {
-        var run = NWSubagentRun(id: "d", name: "desktop", state: .running, detail: "edit ThreadView.swift")
-        #expect(run.accessibilityValue == "")
-        run.progress = 0.616
-        #expect(run.accessibilityValue == "Progress 62%")
-        run.progressLabel = "Context window used"
-        run.progress = 1.4
-        #expect(run.accessibilityValue == "Context window used 100%")
-    }
-
-    @Test(arguments: [
-        (AgentState.running, nil as String?, "worker, running"), (.attention, nil, "worker, needs you"),
-        (.queued, "Paused", "worker, paused"), (.failed, nil, "worker, failed"),
-    ])
-    func aStripSegmentNamesItsRunAndState(state: AgentState, label: String?, help: String) {
-        let cell = NWRunsStripCell(id: "w", name: "worker", state: state, stateLabel: label)
-        #expect(cell.help == help)
-        #expect(cell.accessibilityLabel == "\(help) — open")
-    }
-
-    /// The segments' click targets tile the strip edge to edge, each centred on its segment and
-    /// as tall as the row, so there is no dead gap between two runs.
-    @MainActor @Test(arguments: [1, 4, 12])
-    func stripTargetsTileTheSegmentsWithoutGaps(count: Int) throws {
-        let width = CGFloat(count) * 8 + CGFloat(count - 1) * NWStepStrip.spacing
-        let strip = CGRect(x: 120, y: 14.5, width: width, height: 3)
-        let targets = (0..<count).map { NWRunsStrip.target($0, strip: strip, height: 32, segmentWidth: 8) }
-        for (index, target) in targets.enumerated() {
-            let segment = CGRect(x: strip.minX + CGFloat(index) * (8 + NWStepStrip.spacing), y: strip.minY, width: 8, height: 3)
-            #expect(target.midX == segment.midX)
-            #expect(target.minY == 0 && target.height == 32)
-            if index > 0 { #expect(target.minX == targets[index - 1].maxX) }
-        }
-        #expect(try #require(targets.first).minX == strip.minX - NWStepStrip.spacing / 2)
-        #expect(try #require(targets.last).maxX == strip.maxX + NWStepStrip.spacing / 2)
-    }
-
-    @Test func aLedgerHeaderSpeaksItsDiffOnlyWhenThereIsOne() {
-        var ledger = NWRunLedgerSummary(title: "3 subagents", state: .done, status: "all done · 45m", added: 318, removed: 64, entries: [])
-        #expect(ledger.accessibilityLabel == "3 subagents, all done · 45m, 318 added, 64 removed")
-        ledger.added = 0
-        ledger.removed = 0
-        #expect(ledger.accessibilityLabel == "3 subagents, all done · 45m")
+    /// Only a run still going can be steered and stopped; one waiting on you counts as going.
+    @Test(arguments: [(AgentState.running, true), (.queued, true), (.attention, true), (.done, false), (.failed, false)])
+    func aTrayRowIsLiveUntilItsRunEnds(state: AgentState, live: Bool) {
+        let run = NWSubagentTrayRun(id: "w", name: "worker", state: state, line: .waiting(""))
+        #expect(run.isLive == live)
+        #expect(run.accessibilityLabel == "worker", "the app hands in the spoken label; the name stands in without one")
     }
 }
