@@ -79,6 +79,8 @@ final class ShepherdViewModel {
     /// idle run agent is starting until its run has settled (`AutomationRun.isLive`). Read with
     /// every adopted state.
     var openAutomationRuns: [AutomationID: AutomationRun] = [:]
+    /// Automations whose next run is being started: a second start refuses rather than racing it.
+    @ObservationIgnored var startingAutomations: Set<AutomationID> = []
     /// ⌘⇧S hides the sidebar. Persisted, like the other sidebar disclosure choices.
     var sidebarHidden = false {
         didSet { sidebarDefaults.set(sidebarHidden, forKey: "shepherd.sidebarHidden") }
