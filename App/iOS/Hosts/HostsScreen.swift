@@ -1,45 +1,36 @@
 import SwiftUI
 import ShepherdUI
 
-/// Settings ▸ Hosts (home track): every host with its connection, Retry, and Add host.
+/// Settings ▸ Hosts (home track): every host with its connection and what runs there, Retry while
+/// it is offline, and Add host. A card opens the host's form.
 struct HostsScreen: View {
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        List {
-            Section {
-                ForEach(hosts.hosts) { host in
-                    NavigationLink(value: MobileRoute.settings(.host(host.id))) {
-                        HStack(spacing: NW.Space.m) {
-                            VStack(alignment: .leading, spacing: NW.Space.xxs) {
-                                Text(host.name).font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
-                                Text("\(host.record.address):\(String(host.record.port))").font(.nw(.mono))
-                                    .foregroundStyle(Color.nw.textTertiary)
-                            }
-                            Spacer(minLength: 0)
-                            NWStatusPill(host.phase.isConnected ? .done : host.phase == .connecting ? .running : .failed,
-                                         label: host.phase.word)
-                        }
-                        .frame(minHeight: MobileLayout.twoLineRowHeight)
-                        .accessibilityElement(children: .combine)
-                    }
-                    .swipeActions {
-                        if !host.phase.isConnected { Button("Retry") { hosts.retry(host.id) } }
-                    }
+        let cards = HomeFeed.of(hosts).model.hosts
+        ScrollView {
+            VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+                if cards.isEmpty {
+                    Text("No hosts yet. Add the Macs you run Shepherd on.")
+                        .nwText(.caption).foregroundStyle(Color.nw.textSecondary)
+                        .padding(.horizontal, NW.Space.xs)
                 }
-            } footer: {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: MobileLayout.hostCardMinWidth), spacing: MobileLayout.blockSpacing)],
+                          alignment: .leading, spacing: MobileLayout.blockSpacing) {
+                    ForEach(cards) { card in HostCardView(card: card, presentsForm: false) }
+                }
+                Button("Add host", systemImage: "plus") { navigator.open(.settings(.host(nil))) }
+                    .buttonStyle(.nw(.secondary, size: .l))
                 Text("Trusted LAN or VPN only: the connection has no TLS.")
-                    .font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                    .nwText(.caption).foregroundStyle(Color.nw.textTertiary)
+                    .padding(.horizontal, NW.Space.xs)
             }
-            Section {
-                NavigationLink(value: MobileRoute.settings(.host(nil))) {
-                    Label("Add host", systemImage: "plus")
-                }
-            }
+            .padding(.horizontal, MobileLayout.gutter)
+            .padding(.bottom, MobileLayout.sectionSpacing)
         }
-        .font(.nw(.ui))
-        .scrollContentBackground(.hidden)
         .background(Color.nw.bgWindow)
+        .refreshable { hosts.retryAll() }
         .navigationTitle("Hosts")
         .navigationBarTitleDisplayMode(.inline)
     }

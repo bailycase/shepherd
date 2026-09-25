@@ -64,7 +64,7 @@ Routes today:
 | Route | Shows |
 | --- | --- |
 | `.thread(AgentRef)` | one agent's thread |
-| `.home(.needsYou / .automations / .more)` | Home's destinations |
+| `.home(.needsYou / .automations / .more / .recents)` | Home's destinations, and every recent thread |
 | `.newThread(.compose(host: UUID?))` | New thread (presented modally) |
 | `.subagents(.list(AgentRef) / .run(AgentRef, runID:))` | a thread's runs, one run |
 | `.review(.changes(AgentRef, file: String?) / .diff(AgentRef, path:))` | changes, one file's diff |

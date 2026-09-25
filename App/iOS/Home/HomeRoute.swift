@@ -9,21 +9,19 @@ enum HomeRoute: Hashable, Codable {
     case automations
     /// Hosts and everything else (MobileMore board).
     case more
+    /// Every recent thread, past Home's first few.
+    case recents
 }
 
 struct HomeDestination: View {
     let route: HomeRoute
 
     var body: some View {
-        let (title, message): (String, String) = switch route {
-        case .needsYou: ("Needs you", "Questions and blocked threads from every host.")
-        case .automations: ("Automations", "Each host's automations and their last runs.")
-        case .more: ("More", "Hosts, and everything else.")
+        switch route {
+        case .needsYou: NeedsYouScreen()
+        case .automations: AutomationsScreen()
+        case .more: MoreScreen()
+        case .recents: RecentsScreen()
         }
-        NWEmptyState(Text(title), message: message)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.nw.bgWindow)
-            .navigationTitle(title)
-            .navigationBarTitleDisplayMode(.inline)
     }
 }
