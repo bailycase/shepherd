@@ -4565,7 +4565,7 @@ beside up-down chevrons.
 - **Which host:** with several hosts, a first card, Host, whose menu lists them ("horizon ·
   offline"); the three pages share the choice. With one host there is no card.
 - **Defaults:** New threads: Model (a menu of "pi's default", then the host's catalog, keeping the
-  current model when the catalog lacks it; mono) and Thinking (Off … Xhigh). While pi is working:
+  current model when the catalog lacks it; mono) and Thinking (Off … Max). While pi is working:
   When a turn ends, send the queue (One per turn, All at once).
 - **Worktrees:** New worktrees: Base branch (Remote default, Current branch) and Fetch before
   creating. Finalize: Commit remaining work, Generate PR descriptions, Delete local branch, Merge PR

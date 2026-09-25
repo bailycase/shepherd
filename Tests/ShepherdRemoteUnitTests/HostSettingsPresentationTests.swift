@@ -35,6 +35,7 @@ struct HostSettingsPresentationTests {
 
     @Test func optionsReadAsTheMacNamesThem() {
         #expect(HostSettingsPresentation.title(ThinkingLevel.medium) == "Medium")
+        #expect(HostSettingsPresentation.title(ThinkingLevel.xhigh) == "Extra high")
         #expect(HostSettingsPresentation.title(NativeQueueMode.oneAtATime) == "One per turn")
         #expect(HostSettingsPresentation.title(HostSettings.WorktreeBase.fresh) == "Remote default")
         #expect(HostSettingsPresentation.title(HostSettings.MergeMethod.squash) == "Squash")
