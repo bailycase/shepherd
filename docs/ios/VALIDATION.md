@@ -67,6 +67,7 @@ ipad=$(xcrun simctl create "Shepherd shots iPad" com.apple.CoreSimulator.SimDevi
 bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$iphone" -o /tmp/shots home thread question
 bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$ipad" -o /tmp/shots -r landscape -s dark thread
 bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$ipad" -o /tmp/shots --sidebar thread
+bash Tests/ShepherdIOSChecks/run-simulator.sh -w -d "$ipad" -o /tmp/shots -r landscape windows-split windows-palette
 bash Tests/ShepherdIOSChecks/run-simulator.sh -d "$iphone" -o /tmp/shots -t accessibility-extra-large all
 bash Tests/ShepherdIOSChecks/run-simulator.sh --list
 
@@ -83,6 +84,7 @@ xcrun simctl shutdown "$iphone" "$ipad" && xcrun simctl delete "$iphone" "$ipad"
 | `-t <category>` | a Dynamic Type size (`simctl ui content_size`), reset to large afterwards |
 | `-n <label>` | the device part of file names (default: the simulator's name) |
 | `--sidebar` | opens the iPad sidebar over a portrait thread |
+| `-w` | an app that supports multiple windows, as the shipped app does (the `windows-*` screens) |
 | `--list` | prints every screen name |
 | screens | names from `Tests/ShepherdIOSChecks/Fixtures`, or `all` |
 
@@ -102,6 +104,12 @@ received (`FIXTURE REQUESTS`). Attaching changes a host's PTY size, so the termi
 (`terminal`, `terminal-keys`, `terminal-split`, `terminal-maximized`, `terminal-empty`,
 `terminal-phone`, `terminal-phone-keys`) never attach: their sessions draw canned screens
 (`MobileTerminals.cannedScreens`), and the host answers only the read `terminals` query.
+
+**Windows.** Without `-w` the fixture app is single-window, as the screens of the other tracks
+expect. With it, a screen can open more windows (CONTRACTS.md › Fixture screens): `windows-split`
+and `windows-sent` draw two windows side by side as Split View does, and `windows-new` opens a
+real second window, which the simulator's full-screen mode shows over the first. Windows the
+system restores from an earlier run are closed before a screen starts.
 
 **Adding a screen:** see [CONTRACTS.md › Fixture screens](CONTRACTS.md#fixture-screens).
 

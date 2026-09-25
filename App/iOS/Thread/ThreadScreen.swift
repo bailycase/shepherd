@@ -10,8 +10,10 @@ import ShepherdRemote
 ///
 /// Hooks other tracks fill: `SubagentCards` (Subagents/) where a turn spawned children,
 /// `SubagentHooks.list` for the footer's "N subagents", `ReviewHooks.open` for the changes card
-/// and edit lines, `AgentActionsMenu` (Search/) in the options menu, and the terminal
-/// (Terminal/): `threadTerminal` under the thread, `TerminalToolbarButton`, `TerminalMenuItems`.
+/// and edit lines, `AgentActionsMenu` (Search/) in the options menu, the windows' hooks
+/// (Windows/): Open in new window, a turn's Send to… and drag, and text dropped on the composer,
+/// and the terminal (Terminal/): `threadTerminal` under the thread, `TerminalToolbarButton`,
+/// `TerminalMenuItems`.
 struct ThreadScreen: View {
     let ref: AgentRef
     @Environment(MobileHosts.self) private var hosts
@@ -42,6 +44,7 @@ struct ThreadScreen: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if agent != nil {
                     ThreadComposer(ref: ref)
+                        .composerTextDrop(ref)
                         .environment(\.composerMaxHeight, height > 0 ? height * MobileLayout.composerShare : .infinity)
                         .frame(maxWidth: sizeClass == .regular ? MobileLayout.threadMaxWidth + 2 * MobileLayout.gutter : .infinity)
                         .frame(maxWidth: .infinity)
@@ -77,12 +80,14 @@ struct ThreadScreen: View {
             .onAppear { visible = true }
             .onDisappear { visible = false }
             .task(id: key) {
-                guard key.active, key.session != nil, let client = host?.connectedClient else {
-                    if key.session == nil { store.stop() } else { store.suspend() }
+                // Through the thread's viewers: the same thread may be on screen in another window.
+                let viewers = threads.viewers(for: ref)
+                guard key.active, let session = key.session, let client = host?.connectedClient else {
+                    viewers.rest(detached: key.session == nil)
                     return
                 }
                 let agentID = ref.agent
-                await store.run { request in try await client.nativeThread(agentID: agentID, request: request) }
+                await viewers.run(connection: session) { request in try await client.nativeThread(agentID: agentID, request: request) }
             }
     }
 
@@ -140,6 +145,7 @@ private struct ThreadTranscript: View {
                             // "Working…" under it.
                             turn(row, running: running, working: row.live && row.presentation?.endsInLiveActivity != true ? working : nil)
                         }
+                        .turnTransfer(row, thread: ref)
                         .id(row.id)
                     }
                     if let working, liveRow == nil { NWWorkingRow(working) }
@@ -311,8 +317,8 @@ private struct ThreadStopButton: View {
     }
 }
 
-/// The thread's options: refresh, subagents, the terminal (Terminal/), and the agent actions
-/// (Search/).
+/// The thread's options: refresh, subagents, the terminal (Terminal/), Open in new window
+/// (Windows/), and the agent actions (Search/).
 private struct ThreadOptionsMenu: View {
     let ref: AgentRef
     let store: NativeThreadStore
@@ -327,6 +333,7 @@ private struct ThreadOptionsMenu: View {
                 Button("Subagents", systemImage: "person.2") { navigator.open(SubagentHooks.list(thread: ref)) }
             }
             TerminalMenuItems(thread: ref)
+            OpenInNewWindowButton(thread: ref)
             AgentActionsMenu(thread: ref)
         } label: {
             Label("Thread options", systemImage: "ellipsis")

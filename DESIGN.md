@@ -1507,6 +1507,14 @@ components first), with these differences for touch:
   shows the hover fill.
 - **Navigation:** iPhone has two tabs, Home and Settings, each a stack; iPad a split view with
   the sidebar beside the thread in landscape and over it in portrait.
+- **Windows (iPad; iPadSplitView, iPadPalette boards):** each window is a whole Shepherd, with
+  its own sidebar and thread, over the same hosts and drafts. "Open in new window"
+  (`macwindow.badge.plus`) sits in a thread's options menu and in the sidebar's and the palette's
+  row menus, and beside Open in the palette's preview as a secondary button. A turn's long-press
+  menu has Copy and "Send to", a submenu of the threads other windows show (the thread's name
+  over its host), which puts the text in that thread's composer after a blank line and brings
+  its window forward; a turn also drags out as text. A composer with text over it wears the
+  focus ring. iPhone shows none of this: it has one window.
 - **App measures** come from `MobileLayout` (`App/iOS/Support`), as the Mac's come from
   `AppLayout`.
 - **Terminal** (iPadTerminal board; `App/iOS/Terminal`): on iPad the Mac's panel under the thread

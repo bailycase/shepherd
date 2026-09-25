@@ -7,6 +7,18 @@ import ShepherdUI
 /// `PadOverview`. Other screens are pushed over the detail.
 struct PadShell: View {
     @Environment(MobileNavigator.self) private var navigator
+    /// Until when the columns the layout calls for are held against the split view's own.
+    @State private var settling: ContinuousClock.Instant?
+
+    /// How long the split view may still write its own idea of the columns after a change of
+    /// style or its first layout (a new window opened on a thread).
+    private static let settleTime: Duration = .milliseconds(600)
+
+    /// The columns the layout calls for: in portrait the thread alone, but with no thread chosen
+    /// the sidebar stays out (the overview alone offers no way to one); in landscape both.
+    private static func columns(_ navigator: MobileNavigator) -> NavigationSplitViewVisibility {
+        navigator.padSidebarOverlays && navigator.padSelection != nil ? .detailOnly : .all
+    }
 
     var body: some View {
         @Bindable var navigator = navigator
@@ -25,10 +37,24 @@ struct PadShell: View {
             .navigationSplitViewStyle(PadSplitStyle(portrait: portrait))
             .onChange(of: portrait, initial: true) { _, portrait in
                 navigator.padSidebarOverlays = portrait
-                // After the split view has taken its new style: while it changes, it writes its
-                // own idea of the columns back through the binding. With no thread chosen, the
-                // sidebar stays out in portrait too: the overview alone offers no way to one.
-                Task { @MainActor in navigator.padColumns = portrait && navigator.padSelection != nil ? .detailOnly : .all }
+                // While the split view takes its new style, or lays out for the first time (a new
+                // window opened on a thread), it writes its own idea of the columns back through
+                // the binding, before or after this: set them now, again once it has changed,
+                // and put them back over any write-back for a moment.
+                settling = .now + Self.settleTime
+                let columns = Self.columns(navigator)
+                if navigator.padColumns != columns { navigator.padColumns = columns }
+                Task { @MainActor in navigator.padColumns = Self.columns(navigator) }
+            }
+            .onChange(of: navigator.padColumns) { _, current in
+                guard let settling else { return }
+                guard ContinuousClock.now < settling else {
+                    self.settling = nil
+                    return
+                }
+                if current != Self.columns(navigator) {
+                    Task { @MainActor in navigator.padColumns = Self.columns(navigator) }
+                }
             }
         }
     }
