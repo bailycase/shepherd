@@ -71,7 +71,7 @@ struct WorktreesScreen: View {
         let store = SettingsStore.of(hosts)
         HostSettingsPage(store: store, page: .worktrees,
                          explanation: "How a host creates worktrees, and what Finalize does when a thread's work is done.") { settings, host in
-            let post = { (change: HostSettingChange) in store.hostSettings.post(change, on: host) }
+            let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("New worktrees") {
                 NWListCard {
                     SettingsControlRow("Base branch",
@@ -118,7 +118,7 @@ struct PiExtensionsScreen: View {
         let store = SettingsStore.of(hosts)
         HostSettingsPage(store: store, page: .pi,
                          explanation: "What pi loads on a host: the extensions Shepherd bundles, the ones installed with pi, and their updates.") { settings, host in
-            let post = { (change: HostSettingChange) in store.hostSettings.post(change, on: host) }
+            let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("Bundled with Shepherd") {
                 NWListCard {
                     ForEach(settings.bundledExtensions) { bundled in

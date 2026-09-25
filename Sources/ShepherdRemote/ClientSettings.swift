@@ -102,10 +102,12 @@ public final class ClientHostSettings {
     }
 
     /// Shows `change` at once and sends it without waiting for the host: a control's setter, so
-    /// a switch never springs back while the host answers.
-    public func post(_ change: HostSettingChange, on host: SettingsHost) {
-        guard let client = host.client, show(change, on: host) else { return }
-        Task { await send(change, through: client, to: host) }
+    /// a switch never springs back while the host answers. Returns the send, nil when nothing
+    /// was sent.
+    @discardableResult
+    public func post(_ change: HostSettingChange, on host: SettingsHost) -> Task<Void, Never>? {
+        guard let client = host.client, show(change, on: host) else { return nil }
+        return Task { await send(change, through: client, to: host) }
     }
 
     public func dismissProblem() {
@@ -454,10 +456,11 @@ public final class ClientSuggestions {
     }
 
     /// Changes the experiment on every host that serves it, showing it at once and sending it
-    /// without waiting: a control's setter.
-    public func post(_ hosts: [SettingsHost], _ change: (inout SuggestedInstructionsSettings) -> Void) {
+    /// without waiting: a control's setter. Returns the sends.
+    @discardableResult
+    public func post(_ hosts: [SettingsHost], _ change: (inout SuggestedInstructionsSettings) -> Void) -> Task<Void, Never> {
         let requests = show(hosts, change)
-        Task { await run(requests) }
+        return Task { await run(requests) }
     }
 
     /// Adds a waiting line to its file on its host (`line` edited first, `file` retargeted).
