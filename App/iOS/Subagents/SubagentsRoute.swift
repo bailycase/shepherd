@@ -20,23 +20,20 @@ enum SubagentHooks {
     static func run(thread: AgentRef, runID: String) -> MobileRoute { .subagents(.run(thread, runID: runID)) }
 }
 
+/// iPhone pushes the list (MobileSubagents) and a run (MobileSubagent); iPad keeps the thread and
+/// opens either in the inspector beside it (iPadSubagents, iPadSteer).
 struct SubagentsDestination: View {
     let route: SubagentsRoute
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
-        switch route {
-        case .list:
-            NWEmptyState(Text("Subagents"), message: "This thread's runs, from this turn and earlier ones.")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.nw.bgWindow)
-                .navigationTitle("Subagents")
-                .navigationBarTitleDisplayMode(.inline)
-        case .run(_, let runID):
-            NWEmptyState(Text("Subagent"), message: "Run \(runID): its goal, transcript and steer field.")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.nw.bgWindow)
-                .navigationTitle("Subagent")
-                .navigationBarTitleDisplayMode(.inline)
+        if navigator.layout == .pad {
+            PadSubagentsScreen(route: route)
+        } else {
+            switch route {
+            case .list(let ref): SubagentListScreen(ref: ref)
+            case .run(let ref, let runID): SubagentRunScreen(ref: ref, runID: runID)
+            }
         }
     }
 }
