@@ -155,8 +155,9 @@ keep the version for real breaks.
   snapshots.
 - **iPad:** a split view. Landscape shows the sidebar (New thread, Needs you, Recents, and a
   footer with the hosts and Settings) beside the selected thread; in portrait the thread takes
-  the width and the sidebar slides over it. With no thread selected the detail is the overview:
-  Needs you, Running now and Finished.
+  the width and the sidebar slides over it. Portrait is the window's shape, never what the
+  keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
+  overview: Needs you, Running now and Finished.
 - **Thread (`ThreadScreen`):** the title with its status line ("Idle · 17 turns · 42k", or the
   running turn's clock; on iPad a status pill with the counters trailing), Stop while the agent
   runs, user bubbles with their times, thinking, prose, work groups folded into one line with
