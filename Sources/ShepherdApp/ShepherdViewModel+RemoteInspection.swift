@@ -16,6 +16,9 @@ extension ShepherdViewModel {
                     do { completion(.success(try await self.handleRemoteWorktree(agentID, query: query))) }
                     catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }
                     return
+                case .commitInfo, .commitMessage, .commit:
+                    completion(.failure(RemoteCreateAgentError("Commit from review is not served by this host yet")))
+                    return
                 default: break
                 }
                 guard let agent = self.server.state.agents.first(where: { $0.id == agentID }),
@@ -27,7 +30,8 @@ extension ShepherdViewModel {
                 do {
                     let result: RemoteAgentResult
                     switch query {
-                    case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup, .worktreeCommitCount, .worktreeDescription:
+                    case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus, .worktreeSetup, .worktreeCommitCount, .worktreeDescription,
+                         .commitInfo, .commitMessage, .commit:
                         return
                     case .children:
                         result = .children(self.children(of: agentID))
