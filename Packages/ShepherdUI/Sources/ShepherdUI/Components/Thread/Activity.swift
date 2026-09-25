@@ -87,7 +87,7 @@ public struct NWActivityLine: View {
                     .font(.nw(.ui, weight: .regular))
                     .foregroundStyle(failed ? nw.failed : nw.textSecondary)
                     .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                    .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: typeSize.isAccessibilitySize)
+                    .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
                     .layoutPriority(1)
                     .nwContentTransition(.numeric())
                 if !meta.isEmpty {
@@ -124,7 +124,7 @@ public struct NWActivityLine: View {
             ProgressView().progressViewStyle(.nwSpinner(size: NWThreadMetrics.activityIcon))
             Text(label).font(.nw(.ui, weight: .regular)).foregroundStyle(nw.textPrimary)
                 .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-                .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: typeSize.isAccessibilitySize)
+                .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
                 .layoutPriority(1)
             if !meta.isEmpty {
                 Text(meta).font(.nwMono(11)).foregroundStyle(nw.textTertiary).lineLimit(1).truncationMode(.tail)
