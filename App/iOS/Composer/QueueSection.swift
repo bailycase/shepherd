@@ -81,7 +81,7 @@ struct QueueSection: View {
             }
         }
         if store.queueMode != nil || store.supports("queue") {
-            Picker(selection: Binding(get: { store.queueMode ?? .oneAtATime },
+            Picker(selection: Binding(get: { store.queueMode ?? .all },
                                       set: { mode in Task { await store.setQueueMode(mode) } })) {
                 ForEach(NativeQueueStack.modes, id: \.mode) { choice in
                     Text(choice.title).tag(choice.mode)
