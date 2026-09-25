@@ -1603,7 +1603,8 @@ or the iPad sidebar's.
   footer is Edit and Run now (with Open run while the finished run's thread is there; running
   again replaces it), or, while a run works or asks you, Stop (confirmed: it deletes the run's
   thread) and Open run.
-  The ••• menu has Open Run, Edit and Delete Automation (confirmed).
+  The ••• menu has Open Run, Edit and Delete Automation (confirmed). Each confirmation rises
+  from the control that asked (Stop, or the ••• menu), never from the middle of the screen.
 - **Form:** Name, Prompt, Where it runs (Host when adding and more than one can take it, then
   Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new
   automation keeps one id for the life of the form, so saving again after an answer that never
