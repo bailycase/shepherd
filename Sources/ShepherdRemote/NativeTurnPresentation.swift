@@ -35,8 +35,9 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         case thinking(id: String, text: String, seconds: Double?, live: Bool, since: Double?)
         /// `openFence`: the text ends inside a fence still open (the block a reply is writing).
         case prose(id: String, text: String, blocks: [NativeMarkdownBlock], openFence: Bool)
-        /// A stretch of tool work: its lines, folded into one summary line once there are two.
-        case work(NativeWorkGroup)
+        /// Consecutive activity lines, one per burst of work (NWThread: "one quiet line per
+        /// burst"), between prose, notes, errors, steers and cards. `id` follows the first burst.
+        case activity(id: String, bursts: [NativeActivityBurst])
         /// Subagent cards at a spawn position: `callIDs` look up the placement; `all` is a
         /// folded group (every run of the turn in one stack).
         case subagents(id: String, callIDs: [String], all: Bool)
@@ -50,8 +51,7 @@ public struct NativeTurnPresentation: Equatable, Sendable {
         public var id: String {
             switch self {
             case .thinking(let id, _, _, _, _), .prose(let id, _, _, _), .subagents(let id, _, _), .note(let id, _), .error(let id, _, _, _),
-                 .steer(let id, _, _, _): id
-            case .work(let group): "work:" + group.id
+                 .steer(let id, _, _, _), .activity(let id, _): id
             }
         }
     }
@@ -65,30 +65,23 @@ public struct NativeTurnPresentation: Equatable, Sendable {
     public var copyText: String
     /// When the turn's last message landed (ms).
     public var endedAt: Double?
+    /// The live turn has nothing moving (LiveText): no call running, no thinking streaming, and
+    /// no reply being written. pi is between tools, so the thread ends in "Thinking…".
+    public var betweenTools: Bool
 
-    public init(items: [Item], changes: NativeTurnChanges?, toolCalls: Int, copyText: String, endedAt: Double?) {
+    public init(items: [Item], changes: NativeTurnChanges?, toolCalls: Int, copyText: String, endedAt: Double?,
+                betweenTools: Bool = false) {
         self.items = items
         self.changes = changes
         self.toolCalls = toolCalls
         self.copyText = copyText
         self.endedAt = endedAt
-    }
-
-    /// The last item is live thinking (the view shows it in place of the working row).
-    public var endsInLiveThinking: Bool {
-        if case .thinking(_, _, _, true, _)? = items.last { return true }
-        return false
-    }
-
-    /// The last item is work with a running call.
-    public var endsInLiveActivity: Bool {
-        if case .work(let group)? = items.last { return group.isLive }
-        return false
+        self.betweenTools = betweenTools
     }
 }
 
-/// Builds a turn's presentation. Consecutive calls of one kind merge into activity lines, and a
-/// stretch's lines form one work group; prose and cards split them. Thinking between prose blocks folds into one "Thought for Ns" at the
+/// Builds a turn's presentation. Consecutive calls of one kind merge into activity lines, one per
+/// burst; prose and cards split them. Thinking between prose blocks folds into one "Thought for Ns" at the
 /// start of its stretch, so a thinking model's per-call reasoning does not break every line
 /// in two; the block still streaming stays last, live. `call` builds a call from its message
 /// (the store passes a memoised one).
@@ -145,6 +138,15 @@ public func nativeTurnPresentation(
     // The block still streaming is the turn's live thinking; everything else folds.
     var liveThinking: Raw?
     if live, case .thinking? = raw.last { liveThinking = raw.removeLast() }
+    // Only one thing moves at a time: a running call (even one a card or the tray stands for),
+    // thinking, or the reply being written. With none of them, pi is between tools.
+    let callRunning = messages.contains { message in
+        (message.toolName != nil || message.role == "toolResult") && message.isError != true
+            && (message.status == "running" || message.status == "streaming")
+    }
+    var writing = false
+    if case .prose? = raw.last { writing = true }
+    let betweenTools = live && liveThinking == nil && !callRunning && !writing
 
     var items: [NativeTurnPresentation.Item] = []
     var calls: [NativeActivityCall] = []
@@ -165,8 +167,8 @@ public func nativeTurnPresentation(
     var stretchItems: [NativeTurnPresentation.Item] = []
 
     func flushCalls() {
-        guard !stretchCalls.isEmpty else { return }
-        if let group = nativeWorkGroup(stretchCalls) { stretchItems.append(.work(group)) }
+        let bursts = nativeActivityBursts(stretchCalls)
+        if let first = bursts.first { stretchItems.append(.activity(id: "activity:" + first.id, bursts: bursts)) }
         stretchCalls = []
     }
     func flushStretch() {
@@ -243,7 +245,8 @@ public func nativeTurnPresentation(
         items[items.count - 1] = .error(id: id, text: text, count: count, final: true)
     }
     return NativeTurnPresentation(items: items, changes: live ? nil : nativeTurnChanges(calls), toolCalls: toolCalls,
-                                  copyText: copy.joined(separator: "\n\n"), endedAt: messages.compactMap(\.timestamp).max())
+                                  copyText: copy.joined(separator: "\n\n"), endedAt: messages.compactMap(\.timestamp).max(),
+                                  betweenTools: betweenTools)
 }
 
 /// "Model overloaded — the turn stopped after 6 tool calls." for a turn that ended on an error.
