@@ -20,7 +20,7 @@ import Testing
 @Suite("Idle cost", .mainActorExclusive)
 @MainActor
 struct IdleCostTests {
-    static let clockKeys = ["ui.spinnerFrame", "ui.glowFrame", "ui.shimmerFrame"]
+    static let clockKeys = ["ui.spinnerFrame", "ui.glowFrame", "ui.pulseFrame"]
 
     /// Clock frames drawn over `seconds` of run loop.
     static func clockFrames(over seconds: Double = 1) async -> Int {
@@ -38,6 +38,12 @@ struct IdleCostTests {
     static func spinners(in root: NSView) -> (all: Int, turning: Int) {
         let all = views(NWSpinnerLayerView.self, in: root)
         return (all.count, all.filter { $0.arc.animation(forKey: NWLayerMotion.spinKey) != nil }.count)
+    }
+
+    /// Live text's shimmer bands in `root`, and how many of them move.
+    static func shimmers(in root: NSView) -> (all: Int, moving: Int) {
+        let all = views(NWShimmerLayerView.self, in: root)
+        return (all.count, all.filter { $0.band.animation(forKey: NWLayerMotion.shimmerKey) != nil }.count)
     }
 
     static func glows(in root: NSView) -> (all: Int, pulsing: Int) {
@@ -75,15 +81,18 @@ struct IdleCostTests {
     }
 
     /// Layouts the workspace keeps mounted behind the visible one draw no clock frames, and
-    /// nothing in them turns. Each hidden thread has a turn running (stub pi `slow`, held at its
-    /// first pause), so it keeps a working row whose spinner must rest while its layout is hidden.
+    /// nothing in them moves. Each hidden thread has a turn running (stub pi `slow`, held at its
+    /// second pause, mid-tool), so it keeps a live line whose shimmer must rest while its layout
+    /// is hidden.
     @Test func hiddenLayoutsDrawNoClockFrames() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let space = Fixture.space(path: app.dir.path)
         var agents: [AgentFixture] = []
         for index in 0..<4 { agents.append(try await app.liveAgent("a\(index)", in: space, order: index)) }
-        // Every stub pi runs in this directory, so these release every held turn at the end.
+        // Every stub pi runs in this directory: past its first pause (mid-reply, where nothing but
+        // the text moves) at once, and every held turn released at the end.
+        FileManager.default.createFile(atPath: app.dir.appendingPathComponent("continue-1").path, contents: nil)
         defer {
             for name in ["continue-1", "continue-2"] {
                 FileManager.default.createFile(atPath: app.dir.appendingPathComponent(name).path, contents: nil)
@@ -91,7 +100,7 @@ struct IdleCostTests {
         }
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: agents))
         vm.selectAgent(agents[0].agent.id)
-        // Reduce Motion pinned off: the hidden spinners must be ones that would otherwise turn.
+        // Reduce Motion pinned off: the hidden shimmers must be ones that would otherwise move.
         let window = OffscreenWindow(size: CGSize(width: 1000, height: 700), dark: true,
                                      WorkspaceView(vm: vm).environment(\._accessibilityReduceMotion, false))
         defer { window.close() }
@@ -102,9 +111,9 @@ struct IdleCostTests {
             let store = vm.threadStores.store(for: agent.agent.id)
             try await eventuallyOnMain("\(agent.agent.name)'s thread to load", timeout: .seconds(30)) { store.ready }
             await store.send(text: "slow")
-            try await eventuallyOnMain("\(agent.agent.name)'s turn to hold at its first pause", timeout: .seconds(30)) {
+            try await eventuallyOnMain("\(agent.agent.name)'s turn to hold mid-tool", timeout: .seconds(30)) {
                 ListPerf.settle(window)
-                return store.running && Self.spinners(in: window.host).turning >= 1
+                return store.running && Self.shimmers(in: window.host).moving >= 1
             }
         }
         vm.selectAgent(agents[0].agent.id)
@@ -114,52 +123,86 @@ struct IdleCostTests {
         let frames = await Self.clockFrames()
 
         #expect(frames == 0, "\(frames) clock frames")
-        let spinners = Self.spinners(in: window.host)
-        #expect(spinners.all >= agents.count - 1 && spinners.turning == 0, "\(spinners)")
+        let shimmers = Self.shimmers(in: window.host)
+        #expect(shimmers.all >= agents.count - 1 && shimmers.moving == 0, "\(shimmers)")
+        #expect(Self.spinners(in: window.host).all == 0, "nothing in a thread spins")
     }
 
-    /// A paused spinner resumes as its layout comes back on screen.
-    @Test func aLayoutShownAgainResumesItsSpinner() async throws {
-        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(2) + [ThreadFixture.user("u", "Go")],
-                                                       provisional: [ThreadFixture.streaming("Working on it.")], running: true),
+    /// A paused shimmer moves again as its layout comes back on screen. Between tools the
+    /// thread's live line is "Thinking…".
+    @Test func aLayoutShownAgainResumesItsShimmer() async throws {
+        let thread = FakeThread(ThreadFixture.snapshot(ThreadFixture.history(2) + [ThreadFixture.user("u", "Go")], running: true),
                                 reduceMotion: false)
         defer { thread.close() }
         try await thread.waitUntilReady()
         thread.visibility.motionPaused = true
         ListPerf.settle(thread.window)
-        let paused = Self.spinners(in: thread.window.host)
-        #expect(paused.all > 0 && paused.turning == 0, "rests while hidden: \(paused)")
+        let paused = Self.shimmers(in: thread.window.host)
+        #expect(paused.all > 0 && paused.moving == 0, "rests while hidden: \(paused)")
 
         thread.visibility.motionPaused = false
         ListPerf.settle(thread.window)
 
-        let shown = Self.spinners(in: thread.window.host)
-        #expect(shown.turning == shown.all, "\(shown)")
+        let shown = Self.shimmers(in: thread.window.host)
+        #expect(shown.moving == shown.all, "\(shown)")
     }
 
-    /// A steering message's spinner in "Up next" rests while its layout is hidden and turns
-    /// again on screen, with the working row's.
-    @Test func aSteeringMessagesSpinnerRestsWhileItsLayoutIsHidden() async throws {
+    /// LiveText: nothing in a running thread spins. Its one live line shimmers, and a steering
+    /// message in "Up next" waits still (waiting isn't working). The shimmer rests while the
+    /// layout is hidden and moves again on screen.
+    @Test func aRunningThreadWithASteerSpinsNothing() async throws {
         var snapshot = ThreadFixture.snapshot(ThreadFixture.history(2) + [ThreadFixture.user("u", "Go")],
                                               provisional: [ThreadFixture.streaming("Working on it.")], running: true)
+        snapshot.provisional = [NativeThreadMessage(entryID: "provisional:tool:b", role: "toolResult", blocks: [], toolName: "bash",
+                                                    toolCallID: "b", argumentsText: #"{"command":"swift test"}"#, status: "running")]
         snapshot.queue = NativeQueue(items: QueueFixture.messages(["Use the staging database", "Then run the tests"], steering: 1), mode: .all)
         snapshot.supportedActions.append("queue")
         let thread = FakeThread(snapshot, reduceMotion: false)
         defer { thread.close() }
         try await thread.waitUntilReady()
         ListPerf.settle(thread.window)
-        let shown = Self.spinners(in: thread.window.host)
-        #expect(shown.all >= 2 && shown.turning == shown.all, "the working row's and the steering row's: \(shown)")
+        #expect(Self.spinners(in: thread.window.host).all == 0, "nothing spins")
+        let shown = Self.shimmers(in: thread.window.host)
+        #expect(shown.all >= 1 && shown.moving == shown.all, "the live line's: \(shown)")
 
         thread.visibility.motionPaused = true
         ListPerf.settle(thread.window)
-        let hidden = Self.spinners(in: thread.window.host)
-        #expect(hidden.all == shown.all && hidden.turning == 0, "\(hidden)")
+        let hidden = Self.shimmers(in: thread.window.host)
+        #expect(hidden.all == shown.all && hidden.moving == 0, "\(hidden)")
 
         thread.visibility.motionPaused = false
         ListPerf.settle(thread.window)
-        let back = Self.spinners(in: thread.window.host)
-        #expect(back.turning == back.all, "\(back)")
+        let back = Self.shimmers(in: thread.window.host)
+        #expect(back.moving == back.all, "\(back)")
+    }
+
+    /// A shimmer on screen costs the app no frames: its band slides on the render server, in
+    /// step with the clock.
+    @Test func aShimmerSlidesOnTheRenderServer() async throws {
+        let window = LayoutCountingWindow(size: CGSize(width: 240, height: 60),
+                                          Text("Running tests").nwShimmer(active: true).padding(10)
+                                              .environment(\._accessibilityReduceMotion, false))
+        defer { window.close() }
+        try await eventuallyOnMain("the band to slide") { Self.shimmers(in: window.host) == (1, 1) }
+        // The window's first passes (fonts, the band's host) settle before the idle stretch.
+        _ = await Self.clockFrames(over: 0.3)
+        let before = window.host.layouts
+
+        let frames = await Self.clockFrames()
+
+        #expect(frames == 0 && window.host.layouts == before, "\(frames) frames, \(window.host.layouts - before) layouts")
+        let band = try #require(Self.views(NWShimmerLayerView.self, in: window.host).first)
+        let group = try #require(band.band.animation(forKey: NWLayerMotion.shimmerKey) as? CAAnimationGroup)
+        #expect(group.duration == NW.Motion.shimmer.duration && group.repeatCount == .infinity)
+    }
+
+    /// Under Reduce Motion live text is plain secondary text: no band at all.
+    @Test func reduceMotionDrawsLiveTextStill() {
+        let window = LayoutCountingWindow(size: CGSize(width: 240, height: 60),
+                                          Text("Running tests").nwShimmer(active: true).padding(10)
+                                              .environment(\._accessibilityReduceMotion, true))
+        defer { window.close() }
+        #expect(Self.shimmers(in: window.host).all == 0)
     }
 
     // MARK: Render-server motion
@@ -414,7 +457,7 @@ struct IdleCostReport {
         }
     }
 
-    /// A running thread whose reply has paused (its working row's spinner turning), idle for
+    /// A running thread whose reply has paused (nothing moves but the text it streams), idle for
     /// three seconds.
     @Test func runningThreadIdle() async throws {
         var cpu: [Double] = []
@@ -425,7 +468,7 @@ struct IdleCostReport {
             cpu.append(await MainThreadCPU.milliseconds { try? await Task.sleep(for: .seconds(3)) })
             thread.close()
         }
-        report.add("running thread (working row)", "idle 3 s: main-thread CPU (median of 3)", ms: MainThreadCPU.median(cpu))
+        report.add("running thread (paused reply)", "idle 3 s: main-thread CPU (median of 3)", ms: MainThreadCPU.median(cpu))
     }
 
     /// One loaded thread of two messages, idle for two seconds.

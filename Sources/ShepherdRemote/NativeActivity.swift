@@ -1,10 +1,10 @@
 import Foundation
 import ShepherdProtocol
 
-// Activity lines (NWThread board, "Activity line states"): a turn's tool calls as one quiet line
-// per burst of same-kind work, with the calls behind it, and a stretch's lines folded into one
-// summary line. Pure derivations: every string a line, its calls, or the turn's changes card
-// shows is built here once per turn, never in a view body.
+// Activity lines (NWThread, ToolRows): a turn's tool calls as one quiet line per burst of work,
+// consecutive calls of one kind merged, with the calls behind it. Pure derivations: every string
+// a line, its calls, or the turn's changes card shows is built here once per turn, never in a
+// view body.
 
 /// "1 file", "7 files". Explicit forms: Foundation's inflection does not know words like
 /// "subagent".
@@ -734,88 +734,6 @@ private func runWords(_ calls: [NativeActivityCall], duration: String?) -> (Stri
         }
     }
     return (label, meta + [duration].compactMap { $0 })
-}
-
-// MARK: Work groups
-
-/// A stretch of activity lines, between prose, notes, errors and subagent cards. Two or more
-/// finished lines fold into one summary line ("Worked for 6m 40s"); running calls stand below it.
-public struct NativeWorkGroup: Equatable, Sendable, Identifiable {
-    /// The first line's id: stable while calls join the group.
-    public var id: String
-    /// Finished lines, in order.
-    public var finished: [NativeActivityBurst]
-    /// Calls running now, each its own live line.
-    public var running: [NativeActivityBurst]
-    /// The line the finished lines fold into; nil while there are fewer than two.
-    public var summary: NativeWorkSummary?
-
-    /// Lines that fold into a summary.
-    public static let foldThreshold = 2
-
-    public var isLive: Bool { !running.isEmpty }
-}
-
-/// A work group's summary line.
-public struct NativeWorkSummary: Equatable, Sendable {
-    /// "Worked for 6m 40s", or "Worked" when the host timed none of the calls.
-    public var label: String
-    /// "explored 13 files · edited 15 files · ran 22 commands · 17 tests passed · 5 failed"
-    public var meta: String
-    /// The group ended on a failed call: the one case the summary turns `failed`.
-    public var failed: Bool
-    public var accessibilityLabel: String
-}
-
-/// Groups one stretch's calls: bursts as the lines, then the summary they fold into.
-public func nativeWorkGroup(_ calls: [NativeActivityCall]) -> NativeWorkGroup? {
-    let bursts = nativeActivityBursts(calls)
-    guard let first = bursts.first else { return nil }
-    let finished = bursts.filter { $0.state != .running }
-    let running = bursts.filter { $0.state == .running }
-    let summary = finished.count >= NativeWorkGroup.foldThreshold ? nativeWorkSummary(finished, live: !running.isEmpty) : nil
-    return NativeWorkGroup(id: first.id, finished: finished, running: running, summary: summary)
-}
-
-/// The words for finished lines folded into one: wall time as the label; what was explored,
-/// edited, run, started and used, always in that order (the lines keep the order it happened in);
-/// tests that passed; and how many calls failed. The line turns `failed` only when the last call
-/// failed and nothing is running after it.
-public func nativeWorkSummary(_ bursts: [NativeActivityBurst], live: Bool = false) -> NativeWorkSummary {
-    let calls = bursts.flatMap(\.calls)
-    let order: [NativeActivityCall.Kind] = [.explore, .edit, .run, .subagents, .other]
-    var meta: [String] = order.compactMap { kind in
-        let ofKind = calls.filter { $0.kind == kind }
-        guard !ofKind.isEmpty else { return nil }
-        switch kind {
-        case .explore:
-            let files = Set(ofKind.filter { $0.explore == .read }.map(\.detail)).count + ofKind.count { $0.explore != .read }
-            return "explored " + nativeCount(files, "file")
-        case .edit:
-            return "edited " + nativeCount(Set(ofKind.map { $0.path ?? $0.detail }).count, "file")
-        case .run:
-            return "ran " + nativeCount(ofKind.count, "command")
-        case .subagents:
-            return "started " + nativeCount(ofKind.count, "subagent")
-        case .other:
-            let names = Set(ofKind.map(\.label))
-            guard names.count == 1, let name = names.first else { return "used " + nativeCount(names.count, "tool") }
-            return ofKind.count == 1 ? "used \(name)" : "used \(name) \(ofKind.count) times"
-        }
-    }
-    let passed = calls.compactMap(\.testsPassed).reduce(0, +)
-    if passed > 0 { meta.append(nativeCount(passed, "test") + " passed") }
-    let failures = calls.count(where: \.failed)
-    if failures > 0 { meta.append("\(failures) failed") }
-
-    let starts = calls.compactMap(\.startedAt), ends = calls.compactMap(\.endedAt)
-    var label = "Worked"
-    if let start = starts.min(), let end = ends.max(), end > start {
-        label += " for " + nativeDurationText((end - start) / 1000)
-    }
-    let failed = !live && calls.last?.failed == true
-    return NativeWorkSummary(label: label, meta: meta.joined(separator: " · "), failed: failed,
-                             accessibilityLabel: ([label] + meta + [failed ? "failed" : "done"]).joined(separator: ", "))
 }
 
 // MARK: Changes card

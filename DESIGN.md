@@ -6,8 +6,7 @@ the design canvas, "Shepherd chat UI", which the agents building Shepherd's UI n
 pages are macOS, iOS, iPadOS, Notifications, Missions, Design tool, and Design system · Night
 Watch. That last page is **Night Watch**, Shepherd's design system: Foundations, Controls,
 Status & feedback, Thread, Composer & menus, Navigation, Agents & orchestration, Review, Swift
-implementation, Missions map, Mission screens, and Design tool, each drawn dark and light. Its
-Option A boards are superseded (see Theme model).
+implementation, Missions map, Mission screens, and Design tool, each drawn dark and light.
 
 Rules name their board in parentheses, e.g. (NWFoundations), so a reader can trace them, and the
 Board index at the end maps every board to the section that specifies it. What the app doesn't
@@ -65,10 +64,14 @@ In priority order:
 1. **Readable measure.** The thread column is at most 820pt, and agent prose is capped at 640pt.
 2. **Shape, not labels.** There are no speaker labels or avatars. A user turn is a trailing
    bubble; agent output is unboxed prose.
-3. **One quiet line per stretch of work.** The tool work between two pieces of prose reads as
-   one line ("Worked for 6m 40s · explored 13 files · edited 15 files · ran 22 commands"). Its
-   lines, one per burst of same-kind calls, are one click away; raw arguments are behind ⌥-click.
-4. **Nothing in the default view that isn't useful.** No key-hint rows, no status text that
+3. **One quiet line per burst of work.** Consecutive calls of one kind merge into one line
+   ("Explored 7 files · read 5 · search 2", "Edited 3 files · +67 −46", "Ran tests · swift test ·
+   3 failed"), instead of a card per call; a line expands to its calls, and raw arguments are
+   behind ⌥-click (ToolRows).
+4. **Nothing in the thread spins.** While pi works, one thing moves at a time, and it is text:
+   the running tool's own line, or "Thinking…" between tools, shimmers; a reply being written is
+   its own indicator (LiveText).
+5. **Nothing in the default view that isn't useful.** No key-hint rows, no status text that
    repeats what the thread and the sidebar row already say, no footers in menus, and nothing
    under the composer but its controls: no working directory, no hints (NWSwift).
 
@@ -112,7 +115,7 @@ And the rules that follow from them:
 | NWControls: chords written ⌘ first ("⌘⇧B" in `.nwHelp`, keycaps ⌘ ⇧ B) | Apple's modifier order, ⌃⌥⇧⌘: `NWKeycap("⇧⌘B")`, "Review changes  ⇧⌘B" | The order macOS menus draw (Keyboard › Keycaps) |
 | `NWStatusDot` pulsing with a SwiftUI `.animation(….repeatForever())` started in `onAppear` (NWSwift) | The glow and the spinner are Core Animation layers started at a shared clock's phase (`NWLayerGlowDot`, `NWLayerSpinner`), same look and timing | A SwiftUI-driven spinner redrew its window every display frame (Motion, Performance) |
 | Running sidebar rows draw a sparkline | Running rows show elapsed time; `NWSparkline` exists but nothing uses it | Nothing records an agent's tool calls per minute |
-| The thread toolbar's status pill beside the title ("Running · 0:31", "Needs you", "Idle"; NWNavigation) | No pill: the title, then the counters | The thread, the composer and the sidebar row already say what the agent is doing (Principle 4; `NWThreadToolbar` has no status slot) |
+| The thread toolbar's status pill beside the title ("Running · 0:31", "Needs you", "Idle"; NWNavigation) | No pill: the title, then the counters | The thread, the composer and the sidebar row already say what the agent is doing (Principle 5; `NWThreadToolbar` has no status slot) |
 | Queue & steer: Steer "lands after the tool call pi is running now; the rest of that step is skipped", and "Skipped the rest of that step · N planned edits" in the thread | "Lands once pi's current tool calls finish, before its next step", and no Skipped line | pi 0.87.1 runs every call in a batch before it reads a steer: nothing is skipped, so nothing may say so (honest affordances) |
 | Queue & steer: the stack and composer at radius 10, rows and fields at 7, chips at 5, the Send menu at 10 | 8 (the composer's), 6, 4, and the popover's 12 | The radius scale |
 | Queue & steer: 5px gaps (the Steering pill, "Steered", "From the queue", a compact chip); 1px lines outside each 40px row, the 32px header and the card | 6 in the pill, 4 elsewhere; lines drawn inside, so three rows make a 152pt stack (the board's 157) | The space scale's 4pt steps; every card and list in the app draws its lines inside (`nwBorder`, `NWHairline` overlays) |
@@ -131,7 +134,6 @@ And the rules that follow from them:
 | Status & feedback: no modal alerts for agent events | One: an agent asking to delete another opens `PeerDeleteDialog` | Only the user deletes an agent, by a click (AGENTS.md › Agents never delete each other on their own) |
 | NavAutomations: an Automations page with a table (When, Starts, Host, Last run, Next), filters, and New automation | The sidebar's Automations footer for this Mac; a remote host's Automations disclosure and its Details and Runs sheet | Shepherd's automations have no schedule or trigger: one is on (it starts a run when Shepherd launches) or run by hand, and nothing on the Mac creates one yet but an agent's `automation_*` tools |
 | MobileAutomations, iPadAutomations: a schedule or trigger per automation ("Every day 02:00", "New issue in checkout-svc", "When CI goes green on #24"), its model and repos, a run's outcome ("Passed · 3 migrations, all reversible", "1 PR failed CI"), a CI-checks bar on a running card, and a "mission" kind | "When Shepherd starts · folder" or "By hand", an On switch and a folder on the host, the run's status word with its time ("Finished · 12h ago"), and "Running · 4m" | As NavAutomations: the host has no schedules, triggers, models, repo lists or check tracking, and a run's result is its thread (iOS: Automations) |
-| MobileThread, MobileQueue, and the iPad boards (iPadThread, iPadPortrait, iPadReview, iPadSubagents, iPadQueue): each finished activity line on its own row | Two or more fold into one work-group line ("Worked for 42s · explored 7 files · edited 3 files") | Thread › Work groups: a long turn never reads as a wall of lines |
 | MobileCommit: the sheet's title "Commit" | "Commit n files", as the Mac's commit sheet | The phone and the Mac share the commit form's parts |
 | iPadReview: Revert file in a file's header | Not offered on iOS | The remote protocol has no revert; the Mac's local review keeps it (docs/ios/README.md › Review) |
 | iPadSubagents: Fork as new agent on a finished run | Re-run and Copy transcript | Remote agents have no Fork (docs/native-subagents.md) |
@@ -148,7 +150,7 @@ And the rules that follow from them:
 | Subagents, SubagentCards: the pill carries the time ("Running · 37m 21s", "Done · 4m 02s"), a mode tag ("background", "async"), a stats row ("step 1 / 1", "78 turns · 82 tools · 922k tok") and the last call's diff and age ("+31 · 4s ago") | NWAgents' card: a plain pill; one mono line (the call by file name, the wait, or what it did with "26 tools · 12m") and the context bar; no mode anywhere | The card never grows while it runs; step, turns and tokens live in the inspector |
 | SubagentCards: a running card's row of Inspect ⌘I, Steer…, Pause and Stop; a done card's files, diff, tokens and Open transcript; a failed card folded to one row with Retry and Transcript. Subagents: a done card folded to one row (its summary, diff and time) | Clicking the card inspects it; Pause/Continue, Stop and Re-run in its context menu and the inspector (which has the Steer field); a done card keeps its header and one mono line; a failed card keeps NWAgents' Open replay and Re-run | One target per card; NWAgents' labels |
 | SubagentsDone: the ledger header's "45m wall · 1.5m tok · +318 −64 · 7 files"; rows with tools and questions ("1 question · 26 tools · 12m") and a glyph; the inspector's "async · claude-sonnet · 11 turns · 19 tools · 118k tok"; "Fork as new agent" | NWAgents: "all done · 45m" and the combined diff; rows "5 files · 41m" with a state dot; "claude-sonnet · 11 turns · done 11:02"; "Fork" (its tooltip says the rest) | The NWAgents board |
-| Subagents: the inspector's live call row "Building swift build --target ShepherdRemote 11s" with the output's tail | "Running bash swift build…", with no time or output | A run's session file holds only finished calls: there is nothing to count or tail |
+| Subagents, MobileSubagent: the transcript's live call "Building swift build --target ShepherdRemote 11s" with the output's tail | The live line with its verb, command and clock ("Building swift build --target ShepherdRemote 11s"), with no output lines | A run's session file holds only finished calls, and the run reports its call in flight but not its output |
 | Review: the diff is the side pane's Changes tab, titled by the tab | One pane titled "Review" (`NWPaneHeader`), View › Review Changes | The tabbed side pane is not built |
 | PaneStates: the pane never opens by itself; with it closed, its toolbar button takes a dot | An agent's `review_diff` opens the review (and brings it in front of an inspected subagent) | `review_diff` is how an agent shows you a diff (`shepherd-review.ts`) |
 | PaneStates widths: 380pt minimum (icon-only tabs), 760pt default for Files, the thread keeps 520pt, double-click the divider for half the window, ⇧⌘O pops the pane into a window | Today's pane follows the Navigation board: 480pt minimum, 600 default, at most half the column, the layout keeps 400; no double-click and no pop-out | The Navigation board's rule (`RightPaneSplit`); one window (Window and adaptive layout) |
@@ -206,9 +208,9 @@ NWSwiftLight). A pair carries the same tokens and text; only the rendered appear
 The light boards call the light variant "Day Watch"; the app has one theme, Night Watch, with
 `night-watch-dark` and `night-watch-light` variants.
 
-The canvas's older **Foundations** and **Components** boards and its `tokens.json` are Option A,
-superseded by Night Watch. Take no value, name, or component from them: IBM Plex Sans and
-JetBrains Mono, the 2px spacing base, 7pt and 10pt radii, 32pt sidebar rows with a 22pt indent,
+The canvas's older `tokens.json` is Option A, superseded by Night Watch (its Foundations and
+Components boards are gone from the canvas). Take no value, name, or component from them: IBM
+Plex Sans and JetBrains Mono, the 2px spacing base, 7pt and 10pt radii, 32pt sidebar rows with a 22pt indent,
 a 7px status dot, the composer's and the segmented thumb's shadows, a 3px composer focus ring,
 `ShepherdButton`, `AgentStatusPill`, `InlineError`'s "open Terminal mode", and the
 `bg.canvas`/`accent`/`warning` role names are all gone.
@@ -1101,7 +1103,7 @@ the New agent sheet.
   a 12pt `textSecondary` repo glyph and the repo in mono ("shepherd"), a `textTertiary` "·", a
   display glyph and the host in mono ("This Mac"), and a 10pt `textTertiary` chevron, as a 26pt
   chip in 12 `textSecondary`. It picks where the thread will run. The boards draw it only on this
-  page, before a thread exists; Principle 4 keeps a working directory out of a running thread's
+  page, before a thread exists; Principle 5 keeps a working directory out of a running thread's
   composer.
 - **Suggestions:** three equal cards under the composer, 38pt below it (the column's 24pt gap plus
   14), 720pt across and 10pt apart. Each is padded 12pt above and below and 14pt at the sides,
@@ -1230,7 +1232,9 @@ rest) and Running (a thread while pi works) show the parts assembled in the wind
 the activity line's states. Main and Running draw some parts at other sizes (prose at 15,
 bubbles at 14 with 12×16 padding, times and footer meta in mono 11, 28pt footer buttons) and
 their meta in a gray that is no Night Watch role (`#767c85`); where they differ, NWThread's
-values, below, are the rule.
+values, below, are the rule. Main (and the Subagents board's inspector) still draw the stretch
+summary the component boards dropped in v97 ("Worked for 2m 12s · explored 1 file · …"):
+NWThread, ToolRows and LiveText, one line per burst, are the rule.
 
 - **Layout:** a scroll view with the column centered, at most 820pt wide with 32pt gutters (16pt
   in a thread narrower than the column and both gutters, 884pt; `AppLayout.threadGutter`). User
@@ -1352,9 +1356,10 @@ the turn has finished, the changes card and the footer end it. A running turn ha
     shorter than half a second or untimed). The whole label is the button.
   - Expanded: 8pt beneath, the text in italic 12.5 at 1.55 in `textSecondary`, 12pt past a 2pt
     `lineStrong` rule, at the prose measure. It opens and closes with `disclosure`.
-  - Live: a 12pt `textSecondary` spinner, "Thinking…" in italic 12 `textSecondary`, and its
-    seconds counting in mono 10.5 tertiary ("4s"), 8pt apart on a 26pt row. When thinking ends
-    it cross-fades in place into "Thought for Ns", collapsed.
+  - Live (LiveText): the disclosure's chevron, still, 11pt in `textTertiary`, and "Thinking…" in
+    `ui` (12.5) shimmering, 8pt apart on a 26pt row, with no clock. It is the thread's live line
+    between tools (see Live text), and when thinking ends it cross-fades in place into "Thought
+    for Ns", collapsed.
 - **Notes** ("Image attached", "Output truncated", extension messages) render as caption
   tertiary text on a 2pt rule (three lines, full text on hover).
 - **Errors** (`NWTurnError`): a failed provider request, on `failedTint` with radius 6 and 8×10
@@ -1367,12 +1372,21 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   call Stop interrupted keeps its line's usual colors with "stopped" in its meta ("Ran a
   command · sleep 40 · stopped · 7.5s"), standing alone like a failure, so the word stays
   visible.
-- **Working row** (`NWWorkingRow`, Running): while the agent runs, the thread ends in one 26pt
-  row, 4pt in from the column's edge: a 12pt `running` spinner and what it is doing in italic 12
-  `textSecondary`, 8pt apart: "Working…" under a live activity line, "Running <tool>…", or
-  "Thinking…", each label cross-fading into the next (`content`). It is one row for the whole
-  run, the last part of the streaming reply. Live thinking carries its own spinner instead, and
-  a pending question replaces it with the composer's question panel.
+- **Live text** (LiveText; `NativeTurnPresentation.betweenTools`, `NativeThreadStore.showsThinking`):
+  while pi works, one thing moves at a time, and it is text; nothing in the thread spins, and
+  there is no "Working…" row anywhere.
+  - A tool is running: its own activity line is the indicator (Activity lines › Live), with
+    nothing under it but its output.
+  - Between tools (no call running, no thinking or reply streaming; also before pi's reply has
+    a row): the turn ends in live thinking, "› Thinking…" shimmering. When pi's thinking streams
+    it is the same line, and it settles into "Thought for Ns".
+  - Replying: the text being written is the indicator; no line joins it.
+  - A running call a subagent card or the tray stands for (`shepherd_child_wait`) still counts
+    as moving: the parent waiting on its subagents shows nothing of its own.
+  - A pending question replaces all of it with the composer's question panel. Waiting isn't
+    working: a steering message in Up next waits still (Up next).
+  - A counting timer is motion enough: the running call's clock ticks beside its shimmer in
+    `textTertiary`. Under Reduce Motion the shimmer is plain `textSecondary` text.
 - **Footer** (`NWTurnFooter`), after a finished turn: copy (the turn's prose; tooltip "Copy the
   reply", VoiceOver "Copy response", then a check for 1.5s) and retry (resend the prompt that opened
   it, only while the agent is idle; tooltip "Send this turn's prompt again", VoiceOver "Retry turn";
@@ -1383,8 +1397,8 @@ the turn has finished, the changes card and the footer end it. A running turn ha
 
 **A turn while pi works** (Running): the turn builds in place as its parts arrive, in the order
 above, each fading in (a failed request rising like a row): "Thought for 2s", prose saying what
-it will do, the stretch's finished lines ("Committed · 3 files changed"), the one live line with
-its output ("Pushing · git push origin main · 3s"), and the working row last. It has no changes
+it will do, the finished lines ("Committed · 3 files changed"), and the one live line with its
+output ("Pushing · git push origin main · 3s") last, nothing under it. It has no changes
 card and no footer until it finishes; then both rise into place under it (`list`). The finished
 turn above it keeps its footer hidden at rest, like any other.
 
@@ -1408,32 +1422,13 @@ row) shows them.
   under a message from the parent (never under your own steers and answers), and its time fades
   in beside it.
 
-**Work groups** (`WorkGroupView` in `Thread/ThreadTools.swift`, `nativeWorkGroup`). A stretch's
-activity lines (between prose, notes, errors and subagent cards) form one group, so a long turn
-never reads as a wall of lines.
-
-- **Folded:** two or more finished lines fold into one summary line, `NWActivityLine` with the
-  `work` glyph (`rectangle.stack`): "Worked for 6m 40s" (wall time over its calls; "Worked"
-  untimed) · "explored 13 files · edited 15 files · ran 22 commands · 17 tests passed · 5
-  failed". Kinds always read in that order (explored, edited, ran, started, used); the lines
-  keep the order the work took.
-- **Expanded:** the summary's chevron turns down and its lines open beneath (`disclosure`), as
-  below, on the same rail as a line's calls (`NWActivityRail`: a 1px `lineStrong` rail 9pt in,
-  under the line's glyph, with its rows 16pt past it). The rail's lines are 4pt apart, the first
-  4pt under the summary, and the rail runs 2pt past its first and last line (the app spaces the
-  summary's lines 6pt today).
-- **One line** stays itself: it already is one line.
-- **Running calls** stand below the summary as live lines, and join it when they finish.
-- **Failures are counted, not shouted.** A failed call adds "n failed" to the meta and is red
-  only inside the expanded lines ("Worked for 6m 40s · … · 5 failed" stays quiet). The summary
-  turns `failed` (its label, with `exclamationmark.triangle` in place of the `work` glyph; the
-  meta stays tertiary) only when the group's last call failed and nothing runs after it: the
-  work ended on a failure ("Worked for 19s · ran 2 commands · 2 failed").
-
-**Activity lines** (`ActivityLineView` in `Thread/ThreadTools.swift`, on `NWActivityLine` and
-`NWActivityCalls`). Within a group, a turn's tool calls merge into one quiet line per burst of
-same-kind work (`nativeActivityBursts`). A failed call and the running call each stand alone;
-other tools merge only with the same tool.
+**Activity lines** (`ActivityLinesView` and `ActivityLineView` in `Thread/ThreadTools.swift`, on
+`NWActivityLine` and `NWActivityCalls`; NWThread, ToolRows). One quiet line per burst of work
+instead of a card per call: consecutive calls of one kind merge into one line
+(`nativeActivityBursts`), the lines sit inline with the prose in the order the work took, and
+nothing folds them into a summary. A failed call and the running call each stand alone; other
+tools merge only with the same tool. Consecutive lines form one part of the turn
+(`NativeTurnPresentation.Item.activity`), split by prose, notes, errors, steers and cards.
 
 - **The line:** 26pt, a 13pt glyph in `textTertiary`, the label in `ui` regular (12.5)
   `textSecondary`, the meta in mono 11 tertiary, and a 10pt tertiary chevron (pointing right,
@@ -1465,9 +1460,10 @@ other tools merge only with the same tool.
   "swift test · exit 1 · 8.4s" (ToolRows), or "swift test · 3 failed · 8.4s" when the test
   counts parse; "Edit failed" · the file · the error. A piped test run that exits 0 with
   failures still fails.
-- **Live:** only the current call is live, with no hover fill and no chevron: a 13pt `running`
-  spinner, the progressive verb in `textPrimary`, the command or path in mono 11 tertiary, and
-  its elapsed time in mono 11 `running` ("3s", "1m 20s"), 8pt apart. Its last three output lines
+- **Live** (LiveText): only the current call is live, on a 26pt line with no hover fill and no
+  chevron: the tool's own 13pt glyph, still, in `textSecondary` (nothing spins); the progressive
+  verb (`ui`) and the command or path (mono 11) shimmering (`.nwShimmer(active:)`); and its
+  elapsed time in mono 11 `textTertiary` ("3s", "1m 20s"), 8pt apart. Its last three output lines
   sit 4pt beneath, 21pt in (under the label), in mono 11 at 1.6: the older ones `textTertiary`,
   the newest `textSecondary`. When the call ends the live line cross-fades into its finished
   line in place, and the output lines go at once.
@@ -1968,10 +1964,9 @@ next model request both draw as `queued`).
   order, 8pt apart (`AppLayout.subagentStackSpacing`), as are the strip and the cards under it.
   Once cards stand for a turn's children, the parent's `shepherd_child_wait` and
   `shepherd_child_result` calls no longer show as activity, and nothing else names them: no raw
-  wait or status call shows anywhere, the parent's working row included (SubagentCards: never a
-  raw "subagent_wait" dump; the app still does, see Known gaps).
+  wait or status call shows anywhere (SubagentCards: never a raw "subagent_wait" dump).
 - **Changing shape:** the group reshapes at once, because the rest of its turn (the next card,
-  "Working…") moves at once too. What arrives while the group is on screen (a strip, the ledger in
+  the live line) moves at once too. What arrives while the group is on screen (a strip, the ledger in
   place of the cards, a card that needs you, the cards the strip shows) fades in where it lands
   (`nwRunArrival`); a card keeps its identity when the group folds into the strip.
 - **`NWSubagentCard`** (NWAgents): `bgRaised`, padding 10×12 (the board's 10pt vertical inset),
@@ -2123,8 +2118,11 @@ Changes, Browser, Artifacts, Files" below).
 - **The run's own transcript**, drawn with the thread's components one step smaller
   (`nwProseSize` `.small`), 14pt padding, turns 16pt apart, times and footers on hover as in the
   thread. A live transcript opens at its end and follows; a finished one opens at its start. A
-  live one ends in a working row: the call in flight ("Running bash swift build…"; its session
-  file holds only finished calls), "Pause requested", or "Thinking…". Turns that arrive while it
+  live one ends in what the run is doing now (LiveText; `nativeRunLive`, `RunLiveTail`): its call
+  in flight as a live activity line ("Building swift build --target ShepherdRemote 11s", from the
+  call the run reports; its session file holds only finished calls, so there are no output
+  lines), or "› Thinking…" between tools, and nothing while it asks or once a requested pause has
+  no call left to finish. Its transcript's own thinking is never live. Turns that arrive while it
   follows fade in where they land. With nothing yet it says "No transcript yet." (or "This run is
   no longer listed.") in `caption` `textTertiary`.
 - **Its footer line** (28pt, Geist 11 `textTertiary`, 14pt side padding): "72 earlier turns" in
@@ -3275,8 +3273,9 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 
 One enum, `AgentState`, drives every status surface (NWStatus), and color always comes with a
 word or a glyph's shape: a pill in headers and cards, a dot (with its word where the row has
-room) in rows, a glyph in tool rows, steps, and checklists, a spinner for a tool or turn in
-progress, a bar for steps and budget, and a step strip for a run's steps. The parts are under
+room) in rows, a glyph in tool rows, steps, and checklists, a spinner for work in progress
+outside the thread (in the thread, live text shimmers instead: LiveText), a bar for steps and
+budget, and a step strip for a run's steps. The parts are under
 Components › Status and feedback.
 
 | Lifecycle | `AgentState` | Sidebar | Composer |
@@ -3324,7 +3323,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Status | `NWStatusPill` (20pt, radius 4; a glyph in place of its dot), `NWStatusDot` (6pt), `NWStateGlyph` (14pt), `.progressViewStyle(.nwSpinner)` and `.nwBar` (4pt), `NWStepStrip`, `NWSparkline`, `NWBanner`, `.nwToast(item:)` with `NWToast`, `NWEmptyState`, `.nwShimmer()`, `NWWordmark`, `NWCrook` | across the app; `NWSparkline` and `.nwToast(item:)` have no app use (see departures), and `.nwShimmer()` none yet |
 | Containers | `NWSectionHeader`, `NWGroupCard`, `NWCardRow`, `NWHairline`, `NWChoiceRow` (`NWChoiceRowMetrics`), `NWFlowLayout` | `SettingsComponents.swift`; hairlines everywhere; `NWChoiceRow` in the iOS client's New thread pickers; `NWFlowLayout` for wrapping chips and answers (iOS) |
 | Navigation | `NWSidebar`, `NWSidebarSection`, `NWSidebarRow`, `NWSidebarDisclosureRow`, `NWSidebarNoticeRow`, `NWSidebarFooter`, `NWDropIndicator`, `NWDensity`; `NWThreadToolbar`, `NWPaneToggle`, `NWOptionsMenu`, `NWPaneHeader`; `.nwCommandPalette(isPresented:)`, `NWPaletteCard`, `NWPaletteSearchRow`, `NWPaletteSectionHeader`, `NWPaletteRow` | `SidebarView.swift`, `RemoteSidebarSection.swift`, `ThreadHeader.swift`, `RootView.swift`, `CommandPaletteView.swift`; the review's header (`DiffReviewView.swift`) and the inspector's ⋯ menu (`Thread/SubagentInspector.swift`) |
-| Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWWorkingRow`, `NWJumpToLatest` | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
+| Thread | `NWUserBubble` (its time shown while `revealed`; `origin: .steered`), `NWQueueDivider`, `NWAgentProse`, `NWCodeBlock`, `NWThinking`, `NWActivityLine`, `NWActivityCalls`, `NWChangesCard`, `NWDiffStat`, `NWInlineCode`, `NWAttachmentChip`, `NWTurnFooter` (shown while `revealed`), `NWTurnError`, `NWJumpToLatest`, `.nwShimmer(active:)` (live text) | `Thread/ThreadView.swift`, `ThreadTurns.swift` (with each turn's `MessageHover`), `ThreadTools.swift`, `ThreadMarkdown.swift` |
 | Composer | `NWComposer`, `.nwComposerChip(active:)`, `NWChipChevron`, `NWComposerActionButton` (outlined Stop, Send's ring), `NWMenuHeader`, `NWSlashMenu`, `NWModelPicker`, `NWThinkingMenu`, `NWSendMenu`; the queue: `NWQueueStack`, `NWQueueRow`, `NWQueueEditor`, `NWQueueDeletedRow`, `NWQueueMoreRow`, `NWQueueNumber`, `NWQueueGlyph`, `NWGripGlyph`, `NWQueueMetrics` | `Thread/Composer.swift`, `Thread/QueueStack.swift` |
 | Agents | `NWSubagentCard` (`NWSubagentRun`, `NWSubagentQuestion`), `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup`, `.nwRunArrival`; touch forms for iOS (`NWRunCard`, `NWRunGroupCard`, `NWRunHeader`, `NWRunTabs`, `NWSteerField`, …) | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift`; the iOS client |
 | Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer`, `NWDiffMetrics`; the commit form (`NWCommitMessageEditor`, `NWCommitFileRow`, `NWCommitOptionRow`); touch forms for iOS (`NWTouchDiffLine`, `NWSplitDiffRow`, `NWTouchFileStrip`, `NWLineCommentBar`, `NWReviewFileRow`, …) | `DiffReviewView.swift`, `ReviewCommitSheet.swift`; the iOS client |
@@ -3636,8 +3635,8 @@ Review-pane keys are listed with the review.
   - agent rows: "title, [worktree,] running / needs you / idle / done" (needs you also while one
     of its subagents asks); automation rows: "name, automation, state"
   - activity lines: "Explored 7 files, read 5, search 2, 0.9s, done", with Expanded / Collapsed
-    and the hint "Shows the calls"; a folded stretch: "Worked for 6m 40s, explored 13 files, …,
-    5 failed, done" and the hint "Shows the steps"; call rows: "edit, Sources/A.swift, +58 −41"
+    and the hint "Shows the calls"; the live line: "Pushing, git push origin main, running"; live
+    thinking: "Thinking"; call rows: "edit, Sources/A.swift, +58 −41"
   - subagent cards: "name, role, state, detail", with the context bar as the value; ledger rows:
     "name, state, summary"; runs strip steps: "name, state — open"
   - diff lines: "Removed line 16: …", with Comment as a named action; file chips: "FleetView.swift,
@@ -3688,9 +3687,6 @@ below collects the rest, and the places those sentences point here.
 - **Status and feedback:** an empty state's sentence is capped at 320pt (`Feedback.swift`), the
   board's at 280. A banner's icon is 13pt, the board's 15.
 - **Agents and review:**
-  - The parent's working row reads "Running shepherd_child_wait…" while its subagent cards stand
-    (`nativeWorkingLabel`, `Sources/ShepherdRemote/NativeThreadStore.swift`); Subagents says no
-    raw wait shows.
   - The review header leaves the scope off for the plain local diff ("4 files · +67 −58"); the
     Review board leads with "working tree vs HEAD" (`ReviewHeader.subtitle`,
     `Sources/ShepherdApp/DiffReviewView.swift`).
@@ -3717,8 +3713,8 @@ below collects the rest, and the places those sentences point here.
   settings). Instructions and Experiments are not built.
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalToggle against the
   app):
-  - Consecutive activity lines, and a work group's lines on its rail, sit 6pt apart
-    (`AppLayout.activitySpacing`); the boards' are 4pt.
+  - Consecutive activity lines sit 6pt apart (`AppLayout.activitySpacing`), as NWThread draws
+    them; ToolRows and Running draw 4pt.
   - A Run (bash) activity line draws `apple.terminal` (`Components/Thread/Activity.swift`); the
     board's symbol is `terminal`.
   - The terminal's cursor is `lantern` and its selection `running` at 18% dark and 28% light
@@ -4049,12 +4045,13 @@ follows the Mac's rules (Thread) with the phone's measures below.
 - **Prose** (`NWAgentProse`): 16/1.5 `textPrimary`, paragraphs 8pt apart.
 - **Activity lines** (`NWActivityLine`): a finished line is a 36pt button (a 13pt glyph in
   `textTertiary`, the label in 14 `textSecondary`, the meta in mono 11 `textTertiary`, a 10pt
-  chevron), 8pt between parts, 4pt between lines; it expands its calls. The running line is 26pt: a
-  13pt `running` spinner, the label in `textPrimary` ("Pushing"), the command in mono 11
-  `textTertiary`, the elapsed seconds in mono 11 `running`, then the call's last three output lines
-  in mono 11 at 1.6 line height, indented 21pt, the newest in `textSecondary` and the rest
-  `textTertiary`. No "Working…" row sits under a live line. Two or more finished lines fold into one
-  work-group line (see Where Shepherd departs from the boards).
+  chevron), 8pt between parts, 4pt between lines, one per burst of work; it expands its calls. The
+  running line is 26pt (MobileApproval, LiveText): the tool's 13pt glyph, still, in
+  `textSecondary`, the label ("Pushing") and the command (mono 11) shimmering, the elapsed seconds
+  in mono 11 `textTertiary`, then the call's last three output lines in mono 11 at 1.6 line height,
+  indented 21pt, the newest in `textSecondary` and the rest `textTertiary`. Nothing spins, and no
+  "Working…" row sits under it; between tools the turn ends in "› Thinking…", shimmering, as on the
+  Mac (Thread › Live text).
 - **Changes card** (`NWChangesCard`): 1px `lineSubtle`, 8pt corners, on `bgWindow`. Its 40pt head on
   `bgSunken`: a pencil glyph, "2 files changed" (12.5/600), the stat (`done` added, `failed`
   removed, mono 11), and Review (a 24pt ghost button, 12/500 `textSecondary`) trailing, which opens
@@ -4215,10 +4212,9 @@ per run.
   - The goal (`NWRunGoal`): `bgSunken`, 1px `lineSubtle`, 12pt corners, 12×14 padding: "GOAL · FROM
     THE PARENT" (`.nwSectionLabel()`), then the goal at 14/1.45. The app adds "step 1 of 3 · 34%".
   - Its transcript: prose at 15/1.5, activity lines 32pt tall at 14; the running call live with its
-    verb ("Building"), command, elapsed seconds in `running`, and its last three output lines, as in
-    the thread; "Thinking…" in italic 14 `textTertiary` with a bulb glyph while it thinks. The app
-    shows a live call as the run's working row ("Running bash swift build…") without the output
-    tail: the child's session holds no streamed output.
+    verb ("Building") and command shimmering and its elapsed seconds, as in the thread, and
+    "› Thinking…" between tools (LiveText). The app draws the live call without the board's output
+    tail: the child's session holds no streamed output (Where Shepherd departs from the boards).
   - Its question, while it waits on you, on `lanternTint` with its answers.
   - The steer field (`NWSteerField`) at the bottom: a 44pt capsule, "Steer worker…", Send inside it,
     and under it "to: worker · not the parent · lands before its next turn" (mono 11 `textTertiary`,
@@ -4559,10 +4555,10 @@ selected thread, or the Overview when none is. Other screens push over the detai
 - **Work:** the boards list each burst as its own 36pt line (a 13pt `textTertiary` glyph, the
   summary at 14 `textSecondary`, its meta in mono 11 `textTertiary`, a 10pt chevron): "Explored 1
   file · read 1", "Edited 2 files · +58 −45", "Ran tests and a build · 1 passed · build ok". The
-  app folds a finished stretch into one "Worked for" line (Principles, Where Shepherd departs).
-  The running call keeps its own live line: a `running` glyph, the summary in `textPrimary`,
-  the command in mono 11.5 `textTertiary` and its clock in mono `running` ("Running tests · go
-  test ./ledger/... · 18s").
+  app draws the same lines, one per burst.
+  The running call keeps its own live line (LiveText): the tool's glyph, still, the summary and
+  the command shimmering, and its clock in mono `textTertiary` ("Running tests · go test
+  ./ledger/... · 18s").
 - **Changes card:** `bgWindow`, a 1px `lineSubtle` line, radius 8. A 44pt header on `bgSunken`
   (12pt glyph, "2 files changed" at 12.5/600, "+58 −45" in mono 11 `done`/`failed`, and Review, a
   24pt ghost button with its glyph); then 40pt file rows with hairlines between: the status
@@ -7022,7 +7018,8 @@ Build them on what exists: the activity line, `NWValueSlider`, `NWSegmentedPicke
 - **Previews:** `ShepherdPreviewTests` render every surface offscreen, in light and dark:
   - thread states (idle, running, thinking, queued, failed, prose, question, empty, starting
     before and after the delay, restoring from disk, a hovered turn, "Jump to latest" over the
-    fade, a long stretch folded into one line) and the activity-line states
+    fade, a long stretch of burst lines, a turn between tools ending in "Thinking…") and the
+    activity-line states
   - the composer and its menus
   - the queue (the Queue & steer boards): Up next over a running thread with a hovered row and
     a draft (Stop outlined beside Send), a Steering row under a steered message, the editor with
@@ -7076,7 +7073,7 @@ questions, and menus).
 | SlashMenu | Composer, questions, and menus › Slash menu | Partial |
 | ModelPicker | Composer, questions, and menus › Model picker | Built |
 | CommandPalette | Command palette | Partial |
-| ToolRows | Thread › Work groups, Activity lines | Built |
+| ToolRows | Thread › Activity lines | Built |
 | Review | Right pane › Review; Side pane | Partial |
 | Subagents | Subagents; Right pane › Subagent inspector | Partial |
 | SubagentsDone | Subagents (`NWRunLedger`); Right pane › Subagent inspector | Partial |
@@ -7242,6 +7239,7 @@ questions, and menus).
 | NWControls, NWControlsLight | Components › Controls | Partial |
 | NWStatus, NWStatusLight | Components › Status and feedback; Status language | Partial |
 | NWThread, NWThreadLight | Thread | Partial |
+| LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still) | Built |
 | NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
 | NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Sidebar destinations, Needs you, and Recents; Toolbar | Partial |
 | NWAgents, NWAgentsLight | Subagents; Right pane › Subagent inspector; Mission components | Partial |
@@ -7250,4 +7248,3 @@ questions, and menus).
 | MXVocab, MXVocabLight | Missions › Missions: the map | Not built yet |
 | NWMissions, NWMissionsLight | Missions (Missions: shared parts and the screens that use them) | Not built yet |
 | NWDesignTool, NWDesignToolLight | Design tool › Design components | Not built yet |
-| Foundations, Components (Option A) | Theme model (superseded: take nothing from them) | Superseded |
