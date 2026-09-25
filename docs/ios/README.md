@@ -182,9 +182,9 @@ keep the version for real breaks.
   Undo row for a delete, and a ••• menu (Steer or Send all now, the delivery mode, Clear). A
   paused queue (after Stop, or a failed turn) shows Send now in its header, with its reason as
   the VoiceOver hint, where the Mac shows it on a row's hover and in a tooltip. The
-  model picker lists the host's catalog; images come from Photos, resized to the protocol's
-  limits; "/…" lists the snapshot's commands. A question from the agent takes the composer's
-  place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
+  model picker lists the host's catalog, each model's thinking levels under its name; images
+  come from Photos, resized to the protocol's limits; "/…" lists the snapshot's commands. A
+  question from the agent takes the composer's place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one).
 - **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking (only
