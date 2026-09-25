@@ -363,8 +363,10 @@ final class RPCThreadState {
                 self.operations[index].operation.result = result
                 let waiters = self.operations[index].operation.waiters
                 self.operations[index].operation.waiters = []
-                self.bumpRevision()
+                // One revision: the change the action made, or the answer alone.
+                let revision = self.revision
                 self.commit()
+                if self.revision == revision { self.bumpRevision() }
                 completion(result)
                 waiters.forEach { $0(result) }
             }

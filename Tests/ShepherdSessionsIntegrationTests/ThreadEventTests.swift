@@ -319,6 +319,24 @@ struct ThreadEventTests {
         #expect(await lastSnapshotBytes(t) == (try JSONEncoder().encode(after).count))
     }
 
+    /// A queue action is one revision: the change it made, or, when it changed nothing shown,
+    /// the answer alone.
+    @Test(arguments: [true, false])
+    func aQueueActionMovesTheRevisionOnce(changes: Bool) async throws {
+        let t = try Thread()
+        defer { t.stop() }
+        let s = try await t.ready()
+        try await t.feed(Self.start)
+        let ids = try await queue(["first"], on: t, from: s)
+        let before = try await t.snapshot()
+
+        let id = UUID()
+        let action: NativeQueueAction = changes ? .edit(id: ids[0], text: "first, edited") : .edit(id: ids[0], text: "first")
+        #expect(await t.request(.queue(expectedSessionID: s.piSessionID, generation: s.generation, operationID: id, action: action))
+            == .accepted(operationID: id))
+        #expect(try await t.snapshot().revision == before.revision + 1)
+    }
+
     /// A steer pi reads leaves the queue and joins the run as a steered message: one revision,
     /// and a snapshot sized to the byte.
     @Test func aSteerLandingMovesTheRevisionOnceAndSizesItsSnapshot() async throws {
