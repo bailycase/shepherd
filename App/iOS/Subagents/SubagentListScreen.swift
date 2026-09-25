@@ -57,7 +57,6 @@ struct SubagentListContent: View {
     let store: NativeThreadStore
     let select: ((String) -> Void)?
     @Environment(MobileNavigator.self) private var navigator
-    @Environment(MobileHosts.self) private var hosts
     @State private var list = SubagentList()
 
     var body: some View {
@@ -65,7 +64,7 @@ struct SubagentListContent: View {
         let commands = SubagentCommands(store: store, enabled: store.takesSubagentCommands)
         let selected = SubagentInspection.shared.selected(in: ref)
         VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
-            if let banner { Text(banner).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary) }
+            SubagentHostNotice(ref: ref, subject: "runs")
             if let notice = store.notice { Text(notice).font(.nw(.caption)).foregroundStyle(Color.nw.failed) }
             if list.isEmpty {
                 NWEmptyState(Text("No subagents"), message: store.snapshot == nil ? "Loading the thread…"
@@ -93,11 +92,6 @@ struct SubagentListContent: View {
             }
         }
         .onChange(of: key, initial: true) { list = SubagentList(store) }
-    }
-
-    private var banner: String? {
-        guard let host = hosts.host(ref.host) else { return "This host was forgotten." }
-        return host.phase.isConnected ? nil : "\(host.name) is offline · showing the last known runs"
     }
 
     private func sectionHead(_ title: String, trailing: String, mono: Bool) -> some View {
@@ -132,5 +126,28 @@ struct SubagentListContent: View {
 
     private func open(_ runID: String) {
         if let select { select(runID) } else { SubagentOpening.open(.run(ref, runID: runID), navigator: navigator) }
+    }
+}
+
+/// Why the runs on screen may be stale or read-only: the host is forgotten or offline, or the
+/// agent is gone from it. Nothing while the host serves the thread.
+struct SubagentHostNotice: View {
+    let ref: AgentRef
+    /// What is shown from before: "runs", "run".
+    let subject: String
+    @Environment(MobileHosts.self) private var hosts
+
+    var body: some View {
+        if let text {
+            Text(text).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var text: String? {
+        guard let host = hosts.host(ref.host) else { return "This host was forgotten." }
+        if !host.phase.isConnected { return "\(host.name) is offline · showing the last known \(subject)" }
+        if host.agent(ref.agent) == nil { return "This agent is no longer on \(host.name)." }
+        return nil
     }
 }

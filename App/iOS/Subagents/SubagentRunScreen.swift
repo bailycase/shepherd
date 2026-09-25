@@ -101,6 +101,7 @@ struct SubagentRunView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: MobileLayout.blockSpacing) {
+                    SubagentHostNotice(ref: ref, subject: "run")
                     if let summary {
                         // The inspector heads the run with its card, which carries its question.
                         if !compact {
