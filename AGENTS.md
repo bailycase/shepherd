@@ -75,7 +75,7 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 **Environment variables:**
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
-  extensions, `remote-token`, and subagent artifacts. It wins over the edition's own folder
+  extensions, `remote-token`, `automation-runs.json`, and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
 - **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
@@ -340,12 +340,14 @@ Sources/
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
                        the changes card), NativeQueueRules (the queue's rules, host and client),
+                       AutomationPresentation (automation rows, runs and what a client may do),
                        ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
                        works), ThreadOriginStore (where delivered messages came from, kept per pi
-                       session), PTYSession, SessionScreen (SwiftTerm), StateStore,
+                       session), AutomationRunLog (each automation's runs), PTYSession,
+                       SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
@@ -357,7 +359,7 @@ Sources/
       +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
-      +RemoteInspection, +RemoteWorktrees)
+      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations), RemoteAutomationSheet
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, QueueStack ("Up next", the queue above the composer), Subagents,
                        SubagentPresentation, SubagentInspector
@@ -388,7 +390,7 @@ Packages/
                                      AgentState, HexColor
                        Resources/Fonts  Geist and Geist Mono (SIL OFL)
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
-                                     Agents, Review, Dialogs
+                                     Agents, Review, Dialogs, Automations
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
@@ -481,7 +483,16 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   notify tools but withholds the `automation_*` tools.
 - **Management:** agent requests arrive as `AutomationRequest` through
   `SessionServer.onAutomationRequest` and are served by `ShepherdViewModel+Automations.swift`.
-  The Automations sidebar section is their only surface.
+  The Automations sidebar section is their only surface on the host. Remote clients change them
+  through the same handler (`RemoteRequest.automation`, below), after the server checks what it
+  can (the automation exists; a new or edited one has a name, a prompt and a directory on the
+  host).
+- **Runs are kept** (`AutomationRunLog`, `automation-runs.json`, the newest 30 per automation):
+  a run opens when an automation gains an agent, follows that agent's status (running, needs
+  you, finished), and closes when the agent goes (finished if its turn had finished, else
+  stopped). At startup every run still open closes as interrupted. The server records them from
+  every committed state, so no caller records a run by hand; removing an automation forgets its
+  runs. Remote clients read them with `RemoteAutomationRequest.runs`.
 - **At startup:** the previous run's agents and their layouts are dropped
   (`SessionServer.automationRunAgentIDs`: every agent in the hidden space, plus any agent an
   automation still points at), every automation's `agentID` is cleared, and enabled automations
@@ -510,6 +521,10 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
     info/setup/finalize/delete, and commit from review (`commitInfo`, `commitMessage`, `commit`
     behind `review.commit.v1`; the commit is an operation polled with `worktreeStatus`)
+  - `automation` (`automations.v1`): switch on or off, run now, stop, the runs the host kept,
+    create, edit, delete. There is no schedule or trigger: an automation that is on starts a run
+    when Shepherd launches on the host. The Mac shows a host's automations under its sidebar
+    section; the iOS client in Automations. A host without the capability shows them read-only
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.

@@ -92,6 +92,9 @@ enum SidebarItem: Identifiable, Equatable {
     case remoteAgent(hostID: UUID, model: SidebarAgentRowModel)
     /// A host that isn't connected: one status row stands in for its spaces.
     case notice(hostID: UUID, phase: RemoteHostStore.Phase.Kind)
+    /// A connected host's Automations disclosure, under its spaces.
+    case remoteAutomations(SidebarRemoteAutomations)
+    case remoteAutomation(SidebarRemoteAutomation)
 
     /// Local agents and spaces and remote agents use the ids `sidebarRevealTarget` names, so
     /// the list scrolls to them; the rest are keyed so they never collide with those.
@@ -103,6 +106,8 @@ enum SidebarItem: Identifiable, Equatable {
         case .agent(let model): AnyHashable(model.agent.id)
         case .remoteAgent(let hostID, let model): AnyHashable(RemoteAgentRef(hostID: hostID, agentID: model.agent.id))
         case .notice(let hostID, _): AnyHashable(SidebarRowKey.notice(hostID))
+        case .remoteAutomations(let header): AnyHashable(SidebarRowKey.remoteAutomations(header.hostID))
+        case .remoteAutomation(let row): AnyHashable(row.key)
         }
     }
 
@@ -111,6 +116,7 @@ enum SidebarItem: Identifiable, Equatable {
         switch self {
         case .machine(let machine): machine.collapsed
         case .space(let space): space.collapsed
+        case .remoteAutomations(let header): header.collapsed
         default: nil
         }
     }
@@ -118,7 +124,7 @@ enum SidebarItem: Identifiable, Equatable {
     /// Agents disclose under their space; everything else arrives like a row.
     var motion: NW.Motion {
         switch self {
-        case .agent, .remoteAgent: .disclosure
+        case .agent, .remoteAgent, .remoteAutomation: .disclosure
         default: .list
         }
     }
@@ -128,6 +134,7 @@ private enum SidebarRowKey: Hashable {
     case machine(UUID?)
     case remoteSpace(UUID, SpaceID)
     case notice(UUID)
+    case remoteAutomations(UUID)
 }
 
 /// A machine's section header.
@@ -187,6 +194,10 @@ private struct SidebarItemRow: View, Equatable {
                 RemoteAgentRow(vm: vm, zone: zone, hostID: hostID, model: model)
             case .notice(let hostID, let phase):
                 HostNoticeRow(vm: vm, hostID: hostID, phase: phase)
+            case .remoteAutomations(let header):
+                RemoteAutomationsRow(vm: vm, header: header)
+            case .remoteAutomation(let row):
+                RemoteAutomationRow(vm: vm, row: row)
             }
         }
     }
