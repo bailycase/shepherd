@@ -157,6 +157,24 @@ jobs:
             echo "::error::shard $SHARD ran no tests: check its regex against the suite names"
             STATUS=1
           fi
+
+          # C runs what the other regexes leave. If --skip stopped matching, C
+          # would quietly run their suites a second time and still pass.
+          if [ "$SHARD" = C ] && [ "$STATUS" -eq 0 ]; then
+            expected=unknown
+            if swift test list --skip-build $SWIFTPM_FLAGS > "$RUNNER_TEMP/tests.txt"; then
+              python3 - "$RUNNER_TEMP/tests.txt" > "$RUNNER_TEMP/expected.txt" <<'EOF' && expected=$(cat "$RUNNER_TEMP/expected.txt")
+          import os, re, sys
+          res = [re.compile(os.environ[k]) for k in ("W_RE", "R_RE", "A_RE")]
+          ids = [l.strip() for l in open(sys.argv[1]) if "/" in l]
+          print(sum(1 for i in ids if not any(r.search(i) for r in res)))
+          EOF
+            fi
+            if [ "${count:-0}" != "$expected" ]; then
+              echo "::error::shard C ran ${count:-0} tests, but the regexes leave it $expected"
+              STATUS=1
+            fi
+          fi
           exit "$STATUS"
 
   # Builds clean on every nightly push and saves the caches to nightly's

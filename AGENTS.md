@@ -291,7 +291,8 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
   App integration suites their regexes name (`W_RE`, `R_RE`, `A_RE` in the workflow); C `--skip`s
   all three and runs everything else, so a new or renamed suite always lands in C. Each shard
   lists its suites' times in the run's summary: when the slowest shard beats the fastest by more
-  than 20 s over two runs, move a suite. A shard that runs no tests fails.
+  than 20 s over two runs, move a suite. A shard that runs no tests fails, and so does a C whose
+  count differs from what `swift test list` leaves after the three regexes (a dead `--skip`).
 - **Serial within a shard:** on the shared 3-core runner, a parallel run queued tests behind one
   another's main-thread work until their waits ran out. A watchdog samples a test host still
   running after 10 minutes, then ends the run.
