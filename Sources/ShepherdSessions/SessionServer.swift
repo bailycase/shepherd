@@ -2006,7 +2006,8 @@ public final class SessionServer: @unchecked Sendable {
              .agents(let id, _),
              .message(let id, _),
              .agentRequest(let id, _, _, _),
-             .agentResult(let id, _):
+             .agentResult(let id, _),
+             .suggestion(let id, _):
             return id
         }
     }
