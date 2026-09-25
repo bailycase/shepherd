@@ -81,18 +81,20 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Start an automation's agent: resolve its cwd to a space (creating one
-    /// when no space contains it), spawn a normal agent with the stored
-    /// prompt, and record the link on the automation. A run still going
-    /// refuses; a settled one is replaced (its run stays in the log).
+    /// Start an automation's agent in the reserved hidden space with the stored prompt, and
+    /// record the link on the automation. A run still going (or still being started) refuses.
+    /// A settled one is replaced once the new run exists (its run stays in the log), so a
+    /// settled run on screen hands the workspace straight to the new run's thread.
     func startAutomation(_ id: AutomationID) async throws {
         guard let previous = state.automations.first(where: { $0.id == id }) else {
             throw AgentStartFailure(message: "automation no longer exists")
         }
-        if let agentID = previous.agentID {
-            try await replaceSettledRun(of: previous, agentID: agentID)
+        guard startingAutomations.insert(id).inserted else {
+            throw AgentStartFailure(message: "\(previous.name) is already running")
         }
-        guard let automation = state.automations.first(where: { $0.id == id }), automation.agentID == nil else { return }
+        defer { startingAutomations.remove(id) }
+        let settled = try await settledRun(of: previous)
+        guard let automation = state.automations.first(where: { $0.id == id }), automation.agentID == settled else { return }
 
         let cwd = (automation.cwd as NSString).expandingTildeInPath
         // Watch agents always live in the reserved hidden space — the
@@ -113,23 +115,31 @@ extension ShepherdViewModel {
         // Wear the automation's name; it was chosen deliberately.
         try? await server.renameAgent(agentID, to: automation.name)
 
-        var updated = automation
+        // Re-read: the automation may have been edited while its run started.
+        var updated = state.automations.first { $0.id == id } ?? automation
         updated.agentID = agentID
         try await server.updateAutomation(updated)
         adoptCanonical()
+
+        guard let settled, state.agents.contains(where: { $0.id == settled }) else { return }
+        // Selected before the old run goes, so its deletion has no selection to fall back from.
+        // A run off screen leaves the selection alone.
+        if selectedAgentID == settled { selectAgent(agentID) }
+        try await deleteAgentPersisted(settled)
     }
 
-    /// Deletes the agent of an automation's settled run so the next can start. A live run
-    /// (`AutomationRun.isLive`) throws instead: running again never cuts one short.
-    private func replaceSettledRun(of automation: Automation, agentID: AgentID) async throws {
+    /// The agent of an automation's settled run, which its next run replaces; nil when it has
+    /// none. A live run (`AutomationRun.isLive`) throws instead: running again never cuts one short.
+    private func settledRun(of automation: Automation) async throws -> AgentID? {
+        guard let agentID = automation.agentID else { return nil }
         let run = await server.automationRuns(automation.id).last { $0.agentID == agentID }
-        // Read after the runs: another start may have replaced the run, or its agent started a turn.
+        // Read after the runs: its agent may have gone, or started a turn, meanwhile.
         guard state.automations.first(where: { $0.id == automation.id })?.agentID == agentID,
-              let agent = state.agents.first(where: { $0.id == agentID }) else { return }
+              let agent = state.agents.first(where: { $0.id == agentID }) else { return nil }
         guard !AutomationRun.isLive(agentStatus: agent.status, run: run) else {
             throw AgentStartFailure(message: "\(automation.name) is already running")
         }
-        try await deleteAgentPersisted(agentID)
+        return agentID
     }
 
     /// Stop an automation's run by deleting its agent (the automation itself
