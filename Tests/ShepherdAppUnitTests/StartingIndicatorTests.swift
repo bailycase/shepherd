@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import ShepherdApp
 
-/// When the composer says "Starting pi…": only for a pi slower than a normal start, and sooner
+/// When the composer says "Starting…": only for a pi slower than a normal start, and sooner
 /// over a thread that has nothing to show.
 @Suite("Starting indicator")
 struct StartingIndicatorTests {
