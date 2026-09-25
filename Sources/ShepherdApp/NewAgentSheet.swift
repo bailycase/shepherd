@@ -75,11 +75,13 @@ private struct ModelSuggestionRow: View {
                 .font(.nw(.code))
                 .foregroundStyle(Color.nw.textPrimary)
                 .lineLimit(1)
+                .truncationMode(.middle)
                 .padding(.horizontal, NW.Space.m)
                 .frame(maxWidth: .infinity, minHeight: NW.Height.row, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.nwRow())
+        .help(id)
     }
 }
 

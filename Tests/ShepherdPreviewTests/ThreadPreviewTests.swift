@@ -306,7 +306,7 @@ struct ThreadPreviewTests {
             Text(text).font(.nw(.body)).foregroundStyle(placeholder ? Color.nw.textTertiary : Color.nw.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        let size = CGSize(width: 1260, height: 760)
+        let size = CGSize(width: 1320, height: 760)
         try await Preview.render("composer-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 24) {
@@ -319,29 +319,15 @@ struct ThreadPreviewTests {
                 }
                 .frame(width: 600)
                 VStack(alignment: .leading, spacing: 24) {
-                    NWSlashMenu(commands: [
-                        NWSlashCommand(name: "review", description: "Open the review pane on working-tree changes"),
-                        NWSlashCommand(name: "resume", description: "Pick a previous session to continue", arguments: "[session]"),
-                        NWSlashCommand(name: "reload", description: "Reload extensions, skills and prompts"),
-                        NWSlashCommand(name: "release-notes", description: "Draft release notes since the last tag", arguments: "[tag]", tag: "prompt"),
-                    ], total: 23, query: "re", selection: .constant(0)) { _ in }
+                    NWSlashMenu(commands: Self.slashCommands, total: 23, query: "re", selection: .constant(0)) { _ in }
                     HStack(alignment: .top, spacing: 24) {
-                        NWModelPicker(query: .constant(""), sections: [
-                            NWModelSection(title: "Recent", options: [
-                                NWModelOption(id: "anthropic/claude-opus", title: "claude-opus", isCurrent: true),
-                                NWModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", note: "fast"),
-                            ]),
-                            NWModelSection(title: "Anthropic", options: [
-                                NWModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1"),
-                                NWModelOption(id: "anthropic/claude-haiku", title: "claude-haiku"),
-                            ]),
-                        ], selection: .constant(0), onChoose: { _ in }, onClose: {})
-                        NWThinkingMenu(options: [
-                            NWThinkingOption(id: "off", title: "Off"), NWThinkingOption(id: "low", title: "Low", note: "quick"),
-                            NWThinkingOption(id: "medium", title: "Medium", note: "default"), NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
-                        ], current: "medium", onChoose: { _ in }, onClose: {})
+                        NWModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
+                                      onChoose: { _ in }, onClose: {})
+                        NWThinkingMenu(options: Self.thinkingOptions(["off", "low", "medium", "high"]), current: "medium",
+                                       onChoose: { _ in }, onClose: {})
                     }
                 }
+                .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.thinkingMenuWidth)
                 Spacer(minLength: 0)
             }
             .padding(32)
