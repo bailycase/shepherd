@@ -638,7 +638,9 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   activity lines.
 - **Following:** the thread follows the tail only while the reader is within 80pt of the bottom
   (`NativeScrollFollower`). Only a live scroll gesture or a wheel tick detaches it; content
-  growth, the composer resizing, and history swaps never do. "↓ Jump to latest"
+  growth, the composer resizing, and history swaps never do. While a gesture is live, layout
+  changes never move the view either: a drag up measures the rows it reveals, and landing on
+  the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
   agent runs or unseen output arrived. The composer draws it over the fade it lays on the thread
   and under its card and menus, so the fade never washes it out and it never covers an open
