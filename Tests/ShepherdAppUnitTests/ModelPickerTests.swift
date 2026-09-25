@@ -1,3 +1,4 @@
+import Foundation
 import ShepherdSessions
 import ShepherdUI
 import Testing
@@ -46,6 +47,27 @@ struct ModelPickerTests {
         #expect(Self.catalog.list(query: "", recent: recent, current: nil).options.prefix(2).map(\.id) == recent)
         #expect(Self.catalog.list(query: "gpt", recent: recent, current: nil).options.map(\.id) == ["openai/gpt-5", "openrouter/openai/gpt-5-mini"])
         #expect(ModelCatalog.empty.list(query: "", recent: recent, current: nil).options.map(\.title) == ["model-x", "gpt-5"])
+    }
+
+    /// Each row's second line (ModelPicker board): the current model, where and when a recent one
+    /// was used, else whether it thinks.
+    @Test func eachRowSaysWhatItIsToThisThread() {
+        let now = Date(timeIntervalSince1970: 100_000)
+        let usage = ["openai/gpt-5": RecentModels.Item(id: "openai/gpt-5", at: now.addingTimeInterval(-7200), thread: "Plan"),
+                     "gone/model-x": RecentModels.Item(id: "gone/model-x", at: now.addingTimeInterval(-30), thread: nil)]
+        let list = Self.catalog.list(query: "", recent: ["openai/gpt-5", "gone/model-x"], current: "anthropic/claude-opus-4-5",
+                                     usage: usage, now: now)
+        let subtitles = Dictionary(uniqueKeysWithValues: list.options.map { ($0.id, $0.subtitle) })
+        #expect(subtitles["openai/gpt-5"] == "Used 2h ago in “Plan”")
+        #expect(subtitles["gone/model-x"] == "Used just now")
+        #expect(subtitles["anthropic/claude-opus-4-5"] == "Current · this thread")
+        #expect(subtitles["anthropic/claude-haiku-4-5"] == "No thinking")
+        #expect(subtitles["openrouter/openai/gpt-5-mini"] == "With thinking")
+    }
+
+    @Test(arguments: [(5.0, "just now"), (300, "5m ago"), (7300, "2h ago"), (3 * 86_400 + 5, "3d ago")] as [(TimeInterval, String)])
+    func ageReadsInTheLargestUnit(_ seconds: TimeInterval, _ text: String) {
+        #expect(ModelCatalog.relativeAge(seconds) == text)
     }
 
     @Test func theCatalogKnowsWhichModelsTakeAThinkingLevel() {

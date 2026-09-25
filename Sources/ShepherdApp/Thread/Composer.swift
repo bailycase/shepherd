@@ -598,7 +598,9 @@ struct Composer: View {
             let settable = store.supportedActions.contains("setModel")
             Button { openModels() } label: {
                 HStack(spacing: NW.Space.s) {
-                    Text(nativeModelShortName(model)).font(Font.nw(.code)).nwContentTransition(.crossFade)
+                    // A long id keeps both ends: the provider prefix and the model's tail.
+                    Text(nativeModelShortName(model)).font(Font.nw(.code)).lineLimit(1).truncationMode(.middle)
+                        .nwContentTransition(.crossFade)
                     if settable { NWChipChevron() }
                 }
             }
@@ -646,7 +648,7 @@ struct Composer: View {
     private func openModels() {
         guard store.supports("setModel") else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
-        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model)
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load(), current: store.model)
         dismissCommands()
         menu = .models
         if catalog?.isEmpty != false { Task { await loadModels() } }

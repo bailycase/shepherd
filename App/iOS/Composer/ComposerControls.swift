@@ -56,12 +56,12 @@ struct ModelChip: View {
         let title = model.map(NativeModelChoices.shortName) ?? "Model"
         Button(action: open) {
             HStack(spacing: NW.Space.s) {
-                Text(title).font(.nw(.mono)).lineLimit(1)
+                Text(title).font(.nw(.mono)).lineLimit(1).truncationMode(.middle)
                 if canChange { NWChipChevron() }
             }
         }
         .disabled(!canChange)
-        .accessibilityLabel("Model, \(title)")
+        .accessibilityLabel("Model, \(model ?? title)")
         .accessibilityHint(canChange ? "Choose the agent's model" : "")
     }
 }
@@ -143,6 +143,7 @@ struct ModelPickerSheet: View {
                                     } label: {
                                         HStack {
                                             Text(model.title).font(.nw(.code)).foregroundStyle(Color.nw.textPrimary)
+                                                .lineLimit(1).truncationMode(.middle)
                                             Spacer(minLength: NW.Space.m)
                                             if model.isCurrent {
                                                 Image(systemName: "checkmark").foregroundStyle(Color.nw.running)
@@ -152,6 +153,7 @@ struct ModelPickerSheet: View {
                                         .frame(minHeight: NW.Height.touch)
                                         .contentShape(Rectangle())
                                     }
+                                    .accessibilityLabel(model.id)
                                     .accessibilityAddTraits(model.isCurrent ? .isSelected : [])
                                 }
                             }
