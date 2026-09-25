@@ -493,6 +493,23 @@ struct NativeThreadStoreTests {
         #expect(store.draft == "half-written" && store.pending.count == 1 && store.sentCount == 1)
     }
 
+    /// Only a send that goes into the thread now brings the reader to the tail; a follow-up sent
+    /// while pi works waits in Up next (DESIGN.md › Thread › Following).
+    @Test(arguments: [
+        (running: false, delivery: NativeThreadDelivery.followUp, queued: false),
+        (running: false, delivery: .steer, queued: false),
+        (running: true, delivery: .followUp, queued: true),
+        (running: true, delivery: .steer, queued: false),
+    ])
+    func aSendSaysWhetherItWaitsInUpNext(_ c: (running: Bool, delivery: NativeThreadDelivery, queued: Bool)) async {
+        let (store, host, task) = await started(F.snapshot(running: c.running, messages: [hi], queue: NativeQueue(items: [])))
+        defer { task.cancel() }
+        host.acceptAll()
+        store.draft = "next"
+        await store.send(delivery: c.delivery)
+        #expect(store.sentCount == 1 && store.lastSendQueued == c.queued)
+    }
+
     @Test func nothingIsSentForABlankDraftOrWhenSendIsUnsupported() async {
         let (store, host, task) = await started(F.snapshot(actions: ["abort"]))
         defer { task.cancel() }

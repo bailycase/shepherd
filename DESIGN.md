@@ -645,9 +645,13 @@ Dimensions are in `AppLayout+Thread.swift` and ShepherdUI's `NWThreadMetrics`.
   changes never move the view either: a drag up measures the rows it reveals, and landing on
   the tail then would pull the thread out from under the finger. "↓ Jump to latest"
   (`NWJumpToLatest`, a `bgRaised` capsule above the composer) appears while detached if the
-  agent runs or unseen output arrived. The composer draws it over the fade it lays on the thread
-  and under its card and menus, so the fade never washes it out and it never covers an open
-  menu. Sending re-attaches. The composer floats over the scroll view, which is inset by the
+  agent runs or unseen output arrived: new rows or the last one growing, never the content
+  height alone (a scroll or a turn jump measures the rows it reveals). The composer draws it
+  over the fade it lays on the thread and under its card and menus, so the fade never washes it
+  out and it never covers an open menu. A send that goes in now (pi idle, or a steer)
+  re-attaches and lands on its turn, unless the reader leaves the tail again first. A follow-up
+  that waits in Up next leaves the reader's place alone, then and when it goes: its delivery is
+  new output like any other. The composer floats over the scroll view, which is inset by the
   composer's measured height, so the thread always ends at its last turn.
 - **Turn jumps:** ⌥⌘↑ and ⌥⌘↓ move between user turns (the target lands at the top); stepping
   past the last returns to the tail.

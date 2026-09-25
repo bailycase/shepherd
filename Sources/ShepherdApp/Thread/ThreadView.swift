@@ -43,9 +43,6 @@ struct ThreadView: View {
     /// Narrow windows drop to 16pt gutters so the column keeps its width, not its margins.
     @State private var gutter = AppLayout.gutter
     @State private var hovering = false
-    /// Set on send: once the echoed turn is in the tree, scroll to the tail even if the reader
-    /// had scrolled up.
-    @State private var scrollToTurnPending = false
     @State private var wheelMonitor: Any?
     @State private var wheelIntentUntil = Date.distantPast
     /// Measured height of the floating composer: the scroll view insets by exactly this, so the
@@ -136,20 +133,22 @@ struct ThreadView: View {
                     }
                 }
                 .onChange(of: store.sentCount) { _, _ in
-                    // Sending re-attaches to the tail: the echoed turn is the last thing in the
-                    // thread, and the reply streams in under it.
-                    follower.jumpToLatest()
-                    scrollToTurnPending = true
-                    jumpedTurn = nil
+                    // A send that goes in now re-attaches to the tail: the echoed turn is the last
+                    // thing in the thread, and the reply streams in under it. A follow-up that
+                    // waits in Up next leaves the reader where they are, now and when it goes.
+                    let queued = store.lastSendQueued
+                    follower.sent(queued: queued)
+                    if !queued { jumpedTurn = nil }
                 }
                 .onChange(of: rows.last(where: \.isUser)?.id) { _, id in
-                    guard scrollToTurnPending, id != nil else { return }
-                    scrollToTurnPending = false
+                    guard id != nil, follower.userTurnArrived() else { return }
                     Task { @MainActor in
                         await Task.yield()
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
                 }
+                // New output at the tail is what "unseen" means, never the content height.
+                .onChange(of: rows.last) { _, _ in follower.contentArrived() }
                 .modifier(ThreadCommandHandler(key: commandKey, active: active) { command in
                     handle(command, proxy: proxy)
                 })
