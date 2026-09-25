@@ -78,10 +78,11 @@ struct ReviewPreviewTests {
     }
 
     /// The Commit… sheet (derived from the iPadCommit board): the drafted message, three files
-    /// with one left out, and the options; drafting; an agent still working; a checkout it
+    /// with one left out, and the options; the message written from the file list, following the
+    /// ticked files; drafting; an agent still working; a checkout it
     /// refuses; then the host's steps running, done with a pull request, stopped at a push, and
     /// a commit the host no longer knows (after a restart).
-    @Test(arguments: ["form", "drafting", "working", "blocked", "pr-default", "running", "done", "failed", "unknown"])
+    @Test(arguments: ["form", "written", "drafting", "working", "blocked", "pr-default", "running", "done", "failed", "unknown"])
     func commitSheet(_ state: String) async throws {
         let store = await CommitBoard.store(state)
         try await Preview.render("sheet-commit-\(state)", size: CGSize(width: AppLayout.commitSheetWidth, height: 720)) {
@@ -316,6 +317,9 @@ enum CommitBoard {
         let store = ReviewCommitStore()
         let operationID = UUID()
         switch state {
+        case "written":
+            store.stage(info())
+            store.toggle("App/iOS/FleetView.swift")
         case "drafting": store.stage(info(), drafting: true)
         case "working": store.stage(info(working: true), title: title, body: body, drafted: true)
         case "blocked": store.stage(info(blocked: "A rebase is in progress in this checkout. Finish or abort it first."))
