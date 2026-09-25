@@ -59,6 +59,29 @@ import SwiftUI
     }
 }
 
+#Preview("Settings rows") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: NW.Space.m) {
+            NWSectionHeader("New agents")
+            NWGroupCard(fill: Color.nw.bgWindow) {
+                NWCardRow("Default model", description: "“Use pi's default” passes no `--model` at all.", style: .settings) {
+                    NWTag("Use pi's default")
+                }
+                NWCardRow("Listener", description: "Let other Macs with your token connect to agents here.",
+                          problem: "Couldn't start: port 7433 is already in use.",
+                          problemHelp: "bind failed: Address already in use (errno 48)", style: .settings) {
+                    Toggle("Listener", isOn: .constant(true)).toggleStyle(.nwSwitch).labelsHidden()
+                }
+            }
+            NWSettingsNavRow("Appearance", systemImage: "circle.lefthalf.filled", selected: true) {}
+            NWSettingsNavRow("Remote", systemImage: "dot.radiowaves.left.and.right", selected: false) {}
+        }
+        .frame(width: 560)
+        .padding(NW.Space.xl)
+        .background(Color.nw.bgWindow)
+    }
+}
+
 #Preview("Thread and composer parts") {
     NWPreviewBoth {
         VStack(alignment: .leading, spacing: NW.Space.l) {
