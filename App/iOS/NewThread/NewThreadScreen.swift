@@ -52,6 +52,8 @@ private struct NewThreadForm: View {
     @Bindable var model: NewThreadModel
     let pad: Bool
     @FocusState private var promptFocused: Bool
+    /// Popovers widen with the text size, so a host's name still fits at accessibility sizes.
+    @ScaledMetric(relativeTo: .body) private var popoverWidth = MobileLayout.newThreadPopoverWidth
 
     var body: some View {
         Group {
@@ -177,7 +179,10 @@ private struct NewThreadForm: View {
     }
 
     private func chip(_ label: String, systemImage: String, name: String, panel: NewThreadModel.Panel, active: NewThreadModel.Panel?) -> some View {
-        Button { model.panel = panel } label: {
+        Button {
+            model.workspaceAnchor = nil
+            model.panel = panel
+        } label: {
             NWSelectorChip(label, systemImage: systemImage, active: active != nil && model.panel == active, accessibilityName: name)
         }
     }
@@ -197,7 +202,7 @@ private struct NewThreadForm: View {
 
     private func popover<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         content()
-            .frame(width: MobileLayout.newThreadPopoverWidth)
+            .frame(width: min(popoverWidth, MobileLayout.newThreadPopoverMaxWidth))
             .background(Color.nw.bgRaised)
             .presentationCompactAdaptation(.popover)
             .presentationBackground(Color.nw.bgRaised)
@@ -207,15 +212,17 @@ private struct NewThreadForm: View {
     /// "New worktree on shepherd": opens the worktree's settings.
     private var worktreeSummary: some View {
         let text = NewThreadRules.worktreeSummary(repo: model.space?.name, worktree: model.usesWorktree)
-        return Button { model.panel = pad ? .worktree : .workspace } label: {
+        return Button {
+            model.workspaceAnchor = .worktree
+            model.panel = pad ? .worktree : .workspace
+        } label: {
             HStack(spacing: NW.Space.s) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.nw(.caption))
                     .accessibilityHidden(true)
                 Text(text)
                     .font(.nw(.code))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                    .lineLimit(2)
             }
             .foregroundStyle(Color.nw.textTertiary)
             .frame(minHeight: NW.Height.touch)

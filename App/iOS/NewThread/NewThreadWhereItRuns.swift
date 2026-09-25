@@ -12,6 +12,7 @@ extension MobileLayout {
     static let newThreadThumbnail: CGFloat = 56
     /// The iPad's repo, host, worktree and model popovers.
     static let newThreadPopoverWidth: CGFloat = 380
+    static let newThreadPopoverMaxWidth: CGFloat = 640
     static let newThreadPopoverHeight: CGFloat = 460
     /// The iPad's prompt keeps room for this many lines before the chips.
     static let newThreadPadPromptLines = 6
@@ -24,14 +25,19 @@ struct NewThreadWhereItRuns: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: NW.Space.xxl) {
-                    NewThreadSection("Repo") { NewThreadRepoList(model: model, carded: true) }
-                    NewThreadSection("Host") { NewThreadHostList(model: model, carded: true) }
-                    NewThreadWorktreeCard(model: model)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: NW.Space.xxl) {
+                        NewThreadSection("Repo") { NewThreadRepoList(model: model, carded: true) }
+                        NewThreadSection("Host") { NewThreadHostList(model: model, carded: true) }
+                        NewThreadWorktreeCard(model: model).id(NewThreadModel.Panel.worktree)
+                    }
+                    .padding(.horizontal, MobileLayout.gutter)
+                    .padding(.vertical, NW.Space.xl)
                 }
-                .padding(.horizontal, MobileLayout.gutter)
-                .padding(.vertical, NW.Space.xl)
+                .onAppear {
+                    if model.workspaceAnchor == .worktree { proxy.scrollTo(NewThreadModel.Panel.worktree, anchor: .bottom) }
+                }
             }
             .background(Color.nw.bgWindow)
             .navigationTitle("Where it runs")

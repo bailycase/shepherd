@@ -21,6 +21,8 @@ final class NewThreadModel {
     }
 
     var panel: Panel?
+    /// The part of Where it runs to show first: `.worktree` when the worktree line opened it.
+    var workspaceAnchor: Panel?
     var prompt = ""
     private(set) var hostID: UUID?
     private(set) var spaceID: SpaceID?
