@@ -38,8 +38,8 @@ defaults:
 # summary lists each suite's time).
 env:
   W_RE: 'ShepherdAppIntegrationTests\.(GitWorktreeTests|WorktreeAgentTests|FinalizeWorktreeTests|RemoteWorktreeTests|WorktreeBaseOfflineTests)\b'
-  R_RE: 'ShepherdAppIntegrationTests\.(ComposerMenuTests|ComposerMenuPerformanceTests|ThreadScrollingTests|ShellTerminalMotionTests)\b'
-  A_RE: 'ShepherdAppIntegrationTests\.(ReviewFlowTests|RemoteHostTests|ListPerformanceTests|AgentStartupTests|WorkspaceNavigationTests|ShellMotionTests|ThreadMotionTests|RightPaneMotionTests)\b'
+  R_RE: 'ShepherdAppIntegrationTests\.(ComposerMenuTests|ComposerMenuPerformanceTests|ThreadScrollingTests)\b'
+  A_RE: 'ShepherdAppIntegrationTests\.(ReviewFlowTests|RemoteHostTests|ListPerformanceTests|AgentStartupTests|WorkspaceNavigationTests|ShellMotionTests|ThreadMotionTests|RightPaneMotionTests|ShellTerminalMotionTests|IdleCostTests)\b'
 
 jobs:
   # The release workflow's rules (scripts/release.py): feeds, bundle ids, and
