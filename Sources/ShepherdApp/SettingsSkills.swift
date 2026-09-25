@@ -372,8 +372,8 @@ private struct SkillDetail: View {
             }
             HStack(spacing: NW.Space.s) {
                 ForEach(skill.files) { entry in
-                    NWFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
-                               kind: entry.isDirectory ? (entry.name == "scripts" ? .code : .folder) : .file)
+                    NWSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
+                                    kind: entry.isDirectory ? (entry.name == "scripts" ? .code : .folder) : .file)
                 }
                 Spacer(minLength: NW.Space.m)
                 let here = vm.skillFolder(skill.name) != nil

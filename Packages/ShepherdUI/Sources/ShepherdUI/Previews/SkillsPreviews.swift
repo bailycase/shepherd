@@ -9,10 +9,10 @@ import SwiftUI
                 NWTag("/skill only", mono: true)
             }
             HStack(spacing: NW.Space.s) {
-                NWFileChip("SKILL.md")
-                NWFileChip("reference.md")
-                NWFileChip("scripts/", count: 8, kind: .code)
-                NWFileChip("references/", count: 2, kind: .folder)
+                NWSkillFileChip("SKILL.md")
+                NWSkillFileChip("reference.md")
+                NWSkillFileChip("scripts/", count: 8, kind: .code)
+                NWSkillFileChip("references/", count: 2, kind: .folder)
             }
             VStack(alignment: .leading, spacing: 0) {
                 NWHostStateRow("This Mac", detail: "installed · ready in new threads", mark: .done)

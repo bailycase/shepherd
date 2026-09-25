@@ -47,7 +47,7 @@ public struct NWUpdatePill: View {
 
 /// One entry at the top of a skill's folder: its icon, mono name, and a folder's file count
 /// ("SKILL.md", "scripts/ 8").
-public struct NWFileChip: View {
+public struct NWSkillFileChip: View {
     public enum Kind: Sendable {
         /// A document: SKILL.md, reference.md.
         case file
