@@ -4,55 +4,24 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// A stretch of tool work (NWThread board): two or more finished lines fold into one summary
-/// line that expands to them on a rail; one stays itself. Running calls stand below, live.
-struct WorkGroupView: View, Equatable {
-    let group: NativeWorkGroup
+/// Consecutive activity lines (NWThread, ToolRows: one quiet line per burst of work), each
+/// expanding to its calls. The running call's line is the thread's live indicator (LiveText).
+struct ActivityLinesView: View, Equatable {
+    let bursts: [NativeActivityBurst]
     var review: ((String) -> Void)?
     /// Lines that stream in once the turn is on screen make their entrance.
     var entering = false
-    @State private var expanded: Bool
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// `expanded` opens the summary from the start, for previews.
-    init(group: NativeWorkGroup, review: ((String) -> Void)? = nil, entering: Bool = false, expanded: Bool = false) {
-        self.group = group
-        self.review = review
-        self.entering = entering
-        _expanded = State(initialValue: expanded)
-    }
-
-    static func == (lhs: WorkGroupView, rhs: WorkGroupView) -> Bool {
-        lhs.group == rhs.group && lhs.entering == rhs.entering && (lhs.review == nil) == (rhs.review == nil)
+    static func == (lhs: ActivityLinesView, rhs: ActivityLinesView) -> Bool {
+        lhs.bursts == rhs.bursts && lhs.entering == rhs.entering && (lhs.review == nil) == (rhs.review == nil)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: AppLayout.activitySpacing) {
-            if let summary = group.summary {
-                NWActivityLine(kind: .work, label: summary.label, meta: summary.meta, status: summary.failed ? .failed : .done,
-                               isExpanded: expanded, accessibilityLabel: summary.accessibilityLabel, action: toggle)
-                    .nwArrival(entering)
-                if expanded {
-                    NWActivityRail {
-                        VStack(alignment: .leading, spacing: AppLayout.activitySpacing) { lines(group.finished) }
-                    }
-                    .nwTransition(.disclosure)
-                }
-            } else {
-                lines(group.finished)
+            ForEach(bursts) { burst in
+                ActivityLineView(burst: burst, review: review).equatable().nwArrival(entering)
             }
-            lines(group.running)
         }
-    }
-
-    private func lines(_ bursts: [NativeActivityBurst]) -> some View {
-        ForEach(bursts) { burst in
-            ActivityLineView(burst: burst, review: review).equatable().nwArrival(entering)
-        }
-    }
-
-    private func toggle() {
-        withAnimation(NW.Motion.disclosure.animation(reduceMotion: reduceMotion)) { expanded.toggle() }
     }
 }
 

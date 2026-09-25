@@ -1041,7 +1041,9 @@ private struct RemoteAgentThreadPane: View {
             inspectedRunID: inspecting,
             review: { path in vm.openRemoteReview(ref, path: path) },
             listModels: {
-                (try? await vm.remoteHosts.listModels(hostID: ref.hostID).entries) ?? []
+                guard let listing = try? await vm.remoteHosts.listModels(hostID: ref.hostID) else { return .empty }
+                let allLevels = vm.remoteHosts.connections.first { $0.id == ref.hostID }?.supportsAllThinkingLevels ?? false
+                return await ModelCatalog.derive(listing, hostTakesAllLevels: allLevels)
             }
         )
     }

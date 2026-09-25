@@ -174,6 +174,9 @@ public struct NativeModelChoice: Equatable, Identifiable, Sendable {
     public var id: String
     /// "claude-opus" for "anthropic/claude-opus".
     public var title: String
+    /// The row's second line: the thinking levels the model takes (`NativeThinkingLevel.line`),
+    /// nil when the host's catalog does not say.
+    public var thinking: String?
     public var isCurrent: Bool
 }
 
@@ -198,9 +201,10 @@ public enum NativeModelChoices {
     }
 
     /// One section per provider in the host's order, the models matching `query` (a
-    /// case-insensitive part of the id). The current model is marked, and listed even when the
-    /// host's catalog lacks it.
-    public static func sections(_ models: [String], current: String?, query: String = "") -> [NativeModelSection] {
+    /// case-insensitive part of the id), each with its line from `thinking` (`thinkingLines`).
+    /// The current model is marked, and listed even when the host's catalog lacks it.
+    public static func sections(_ models: [String], current: String?, query: String = "",
+                                thinking: [String: String] = [:]) -> [NativeModelSection] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
         var ids = models
         if let current, !ids.contains(current) { ids.insert(current, at: 0) }
@@ -210,9 +214,27 @@ public enum NativeModelChoices {
         for id in ids where seen.insert(id).inserted && (q.isEmpty || id.lowercased().contains(q)) {
             let provider = provider(id)
             if byProvider[provider] == nil { order.append(provider) }
-            byProvider[provider, default: []].append(NativeModelChoice(id: id, title: shortName(id), isCurrent: id == current))
+            byProvider[provider, default: []].append(NativeModelChoice(id: id, title: shortName(id), thinking: thinking[id],
+                                                                       isCurrent: id == current))
         }
         return order.map { NativeModelSection(title: $0, models: byProvider[$0] ?? []) }
+    }
+
+    /// Each model's thinking line (`NativeThinkingLevel.line`), derived once per catalog: the
+    /// levels the New thread sheet offers it (`ThinkingLevel.offered`), and for the thread's
+    /// `current` model the ones pi reports for it (`currentLevels`, the snapshot's), when it does.
+    public static func thinkingLines(_ listing: ModelListing, hostTakesAllLevels: Bool, current: String? = nil,
+                                     currentLevels: [String]? = nil) -> [String: String] {
+        let plain = Set(listing.withoutThinking ?? [])
+        // Without `withoutThinking`, so that one set lookup says whether each model reasons.
+        let configured = ModelListing(models: [], defaultModel: nil, thinkingLevels: listing.thinkingLevels)
+        var lines: [String: String] = [:]
+        for id in listing.models where lines[id] == nil {
+            let levels = plain.contains(id) ? [] : ThinkingLevel.offered(model: id, listing: configured, hostTakesAllLevels: hostTakesAllLevels)
+            lines[id] = NativeThinkingLevel.line(levels.map(\.rawValue))
+        }
+        if let current, let currentLevels, !currentLevels.isEmpty { lines[current] = NativeThinkingLevel.line(currentLevels) }
+        return lines
     }
 }
 
@@ -249,6 +271,14 @@ public struct NativeThinkingLevel: Equatable, Identifiable, Sendable {
     /// capitalized.
     public static func title(_ level: String) -> String {
         all.first { $0.id == level }?.title ?? level.prefix(1).uppercased() + level.dropFirst()
+    }
+
+    /// A model picker row's second line: the levels a model takes (pi's spellings, in pi's
+    /// order), titled as the thinking menu titles them ("Off · Minimal · Low · Medium · High"),
+    /// or "No thinking" when it takes none but Off.
+    public static func line(_ levels: [String]) -> String {
+        guard levels.contains(where: { $0 != "off" }) else { return "No thinking" }
+        return levels.map(title).joined(separator: " · ")
     }
 
     /// Whether a menu of `levels` offers any thinking: pi reports only Off for a model without
