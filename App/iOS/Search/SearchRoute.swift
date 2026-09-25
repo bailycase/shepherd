@@ -3,10 +3,11 @@ import ShepherdUI
 
 /// Search's screens (search track): threads and snippets across every host.
 enum SearchRoute: Hashable, Codable {
+    /// iPhone (and an iPad window as narrow as one): the search screen, pushed.
     case search(query: String)
 }
 
-/// Where other screens open search (Home's search button, ⌘K on iPad).
+/// Where other screens open search (Home's search button, the iPad sidebar).
 @MainActor
 enum SearchHooks {
     static func open(query: String = "", navigator: MobileNavigator) {
@@ -19,12 +20,7 @@ struct SearchDestination: View {
 
     var body: some View {
         switch route {
-        case .search:
-            NWEmptyState(Text("Search"), message: "Find a thread or a line in one, on every host.")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.nw.bgWindow)
-                .navigationTitle("Search")
-                .navigationBarTitleDisplayMode(.inline)
+        case .search(let query): MobileSearchScreen(initialQuery: query)
         }
     }
 }
