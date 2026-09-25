@@ -131,6 +131,7 @@ struct AutomationPresentationTests {
         #expect(detail.bars.last?.height == 1)
         #expect(detail.bars.first { $0.tone == .attention }?.height == AutomationsModel.minimumBar, "a run with no end yet is a stub")
         #expect(detail.chartSummary == "stopped: 1 · asked: 1")
+        #expect(detail.chartStart == "Sep 11 02:00" && detail.chartEnd == "Sep 24 02:00", "the charted fourteen, not every run")
         #expect(detail.bars.last?.label.hasSuffix("finished, 45s") == true)
     }
 
@@ -138,6 +139,7 @@ struct AutomationPresentationTests {
         let model = AutomationsModel(hosts: [Self.host([Self.automation("a")])], runs: [:])
         let detail = try #require(model.detail(Self.key("a"), runs: nil))
         #expect(!detail.runsKnown && detail.runs.isEmpty && detail.bars.isEmpty && detail.lastRun == nil && detail.chartSummary == nil)
+        #expect(detail.chartStart == nil && detail.chartEnd == nil)
         #expect(model.detail(Self.key("gone"), runs: nil) == nil)
     }
 

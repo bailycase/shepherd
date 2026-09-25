@@ -10,6 +10,8 @@ public enum NWAutomationMetrics {
     public static let chartHeight: CGFloat = 96
     /// Between two bars.
     public static let barSpacing: CGFloat = NW.Space.xs
+    /// The widest a bar gets, so a few runs still read as bars.
+    public static let barMaxWidth: CGFloat = 32
     /// A bar's top corners.
     public static let barRadius: CGFloat = NW.Radius.xs
     /// A fact's label column (iPadAutomations: "Trigger", "Runs on").
@@ -72,11 +74,12 @@ public struct NWAutomationRow: View, Equatable {
 
     public var body: some View {
         HStack(spacing: NW.Space.m) {
+            // Dimming reaches the words, never the switch: an off switch must still read as one.
             if let open {
-                Button(action: open) { content }
-                    .buttonStyle(.nwRow(selected: selected, radius: 0))
+                Button(action: open) { content.opacity(dimmed ? NWListMetrics.dimmedOpacity : 1) }
+                    .buttonStyle(.nwRow(radius: 0))
             } else {
-                content
+                content.opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
             }
             if let isOn {
                 let binding = Binding(get: { isOn }, set: { toggle?($0) })
@@ -95,8 +98,8 @@ public struct NWAutomationRow: View, Equatable {
                 .padding(.trailing, NW.Space.l)
             }
         }
-        .background(selected && open == nil ? Color.nw.bgSelected : .clear)
-        .opacity(dimmed ? NWListMetrics.dimmedOpacity : 1)
+        // The whole row, switch included, is the selection.
+        .background(selected ? Color.nw.bgSelected : .clear)
     }
 
     private var content: some View {
@@ -299,20 +302,33 @@ public struct NWRunBars: View, Equatable {
                     UnevenRoundedRectangle(topLeadingRadius: NWAutomationMetrics.barRadius,
                                            topTrailingRadius: NWAutomationMetrics.barRadius)
                         .fill(bar.state.color)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: NWAutomationMetrics.barMaxWidth)
                         .frame(height: max(NW.Space.xxs, NWAutomationMetrics.chartHeight * min(1, max(0, bar.height))))
                         .accessibilityElement()
                         .accessibilityLabel(bar.label)
                 }
             }
-            .frame(height: NWAutomationMetrics.chartHeight, alignment: .bottom)
+            .frame(maxWidth: .infinity, minHeight: NWAutomationMetrics.chartHeight, maxHeight: NWAutomationMetrics.chartHeight,
+                   alignment: .bottomLeading)
             .accessibilityElement(children: .contain)
-            HStack(spacing: NW.Space.s) {
-                Text(first ?? "")
-                Spacer(minLength: NW.Space.xs)
-                if let summary { Text(summary) }
-                Spacer(minLength: NW.Space.xs)
-                Text(last ?? "")
+            // The dates and what went other than finished share a line when they fit; otherwise
+            // the summary takes its own line under the dates.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NW.Space.s) {
+                    Text(first ?? "").fixedSize()
+                    Spacer(minLength: NW.Space.xs)
+                    if let summary { Text(summary).fixedSize() }
+                    Spacer(minLength: NW.Space.xs)
+                    Text(last ?? "").fixedSize()
+                }
+                VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                    HStack(spacing: NW.Space.s) {
+                        Text(first ?? "")
+                        Spacer(minLength: NW.Space.xs)
+                        Text(last ?? "")
+                    }
+                    if let summary { Text(summary) }
+                }
             }
             .font(.nw(.micro, weight: .regular))
             .foregroundStyle(nw.textTertiary)
