@@ -19,22 +19,27 @@ struct TerminalPanelTests {
     /// Picking a tab whose news equals the last tab's still marks it seen: the mark names the tab
     /// and its sessions, not just how far their news has got.
     @Test func theSeenMarkChangesWithTheTabEvenWhenItsNewsMatches() {
-        let first = LeafPane(cwd: "~"), second = LeafPane(cwd: "~")
-        func row(_ pane: LeafPane, news: UInt64) -> RemoteTerminalActivity {
-            RemoteTerminalActivity(paneID: pane.id, sessionID: pane.sessionID!, process: "zsh", command: nil,
+        let firstSession = SessionID(), secondSession = SessionID()
+        let first = LeafPane(sessionID: firstSession, cwd: "~"), second = LeafPane(sessionID: secondSession, cwd: "~")
+        func row(_ pane: LeafPane, _ session: SessionID, news: UInt64) -> RemoteTerminalActivity {
+            RemoteTerminalActivity(paneID: pane.id, sessionID: session, process: "zsh", command: nil,
                                    outputSequence: news + 3, newsSequence: news)
         }
-        let activity = [first.id: row(first, news: 6), second.id: row(second, news: 6)]
+        let activity = [first.id: row(first, firstSession, news: 6), second.id: row(second, secondSession, news: 6)]
         let a = TerminalPanel.seenMark(selected: TerminalPanelTab(node: .leaf(first)), onScreen: true, activity: activity)
         let b = TerminalPanel.seenMark(selected: TerminalPanelTab(node: .leaf(second)), onScreen: true, activity: activity)
         #expect(a.news == b.news && a != b)
-        #expect(b.sessions == [second.sessionID!] && b.news == [6])
+        #expect(b.sessions == [secondSession] && b.news == [6])
     }
 
     @Test func nothingIsMarkedSeenOffScreen() {
-        let pane = LeafPane(cwd: "~")
+        let session = SessionID()
+        let pane = LeafPane(sessionID: session, cwd: "~")
         let tab = TerminalPanelTab(node: .leaf(pane))
-        #expect(TerminalPanel.seenMark(selected: tab, onScreen: false, activity: [:]) == TerminalSeenMark())
+        let activity = [pane.id: RemoteTerminalActivity(paneID: pane.id, sessionID: session, process: "zsh", command: nil,
+                                                        outputSequence: 4, newsSequence: 2)]
+        #expect(TerminalPanel.seenMark(selected: tab, onScreen: true, activity: activity).sessions == [session])
+        #expect(TerminalPanel.seenMark(selected: tab, onScreen: false, activity: activity) == TerminalSeenMark())
         #expect(TerminalPanel.seenMark(selected: nil, onScreen: true, activity: [:]) == TerminalSeenMark())
     }
 
