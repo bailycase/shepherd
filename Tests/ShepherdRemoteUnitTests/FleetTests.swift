@@ -239,10 +239,15 @@ struct FleetTests {
 
     @Test func theSummariesCountAcrossHosts() {
         let model = FleetModel(hosts: [
-            Self.host(Self.studio, "Studio", agents: [Self.agent("a", .working), Self.agent("b", .blocked)]),
+            Self.host(Self.studio, "Studio", agents: [Self.agent("a", .working), Self.agent("b", .blocked),
+                                                     Self.agent("run", .working, space: Self.hidden)],
+                      automations: [Automation(id: AutomationID(rawValue: "nightly"), name: "Nightly", prompt: "go",
+                                               cwd: "/", agentID: AgentID(rawValue: "run"))]),
             Self.host(Self.build, "build-01", .failed("down"), agents: []),
         ], digests: [:])
-        #expect(model.summary == "1 needs you · 1 running · 2 hosts")
+        // Running counts what the overview's Running now lists: threads and automation runs.
+        #expect(model.runningCount == 2)
+        #expect(model.summary == "1 needs you · 2 running · 2 hosts")
         #expect(model.offlineSummary == "1 host offline")
         #expect(model.hosts.first?.needsYou == 1)
         #expect(FleetModel(hosts: [], digests: [:]).offlineSummary == nil)

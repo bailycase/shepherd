@@ -281,11 +281,14 @@ public struct FleetModel: Equatable, Sendable {
     public var offlineCount: Int { offlineHosts.count }
     public var connectedCount: Int { hosts.count - offlineHosts.count }
 
+    /// Threads and automation runs going now: the overview's Running now.
+    public var runningCount: Int { running.count + automationsRunning.count }
+
     /// "4 need you · 6 running · 3 hosts".
     public var summary: String {
         var parts: [String] = []
         if !needsYou.isEmpty { parts.append("\(needsYou.count) need\(needsYou.count == 1 ? "s" : "") you") }
-        parts.append("\(running.count) running")
+        parts.append("\(runningCount) running")
         parts.append(nativeCount(hosts.count, "host"))
         return parts.joined(separator: " · ")
     }

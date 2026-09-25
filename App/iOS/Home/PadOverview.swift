@@ -72,7 +72,7 @@ private struct OverviewColumns: View {
                 }
             }
         }
-        column("Running now", count: model.running.count + model.automationsRunning.count) {
+        column("Running now", count: model.runningCount) {
             if model.running.isEmpty && model.automationsRunning.isEmpty {
                 quiet("Nothing is running.")
             }
