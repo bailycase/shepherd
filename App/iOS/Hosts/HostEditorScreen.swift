@@ -27,7 +27,11 @@ struct HostEditorScreen: View {
                                      label: host.phase.word)
                     }
                     if let failure = host.phase.failure {
-                        Text(failure).font(.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
+                        VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                            Text(failure.message(host: host.name)).font(.nw(.caption)).foregroundStyle(Color.nw.textSecondary)
+                            Text(failure.detail).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
+                                .textSelection(.enabled)
+                        }
                     }
                     if !host.phase.isConnected {
                         Button("Retry", systemImage: "arrow.clockwise") { hosts.retry(host.id) }

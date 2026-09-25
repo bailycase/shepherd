@@ -28,6 +28,8 @@ struct FixtureHostData {
     var threads: [AgentID: NativeThreadSnapshot] = [:]
     /// Offline hosts refuse connections, so the app shows them unreachable.
     var online = true
+    /// Answers hello as a host holding another token does: `unauthorized`, then it closes.
+    var refusesToken = false
     var models: [String] = ["anthropic/claude-opus", "anthropic/claude-sonnet", "openai/gpt-5"]
     /// Answers a request before the default handler (agent queries, transcripts, …); nil
     /// falls through.

@@ -7,8 +7,25 @@ extension FixtureCatalog {
             FixtureScreen(name: "hosts", routes: [.settings(.hosts)], tab: .settings),
             FixtureScreen(name: "host", routes: [.settings(.hosts), .settings(.host(FixtureData.studio))], tab: .settings),
             FixtureScreen(name: "host-offline", routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
+            FixtureScreen(name: "hosts-refused", hosts: FixtureData.refusingLaptop(), routes: [.settings(.hosts)], tab: .settings),
+            FixtureScreen(name: "host-refused", hosts: FixtureData.refusingLaptop(),
+                          routes: [.settings(.hosts), .settings(.host(FixtureData.laptop))], tab: .settings),
             FixtureScreen(name: "addhost", routes: [.settings(.hosts), .settings(.host(nil))], tab: .settings),
             FixtureScreen(name: "addhost-sheet", presented: .settings(.host(nil))),
         ]
+    }
+}
+
+extension FixtureData {
+    /// The usual hosts, with the laptop up but refusing the phone's token.
+    static func refusingLaptop() -> [FixtureHostData] {
+        hosts().map { host in
+            var host = host
+            if host.id == laptop {
+                host.online = true
+                host.refusesToken = true
+            }
+            return host
+        }
     }
 }
