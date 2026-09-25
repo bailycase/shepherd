@@ -51,7 +51,7 @@ struct ReviewFlowTests {
         let owner = SidePaneOwner.local(background.agent.id)
         #expect(!vm.subagentInspector.open.contains(owner), "the pane stays closed")
         #expect(vm.subagentInspector.news[owner] == [.changes])
-        #expect(vm.sidePaneButton(for: owner).news == "pi opened a review in Changes")
+        #expect(vm.sidePaneButton(for: owner).news == "Agent opened a review in Changes")
         #expect(app.server.state.tabs.map(\.layout) == [background.tab.layout, visible.tab.layout], "a review never touches the layout")
         try await eventuallyOnMain("the diff to load") { !session.isLoading }
         #expect(session.files.map(\.displayPath) == ["file.txt", "new.txt"])
@@ -169,7 +169,7 @@ struct ReviewFlowTests {
 
         let owner = SidePaneOwner.local(agent.agent.id)
         #expect(vm.rightPaneContent == .inspector(runID: "run-1"))
-        #expect(vm.sidePaneButton(for: owner) == (true, "pi opened a review in Changes"))
+        #expect(vm.sidePaneButton(for: owner) == (true, "Agent opened a review in Changes"))
         vm.closeInspector(owner)
         #expect(vm.rightPaneContent == .review, "closing the inspector goes back to Changes")
         #expect(vm.subagentInspector.news[owner] == [.changes], "the tab keeps its dot until it is shown")

@@ -2258,7 +2258,7 @@ artifacts, files, etc, only show the things we have"); each joins `SidePaneTab` 
   after its count. The pane never opens, and never switches tabs or covers an inspected subagent,
   on its own. While the strip is out of sight (the pane closed, or a subagent inspected over it)
   the header's button takes the dot instead, and a tip hangs under it for 4 seconds and again
-  while the button is hovered (`NWPaneNewsTip`: "pi opened a review in Changes" in `caption` with
+  while the button is hovered (`NWPaneNewsTip`: "Agent opened a review in Changes" in `caption` with
   a 12pt glyph and the ⇧⌘B keycaps, on `bgRaised` at radius 12 with the popover shadow). Showing
   the tab clears its dot; a request while Changes is on screen just reloads it.
 - **The tab strip** (`NWSidePaneTabs`; SidePaneTabs): 44pt so it lines up with the toolbar, on
