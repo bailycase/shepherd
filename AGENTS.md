@@ -756,8 +756,9 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
   - It refuses a detached HEAD, a merge, rebase, cherry-pick or revert in progress, unmerged
     paths, a HEAD that moved, or a ticked file whose fingerprint changed since the sheet showed
     it. It refuses while the agent is working unless the reviewer confirmed.
-  - Push goes to the branch's upstream, or sets one on the push remote (origin, else the only
-    remote); never forced. A pull request pushes the branch (a new `shepherd/<slug>` branch,
+  - Push goes to the branch's upstream when it has the branch's own name, else to that name on
+    the push remote (origin, else the only remote), setting the upstream; never forced, and never
+    to another branch (a feature branch tracking origin/main never pushes to main). A pull request pushes the branch (a new `shepherd/<slug>` branch,
     made with `git switch -c`, when on the default branch) and runs `gh pr create`.
   - It holds the checkout in `hostBusyWorktrees` while it runs, like Finalize.
 

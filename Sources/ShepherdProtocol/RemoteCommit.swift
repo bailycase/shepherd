@@ -54,7 +54,8 @@ public struct RemoteCommitInfo: Codable, Hashable, Sendable {
     /// HEAD's commit when the host looked ("" before the first commit). The commit is refused if
     /// HEAD moved since.
     public var head: String
-    /// The branch's upstream ("origin/main"); nil when it has none.
+    /// The upstream a push goes to ("origin/feat-x"): the remote's branch of the same name. nil
+    /// when the branch has none, or tracks another name (a push then sets its own).
     public var upstream: String?
     /// The remote a push sets the upstream on when there is none ("origin"); nil with no remote.
     public var pushRemote: String?
