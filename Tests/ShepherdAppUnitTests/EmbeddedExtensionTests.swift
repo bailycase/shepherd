@@ -14,7 +14,6 @@ struct EmbeddedExtensionTests {
     /// Every embedded literal paired with its canonical file.
     private static let embedded: [String: String] = [
         "shepherd-status.ts": StatusExtension.extensionSource,
-        "shepherd-theme.ts": ThemeExtension.extensionSource,
         "shepherd-namer.ts": NamerExtension.extensionSource,
         "shepherd-panes.ts": PanesExtension.extensionSource,
         "shepherd-review.ts": ReviewExtension.extensionSource,

@@ -37,8 +37,8 @@ struct SettingsResetTests {
         #expect(app.server.state == workspace && vm.state == workspace)
     }
 
-    /// The pi theme file is written first; if that fails, nothing else may change.
-    @Test func aFailedThemeInstallLeavesEveryPreferenceUntouched() async throws {
+    /// The editor variant marker is written first; if that fails, nothing else may change.
+    @Test func aFailedThemeMarkerInstallLeavesEveryPreferenceUntouched() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         customize(app)
