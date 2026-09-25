@@ -66,9 +66,11 @@ struct ModelChip: View {
     }
 }
 
-/// The thinking chip: a menu of Off, Low, Medium and High, checked at the current level.
+/// The thinking chip: a menu of the levels pi offers the thread's model, checked at the current
+/// level.
 struct ThinkingChip: View {
     let level: String?
+    let levels: [NativeThinkingLevel]
     let enabled: Bool
     let choose: (String) -> Void
 
@@ -76,7 +78,7 @@ struct ThinkingChip: View {
         let title = level.map(NativeThinkingLevel.title) ?? "Default"
         Menu {
             Picker("Thinking", selection: Binding(get: { level ?? "" }, set: choose)) {
-                ForEach(NativeThinkingLevel.all) { option in
+                ForEach(levels) { option in
                     Text(option.note.map { "\(option.title) · \($0)" } ?? option.title).tag(option.id)
                 }
             }

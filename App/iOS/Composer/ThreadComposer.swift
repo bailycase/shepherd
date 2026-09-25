@@ -180,7 +180,7 @@ struct ThreadComposer: View {
         }
         if NativeThinkingLevel.offered(thinking: store.thinking, supportedActions: store.supportedActions, model: store.model,
                                        listing: state.models) {
-            ThinkingChip(level: store.thinking, enabled: live) { level in Task { await store.setThinking(level) } }
+            ThinkingChip(level: store.thinking, levels: store.thinkingLevels, enabled: live) { level in Task { await store.setThinking(level) } }
         }
     }
 
