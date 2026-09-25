@@ -371,15 +371,15 @@ public struct NWThinking: View {
         }
     }
 
-    /// The disclosure's chevron, still, in `textTertiary`, and "Thinking…" in 12.5 shimmering
-    /// (LiveText: text moves, icons don't).
+    /// The disclosure's chevron, still, in `textTertiary`, and "Thinking…" in italic 12.5
+    /// shimmering (LiveText: text moves, icons don't).
     private var liveHeader: some View {
         HStack(spacing: NW.Space.m) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 8, weight: .semibold))
                 .foregroundStyle(Color.nw.textTertiary)
                 .frame(width: NWThreadMetrics.liveChevron, height: NWThreadMetrics.liveChevron)
-            Text(title).font(.nw(.ui, weight: .regular)).lineLimit(1).nwShimmer(active: true)
+            Text(title).font(.nw(.ui, weight: .regular)).italic().lineLimit(1).nwShimmer(active: true)
         }
         .frame(minHeight: NWThreadMetrics.liveHeight)
         .accessibilityElement(children: .ignore)
