@@ -36,7 +36,7 @@ struct AutomationsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NWPageHeader("Automations", leadingInset: chrome.leadingInset, sidebar: chrome.showSidebar) {
+            DestinationPageHeader(title: "Automations", chrome: chrome) {
                 NWPageFilterField("Filter automations", text: Binding(get: { model.filter }, set: actions.setFilter))
                 Button("New automation", systemImage: "plus", action: actions.create)
                     .buttonStyle(.nw(.primary))

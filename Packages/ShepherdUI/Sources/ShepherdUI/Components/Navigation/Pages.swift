@@ -46,22 +46,26 @@ public enum NWPageMetrics {
 /// A destination page's header: the title, an optional subtitle ("3 hosts · 1 offline"), then
 /// the trailing controls (a filter, the page's one primary button), on the window's background
 /// with a hairline beneath. As the thread toolbar (`NWThreadToolbar`): a sidebar button leads
-/// while the sidebar is not docked, and `leadingInset` clears the window controls.
+/// while the sidebar is not docked, `leadingInset` clears the window controls, and its empty area
+/// drags the window.
 public struct NWPageHeader<Trailing: View>: View {
     let title: String
     let subtitle: String?
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
     let sidebarLabel: String
+    let sidebarShortcut: String?
     let trailing: Trailing
 
     public init(_ title: String, subtitle: String? = nil, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil,
-                sidebarLabel: String = "Show sidebar", @ViewBuilder trailing: () -> Trailing) {
+                sidebarLabel: String = "Show sidebar", sidebarShortcut: String? = nil,
+                @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.subtitle = subtitle
         self.leadingInset = leadingInset
         self.sidebar = sidebar
         self.sidebarLabel = sidebarLabel
+        self.sidebarShortcut = sidebarShortcut
         self.trailing = trailing()
     }
 
@@ -70,7 +74,7 @@ public struct NWPageHeader<Trailing: View>: View {
             if let sidebar {
                 Button(action: sidebar) { Image(systemName: "sidebar.left") }
                     .buttonStyle(.nwIcon)
-                    .nwHelp(sidebarLabel)
+                    .nwHelp(sidebarLabel, shortcut: sidebarShortcut)
                     .accessibilityLabel(sidebarLabel)
             }
             Text(title)
@@ -93,6 +97,8 @@ public struct NWPageHeader<Trailing: View>: View {
         .frame(maxWidth: .infinity)
         .background(Color.nw.bgWindow)
         .overlay(alignment: .bottom) { NWHairline() }
+        .contentShape(Rectangle())
+        .nwWindowDrag()
     }
 }
 

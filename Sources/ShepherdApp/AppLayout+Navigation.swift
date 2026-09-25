@@ -37,11 +37,7 @@ extension AppLayout {
     /// An overlaid sidebar leaves this much of the window uncovered.
     static let sidebarOverlayMargin: CGFloat = 48
 
-    // Destination pages (NavNewThread, NavAutomations, NavHosts)
-    /// The page header: 52pt (the thread toolbar is 44), 24pt in, 16pt from the trailing edge.
-    static let pageHeaderHeight: CGFloat = 52
-    static let pageHeaderLeading: CGFloat = 24
-    static let pageHeaderTrailing: CGFloat = 16
+    // Destination pages (NavNewThread, NavAutomations, NavHosts); the header is `NWPageMetrics`'.
     /// New thread: the column's gaps and padding, the heading (Geist 26 semibold, tracked −2%),
     /// the 720pt composer and the Continue card's row under it.
     static let newThreadGap: CGFloat = 24
