@@ -90,7 +90,7 @@ And the rules that follow from them:
 | Queue & steer: a row's actions take room only while it is hovered | An 82pt slot is always laid out, empty at rest | Details on hover: hovering never re-truncates the text |
 | Queue & steer: message times at rest | On hover (Details on hover) | The thread's rule |
 | Queue & steer: "Pi" | "pi" | The app's spelling, until the rest of that redesign lands |
-| Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn or asks a question while you aren't watching it (`AgentNotifications`) | Reaches you outside the app |
+| Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn, fails one, or asks a question while you aren't watching it (`AgentNotifications`; see Status language) | Reaches you outside the app |
 | Missions, the mission graph, the attention inbox, evidence review (Lab boards) | Not built | Out of scope for this pass |
 | ⌘M opens the model picker (earlier handoff) | **⇧⌘M** | ⌘M is the system Minimize chord |
 | A compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither: the tree starts under the window controls | The sidebar is navigation only; ⌘K opens the palette and ⌘N (or a space's hover `+`) starts an agent |
@@ -1260,12 +1260,28 @@ keeps its destructive action disabled until the unreconciled-work check is in.
 | Agent blocked on a question | `attention` | lantern dot, glowing; "ASK" | the question panel in place of the field |
 | A subagent needs you | `attention` | its agent's row: lantern dot, glowing; "ASK" | the card's answers and Reply… |
 | Agent done | `done` | green dot | Send |
+| Agent done, its turn failed | `failed` | red dot | Send |
 | Agent idle | `idle` | hollow ring | Send |
 | pi starting | `idle` | hollow ring | Send, which waits for pi; only when pi is slow (two seconds, half a second over a blank thread), "Starting pi…" beside it |
 | Connection lost | `failed` | — | Send, plus a `failed` banner with Reconnect |
 
 Subagent runs use the same states on their dots, glyphs, pills, and steps: running, needs you,
 done, failed, and queued (queued or paused, hollow). Tool calls use running, done, and failed.
+
+A turn fails when pi's last reply is a provider error (not a Stop). The thread shows the error
+(`NWTurnError`), and the agent's row reads failed until its next turn starts.
+
+**System notifications** (`AgentNotifications`, worded by `AgentBanners`) follow the same
+language, and post only while you aren't watching that agent (it isn't selected, or Shepherd
+isn't frontmost):
+
+| Moment | Title | Body | Sound |
+| --- | --- | --- | --- |
+| A turn finished | the agent | "Agent finished" | no |
+| A turn failed | the agent | "Turn failed", then the error's first line | yes |
+| The agent asks a question | the agent | "Agent needs your input" | yes |
+
+An agent's banners replace each other. Clicking a banner selects the agent.
 
 ## Components
 

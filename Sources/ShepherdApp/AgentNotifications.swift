@@ -1,10 +1,11 @@
 import AppKit
 import UserNotifications
 import ShepherdCore
+import ShepherdSessions
 
-/// System notifications for agent lifecycle: an agent finishing a turn or
-/// asking a question posts a banner, clicking it selects that agent. Enabled/
-/// disabled through macOS System Settings — no in-app toggle.
+/// System notifications for agent lifecycle: an agent finishing a turn, failing one, or
+/// asking a question posts a banner (`AgentBanners` decides which), clicking it selects that
+/// agent. Enabled/disabled through macOS System Settings — no in-app toggle.
 @MainActor
 final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
     /// Set by the view model; called with the agent id when a notification
@@ -25,31 +26,26 @@ final class AgentNotifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    func agentStatusChanged(_ agent: Agent, from old: AgentStatus, isAgentVisible: Bool) {
+    func agentStatusChanged(_ agent: Agent, from old: AgentStatus, failure: TurnFailure?, isAgentVisible: Bool) {
         guard available else { return }
-        // Only working→done / working→blocked are "your attention is
-        // wanted" moments; idle churn (launch resets, session restarts) is not.
-        guard old == .working, agent.status == .done || agent.status == .blocked else { return }
         // Watching the agent already — no banner needed.
-        if isAgentVisible && NSApp.isActive { return }
+        let watching = isAgentVisible && NSApp.isActive
+        guard let banner = AgentBanners.status(of: agent, from: old, failure: failure, watching: watching) else { return }
+        post(banner)
+    }
 
+    private func post(_ banner: AgentBanner) {
         let center = UNUserNotificationCenter.current()
         if !requestedAuthorization {
             requestedAuthorization = true
             center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
-
         let content = UNMutableNotificationContent()
-        content.title = agent.name
-        content.body = agent.status == .done ? "Agent finished" : "Agent needs your input"
-        if agent.status == .blocked { content.sound = .default }
-        content.userInfo = ["agentID": agent.id.rawValue]
-        // One notification per agent: a newer status replaces the older banner.
-        center.add(UNNotificationRequest(
-            identifier: "agent-status-\(agent.id.rawValue)",
-            content: content,
-            trigger: nil
-        ))
+        content.title = banner.title
+        content.body = banner.body
+        if banner.sound { content.sound = .default }
+        content.userInfo = ["agentID": banner.agentID.rawValue]
+        center.add(UNNotificationRequest(identifier: banner.identifier, content: content, trigger: nil))
     }
 
     /// A custom notification from an agent's notify tool. Always posted —
