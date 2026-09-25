@@ -57,7 +57,8 @@ struct RenameAgentSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        // On iPad the sheet is a form fitted to what it holds (MobileRoot); a detent would override it.
+        .presentationDetents(navigator.layout == .pad ? [.large] : [.medium, .large])
         .onAppear {
             if name.isEmpty { name = current }
             focused = true
@@ -104,7 +105,7 @@ struct DeleteAgentSheet: View {
         .background(Color.nw.bgWindow)
         .navigationBarTitleDisplayMode(.inline)
         // The worktree's confirmation needs the whole height: details, the warning, both deletes.
-        .presentationDetents(worktree ? [.large] : [.medium, .large])
+        .presentationDetents(worktree || navigator.layout == .pad ? [.large] : [.medium, .large])
     }
 }
 
@@ -365,6 +366,6 @@ struct ActionProblemSheet: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.nw.bgWindow)
-        .presentationDetents([.medium])
+        .presentationDetents(navigator.layout == .pad ? [.large] : [.medium])
     }
 }

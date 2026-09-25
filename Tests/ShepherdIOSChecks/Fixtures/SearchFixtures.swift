@@ -20,6 +20,9 @@ extension FixtureCatalog {
                           presented: .search(.delete(FixtureData.ref(FixtureData.extensions)))),
             FixtureScreen(name: "delete-worktree", hosts: SearchFixtures.hosts(), routes: [.thread(preview)],
                           presented: .search(.delete(FixtureData.ref(SearchFixtures.worktree)))),
+            FixtureScreen(name: "action-problem", hosts: SearchFixtures.hosts(), routes: [.thread(preview)],
+                          presented: .search(.problem(title: "Couldn't rename the thread",
+                                                      message: "Studio refused it: the agent is gone."))),
         ]
     }
 }
