@@ -300,7 +300,7 @@ struct NativeThreadStoreTests {
         #expect(host.actions.count == 1 && store.sentCount == 1 && store.draft.isEmpty && store.ready)
     }
 
-    /// What the composer's "Starting pi…" watches: a thread waiting for its pi, never one that
+    /// What the composer's "Starting…" watches: a thread waiting for its pi, never one that
     /// is ready, in trouble, or a thread kept from before that is only refreshing.
     @Test func aThreadAwaitsPiOnlyWhileItsPiHasNotAnswered() async {
         let fresh = manualStore()
@@ -413,18 +413,18 @@ struct NativeThreadStoreTests {
         store.draft = "do the thing"
         let sending = Task { await store.send() }
         await until { store.busy }
-        host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent's pi exited (code 127)."))]
+        host.next = [.failure(RemoteHostClientError.rejected(code: NativeThreadCode.unavailable, message: "The agent exited (code 127)."))]
         await store.refresh()
         await sending.value
         #expect(host.actions.isEmpty && store.draft == "do the thing" && !store.busy)
-        #expect(!store.starting && store.loadError == "native_unavailable: The agent's pi exited (code 127).")
+        #expect(!store.starting && store.loadError == "native_unavailable: The agent exited (code 127).")
     }
 
     @Test func aPiThatNeverStartsBecomesAnErrorAfterTheLimitAndClearsWhenItAnswers() async {
         let (store, host, task) = await startedWhileStarting(manualStore(startingLimit: .zero))
         defer { task.cancel() }
         #expect(!store.starting && !store.acceptsSend)
-        #expect(store.loadError?.hasPrefix("The agent's pi has not started after") == true)
+        #expect(store.loadError?.hasPrefix("The agent has not started after") == true)
         await store.refresh()
         #expect(!store.starting && store.loadError != nil, "still over the limit: the error stays")
         host.starting = false
@@ -912,6 +912,29 @@ struct NativeThreadStoreTests {
         #expect(store.rows.map(\.live) == [false, false, false, true])
     }
 
+    /// LiveText: the thread ends in "Thinking…" only while nothing else moves.
+    @Test func theThreadShowsThinkingOnlyWhileNothingElseMoves() async {
+        let prompt = F.user(id: "u")
+        let (store, host, task) = await started(F.snapshot(running: true, messages: [prompt]))
+        defer { task.cancel() }
+        #expect(store.showsThinking, "before pi's reply has a row")
+        host.snapshot = F.snapshot(revision: 2, running: true, messages: [prompt],
+                                   provisional: [F.assistant("Writing", status: "streaming", id: "p")])
+        await store.refresh()
+        #expect(!store.showsThinking, "the reply being written is what moves")
+        host.snapshot = F.snapshot(revision: 3, running: true, messages: [prompt],
+                                   provisional: [F.tool("bash", args: #"{"command":"swift test"}"#, status: "running", id: "b", callID: "b")])
+        await store.refresh()
+        #expect(!store.showsThinking, "the running call is what moves")
+        host.snapshot = F.snapshot(revision: 4, running: true, messages: [prompt],
+                                   provisional: [F.tool("bash", args: #"{"command":"swift test"}"#, id: "b", callID: "b")])
+        await store.refresh()
+        #expect(store.showsThinking, "between tools")
+        host.snapshot = F.snapshot(revision: 5, messages: [prompt, F.assistant("Done.", id: "a")])
+        await store.refresh()
+        #expect(!store.showsThinking, "an idle thread")
+    }
+
     @Test func aRunningCallsTailFollowsOutputThatKeepsItsLength() async throws {
         let running = { (output: String) in
             F.tool("bash", args: #"{"command":"swift build"}"#, output: output, status: "running", id: "provisional:tool:b", callID: "b")
@@ -920,7 +943,7 @@ struct NativeThreadStoreTests {
         defer { task.cancel() }
         host.snapshot = F.snapshot(revision: 2, running: true, messages: [F.user(id: "u")], provisional: [running("step 2")])
         await store.refresh()
-        guard case .work(let group)? = store.rows.last?.presentation?.items.last, let burst = group.running.first else {
+        guard case .activity(_, let bursts)? = store.rows.last?.presentation?.items.last, let burst = bursts.last else {
             Issue.record("no live line")
             return
         }
@@ -993,7 +1016,7 @@ struct NativeThreadStoreTests {
         ("widgets", { _ = $0.widgets }), ("commands", { _ = $0.commands }), ("model", { _ = $0.model }),
         ("thinking", { _ = $0.thinking }), ("stats", { _ = $0.stats }), ("supportedActions", { _ = $0.supportedActions }),
         ("clipped", { _ = $0.clipped }), ("running", { _ = $0.running }), ("hostRunning", { _ = $0.hostRunning }),
-        ("workingLabel", { _ = $0.workingLabel }), ("userTurnCount", { _ = $0.userTurnCount }),
+        ("showsThinking", { _ = $0.showsThinking }), ("userTurnCount", { _ = $0.userTurnCount }),
         ("hasSubagents", { _ = $0.hasSubagents }),
     ]
 
@@ -1011,12 +1034,12 @@ struct NativeThreadStoreTests {
     /// a poll that moves only the context count moves only `stats`; and each other change moves
     /// what it shows.
     @Test func eachChromePropertyChangesOnlyWithWhatItShows() async {
-        var snapshot = F.snapshot(running: true, messages: [F.user("go", id: "u")],
-                                  provisional: [F.assistant("Str", status: "streaming", id: "p")], model: "a/one")
+        let read = { (id: String) in F.tool("read", args: #"{"path":"\#(id).swift"}"#, id: id, callID: id) }
+        var snapshot = F.snapshot(running: true, messages: [F.user("go", id: "u")], provisional: [read("p1")], model: "a/one")
         snapshot.stats = NativeThreadStats(contextTokens: 1_000)
         let (store, host, task) = await started(snapshot)
         defer { task.cancel() }
-        #expect(store.running && store.workingLabel == "Working…" && store.userTurnCount == 1)
+        #expect(store.running && store.showsThinking && store.userTurnCount == 1)
 
         func serve(_ edit: (inout NativeThreadSnapshot) -> Void) async -> Set<String> {
             await changed(store) {
@@ -1028,7 +1051,7 @@ struct NativeThreadStoreTests {
         }
 
         let steps: [(Set<String>, (inout NativeThreadSnapshot) -> Void)] = [
-            ([], { $0.provisional = [F.assistant("Streaming more", status: "streaming", id: "p")] }),
+            ([], { $0.provisional = [read("p1"), read("p2")] }),
             (["stats"], { $0.stats = NativeThreadStats(contextTokens: 2_000) }),
             (["model"], { $0.model = "a/two" }),
             (["thinking"], { $0.thinking = "high" }),
@@ -1038,7 +1061,7 @@ struct NativeThreadStoreTests {
             (["clipped"], { $0.clipped = true }),
             (["hasSubagents"], { $0.subagents = [F.run("r")] }),
             (["userTurnCount"], { $0.messages += [F.assistant("Done.", id: "a"), F.user("next", id: "u2")] }),
-            (["dialogs", "workingLabel"], { $0.dialogs = [NativeThreadDialog(id: "d", kind: .confirm, title: "Go?")] }),
+            (["dialogs", "showsThinking"], { $0.dialogs = [NativeThreadDialog(id: "d", kind: .confirm, title: "Go?")] }),
             (["session"], { $0.generation = "g2" }),
         ]
         for (index, (expected, edit)) in steps.enumerated() {
