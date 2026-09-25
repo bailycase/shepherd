@@ -75,7 +75,8 @@ git -C <repo> worktree add --no-track -b <branch> <checkout> <base>
 
 The base is stored on the agent as `Agent.worktreeBase` (`ShepherdCore`), alongside
 `worktreeBranch` and, for imported worktrees, `worktreePath`. All three decode as nil from older
-state files. The sidebar marks worktree agents with `⎇`.
+state files. A worktree agent's sidebar row names its branch in its tooltip, and its menu offers
+Finalize Worktree… and Delete Worktree Agent….
 
 ## Finalizing
 

@@ -12,8 +12,10 @@ agents.
   does the iPad; the iPhone opens them full screen. On the Mac they are real PTYs rendered with
   libghostty; the iOS client attaches to the host's over the remote protocol and renders them
   with SwiftTerm. There are no global shells and no space shell workspaces.
-- **Spaces** are plain groups in the sidebar. With no agent selected, the workspace shows an
-  empty state.
+- **Spaces** are projects: the folders threads start in. The sidebar has no tree; it lists
+  destinations (New thread, Automations, More ▸ Hosts and Extensions), then Needs you and Recents
+  (every agent, local and remote, most recently active first). The New thread page's workplace
+  chip lists each host's spaces, flat. With no agent on screen, the main column shows New thread.
 - **Lifetime:** there is no daemon. Sessions live and die with the app. On relaunch the workspace
   (spaces, agents, pane layouts) restores from `state.json`, every agent resumes its pi session
   over RPC, and every terminal pane respawns a fresh shell.
@@ -362,11 +364,13 @@ Sources/
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
-      SidebarView, RemoteSidebarSection, ThreadHeader, WorkspaceView, WorkspaceSelection,
-      RightPaneSplit, AppCommands (menus, MenuState), AppDialogs (every sheet)
+      SidebarView (+ SidebarModel: destinations, Needs you, Recents, footer), NewThreadPage (+
+      NewThreadModel), Pages/ (the Automations and Hosts pages, PageHeader), ThreadHeader,
+      WorkspaceView, WorkspaceSelection (+ MainDestination), RightPaneSplit, AppCommands (menus,
+      MenuState), AppDialogs (every sheet)
     AppLayout (+Navigation, +Thread, +Agents, +Settings; ShellLayout's adaptive rules live in
       +Navigation), AgentStateMapping (app lifecycles → AgentState)
-    ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
+    ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
       +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal), RemoteAutomationSheet
     TerminalPanels (each layout's terminal panel: shown, tab, maximized, activity),
@@ -652,7 +656,7 @@ are `@MainActor @Observable` classes, owned with `@State` and bound with `@Binda
 **Keybindings resolve through the store.** Menus, palette keycaps, Settings ▸ Keyboard, and the
 Ghostty unbind list all read `KeybindingsStore`, and hardcoding a chord in a view is a bug.
 
-- A rebound chord must include ⌘. ⌘1–9 (agents), ⌃⇧1–9 (machine jumps), ⌘,, and the plain ⌘
+- A rebound chord must include ⌘. ⌘1–9 (the first nine Recents rows), ⌘,, and the plain ⌘
   system and terminal chords are reserved.
 - A focused Ghostty surface eats any key equivalent it has a binding for, so every chord the app
   chrome uses must be unbound in `appOwnedChords` (`TerminalSurfaceModel.swift`). Rebindable
