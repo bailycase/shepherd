@@ -88,4 +88,31 @@ struct AutomationsPageActionTests {
             host.state.automations.isEmpty && !vm.remoteAutomationsPending.contains(key)
         }
     }
+
+    /// Run Now from the page starts a run on this Mac, its detail lists the run, and opening the
+    /// run's thread leaves the page for that thread.
+    @Test func runNowStartsARunWhoseThreadOpensFromThePage() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        let automation = Automation(name: "watch CI", prompt: "watch the build", cwd: app.dir.path, enabled: false)
+        let vm = try await app.start(with: ShepherdState(spaces: [Fixture.space(path: app.dir.path)], automations: [automation]))
+        let key = AutomationKey(host: PageHost.localID, automation: automation.id)
+        vm.openDestination(.automations)
+        vm.automationsPageSelection = key
+        #expect(vm.shownDestination == .automations)
+
+        vm.runAutomation(key)
+        try await eventuallyOnMain("the run to start", timeout: .seconds(30)) {
+            app.server.state.automations.first?.agentID != nil
+        }
+        let run = try #require(app.server.state.automations.first?.agentID)
+        await vm.loadAutomationPageRuns()
+        let thread = try #require(vm.automationsPageModel().detail?.runs.first?.thread)
+        #expect(thread == FleetRef(host: PageHost.localID, agent: run))
+
+        vm.openThread(thread)
+        #expect(vm.selectedAgentID == run)
+        #expect(vm.destination == nil && vm.shownDestination == nil, "a run's thread takes the column off the page")
+    }
 }
