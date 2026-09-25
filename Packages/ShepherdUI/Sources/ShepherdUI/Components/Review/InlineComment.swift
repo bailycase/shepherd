@@ -37,7 +37,7 @@ public struct NWInlineComment: View {
                         if let onDelete { Button("Delete", action: onDelete) }
                     }
                     .buttonStyle(.nwLink(color: nw.textSecondary, font: .nw(.caption)))
-                    .opacity(hovering ? 1 : 0)
+                    .opacity(NWPlatform.showsHoverDetails || hovering ? 1 : 0)
                     .accessibilityHidden(true)
                 }
             }

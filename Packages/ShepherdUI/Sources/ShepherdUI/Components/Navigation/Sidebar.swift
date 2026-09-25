@@ -93,7 +93,7 @@ public struct NWSidebarSection<Accessory: View>: View {
     /// out and only fade, and the accessory (taller than the label) floats over the count's slot
     /// instead of joining the row. Always shown for VoiceOver.
     public var body: some View {
-        let showsAccessory = accessoryWidth > 0 && (hovering || voiceOver)
+        let showsAccessory = accessoryWidth > 0 && (NWPlatform.showsHoverDetails || hovering || voiceOver)
         Button { toggle?() } label: {
             HStack(spacing: NW.Space.s) {
                 Text(title).nwSectionLabel().lineLimit(1)

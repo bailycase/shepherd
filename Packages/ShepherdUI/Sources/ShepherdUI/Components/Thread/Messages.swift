@@ -10,7 +10,7 @@ import SwiftUI
 /// (`.hover`): showing them never moves or resizes anything.
 enum NWMessageDetails {
     static func shown(hovering: Bool, focused: Bool = false, confirming: Bool = false, voiceOver: Bool) -> Bool {
-        hovering || focused || confirming || voiceOver
+        NWPlatform.showsHoverDetails || hovering || focused || confirming || voiceOver
     }
 }
 
@@ -252,7 +252,7 @@ public struct NWCodeBlock: View {
                 }
                 .buttonStyle(.nwIcon(size: NWThreadMetrics.codeCopyButton))
                 .focused($copyFocused)
-                .opacity(hovering || copyFocused || copied ? 1 : 0)
+                .opacity(NWPlatform.showsHoverDetails || hovering || copyFocused || copied ? 1 : 0)
                 .nwAnimation(.hover, value: hovering || copyFocused || copied)
                 .accessibilityLabel(copied ? "Copied" : "Copy code")
             }
@@ -396,6 +396,9 @@ public struct NWThinking: View {
                     .nwAnimation(.content, value: title)
             }
             .foregroundStyle(Color.nw.textSecondary)
+            #if os(iOS)
+            .frame(minHeight: NW.Height.touch)
+            #endif
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
