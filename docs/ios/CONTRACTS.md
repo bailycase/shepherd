@@ -154,8 +154,8 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | Hook | Lives in (filled by) | Called by | Signature |
 | --- | --- | --- | --- |
 | Composer slot | `Composer/ThreadComposer.swift` (B) | `ThreadScreen`, at the bottom | `ThreadComposer(ref: AgentRef)` |
-| Subagent cards | `Subagents/SubagentCards.swift` (D) | `AgentTurnView`, where a turn spawned children and after it | `SubagentCards(thread: AgentRef, runs: [NativeSubagent], turnLive: Bool)` |
-| Subagent routes | `Subagents/SubagentsRoute.swift` (D) | the turn footer's "N subagents", the thread's options menu | `SubagentHooks.list(thread:) -> MobileRoute`, `SubagentHooks.run(thread:runID:) -> MobileRoute` |
+| Subagent tray | `Subagents/SubagentTray.swift` (D) | `ThreadComposer`, above the composer in one card with Up next | `SubagentTraySection(ref: AgentRef, tray: NativeSubagentTray, store: NativeThreadStore, state: ComposerState, size: NWSubagentTraySize, enabled: Bool)` |
+| Subagent routes | `Subagents/SubagentsRoute.swift` (D) | the turn footer's "N subagents", a turn's subagent record lines, the thread's options menu | `SubagentHooks.list(thread:) -> MobileRoute`, `SubagentHooks.run(thread:runID:) -> MobileRoute` |
 | Open review | `Review/ReviewRoute.swift` (E) | the changes card's Review and files, an edit line | `ReviewHooks.open(thread: AgentRef, file: String?, navigator: MobileNavigator)` |
 | Agent actions | `Search/AgentActionsMenu.swift` (F) | the thread's options menu (menu items only) | `AgentActionsMenu(thread: AgentRef)` |
 | Commit from review | `Commit/CommitHooks.swift` (G) | the changes' bar and ••• menu, the iPad composer and full-screen toolbar | `CommitHooks.available(host:) -> Bool`, `CommitHooks.open(thread:navigator:sizeClass:)`, `.commitPopover(ref:arrowEdge:)` on the iPad's Commit… |
@@ -174,8 +174,8 @@ them except the navigator, which is each window's own ([Windows](#windows-ipad))
 | Terminal menu item | `Terminal/TerminalRoute.swift` (J) | the thread's options menu (menu items only) | `TerminalMenuItems(thread: AgentRef)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
-the owning track replaces the body. Keep the signature. A hook drawn inside a turn
-(`SubagentCards`) compares equal on its plain inputs (`Equatable`), so a streamed chunk never
+the owning track replaces the body. Keep the signature. What a turn draws of its
+subagents (`NWSubagentRecordLine`) compares equal on its plain inputs, so a streamed chunk never
 redraws it unless its values changed; keep it that way.
 
 ## Windows (iPad)

@@ -23,11 +23,14 @@ public enum NWTouchQuestionMetrics {
 public struct NWQuestionCard<Content: View>: View {
     let docked: Bool
     let count: Int
+    let title: String
     let content: Content
 
-    public init(docked: Bool, count: Int = 1, @ViewBuilder content: () -> Content) {
+    /// `title` names the asker: "Agent is asking", or a subagent's name ("reviewer is asking").
+    public init(docked: Bool, count: Int = 1, title: String = "Agent is asking", @ViewBuilder content: () -> Content) {
         self.docked = docked
         self.count = count
+        self.title = title
         self.content = content()
     }
 
@@ -38,7 +41,7 @@ public struct NWQuestionCard<Content: View>: View {
             bottomTrailing: docked ? 0 : NW.Radius.l, topTrailing: NW.Radius.l))
         VStack(alignment: .leading, spacing: NW.Space.l) {
             HStack(spacing: NW.Space.s) {
-                Label("Agent is asking", systemImage: "questionmark.circle")
+                Label(title, systemImage: "questionmark.circle")
                     .font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.lanternText)
                 Spacer(minLength: NW.Space.m)
                 if count > 1 {
