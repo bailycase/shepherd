@@ -136,55 +136,79 @@ class PlanTests(unittest.TestCase):
 
 
 class IOSPlanTests(unittest.TestCase):
-    """Only a push to nightly uploads the iOS client, to TestFlight internal testing."""
+    """Only a manual TestFlight run on nightly uploads the iOS client, to TestFlight internal
+    testing: Apple caps uploads per day (ITMS-90382), so no push does."""
 
-    def test_a_push_to_nightly_with_the_key_uploads_to_testflight_internal(self):
-        p = release.plan("refs/heads/nightly", STAMP, asc_key=True)
-        self.assertTrue(p["build"])
+    def test_a_manual_testflight_run_on_nightly_uploads_ios_only(self):
+        p = release.plan("refs/heads/nightly", STAMP, asc_key=True, testflight=True)
         self.assertTrue(p["ios"])
+        self.assertFalse(p["build"])
+        self.assertIn("only the iOS client", p["reason"])
         self.assertEqual((p["ios_scheme"], p["ios_configuration"], p["ios_product"]),
                          ("Shepherd iOS", "Release", "Shepherd iOS.app"))
         self.assertEqual(p["ios_bundle_id"], "com.bailycase.shepherd.ios")
         self.assertEqual(p["ios_export_options"], "App/iOS/ExportOptions.plist")
         self.assertEqual(p["ios_testing"], "internal")
 
-    def test_without_the_key_the_upload_is_skipped_and_the_mac_nightly_still_builds(self):
-        p = release.plan("refs/heads/nightly", STAMP)
+    def test_no_push_uploads_the_ios_client(self):
+        # Every trigger but a manual TestFlight run, with the key set: the Mac plan is untouched.
+        for ref, attempt, published in (("refs/heads/nightly", 1, ""),
+                                        ("refs/heads/nightly", 2, ""),
+                                        ("refs/heads/nightly", 2, "nightly-202609232159"),
+                                        ("refs/tags/v1.2.3", 1, ""), ("refs/tags/v1.3.0-beta.2", 1, ""),
+                                        ("refs/tags/v1.3.0-rc.1", 1, ""), ("refs/heads/master", 1, ""),
+                                        ("refs/heads/feat/native-redesign", 1, ""), ("refs/pull/32/merge", 1, "")):
+            with self.subTest(ref=ref, attempt=attempt, published=published):
+                p = release.plan(ref, STAMP, attempt, published, asc_key=True)
+                self.assertFalse(p["ios"])
+                self.assertIn(release.TESTFLIGHT_RUN, p["ios_reason"])
+                self.assertEqual({k: v for k, v in p.items() if not k.startswith("ios")},
+                                 release._plan_mac(ref, STAMP, attempt, published))
+
+    def test_a_push_to_nightly_still_builds_shepherd_nightly(self):
+        p = release.plan("refs/heads/nightly", STAMP, asc_key=True)
         self.assertTrue(p["build"])
+        self.assertEqual(p["app"], "nightly")
         self.assertFalse(p["ios"])
+
+    def test_a_testflight_run_refuses_to_upload_what_it_should_not(self):
+        # (ref, attempt, key set, what the reason names)
+        for ref, attempt, asc_key, reason in (
+                ("refs/tags/v1.2.3", 1, True, "nightly branch"),
+                ("refs/tags/v1.3.0-beta.2", 1, True, "nightly branch"),
+                ("refs/heads/master", 1, True, "nightly branch"),
+                ("refs/heads/feat/native-redesign", 1, True, "nightly branch"),
+                ("refs/heads/nightly-old", 1, True, "nightly branch"),
+                ("refs/heads/nightly", 1, False, "APP_STORE_CONNECT_KEY_P8"),
+                # A re-run keeps the run number, which is the build number.
+                ("refs/heads/nightly", 2, True, "new run"),
+                ("refs/heads/nightly", 3, True, "new run")):
+            with self.subTest(ref=ref, attempt=attempt, asc_key=asc_key):
+                p = release.plan(ref, STAMP, attempt, asc_key=asc_key, testflight=True)
+                self.assertFalse(p["ios"])
+                self.assertFalse(p["build"])
+                self.assertIn(reason, p["ios_reason"])
+
+    def test_without_the_key_every_secret_is_named(self):
+        p = release.plan("refs/heads/nightly", STAMP, testflight=True)
         for secret in release.IOS_SECRETS:
             self.assertIn(secret, p["ios_reason"])
-        self.assertEqual({k: v for k, v in p.items() if not k.startswith("ios")},
-                         {k: v for k, v in release.plan("refs/heads/nightly", STAMP, asc_key=True).items()
-                          if not k.startswith("ios")})
 
-    def test_no_other_trigger_uploads_the_ios_client_yet(self):
-        # Beta tags (external testing) and stable tags (the App Store) are later lanes.
-        for ref in ("refs/tags/v1.2.3", "refs/tags/v1.3.0-beta.2", "refs/tags/v1.3.0-rc.1", "refs/tags/vnext",
-                    "refs/heads/master", "refs/heads/feat/native-redesign", "refs/heads/nightly-old",
-                    "refs/pull/32/merge"):
-            with self.subTest(ref=ref):
-                p = release.plan(ref, STAMP, asc_key=True)
-                self.assertFalse(p["ios"])
-                self.assertTrue(p["ios_reason"])
-
-    def test_a_rerun_that_already_published_its_nightly_uploads_nothing(self):
-        # The re-run would reuse the build number, which TestFlight refuses as a redundant binary.
-        p = release.plan("refs/heads/nightly", STAMP, 2, "nightly-202609232159", asc_key=True)
-        self.assertFalse(p["ios"])
-        self.assertIn("nightly-202609232159", p["ios_reason"])
-
-    def test_the_plan_command_takes_the_key_flag_anywhere(self):
-        for args, ios in ((["refs/heads/nightly", STAMP], False),
-                          (["refs/heads/nightly", STAMP, "--asc-key"], True),
-                          (["refs/heads/nightly", STAMP, "1", "", "--asc-key"], True),
-                          (["--asc-key", "refs/heads/nightly", STAMP, "1", ""], True),
-                          (["refs/tags/v1.2.3", STAMP, "1", "", "--asc-key"], False)):
+    def test_the_plan_command_takes_the_flags_anywhere(self):
+        for args, build, ios in ((["refs/heads/nightly", STAMP], True, False),
+                                 (["refs/heads/nightly", STAMP, "--asc-key"], True, False),
+                                 (["refs/heads/nightly", STAMP, "1", "", "--asc-key", "--testflight"], False, True),
+                                 (["--testflight", "--asc-key", "refs/heads/nightly", STAMP, "1", ""], False, True),
+                                 (["refs/heads/nightly", STAMP, "1", "", "--testflight"], False, False),
+                                 (["refs/heads/nightly", STAMP, "2", "", "--asc-key", "--testflight"], False, False),
+                                 (["refs/tags/v1.2.3", STAMP, "1", "", "--asc-key", "--testflight"], False, False),
+                                 (["refs/tags/v1.2.3", STAMP, "1", "", "--asc-key"], True, False)):
             with self.subTest(args=args):
                 out = io.StringIO()
                 with contextlib.redirect_stdout(out):
                     self.assertEqual(release.main(["plan", *args]), 0)
-                self.assertEqual(json.loads(out.getvalue().strip().removeprefix("plan="))["ios"], ios)
+                p = json.loads(out.getvalue().strip().removeprefix("plan="))
+                self.assertEqual((p["build"], p["ios"]), (build, ios))
 
     def test_the_ios_client_shares_no_identity_with_the_mac_apps(self):
         for app in release.APPS.values():
@@ -1079,6 +1103,50 @@ class RetireCommandTests(unittest.TestCase):
         self.assertEqual(self.server.state["tokens"], [])
 
 
+class ReleaseConcurrencyTests(unittest.TestCase):
+    """A release run is never cancelled: nightly pushes queue, and the newest waiting one ships next."""
+
+    def test_a_newer_push_waits_instead_of_cancelling_the_running_release(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as f:
+            release_yml = f.read()
+        m = re.search(r"^concurrency:\n((?:  .*\n)+)", release_yml, re.M)
+        self.assertIsNotNone(m)
+        self.assertIn("cancel-in-progress: false", m.group(1))
+
+    def test_a_testflight_run_queues_apart_from_the_pushes(self):
+        # One group would let a TestFlight run replace a waiting push, or a push replace it.
+        with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as f:
+            release_yml = f.read()
+        m = re.search(r"^concurrency:\n((?:  .*\n)+)", release_yml, re.M)
+        self.assertIsNotNone(m)
+        self.assertIn("group: release-${{ github.ref }}${{ inputs.testflight && '-testflight' || '' }}\n",
+                      m.group(1))
+
+
+class TestFlightInputTests(unittest.TestCase):
+    """Only a manual run asks release.py for TestFlight, through the workflow's testflight input."""
+
+    def setUp(self):
+        with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as f:
+            self.release = f.read()
+
+    def test_a_manual_run_has_a_testflight_switch_that_is_off_by_default(self):
+        dispatch = re.search(r"^  workflow_dispatch:\n((?:    .*\n)+)", self.release, re.M)
+        self.assertIsNotNone(dispatch)
+        testflight = re.search(r"^      testflight:\n((?:        .*\n)+)", dispatch.group(1), re.M)
+        self.assertIsNotNone(testflight)
+        self.assertRegex(testflight.group(1), r"(?m)^        type: boolean$")
+        self.assertRegex(testflight.group(1), r"(?m)^        default: false$")
+        self.assertRegex(testflight.group(1), r"(?m)^        description: \S")
+
+    def test_the_plan_step_passes_the_flag_only_for_a_manual_run_that_asked(self):
+        step = re.search(r"^      - name: Plan\n((?:        .*\n)+)", self.release, re.M)
+        self.assertIsNotNone(step)
+        self.assertEqual(re.findall(r"--testflight", self.release), ["--testflight"])
+        self.assertIn("${{ github.event_name == 'workflow_dispatch' && inputs.testflight "
+                      "&& '--testflight' || '' }}", step.group(1))
+
+
 class RetireWorkflowTests(unittest.TestCase):
     """release.yml's retire-testflight job runs only after the testflight job uploads."""
 
@@ -1107,10 +1175,12 @@ class RetireWorkflowTests(unittest.TestCase):
         self.assertIn(testflight_if, condition)
         self.assertIn("fromJSON(needs.plan.outputs.plan).ios", condition)
         self.assertIn("needs.testflight.result == 'success'", condition)
-        # Only a push to nightly (with the key) plans an upload.
-        self.assertTrue(release.plan("refs/heads/nightly", "202609250000", asc_key=True)["ios"])
+        # Only a manual TestFlight run on nightly (with the key) plans an upload; no push does.
+        self.assertTrue(release.plan("refs/heads/nightly", "202609250000", asc_key=True, testflight=True)["ios"])
+        self.assertFalse(release.plan("refs/heads/nightly", "202609250000", asc_key=True)["ios"])
         for ref in ("refs/tags/v1.2.3", "refs/tags/v1.2.3-beta.1", "refs/heads/master"):
             self.assertFalse(release.plan(ref, "202609250000", asc_key=True)["ios"], ref)
+            self.assertFalse(release.plan(ref, "202609250000", asc_key=True, testflight=True)["ios"], ref)
 
     def test_it_runs_on_linux_and_reads_the_repo_without_writing_it(self):
         self.assertRegex(self.job, r"(?m)^    runs-on: ubuntu-latest$")
