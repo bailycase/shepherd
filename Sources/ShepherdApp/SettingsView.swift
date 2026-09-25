@@ -50,25 +50,25 @@ struct SettingsView: View {
     private var nav: some View {
         let sections = matchingSections
         return VStack(alignment: .leading, spacing: 0) {
-            // Traffic-light strip: draggable, nothing else lives up here.
+            // The window controls' strip: draggable, nothing else lives up here.
             Color.clear
-                .frame(height: AppLayout.trafficLightHeight)
+                .frame(height: AppLayout.settingsWindowStripHeight)
                 .contentShape(Rectangle())
                 .gesture(WindowDragGesture())
 
             Button { vm.showSettings = false } label: {
                 HStack(spacing: NW.Space.m) {
                     Image(systemName: "chevron.left")
-                        .font(.nw(.ui, weight: .semibold))
+                        .font(.nwSans(NWSettingsNavMetrics.textSize, .semibold))
                         .imageScale(.small)
                         .frame(width: NW.Space.xl)
                         .accessibilityHidden(true)
-                    Text("Back to Shepherd").font(.nw(.ui))
+                    Text("Back to Shepherd").font(.nwSans(NWSettingsNavMetrics.textSize))
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Color.nw.textSecondary)
                 .padding(.horizontal, NW.Space.m)
-                .frame(minHeight: NW.Height.row)
+                .frame(minHeight: AppLayout.settingsBackRowHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.nwRow())
@@ -165,7 +165,7 @@ struct SettingsView: View {
         .background(Color.nw.bgWindow)
         .overlay(alignment: .top) {
             // The window has no title bar; the strip above the content still drags it.
-            Color.clear.frame(height: AppLayout.trafficLightHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
+            Color.clear.frame(height: AppLayout.settingsWindowStripHeight).contentShape(Rectangle()).gesture(WindowDragGesture())
         }
     }
 }
@@ -257,7 +257,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .agents: return "person.2"
         case .worktrees: return "arrow.branch"
         case .pi: return "pi"
-        case .remote: return "desktopcomputer"
+        case .remote: return "dot.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         }

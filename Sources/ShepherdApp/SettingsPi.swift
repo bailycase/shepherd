@@ -24,7 +24,7 @@ struct PiSettings: View {
                             subtitle: "Let agents control panes, message or spawn agents, manage automations and send notifications.") {
                     SettingsSwitch(label: "Panes and agent tools", isOn: $settings.piPanesExtension)
                 }
-                SettingsRow(title: "Diff review tool", subtitle: "Let agents open the review pane with review_diff.") {
+                SettingsRow(title: "Diff review tool", subtitle: "Let agents open the review pane with `review_diff`.") {
                     SettingsSwitch(label: "Diff review tool", isOn: $settings.piReviewExtension)
                 }
                 SettingsRow(title: "Native subagents",
@@ -83,27 +83,26 @@ struct PiSettings: View {
             }
 
             SettingsGroup(title: "Updates", footnote: "Updating never restarts running agents.") {
-                SettingsRow(title: "Update pi daily", subtitle: "Runs pi update once a day.") {
+                SettingsRow(title: "Update pi daily", subtitle: "Runs `pi update` once a day.") {
                     updateSwitch("Update pi daily", $settings.autoUpdatePi)
                 }
-                SettingsRow(title: "Update extensions daily", subtitle: "Runs pi update --extensions once a day.") {
+                SettingsRow(title: "Update extensions daily", subtitle: "Runs `pi update --extensions` once a day.") {
                     updateSwitch("Update extensions daily", $settings.autoUpdateExtensions)
                 }
                 SettingsActionRow {
-                    VStack(alignment: .leading, spacing: NW.Space.xs) {
-                        Text("pi \(updates.currentVersion ?? "—")").font(.nw(.ui)).foregroundStyle(Color.nw.textPrimary)
+                    VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                        Text("pi \(updates.currentVersion ?? "—")")
+                            .font(.nw(.body, weight: .medium))
+                            .foregroundStyle(Color.nw.textPrimary)
                         status
                     }
                 } actions: {
                     Button(updates.isChecking ? "Checking…" : "Check now") { updates.checkNow() }
                         .buttonStyle(.nw(.secondary, size: .s))
                         .disabled(updates.isBusy)
-                    Button(piUpdateTitle) { updates.updatePiNow() }
+                    Button(updates.isUpdating ? "Updating…" : "Update now") { updates.updateNow() }
                         .buttonStyle(.nw(.secondary, size: .s))
-                        .disabled(!updates.canUpdatePi)
-                    Button(extensionsUpdateTitle) { updates.updateExtensionsNow() }
-                        .buttonStyle(.nw(.secondary, size: .s))
-                        .disabled(!updates.canUpdateExtensions)
+                        .disabled(!updates.canUpdate)
                 }
             }
         }
@@ -111,7 +110,7 @@ struct PiSettings: View {
         // Checking → up to date, updating → updated: the words, the dot and the buttons' titles
         // fade in place.
         .nwAnimation(.content, value: statusLine.text)
-        .nwAnimation(.content, value: piUpdateTitle + extensionsUpdateTitle)
+        .nwAnimation(.content, value: updates.isUpdating)
     }
 
     /// The configured subagent model always stays listed, even when pi's catalog lacks it.
@@ -147,7 +146,8 @@ struct PiSettings: View {
         return ("Up to date" + (updates.extensionsUpdatedAt == nil ? "" : " · extensions updated"), .done)
     }
 
-    /// "● Up to date · extensions updated · uses the pi resolved from your login shell"
+    /// "● Up to date · extensions updated · uses the pi resolved from your login shell", in the
+    /// description's size.
     private var status: some View {
         let (text, state) = statusLine
         return HStack(spacing: NW.Space.s) {
@@ -156,21 +156,7 @@ struct PiSettings: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .nwContentTransition(.crossFade)
         }
-        .nwText(.caption)
+        .nwText(size: NWTextStyle.ui.size, lineHeight: NWCardRowMetrics.settingsDescriptionLineHeight)
         .accessibilityElement(children: .combine)
-    }
-
-    private var piUpdateTitle: String {
-        switch updates.activeUpdate {
-        case .pi, .both: "Updating…"
-        default: "Update pi"
-        }
-    }
-
-    private var extensionsUpdateTitle: String {
-        switch updates.activeUpdate {
-        case .extensions, .both: "Updating…"
-        default: updates.extensionsUpdatedAt == nil ? "Update extensions" : "Extensions updated"
-        }
     }
 }

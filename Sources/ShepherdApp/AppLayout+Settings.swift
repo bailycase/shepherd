@@ -6,12 +6,25 @@ import ShepherdUI
 extension AppLayout {
     // Settings
     static let settingsNavWidth: CGFloat = 232
-    /// The nav's rows sit 1pt apart, like the sidebar's.
-    static let settingsNavRowSpacing: CGFloat = NWSidebarMetrics.rowSpacing
+    /// The strip at the top of the nav and the page that holds the window controls and drags
+    /// the window.
+    static let settingsWindowStripHeight: CGFloat = 44
+    /// Back to Shepherd: a 30pt row, not scaled by density.
+    static let settingsBackRowHeight: CGFloat = 30
+    static let settingsNavRowSpacing: CGFloat = NW.Space.xxs
     static let settingsContentWidth: CGFloat = 720
     static let settingsTop: CGFloat = 44
     static let settingsBottom: CGFloat = 48
-    static let settingsGutter: CGFloat = NW.Space.xxxl
+    /// 48pt either side of the page's column.
+    static let settingsGutter: CGFloat = NW.Space.xxxl + NW.Space.xl
+    /// The page title: Geist 22/600, tracked −1%.
+    static let settingsTitleSize: CGFloat = 22
+    static let settingsTitleTracking: CGFloat = -0.01
+    /// A group's footnote: Geist 12/1.5.
+    static let settingsFootnoteSize: CGFloat = 12
+    static let settingsFootnoteLineHeight: CGFloat = 1.5
+    /// A remote host's address in its row ("horizon.starlight.internal:7433"): mono 12.
+    static let settingsAddressSize: CGFloat = 12
     /// Between the page header and each group.
     static let settingsGroupSpacing: CGFloat = NW.Space.xxl + NW.Space.xs
     /// Density-scaled.

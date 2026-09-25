@@ -157,6 +157,9 @@ And the rules that follow from them:
 | Settings boards: controls drawn by hand larger than the Controls board's (30pt buttons, fields and popups at radius 7 in Geist 13; a 26pt segmented control on its own track; a 180pt slider with a 4pt track and an 18pt knob; a 30×28 stepper; 22pt keycaps at radius 5; 240pt fields and a 100pt port field; a 32pt search field with a plain "⌘F"), cards at radius 10, 10pt paddings and gaps (rows, nav rows, the icon-to-name gap, under the search field), mono-free sans section labels (Geist 11/600 caps in `textSecondary`), and hexes outside the palette (`#22262a`, `#1b1e21`, `#c1c5cb`, `#767c85`, `#23272c`, `#f58a86`, `#6fd49a`) | The Controls board's components at their sizes (`NWSegmentedPicker` m, `NWPopupMenu` 200×28, `NWStepper`, `NWValueSlider` 200pt, `.nw` fields 220pt and a port 88pt, `NWKeycap`, `NWSearchField` with keycaps); the radius and space scales (cards 8, controls 6, keycaps 4; 10pt steps to 8 or 12); `.nwSectionLabel()` (Foundations' micro mono caps in `textTertiary`); the nearest roles (`lineSubtle`, `textSecondary`, `textTertiary`, `bgSelected`, `failed`, `done`) | One anatomy per control and one section label across the app; the scales and roles are the contract (SettingsAdvanced's own Update channel row already draws the Controls board's segmented control) |
 | SettingsRemote: a host's state as a colored word ("connected") | A state dot plus its word, and a failed host's sentence under it | Status is a dot or glyph plus a word (Principles) |
 | SettingsPi: Subagent display "Show subagent runs in the sidebar and open their inspector" | "Show subagent runs in their agent's thread, the inspector and the palette" | Subagents have no sidebar rows (Subagents); one waiting on you marks its parent's row |
+| SettingsPi: Sync pi theme "Use Shepherd's palette in pi and follow theme changes." | "Use Shepherd's palette when you run pi by hand in a shell, and follow theme changes." | Agents run pi over RPC and draw no pi TUI, so the theme reaches only pi run by hand (honest affordances) |
+| SettingsRemote: Token "Delete the file to revoke every client." | "To revoke every client, delete the file and turn the listener off and on." | The listener reads the token when it starts; deleting the file alone revokes no one |
+| SettingsAdvanced: Reset settings "Restores appearance, font, agent and keyboard preferences. Spaces, agents and layouts are untouched." | "Restores appearance, terminal, agent, worktree, pi and keyboard preferences. Spaces, agents, layouts and Remote are untouched." | The reset covers every page but Remote, and the copy names what it touches |
 
 Additions the boards don't have:
 
@@ -458,7 +461,7 @@ output, counts, times), both bundled (NWFoundations). Sizes are points:
 
 | Style (`NWTextStyle`) | Mac spec | iOS | Board use (NWFoundations) | Also in the app |
 | --- | --- | --- | --- | --- |
-| `display` | Geist 28/600/1.15 | 28 | Empty states, onboarding | Settings page titles today (the Settings boards draw them at 22/600; Known gaps). There is no onboarding, and empty-state titles follow the Status board at 17/600 (`Font.nwSans`) |
+| `display` | Geist 28/600/1.15 | 28 | Empty states, onboarding | Nothing in the Mac app: there is no onboarding, empty-state titles follow the Status board at 17/600, and Settings page titles the Settings boards at 22/600 (`Font.nwSans`) |
 | `title` | Geist 15/600/1.3 | 16 | Thread and pane titles | Dialog and sheet titles. The toolbar title and pane headers follow the Navigation board at 13/600 (`Font.nwSans(13, .semibold)`) |
 | `headline` | Geist 13.5/600/1.35 | 17 | Card titles, section heads | Markdown headings |
 | `body` | Geist 13.5/400/1.6 | 16/1.5 | Agent prose, bubbles | The composer field |
@@ -2702,9 +2705,9 @@ with ⌘S).
     Experiments (`flask`). A row is 32pt × density (`NW.Height.scaled(32)`), radius `s`, with
     `NW.Space.m` side padding: a 15pt medium icon in `textSecondary` (`textPrimary` when selected),
     then, `NW.Space.m` after it, the name in Geist 13 `textPrimary`. The selected page sits on
-    `bgSelected` with its name at medium (500) weight; hover is `bgHover`. **Not built yet:**
-    Instructions and Experiments; the app's nav has the other eight, and the Remote icon is
-    `desktopcomputer`.
+    `bgSelected` with its name at medium (500) weight; hover is `bgHover`
+    (`NWSettingsNavMetrics`). **Not built yet:** Instructions and Experiments; the app's nav has
+    the other eight.
   - "Shepherd x.y.z · pi x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there.
 - **Search:** typing narrows the nav to pages with a match (a row's title, or a keyword such as
@@ -2723,17 +2726,20 @@ with ⌘S).
     footnote `NW.Space.m` under the card, `NW.Space.xs` in. The card is radius `NW.Radius.m` with a
     1px `lineSubtle` line, filled `bgWindow` like the page it sits on: flat, drawn by its line
     alone. `NWHairline`s separate its rows.
-  - a row (`NWCardRow`, through `SettingsRow`): at least 52pt × density, `NW.Space.l` top and bottom
-    and `NW.Space.xl` at the sides, the text and the control `NW.Space.xxl` apart. The title in
-    Geist 13.5/500 (`Font.nw(.body, weight: .medium)`, `textPrimary`), `NW.Space.xxs` over its
-    description in Geist 12.5/1.45 (`Font.nw(.ui, weight: .regular)`, `textSecondary`). A row may
-    have no description (Sidebar width, Port, Thinking). The control trails, centered on the row.
+  - a row (`NWCardRow` with `style: .settings`, through `SettingsRow`): at least 52pt × density,
+    `NW.Space.l` top and bottom and `NW.Space.xl` at the sides, the text and the control
+    `NW.Space.xxl` apart. The title in Geist 13.5/500 (`Font.nw(.body, weight: .medium)`,
+    `textPrimary`), `NW.Space.xxs` over its description in Geist 12.5/1.45 (`textSecondary`). A row
+    may have no description (Sidebar width, Port, Thinking). The control trails, centered on the
+    row. The card row's default style is the compact one sheets and the phone's forms use.
   - inside a description, a flag, file or tool name is inline code: mono 11.5 on `bgSunken`, radius
     `xs`, `NW.Space.xs` side padding and no line, lighter than the standalone `NWInlineCode`
     ("passes no `--model` at all", "with `review_diff`", "Runs `pi update` once a day"). Where a
     description explains the options, their names are set at medium (500) weight, a step brighter
     than the text around them (`textPrimary`; the board's #c1c5cb is off the palette): "**Remote
-    default** starts clean…".
+    default** starts clean…". Descriptions and page explanations are written with that markup
+    (`` `code` ``, `**name**`) and drawn by `NWInlineMarkup`, which parses each string once and pads
+    the code's fill by kerning the characters around it.
   - rows without a title (a form's Add host, pi's version and update buttons, a remote host) are
     `SettingsActionRow`s: the same padding and minimum height, their own content leading, actions
     trailing `NW.Space.s` apart.
@@ -2762,13 +2768,14 @@ with ⌘S).
   - small buttons (`size: .s`): `.secondary` for actions (Reveal, Check now, Edit), `.danger` for
     one that removes or resets (Remove, Reset…), `.ghost` for Cancel, `.nwLink` for a text action
     inside a row (a shortcut's Reset)
-- **Footnotes and problems:** a footnote is Geist 12/1.5 (`Font.nwSans(12)`) in `textTertiary`: a
-  sentence or two about the whole group, never a mono paragraph. An inline problem (the listener's
-  bind error) sits in its row, `NW.Space.xs` under the description: an `xmark` glyph (12pt,
-  `failed`), then, `NW.Space.s` after it, one sentence in the description's size in `failed` that
-  says what happened in plain words ("Couldn't start: port 7433 is already in use."). It discloses,
-  and the card grows with it (`disclosure`). Never show an errno or a raw error as the message; the
-  technical reason may be the line's tooltip.
+- **Footnotes and problems:** a footnote is Geist 12/1.5 (`nwText(size:lineHeight:)`) in
+  `textTertiary`: a sentence or two about the whole group, never a mono paragraph. An inline problem
+  (the listener's bind error) sits in its row, `NW.Space.xs` under the description
+  (`NWInlineProblem`): an `xmark` glyph (12pt, `failed`), then, `NW.Space.s` after it, one sentence
+  in the description's size in `failed` that says what happened in plain words ("Couldn't start:
+  port 7433 is already in use."). It discloses, and the card grows with it (`disclosure`). Never
+  show an errno or a raw error as the message; the technical reason is the line's tooltip
+  (`RemoteListenerFailure` words the listener's).
 - **Status inside a row** is a state dot plus its word (`NWStatusDot`, the word in the state's text
   color): a remote host's connection, pi's update status. A failed remote host adds what happened
   and what to do as its problem ("studio refused the token. Edit the host to paste its current
@@ -2864,9 +2871,9 @@ automated step of the worktree flows can be turned off here.
   tracking are always on."), switches, all on by default:
   - Name agents automatically, "Titles each new agent from its first prompt using the cheapest
     authed model. A rename you type is always final."
-  - Sync pi theme, "Use Shepherd's palette in pi and follow theme changes." (the theme extension
-    reaches only pi run by hand in a terminal pane; the app says so: "…when you run pi by hand in a
-    shell…")
+  - Sync pi theme, "Use Shepherd's palette when you run pi by hand in a shell, and follow theme
+    changes." (the board: "…in pi and follow theme changes."; the theme extension reaches only pi
+    run by hand in a terminal pane, see the departures)
   - Panes and agent tools, "Let agents control panes, message or spawn agents, manage automations
     and send notifications."
   - Diff review tool, "Let agents open the review pane with `review_diff`."
@@ -2895,9 +2902,11 @@ automated step of the worktree flows can be turned off here.
     Updating extensions… / Updating pi and extensions… (running) · Update available · x.y.z
     (attention) · the error, in words (failed) · Not checked yet (idle) · Up to date, plus " ·
     extensions updated" once they have been (done). The words and the dot cross-fade (`content`).
-    Actions: Check now ("Checking…" while it runs) and Update now, disabled until there is something
-    to update. The app splits Update now into Update pi and Update extensions, each disabled until
-    it can run, "Updating…" while it does, and "Extensions updated" after.
+    Actions: Check now ("Checking…" while it runs) and Update now ("Updating…" while it runs),
+    disabled until there is something to update. Update now runs whatever there is in one run
+    (`PiUpdateManager.updateNow`): `pi update` when a check found pi out of date or none has run
+    yet, and `pi update --extensions` until the extensions have been updated, since nothing tells
+    Shepherd whether they are current.
 
 #### Remote (SettingsRemote)
 
@@ -2926,8 +2935,9 @@ automated step of the worktree flows can be turned off here.
   - Listener, "Let other Macs with your token connect to agents here.": a switch. While it is bound
     the description reads "Serving on port 7433. Other Macs with your token connect to agents here."
     A bind failure is the row's problem, "Couldn't start: port 7433 is already in use."
-  - Token, "Paste this into the other Mac's Token field. Delete the file to revoke every client.": a
-    `PathRow` for `remote-token` with Reveal.
+  - Token, "Paste this into the other Mac's Token field. To revoke every client, delete the file and
+    turn the listener off and on." (the board: "Delete the file to revoke every client."; see the
+    departures): a `PathRow` for `remote-token` with Reveal.
 
 #### Keyboard (SettingsKeyboard)
 
@@ -2974,10 +2984,12 @@ automated step of the worktree flows can be turned off here.
   as Shepherd." Last, "Version 0.1.0 (1)" (the short version and the build) with Check for updates.
   Debug builds have no updater: the group holds only the version row, with no button, and Sparkle's
   rows disclose once it reports it can update.
-- **Reset:** Reset settings, "Restores appearance, font, agent and keyboard preferences. Spaces,
-  agents and layouts are untouched.": Reset… (danger) opens `ResetSettingsDialog` ("Reset settings
-  to defaults?", "Your spaces, agents and pane layouts are not affected.", Cancel and a destructive
-  Reset).
+- **Reset:** Reset settings, "Restores appearance, terminal, agent, worktree, pi and keyboard
+  preferences. Spaces, agents, layouts and Remote are untouched." (the board: "Restores appearance,
+  font, agent and keyboard preferences. Spaces, agents and layouts are untouched."; see the
+  departures): Reset… (danger) opens `ResetSettingsDialog` ("Reset settings to defaults?", "Your
+  spaces, agents and pane layouts are not affected.", Cancel and a destructive Reset). Remote's
+  hosts and its listener stay as they are (`AppSettings.Key.resettable`).
 
 #### Wide pages: Instructions and Experiments
 
@@ -3693,20 +3705,8 @@ below collects the rest, and the places those sentences point here.
     composer's field, the strip's and the ledger's gaps, a file header's leading inset,
     `AppLayout.steerTopInset`), which is not a step on the space scale ("Padding and gaps use only
     these steps").
-- **Settings (the boards against `SettingsView.swift`, `SettingsComponents.swift`,
-  `NWSettingsNavRow`, `NWCardRow`, `NWGroupCard`):** the nav's window-controls strip 38pt
-  (`AppLayout.trafficLightHeight`) instead of 44; page titles in `display` (28) instead of 22/600;
-  nav rows 28pt at `ui` with a semibold selection instead of 32pt at Geist 13 and 500, rows 1pt
-  apart instead of 2, nav icons at 13.5 instead of 15, the Back row 28pt, and the Remote icon
-  `desktopcomputer`; 32pt page gutters instead of 48; group cards on `bgRaised` instead of flat on
-  `bgWindow`; row titles in `ui` (12.5) and descriptions and footnotes in `caption` (11.5) instead
-  of 13.5/500, 12.5, and 12; 16pt between a row's text and its control instead of 24, 3pt between
-  title and description instead of 2, 6pt under the page title instead of 4; descriptions without
-  inline code or emphasized option names; the listener's problem without its `xmark` and showing the
-  raw bind error; the remote host line all in mono; Keyboard's Reset all as a danger button in a
-  Fixed row, "Confirm or cancel in sheets" with ⎋, and the Reset link 8pt from its keycaps; pi's
-  Update now split in two; and copy that differs (Sync pi theme, Remote's Token, Advanced's Reset
-  settings). Instructions and Experiments are not built.
+- **Settings (the boards against `SettingsView.swift` and `SettingsComponents.swift`):**
+  Instructions and Experiments are not built.
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalToggle against the
   app):
   - Consecutive activity lines, and a work group's lines on its rail, sit 6pt apart

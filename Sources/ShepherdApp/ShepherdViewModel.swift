@@ -808,7 +808,7 @@ final class ShepherdViewModel {
     /// The bound port while serving, nil otherwise. Distinct from the
     /// setting: binding can fail (port in use), and the UI must say so.
     private(set) var remoteListenerBoundPort: UInt16?
-    private(set) var remoteListenerError: String?
+    private(set) var remoteListenerFailure: RemoteListenerFailure?
 
     var remoteListenerEnabled: Bool { settings.remoteListenerEnabled }
 
@@ -819,8 +819,10 @@ final class ShepherdViewModel {
         return "Let other Macs with your token connect to agents here."
     }
 
-    /// The bind failure, shown inline under the listener row.
-    var remoteListenerProblem: String? { remoteListenerError.map { "Couldn't start: \($0)" } }
+    /// Why the listener couldn't start, in words, shown inline under the listener row.
+    var remoteListenerProblem: String? { remoteListenerFailure?.sentence }
+    /// The technical reason: that line's tooltip.
+    var remoteListenerProblemDetail: String? { remoteListenerFailure?.detail }
 
     /// Applied at startup (ShepherdApp calls this after server.start()) and
     /// from the Settings toggle.
@@ -830,18 +832,19 @@ final class ShepherdViewModel {
 
     func setRemoteListenerEnabled(_ enabled: Bool, persist: Bool = true) {
         if persist { settings.remoteListenerEnabled = enabled }
-        remoteListenerError = nil
+        remoteListenerFailure = nil
         if enabled {
             guard remoteListenerBoundPort == nil else { return }
+            let port = UInt16(clamping: settings.remoteListenerPort)
             do {
                 remoteListenerBoundPort = try server.startRemoteListener(
-                    port: UInt16(clamping: settings.remoteListenerPort),
+                    port: port,
                     tokenURL: ShepherdPaths.remoteTokenURL()
                 )
             } catch {
                 // Surfaced in Settings AND logged — on a headless host nobody
                 // is looking at Settings.
-                remoteListenerError = String(describing: error)
+                remoteListenerFailure = RemoteListenerFailure(error, port: port)
                 NSLog("Shepherd: remote listener failed to start: \(error)")
             }
         } else if remoteListenerBoundPort != nil {
