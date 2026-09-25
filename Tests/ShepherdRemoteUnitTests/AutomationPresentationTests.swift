@@ -60,8 +60,10 @@ struct AutomationPresentationTests {
     }
 
     @Test(arguments: [
-        (true, [AutomationRun]?.none, "Not run yet", AutomationTone.stopped),
+        (true, [AutomationRun]?.none, "On", AutomationTone.stopped),
         (false, nil, "Off", .off),
+        (true, [], "Not run yet", .stopped),
+        (false, [], "Off", .off),
         (true, [run(0, .finished, took: 43, ended: 600)], "Finished", .done),
         (true, [run(0, .interrupted, ended: 60)], "Interrupted", .failed),
         (false, [run(0, .stopped, ended: 60)], "Off · stopped", .stopped),
