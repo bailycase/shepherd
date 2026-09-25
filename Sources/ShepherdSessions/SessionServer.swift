@@ -408,7 +408,8 @@ public final class SessionServer: @unchecked Sendable {
     /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default, all
     /// as "provider/id".
     public static let piModelCatalog: ModelCatalog = {
-        ModelListing(entries: PiModelCatalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel())
+        ModelListing(entries: PiModelCatalog.entriesOrConfigured(), defaultModel: PiConfig.defaultModel(),
+                     levelMaps: PiConfig.thinkingLevelMaps())
     }
 
     /// This Mac's models as a remote client's `listModels` gets them, for the local New Agent
@@ -1062,7 +1063,7 @@ public final class SessionServer: @unchecked Sendable {
                 self?.queue.async {
                     guard let self, self.clients[client.fd] === client else { return }
                     self.send(.models(id: id, models: listing.models, defaultModel: listing.defaultModel,
-                                     withoutThinking: listing.withoutThinking), to: client)
+                                     withoutThinking: listing.withoutThinking, thinkingLevels: listing.thinkingLevels), to: client)
                 }
             }
         case .addSpace(let id, let path):
