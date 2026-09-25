@@ -8,5 +8,6 @@ struct ShepherdIOSApp: App {
         WindowGroup {
             MobileRoot(app: app)
         }
+        .commands { SearchCommands(navigator: app.navigator) }
     }
 }
