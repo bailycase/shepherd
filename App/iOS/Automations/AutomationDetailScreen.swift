@@ -85,8 +85,9 @@ struct AutomationDetailContent: View {
         }
         .confirmationDialog("Delete \(row.name)?", isPresented: $confirmingDelete, titleVisibility: .visible) {
             Button("Delete Automation", role: .destructive) {
-                store.delete(key)
-                if !pad { navigator.popToRoot() }
+                // The iPhone's detail closes once the host has removed it; the list stays.
+                let detail = MobileRoute.automations(.detail(host: key.host, automation: key.automation))
+                store.delete(key) { navigator.close(detail) }
             }
         } message: {
             Text("It stops its run and is removed from \(row.hostName). Its runs are forgotten.")

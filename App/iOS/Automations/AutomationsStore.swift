@@ -42,6 +42,14 @@ final class AutomationsStore {
     @ObservationIgnored private var watchers = 0
 
     private static var stores: [ObjectIdentifier: AutomationsStore] = [:]
+    /// What `choose` asked for before a store existed.
+    private static var firstChoice: AutomationKey?
+
+    /// Shows `key` beside the iPad's list, whenever that list appears.
+    static func choose(_ key: AutomationKey) {
+        firstChoice = key
+        for store in stores.values { store.chosen = key }
+    }
 
     /// The store of the app's hosts: one per `MobileHosts`, made on first use.
     static func of(_ hosts: MobileHosts) -> AutomationsStore {
@@ -53,6 +61,7 @@ final class AutomationsStore {
 
     private init(hosts: MobileHosts) {
         self.hosts = hosts
+        chosen = Self.firstChoice
         track()
     }
 
@@ -171,7 +180,10 @@ final class AutomationsStore {
 
     func stop(_ key: AutomationKey) { send(key, .stop) }
 
-    func delete(_ key: AutomationKey) { send(key, .delete) }
+    /// `deleted` runs once the host has removed it.
+    func delete(_ key: AutomationKey, deleted: @escaping () -> Void = {}) {
+        send(key, .delete) { ok in if ok { deleted() } }
+    }
 
     /// Saves a new automation (`key` names the id this client minted) or an edited one. Throws
     /// the host's reason when it refuses.
