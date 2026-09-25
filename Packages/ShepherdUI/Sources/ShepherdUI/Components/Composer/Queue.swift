@@ -477,7 +477,9 @@ public struct NWQueueRow: View {
             .nwAnimation(.hover, value: shown)
             .frame(width: NWQueueMetrics.gripSize.width, height: NWQueueMetrics.rowHeight)
             .contentShape(Rectangle())
+            #if os(macOS)
             .pointerStyle(drag == nil || kind == .steering ? nil : lifted ? .grabActive : .grabIdle)
+            #endif
             .gesture(DragGesture(minimumDistance: 2, coordinateSpace: .global)
                 .onChanged { value in drag?.changed(value.translation.height) }
                 .onEnded { value in drag?.ended(value.translation.height) },

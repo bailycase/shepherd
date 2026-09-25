@@ -9,11 +9,11 @@ import UIKit
 /// bubbles and the prose measure.
 public enum NWThreadMetrics {
     /// An activity line's minimum height.
-    public static let activityHeight: CGFloat = 26
+    public static let activityHeight: CGFloat = touchable(26)
     public static let activityIcon: CGFloat = 13
     public static let chevron: CGFloat = 10
     /// A call row in an expanded line.
-    public static let callRowHeight: CGFloat = 22
+    public static let callRowHeight: CGFloat = touchable(22)
     /// The calls list's kind column ("edit", "bash"), before it widens for longer names.
     public static let callLabelWidth: CGFloat = 32
     /// The hairline rail sits under the line's icon; its rows start 16pt right of it.
@@ -25,9 +25,9 @@ public enum NWThreadMetrics {
     public static let tailLineSpacing: CGFloat = 4
     /// Mono 11 lines in an expanded call's output.
     public static let outputMaxLines = 12
-    public static let changesHeaderHeight: CGFloat = 32
-    public static let changesRowHeight: CGFloat = 28
-    public static let codeHeaderHeight: CGFloat = 28
+    public static let changesHeaderHeight: CGFloat = touchable(32)
+    public static let changesRowHeight: CGFloat = touchable(28)
+    public static let codeHeaderHeight: CGFloat = touchable(28)
     /// The copy and retry buttons under a turn, and the code block's copy.
     public static let footerButton: CGFloat = 24
     public static let codeCopyButton: CGFloat = 22
@@ -42,6 +42,15 @@ public enum NWThreadMetrics {
     public static let attachmentThumbnail: CGFloat = 20
     /// "From the queue"'s glyph.
     public static let queueGlyph: CGFloat = 11
+
+    /// A row someone taps: the Mac's height, or the touch minimum on iOS.
+    static func touchable(_ height: CGFloat) -> CGFloat {
+        #if os(iOS)
+        max(height, NW.Height.touch)
+        #else
+        height
+        #endif
+    }
 }
 
 enum NWPasteboard {
