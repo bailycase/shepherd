@@ -20,6 +20,8 @@ public enum NWListMetrics {
     public static let symbol: CGFloat = 15
     /// How far a host's address may shrink to stay on one line before it truncates.
     public static let addressMinimumScale: CGFloat = 0.6
+    /// The lines a status line may wrap to at accessibility sizes, its time included.
+    public static let accessibilityStatusLines = 3
     /// A row whose host is offline, or an automation switched off.
     public static let dimmedOpacity: Double = 0.55
 }
@@ -157,7 +159,7 @@ public struct NWListRow: View, Equatable {
                     statusLine
                         .font(subtitleMono ? .nw(.mono) : .nw(.caption))
                         .foregroundStyle(subtitleTone?.textColor ?? nw.textTertiary)
-                        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
+                        .lineLimit(typeSize.isAccessibilitySize ? NWListMetrics.accessibilityStatusLines : 1)
                 }
                 // At accessibility sizes the accessory goes under the title, which keeps its width.
                 if typeSize.isAccessibilitySize { trailingView }
@@ -198,11 +200,16 @@ public struct NWListRow: View, Equatable {
         }
     }
 
-    /// The status with its time: a long command truncates, the time stays whole.
-    private func timed(_ time: String) -> some View {
-        HStack(spacing: 0) {
-            if let subtitle { Text(subtitle) }
-            Text(subtitle == nil ? time : " · " + time).fixedSize()
+    /// The status with its time: a long command truncates, the time stays whole. At
+    /// accessibility sizes the two wrap as one text, which a whole time beside would squeeze.
+    @ViewBuilder private func timed(_ time: String) -> some View {
+        if typeSize.isAccessibilitySize {
+            Text(subtitle.map { "\($0) · \(time)" } ?? time)
+        } else {
+            HStack(spacing: 0) {
+                if let subtitle { Text(subtitle) }
+                Text(subtitle == nil ? time : " · " + time).fixedSize()
+            }
         }
     }
 

@@ -79,6 +79,9 @@ public struct FleetDigest: Equatable, Sendable {
     public var running: Bool
     public var question: Question?
     public var subagentQuestion: SubagentQuestion?
+    /// A subagent is still running: background children outlive their parent's turn, so one may
+    /// ask later while the thread itself is settled.
+    public var liveSubagents: Bool
     /// The call running now ("swift build", "edit ThreadView.swift"); nil when none is.
     public var activity: String?
     /// When that call started (ms since epoch).
@@ -101,6 +104,7 @@ public struct FleetDigest: Equatable, Sendable {
             SubagentQuestion(runID: run.runID, label: run.role ?? run.label,
                              text: run.question?.text ?? run.attentionText ?? "Waiting on you")
         }
+        liveSubagents = (snapshot.subagents ?? []).contains { !$0.isTerminal }
         let entries = snapshot.messages + snapshot.provisional
         if snapshot.running, let call = entries.last(where: { $0.toolName != nil && $0.status == "running" }) {
             activity = Self.activity(NativeActivityCall(call))
@@ -120,6 +124,14 @@ public struct FleetDigest: Equatable, Sendable {
             return "\(call.label) \(name)"
         }
         return call.detail.isEmpty ? call.label : "\(call.label) \(call.detail)"
+    }
+
+    /// Whether Home reads this thread on every poll rather than once per connection: it runs,
+    /// waits on the user, or has a subagent that may still ask.
+    public static func watches(status: AgentStatus, digest: FleetDigest?) -> Bool {
+        if status == .working || status == .blocked { return true }
+        guard let digest else { return false }
+        return digest.running || digest.question != nil || digest.subagentQuestion != nil || digest.liveSubagents
     }
 
     /// Whether the snapshot's `unchanged` answer still describes this digest.
