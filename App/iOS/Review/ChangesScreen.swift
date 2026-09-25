@@ -65,7 +65,8 @@ struct ChangesScreen: View {
         .scrollDismissesKeyboard(.interactively)
         .background(Color.nw.bgBase)
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            ReviewActionBar(store: store) { sent in if sent { dismiss() } }
+            ReviewActionBar(store: store, commitDirectly: CommitHooks.available(host: host)
+                            ? { navigator.present(.review(.commit(ref))) } : nil) { sent in if sent { dismiss() } }
         }
         .toolbar(.hidden, for: .tabBar)
         .navigationTitle("Changes")
@@ -76,7 +77,8 @@ struct ChangesScreen: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 ReviewOptionsMenu(store: store, finalize: ReviewFinalizeGate.available(host: host, agent: agent)
-                                  ? { navigator.present(.review(.finalize(ref))) } : nil)
+                                  ? { navigator.present(.review(.finalize(ref))) } : nil,
+                                  askAgentToCommit: CommitHooks.available(host: host) ? { dismiss() } : nil)
             }
         }
         .task(id: host?.session) { await store.loadIfNeeded(hosts: hosts) }
@@ -127,9 +129,13 @@ struct ReviewOverallField: View {
     }
 }
 
-/// Request changes and Commit (MobileChanges board), with why a send failed above them.
+/// Request changes and Commit (MobileChanges board), with why a send failed above them. Where
+/// the host commits from review, Commit… opens the commit (MobileCommit board) and asking the
+/// agent moves to the options menu.
 struct ReviewActionBar: View {
     let store: ReviewStore
+    /// Opens the commit sheet; nil where the host only takes Commit as a turn.
+    var commitDirectly: (() -> Void)? = nil
     /// Called with whether the host took the review.
     let finished: (Bool) -> Void
     @Environment(MobileHosts.self) private var hosts
@@ -151,12 +157,19 @@ struct ReviewActionBar: View {
                 .buttonStyle(.nwReviewBar(.secondary))
                 .disabled(!store.canRequestChanges)
                 .accessibilityHint("Sends your comments as the agent's next message")
-                Button("Commit") {
-                    Task { finished(await store.commit(hosts: hosts)) }
+                if let commitDirectly {
+                    Button("Commit\u{2026}", action: commitDirectly)
+                        .buttonStyle(.nwReviewBar(.primary))
+                        .disabled(!store.canCommit)
+                        .accessibilityHint("Choose the files and message, then commit on the host")
+                } else {
+                    Button("Commit") {
+                        Task { finished(await store.commit(hosts: hosts)) }
+                    }
+                    .buttonStyle(.nwReviewBar(.primary))
+                    .disabled(!store.canCommit)
+                    .accessibilityHint("Asks the agent to commit these changes")
                 }
-                .buttonStyle(.nwReviewBar(.primary))
-                .disabled(!store.canCommit)
-                .accessibilityHint("Asks the agent to commit these changes")
             }
         }
         .padding(.horizontal, MobileLayout.gutter - NW.Space.xxs)
@@ -167,10 +180,12 @@ struct ReviewActionBar: View {
     }
 }
 
-/// The review's options: which side to diff, refresh, and Finalize for a worktree agent.
+/// The review's options: which side to diff, refresh, Ask agent to commit where Commit… commits
+/// directly (`askAgentToCommit` runs once the agent took it), and Finalize for a worktree agent.
 struct ReviewOptionsMenu: View {
     @Bindable var store: ReviewStore
     let finalize: (() -> Void)?
+    var askAgentToCommit: (() -> Void)? = nil
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
@@ -180,6 +195,12 @@ struct ReviewOptionsMenu: View {
                 Text("Pull request").tag(true)
             }
             Button("Refresh", systemImage: "arrow.clockwise") { Task { await store.load(hosts: hosts) } }
+            if let askAgentToCommit {
+                Button("Ask agent to commit", systemImage: "text.bubble") {
+                    Task { if await store.commit(hosts: hosts) { askAgentToCommit() } }
+                }
+                .disabled(!store.canCommit)
+            }
             if let finalize {
                 Button("Finalize worktree…", systemImage: "checkmark.seal", action: finalize)
             }

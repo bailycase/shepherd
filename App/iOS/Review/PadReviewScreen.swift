@@ -202,6 +202,7 @@ private struct PadComposer: View {
     var focused: FocusState<Bool>.Binding
     let close: () -> Void
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         VStack(spacing: NW.Space.m) {
@@ -213,7 +214,10 @@ private struct PadComposer: View {
             NWReviewComposer(text: $store.summary, isFocused: focused, inlineCount: store.comments.count,
                              canCommit: store.canCommit, canRequestChanges: store.canRequestChanges,
                              onCommit: { Task { if await store.commit(hosts: hosts) { close() } } },
-                             onRequestChanges: { Task { if await store.requestChanges(hosts: hosts) { close() } } })
+                             onRequestChanges: { Task { if await store.requestChanges(hosts: hosts) { close() } } },
+                             onCommitDirectly: CommitHooks.available(host: hosts.host(store.ref.host))
+                                ? { CommitHooks.open(thread: store.ref, navigator: navigator, sizeClass: .regular) } : nil)
+                .commitPopover(ref: store.ref, arrowEdge: .bottom)
         }
         .padding(NW.Space.l)
         .overlay(alignment: .top) { NWHairline() }
@@ -226,6 +230,7 @@ private struct PadFullReview: View {
     let finalize: (() -> Void)?
     let close: () -> Void
     @Environment(MobileHosts.self) private var hosts
+    @Environment(MobileNavigator.self) private var navigator
     @FocusState private var editorFocused: Bool
     @FocusState private var summaryFocused: Bool
 
@@ -277,11 +282,20 @@ private struct PadFullReview: View {
                 if let finalize {
                     Button("Finalize worktree", systemImage: "checkmark.seal", action: finalize)
                 }
-                Button("Commit") { Task { if await store.commit(hosts: hosts) { close() } } }
-                    .buttonStyle(.nw(.secondary, size: .l))
-                    .fixedSize()
-                    .disabled(!store.canCommit)
-                    .accessibilityHint("Asks the agent to commit these changes")
+                if CommitHooks.available(host: host) {
+                    Button("Commit\u{2026}") { CommitHooks.open(thread: store.ref, navigator: navigator, sizeClass: .regular) }
+                        .buttonStyle(.nw(.secondary, size: .l))
+                        .fixedSize()
+                        .disabled(!store.canCommit)
+                        .accessibilityHint("Choose the files and message, then commit on the host")
+                        .commitPopover(ref: store.ref)
+                } else {
+                    Button("Commit") { Task { if await store.commit(hosts: hosts) { close() } } }
+                        .buttonStyle(.nw(.secondary, size: .l))
+                        .fixedSize()
+                        .disabled(!store.canCommit)
+                        .accessibilityHint("Asks the agent to commit these changes")
+                }
                 Button("Request changes") { Task { if await store.requestChanges(hosts: hosts) { close() } } }
                     .buttonStyle(.nw(.primary, size: .l))
                     .fixedSize()

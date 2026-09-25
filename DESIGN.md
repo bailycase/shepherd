@@ -92,6 +92,7 @@ And the rules that follow from them:
 | Queue & steer: "Pi" | "pi" | The app's spelling, until the rest of that redesign lands |
 | Background events as in-app toasts (`.nwToast`) | A system notification when an agent finishes a turn or asks a question while you aren't watching it (`AgentNotifications`) | Reaches you outside the app |
 | Missions, the mission graph, the attention inbox, evidence review (Lab boards) | Not built | Out of scope for this pass |
+| NavAutomations: an Automations page with a table (When, Starts, Host, Last run, Next), filters, and New automation | The sidebar's Automations footer for this Mac; a remote host's Automations disclosure and its Details and Runs sheet | Shepherd's automations have no schedule or trigger: one is on (it starts a run when Shepherd launches) or run by hand, and nothing on the Mac creates one yet but an agent's `automation_*` tools |
 | ⌘M opens the model picker (earlier handoff) | **⇧⌘M** | ⌘M is the system Minimize chord |
 | A compose button beside the window controls and a "Jump to…" field above the sidebar tree | Neither: the tree starts under the window controls | The sidebar is navigation only; ⌘K opens the palette and ⌘N (or a space's hover `+`) starts an agent |
 
@@ -524,7 +525,9 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
   2. One section per remote host. Connected: its agent count, or "n need you" in `lanternText`
      (blocked agents plus subagents asking), and a hover `+` for a new space on the host.
      Otherwise one status row (`NWSidebarNoticeRow`) stands in for its spaces: "Connecting…",
-     "Unreachable" with Retry, or "Off" with Connect.
+     "Unreachable" with Retry, or "Off" with Connect. A connected host with automations ends
+     with an **Automations** disclosure under its spaces (a space's row: its count, or how many
+     runs wait on you), closed by default and remembered per host.
   3. **Automations** as the footer (`NWSidebarFooter`), behind a hairline and hidden while
      empty: a bolt, "Automations", and a count badge that turns `attention` while an
      automation's agent needs you. Clicking it discloses the automation rows.
@@ -552,6 +555,17 @@ A sidebar row is therefore its density's base height × Density. `NavigationToke
 - **Automation rows:** the automation's name, and its run's state: "running", "ASK", "done", or
   "stopped" (a hollow dot, not selectable). The context menu has Run Now or Stop, and Delete
   Automation.
+- **A remote host's automation rows** (`RemoteSidebarSection.swift`) nest one level under its
+  Automations disclosure with the same dots and words, plus "off" for one that does not start
+  with Shepherd. Clicking a row opens its run's thread, or its details while it has none. The
+  context menu has Run Now or Stop, a Starts with Shepherd check, Details and Runs…, and Delete
+  Automation; on a host from before automations over the remote protocol the menu says why it
+  is read-only and disables them. Details and Runs… is a sheet (`RemoteAutomationSheet`,
+  NavAutomations' detail pane): the On switch with what it means, Status, Host and Folder rows
+  (`NWFactRow`), the prompt (`NWAutomationPrompt`), the latest fourteen runs as bars as tall as
+  each took (`NWRunBars`: done green, asked lantern, interrupted failed, stopped tertiary), and
+  every run the host kept (`NWRunRow`), a run opening its thread while that thread exists.
+  Its footer is Close and Run Now, or Open Run and Stop while one runs.
 - **Width:** 232pt by default, 190–340, by dragging the trailing edge (a 9pt handle, adjustable
   with VoiceOver in 16pt steps) or in Settings ▸ Appearance. It never narrows the main column
   below 720 and keeps its width while a right pane is open.
@@ -1118,7 +1132,35 @@ layout" above.
 - **Review composer** (`NWReviewComposer`, at the foot): "Overall comment", "n inline",
   **Commit** (asks the agent to commit; not in PR mode) and **Request changes** (primary, ⌘⏎;
   sends the overall and inline comments as the agent's next turn, queued if it is mid-turn). The
-  review closes only once the send succeeds.
+  review closes only once the send succeeds. Where the host commits from review (a local review,
+  or a remote host with `review.commit.v1`), Commit becomes **Ask agent to commit** (ghost) beside
+  **Commit…** (secondary), which opens the commit sheet.
+- **Commit… sheet** (`ReviewCommitSheet`, 520pt, derived from the iPadCommit board; parts in
+  `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
+  - The message card (`NWCommitMessageEditor`, a raised card with a strong line): the summary in
+    semibold over the description, both editable, and a note: "Drafted from the diff · edit
+    anything" (a sparkle), "Written from the file list · edit anything", or a spinner with
+    "Drafting from the diff…". The plain message shows at once; the drafted one replaces it only
+    if nothing was typed meanwhile. Drafting follows Settings ▸ Worktrees ▸ Generate PR
+    descriptions and its model.
+  - "Files" with "n of m" and Select All/None, then a card of `NWCommitFileRow`s (a row-high
+    checkbox row: lantern checkbox, the name in mono, its directory in tertiary, the diff stat;
+    the whole row toggles). Every file starts ticked; the list scrolls past 232pt.
+  - A card of two `NWCommitOptionRow`s: **Push after commit** over the upstream in mono
+    ("origin/main", or "origin/feat · sets upstream"), and **Open a pull request instead** over
+    what it does ("pushes feat, opens a PR into main", or "creates shepherd/<slug>, opens a PR
+    into main" on the default branch). The PR option turns the push on and disables its switch;
+    an option with nowhere to go is disabled.
+  - An agent still working puts an attention banner above the message and a "Commit while it
+    works" checkbox that Commit waits for. A checkout the host refuses (detached HEAD, a merge or
+    rebase in progress, unmerged paths) is a failed banner over the disabled form; a refused
+    commit comes back as a failed "Nothing was committed" banner.
+  - Footer: why Commit waits (caption), then Ask Agent to Commit (ghost), Cancel (⎋), and the
+    primary: **Commit**, **Commit & push** or **Commit & open PR** (⏎).
+  - Running, the body becomes the host's steps as `NWChecklistRow`s (check the checkout, create
+    branch, commit n files, push to …, open a pull request into …) with each one's detail, a
+    failed "Stopped" banner saying what was kept, then Open Pull Request and Done. Close while it
+    runs leaves it running; Commit… shows it again. A finished commit reloads the review.
 - **Empty and error states:** "Loading the diff…"; "No changes" with "The working tree matches
   HEAD." (or "This branch matches its PR base."); a `failed` banner for an error.
 - **Keys:** j/k move between hunks, n/p between files, c comments, v marks viewed, ⌘⏎ sends, and
@@ -1237,7 +1279,8 @@ or `NSAlert` in the app:
   worktree agent's worktree and branch are kept), Cancel (⎋) and a destructive Delete agent. Only that button
   approves. The dialog closes by itself when the request lapses (cancelled, the asking agent
   gone, or two minutes without an answer).
-- Stop all (`StopAllDialog`), the review's Revert (`RevertFileDialog`), and a failed agent action
+- Stop all (`StopAllDialog`), the review's Revert (`RevertFileDialog`) and Commit…
+  (`ReviewCommitSheet`, described with the review pane), and a failed agent action
   (`ActionErrorDialog`)
 - Reset settings (`ResetSettingsDialog`)
 - Quitting while agents are working or waiting on you (`QuitDialog`), because quitting stops
@@ -1285,6 +1328,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Agents | `NWSubagentCard`, `NWRunsStrip`, `NWRunLedger`, `NWInspectorHeader`, `NWRunBrief`, `NWRunActions`, `NWBranchGlyph`, `NWElapsedText`, `NWDuration`, `NWInlineMarkup` | `Thread/Subagents.swift`, `Thread/SubagentInspector.swift`, `Thread/SubagentPresentation.swift` |
 | Review | `NWFileStrip`, `NWFileHeader`, `NWDiffView`, `NWDiffLine`, `NWHunkHeader`, `NWFoldRow`, `NWInlineComment`, `NWCommentEditor`, `NWReviewComposer` | `DiffReviewView.swift` |
 | Dialogs | `NWDialog`, `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `SettingsView.swift` |
+| Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics` | `RemoteAutomationSheet.swift`; the iOS client's `Automations/` |
 
 Rules for the controls:
 
@@ -1407,6 +1451,49 @@ components first), with these differences for touch:
   focus ring. iPhone shows none of this: it has one window.
 - **App measures** come from `MobileLayout` (`App/iOS/Support`), as the Mac's come from
   `AppLayout`.
+- **Commit from review** (MobileCommit, iPadCommit boards): the same parts as the Mac's sheet. On
+  iPhone the changes' bar reads Request changes and **Commit…** (primary), which presents a sheet
+  (Cancel, "Commit n files"; Message, Files "n of m", the options card; a full-width Commit &
+  push, with Ask agent to commit as a link under it and in the review's ••• menu). File rows are
+  44pt and show the name alone. On iPad, Commit… (the docked composer's, or the full-screen
+  toolbar's) opens a 400pt popover: the title, the message card on `bgWindow`, the files, the
+  options between hairlines, and Ask agent, Cancel and Commit & push. A host without
+  `review.commit.v1` keeps the single Commit that asks the agent.
+
+### iOS: Automations
+
+`App/iOS/Automations` (MobileAutomations, iPadAutomations boards), from Home's Automations row
+or the iPad sidebar's.
+
+- **What an automation is here:** the Mac's fields and nothing else. It has a name, a prompt,
+  a folder on its host (one of the host's spaces), and a switch: **On** starts a run each time
+  Shepherd launches on the host; Run now starts one any time. The boards' schedules, triggers,
+  models and repo lists are not built, because the host has none of them.
+- **List:** Running now (a spinner, "Running · 4m"; "Asked you" in lantern), then All with the
+  count. Each row (`NWAutomationRow`) is its name, "When Shepherd starts · folder" (or "By
+  hand"; the host's name instead of the folder when there are several hosts), how the last run
+  went with its time ("Finished · 12h ago", "Interrupted · 3d ago", "Not run yet"; "On" or
+  "Off" until its runs are read), and its switch, which flips at once and waits for the host.
+  An offline host's rows read "Host offline", dimmed, with the switch disabled; a host from
+  before automations over the remote protocol keeps its rows and says under the list why they
+  are read-only. `+` opens the form when a host can take one.
+- **iPhone** pushes one automation; **iPad** lists them in a 340pt column beside the chosen
+  one's detail, whose header is the name, an On or Off pill and the ••• menu.
+- **Detail:** the On switch with what it means, Status, Runs on ("build-01 · a new thread each
+  run"), Folder, the prompt, the latest fourteen runs as bars (bar height = duration), the last
+  run, and every run the host kept (`NWRunRow`), each opening its thread while it exists. The
+  footer is Edit and Run now, or Stop (confirmed: it deletes the run's thread) and Open run.
+  The ••• menu has Open Run, Edit and Delete Automation (confirmed).
+- **Form:** Name, Prompt, Where it runs (Host when adding and more than one can take it, then
+  Folder from the host's spaces), and Starts with Shepherd. Save waits for the host. A new
+  automation keeps one id for the life of the form, so saving again after an answer that never
+  came back can never save it twice.
+- **Switches** (`NWAutomationSwitch`) flip from their whole 44pt target, caption included, and
+  read as toggles to VoiceOver.
+- **When a change does not come back ok:** a refusal shows a banner with the host's reason
+  ("Couldn't start the run: …"). A timeout or a dropped connection says the change may have
+  happened and to check before trying again; nothing is ever resent on its own. Delete closes
+  the iPhone's detail only once the host has removed the automation.
 
 ## Verifying visuals
 
@@ -1420,7 +1507,7 @@ components first), with these differences for touch:
     a Deleted row and the Send menu, every row and stack state, and "From the queue" and
     "Steered" in the thread
   - subagent cards, the ledger, and the inspector
-  - the review pane
+  - the review pane, and its Commit… sheet in every state
   - the palette, the toolbar, the sidebar at each row density, and the window at its minimum
   - every Settings page, sheet, and dialog
   - the empty states
