@@ -105,7 +105,11 @@ received (`FIXTURE REQUESTS`). A screen can also measure what it draws and print
 `FIXTURE CHECK ok|FAILED: …`, which the script echoes and fails on: `thread-follow` checks that
 the reply ends above the composer, and `thread-jump` (a drag up from the tail, stepped through
 the scroll view's pan recognizer) that new output leaves the thread where the reader left it,
-with "Jump to latest" showing. Attaching changes a host's PTY size, so the terminal screens
+with "Jump to latest" showing. `composer-focus` focuses the composer as a tap does and checks
+that the field keeps the focus above the keyboard and, on an iPad in portrait, that the sidebar
+stays a hidden overlay; `composer-focus-rotate` does the same after focusing in landscape and
+turning the iPad to portrait (run both in portrait; `-r landscape` shots draw the keyboard
+sideways). Attaching changes a host's PTY size, so the terminal screens
 (`terminal`, `terminal-keys`, `terminal-split`, `terminal-maximized`, `terminal-empty`,
 `terminal-phone`, `terminal-phone-keys`) never attach: their sessions draw canned screens
 (`MobileTerminals.cannedScreens`), and the host answers only the read `terminals` query.

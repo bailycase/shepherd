@@ -1,5 +1,6 @@
 import SwiftUI
 import ShepherdUI
+import ShepherdRemote
 
 /// iPad (iPadThread, iPadSidebar, iPadPortrait boards): the sidebar beside the selected thread
 /// in landscape; in portrait the thread takes the width and the sidebar slides over it. The
@@ -23,7 +24,7 @@ struct PadShell: View {
     var body: some View {
         @Bindable var navigator = navigator
         GeometryReader { proxy in
-            let portrait = proxy.size.width < proxy.size.height
+            let portrait = PadSplitLayout.sidebarOverlays(window: proxy.size)
             NavigationSplitView(columnVisibility: $navigator.padColumns) {
                 PadSidebar()
                     .navigationSplitViewColumnWidth(MobileLayout.sidebarWidth)
@@ -57,6 +58,8 @@ struct PadShell: View {
                 }
             }
         }
+        // The window's shape, not what the keyboard leaves of it (`PadSplitLayout`).
+        .ignoresSafeArea(.keyboard)
     }
 }
 
