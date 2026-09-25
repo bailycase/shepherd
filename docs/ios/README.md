@@ -125,9 +125,9 @@ keep the version for real breaks.
   `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote` and `ShepherdUI`, never `ShepherdApp`.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
-  `Review/`, `Search/`, `Settings/`, `Windows/` (the scene and its windows), and `Support/`
-  (`AgentRef`, `MobileLayout`, `MobileAppearance`, the `AgentState` mapping). Ownership and
-  hooks: [CONTRACTS.md](CONTRACTS.md).
+  `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Windows/` (the scene and its
+  windows), and `Support/` (`AgentRef`, `MobileLayout`, `MobileAppearance`, the `AgentState`
+  mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
   derivations (`NativeTurnPresentation`, `NativeActivity`), host records
   (`RemoteHostRecord`, `RemoteHostEntry`, `RemoteReconnectBackoff`), and ShepherdUI's
@@ -145,7 +145,7 @@ keep the version for real breaks.
   locked then, the token moves on the next foreground. Backgrounding
   disconnects every host; the agents keep running on the Macs.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home merges every host:
-  Automations (read-only) and More (host cards), offline hosts with Retry, Needs you (questions
+  Automations and More (host cards), offline hosts with Retry, Needs you (questions
   and blocked threads, answered in place when short), and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
@@ -185,11 +185,27 @@ keep the version for real breaks.
   Continue, Stop and Re-run appear where the host takes them. On iPad the run opens in an
   inspector column beside the thread.
 - **Review (`Review/`):** the changes (working tree vs HEAD, or the PR), with viewed progress,
-  the file list, comments, Request changes, and Commit (it sends the agent a turn, as on the
-  Mac); the diff reader (wrapped, syntax-colored lines, folded removed runs, line comments, Next
+  the file list, comments, Request changes, and Commit… (below; on an older host, Commit sends the
+  agent a turn, as on the Mac); the diff reader (wrapped, syntax-colored lines, folded removed runs, line comments, Next
   file); and Finalize for worktree agents (checks, the form, each step, the PR link). On iPad
   review docks beside the thread or goes full screen with a unified or split view. There is no
   per-file revert: the remote protocol has none.
+- **Commit from review (`Commit/`):** on a host with `review.commit.v1`, Commit… opens the
+  commit: a sheet on iPhone, a popover beside Commit… on iPad. The host drafts the message from
+  the diff (a plain one from the file list shows first), every changed file starts ticked, and
+  Push after commit (to the upstream, setting one when there is none) or Open a pull request
+  instead picks where it goes. The host runs it (`ReviewCommitStore` in ShepherdRemote drives
+  the sheet) and refuses a detached HEAD, a merge or rebase in progress, a file that changed since
+  the sheet opened, and an agent still working unless confirmed; the sheet shows each step, and a
+  finished commit reloads the changes. Ask agent to commit keeps the old turn.
+- **Automations (`Automations/`):** every host's automations, the running ones first, each
+  with its switch (On starts a run when Shepherd launches on the host) and how its last run went.
+  One automation shows its folder, prompt, the latest fourteen runs as a chart, and every run the
+  host kept, each opening its thread while that thread exists; Run now, Stop (confirmed), Edit
+  and Delete act on the host. `+` saves a new one: a name, a prompt, and one of the host's spaces.
+  The Mac has no schedules or triggers, so neither does the form. On iPad the list sits beside
+  the chosen automation. A host without `automations.v1` shows its automations read-only and
+  says so.
 - **Windows (`Windows/`, iPad):** several Shepherd windows side by side in Split View or Stage
   Manager, each with its own place (restored on relaunch) over the same hosts, connections and
   threads. Open in new window from a thread's options, a sidebar row or the ⌘K palette (it
@@ -205,5 +221,5 @@ keep the version for real breaks.
 ## Not in the first release
 
 Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), automations over remote, QR pairing and TLS, terminal panes, and everything
-waiting on the Mac (Missions, Designs, daemon hosts).
+background), QR pairing and TLS, terminal panes, and everything waiting on the Mac (Missions,
+Designs, daemon hosts).

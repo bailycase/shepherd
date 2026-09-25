@@ -77,8 +77,13 @@ private enum ReviewSample {
     @Previewable @State var summary = ""
     @Previewable @FocusState var focused: Bool
     NWPreviewBoth {
-        NWReviewComposer(text: $summary, isFocused: $focused, inlineCount: 1, canCommit: true, canRequestChanges: true,
-                         onCommit: {}, onRequestChanges: {})
-            .frame(width: 528)
+        VStack(spacing: NW.Space.l) {
+            NWReviewComposer(text: $summary, isFocused: $focused, inlineCount: 1, canCommit: true, canRequestChanges: true,
+                             onCommit: {}, onRequestChanges: {})
+            // A host that commits from review: Commit… beside the agent's commit.
+            NWReviewComposer(text: $summary, isFocused: $focused, inlineCount: 1, canCommit: true, canRequestChanges: true,
+                             onCommit: {}, onRequestChanges: {}, onCommitDirectly: {})
+        }
+        .frame(width: 528)
     }
 }

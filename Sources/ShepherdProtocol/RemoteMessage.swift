@@ -31,7 +31,13 @@ public enum RemoteProtocol {
     public static let worktreeActionsCapability = "agent.worktree.v1"
     public static let worktreeSetupCapability = "agent.worktree.setup.v1"
     public static let agentInspectionCapability = "agent.inspection.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability]
+    /// The host commits from review (`RemoteAgentQuery.commitInfo`, `.commitMessage`, `.commit`).
+    /// Older hosts only take Commit as a turn the agent is asked to do.
+    public static let reviewCommitCapability = "review.commit.v1"
+    /// The host serves `RemoteRequest.automation`: on and off, Run now and Stop, the runs it
+    /// kept, and create, edit and delete. Older hosts show automations read-only.
+    public static let automationsCapability = "automations.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -180,6 +186,12 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     case children
     case inspectorPane(tabID: TabID, action: RemoteInspectorPaneAction)
     case search(query: String)
+    /// What a commit from review would take (`reviewCommitCapability`).
+    case commitInfo
+    /// A commit message drafted from the diff of `paths`; slow, so asked for after the info.
+    case commitMessage(paths: [String])
+    /// Commit (then push, or open a pull request), as an operation polled with `worktreeStatus`.
+    case commit(operationID: UUID, options: RemoteCommitOptions)
 }
 
 public enum RemoteAgentResult: Codable, Hashable, Sendable {
@@ -194,6 +206,9 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case inspector(TabID)
     case inspectorFocus(PaneID)
     case search(snippet: String?)
+    case commitInfo(RemoteCommitInfo)
+    /// `drafted` is false when the host fell back to a message written from the file list.
+    case commitMessage(title: String, body: String, drafted: Bool)
 }
 
 /// Client → host. The first message on a connection must be a successful
@@ -253,6 +268,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
     case creationOptions(id: Int, spaceID: SpaceID, cwd: String?, fetchFirst: Bool?)
     case agentQuery(id: Int, agentID: AgentID, query: RemoteAgentQuery)
     case agentAction(id: Int, agentID: AgentID, action: RemoteAgentAction)
+    /// Manage one automation (`RemoteProtocol.automationsCapability`). A `create` names the new
+    /// automation's id.
+    case automation(id: Int, automationID: AutomationID, request: RemoteAutomationRequest)
 
     private enum CodingKeys: String, CodingKey {
         case request
@@ -260,6 +278,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case sessionID, cols, rows, data, viewportGeneration
         case path, spaceID, cwd, model, thinking, initialPrompt, worktreeBranch
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
+        case automationID
     }
 
     private enum Kind: String, Codable {
@@ -267,6 +286,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case hello, stateFetch, attach, detach, input, resize, paste
         case openPane, closePane, resizePaneSplit
         case listDir, listModels, addSpace, createAgent, agentAction, agentQuery, upload, creationOptions
+        case automation
     }
 
     public init(from decoder: Decoder) throws {
@@ -274,6 +294,10 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         switch try c.decode(Kind.self, forKey: .type) {
         case .nativeThread:
             self = .nativeThread(id: try c.decode(Int.self, forKey: .id), agentID: try c.decode(AgentID.self, forKey: .agentID), request: try c.decode(NativeThreadRequest.self, forKey: .request))
+        case .automation:
+            self = .automation(id: try c.decode(Int.self, forKey: .id),
+                               automationID: try c.decode(AutomationID.self, forKey: .automationID),
+                               request: try c.decode(RemoteAutomationRequest.self, forKey: .request))
         case .hello:
             self = .hello(
                 id: try c.decode(Int.self, forKey: .id),
@@ -409,6 +433,11 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(id, forKey: .id)
             try c.encode(agentID, forKey: .agentID)
             try c.encode(action, forKey: .action)
+        case .automation(let id, let automationID, let request):
+            try c.encode(Kind.automation, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(automationID, forKey: .automationID)
+            try c.encode(request, forKey: .request)
         case .stateFetch(let id):
             try c.encode(Kind.stateFetch, forKey: .type)
             try c.encode(id, forKey: .id)
@@ -512,6 +541,8 @@ public enum RemoteReply: Codable, Hashable, Sendable {
     case spaceAdded(id: Int, spaceID: SpaceID)
     /// Agent created and its pi process spawned on the host.
     case agentCreated(id: Int, agentID: AgentID)
+    /// An automation request's answer (`RemoteRequest.automation`).
+    case automationResult(id: Int, result: RemoteAutomationResult)
 
     private enum CodingKeys: String, CodingKey {
         case result
@@ -524,6 +555,7 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case nativeThread
         case agentResult, helloOk, ok, paneOpened, error, state, stateChanged, attached, output, sessionExited
         case dirListing, models, spaceAdded, agentCreated, uploadResult, creationOptions
+        case automationResult
     }
 
     public init(from decoder: Decoder) throws {
@@ -544,6 +576,9 @@ public enum RemoteReply: Codable, Hashable, Sendable {
         case .agentResult:
             self = .agentResult(id: try c.decode(Int.self, forKey: .id),
                                 result: try c.decode(RemoteAgentResult.self, forKey: .result))
+        case .automationResult:
+            self = .automationResult(id: try c.decode(Int.self, forKey: .id),
+                                     result: try c.decode(RemoteAutomationResult.self, forKey: .result))
         case .ok:
             self = .ok(id: try c.decode(Int.self, forKey: .id))
         case .paneOpened:
@@ -636,6 +671,10 @@ public enum RemoteReply: Codable, Hashable, Sendable {
             try c.encode(options, forKey: .options)
         case .agentResult(let id, let result):
             try c.encode(Kind.agentResult, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
+        case .automationResult(let id, let result):
+            try c.encode(Kind.automationResult, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(result, forKey: .result)
         case .ok(let id):
