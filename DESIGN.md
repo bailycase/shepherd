@@ -1134,11 +1134,12 @@ layout" above.
   (`NWInlineComment`) is a raised card with a 16pt lantern avatar, "You", "line 33 · just now",
   and Edit / Delete on hover.
 - **Review composer** (`NWReviewComposer`, at the foot): "Overall comment", "n inline",
-  **Commit** (asks the agent to commit; not in PR mode) and **Request changes** (primary, ⌘⏎;
-  sends the overall and inline comments as the agent's next turn, queued if it is mid-turn). The
-  review closes only once the send succeeds. Where the host commits from review (a local review,
-  or a remote host with `review.commit.v1`), Commit becomes **Ask agent to commit** (ghost) beside
-  **Commit…** (secondary), which opens the commit sheet.
+  **Commit** (asks the agent to commit, naming every file under review; not in PR mode) and
+  **Request changes** (primary, ⌘⏎; sends the overall and inline comments as the agent's next
+  turn, queued if it is mid-turn). The review closes only once the send succeeds. Where the
+  host commits from review (a local review, or a remote host with `review.commit.v1`), Commit
+  becomes **Ask agent to commit** (ghost) beside **Commit…** (secondary), which opens the commit
+  sheet.
 - **Commit… sheet** (`ReviewCommitSheet`, 520pt, derived from the iPadCommit board; parts in
   `Components/Review/CommitForm.swift`): "Commit n files" over "On <branch> in <repository>."
   - The message card (`NWCommitMessageEditor`, a raised card with a strong line): the summary in
