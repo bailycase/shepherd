@@ -44,6 +44,8 @@ struct AutomationRunLogTests {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let log = AutomationRunLog(url: dir.appendingPathComponent("automation-runs.json"))
+        // Writes go to disk off the caller; let them land before the directory goes.
+        defer { log.flush() }
 
         Self.replay(statuses.map { Self.state(agent: $0) }, log: log)
 
@@ -60,6 +62,7 @@ struct AutomationRunLogTests {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let log = AutomationRunLog(url: dir.appendingPathComponent("automation-runs.json"))
+        defer { log.flush() }
         var states = [Self.state(agent: nil)]
         for index in 0..<(AutomationRunLog.limit + 2) {
             states.append(Self.state(agent: .working, id: AgentID(rawValue: "run\(index)")))
@@ -77,6 +80,7 @@ struct AutomationRunLogTests {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let log = AutomationRunLog(url: dir.appendingPathComponent("automation-runs.json"))
+        defer { log.flush() }
         let live = Self.state(agent: .done)
         log.record(from: Self.state(agent: nil), to: live)
 
@@ -94,6 +98,7 @@ struct AutomationRunLogTests {
         first.flush()
 
         let second = AutomationRunLog(url: url)
+        defer { second.flush() }
         #expect(second.runs == first.runs)
         second.closeOpenRuns(now: Self.start.addingTimeInterval(60))
         let run = try #require(second.runs[Self.automation.id]?.first)
@@ -104,6 +109,7 @@ struct AutomationRunLogTests {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
         let log = AutomationRunLog(url: dir.appendingPathComponent("automation-runs.json"))
+        defer { log.flush() }
         Self.replay([Self.state(agent: nil), Self.state(agent: .done), ShepherdState(spaces: [Self.space])], log: log)
         #expect(log.runs.isEmpty)
     }
