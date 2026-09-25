@@ -91,7 +91,7 @@ final class ThreadFixture {
     /// Header over thread, the way the workspace composes a native agent.
     func thread(title: String = "Investigate SwiftUI live preview capabilities", inspected: String? = nil,
                 workingDirectory: String = "~/Developer/Shepherd",
-                listModels: (() async -> [PiModelCatalog.Entry])? = nil) -> some View {
+                listModels: (() async -> ModelCatalog)? = nil) -> some View {
         VStack(spacing: 0) {
             ThreadHeader(store: store, project: "Shepherd", title: title)
             ThreadView(store: store, active: true, isFocused: false, request: request, commandKey: "preview",
@@ -226,7 +226,8 @@ enum Threads {
     static var liveRuns: [ChildRun] {
         let now = boardNow.timeIntervalSince1970 * 1000
         return retimed([
-            ChildRun(runID: "native-worker", label: "worker: restyle", state: "running", startedAt: now - (37 * 60 + 21) * 1000, needsAttention: false,
+            ChildRun(runID: "native-worker", label: "worker: restyle", state: "running", startedAt: now - (37 * 60 + 21) * 1000, currentTool: "edit",
+                     needsAttention: false,
                      role: "worker", model: "anthropic/claude-opus-4-5", thinking: "high", context: "background", step: ChildStep(index: 1, total: 1),
                      turns: 78, toolCalls: 82, tokens: 922_000, contextPercent: 62,
                      lastActivity: ChildActivity(kind: ChildActivity.runningKind, tool: "edit", preview: "Sources/ShepherdRemote/NativeThreadPresentation.swift",
@@ -282,7 +283,12 @@ enum Threads {
                 NativeThreadMessage(entryID: "u", role: "user", blocks: [NativeThreadBlock(kind: .text, text: "Restyle Shepherd's native UI to match the design spec. Split it up if that's faster.")]),
                 NativeThreadMessage(entryID: "a", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "Splitting into three: a worker for the restyle, a reviewer that checks each step against the spec, and a tests run in parallel.")]),
                 spawn("spawn-worker", "worker"), spawn("spawn-reviewer", "reviewer"), spawn("spawn-tests", "tests"),
-            ] + (running ? [] : [
+            ] + (running ? [
+                // The turn waits on them: that call runs, so the thread's own tail stays still and
+                // only the tray moves (Subagents, SubagentsQueue: no "Thinking…").
+                NativeThreadMessage(entryID: "t-wait", role: "toolResult", blocks: [], toolName: "shepherd_child_wait",
+                                    toolCallID: "wait", argumentsText: "{}", status: "running"),
+            ] : [
                 NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: "All three handed off. Integrated the worker's restyle with the reviewer's two fixes; the test suite is green on both platforms. The branch is ready for the review pane whenever you want to look.")],
                                     timestamp: (runs.compactMap(\.endedAt).max() ?? 0) + 60_000),
             ]),

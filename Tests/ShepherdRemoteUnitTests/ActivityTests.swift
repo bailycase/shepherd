@@ -241,65 +241,6 @@ struct ActivityTests {
         #expect(burst.kind == .subagents && burst.label == "Started 2 subagents" && burst.meta == "reviewer · tests")
     }
 
-    // MARK: Work groups
-
-    @Test func twoOrMoreLinesFoldIntoOneSummaryOfWhatTheStretchDid() throws {
-        let group = try #require(nativeWorkGroup([
-            call("read", ["path": "a"], start: 1_000, end: 1_100), call("read", ["path": "b"]), call("grep", ["pattern": "x"]),
-            edit("a", added: 3, removed: 1),
-            bash("swift test", output: "✔ Test run with 17 tests passed after 1 seconds.", start: 2_000, end: 20_000), bash("git status", end: 63_000),
-        ]))
-        #expect(group.finished.map(\.kind) == [.explore, .edit, .run] && group.running.isEmpty)
-        let summary = try #require(group.summary)
-        #expect(summary.label == "Worked for 1m 02s")
-        #expect(summary.meta == "explored 3 files · edited 1 file · ran 2 commands · 17 tests passed")
-        #expect(!summary.failed)
-        #expect(summary.accessibilityLabel == "Worked for 1m 02s, explored 3 files, edited 1 file, ran 2 commands, 17 tests passed, done")
-    }
-
-    @Test func oneLineStaysItself() throws {
-        let group = try #require(nativeWorkGroup([call("read", ["path": "a"]), call("read", ["path": "b"])]))
-        #expect(group.summary == nil && group.finished.count == 1)
-        #expect(nativeWorkGroup([]) == nil)
-    }
-
-    @Test func failuresAreCountedAndTurnTheSummaryRedOnlyWhenTheWorkEndedOnOne() throws {
-        let failing = { bash("ssh host uptime", output: "Command exited with code 255", error: true) }
-        let recovered = try #require(nativeWorkGroup([call("read", ["path": "a"]), failing(), failing(), bash("ssh host -v uptime")])?.summary)
-        #expect(!recovered.failed && recovered.meta == "explored 1 file · ran 3 commands · 2 failed")
-        let ended = try #require(nativeWorkGroup([call("read", ["path": "a"]), bash("ls"), failing()])?.summary)
-        #expect(ended.failed && ended.accessibilityLabel.hasSuffix("1 failed, failed"))
-    }
-
-    @Test func runningCallsStandBelowTheSummaryWhichNeverFailsWhileTheyRun() throws {
-        let group = try #require(nativeWorkGroup([
-            call("read", ["path": "a"]), edit("a", added: 1, removed: 0), bash("ls", output: "Command exited with code 1", error: true),
-            call("bash", ["command": "git push"], status: "running", start: 1_000),
-        ]))
-        #expect(group.isLive && group.running.map(\.label) == ["Pushing"])
-        let summary = try #require(group.summary)
-        #expect(!summary.failed && summary.meta.hasSuffix("1 failed"))
-    }
-
-    @Test(arguments: [
-        (["ask_user", "ask_user"], "used ask_user 2 times"),
-        (["ask_user"], "used ask_user"),
-        (["ask_user", "review_diff", "ask_user"], "used 2 tools"),
-    ])
-    func otherToolsReadByName(names: [String], words: String) throws {
-        let summary = try #require(nativeWorkGroup([call("read", ["path": "a"])] + names.map { call($0) })?.summary)
-        #expect(summary.meta == "explored 1 file · " + words)
-    }
-
-    @Test func theSummaryNamesKindsInOneOrderWhateverOrderTheWorkTook() throws {
-        let summary = try #require(nativeWorkGroup([call("ask_user"), bash("ls"), edit("a", added: 1, removed: 0), call("read", ["path": "a"])])?.summary)
-        #expect(summary.meta == "explored 1 file · edited 1 file · ran 1 command · used ask_user")
-    }
-
-    @Test func untimedWorkSaysOnlyThatItWorked() throws {
-        #expect(try #require(nativeWorkGroup([call("read", ["path": "a"]), bash("ls")])?.summary).label == "Worked")
-    }
-
     // MARK: Changes card
 
     @Test func theChangesCardSumsEachFileInFirstTouchedOrder() throws {
@@ -346,7 +287,7 @@ struct TurnPresentationTests {
             switch item {
             case .thinking(_, _, _, let live, _): live ? "live-thinking" : "thinking"
             case .prose: "prose"
-            case .work(let group): "work:" + (group.finished + group.running).map { "\($0.calls.count)" }.joined(separator: "+")
+            case .activity(_, let bursts): "lines:" + bursts.map { "\($0.calls.count)" }.joined(separator: "+")
             case .subagents(_, let lines): "record:" + lines.map(\.title).joined(separator: "|")
             case .note: "note"
             case .error(_, _, _, let final): final ? "error:final" : "error"
@@ -362,7 +303,7 @@ struct TurnPresentationTests {
             F.assistant("Done."),
         ]
         let presentation = nativeTurnPresentation(messages, live: false)
-        #expect(kinds(presentation) == ["thinking", "prose", "thinking", "work:2+1", "prose"])
+        #expect(kinds(presentation) == ["thinking", "prose", "thinking", "lines:2+1", "prose"])
         guard case .thinking(_, let text, _, _, _) = presentation.items[2] else { Issue.record("no folded thinking"); return }
         #expect(text == "next\n\nthen")
     }
@@ -375,7 +316,7 @@ struct TurnPresentationTests {
         steer.timestamp = 7
         steer.blocks.append(NativeThreadBlock(kind: .unsupportedImage, text: ""))
         let presentation = nativeTurnPresentation([tool("read", "r1"), steer, F.assistant("Switching."), tool("edit", "e1")], live: false)
-        #expect(kinds(presentation) == ["work:1", "steer:use tables", "prose", "work:1"])
+        #expect(kinds(presentation) == ["lines:1", "steer:use tables", "prose", "lines:1"])
         #expect(presentation.copyText == "Switching." && presentation.toolCalls == 2)
         guard case .steer(_, _, let sentAt, let images) = presentation.items[1] else { Issue.record("no steer"); return }
         #expect(sentAt == 7 && images == 1)
@@ -396,7 +337,7 @@ struct TurnPresentationTests {
         let messages = [F.assistant("Sleeping."), tool("bash", "b", status: "aborted", error: true),
                         F.assistant("", status: "aborted")]
         let presentation = nativeTurnPresentation(messages, live: false)
-        #expect(kinds(presentation) == ["prose", "work:1", "note"])
+        #expect(kinds(presentation) == ["prose", "lines:1", "note"])
         guard case .note(_, let text) = presentation.items.last else { Issue.record("no note"); return }
         #expect(text == "Stopped")
     }
@@ -428,15 +369,67 @@ struct TurnPresentationTests {
         var streaming = F.assistant("", thinking: "hmm", status: "streaming")
         streaming.timestamp = 5_000
         let presentation = nativeTurnPresentation([F.assistant("Going."), tool("read", "r"), streaming], live: true)
-        #expect(kinds(presentation) == ["prose", "work:1", "live-thinking"])
-        #expect(presentation.endsInLiveThinking)
+        #expect(kinds(presentation) == ["prose", "lines:1", "live-thinking"])
+        #expect(!presentation.betweenTools, "the thinking is what moves")
         guard case .thinking(_, _, _, _, let since) = presentation.items.last else { return }
         #expect(since == 5_000)
     }
 
-    @Test func aRunningCallEndsTheLiveTurn() {
+    @Test func aRunningCallEndsTheLiveTurnOnItsOwnLine() {
         let presentation = nativeTurnPresentation([tool("read", "r"), tool("bash", "b", status: "running")], live: true)
-        #expect(presentation.endsInLiveActivity && presentation.changes == nil)
+        #expect(kinds(presentation) == ["lines:1+1"] && presentation.changes == nil)
+        guard case .activity(_, let bursts)? = presentation.items.last else { Issue.record("no lines"); return }
+        #expect(bursts.map(\.state) == [.done, .running])
+        #expect(!presentation.betweenTools, "the running call is what moves")
+    }
+
+    /// NWThread, ToolRows: one quiet line per burst, in the order the work took, with no line
+    /// that folds them. A failure stays its own red line; the running call is live in place.
+    @Test func aStretchIsItsBurstLinesInOrder() {
+        let messages = [tool("read", "a"), tool("read", "b"), tool("edit", "c"),
+                        F.tool("bash", args: #"{"command":"swift test"}"#, output: "Command exited with code 1", error: true, id: "e-t", callID: "t"),
+                        tool("bash", "l"), tool("bash", "p", status: "running")]
+        let presentation = nativeTurnPresentation(messages, live: true)
+        #expect(kinds(presentation) == ["lines:2+1+1+1+1"])
+        guard case .activity(_, let bursts)? = presentation.items.first else { Issue.record("no lines"); return }
+        #expect(bursts.map(\.label) == ["Explored 2 files", "Edited 1 file", "Ran tests", "Ran a command", "Running"])
+        #expect(bursts.map(\.state) == [.done, .done, .failed, .done, .running])
+    }
+
+    /// LiveText: only one thing moves. With no call running, no thinking streaming and no reply
+    /// being written, pi is between tools and the live turn ends in "Thinking…".
+    @Test(arguments: [
+        ("after a finished call", ["read"], true, true),
+        ("after a steer pi read", ["read", "steer"], true, true),
+        ("while a call runs", ["read", "running"], true, false),
+        ("while it thinks", ["read", "thinking"], true, false),
+        ("while it writes its reply", ["read", "prose"], true, false),
+        ("once the turn is over", ["read"], false, false),
+    ])
+    func theLiveTurnIsBetweenToolsOnlyWhenNothingElseMoves(_ what: String, parts: [String], live: Bool, between: Bool) {
+        let messages: [NativeThreadMessage] = parts.enumerated().map { index, part in
+            switch part {
+            case "running": tool("bash", "b\(index)", status: "running")
+            case "thinking": F.assistant("", thinking: "hm", status: "streaming")
+            case "prose": F.assistant("Pushing now.", status: "streaming")
+            case "steer": {
+                var steer = F.user("also tests", id: "s\(index)")
+                steer.origin = .steered
+                return steer
+            }()
+            default: tool(part, "c\(index)")
+            }
+        }
+        #expect(nativeTurnPresentation(messages, live: live).betweenTools == between, "\(what)")
+    }
+
+    /// A call the record stands for still runs: the parent waiting on its subagents is not
+    /// thinking.
+    @Test func aRunningCallTheRecordStandsForStillCountsAsMoving() {
+        let messages = [tool("shepherd_child_start", "s1"), tool("shepherd_child_wait", "w", status: "running")]
+        let presentation = nativeTurnPresentation(messages, live: true,
+                                                  cards: NativeCardLayout(callIDs: ["s1"], record: NativeSubagentRecord(started: Self.record.started)))
+        #expect(kinds(presentation) == ["record:Started 2 subagents"] && !presentation.betweenTools)
     }
 
     private static let record = NativeSubagentRecord(
@@ -444,16 +437,16 @@ struct TurnPresentationTests {
         finished: NativeSubagentRecordLine(title: "2 subagents finished", meta: "4m"), finishedAt: 5)
 
     /// The record's first line takes the first spawn's place; later spawns and the parent's
-    /// wait and result calls leave no line, and the work around them stays one group.
+    /// wait and result calls leave no line, and the work around them stays one line.
     @Test func theRecordTakesTheFirstSpawnsPlaceAndBookkeepingCallsHide() {
         let live = NativeSubagentRecord(started: Self.record.started)
         let messages = [tool("read", "r"), tool("shepherd_child_start", "s1"), tool("shepherd_child_wait", "w"), tool("shepherd_child_start", "s2")]
         let presentation = nativeTurnPresentation(messages, live: true, cards: NativeCardLayout(callIDs: ["s1", "s2"], record: live))
-        #expect(kinds(presentation) == ["work:1", "record:Started 2 subagents"])
+        #expect(kinds(presentation) == ["lines:1", "record:Started 2 subagents"])
         #expect(presentation.toolCalls == 2, "spawn calls the record stands for are not counted")
         let around = [tool("read", "r1"), tool("shepherd_child_start", "s1"), tool("read", "r2"), tool("shepherd_child_start", "s2"), tool("read", "r3")]
         #expect(kinds(nativeTurnPresentation(around, live: true, cards: NativeCardLayout(callIDs: ["s1", "s2"], record: live)))
-                == ["work:1", "record:Started 2 subagents", "work:2"])
+                == ["lines:1", "record:Started 2 subagents", "lines:2"])
     }
 
     /// "finished" sits where they finished: before the first thing that landed after the last
@@ -507,7 +500,7 @@ struct TurnPresentationTests {
     @Test func anErrorThatEndsAFinishedTurnOffersRetry() {
         let failed = { F.assistant("Model overloaded", status: "error") }
         let finished = nativeTurnPresentation([tool("read", "r"), failed(), failed()], live: false)
-        #expect(kinds(finished) == ["work:1", "error:final"])
+        #expect(kinds(finished) == ["lines:1", "error:final"])
         guard case .error(_, let text, let count, _) = finished.items.last else { return }
         #expect(text == "Model overloaded" && count == 2)
         #expect(nativeTurnErrorText(text, toolCalls: finished.toolCalls) == "Model overloaded — the turn stopped after 1 tool call.")

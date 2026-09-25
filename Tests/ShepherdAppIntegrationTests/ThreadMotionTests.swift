@@ -74,9 +74,20 @@ struct ThreadMotionTests {
         let bubble = (0..<settled.bitmap.pixelsHigh).filter {
             settled.lightness(x: 0, y: $0) < 0.975 && settled.lightness(x: 0, y: $0) != recording.before.lightness(x: 0, y: $0)
         }
-        let middle = try #require(bubble.isEmpty ? nil : (bubble.first! + bubble.last!) / 2, "the sent bubble")
-        let first = recording.before.lightness(x: 0, y: middle), last = recording.settled.lightness(x: 0, y: middle)
-        let path = recording.inBetween.map { $0.lightness(x: 0, y: middle) }
+        let resting = try #require(bubble.isEmpty ? nil : (bubble.first! + bubble.last!) / 2, "the sent bubble")
+        // A queued follow-up sits under the reply that was running, which takes its footer's
+        // place as it ends: the bubble moves down by it, so each frame is read at the bubble's
+        // own middle there (the lowest run of rows off the background, right of the prose).
+        let background = settled.lightness(x: 0, y: min(bubble.last! + 20, settled.bitmap.pixelsHigh - 1))
+        func middle(_ frame: MotionRecording.Frame) -> Int {
+            let rows = (0..<frame.bitmap.pixelsHigh).filter { abs(frame.lightness(x: 0, y: $0) - background) > 0.004 }
+            guard var top = rows.last, let bottom = rows.last else { return resting }
+            let set = Set(rows)
+            while set.contains(top - 1) { top -= 1 }
+            return (top + bottom) / 2
+        }
+        let first = recording.before.lightness(x: 0, y: middle(recording.before)), last = settled.lightness(x: 0, y: resting)
+        let path = recording.inBetween.map { $0.lightness(x: 0, y: middle($0)) }
         #expect(abs(first - last) > 0.01, "the bubble's fill changed")
         #expect(path.contains { abs($0 - first) < abs($0 - last) && abs($0 - first) > 0.001 },
                 "it eases from \(first) to \(last): \(path)")
@@ -133,7 +144,7 @@ struct ThreadMotionTests {
                                                     provisional: [Fixtures.streaming(first)], running: true))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        // Through the prose, clear of the working row's spinner and label.
+        // Through the prose.
         let column = CGRect(x: 300, y: 0, width: 1, height: 560)
 
         let recording = await MotionProbe.record(thread.window, region: column) {
@@ -155,12 +166,13 @@ struct ThreadMotionTests {
         let thread = MotionThread(live)
         defer { thread.close() }
         try await thread.waitUntilReady()
-        // From the bottom: the working row, the three output lines, the line itself.
+        // From the bottom: the three output lines, then the line itself. Nothing sits under a
+        // live line (LiveText).
         let lines = thread.textRows()
-        try #require(lines.count >= 5, "rows of text: \(lines)")
-        let header = lines[lines.count - 5], lastOutput = lines[lines.count - 2]
+        try #require(lines.count >= 4, "rows of text: \(lines)")
+        let header = lines[lines.count - 4], lastOutput = lines[lines.count - 1]
 
-        // Clear of the spinners at the start of the line and the working row.
+        // Clear of the glyph at the start of the line.
         let headerRecording = await MotionProbe.record(thread.window, region: CGRect(x: 60, y: header, width: 400, height: 1)) {
             thread.serve(finished)
         }
@@ -189,14 +201,15 @@ struct ThreadMotionTests {
         let thread = MotionThread(Fixtures.snapshot(turn, provisional: [Fixtures.streaming(text)], running: true))
         defer { thread.close() }
         try await thread.waitUntilReady()
-        // From the bottom: the working row, then the reply's one line of prose.
+        // From the bottom: the reply's one line of prose, the thread's live indicator while it
+        // is written (LiveText).
         let lines = thread.textRows()
-        try #require(lines.count >= 2, "rows of text: \(lines)")
-        let prose = Int(lines[lines.count - 2])
+        try #require(lines.count >= 1, "rows of text: \(lines)")
+        let prose = Int(lines[lines.count - 1])
         let saved = NativeThreadMessage(entryID: "a2", role: "assistant", blocks: [NativeThreadBlock(kind: .text, text: text)],
                                         truncated: false, timestamp: asked + 5000)
         // The prose and, below it, where the footer's time ("4:13 PM · 5s") would be, clear of the
-        // working row's label and the footer's buttons.
+        // footer's buttons.
         let column = CGRect(x: AppLayout.threadGutter(width: Self.size.width) + 90, y: CGFloat(prose - 8), width: 210, height: 64)
 
         let recording = await MotionProbe.record(thread.window, region: column, timeout: 1) {
@@ -625,7 +638,7 @@ private final class MotionThread {
 
         var body: some View {
             ThreadView(store: store, active: visibility.active, isFocused: false, request: request, commandKey: "motion",
-                       listModels: { models })
+                       listModels: { ModelCatalog(models) })
         }
     }
 

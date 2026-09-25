@@ -87,8 +87,8 @@ extension FixtureCatalog {
             // the turn with no second tap.
             FixtureScreen(name: "composer-focus-rotate", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: FollowFixture.focusRotateAndCheck),
-            // The model picker, from the host's catalog.
-            FixtureScreen(name: "models", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
+            // The model picker, from the host's catalog: each model's thinking levels under its name.
+            FixtureScreen(name: "models", hosts: ThreadFixtures.levels(ThreadFixtures.hosts()), routes: [.thread(preview)],
                           prepare: { _ in ComposerStates.shared.state(for: preview).choosingModel = true }),
         ]
     }
@@ -117,6 +117,15 @@ enum ThreadFixtures {
     static func plainModel(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
         var hosts = hosts
         hosts[0].withoutThinking = ["anthropic/claude-opus"]
+        return hosts
+    }
+
+    /// Studio's catalog with a model that takes no thinking level and one models.json gives
+    /// Extra high and Max.
+    static func levels(_ hosts: [FixtureHostData]) -> [FixtureHostData] {
+        var hosts = hosts
+        hosts[0].withoutThinking = ["anthropic/claude-haiku"]
+        hosts[0].thinkingLevels = ["anthropic/claude-sonnet": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]]
         return hosts
     }
 

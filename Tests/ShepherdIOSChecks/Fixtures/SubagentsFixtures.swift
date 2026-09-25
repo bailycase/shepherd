@@ -81,6 +81,8 @@ enum SubagentFixtures {
             FixtureData.user("m1", "Restyle all of Shepherd's native UI to match the design spec. Split it up if that's faster.", at: started),
             FixtureData.assistant("m2", spawnNote, at: started + 5_000),
             FixtureData.tool("m3", "shepherd_child_start", args: #"{"workflow":"restyle"}"#, at: started + 8_000),
+            // It waits on them: that call runs, so the thread's own tail stays still (MobileSteer).
+            FixtureData.tool("m4", "shepherd_child_wait", args: "{}", status: "running", at: started + 9_000),
         ], running: true, subagents: liveRuns() + earlierRuns())
     }
 

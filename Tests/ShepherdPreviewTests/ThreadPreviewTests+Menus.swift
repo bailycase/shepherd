@@ -14,14 +14,14 @@ extension ThreadPreviewTests {
         NWSlashCommand(name: "release-notes", description: "Draft release notes from commits since the last tag", arguments: "[tag]", tag: "prompt"),
     ]
 
-    /// The ModelPicker board's list.
+    /// The ModelPicker board's list, each row's second line the levels its model takes.
     static let boardModels = [
         NWModelSection(title: "Recent", options: [
-            NWModelOption(id: "anthropic/claude-opus", title: "claude-opus", subtitle: "Current · this thread", note: "200K", isCurrent: true),
-            NWModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1", subtitle: "Used 2h ago in “Plan shepherd extensions”", note: "200K"),
+            NWModelOption(id: "anthropic/claude-opus", title: "claude-opus", subtitle: "Off · Low · Medium · High", note: "200K", isCurrent: true),
+            NWModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1", subtitle: "Off · Minimal · Low · Medium · High · Extra high · Max", note: "200K"),
         ]),
         NWModelSection(title: "anthropic", options: [
-            NWModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", subtitle: "With thinking", note: "200K"),
+            NWModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", subtitle: "Off · Minimal · Low · Medium · High", note: "200K"),
             NWModelOption(id: "anthropic/claude-haiku", title: "claude-haiku", subtitle: "No thinking", note: "200K"),
         ]),
     ]
@@ -47,16 +47,16 @@ extension ThreadPreviewTests {
         let opus = [
             NWModelSection(title: "Recent", options: [
                 NWModelOption(id: "cpa/~anthropic/claude-opus-4-8-thinking-max", title: "~anthropic/claude-opus-4-8-thinking-max",
-                              subtitle: "Current · this thread", note: "1M", isCurrent: true),
+                              subtitle: "Off · Minimal · Low · Medium · High · Extra high · Max", note: "1M", isCurrent: true),
             ]),
             NWModelSection(title: "AG", options: [
                 NWModelOption(id: "AG/claude-opus-4-6-thinking-extended-context", title: "claude-opus-4-6-thinking-extended-context",
-                              subtitle: "Used 3d ago in “Fix remote subagent deletion”", note: "200K"),
-                NWModelOption(id: "AG/claude-opus-4-6", title: "claude-opus-4-6", subtitle: "With thinking", note: "200K"),
+                              subtitle: "Off · Minimal · Low · Medium · High", note: "200K"),
+                NWModelOption(id: "AG/claude-opus-4-6", title: "claude-opus-4-6", subtitle: "Off · Minimal · Low · Medium · High · Extra high", note: "200K"),
             ]),
             NWModelSection(title: "cpa", options: [
                 NWModelOption(id: "cpa/~anthropic/claude-opus-4-5-20251101", title: "~anthropic/claude-opus-4-5-20251101",
-                              subtitle: "With thinking", note: "200K"),
+                              subtitle: "Off · Minimal · Low · Medium · High", note: "200K"),
                 NWModelOption(id: "cpa/~openrouter/anthropic/claude-opus-4.1", title: "~openrouter/anthropic/claude-opus-4.1",
                               subtitle: "No thinking", note: "200K"),
             ]),
