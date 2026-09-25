@@ -36,14 +36,17 @@ private let started = Date().addingTimeInterval(-41 * 60)
 #Preview("Toolbar and pane header") {
     NWPreviewBoth {
         VStack(spacing: NW.Space.l) {
-            NWThreadToolbar("Investigate SwiftUI live preview", counters: "17 turns · 42k ctx",
-                            toggles: [(NWPaneToggle(systemImage: "arrow.triangle.branch", label: "Subagents", isOn: false), {}),
-                                      (NWPaneToggle(systemImage: "plus.forwardslash.minus", label: "Review", shortcut: "⇧⌘B", isOn: false), {})]) {
-                NWOptionsMenu { Button("Rename…") {} }
+            NWThreadToolbar("Investigate SwiftUI live preview", project: "Shepherd") {
+                NWBranchChip(kind: .worktree, branch: "pi/swiftui-previews", changedFiles: 3)
+            } trailing: {
+                NWSidePaneButton(isOn: false, shortcut: "⇧⌘B") {}
+                NWOptionsMenu("Thread options") { Button("Rename…") {} }
             }
-            NWThreadToolbar("Dock review pane", sidebar: {},
-                            toggles: [(NWPaneToggle(systemImage: "plus.forwardslash.minus", label: "Review", isOn: true), {})]) {
-                NWOptionsMenu { Button("Rename…") {} }
+            NWThreadToolbar("Deploy media stack", project: "homelab", sidebar: {}) {
+                NWBranchChip(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "horizon")
+            } trailing: {
+                NWSidePaneButton(isOn: true, shortcut: "⇧⌘B") {}
+                NWOptionsMenu("Thread options") { Button("Rename…") {} }
             }
             NWPaneHeader("Review", close: {}) {
                 HStack(spacing: NW.Space.xs) {
@@ -55,6 +58,26 @@ private let started = Date().addingTimeInterval(-41 * 60)
             }
         }
         .frame(width: 720)
+    }
+}
+
+#Preview("Side pane tabs and button") {
+    NWPreviewBoth {
+        VStack(alignment: .trailing, spacing: NW.Space.l) {
+            NWSidePaneTabs([NWSidePaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 4, shortcut: "⌃1")],
+                           selection: "changes", select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
+                Button("Reset Width") {}
+            }
+            .frame(width: 600)
+            NWSidePaneTabs([NWSidePaneTab(id: "changes", title: "Changes", systemImage: "plus.forwardslash.minus", count: 2, news: true)],
+                           selection: "changes", select: { _ in }, close: {}) {
+                Button("Reset Width") {}
+            }
+            .frame(width: 400)
+            NWSidePaneButton(isOn: false, news: "pi opened a review in Changes", shortcut: "⇧⌘B") {}
+                .padding(.bottom, 48)
+        }
+        .frame(width: 720, alignment: .trailing)
     }
 }
 

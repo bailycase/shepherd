@@ -23,18 +23,15 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Open the agent's review (right pane) scrolled to `path`, reusing an open one: the
-    /// thread's "review ›" links land here.
+    /// Show the agent's Changes tab scrolled to `path`, in front of an inspected subagent: the
+    /// thread's "review ›" links and the inspector's file links land here.
     func openReview(agentID: AgentID, path: String?) {
-        let existing = reviewSessions.values.first { $0.agentID == agentID }
-        subagentInspector.runByAgent.removeValue(forKey: agentID)
-        if existing == nil { beginReview(agentID: agentID, cwd: nil, reference: nil, respond: nil) }
+        showSidePane(.local(agentID), tab: .changes)
         focus(reviewSessions.values.first { $0.agentID == agentID }, path: path)
     }
 
     func openRemoteReview(_ target: RemoteAgentRef, path: String?) {
-        subagentInspector.remoteRuns.removeValue(forKey: target)
-        if remoteReviews[target] == nil { openRemoteReview(target, pullRequest: false) }
+        showSidePane(.remote(target), tab: .changes)
         focus(remoteReviews[target], path: path)
     }
 
@@ -46,43 +43,32 @@ extension ShepherdViewModel {
         session.focusRequest = UUID()
     }
 
-    /// The header button toggles: open a review pane for the selected agent,
-    /// or close the one already open (comments are discarded like cancel).
+    /// Review Changes (the sidebar's menu, the palette): the side pane on Changes for the
+    /// selected agent.
     func openUserReview() {
-        if let target = selectedRemoteAgent {
-            openRemoteReview(target, pullRequest: false)
-            return
-        }
-        guard let agent = selectedAgent else {
-            NSSound.beep()
-            return
-        }
-        if let existing = reviewSessions.values.first(where: { $0.agentID == agent.id }) {
-            cancelReview(existing)
-            return
-        }
-        subagentInspector.runByAgent.removeValue(forKey: agent.id)
-        beginReview(agentID: agent.id, cwd: nil, reference: nil, respond: nil)
+        guard sidePaneOwner != nil else { NSSound.beep(); return }
+        selectSidePaneTab(.changes)
     }
 
     /// Review the changes sitting in this branch's PR (merge-base diff
-    /// against the PR base, falling back to the remote default branch).
-    /// Replaces an open review for the agent.
+    /// against the PR base, falling back to the remote default branch),
+    /// on the Changes tab. Replaces an open review for the agent.
     func openUserPRReview() {
         if let target = selectedRemoteAgent {
             openRemoteReview(target, pullRequest: true)
+            showSidePane(.remote(target), tab: .changes)
             return
         }
         guard let agent = selectedAgent else {
             NSSound.beep()
             return
         }
-        subagentInspector.runByAgent.removeValue(forKey: agent.id)
         if let existing = reviewSessions.values.first(where: { $0.agentID == agent.id }) {
             reloadReview(existing, reference: "pr")
-            return
+        } else {
+            beginReview(agentID: agent.id, cwd: nil, reference: "pr")
         }
-        beginReview(agentID: agent.id, cwd: nil, reference: "pr", respond: nil)
+        showSidePane(.local(agent.id), tab: .changes)
     }
 
     func submitReview(_ session: ReviewSession) {
@@ -105,7 +91,10 @@ extension ShepherdViewModel {
                     if session.hostReviewPane {
                         _ = try await remoteHosts.agentQuery(target, query: .finishReview(paneID: session.paneID, text: text))
                     } else { try await remoteHosts.sendUserMessage(target, text: text) }
-                    if remoteReviews[target] === session { remoteReviews.removeValue(forKey: target) }
+                    if remoteReviews[target] === session {
+                        remoteReviews.removeValue(forKey: target)
+                        subagentInspector.open.remove(.remote(target))
+                    }
                 } catch { remoteActionError = String(describing: error) }
             }
             return
@@ -194,16 +183,22 @@ extension ShepherdViewModel {
                 }
             }
             remoteReviews.removeValue(forKey: target)
+            subagentInspector.open.remove(.remote(target))
+            subagentInspector.clearNews(.remote(target), .changes)
             return
         }
         guard reviewSessions[session.paneID] === session else { return }
         removeReview(session)
     }
 
-    /// Reviews dock in the right pane; a review a remote client adopted from a layout leaf
+    /// Reviews dock in the side pane's Changes tab, which closes with its review (a sent review
+    /// closes the pane, as a cancel does); a review a remote client adopted from a layout leaf
     /// (older hosts split the layout) also closes that leaf.
     private func removeReview(_ session: ReviewSession) {
         reviewSessions.removeValue(forKey: session.paneID)
+        let owner = SidePaneOwner.local(session.agentID)
+        if subagentInspector.open.contains(owner) { subagentInspector.open.remove(owner) }
+        subagentInspector.clearNews(owner, .changes)
         if state.tabs.contains(where: { $0.layout.contains(session.paneID) }) { closeLocalPane(session.paneID) }
     }
 
@@ -216,6 +211,7 @@ extension ShepherdViewModel {
         for paneID in doomed {
             reviewSessions.removeValue(forKey: paneID)
         }
+        subagentInspector.forget(.local(agentID))
     }
 
     func pruneReviewSessions() {
@@ -224,6 +220,8 @@ extension ShepherdViewModel {
         for session in doomed {
             reviewSessions.removeValue(forKey: session.paneID)
         }
+        let panes = subagentInspector
+        for case .local(let id) in panes.open.union(panes.news.keys) where !liveAgents.contains(id) { panes.forget(.local(id)) }
     }
 
     /// Switch an open review between uncommitted (nil) and PR ("pr") mode:
@@ -269,13 +267,16 @@ extension ShepherdViewModel {
         }
     }
 
-    /// Open the pane immediately (empty, loading), then fill in the parsed
-    /// diff when git finishes — the pane must never wait on a subprocess.
-    private func beginReview(
+    /// Start the agent's review (loading at once, filled in when git finishes: the pane must
+    /// never wait on a subprocess). An agent's `review_diff` (`respond`) never opens the side pane
+    /// or takes it from an inspected subagent: the Changes tab takes a dot, and with the pane
+    /// closed so does the header's button (PaneStates: nothing opens by itself). Callers the user
+    /// drove show the pane themselves (`showSidePane`).
+    func beginReview(
         agentID: AgentID,
         cwd requestedCwd: String?,
         reference: String?,
-        respond: ((ReviewOutcome) -> Void)?
+        respond: ((ReviewOutcome) -> Void)? = nil
     ) {
         guard let agent = state.agents.first(where: { $0.id == agentID }),
               let tab = state.tabs.first(where: { $0.id == agent.tabID }),
@@ -287,21 +288,30 @@ extension ShepherdViewModel {
         // Never changes the agent's own directory; no cwd means the agent's, even when the open
         // review targets another repository.
         let cwdPath = ((requestedCwd ?? piPane.cwd) as NSString).expandingTildeInPath
+        let owner = SidePaneOwner.local(agentID)
+        let panes = subagentInspector
+        // What the agent is told, and the dot when the Changes tab is out of sight.
+        func told(_ reloaded: Bool) {
+            guard let respond else { return }
+            let showing = panes.open.contains(owner) && panes.run(for: owner) == nil && panes.tab(for: owner) == .changes
+            if !showing { panes.addNews(owner, .changes) }
+            let lead = showing ? "Review pane already open; reloaded." : reloaded
+                ? "Review reloaded in the side pane's Changes tab, which the user opens when they choose."
+                : "Review ready in the side pane's Changes tab; the user opens it when they choose."
+            respond(.submitted(text: lead + " The user's review will arrive as a message when they submit; continue only if you have unrelated work."))
+        }
 
         // One review per agent, regardless of entry point: an agent re-requesting a review
-        // reloads the open one and brings it back in front of an inspected subagent.
+        // reloads the one it has.
         if let existing = reviewSessions.values.first(where: { $0.agentID == agentID }) {
             if existing.cwd != cwdPath { existing.retarget(cwd: cwdPath) }
-            subagentInspector.runByAgent.removeValue(forKey: agentID)
             reloadReview(existing, reference: reference)
-            respond?(.submitted(
-                text: "Review pane already open; reloaded. The user's review will arrive as a message when they submit."
-            ))
+            told(true)
             return
         }
 
-        // The review docks in the agent's right pane: a view slot, not a layout leaf, so it
-        // never touches the persisted layout.
+        // The review sits in the agent's side pane: a view slot, not a layout leaf, so it never
+        // touches the persisted layout.
         let session = ReviewSession(
             agentID: agentID,
             paneID: PaneID(),
@@ -311,14 +321,10 @@ extension ShepherdViewModel {
             isLoading: true
         )
         session.isPRMode = reference == "pr"
-        subagentInspector.runByAgent.removeValue(forKey: agentID)
         reviewSessions[session.paneID] = session
         // The tool returns immediately; the review itself arrives later as a
         // typed prompt message when the user submits.
-        respond?(.submitted(
-            text: "Review pane opened. The user's review will arrive as a message when they submit; continue only if you have unrelated work."
-        ))
-
+        told(false)
         loadReviewDiff(session)
     }
 }
