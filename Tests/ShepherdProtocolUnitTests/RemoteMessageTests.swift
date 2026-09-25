@@ -115,6 +115,20 @@ enum RemoteSamples {
         AutomationRun(id: op, startedAt: 1_700_000_300, endedAt: 1_700_000_400, result: .interrupted),
     ]
     static let automationResults: [RemoteAutomationResult] = [.ok, .runs([]), .runs(runs)]
+
+    static let instructionsRequests: [RemoteInstructionsRequest] = [
+        .fetch,
+        .save(file: .agents, content: "# How I work\n- Prefer \"small\" commits.\n", origin: "studio", sync: false),
+        .save(file: .appendSystem, content: "", origin: "iPhone", sync: true),
+        .restore(revisionID: op, origin: "This Mac"),
+    ]
+    static let instructions = InstructionsSnapshot(
+        agents: "- Prefer small commits.\n", appendSystem: "Never force-push.\n",
+        directory: "~/Library/Application Support/Shepherd/instructions",
+        history: [
+            InstructionHistoryEntry(id: op, file: .appendSystem, savedAt: 1_700_000_100, summary: "Synced from studio", origin: "studio"),
+            InstructionHistoryEntry(id: op, file: .agents, savedAt: 1_700_000_000, summary: "Added “Prefer small commits.”"),
+        ])
 }
 
 @Suite("Remote requests")
@@ -127,11 +141,11 @@ struct RemoteRequestTests {
         switch request {
         case .nativeThread, .hello, .stateFetch, .attach, .detach, .input, .resize, .paste, .openPane,
              .closePane, .resizePaneSplit, .listDir, .listModels, .addSpace, .createAgent, .upload,
-             .creationOptions, .agentQuery, .agentAction, .automation:
+             .creationOptions, .agentQuery, .agentAction, .automation, .instructions:
             return Wire.caseName(request)
         }
     }
-    static let caseCount = 20
+    static let caseCount = 21
 
     static let samples: [RemoteRequest] = [
         .nativeThread(id: 80, agentID: S.agent, request: .snapshot(expectedSessionID: "s", beforeEntryID: "m:3", afterRevision: 9)),
@@ -157,6 +171,7 @@ struct RemoteRequestTests {
         .agentQuery(id: 31, agentID: S.agent, query: .children),
         .agentAction(id: 20, agentID: S.agent, action: .rename(name: "new \"name\"")),
         .automation(id: 21, automationID: S.automation, request: .setEnabled(enabled: false)),
+        .instructions(id: 23, request: .save(file: .appendSystem, content: "Never force-push.\n", origin: "studio", sync: true)),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -198,6 +213,12 @@ struct RemoteRequestTests {
     @Test(arguments: RemoteSamples.automationRequests)
     func everyAutomationRequestRoundTrips(_ request: RemoteAutomationRequest) throws {
         let message = RemoteRequest.automation(id: 1, automationID: S.automation, request: request)
+        #expect(try Wire.roundTrip(message) == message)
+    }
+
+    @Test(arguments: RemoteSamples.instructionsRequests)
+    func everyInstructionsRequestRoundTrips(_ request: RemoteInstructionsRequest) throws {
+        let message = RemoteRequest.instructions(id: 1, request: request)
         #expect(try Wire.roundTrip(message) == message)
     }
 
@@ -247,11 +268,11 @@ struct RemoteReplyTests {
         switch reply {
         case .nativeThread, .uploadResult, .creationOptions, .helloOk, .agentResult, .ok, .paneOpened, .error,
              .state, .stateChanged, .attached, .output, .sessionExited, .dirListing, .models, .spaceAdded,
-             .agentCreated, .automationResult:
+             .agentCreated, .automationResult, .instructions:
             return Wire.caseName(reply)
         }
     }
-    static let caseCount = 18
+    static let caseCount = 19
 
     static let samples: [RemoteReply] = [
         .nativeThread(id: 80, result: .accepted(operationID: S.op)),
@@ -274,6 +295,7 @@ struct RemoteReplyTests {
         .spaceAdded(id: 6, spaceID: S.space),
         .agentCreated(id: 7, agentID: S.agent),
         .automationResult(id: 22, result: .runs(S.runs)),
+        .instructions(id: 24, snapshot: S.instructions),
     ]
 
     @Test func samplesCoverEveryCase() {
@@ -298,6 +320,16 @@ struct RemoteReplyTests {
     @Test(arguments: RemoteSamples.automationResults)
     func everyAutomationResultRoundTrips(_ result: RemoteAutomationResult) throws {
         #expect(try Wire.roundTrip(RemoteReply.automationResult(id: 1, result: result)) == .automationResult(id: 1, result: result))
+    }
+
+    @Test func aSnapshotNamesEachFilesPathAndLastSave() {
+        let snapshot = RemoteSamples.instructions
+        #expect(snapshot[.agents] == "- Prefer small commits.\n")
+        #expect(snapshot[.appendSystem] == "Never force-push.\n")
+        #expect(snapshot.path(of: .agents) == "~/Library/Application Support/Shepherd/instructions/AGENTS.md")
+        #expect(snapshot.lastSaved(.appendSystem) == 1_700_000_100)
+        #expect(InstructionsSnapshot(directory: "/i/").path(of: .appendSystem) == "/i/APPEND_SYSTEM.md")
+        #expect(InstructionsSnapshot(directory: "/i").lastSaved(.agents) == nil)
     }
 
     /// A run a newer host reports with a result this build does not know reads as stopped;

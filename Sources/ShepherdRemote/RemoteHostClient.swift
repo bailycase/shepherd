@@ -474,6 +474,24 @@ public final class RemoteHostClient: @unchecked Sendable {
         return runs
     }
 
+    /// Reads or saves the host's root instructions for pi, and answers with its files as they
+    /// are afterwards. A host without `instructionsCapability` has none: this throws
+    /// `update_required` before sending anything.
+    @discardableResult
+    public func instructions(_ request: RemoteInstructionsRequest = .fetch) async throws -> InstructionsSnapshot {
+        guard capabilities.contains(RemoteProtocol.instructionsCapability) else {
+            throw RemoteHostClientError.rejected(
+                code: "update_required", message: "Update Shepherd on the host to edit its instructions from here."
+            )
+        }
+        let reply = try await self.request { .instructions(id: $0, request: request) }
+        switch reply {
+        case .instructions(_, let snapshot): return snapshot
+        case .error(_, let code, let message): throw RemoteHostClientError.rejected(code: code, message: message)
+        default: throw RemoteHostClientError.rejected(code: "protocol", message: "unexpected instructions reply")
+        }
+    }
+
     public func detach(sessionID: SessionID) {
         queue.async { self.sendRequest(.detach(sessionID: sessionID)) }
     }
@@ -731,7 +749,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         case .nativeThread(let id, _), .uploadResult(let id, _), .creationOptions(let id, _), .agentResult(let id, _), .helloOk(let id, _, _), .ok(let id), .paneOpened(let id, _),
              .state(let id, _), .attached(let id, _),
              .dirListing(let id, _, _, _), .models(let id, _, _, _),
-             .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _):
+             .spaceAdded(let id, _), .agentCreated(let id, _), .automationResult(let id, _), .instructions(let id, _):
             resumePending(id: id, with: reply)
         case .error(let id, _, _):
             resumePending(id: id, with: reply)
