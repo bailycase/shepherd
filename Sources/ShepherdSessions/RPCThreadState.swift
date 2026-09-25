@@ -77,6 +77,8 @@ final class RPCThreadState {
     /// serves (pi has answered `get_state` and `get_messages`).
     var onServable: (() -> Void)?
     private var announcedServable = false
+    /// A new agent's opening prompt, held until the thread serves (`sendOpeningPrompt`).
+    private var openingPrompt: (text: String, id: UUID)?
     /// Requests get a snapshot rather than `native_starting`.
     var isServable: Bool { piSessionID != nil && !historyPending }
     private(set) var generation = UUID().uuidString
@@ -156,6 +158,11 @@ final class RPCThreadState {
     /// The user stopped this run: pi ends a run stopped mid-tool-call with an error reply,
     /// which is not a turn that failed.
     var stopRequested = false
+    /// What a Stop ended, which projects as `aborted` rather than as a failure: tool calls that
+    /// failed as it aborted them, and the error replies pi ended those runs with (by pi's
+    /// timestamp).
+    private var stoppedCalls: Set<String> = []
+    private var stoppedReplies: Set<Double> = []
 
     // Queue state (RPCThreadState+Queue.swift).
     var items: [QueueItem] = []
@@ -276,16 +283,23 @@ final class RPCThreadState {
                 sequence += 1
                 currentAssistant = sequence
             }
-            upsertAssistant(message, ended: true)
-            currentAssistant = nil
             runFailed = message.stopReason == "error"
             runError = runFailed ? message.errorMessage : nil
+            var ended = message
+            if runFailed, stopRequested {
+                ended.stopReason = "aborted"
+                if let time = message.timestamp { stoppedReplies.insert(time) }
+            }
+            upsertAssistant(ended, ended: true)
+            currentAssistant = nil
         case .toolExecutionStart(let id, let name, let args):
             upsertTool(id: id, name: name, args: args, content: [], isError: nil, status: "running")
         case .toolExecutionUpdate(let id, let name, let args, let partial):
             upsertTool(id: id, name: name, args: args, content: partial?.content ?? [], isError: nil, status: "running")
         case .toolExecutionEnd(let id, let name, let result, let isError):
-            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: "complete")
+            let stopped = isError && stopRequested
+            if stopped { stoppedCalls.insert(id) }
+            upsertTool(id: id, name: name, args: nil, content: result?.content ?? [], isError: isError, status: stopped ? "aborted" : "complete")
         case .queueUpdate(let steering, let followUp):
             piQueueChanged(steering: steering, followUp: followUp)
         case .extensionUIRequest(let request):
@@ -609,7 +623,34 @@ final class RPCThreadState {
     private func announceIfServable() {
         guard isServable, !announcedServable else { return }
         announcedServable = true
+        if let opening = openingPrompt {
+            openingPrompt = nil
+            deliverOpeningPrompt(opening.text, id: opening.id)
+        }
         onServable?()
+    }
+
+    /// A new agent's opening prompt (`OpeningPrompt`), sent the moment the thread serves: in the
+    /// same queue turn, before any request is answered, so the first snapshot a client gets shows
+    /// it (pending until pi starts it) and none shows the thread without it.
+    func sendOpeningPrompt(_ text: String, id: UUID) {
+        guard isServable else {
+            openingPrompt = (text, id)
+            return
+        }
+        deliverOpeningPrompt(text, id: id)
+    }
+
+    private func deliverOpeningPrompt(_ text: String, id: UUID) {
+        let sessionID = session.id
+        guard text.utf8.count <= Self.textLimit else {
+            ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: over \(Self.textLimit) bytes")
+            return
+        }
+        send(id: id, text: text, delivery: .followUp, images: []) { result in
+            guard case .failure(let code, let message) = result else { return }
+            ShepherdLog.warning("rpc session \(sessionID) refused its opening prompt: \(code) \(message)")
+        }
     }
 
     private func refreshMessages(timeout: TimeInterval = 10, done: ((Result<RPCResponse, RPCError>) -> Void)? = nil) {
@@ -617,9 +658,12 @@ final class RPCThreadState {
             defer { done?(result) }
             guard let self, case .success(let response) = result, response.success,
                   let messages = response.messages else { return }
-            let history = Self.projectHistory(messages) { value, message in
+            let history = Self.projectHistory(self.markingStopped(messages)) { value, message in
                 if let id = message.toolCallId, message.role == "toolResult", let started = self.toolStarts[id] {
                     value.startedAt = started
+                }
+                if let id = message.toolCallId, message.role == "toolResult", self.stoppedCalls.contains(id) {
+                    value.status = "aborted"
                 }
                 if message.role == "assistant", let time = message.timestamp { value.thinkingSeconds = self.thinkingByTimestamp[time] }
                 if message.role == "user" {
@@ -639,7 +683,7 @@ final class RPCThreadState {
             self.live.removeAll { item in
                 switch item.kind {
                 case .assistant, .user: item.ended
-                case .tool: item.value.status == "complete"
+                case .tool: item.value.status == "complete" || item.value.status == "aborted"
                 case .pending: false
                 }
             }
@@ -647,19 +691,39 @@ final class RPCThreadState {
         }
     }
 
+    /// pi's error replies to a Stop, as the stops they were.
+    private func markingStopped(_ messages: [RPCMessage]) -> [RPCMessage] {
+        guard !stoppedReplies.isEmpty else { return messages }
+        return messages.map { message in
+            guard message.role == "assistant", message.stopReason == "error", let time = message.timestamp,
+                  stoppedReplies.contains(time) else { return message }
+            var stopped = message
+            stopped.stopReason = "aborted"
+            return stopped
+        }
+    }
+
     private func refreshStats(timeout: TimeInterval = 10) {
         session.request(.getSessionStats, timeout: timeout) { [weak self] result in
             guard let self, case .success(let response) = result, response.success, let data = response.data else { return }
-            let usage = data["contextUsage"]
-            self.stats = NativeThreadStats(
-                contextTokens: usage?["tokens"]?.doubleValue.map { Int($0) },
-                contextWindow: usage?["contextWindow"]?.doubleValue.map { Int($0) },
-                contextPercent: usage?["percent"]?.doubleValue,
-                totalTokens: data["tokens"]?["total"]?.doubleValue.map { Int($0) },
-                cost: data["cost"]?.doubleValue
-            )
+            self.stats = Self.projectStats(data)
             self.commit()
         }
+    }
+
+    /// get_session_stats → stats. pi estimates the context from the thread's messages, so a
+    /// session with none yet (a first turn before pi's first reply) reports 0: unknown, not a
+    /// figure to show.
+    static func projectStats(_ data: JSONValue) -> NativeThreadStats {
+        let usage = data["contextUsage"]
+        let tokens = usage?["tokens"]?.doubleValue.map { Int($0) }.flatMap { $0 > 0 ? $0 : nil }
+        return NativeThreadStats(
+            contextTokens: tokens,
+            contextWindow: usage?["contextWindow"]?.doubleValue.map { Int($0) },
+            contextPercent: tokens == nil ? nil : usage?["percent"]?.doubleValue,
+            totalTokens: data["tokens"]?["total"]?.doubleValue.map { Int($0) },
+            cost: data["cost"]?.doubleValue
+        )
     }
 
     /// get_commands → capped, byte-limited list. Over-long names are dropped, descriptions clipped.
@@ -687,6 +751,8 @@ final class RPCThreadState {
         toolStarts.removeAll()
         thinkingSpans.removeAll()
         thinkingByTimestamp.removeAll()
+        stoppedCalls.removeAll()
+        stoppedReplies.removeAll()
         widgets.removeAll()
         history.removeAll()
         historyVersion += 1
@@ -1299,7 +1365,8 @@ final class RPCThreadState {
                 break
             }
         }
-        if let error = message.errorMessage, !error.isEmpty {
+        // A stopped run's "Request was aborted" says nothing its `aborted` status does not.
+        if let error = message.errorMessage, !error.isEmpty, message.stopReason != "aborted" {
             result.blocks.append(NativeThreadBlock(kind: .text, text: clip(error)))
         }
         if let isError = message.isError { result.isError = isError }

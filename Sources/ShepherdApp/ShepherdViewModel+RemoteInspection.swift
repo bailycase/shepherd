@@ -119,7 +119,7 @@ extension ShepherdViewModel {
         guard let session = await sessions.awaitSession(forPane: pane.id, timeout: .seconds(10)) else {
             throw RemoteCreateAgentError("Host terminal failed to start")
         }
-        server.write(sessionID: session, data: Data((command + "\n").utf8))
+        server.typeCommand(command, sessionID: session)
         hostRemoteInspectors[key] = tab.id
         return tab.id
     }

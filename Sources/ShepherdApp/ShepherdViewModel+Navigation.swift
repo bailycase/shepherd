@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import ShepherdCore
+import ShepherdRemote
 import ShepherdUI
 
 /// Memoized sidebar projections, owned by the view model
@@ -499,6 +500,11 @@ extension ShepherdViewModel {
             worktreeBase: worktreeBase,
             worktreeFetchFirst: worktreeFetchFirst
         )
+        // The prompt shows while the host's pi starts, as the row the host's first snapshot carries.
+        if let opening = OpeningPrompt(initialPrompt, agentID: agentID) {
+            remoteThreadStores.store(for: RemoteAgentRef(hostID: hostID, agentID: agentID))
+                .preview(opening.preview(model: model, thinking: thinking?.rawValue))
+        }
         selectRemoteAgent(hostID: hostID, agentID: agentID)
     }
 

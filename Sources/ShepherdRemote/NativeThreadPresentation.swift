@@ -297,7 +297,7 @@ public func nativeTurns(_ messages: [NativeThreadMessage], aliases: [String: Str
     // they render as stray notes and stretch the turn's duration to the next system update.
     // User messages always stay: they are the turn boundaries.
     for message in messages where message.role == "user" || (message.role != "system" && (message.toolName != nil
-        || message.role == "toolResult" || message.truncated || message.status == "error"
+        || message.role == "toolResult" || message.truncated || message.status == "error" || message.status == "aborted"
         || message.blocks.contains { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0.kind == .unsupportedImage })) {
         let isUser = message.role == "user"
         if isUser, message.origin == .steered, let last = turns.last, !last.isUser {

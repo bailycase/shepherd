@@ -81,6 +81,54 @@ struct AgentStartupTests {
         #expect(send > firstSnapshot, "nothing is dispatched before pi serves the thread")
     }
 
+    /// What the user asked for shows the moment the agent appears, while its pi is held, and it
+    /// stays one row, the same row, when the host's first snapshot carries it and when pi starts it.
+    @Test func aNewAgentsOpeningPromptShowsWhilePiStartsAndStaysOneRow() async throws {
+        try StubPi.installOnPath()
+        let app = try AppHarness()
+        defer { app.stop() }
+        try Self.holdPi(in: app.dir)
+        let space = Fixture.space(path: app.dir.path)
+        let vm = try await app.start(with: ShepherdState(spaces: [space]))
+
+        let prompt = "tools:0 fix the build"
+        var config = ShepherdViewModel.quickAgentConfig(for: space, defaults: app.settings.agentDefaults)
+        config.initialPrompt = prompt
+        let creating = Task { try await vm.startAgent(config, selectAfter: false) }
+        try await eventuallyOnMain("the new agent to appear") { vm.state.agents.count == 1 }
+        let id = try #require(vm.state.agents.first?.id)
+        let store = vm.threadStores.store(for: id)
+        /// The prompt's row, once per copy of it the thread draws.
+        func promptRows() -> [NativeThreadRow] {
+            store.rows.filter(\.isUser).flatMap { row in
+                row.turn.messages.filter { $0.blocks.first?.text == prompt }.map { _ in row }
+            }
+        }
+
+        #expect(store.previewing && !store.ready)
+        let shown = try #require(promptRows().first, "the prompt shows while pi starts")
+        #expect(promptRows().count == 1 && store.rows.count == 1)
+
+        let recorder = ThreadRecorder(store)
+        let server = app.server
+        let polling = Task { await store.run(request: recorder.forward { try await server.nativeThread(agentID: id, request: $0) }) }
+        defer { polling.cancel(); store.stop() }
+        try await eventuallyOnMain("the thread to show pi starting") { store.starting }
+        #expect(try await creating.value == id)
+        #expect(promptRows().map(\.id) == [shown.id], "the prompt still shows while pi is starting")
+
+        Self.releasePi(in: app.dir)
+        var most = 0
+        try await eventuallyOnMain("pi to answer the opening prompt", timeout: .seconds(20)) {
+            most = max(most, promptRows().count)
+            return store.ready && store.displayedMessages.contains { $0.role == "assistant" && $0.blocks.contains { $0.text == "Reply to \(prompt)" } }
+        }
+        #expect(most == 1, "the prompt never showed twice")
+        #expect(promptRows().map(\.id) == [shown.id], "the row kept its identity from preview to pi's message")
+        let landed = store.displayedMessages.filter { $0.role == "user" && $0.blocks.first?.text == prompt }
+        #expect(landed.count == 1 && landed.first?.status != "pending", "pi's own message, once")
+    }
+
     /// A relaunch: every restored pane still names the previous run's pi, and every agent's pi
     /// respawns (a few at a time, `AgentStartQueue`). Each thread starts quietly, a thread switched
     /// away from and back to meanwhile starts again, and all come up with their history.

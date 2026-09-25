@@ -279,10 +279,8 @@ extension RPCThreadState {
         let expectsMessage = !isExtensionCommand(text)
         dispatches.append(Dispatch(id: id, text: text, parts: parts, items: batch, expectsMessage: expectsMessage))
         if expectsMessage {
-            var blocks = [NativeThreadBlock(kind: .text, text: text)]
-            blocks += images.map { _ in NativeThreadBlock(kind: .unsupportedImage, text: "[Image unavailable in native thread]") }
-            var row = NativeThreadMessage(entryID: "pending:\(id.uuidString)", role: "user", blocks: blocks, status: "pending",
-                                          timestamp: Date().timeIntervalSince1970 * 1000, operationID: id)
+            var row = NativeThreadMessage.pendingSend(operationID: id, text: text, images: images.count,
+                                                      timestamp: Date().timeIntervalSince1970 * 1000)
             row.origin = parts.map { Self.clipped(.queue(parts: $0)) }
             live.append(LiveItem(kind: .pending(id), value: row, raw: nil, ended: false))
         }
