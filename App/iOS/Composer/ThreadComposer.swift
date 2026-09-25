@@ -19,6 +19,7 @@ struct ThreadComposer: View {
     @Environment(ThreadStores.self) private var threads
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.dynamicTypeSize) private var typeSize
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -116,11 +117,24 @@ struct ThreadComposer: View {
             field(store: store, placeholder: store.running ? "Queue a follow-up…"
                   : store.commands.isEmpty ? "Follow up…" : "Follow up, or / for commands…")
         } controls: {
-            if acceptsImages(store) { AttachButton(state: state, enabled: live, chip: true) }
-            chips(store: store, state: state, live: live).buttonStyle(.nwComposerChip())
-            Spacer(minLength: NW.Space.m)
+            if typeSize.isAccessibilitySize {
+                // At the accessibility sizes the row outgrows the card: it scrolls rather than
+                // truncating every chip, and Send stays put.
+                ScrollView(.horizontal) {
+                    HStack(spacing: NW.Space.xxs) { cardControls(store: store, state: state, live: live) }
+                }
+                .scrollIndicators(.hidden)
+            } else {
+                cardControls(store: store, state: state, live: live)
+                Spacer(minLength: NW.Space.m)
+            }
             sendButton(store: store, state: state, live: live)
         }
+    }
+
+    @ViewBuilder private func cardControls(store: NativeThreadStore, state: ComposerState, live: Bool) -> some View {
+        if acceptsImages(store) { AttachButton(state: state, enabled: live, chip: true) }
+        chips(store: store, state: state, live: live).buttonStyle(.nwComposerChip())
     }
 
     // MARK: Parts
