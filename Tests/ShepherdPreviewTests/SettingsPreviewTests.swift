@@ -33,6 +33,40 @@ struct SettingsPreviewTests {
         }
     }
 
+    /// Skills with a sourced skill waiting on an update, two used only through /skill (one off),
+    /// and the page's rail: installed from a scratch repository on this Mac, no network.
+    @Test func settingsSkillsInstalled() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let repo = try makeScratchRepo(files: [
+            "skills/pdf/SKILL.md": "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n",
+            "skills/pdf/reference.md": "# Reference\n",
+            "skills/pdf/scripts/fill.py": "print('fill')\n",
+            "skills/frontend-design/SKILL.md": "---\nname: frontend-design\ndescription: Production-grade UI that doesn’t look generic.\n---\n",
+            "skills/webapp-testing/SKILL.md": "---\nname: webapp-testing\ndescription: Tests local web apps with Playwright.\n---\n",
+        ])
+        let store = workspace.server.skills
+        let url = "file://" + repo.path
+        try store.install(repo: url, paths: ["skills/pdf", "skills/frontend-design", "skills/webapp-testing"], commit: nil,
+                          invocation: nil)
+        try "---\nname: pdf\ndescription: Read, fill, merge and split PDFs.\n---\n# PDF\n\nFill forms first.\n"
+            .write(to: repo.appendingPathComponent("skills/pdf/SKILL.md"), atomically: true, encoding: .utf8)
+        try git(["commit", "-qam", "Fill forms first"], in: repo)
+        try store.checkUpdates()
+        for (name, description) in [("go-table-tests", "House style for table-driven Go tests."),
+                                    ("changelog", "Drafts a CHANGELOG entry since the last tag.")] {
+            let text = "---\nname: \(name)\ndescription: \(description)\n---\n"
+            try store.installFiles(name: name, files: [SkillFile(path: "SKILL.md", contents: Data(text.utf8))], invocation: .slashOnly)
+        }
+        try store.setOn("changelog", on: false)
+        let vm = workspace.vm
+        vm.settingsSection = .skills
+        try await Preview.render("settings-skills-installed", size: CGSize(width: 1440, height: 900),
+                                 ready: { vm.skills.row("pdf", in: vm.skillsHosts)?.skill.update != nil }) {
+            SettingsView(vm: vm)
+        }
+    }
+
     /// Remote with a configured host that cannot be reached.
     @Test func settingsRemoteWithHosts() async throws {
         let workspace = try PreviewWorkspace()

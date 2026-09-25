@@ -6,7 +6,7 @@ import ShepherdProtocol
 
 /// Settings replaces the window content in place. A 232pt nav on `bgBase` (Back to Shepherd,
 /// search on ⌘F, the pages, the versions pinned at the bottom) beside a 720pt content column, or
-/// a wide page (Instructions, Experiments) that fills the detail area.
+/// a wide page (Instructions, Skills, Experiments) that fills the detail area.
 ///
 /// Everything here is wired: a row exists only if changing it changes the app.
 struct SettingsView: View {
@@ -147,6 +147,7 @@ struct SettingsView: View {
         case .pi: PiSettings()
         case .worktrees: WorktreeSettings()
         case .instructions: InstructionsSettings(model: vm.instructions)
+        case .skills: SkillsSettings(vm: vm, model: vm.skills)
         case .remote: RemoteSettings(vm: vm, store: vm.remoteHosts)
         case .keyboard: KeyboardSettings(vm: vm)
         case .advanced: AdvancedSettings(vm: vm)
@@ -212,7 +213,7 @@ private struct SettingsSearchHit: View {
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
-    case appearance, terminal, agents, worktrees, pi, instructions, remote, keyboard, advanced, experiments
+    case appearance, terminal, agents, worktrees, pi, instructions, skills, remote, keyboard, advanced, experiments
 
     var id: String { rawValue }
 
@@ -224,6 +225,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: return "Worktrees"
         case .pi: return "Pi"
         case .instructions: return "Instructions"
+        case .skills: return "Skills"
         case .remote: return "Remote"
         case .keyboard: return "Keyboard"
         case .advanced: return "Advanced"
@@ -240,6 +242,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: ["Base branch", "Fetch before creating", "Commit remaining work", "Generate PR descriptions", "Delete local branch", "Merge PR automatically"]
         case .pi: ["Name agents automatically", "Panes and agent tools", "Diff review tool", "Native subagents", "Subagent display", "Concurrency", "Update pi daily", "Update extensions daily", "Check now"]
         case .instructions: ["Same on every host", "AGENTS.md", "APPEND_SYSTEM.md", "History"]
+        case .skills: ["Installed skills", "Browse skills.sh", "Add from repo", "Skills in the / menu", "Same skills on every host",
+                       "Update automatically"]
         case .remote: ["Hosts", "Add host", "Listener", "Token"]
         case .keyboard: ["Shortcuts", "Reset all shortcuts"]
         case .advanced: ["Workspace state", "Extension socket", "Update channel", "Check for updates", "Reset settings"]
@@ -259,6 +263,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .pi: ["Native subagents": ["children", "workflows"], "Update pi daily": ["version", "upgrade"]]
         case .instructions: ["Same on every host": ["sync", "hosts"], "AGENTS.md": ["system prompt", "how you work", "context"],
                              "APPEND_SYSTEM.md": ["system prompt", "override"], "History": ["restore", "undo"]]
+        case .skills: ["Installed skills": ["SKILL.md", ".agents", "agent skills"], "Browse skills.sh": ["directory", "search", "install"],
+                       "Add from repo": ["github", "git", "folder"], "Skills in the / menu": ["slash", "command", "composer"],
+                       "Same skills on every host": ["sync", "hosts"], "Update automatically": ["update", "upgrade"]]
         case .remote: ["Hosts": ["vpn", "tailscale", "ssh"], "Listener": ["port", "serve"]]
         case .keyboard: ["Shortcuts": ["hotkey", "keybinding", "chord"]]
         case .advanced: ["Update channel": ["beta", "nightly", "sparkle"], "Workspace state": ["state.json"]]
@@ -285,6 +292,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .worktrees: return "arrow.branch"
         case .pi: return "pi"
         case .instructions: return "doc.text"
+        case .skills: return "graduationcap"
         case .remote: return "dot.radiowaves.left.and.right"
         case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
@@ -293,5 +301,5 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     }
 
     /// A wide page fills the detail area instead of the 720pt column.
-    var isWide: Bool { self == .instructions || self == .experiments }
+    var isWide: Bool { self == .instructions || self == .skills || self == .experiments }
 }

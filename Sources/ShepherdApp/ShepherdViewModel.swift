@@ -139,6 +139,11 @@ final class ShepherdViewModel {
     let instructions: InstructionsModel
     /// Settings ▸ Experiments ▸ Suggested instructions: what this Mac's agents suggested.
     let suggestions: SuggestionsModel
+    /// Settings ▸ Skills: every host's agent skills, This Mac's through `localSkills`.
+    let skills: ClientSkills
+    @ObservationIgnored let localSkills: LocalSkillsClient
+    /// This Mac's daily look for newer skills (`startSkillChecks`).
+    @ObservationIgnored var skillChecks: Task<Void, Never>?
     /// Where the open space-directory browser creates its space: this Mac
     /// or a host. Sheet in RootView; every "new space" entry point (⌘⇧N,
     /// ⌘K, sidebar +) routes here — the system open panel is gone.
@@ -405,6 +410,8 @@ final class ShepherdViewModel {
         let instructions = InstructionsModel(store: server.instructions, remoteHosts: hosts, defaults: sidebarDefaults)
         self.instructions = instructions
         self.suggestions = SuggestionsModel(store: server.suggestions, instructionsStore: server.instructions, instructions: instructions)
+        self.skills = ClientSkills(defaults: sidebarDefaults)
+        self.localSkills = LocalSkillsClient(store: server.skills)
         self.installThemeMarker = themeInstaller
         self.sessions = TerminalSessionStore(server: server)
         self.selectedSpaceID = nil
@@ -436,8 +443,13 @@ final class ShepherdViewModel {
         server.onInstructionsChanged = { [weak instructions = self.instructions] snapshot in
             MainActor.assumeIsolated { instructions?.localChanged(snapshot) }
         }
-        hosts.onHostConnected = { [weak instructions = self.instructions] hostID in
+        hosts.onHostConnected = { [weak self, weak instructions = self.instructions] hostID in
             instructions?.hostConnected(hostID)
+            self?.skillsHostConnected(hostID)
+        }
+        // Settings ▸ Skills follows a remote client's change to This Mac's skills.
+        server.onSkillsChanged = { [weak skills = self.skills] snapshot in
+            MainActor.assumeIsolated { skills?.hostChanged(ShepherdViewModel.thisMacSkills, snapshot) }
         }
         server.onSuggestionsChanged = { [weak suggestions = self.suggestions] snapshot in
             MainActor.assumeIsolated { suggestions?.serverChanged(snapshot) }

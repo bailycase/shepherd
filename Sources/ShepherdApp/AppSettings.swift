@@ -61,6 +61,8 @@ final class AppSettings {
         static let defaultModel = "shepherd.agent.defaultModel"
         static let defaultThinking = "shepherd.agent.defaultThinking"
         static let autoNameAgents = "shepherd.agent.autoName"
+        static let skillsInSlashMenu = "shepherd.skills.slashMenu"
+        static let skillsDirectoryKey = "shepherd.skills.directoryKey"
         static let returnWhileWorking = "shepherd.agent.returnWhileWorking"
         static let queueDelivery = "shepherd.agent.queueDelivery"
         static let piPanesExtension = "shepherd.pi.extension.panes"
@@ -100,7 +102,7 @@ final class AppSettings {
             worktreeBaseMode, worktreeFetchBeforeCreate,
             worktreeAutoCommit, worktreeGeneratePRDescription,
             worktreeDeleteLocalBranch, worktreeAutoMergePR,
-            worktreeMergeMethod,
+            worktreeMergeMethod, skillsInSlashMenu, skillsDirectoryKey,
         ]
 
         /// What Reset settings clears: everything but Remote's listener, which only its own
@@ -113,6 +115,7 @@ final class AppSettings {
         static let terminalFontSize: Double = 12.5
         static let thinking: ThinkingLevel = .medium
         static let autoNameAgents = true
+        static let skillsInSlashMenu = true
         static let returnWhileWorking: ReturnWhileWorking = .queue
         static let queueDelivery: NativeQueueMode = .all
         static let autoUpdatePi = false
@@ -147,6 +150,17 @@ final class AppSettings {
     /// prompt) and the namer extension is never passed to pi.
     var autoNameAgents: Bool {
         didSet { store.set(autoNameAgents, forKey: Key.autoNameAgents) }
+    }
+
+    /// Settings ▸ Skills ▸ Skills in the / menu: the composer lists pi's `/skill:name` commands.
+    /// Off, they are left out of the menu (typing one still works; pi takes it).
+    var skillsInSlashMenu: Bool {
+        didSet { store.set(skillsInSlashMenu, forKey: Key.skillsInSlashMenu) }
+    }
+
+    /// A skills.sh API key: Browse's ranked lists need one (search and install don't).
+    var skillsDirectoryKey: String {
+        didSet { store.set(skillsDirectoryKey, forKey: Key.skillsDirectoryKey) }
     }
 
     /// What ↩ does in the composer while pi works: queue the message (the default) or steer it in.
@@ -325,6 +339,8 @@ final class AppSettings {
         defaultThinking = store.string(forKey: Key.defaultThinking)
             .flatMap(ThinkingLevel.init(rawValue:)) ?? Defaults.thinking
         autoNameAgents = store.object(forKey: Key.autoNameAgents) as? Bool ?? Defaults.autoNameAgents
+        skillsInSlashMenu = store.object(forKey: Key.skillsInSlashMenu) as? Bool ?? Defaults.skillsInSlashMenu
+        skillsDirectoryKey = store.string(forKey: Key.skillsDirectoryKey) ?? ""
         returnWhileWorking = store.string(forKey: Key.returnWhileWorking)
             .flatMap(ReturnWhileWorking.init(rawValue:)) ?? Defaults.returnWhileWorking
         queueDelivery = store.string(forKey: Key.queueDelivery)
@@ -410,6 +426,8 @@ final class AppSettings {
         defaultModel = ""
         defaultThinking = Defaults.thinking
         autoNameAgents = Defaults.autoNameAgents
+        skillsInSlashMenu = Defaults.skillsInSlashMenu
+        skillsDirectoryKey = ""
         returnWhileWorking = Defaults.returnWhileWorking
         queueDelivery = Defaults.queueDelivery
         uiDensity = 1
