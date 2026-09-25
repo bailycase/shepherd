@@ -50,8 +50,14 @@ public struct ReviewComment: Identifiable, Hashable, Sendable {
 /// The review as the agent's next message: every comment in file then line order, quoting its
 /// line, then the overall comment.
 public func formatReview(files: [DiffFile], comments: [ReviewComment], summary: String, reference: String? = nil) -> String {
+    formatReview(fileIDs: files.map(\.id), comments: comments, summary: summary, reference: reference)
+}
+
+/// `formatReview` ordered by file ids (`DiffFile.id`, `ChangesFile.id`: the path) rather than
+/// loaded diffs: the Changes pane lists files before it loads their hunks.
+public func formatReview(fileIDs: [String], comments: [ReviewComment], summary: String, reference: String? = nil) -> String {
     var output = ["Diff review (\(reference ?? "working tree vs HEAD")):", ""]
-    let fileOrder = Dictionary(uniqueKeysWithValues: files.enumerated().map { ($0.element.id, $0.offset) })
+    let fileOrder = Dictionary(fileIDs.enumerated().map { ($0.element, $0.offset) }, uniquingKeysWith: { first, _ in first })
     let orderedComments = comments.filter {
         !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }.sorted { lhs, rhs in
