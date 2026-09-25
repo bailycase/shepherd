@@ -403,6 +403,7 @@ public final class RemoteHostClient: @unchecked Sendable {
         switch query {
         case .worktreeSetup, .worktreeCommitCount, .worktreeDescription: capability = RemoteProtocol.worktreeSetupCapability
         case .deleteKeepingWorktree, .worktreeInfo, .deleteWorktree, .finalizeWorktree, .worktreeStatus: capability = RemoteProtocol.worktreeActionsCapability
+        case .terminals: capability = RemoteProtocol.terminalActivityCapability
         default: capability = RemoteProtocol.agentInspectionCapability
         }
         guard capabilities.contains(capability) else {
