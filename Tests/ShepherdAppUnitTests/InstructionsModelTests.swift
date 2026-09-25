@@ -19,14 +19,14 @@ struct InstructionsModelTests {
     }
 
     func makeModel(_ hosts: RemoteHostStore? = nil) async -> InstructionsModel {
-        let model = InstructionsModel(store: store, remoteHosts: hosts ?? RemoteHostStore(defaults: defaults), defaults: defaults)
+        let model = InstructionsModel(store: store, remoteHosts: hosts ?? RemoteHostStore(defaults: defaults, connects: false), defaults: defaults)
         await model.refresh()
         return model
     }
 
     /// A host that is configured but never answers (nothing listens on port 1).
     func offlineHost(_ name: String = "horizon") -> (RemoteHostStore, UUID) {
-        let hosts = RemoteHostStore(defaults: defaults)
+        let hosts = RemoteHostStore(defaults: defaults, connects: false)
         hosts.addHost(name: name, host: "127.0.0.1", port: 1, token: "x")
         return (hosts, hosts.connections[0].id)
     }

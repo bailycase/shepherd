@@ -138,14 +138,17 @@ final class RemoteHostStore {
 
     private let defaults: UserDefaults
     private let childRefreshInterval: Duration
+    /// False keeps every host disconnected: a unit test's hosts, which never open a socket.
+    private let connects: Bool
 
     var hosts: [HostConfig] {
         connections.map(\.config)
     }
 
-    init(defaults: UserDefaults = .standard, childRefreshInterval: Duration = .seconds(3)) {
+    init(defaults: UserDefaults = .standard, childRefreshInterval: Duration = .seconds(3), connects: Bool = true) {
         self.defaults = defaults
         self.childRefreshInterval = childRefreshInterval
+        self.connects = connects
         if let data = defaults.data(forKey: Self.defaultsKey),
            let configs = try? JSONDecoder().decode([HostConfig].self, from: data) {
             connections = configs.map(Connection.init)
@@ -216,7 +219,7 @@ final class RemoteHostStore {
     // MARK: - Connection lifecycle
 
     private func connect(_ connection: Connection) {
-        guard connections.contains(where: { $0 === connection }) else { return }
+        guard connects, connections.contains(where: { $0 === connection }) else { return }
         connection.retryPending = false
         connection.onProjectionChanged = { [weak self] in self?.onProjectionChanged?() }
         connection.transportID = UUID()

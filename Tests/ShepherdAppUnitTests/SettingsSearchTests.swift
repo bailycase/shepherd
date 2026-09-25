@@ -46,7 +46,7 @@ struct SettingsSearchTests {
         ("append", .instructions, ["APPEND_SYSTEM.md"]),
         ("lessons", .experiments, ["Suggested instructions"]),
         ("automations", .experiments, ["Learn from"]),
-    ])
+    ] as [(String, SettingsSection, [String])])
     func rowsMatchByTitleOrKeyword(query: String, section: SettingsSection, rows: [String]) {
         #expect(section.matches(for: query) == rows)
     }
