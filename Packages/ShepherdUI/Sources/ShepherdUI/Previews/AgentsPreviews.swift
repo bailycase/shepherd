@@ -1,54 +1,48 @@
 import SwiftUI
 
 private enum AgentsSamples {
-    static let running = NWSubagentRun(id: "desktop", name: "desktop", role: "worker", model: "claude-fable-5-1", state: .running,
-                                       detail: "edit DesktopNativeThreadView.swift", progress: 0.62, progressLabel: "Context window used")
-    static let attention = NWSubagentRun(id: "ios", name: "ios", role: "worker", model: "claude-sonnet", state: .attention,
-                                         detail: "waiting on your answer", waitingSince: Date().addingTimeInterval(-130),
-                                         question: NWSubagentQuestion(text: "Keep MobileTokens as an alias, or migrate all 31 call sites?",
-                                                                      options: ["Migrate", "Keep alias"]))
-    static let done = NWSubagentRun(id: "reviewer", name: "reviewer", model: "claude-opus", state: .done,
-                                    detail: "2 spec deviations fixed", detailMeta: "26 tools · 12m")
-    static let failed = NWSubagentRun(id: "tests", name: "tests", role: "tester", model: "claude-sonnet", state: .failed,
-                                      detail: "3 snapshot tests fail at Dynamic Type XL")
-    static let paused = NWSubagentRun(id: "docs", name: "docs", role: "writer", state: .queued, stateLabel: "Paused",
-                                      detail: "paused before its next model request")
-
-    static let ledger = NWRunLedgerSummary(title: "3 subagents", state: .done, status: "all done · 45m", added: 318, removed: 64, entries: [
-        NWRunLedgerEntry(id: "worker", name: "worker", state: .done, summary: "Restyled thread, sidebar, composer to the spec.", meta: "5 files · 41m"),
-        NWRunLedgerEntry(id: "reviewer", name: "reviewer", state: .done, summary: "2 spec deviations found and fixed.", meta: "12m"),
-        NWRunLedgerEntry(id: "tests", name: "tests", state: .done, summary: "Added 6 tests; all 14 pass on both platforms.", meta: "4m"),
+    static let now = Date()
+    static let live: [NWSubagentTrayRun] = [
+        NWSubagentTrayRun(id: "worker", name: "worker", state: .running,
+                          line: .working(verb: "Editing", subject: "NativeThreadPresentation.swift", live: true),
+                          added: 31, removed: 4, since: now.addingTimeInterval(-37 * 60)),
+        NWSubagentTrayRun(id: "reviewer", name: "reviewer", state: .attention,
+                          line: .asks("Rename the new token names, or replace the old ones everywhere?"), since: now.addingTimeInterval(-130)),
+        NWSubagentTrayRun(id: "tests", name: "tests", state: .done, line: .result("Added 6 presentation tests · 14 pass"),
+                          added: 96, removed: 3, since: now.addingTimeInterval(-600), until: now.addingTimeInterval(-600 + 242)),
+    ]
+    static let liveSummary = NWSubagentTraySummary(title: "3 subagents", cells: [.running, .attention, .done], tally: [
+        .init("1 needs you", state: .attention), .init("1 running", state: .running), .init("1 done"),
     ])
-
-    static let strip = NWRunsStripSummary(title: "12 subagents", state: .attention,
-                                          cells: (Array(repeating: AgentState.done, count: 7) + [.running, .running, .running, .attention, .failed])
-                                              .enumerated().map { NWRunsStripCell(id: "run-\($0.offset)", name: "lane-\($0.offset + 1)", state: $0.element) },
-                                          states: "7 done · 3 running · 1 needs you · 1 failed", tokens: "3.6m tok",
-                                          since: Date().addingTimeInterval(-720))
 }
 
-#Preview("Subagent cards") {
+#Preview("Subagent tray") {
+    @Previewable @State var collapsed = false
     NWPreviewBoth {
-        VStack(spacing: NW.Space.m) {
-            NWSubagentCard(AgentsSamples.running, isSelected: true, inspect: {})
-            NWSubagentCard(AgentsSamples.attention, inspect: {}, answer: { _ in })
-            NWSubagentCard(AgentsSamples.done, inspect: {})
-            NWSubagentCard(AgentsSamples.failed, inspect: {}, rerun: {})
-            NWSubagentCard(AgentsSamples.paused, inspect: {})
+        VStack(spacing: NW.Space.l) {
+            NWDockStack(showsTray: true, showsQueue: false) {
+                NWSubagentTray(AgentsSamples.liveSummary, collapsed: collapsed, onToggle: { collapsed.toggle() }) {
+                    ForEach(AgentsSamples.live) { run in
+                        NWSubagentTrayRow(run, selected: run.id == "worker", actions: NWSubagentTrayActions(open: {}, answer: {}, steer: {}, stop: {}))
+                    }
+                }
+            } queue: {
+                EmptyView()
+            }
+            NWSubagentRecordLine(title: "Started 3 subagents", meta: "worker · reviewer · tests", action: {})
+            NWSubagentRecordLine(title: "3 subagents finished", meta: "45m · 7 files · +318 −64", action: {})
         }
-        .frame(width: 520)
+        .frame(width: 620)
     }
 }
 
-#Preview("Runs strip and ledger") {
-    @Previewable @State var expanded = false
-    @Previewable @State var selection: String? = "tests"
+#Preview("Subagent question dock") {
     NWPreviewBoth {
-        VStack(spacing: NW.Space.l) {
-            NWRunsStrip(AgentsSamples.strip, isExpanded: $expanded) { selection = $0 }
-            NWRunLedger(AgentsSamples.ledger, selection: $selection)
-        }
-        .frame(width: 560)
+        NWSubagentQuestionDock(name: "reviewer", question: "Rename the new token names, or replace the old ones everywhere?", options: [
+            NWQuestionDockOption(number: 1, title: "Replace everywhere", detail: "Old names go; 31 call sites change.", recommended: true),
+            NWQuestionDockOption(number: 2, title: "Rename the new ones", detail: "Keeps both; adds an alias."),
+        ], answer: { _ in }, hide: {})
+        .frame(width: 620)
     }
 }
 

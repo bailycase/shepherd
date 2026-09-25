@@ -55,8 +55,7 @@ enum Fixture {
     }
 }
 
-/// The canvas's Subagent card states board (SubagentCards), timed so durations read
-/// as drawn.
+/// The canvas's subagent runs (SubagentTray, Subagents), timed so durations read as drawn.
 enum Board {
     static let now = Date(timeIntervalSince1970: 10_000)
     static var nowMS: Double { now.timeIntervalSince1970 * 1000 }

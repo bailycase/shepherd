@@ -461,12 +461,6 @@ public func nativeSubagentShortDuration(_ seconds: Double) -> String {
     }
 }
 
-/// More than `collapseThreshold` sibling runs fold into the runs strip; needs-you runs keep
-/// their own card under it.
-public enum NativeRunsStrip {
-    public static let collapseThreshold = 3
-}
-
 // MARK: Spawn groups
 
 /// True when a spawn group has finished: every run terminal and none still asking.

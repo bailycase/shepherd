@@ -5,8 +5,8 @@ import ShepherdUI
 import Testing
 @testable import ShepherdApp
 
-/// Child runs as the Agents components show them: state, names, the card's one line, the
-/// ledger and strip summaries, and the inspector header.
+/// Child runs as the Agents components show them: state, names, the tray's rows and header,
+/// its layout, and the inspector header.
 @Suite("Subagent presentation")
 struct SubagentPresentationTests {
     /// 10:00:00 UTC, in milliseconds.
@@ -36,8 +36,6 @@ struct SubagentPresentationTests {
         #expect(SubagentPresentation.stateLabel(run) == nil)
         run.paused = true
         #expect(SubagentPresentation.stateLabel(run) == "Paused")
-        #expect(SubagentPresentation.card(run).detail == "paused before its next model request")
-        #expect(SubagentPresentation.card(Self.run(state: "queued")).detail == "waiting to start")
     }
 
     @Test(arguments: [
@@ -52,188 +50,55 @@ struct SubagentPresentationTests {
         #expect(names.role == tag)
     }
 
-    // MARK: Card line
+    // MARK: Tray
 
-    @Test(arguments: [
-        ("Sources/ShepherdRemote/NativeThreadPresentation.swift", "edit NativeThreadPresentation.swift"),
-        ("swift build --target ShepherdRemote", "edit swift build --target ShepherdRemote"),
-        ("", "edit"),
-    ])
-    func aRunningCardShowsItsLastCallWithAFileName(preview: String, line: String) {
-        var run = Self.run()
-        run.lastActivity = ChildActivity(tool: "edit", preview: preview, at: Self.t0)
-        #expect(SubagentPresentation.activity(run) == line)
+    @Test(arguments: [(NativeRunPhase.running, AgentState.running), (.queued, .queued), (.paused, .queued), (.needsYou, .attention),
+                      (.done, .done), (.failed, .failed)])
+    func phasesMapOntoTheOneStatusEnum(phase: NativeRunPhase, state: AgentState) {
+        #expect(SubagentPresentation.state(phase) == state)
     }
 
-    @Test func withNoFinishedCallTheCardShowsTheToolInFlight() {
-        var run = Self.run()
-        #expect(SubagentPresentation.activity(run) == "working")
-        run.currentTool = "bash"
-        #expect(SubagentPresentation.activity(run) == "bash")
+    /// The header's cells and tally keep their states; a quiet part carries none.
+    @Test func theTrayHeaderCarriesItsStates() {
+        var asking = Self.run("a", startedAt: Self.t0 + 1)
+        asking.needsAttention = true
+        let tray = NativeSubagentTray([Self.run("w"), asking, Self.run("t", state: "complete", startedAt: Self.t0 + 2, endedAt: Self.t0 + 60_000)])
+        let (summary, rows) = SubagentPresentation.tray(tray)
+        #expect(summary.title == "3 subagents")
+        #expect(summary.cells == [.running, .attention, .done])
+        #expect(summary.tally == [.init("1 needs you", state: .attention), .init("1 running", state: .running), .init("1 done")])
+        #expect(rows.map(\.state) == [.running, .attention, .done])
     }
 
-    @Test func aRunningCardMeasuresItsContextWindow() {
-        var run = Self.run()
-        #expect(SubagentPresentation.card(run).progress == nil)
-        run.contextPercent = 62
-        let card = SubagentPresentation.card(run)
-        #expect(card.progress == 0.62)
-        #expect(card.progressLabel == "Context window used")
+    /// A row's figure counts live from its start, and is its duration once finished.
+    @Test func aTrayRowsTimesAreDates() {
+        let tray = NativeSubagentTray([Self.run("w"), Self.run("t", state: "complete", startedAt: Self.t0 + 1, endedAt: Self.t0 + 4 * 60_000)])
+        let rows = SubagentPresentation.tray(tray).rows
+        #expect(rows[0].since == Date(timeIntervalSince1970: Self.t0 / 1000) && rows[0].until == nil)
+        #expect(rows[1].until == Date(timeIntervalSince1970: (Self.t0 + 4 * 60_000) / 1000))
     }
 
-    /// Only a native child's ask gives an honest start for the wait.
-    @Test func theWaitCountsFromTheAskOnly() {
-        var run = Self.run()
-        run.needsAttention = true
-        run.question = ChildQuestion(text: "Keep the alias?", options: ["Migrate", "Keep alias"])
-        run.lastActivity = ChildActivity(tool: "bash", at: Self.t0 + 5_000)
-        #expect(SubagentPresentation.card(run).waitingSince == nil)
-        run.lastActivity = ChildActivity(tool: "shepherd_parent_message", at: Self.t0 + 60_000)
-        let card = SubagentPresentation.card(run)
-        #expect(card.waitingSince == Date(timeIntervalSince1970: (Self.t0 + 60_000) / 1000))
-        #expect(card.detail == "waiting on your answer")
-        #expect(card.question == NWSubagentQuestion(text: "Keep the alias?", options: ["Migrate", "Keep alias"]))
-    }
-
-    @Test func aQuestionWithoutOptionsFallsBackToTheAttentionText() {
-        var run = Self.run()
-        run.needsAttention = true
-        run.attentionText = "Which base?"
-        #expect(SubagentPresentation.card(run).question == NWSubagentQuestion(text: "Which base?", options: []))
-    }
-
-    @Test func aDoneCardSaysWhatItDidThenToolsAndTime() {
-        var run = Self.run(state: "complete", endedAt: Self.t0 + 12 * 60_000)
-        run.summary = "2 spec deviations fixed. Both in the header."
-        run.toolCalls = 26
-        let card = SubagentPresentation.card(run)
-        #expect(card.detail == "2 spec deviations fixed")
-        #expect(card.detailMeta == "26 tools · 12m")
-        run.summary = nil
-        #expect(SubagentPresentation.card(run).detail == "finished")
+    /// Four rows, then "Show N more"; open, every row, then "Show fewer".
+    @Test(arguments: [(3, false, 3, nil as Int?), (4, false, 4, nil), (8, false, 4, 4), (8, true, 8, 0)])
+    func aLongTrayShowsFourRowsThenMore(count: Int, expanded: Bool, rows: Int, hidden: Int?) {
+        let runs = (0..<count).map { NWSubagentTrayRun(id: "r\($0)", name: "r\($0)", state: .running, line: .waiting("")) }
+        let items = SubagentTrayLayout.items(runs, expanded: expanded)
+        #expect(items.filter { if case .run = $0 { true } else { false } }.count == rows)
+        let more: Int? = items.last.flatMap { if case .more(let hidden, _) = $0 { hidden } else { nil } }
+        #expect(more == hidden)
     }
 
     @Test func summaryLinesDropInlineMarkdown() {
         var run = Self.run(state: "complete", endedAt: Self.t0 + 60_000)
         run.summary = "Added 6 tests to `NativePresentationTests`; all pass on **macOS**. Then iOS."
-        #expect(SubagentPresentation.card(run).detail == "Added 6 tests to NativePresentationTests; all pass on macOS")
-        #expect(SubagentPresentation.ledger([run]).entries.first?.summary == "Added 6 tests to NativePresentationTests; all pass on macOS.")
+        #expect(SubagentPresentation.summaryLine(run) == "Added 6 tests to NativePresentationTests; all pass on macOS.")
         run.summary = "Kept an unpaired ` and 2 * 3."
         #expect(SubagentPresentation.summaryLine(run) == "Kept an unpaired ` and 2 * 3.")
-    }
-
-    @Test func aFailedCardSaysWhy() {
-        var run = Self.run(state: "failed", endedAt: Self.t0 + 1_000)
-        run.exitReason = "exit 1 · context limit reached after 41 turns"
-        #expect(SubagentPresentation.card(run).detail == "exit 1 · context limit reached after 41 turns")
-        run.exitReason = nil
-        #expect(SubagentPresentation.card(run).detail == "failed")
     }
 
     @Test(arguments: [("Fixed it.", "Fixed it"), ("Fixed it", "Fixed it"), ("Wait...", "Wait..."), ("Done?", "Done?")])
     func aSentenceLeadingALineDropsItsPeriod(sentence: String, line: String) {
         #expect(SubagentPresentation.lineWithoutFinalPeriod(sentence) == line)
-    }
-
-    // MARK: Groups
-
-    private static var finished: [ChildRun] {
-        var worker = run("w", state: "complete", startedAt: t0, endedAt: t0 + 41 * 60_000)
-        worker.summary = "Restyled the thread. Then the sidebar."
-        worker.result = ChildResultSummary(files: 5, added: 200, removed: 60, tools: 118, tokens: 900_000)
-        var reviewer = run("r", label: "reviewer: check", state: "complete", role: "reviewer", startedAt: t0 + 60_000, endedAt: t0 + 13 * 60_000)
-        reviewer.output = "Two collisions fixed"
-        reviewer.result = ChildResultSummary(files: 0, added: 0, removed: 0, tools: 24, tokens: 460_000)
-        var tests = run("t", label: "tests: run", state: "complete", role: "tests", startedAt: t0 + 41 * 60_000, endedAt: t0 + 45 * 60_000)
-        tests.result = ChildResultSummary(files: 2, added: 118, removed: 4, tools: 19, tokens: 118_000)
-        return [tests, reviewer, worker]
-    }
-
-    @Test func theLedgerListsRunsInSpawnOrderWithFilesAndTime() {
-        let ledger = SubagentPresentation.ledger(Self.finished)
-        #expect(ledger.title == "3 subagents")
-        #expect(ledger.state == .done)
-        #expect(ledger.status == "all done · 45m")
-        #expect(ledger.added == 318)
-        #expect(ledger.removed == 64)
-        #expect(ledger.entries.map(\.name) == ["worker", "reviewer", "tests"])
-        #expect(ledger.entries.map(\.summary) == ["Restyled the thread.", "Two collisions fixed", ""])
-        #expect(ledger.entries.map(\.meta) == ["5 files · 41m", "12m", "2 files · 4m"])
-    }
-
-    @Test func aLedgerWithAFailureCountsItAndTurnsRed() {
-        var runs = Self.finished
-        runs[0].state = "failed"
-        runs[0].exitReason = "exit 1"
-        let ledger = SubagentPresentation.ledger(runs)
-        #expect(ledger.state == .failed)
-        #expect(ledger.status == "2 done · 1 failed · 45m")
-        #expect(ledger.entries.last?.summary == "exit 1")
-    }
-
-    @Test func theStripTalliesStatesAndCountsWhileAnyRunLives() {
-        var runs = Self.finished
-        runs.append(Self.run("live", startedAt: Self.t0 + 50 * 60_000))
-        var asking = Self.run("ask", startedAt: Self.t0 + 51 * 60_000)
-        asking.needsAttention = true
-        runs.append(asking)
-        runs[0].tokens = 1_000_000
-        runs[1].tokens = 600_000
-        let strip = SubagentPresentation.strip(runs)
-        #expect(strip.title == "5 subagents")
-        #expect(strip.states == "3 done · 1 running · 1 needs you")
-        #expect(strip.state == .attention)
-        #expect(strip.cells.map(\.state) == [.done, .done, .done, .running, .attention])
-        #expect(strip.tokens == "1.6m tok")
-        #expect(strip.since == Date(timeIntervalSince1970: Self.t0 / 1000))
-        #expect(strip.until == nil)
-    }
-
-    /// Queued and paused runs draw as waiting cells, so the tally counts them as waiting too.
-    @Test func theStripTalliesQueuedAndPausedRunsAsTheirCellsDrawThem() {
-        var paused = Self.run("paused", startedAt: Self.t0 + 1_000)
-        paused.paused = true
-        let runs = Self.finished + [Self.run("live", startedAt: Self.t0 + 2_000), Self.run("next", state: "queued", startedAt: Self.t0 + 3_000), paused]
-        let strip = SubagentPresentation.strip(runs)
-        #expect(strip.cells.filter { $0.state == .queued }.count == 2)
-        #expect(strip.states == "3 done · 1 running · 1 queued · 1 paused")
-        #expect(strip.state == .running)
-    }
-
-    /// Each segment opens its run, so it carries the run's id, and is named and worded as the
-    /// run's card and the tally name it.
-    @Test func theStripsSegmentsNameTheirRunsInSpawnOrder() {
-        var paused = Self.run("paused", label: "docs: rewrite", role: "docs", startedAt: Self.t0 + 1_000)
-        paused.paused = true
-        var lane = Self.run("wf", label: "lane-2", role: "worker", startedAt: Self.t0 + 2_000)
-        lane.childIndex = 2
-        var asking = Self.run("ask", startedAt: Self.t0 + 3_000)
-        asking.needsAttention = true
-        let strip = SubagentPresentation.strip(Self.finished + [asking, lane, paused])
-        #expect(strip.cells.map(\.id) == ["w", "paused", "wf#2", "ask", "r", "t"])
-        #expect(strip.cells.map(\.help) == ["worker, done", "docs, paused", "lane-2, running", "worker, needs you",
-                                            "reviewer, done", "tests, done"])
-        #expect(strip.cells[1].accessibilityLabel == "docs, paused — open")
-    }
-
-    @Test func aStripWhoseLiveRunsAllWaitShowsTheWaitingGlyph() {
-        let runs = Self.finished + [Self.run("next", state: "queued", startedAt: Self.t0 + 60_000)]
-        let strip = SubagentPresentation.strip(runs)
-        #expect(strip.states == "3 done · 1 queued")
-        #expect(strip.state == .queued)
-    }
-
-    @Test func aStripWithoutTokensShowsOnlyItsTime() {
-        #expect(SubagentPresentation.strip(Self.finished).tokens == nil)
-        #expect(SubagentPresentation.strip(Self.finished).until == Date(timeIntervalSince1970: (Self.t0 + 45 * 60_000) / 1000))
-    }
-
-    @Test func fewLiveRunsAreCardsManyAreAStripAndAFinishedGroupIsALedger() {
-        let live = (0..<3).map { Self.run("l\($0)") }
-        #expect(SubagentPresentation.layout(live, turnLive: false) == .cards)
-        #expect(SubagentPresentation.layout(live + [Self.run("l3")], turnLive: false) == .strip)
-        #expect(SubagentPresentation.layout(Self.finished, turnLive: false) == .ledger)
-        #expect(SubagentPresentation.layout(Self.finished, turnLive: true) == .cards)
     }
 
     // MARK: Inspector
