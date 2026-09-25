@@ -201,7 +201,8 @@ private struct SubagentTurnItem: View {
             if live {
                 NWThinking(liveSince: since.map { Date(timeIntervalSince1970: $0 / 1000) }, seconds: seconds)
             } else {
-                NWThinking(nativeThoughtText(seconds), text: text, isExpanded: $openThinking)
+                NWThinking(nativeThoughtText(seconds), text: text, isExpanded: $openThinking,
+                           spokenTitle: nativeThoughtSpokenText(seconds))
             }
         case .prose(_, _, let blocks, _):
             NWAgentProse(ProseView.proseBlocks(blocks))

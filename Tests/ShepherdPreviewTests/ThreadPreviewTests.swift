@@ -83,6 +83,12 @@ struct ThreadPreviewTests {
         try await render("thread-activity-thinking", ActivityThreads.running(thinking: true))
     }
 
+    /// Thinking the model kept back: a plain "Thought for 10s" line with no chevron, above the
+    /// disclosure of thinking it shared.
+    @Test func threadThinkingUnshared() async throws {
+        try await render("thread-thinking-unshared", ActivityThreads.unsharedThinking, size: CGSize(width: 1180, height: 640))
+    }
+
     /// A new agent from its first frame, while its pi boots: the framed empty state and a complete
     /// composer, with nothing said about pi yet (a normal start is over before it would be).
     @Test func threadStartingQuiet() async throws {
@@ -268,6 +274,8 @@ struct ThreadPreviewTests {
                 }
                 NWThinking("Thought for 6s", text: "The tool summary row is 28pt elsewhere. I’ll keep it a minimum, not a fixed height, so large text sizes still fit.",
                            isExpanded: .constant(true))
+                NWThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
+                NWThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
                 NWThinking(liveSince: Date().addingTimeInterval(-4))
                 changes
                 NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
@@ -306,7 +314,7 @@ struct ThreadPreviewTests {
             Text(text).font(.nw(.body)).foregroundStyle(placeholder ? Color.nw.textTertiary : Color.nw.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        let size = CGSize(width: 1260, height: 760)
+        let size = CGSize(width: 1320, height: 760)
         try await Preview.render("composer-states", size: size) {
             HStack(alignment: .top, spacing: 32) {
                 VStack(alignment: .leading, spacing: 24) {
@@ -319,29 +327,15 @@ struct ThreadPreviewTests {
                 }
                 .frame(width: 600)
                 VStack(alignment: .leading, spacing: 24) {
-                    NWSlashMenu(commands: [
-                        NWSlashCommand(name: "review", description: "Open the review pane on working-tree changes"),
-                        NWSlashCommand(name: "resume", description: "Pick a previous session to continue", arguments: "[session]"),
-                        NWSlashCommand(name: "reload", description: "Reload extensions, skills and prompts"),
-                        NWSlashCommand(name: "release-notes", description: "Draft release notes since the last tag", arguments: "[tag]", tag: "prompt"),
-                    ], total: 23, query: "re", selection: .constant(0)) { _ in }
+                    NWSlashMenu(commands: Self.slashCommands, total: 23, query: "re", selection: .constant(0)) { _ in }
                     HStack(alignment: .top, spacing: 24) {
-                        NWModelPicker(query: .constant(""), sections: [
-                            NWModelSection(title: "Recent", options: [
-                                NWModelOption(id: "anthropic/claude-opus", title: "claude-opus", isCurrent: true),
-                                NWModelOption(id: "anthropic/claude-sonnet", title: "claude-sonnet", note: "fast"),
-                            ]),
-                            NWModelSection(title: "Anthropic", options: [
-                                NWModelOption(id: "anthropic/claude-fable-5-1", title: "claude-fable-5-1"),
-                                NWModelOption(id: "anthropic/claude-haiku", title: "claude-haiku"),
-                            ]),
-                        ], selection: .constant(0), onChoose: { _ in }, onClose: {})
-                        NWThinkingMenu(options: [
-                            NWThinkingOption(id: "off", title: "Off"), NWThinkingOption(id: "low", title: "Low", note: "quick"),
-                            NWThinkingOption(id: "medium", title: "Medium", note: "default"), NWThinkingOption(id: "high", title: "High", note: "slower, deeper"),
-                        ], current: "medium", onChoose: { _ in }, onClose: {})
+                        NWModelPicker(query: .constant(""), sections: Self.boardModels, selection: .constant(0), shortcut: "⇧⌘M",
+                                      onChoose: { _ in }, onClose: {})
+                        NWThinkingMenu(options: Self.thinkingOptions(["off", "low", "medium", "high"]), current: "medium",
+                                       onChoose: { _ in }, onClose: {})
                     }
                 }
+                .frame(width: NWComposerMetrics.modelPickerWidth + 24 + NWComposerMetrics.thinkingMenuWidth)
                 Spacer(minLength: 0)
             }
             .padding(32)
@@ -491,6 +485,23 @@ enum ActivityThreads {
     }
 
     static var idle: NativeThreadSnapshot { snapshot(idleMessages) }
+
+    /// A turn whose model shared some of its thinking: none for the first stretch (timed, a
+    /// plain line), some for the second (the disclosure, folding in a blank block).
+    static var unsharedThinking: NativeThreadSnapshot {
+        let t0 = now - 5 * 60_000
+        return snapshot([
+            user("u1", "Why does the sidebar jump when an agent finishes?", at: t0),
+            assistant("a1", "Looking at how the sidebar orders its rows.", thinking: "", seconds: 10, at: t0 + 11_000),
+            tool("r1", "read", ["path": "Sources/ShepherdApp/SidebarView.swift"], output: "line", start: t0 + 12_000, end: t0 + 12_100),
+            tool("r2", "read", ["path": "Sources/ShepherdCore/Reorder.swift"], output: "line", start: t0 + 12_200, end: t0 + 12_300),
+            assistant("a2", "", thinking: "Finished agents sort by their last activity, so a status change moves the row.", seconds: 4,
+                      at: t0 + 17_000),
+            tool("g1", "grep", ["pattern": "lastActivity", "path": "Sources/"], output: "Sources/A.swift:12", start: t0 + 17_100, end: t0 + 17_200),
+            assistant("a3", "The row moves because finished agents sort by their last activity. Sorting by creation keeps it still.",
+                      thinking: " ", at: t0 + 20_000),
+        ])
+    }
 
     /// The Running board: the previous turn, the new prompt, a commit, and a live push (or live
     /// thinking) at the tail.

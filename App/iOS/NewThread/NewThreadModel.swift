@@ -71,7 +71,9 @@ final class NewThreadModel {
     var usesWorktree: Bool { draft.usesWorktree }
 
     var draft: NewThreadDraft {
-        NewThreadDraft(prompt: prompt, host: host, space: space, defaults: defaults, worktree: worktreeWanted, branch: branch,
+        var defaults = defaults
+        defaults.thinking = thinking
+        return NewThreadDraft(prompt: prompt, host: host, space: space, defaults: defaults, worktree: worktreeWanted, branch: branch,
                        base: base, attachments: attachments.count, starting: starting)
     }
 
@@ -195,7 +197,16 @@ final class NewThreadModel {
 
     /// Thinking is offered only for a model that takes a level (DESIGN › Composer); a catalog
     /// still loading, or one that does not know the model, keeps it.
-    var offersThinking: Bool { models?.takesThinking(defaults.model) != false }
+    var offersThinking: Bool { !thinkingLevels.isEmpty }
+
+    /// The levels the host offers the chosen model before its pi starts (`ThinkingLevel.offered`).
+    var thinkingLevels: [ThinkingLevel] {
+        ThinkingLevel.offered(model: defaults.model, listing: models,
+                              hostTakesAllLevels: hostID.flatMap { hosts.host($0)?.supports(RemoteProtocol.thinkingLevelsCapability) } ?? false)
+    }
+
+    /// The level the thread starts with: the chosen one, or the one pi would use for it.
+    var thinking: ThinkingLevel { defaults.thinking.clamped(to: thinkingLevels) }
 
     func setThinking(_ level: ThinkingLevel) {
         defaults.edit(thinking: level)
