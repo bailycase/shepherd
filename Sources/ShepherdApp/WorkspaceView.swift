@@ -215,9 +215,12 @@ struct AgentLayoutModel: Equatable {
     let thread: Thread?
     /// The focused pane while the layout is on screen; a hidden layout holds no focus.
     let focusedPaneID: PaneID?
-    /// The subagent the right pane inspects.
+    /// The subagent the side pane inspects, over its tabs.
     let inspectingRunID: String?
-    /// The review docked beside the layout, by identity.
+    /// The side pane's tab while it is open, and the tabs pi opened something in.
+    var sideTab: SidePaneTab?
+    var sideNews: Set<SidePaneTab> = []
+    /// The Changes tab's review, by identity.
     let review: ReviewSession?
     /// The terminal panel under the thread, and its height.
     var terminal = TerminalPanels.Panel()
@@ -225,7 +228,7 @@ struct AgentLayoutModel: Equatable {
 
     static func == (a: AgentLayoutModel, b: AgentLayoutModel) -> Bool {
         a.tab == b.tab && a.isVisible == b.isVisible && a.thread == b.thread && a.focusedPaneID == b.focusedPaneID
-            && a.inspectingRunID == b.inspectingRunID && a.review === b.review
+            && a.inspectingRunID == b.inspectingRunID && a.sideTab == b.sideTab && a.sideNews == b.sideNews && a.review === b.review
             && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight
     }
 
@@ -236,6 +239,7 @@ struct AgentLayoutModel: Equatable {
         private let focusedPaneID: PaneID?
         private let agentsByTab: [TabID: Agent]
         private let runs: [AgentID: String]
+        private let panes: RightPaneState
         private let reviews: [AgentID: ReviewSession]
         private let terminals: TerminalPanels
 
@@ -245,6 +249,7 @@ struct AgentLayoutModel: Equatable {
             focusedPaneID = vm.focusedPaneID
             agentsByTab = Dictionary(vm.state.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
             runs = vm.subagentInspector.runByAgent
+            panes = vm.subagentInspector
             reviews = Dictionary(vm.reviewSessions.values.map { ($0.agentID, $0) }, uniquingKeysWith: { first, _ in first })
         }
 
@@ -254,8 +259,11 @@ struct AgentLayoutModel: Equatable {
                 tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: [agent]) != nil }
                     .map { Thread(agentID: agent.id, paneID: $0.id, agentName: agent.name, piSessionID: agent.effectivePiSessionID) }
             }
+            let owner = thread.map { SidePaneOwner.local($0.agentID) }
             return AgentLayoutModel(tab: tab, isVisible: visible, thread: thread, focusedPaneID: visible ? focusedPaneID : nil,
                                     inspectingRunID: thread.flatMap { runs[$0.agentID] },
+                                    sideTab: owner.flatMap { panes.open.contains($0) ? panes.tab(for: $0) : nil },
+                                    sideNews: owner.flatMap { panes.news[$0] } ?? [],
                                     review: thread.flatMap { reviews[$0.agentID] },
                                     terminal: terminals.panel(TerminalPanelKey(host: nil, tab: tab.id)),
                                     terminalHeight: terminals.height)
@@ -263,10 +271,10 @@ struct AgentLayoutModel: Equatable {
     }
 }
 
-/// An agent's layout with its right pane (an inspected subagent, else its review) docked beside
-/// the whole layout, never inside the thread's pane: the dock rule measures the main column, so a
-/// terminal split beside the thread neither halves the width it measures nor leaves the pane
-/// covering the thread. It reads only its model; `vm` is for actions.
+/// An agent's layout with its side pane (its tabs, or an inspected subagent over them) docked
+/// beside the whole layout, never inside the thread's pane: the dock rule measures the main
+/// column, so a terminal panel under the thread neither halves the width it measures nor leaves
+/// the pane covering the thread. It reads only its model; `vm` is for actions.
 struct AgentLayoutView: View, Equatable {
     var vm: ShepherdViewModel
     let model: AgentLayoutModel
@@ -279,27 +287,27 @@ struct AgentLayoutView: View, Equatable {
         let _ = NWRenderProbe.tick("layout.agentLayout")
         let thread = model.thread
         let inspecting = model.inspectingRunID
-        let review = model.review
+        let sideTab = model.sideTab
         // The layout stays the first child whether or not a pane is open, so opening one never
         // remounts a pane's surface.
-        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
+        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || sideTab != nil) {
             PaneTreeView(vm: vm, model: model)
         } pane: {
             if let thread {
                 let agentID = thread.agentID
+                let owner = SidePaneOwner.local(agentID)
                 let store = vm.threadStores.store(for: agentID)
-                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? review.map { .review($0.id) }) {
+                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? .tab(sideTab ?? .changes, model.review?.id)) {
                     if let inspecting {
                         SubagentInspector(store: store, runID: inspecting, active: model.isVisible, close: { [vm] in
-                            vm.subagentInspector.runByAgent.removeValue(forKey: agentID)
+                            vm.closeInspector(owner)
                         }, select: { [vm] in vm.subagentInspector.runByAgent[agentID] = $0.runID }, fork: { [vm] run in
                             do { try await vm.forkSubagent(agentID: agentID, run: run); return nil } catch { return String(describing: error) }
                         }, review: { [vm] in vm.openReview(agentID: agentID, path: $0) })
                         // The inspector keys its run itself, so a run switch nudges in from its side.
                         .nwTransition(.content)
-                    } else if let review {
-                        ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: false), store: store)
-                            .id(review.id)
+                    } else if let sideTab {
+                        SidePaneView(vm: vm, owner: owner, tab: sideTab, news: model.sideNews, review: model.review, store: store)
                             .nwTransition(.content)
                     }
                 }
@@ -804,7 +812,7 @@ private struct RemoteAgentPaneContent: View {
     }
 }
 
-/// A remote agent's layout with its right pane docked beside the whole layout, as
+/// A remote agent's layout with its side pane docked beside the whole layout, as
 /// `AgentLayoutView` does locally. The host's inspector tab (a utility terminal) has none.
 private struct RemoteAgentLayoutView: View {
     var vm: ShepherdViewModel
@@ -814,25 +822,27 @@ private struct RemoteAgentLayoutView: View {
 
     var body: some View {
         let threadPaneID = tab.layout.leaves.first { primaryAgent(in: tab, pane: $0, agents: connection.state.agents) != nil }?.id
-        let inspecting = threadPaneID == nil ? nil : vm.subagentInspector.remoteRuns[ref]
+        let owner = SidePaneOwner.remote(ref)
+        let panes = vm.subagentInspector
+        let inspecting = threadPaneID == nil ? nil : panes.remoteRuns[ref]
+        let sideTab = threadPaneID != nil && panes.open.contains(owner) ? panes.tab(for: owner) : nil
         // A review a host layout still carries as a leaf (older hosts) renders there instead.
         let review = threadPaneID == nil ? nil : vm.remoteReviews[ref].flatMap { $0.hostReviewPane ? nil : $0 }
-        RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
+        RightPaneSplit(state: panes, showPane: inspecting != nil || sideTab != nil) {
             RemotePaneTreeView(vm: vm, connection: connection, ref: ref, tab: tab, node: tab.layout, thread: threadPaneID)
         } pane: {
             if let threadPaneID {
                 let store = vm.remoteThreadStores.store(for: ref)
-                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? review.map { .review($0.id) }) {
+                RightPaneSlot(showing: inspecting.map { .inspector(runID: $0) } ?? .tab(sideTab ?? .changes, review?.id)) {
                     if let inspecting {
-                        SubagentInspector(store: store, runID: inspecting, active: true, close: { [vm, ref] in
-                            vm.subagentInspector.remoteRuns.removeValue(forKey: ref)
+                        SubagentInspector(store: store, runID: inspecting, active: true, close: { [vm] in
+                            vm.closeInspector(owner)
                         }, select: { [vm, ref] in vm.subagentInspector.remoteRuns[ref] = $0.runID }, fork: nil,
                         review: { [vm, ref] in vm.openRemoteReview(ref, path: $0) })
                         // The inspector keys its run itself, so a run switch nudges in from its side.
                         .nwTransition(.content)
-                    } else if let review {
-                        ReviewPaneHost(session: review, actions: vm.reviewActions(for: review, remote: true), store: store)
-                            .id(review.id)
+                    } else if let sideTab {
+                        SidePaneView(vm: vm, owner: owner, tab: sideTab, news: panes.news[owner] ?? [], review: review, store: store)
                             .nwTransition(.content)
                     }
                 }
@@ -979,7 +989,7 @@ private struct RemotePaneLeafView: View {
                 RemoteAgentThreadPane(vm: vm, ref: ref, agentName: agent.name, isFocused: vm.remoteFocusedPaneID == leaf.id)
             } else if let target = reviewTarget {
                 if let review {
-                    ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true))
+                    ReviewPane(session: review, actions: vm.reviewActions(for: review, remote: true), chrome: .header)
                         .nwTransition(.content)
                 } else {
                     PanePlaceholder(text: "loading host review…")

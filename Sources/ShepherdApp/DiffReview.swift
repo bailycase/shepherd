@@ -52,6 +52,8 @@ final class ReviewSession: Identifiable {
     /// The file the strip selected or a "review ›" link asked for; the pane scrolls to it.
     var focusFile: String?
     var focusRequest = UUID()
+    /// The pane drawing this review, for the side pane's ⋯ menu (Expand and Collapse All Files).
+    @ObservationIgnored weak var paneModel: ReviewPaneModel?
 
     /// Comments by file, then by line: a file's section takes one dictionary (unchanged files
     /// compare equal without a scan), and a row finds its comment in O(1).

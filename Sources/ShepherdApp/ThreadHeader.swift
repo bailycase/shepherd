@@ -1,22 +1,22 @@
 import SwiftUI
+import AppKit
 import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-/// The thread toolbar (Navigation board, `NWThreadToolbar`) for the agent on screen: title ·
-/// spacer · "n turns · 42k ctx" · the subagents and review toggles (lantern while their pane is
-/// open) · options. Observes the thread store; everything else comes in as values, compared by
+/// The thread toolbar (`NWThreadToolbar`; Main, Review, QuestionAsk boards) for the agent on
+/// screen: "space / title", the branch chip (where the agent works and the files changed there),
+/// then the one side-pane button and the options menu. Everything comes in as values, compared by
 /// value (closures by presence), so the workspace header rerunning for a status report or a
-/// selection elsewhere leaves it alone (`.equatable()`).
+/// selection elsewhere leaves it alone (`.equatable()`). The terminal panel has no button here:
+/// ⌘J, the Pane menu and the palette show it.
 struct ThreadHeader: View, Equatable {
     static func == (a: ThreadHeader, b: ThreadHeader) -> Bool {
         a.store === b.store && a.project == b.project && a.title == b.title && a.leadingInset == b.leadingInset
-            && (a.showSidebar == nil) == (b.showSidebar == nil) && a.reviewOpen == b.reviewOpen && a.inspectorOpen == b.inspectorOpen
-            && a.reviewShortcut == b.reviewShortcut && a.inspectShortcut == b.inspectShortcut
-            && (a.toggleReview == nil) == (b.toggleReview == nil) && (a.toggleSubagents == nil) == (b.toggleSubagents == nil)
+            && (a.showSidebar == nil) == (b.showSidebar == nil) && a.branch == b.branch && a.directory == b.directory
+            && a.paneOpen == b.paneOpen && a.paneNews == b.paneNews && a.paneShortcut == b.paneShortcut
+            && (a.togglePane == nil) == (b.togglePane == nil) && (a.showChanges == nil) == (b.showChanges == nil)
             && (a.rename == nil) == (b.rename == nil)
-            && a.terminalOpen == b.terminalOpen && a.terminalNews == b.terminalNews && a.terminalShortcut == b.terminalShortcut
-            && (a.toggleTerminal == nil) == (b.toggleTerminal == nil)
     }
 
     var store: NativeThreadStore
@@ -24,90 +24,82 @@ struct ThreadHeader: View, Equatable {
     let title: String
     var leadingInset: CGFloat = 0
     var showSidebar: (() -> Void)?
-    var reviewOpen = false
-    var inspectorOpen = false
-    var reviewShortcut: String?
-    var inspectShortcut: String?
-    var toggleReview: (() -> Void)?
-    var toggleSubagents: (() -> Void)?
+    /// Where the agent works; nil draws no chip.
+    var branch: AgentBranchLabel?
+    /// The checkout's directory, for the chip's tooltip and menu (local agents only).
+    var directory: String?
+    /// The side pane: showing, and what pi opened while its tabs are out of sight.
+    var paneOpen = false
+    var paneNews: String?
+    var paneShortcut: String?
+    var togglePane: (() -> Void)?
+    /// The chip's Show Changes.
+    var showChanges: (() -> Void)?
     var rename: (() -> Void)?
-    /// The terminal panel under the thread: open, and whether a hidden tab printed.
-    var terminalOpen = false
-    var terminalNews = false
-    var terminalShortcut: String?
-    var toggleTerminal: (() -> Void)?
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.header")
-        let toggles = toggles
-        // The counters are read in their own view: a poll that moves only them (the context
-        // count) redraws the toolbar, not this.
-        ThreadCountersReader(store: store) { counters, help in
-            NWThreadToolbar(title, titleHelp: "\(project) / \(title)", counters: counters, countersHelp: help,
-                            leadingInset: leadingInset, sidebar: showSidebar, toggles: toggles) {
-                NWOptionsMenu("Thread options") {
-                    Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
-                    if store.olderCursor != nil {
-                        Button("Load Older Messages") { Task { await store.loadOlder() } }
-                    }
-                    if let rename {
-                        Divider()
-                        Button("Rename…", action: rename)
-                    }
+        NWThreadToolbar(title, project: project, titleHelp: "\(project) / \(title)", leadingInset: leadingInset, sidebar: showSidebar) {
+            if let branch {
+                BranchChipMenu(branch: branch, directory: directory, showChanges: showChanges)
+            }
+        } trailing: {
+            if let togglePane {
+                NWSidePaneButton(isOn: paneOpen, news: paneNews, shortcut: paneShortcut, action: togglePane)
+            }
+            NWOptionsMenu("Thread options") {
+                Button("Refresh Thread") { Task { await store.refresh(fresh: true) } }
+                if store.olderCursor != nil {
+                    Button("Load Older Messages") { Task { await store.loadOlder() } }
+                }
+                if let rename {
+                    Divider()
+                    Button("Rename…", action: rename)
                 }
             }
         }
     }
-
-    private var toggles: [(NWPaneToggle, () -> Void)] {
-        var toggles: [(NWPaneToggle, () -> Void)] = []
-        if let toggleTerminal {
-            toggles.append((NWPaneToggle(systemImage: "terminal", label: terminalOpen ? "Hide terminal" : "Show terminal",
-                                         shortcut: terminalShortcut, isOn: terminalOpen, badge: terminalNews && !terminalOpen), toggleTerminal))
-        }
-        if let toggleSubagents, store.hasSubagents {
-            toggles.append((NWPaneToggle(systemImage: "arrow.triangle.branch", label: inspectorOpen ? "Close subagent" : "Inspect subagents",
-                                         shortcut: inspectShortcut, isOn: inspectorOpen), toggleSubagents))
-        }
-        if let toggleReview {
-            toggles.append((NWPaneToggle(systemImage: "plus.forwardslash.minus", label: reviewOpen ? "Close review" : "Review changes",
-                                         shortcut: reviewShortcut, isOn: reviewOpen), toggleReview))
-        }
-        return toggles
-    }
 }
 
-/// "18 turns · 46k ctx" plus the subagent rollup; the turn count shows once the whole history
-/// is loaded.
-enum ThreadCounters {
-    @MainActor static func text(_ store: NativeThreadStore) -> String? {
-        let parts = [
-            store.olderCursor == nil && store.session != nil ? turns(store) : nil,
-            context(store.stats?.contextTokens),
-            nativeSubagentRollup(store.subagents),
-        ].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// "46k ctx", once pi has measured the context: an older host reports an unmeasured one as 0.
-    static func context(_ tokens: Int?) -> String? {
-        tokens.flatMap { $0 > 0 ? "\(nativeTokenCount($0)) ctx" : nil }
-    }
-
-    @MainActor private static func turns(_ store: NativeThreadStore) -> String {
-        let turns = store.userTurnCount
-        return "\(turns) turn\(turns == 1 ? "" : "s")"
-    }
-}
-
-/// Reads the toolbar's counters and their tooltip for `content`, in a view of its own.
-private struct ThreadCountersReader<Content: View>: View {
-    var store: NativeThreadStore
-    @ViewBuilder let content: (_ counters: String?, _ help: String) -> Content
+/// The branch chip, and its menu (the chevron): Show Changes, Copy Branch Name, and for a
+/// checkout on this Mac Copy Path and Show in Finder. Its tooltip has the branch, the count, and
+/// the directory in full.
+private struct BranchChipMenu: View {
+    let branch: AgentBranchLabel
+    let directory: String?
+    let showChanges: (() -> Void)?
 
     var body: some View {
-        let _ = NWRenderProbe.tick("thread.counters")
-        content(ThreadCounters.text(store), nativeContextTooltip(store.stats))
+        Menu {
+            if let showChanges {
+                Button("Show Changes", action: showChanges)
+                Divider()
+            }
+            Button("Copy Branch Name") { copy(branch.branch) }
+            if let directory {
+                Button("Copy Path") { copy(directory) }
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: (directory as NSString).expandingTildeInPath)])
+                }
+            }
+        } label: {
+            NWBranchChip(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
+                         changedFiles: branch.changedFiles, host: branch.host)
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.plain)
+        .fixedSize(horizontal: false, vertical: true)
+        .help(branch.help(directory: directory.map { ($0 as NSString).abbreviatingWithTildeInPath }))
+        .accessibilityLabel(NWBranchChip.accessibilityLabel(kind: branch.kind == .worktree ? .worktree : .checkout, branch: branch.branch,
+                                                            changedFiles: branch.changedFiles, host: branch.host))
+        // A count that moves rolls; switching agents replaces the header at once.
+        .nwAnimation(.content, value: branch)
+    }
+
+    private func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 }
 
