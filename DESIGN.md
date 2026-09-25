@@ -1391,7 +1391,11 @@ components first), with these differences for touch:
 - **Type:** the phone and iPad boards' ramp (rows at 15, prose at 16 with 1.5 line height, meta
   at 12), following Dynamic Type through `relativeTo:`.
 - **Touch targets:** 44pt (`NW.Height.touch`). Controls keep their drawn size and grow their hit
-  area (`.nwTouchTarget(height:)`); rows people tap are at least 44pt tall.
+  area (`.nwTouchTarget(height:)`); rows people tap are at least 44pt tall. One deliberate
+  exception: diff lines (`NWTouchDiffLine`) keep the boards' dense `NW.Height.rowCompact`, so a
+  file reads as code. A tap only selects the line to comment on (a miss selects its neighbor,
+  and nothing is sent until the comment is written), and VoiceOver reaches each line as its own
+  button.
 - **No hover:** `NWPlatform.showsHoverDetails` shows at rest what the Mac reveals on hover (a
   message's time, a turn's footer, a code block's Copy, a comment's actions); a pressed row
   shows the hover fill.
