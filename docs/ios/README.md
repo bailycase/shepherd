@@ -73,8 +73,10 @@ The iOS client ships through TestFlight, following the Mac's channels:
   manual run: a dry run (`release.py retire-testflight --dry-run`) works only locally, with the
   App Store Connect key.
 - **Re-runs:** a re-run keeps the run number, so it keeps the build number, which App Store
-  Connect refuses a second time. So a re-run of the whole workflow uploads nothing: start a new
-  TestFlight run instead.
+  Connect refuses a second time. So re-running all jobs uploads nothing: start a new TestFlight
+  run instead. "Re-run failed jobs" reuses the first attempt's plan and retries the upload with
+  the same build number, which works only when the failed attempt never reached App Store
+  Connect (a runner, archive or signing failure).
 
 **One-time setup, in order:**
 
