@@ -1507,6 +1507,9 @@ components first), with these differences for touch:
   shows the hover fill.
 - **Navigation:** iPhone has two tabs, Home and Settings, each a stack; iPad a split view with
   the sidebar beside the thread in landscape and over it in portrait.
+- **Following** (the boards draw only a thread at its tail): the Mac's rule (Thread ›
+  Following), with a finger's drag as the only intent. "↓ Jump to latest" (`NWJumpToLatest`)
+  sits 8pt above the composer, drawn as on the Mac with a 44pt hit area.
 - **Windows (iPad; iPadSplitView, iPadPalette boards):** each window is a whole Shepherd, with
   its own sidebar and thread, over the same hosts and drafts. "Open in new window"
   (`macwindow.badge.plus`) sits in a thread's options menu and in the sidebar's and the palette's

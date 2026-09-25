@@ -48,6 +48,10 @@ extension FixtureCatalog {
                               app.threads.store(for: preview).draft = "Match the spacing in this screenshot"
                               Task { await ComposerStates.shared.state(for: preview).attach([(ThreadFixtures.image(), "thread-spacing.png")]) }
                           }),
+            // Following the tail: a long thread gets a turn and then its reply (and changes card)
+            // after the composer shrinks from eight lines to one, and on iPad the review docks
+            // beside it before the reply. The reply must end above the composer.
+            FixtureScreen(name: "thread-follow", hosts: FollowFixture.hosts(), routes: [.thread(preview)], prepare: FollowFixture.follow),
             // The model picker, from the host's catalog.
             FixtureScreen(name: "models", hosts: ThreadFixtures.hosts(), routes: [.thread(preview)],
                           prepare: { _ in ComposerStates.shared.state(for: preview).choosingModel = true }),
@@ -209,6 +213,68 @@ enum ThreadFixtures {
         UIGraphicsImageRenderer(size: CGSize(width: 120, height: 80)).pngData { context in
             UIColor.systemTeal.setFill()
             context.fill(CGRect(x: 0, y: 0, width: 120, height: 80))
+        }
+    }
+}
+
+/// "thread-follow": the host serves a long thread, then, as the screen asks, the same thread with
+/// a new turn (pi took it) and then its reply, as two polls bring them.
+enum FollowFixture {
+    private static let state = FollowState()
+
+    private final class FollowState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func advance() { lock.withLock { value += 1 } }
+        var stage: Int { lock.withLock { value } }
+    }
+
+    static func hosts() -> [FixtureHostData] {
+        var hosts = ReviewFixture.hosts()
+        let review = hosts[0].reply
+        hosts[0].reply = { request in
+            guard case .nativeThread(let id, let agentID, .snapshot) = request, agentID == FixtureData.preview else { return review?(request) }
+            return .nativeThread(id: id, result: .snapshot(value: thread(stage: state.stage)))
+        }
+        return hosts
+    }
+
+    static func thread(stage: Int) -> NativeThreadSnapshot {
+        typealias F = FixtureData
+        var messages: [NativeThreadMessage] = []
+        for turn in 0..<8 {
+            let at = Double(turn) * 60_000
+            messages.append(F.user("f\(turn)u", "Reply with exactly: follow-\(turn)", at: at))
+            messages.append(F.assistant("f\(turn)a", "follow-\(turn)\n\nThe thread keeps growing so it scrolls well past one screen on every device, iPad landscape included.",
+                                        at: at + 3_000))
+        }
+        if stage >= 1 {
+            messages.append(F.user("g1", "Use the edit tool to append a line '# pad' to README.md. Then reply with exactly: pad-done", at: 600_000))
+        }
+        if stage >= 2 {
+            messages.append(F.tool("g2", "edit", args: #"{"path":"README.md","oldText":"a","newText":"a\n# pad"}"#, output: "Edited", at: 603_000))
+            messages.append(F.assistant("g3", "pad-done", at: 605_000))
+        }
+        var snapshot = F.snapshot(messages, running: stage < 2)
+        snapshot.revision = UInt64(stage + 1)
+        return snapshot
+    }
+
+    /// A draft of many lines grows the composer, as the keyboard does; sending clears it, and the
+    /// turn and its reply arrive in two polls.
+    @MainActor static func follow(_ app: MobileApp) async {
+        let ref = FixtureData.ref(FixtureData.preview)
+        let store = app.threads.store(for: ref)
+        store.draft = (1...8).map { "Line \($0) of a long message to the agent" }.joined(separator: "\n")
+        try? await Task.sleep(for: .seconds(1.5))
+        store.draft = ""
+        for stage in 1...2 {
+            // On iPad the review docks beside the thread between the turn and its reply, and
+            // the thread's rows re-wrap narrower.
+            if stage == 2, UIDevice.current.userInterfaceIdiom == .pad { app.navigator.open(.review(.changes(ref, file: nil))) }
+            state.advance()
+            await FixtureWindows.wait(seconds: 10) { store.snapshot?.revision == UInt64(stage + 1) }
+            try? await Task.sleep(for: .seconds(1))
         }
     }
 }
