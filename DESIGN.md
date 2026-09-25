@@ -1220,7 +1220,9 @@ a tab, oldest first (`TerminalPanel.tabs`), drawn with its own splits.
   A resize is not news: a shell or TUI redraws on SIGWINCH (a window resize, maximize or
   restore, a hidden panel's panes following the geometry, a remote viewer leaving), so the host
   counts no output for a second after it gives a PTY a size (`TerminalNews`, carried as
-  `RemoteTerminalActivity.newsSequence`; an older host's every read counts).
+  `RemoteTerminalActivity.newsSequence`; an older host's every read counts). Showing a tab marks
+  it seen whenever the tab, its panes, or their news change (`TerminalSeenMark`), so picking a
+  tab whose output matches the last one's still clears its dot.
   The selected tab of a remote agent names its host. What each terminal runs comes from
   `SessionServer.terminalActivity` (a remote agent's host answers `RemoteAgentQuery.terminals`),
   polled every 2 s while the layout is on screen; an older host leaves plain tabs named for the
