@@ -33,7 +33,7 @@ public enum NativeImagePreparation {
 
     /// `data` resized and encoded for a send. A JPEG that is still too large steps its quality
     /// down; a PNG that is too large is sent as a JPEG instead, as a photo would be.
-    public static func prepare(_ data: Data, name: String) throws -> NativeImage {
+    public static func prepare(_ data: Data, name: String, maxEdge: Int = maxEdge) throws -> NativeImage {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let type = CGImageSourceGetType(source) as String?,
               CGImageSourceGetCount(source) > 0 else { throw Failure.unreadable(name) }

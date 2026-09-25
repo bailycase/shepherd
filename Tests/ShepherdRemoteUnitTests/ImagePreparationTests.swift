@@ -12,13 +12,15 @@ struct ImagePreparationTests {
         #expect([0, 3, 4, 6].map(NativeImagePreparation.room) == [4, 1, 0, 0])
     }
 
-    @Test func aLargeImageIsClampedTo2000PointsAndStaysPNG() throws {
-        let png = try #require(Self.png(width: 2400, height: 1200))
-        let image = try NativeImagePreparation.prepare(png, name: "Screenshot.png")
+    @Test func theLongestEdgeIsClampedAndAScreenshotStaysPNG() throws {
+        #expect(NativeImagePreparation.maxEdge == 2000)
+        // A small edge stands in for 2000 px, so the test stays fast.
+        let png = try #require(Self.png(width: 240, height: 120))
+        let image = try NativeImagePreparation.prepare(png, name: "Screenshot.png", maxEdge: 200)
         #expect(image.mimeType == "image/png")
         #expect(image.name == "Screenshot.png")
         #expect(image.data.count <= NativeImage.maxBytes)
-        #expect(Self.size(image.data) == [2000, 1000])
+        #expect(Self.size(image.data) == [200, 100])
     }
 
     @Test func aJPEGStaysAJPEG() throws {
