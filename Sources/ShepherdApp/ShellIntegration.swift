@@ -16,7 +16,7 @@ enum ShellIntegration {
             "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET", "SHEPHERD_EXT_STATUS",
             "SHEPHERD_EXT_PANES", "SHEPHERD_NEEDS_NAME", "SHEPHERD_AUTOMATION",
             "SHEPHERD_MODEL", "SHEPHERD_EXT_THEME", "SHEPHERD_PI_THEME_PATH",
-            "SHEPHERD_PI_THEME_NAME",
+            "SHEPHERD_PI_THEME_NAME", "SHEPHERD_INSTRUCTIONS_DIR", "SHEPHERD_SUGGEST_FILES",
         ].map { ($0, "") })
         guard let themeExtensionPath, let themePath,
               let executable = shell.first else {
