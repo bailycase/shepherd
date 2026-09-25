@@ -305,8 +305,9 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
   both caches where every PR based on `nightly` can read them. Pull requests save nothing, so
   every push to one restores that entry and compiles the PR's changes on top; a PR into
   `master` reads only `master`'s. Master pushes and manual runs save from shard C, before its
-  tests. Run the workflow by hand with `clean` to ignore the build cache. A
-  corrupt build cache: bump `CACHE_EPOCH` in the action to orphan every entry, or clear one
+  tests (never on `nightly`, where the warm job saves). Run the workflow by hand with `clean` to
+  ignore the build cache. A corrupt cache: bump `CACHE_EPOCH` in the action to orphan every
+  entry, build and dependencies, or clear one
   ref's with `gh cache delete --all --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
 - **Checking a CI change:** a pull request's run is cold ("Cache not found") until `nightly`
   holds an entry for the same toolchain and epoch, and it saves nothing, so it cannot show an

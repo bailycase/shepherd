@@ -78,7 +78,8 @@ jobs:
       - uses: ./.github/actions/swift-build
         with:
           clean: ${{ inputs.clean }}
-          save: ${{ matrix.shard == 'C' && github.event_name != 'pull_request' }}
+          # Not on nightly: its warm job saves the clean build under that sha.
+          save: ${{ matrix.shard == 'C' && github.event_name != 'pull_request' && github.ref != 'refs/heads/nightly' }}
 
       # Diagnostic: git calls cost 0.16-0.2 s each in tests here, against
       # 0.035 s on the same image before. Tests run /usr/bin/git, the xcrun shim.
