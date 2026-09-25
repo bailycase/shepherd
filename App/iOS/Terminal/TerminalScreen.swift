@@ -31,9 +31,9 @@ struct TerminalScreen: View {
                newTab: model.canChangePanes && model.connected ? { newTab(model) } : nil) {
                 EmptyView()
             }
-            if let problem = terminals.problem {
+            if let problem = terminals.problems[ref] {
                 NWBanner(.failed, title: problem) {
-                    Button("Dismiss") { terminals.problem = nil }.buttonStyle(.nw(.ghost, size: .s))
+                    Button("Dismiss") { terminals.problems[ref] = nil }.buttonStyle(.nw(.ghost, size: .s))
                 }
                 .padding(NW.Space.m)
             }
