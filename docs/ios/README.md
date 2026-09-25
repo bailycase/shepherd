@@ -140,7 +140,8 @@ keep the version for real breaks.
   connection state and backoff (1, 2, 4… up to 30 s). Records (name, address, port) are saved in
   UserDefaults (`shepherd.ios.hosts`); each token is a Keychain generic password per host
   (device-only, available when unlocked, never synced). The first client's single saved host
-  (`shepherd.ios.host` and its one Keychain item) migrates on first launch. Backgrounding
+  (`shepherd.ios.host` and its one Keychain item) migrates on first launch; if the Keychain is
+  locked then, the token moves on the next foreground. Backgrounding
   disconnects every host; the agents keep running on the Macs.
 - **iPhone:** two tabs, Home and Settings, each a navigation stack. Home lists each host with its
   status (Retry when offline) and agents, and links Needs you, Automations and More.
