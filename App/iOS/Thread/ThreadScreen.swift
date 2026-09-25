@@ -222,6 +222,7 @@ struct ThreadTitle: View {
     let status: Status
     /// iPad: the name and a pill on one line.
     var wide = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Group {
@@ -244,8 +245,11 @@ struct ThreadTitle: View {
             Text(name).font(.nw(.headline)).foregroundStyle(Color.nw.textPrimary).lineLimit(1)
             HStack(spacing: NW.Space.s) {
                 NWStatusDot(status.state)
-                Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor)
-                ForEach(meta.compact, id: \.self) { part in
+                // The status word keeps its room; the counters truncate first.
+                Text(status.label).fontWeight(.medium).foregroundStyle(status.state.textColor).layoutPriority(1)
+                // At the accessibility sizes the counters would only show as "1…": the running
+                // clock stays, the counters go.
+                ForEach(typeSize.isAccessibilitySize ? meta.elapsed.map { [$0] } ?? [] : meta.compact, id: \.self) { part in
                     Text("· " + part).font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
                 }
             }
