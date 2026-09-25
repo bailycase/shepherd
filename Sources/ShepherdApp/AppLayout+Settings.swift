@@ -35,7 +35,8 @@ extension AppLayout {
     static let settingsPortFieldWidth: CGFloat = 88
     static let settingsFontPreviewWidth: CGFloat = 320
 
-    // Wide pages (Instructions): the page fills the detail area instead of the 720pt column.
+    // Wide pages (Instructions, Experiments): the page fills the detail area instead of the 720pt
+    // column.
     static let settingsWideTop: CGFloat = 44
     static let settingsWideSides: CGFloat = 40
     static let settingsWideBottom: CGFloat = 32
@@ -107,6 +108,50 @@ extension AppLayout {
     static let instructionsHistoryTextSize: CGFloat = 12
     static let instructionsHistoryPopoverWidth: CGFloat = 380
     static let instructionsHistoryPopoverMaxHeight: CGFloat = 340
+
+    // Settings ▸ Experiments: the experiments beside a 320pt side column, 32pt apart.
+    static let experimentsSideWidth: CGFloat = 320
+    static let experimentsColumnSpacing: CGFloat = 32
+    /// Between the main column's blocks, and the side column's.
+    static let experimentsBlockSpacing: CGFloat = 22
+    static let experimentsSideSpacing: CGFloat = 24
+    /// An experiment's card: a 36pt tile holding an 18pt glyph, the name in Geist 14/600 beside a
+    /// mono 10.5 tag 18pt tall, and a 12.5/1.5 description at most 620pt wide.
+    static let experimentTileSize: CGFloat = 36
+    static let experimentGlyphSize: CGFloat = 18
+    static let experimentNameSize: CGFloat = 14
+    static let experimentTagSize: CGFloat = 10.5
+    static let experimentTagHeight: CGFloat = 18
+    static let experimentDescriptionSize: CGFloat = 12.5
+    static let experimentDescriptionLineHeight: CGFloat = 1.5
+    static let experimentDescriptionWidth: CGFloat = 620
+    /// Its options: rows at least 48pt, a 13/500 title over a 12/1.45 note, checkboxes 14pt apart.
+    static let experimentOptionMinHeight: CGFloat = 48
+    static let experimentOptionTitleSize: CGFloat = 13
+    static let experimentOptionNoteSize: CGFloat = 12
+    static let experimentOptionNoteLineHeight: CGFloat = 1.45
+    static let experimentCheckboxSpacing: CGFloat = 14
+    /// A suggestion: a 13pt source glyph, the name in 12.5/600, where and when in 12, a 24pt
+    /// target chip in Geist 11.5 with 11pt glyphs and a 9pt chevron, the line in mono 12.5/1.5, the
+    /// reason in 12/1.45.
+    static let suggestionGlyphSize: CGFloat = 13
+    static let suggestionNameSize: CGFloat = 12.5
+    static let suggestionOriginSize: CGFloat = 12
+    static let suggestionTargetHeight: CGFloat = 24
+    static let suggestionTargetSize: CGFloat = 11.5
+    static let suggestionTargetGlyphSize: CGFloat = 11
+    static let suggestionChevronSize: CGFloat = 9
+    static let suggestionLineSize: CGFloat = 12.5
+    static let suggestionLineHeight: CGFloat = 1.5
+    static let suggestionReasonSize: CGFloat = 12
+    static let suggestionReasonLineHeight: CGFloat = 1.45
+    /// How it works: each step's number in an 18pt ring, the sentence in 12.5/1.5.
+    static let experimentStepRing: CGFloat = 18
+    static let experimentStepTextSize: CGFloat = 12.5
+    /// Added from suggestions: rows at least 44pt, the line in 12.5 over an 11 note.
+    static let addedRowMinHeight: CGFloat = 44
+    static let addedLineSize: CGFloat = 12.5
+    static let addedNoteSize: CGFloat = 11
 
     // Sheets
     static let renameSheetWidth: CGFloat = 420

@@ -116,9 +116,22 @@ final class InstructionsModel {
         }
     }
 
-    /// A remote client changed This Mac's files: the page shows them at once.
+    /// This Mac's files changed outside the editor (a remote client's save, a suggestion added
+    /// or taken back): the page shows them at once, a draft keeps a line added at the end, and
+    /// with Same on every host on every host takes the change.
     func localChanged(_ snapshot: InstructionsSnapshot) {
+        let old = local
         local = snapshot
+        guard let old else { return }
+        let changed = InstructionFile.allCases.filter { old[$0] != snapshot[$0] }
+        guard !changed.isEmpty else { return }
+        for file in changed {
+            let key = DraftKey(machine: .local, file: file)
+            guard let draft = drafts[key] else { continue }
+            let rebased = InstructionsText.rebased(draft, from: old[file], to: snapshot[file])
+            drafts[key] = rebased == snapshot[file] ? nil : rebased
+        }
+        if sameEverywhere { Task { await pushToAll() } }
     }
 
     /// What a host's files are, as far as the page knows now.

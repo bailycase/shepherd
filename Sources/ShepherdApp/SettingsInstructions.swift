@@ -141,7 +141,7 @@ struct InstructionsHostChip: View {
         .nwAnimation(.hover, value: hovering)
     }
 
-    static func color(_ tone: InstructionsChip.Tone) -> Color {
+    @MainActor static func color(_ tone: InstructionsChip.Tone) -> Color {
         switch tone {
         case .done: .nw.done
         case .attention: .nw.lanternText

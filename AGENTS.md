@@ -92,7 +92,9 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
     `AGENTS.md` and `APPEND_SYSTEM.md`).
   - With the matching extension on: `SHEPHERD_EXT_PANES`, `SHEPHERD_NATIVE_CHILDREN`,
     `SHEPHERD_EXT_CHILDREN`, and `SHEPHERD_CHILD_*`.
-  - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`.
+  - Per agent: `SHEPHERD_NEEDS_NAME`, `SHEPHERD_AUTOMATION`, `SHEPHERD_MODEL`, and
+    `SHEPHERD_SUGGEST_FILES` (the files its `suggest_instruction` may draft a line for, while
+    Settings ▸ Experiments ▸ Suggested instructions is on for its kind of agent).
 - **`SHEPHERD_PR_DESCRIPTION_MODEL`** overrides the model that drafts finalize PR bodies.
 - **`SHEPHERD_PREVIEW_DIR`**, **`SHEPHERD_LIVE_MODEL`**, and **`SHEPHERD_PERF_REPORT`** switch on
   the preview renders, the live-model run, and the long-list timing report (see Testing).
@@ -345,15 +347,17 @@ Sources/
                        NativeThread (requests, results, NativeThreadSnapshot), RPCWire (pi's
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id),
-                       Instructions (Settings ▸ Instructions' files, history and requests).
+                       Instructions (Settings ▸ Instructions' files, history and requests),
+                       Suggestions (Settings ▸ Experiments ▸ Suggested instructions).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
                        the changes card), NativeQueueRules (the queue's rules, host and client),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), InstructionsText (an instruction file's size,
-                       diff, changed lines and highlighting), InstructionsPresentation (its host
-                       chips and rows), ShepherdLog. Shared with the iOS client.
+                       diff, changed lines, highlighting and suggested lines),
+                       InstructionsPresentation (its host chips and rows), SuggestionsPresentation
+                       (Experiments' words), ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
@@ -362,7 +366,8 @@ Sources/
                        SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file),
-                       InstructionsStore (Settings ▸ Instructions' files and their history).
+                       InstructionsStore (Settings ▸ Instructions' files and their history),
+                       SuggestionsStore (Suggested instructions: settings, waiting, added).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   ShepherdApp/         The Mac app:
     ShepherdApp.swift (the Window scene, AppDelegate), RootView (+ WorkspaceHeaderView),
@@ -388,8 +393,9 @@ Sources/
       QuitConfirmation (QuitDialog)
     CommandPalette, CommandPaletteView, PaletteContentSearch, Keybindings (KeybindingsStore)
     SettingsView, SettingsWindow, SettingsComponents, Settings{Appearance, Terminal, Agents,
-      Worktrees, Pi, Instructions, Remote, Keyboard, Advanced}, AppSettings, InstructionsModel
-      (the Instructions page's files, drafts and sync), InstructionsEditor (its NSTextView)
+      Worktrees, Pi, Instructions, Remote, Keyboard, Advanced, Experiments}, AppSettings,
+      InstructionsModel (the Instructions page's files, drafts and sync), InstructionsEditor (its
+      NSTextView), SuggestionsModel (the Experiments page's suggestions)
     Themes (ThemeManager, ShepherdTheme), ShepherdPiTheme, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
       AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
@@ -421,7 +427,8 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
                           native subagent runtime; see docs/native-subagents.md
   shepherd-theme.ts       theme sync for pi run by hand in a terminal pane
   shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to
-                          every session Shepherd starts (never ~/.pi/agent)
+                          every session Shepherd starts (never ~/.pi/agent); suggest_instruction
+                          (Settings ▸ Experiments ▸ Suggested instructions)
 Tests/
   <Module>UnitTests/, *IntegrationTests/, ShepherdPreviewTests/   the tiers above
   ShepherdTestIsolation/  C, run when a test bundle loads: scratch root, PATH, ZDOTDIR
@@ -560,6 +567,9 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   - `instructions` (`instructions.v1`): Settings ▸ Instructions' files on the host (fetch, save,
     restore a saved version), answered with the files and their history. The Mac's page syncs
     them to every host, or edits one host at a time
+  - `suggestions` (`suggestions.v1`): Settings ▸ Experiments ▸ Suggested instructions on the host
+    (fetch, configure, add as edited and retargeted, add all, dismiss, undo), answered with the
+    experiment's settings and its lines
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.

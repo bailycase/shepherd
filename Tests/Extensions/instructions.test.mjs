@@ -1,8 +1,10 @@
 // Shepherd's root instructions reach pi's system prompt where Settings ▸ Instructions says they
-// do, rendered by pi's own prompt builder. No model provider, only temporary files.
+// do, rendered by pi's own prompt builder; suggest_instruction drafts a line over a stand-in
+// Shepherd socket. No model provider, only temporary files.
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 import { createRequire } from "node:module";
@@ -14,6 +16,7 @@ const require = createRequire(path.join(pkg, "package.json"));
 const { createJiti } = require("jiti");
 const jiti = createJiti(import.meta.url, { alias: {
   "@earendil-works/pi-coding-agent": path.join(pkg, "dist/index.js"),
+  typebox: path.join(pkg, "node_modules/typebox/build/index.mjs"),
 } });
 const { default: install } = await jiti.import(path.join(root, "Extensions/shepherd-instructions.ts"));
 const { buildSystemPrompt, normalizeBuildSystemPromptOptions } = await import(path.join(pkg, "dist/core/system-prompt.js"));
@@ -131,4 +134,96 @@ test("empty or missing files add nothing", () => {
   } finally {
     agent.restore();
   }
+});
+
+/**
+ * Runs `body` with Settings ▸ Experiments ▸ Suggested instructions on for `files`, against a
+ * stand-in Shepherd socket that answers each request with `answer(frame)`.
+ */
+async function withSuggestions(files, answer, body) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sh-suggest-"));
+  const socketPath = path.join(dir, "s");
+  const frames = [];
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => {
+      buffer += chunk;
+      const index = buffer.indexOf("\n");
+      if (index < 0) return;
+      const frame = JSON.parse(buffer.slice(0, index));
+      frames.push(frame);
+      socket.write(JSON.stringify(answer(frame)) + "\n");
+    });
+  });
+  await new Promise((resolve) => server.listen(socketPath, resolve));
+  const keys = ["SHEPHERD_SUGGEST_FILES", "SHEPHERD_AGENT_ID", "SHEPHERD_SOCKET"];
+  const saved = keys.map((key) => process.env[key]);
+  for (const [key, value] of [["SHEPHERD_SUGGEST_FILES", files], ["SHEPHERD_AGENT_ID", "a1"], ["SHEPHERD_SOCKET", socketPath]]) {
+    if (value === undefined) delete process.env[key]; else process.env[key] = value;
+  }
+  const tools = new Map();
+  try {
+    install({ on: () => {}, registerTool: (tool) => tools.set(tool.name, tool) });
+    await body(tools, frames);
+  } finally {
+    keys.forEach((key, index) => {
+      if (saved[index] === undefined) delete process.env[key]; else process.env[key] = saved[index];
+    });
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const suggestion = (outcome) => (frame) => ({ type: "suggestion", id: frame.id, outcome });
+
+test("suggest_instruction is offered only while the experiment is on for this agent", async () => {
+  await withSuggestions(undefined, suggestion("waiting"), async (tools) => assert.equal(tools.size, 0));
+  await withSuggestions("", suggestion("waiting"), async (tools) => assert.equal(tools.size, 0));
+  await withSuggestions("AGENTS.md", suggestion("waiting"), async (tools) => {
+    const tool = tools.get("suggest_instruction");
+    assert.ok(tool, "the tool is registered");
+    assert.deepEqual(Object.keys(tool.parameters.properties).sort(), ["line", "reason"], "one file needs no choice");
+  });
+  await withSuggestions("AGENTS.md,APPEND_SYSTEM.md,notes.md", suggestion("waiting"), async (tools) => {
+    assert.deepEqual(Object.keys(tools.get("suggest_instruction").parameters.properties).sort(), ["file", "line", "reason"]);
+  });
+});
+
+test("a suggestion goes to Shepherd, and the reply says what became of it", async () => {
+  const outcomes = ["waiting", "alreadyWaiting", "dismissed", "inFile"];
+  let next = 0;
+  await withSuggestions("AGENTS.md,APPEND_SYSTEM.md", (frame) => suggestion(outcomes[next++])(frame), async (tools, frames) => {
+    const tool = tools.get("suggest_instruction");
+    const texts = [];
+    for (const params of [
+      { line: "- Ask for join keys first.", reason: "Two services re-ran." },
+      { line: "- Ask for join keys first.", reason: "Again.", file: "APPEND_SYSTEM.md" },
+      { line: "- Retry flaky tests.", reason: "It passed on retry.", file: "notes.md" },
+      { line: "- Prefer the standard library.", reason: "A dependency broke." },
+    ]) {
+      const result = await tool.execute("call", params);
+      texts.push(result.content[0].text);
+    }
+    assert.deepEqual(texts, [
+      "Suggested for AGENTS.md. The user decides whether to add it; nothing is written until they do.",
+      "That line is already waiting for the user.",
+      "The user dismissed that line before, so it is not suggested again.",
+      "AGENTS.md already has that line.",
+    ]);
+    assert.deepEqual(frames[0], {
+      type: "suggestInstruction", agentID: "a1", line: "- Ask for join keys first.", reason: "Two services re-ran.",
+      file: "AGENTS.md", id: 1,
+    });
+    // A file it may suggest for is kept; anything else falls back to the first.
+    assert.deepEqual(frames.map((frame) => frame.file), ["AGENTS.md", "APPEND_SYSTEM.md", "AGENTS.md", "AGENTS.md"]);
+  });
+});
+
+test("a refusal fails the tool call with Shepherd's reason", async () => {
+  const refuse = (frame) => ({ type: "error", id: frame.id, code: "invalid", message: "Suggest one line at a time." });
+  await withSuggestions("AGENTS.md", refuse, async (tools) => {
+    await assert.rejects(tools.get("suggest_instruction").execute("call", { line: "- a\n- b", reason: "" }),
+                         /Suggest one line at a time\. \(invalid\)/);
+  });
 });

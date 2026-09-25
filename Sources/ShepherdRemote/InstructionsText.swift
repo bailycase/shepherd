@@ -179,6 +179,75 @@ public enum InstructionsText {
         return spans
     }
 
+    // MARK: Suggested lines
+
+    /// The longest line an agent may suggest.
+    public static let suggestionLimit = 300
+
+    /// Why a suggested line can't be taken, in words the agent reads; nil when it can.
+    public static func suggestionProblem(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "Suggest the line to add." }
+        if trimmed.contains(where: \.isNewline) { return "Suggest one line at a time." }
+        if trimmed.count > suggestionLimit { return "Keep the line under \(suggestionLimit) characters." }
+        return nil
+    }
+
+    /// A suggested line as it goes into a file: trimmed, and a Markdown list item ("- …") unless
+    /// it already is one.
+    public static func listItem(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let units = Array(trimmed.utf16)
+        if units.count > 1, [dash, star, plus].contains(units[0]), units[1] == space { return trimmed }
+        var digits = 0
+        while digits < units.count, (zero...nine).contains(units[digits]) { digits += 1 }
+        if digits > 0, digits + 1 < units.count, units[digits] == dot, units[digits + 1] == space { return trimmed }
+        return "- " + trimmed
+    }
+
+    /// What makes two lines the same lesson: their words without Markdown marks, case, spacing
+    /// or a closing period ("- Never force-push." and "never  force-push" match).
+    public static func lineKey(_ line: String) -> String {
+        var text = line.trimmingCharacters(in: .whitespaces)
+        while let first = text.first, "#-*+>".contains(first) { text.removeFirst() }
+        if let dot = text.firstIndex(of: "."), dot > text.startIndex, text[..<dot].allSatisfy(\.isNumber) {
+            text = String(text[text.index(after: dot)...])
+        }
+        let words = text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return String(words.reversed().drop { ".!;:".contains($0) }.reversed())
+    }
+
+    /// Whether `text` already has the lesson `line` teaches, on a line of its own.
+    public static func holds(_ line: String, in text: String) -> Bool {
+        let key = lineKey(line)
+        return !key.isEmpty && lines(text).contains { lineKey($0) == key }
+    }
+
+    /// `text` with `line` added as its last line.
+    public static func appending(_ line: String, to text: String) -> String {
+        if text.isEmpty { return line + "\n" }
+        return text + (text.hasSuffix("\n") ? "" : "\n") + line + "\n"
+    }
+
+    /// `text` without its last line that teaches `line`'s lesson; nil when none does.
+    public static func removing(_ line: String, from text: String) -> String? {
+        let key = lineKey(line)
+        var all = text.components(separatedBy: "\n")
+        guard !key.isEmpty, let index = all.lastIndex(where: { lineKey($0) == key }) else { return nil }
+        all.remove(at: index)
+        return all.joined(separator: "\n")
+    }
+
+    /// A draft made on `old` when the saved file became `new` underneath it: lines added at the
+    /// end (a suggestion) join the draft's end, so saving the draft keeps them. Any other change
+    /// leaves the draft as it is.
+    public static func rebased(_ draft: String, from old: String, to new: String) -> String {
+        guard new.count > old.count, new.hasPrefix(old), old.isEmpty || old.hasSuffix("\n") else { return draft }
+        let added = String(new.dropFirst(old.count))
+        if draft.hasSuffix(added) { return draft }
+        return draft.isEmpty || draft.hasSuffix("\n") ? draft + added : draft + "\n" + added
+    }
+
     // MARK: Helpers
 
     private static let space: UInt16 = 0x20, hash: UInt16 = 0x23, dash: UInt16 = 0x2D, star: UInt16 = 0x2A

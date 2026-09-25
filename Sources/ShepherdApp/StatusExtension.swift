@@ -43,6 +43,7 @@ enum StatusExtension {
         needsName: Bool = false,
         isAutomation: Bool = false,
         instructions: (extensionPath: String, directory: String)? = nil,
+        suggestFiles: [String] = [],
         model: String?,
         thinking: ThinkingLevel?
     ) -> SessionCommand {
@@ -59,6 +60,9 @@ enum StatusExtension {
             "SHEPHERD_EXT_STATUS": extensionPath,
         ]
         if let instructions { env["SHEPHERD_INSTRUCTIONS_DIR"] = instructions.directory }
+        // Settings ▸ Experiments ▸ Suggested instructions, while on for this agent: the files its
+        // suggest_instruction may draft a line for.
+        if instructions != nil, !suggestFiles.isEmpty { env["SHEPHERD_SUGGEST_FILES"] = suggestFiles.joined(separator: ",") }
         if let panesExtensionPath { env["SHEPHERD_EXT_PANES"] = panesExtensionPath }
         if let childrenExtensionPath {
             env["SHEPHERD_NATIVE_CHILDREN"] = "1"

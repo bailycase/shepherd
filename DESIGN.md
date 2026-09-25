@@ -164,6 +164,8 @@ And the rules that follow from them:
 | SettingsInstructions: "new threads, mission stations and automations get this one" | "new agents and automations get this one" | Missions aren't built |
 | SettingsInstructionsHosts: the diff shows the lines around the differences | The whole file as a diff, scrolled to its first difference | Instruction files are short, and nothing hides behind a fold |
 | SettingsInstructionsHosts: every History row offers Restore | The newest row reads "current" | Restoring the file as it is would change nothing (honest affordances) |
+| SettingsExperiments: Learn from Missions, Threads, Automations | Threads and Automations | Missions aren't built |
+| SettingsExperiments: Hosts as a 190pt popup, "Follow Instructions"; a suggestion names "which hosts it applies to" and its chip retargets hosts | A note naming where lines go now, with Open Instructions; the chip retargets the file and reports the hosts; How it works says "for a root file, with the reason." | A line goes where Settings › Instructions sends This Mac's files, so a popup with one option would pick nothing (honest affordances) |
 
 Additions the boards don't have:
 
@@ -2710,7 +2712,7 @@ Save or Apply (the one exception is Instructions, which edits files and saves wi
     `NW.Space.m` side padding: a 15pt medium icon in `textSecondary` (`textPrimary` when selected),
     then, `NW.Space.m` after it, the name in Geist 13 `textPrimary`. The selected page sits on
     `bgSelected` with its name at medium (500) weight; hover is `bgHover`
-    (`NWSettingsNavMetrics`). **Not built yet:** Experiments; the app's nav has the other nine.
+    (`NWSettingsNavMetrics`).
   - "Shepherd x.y.z · pi x.y.z" pinned at the bottom in mono `micro`, `textTertiary`, aligned with
     the rows' icons: the app's own name, so "Shepherd Nightly …" there.
 - **Search:** typing narrows the nav to pages with a match (a row's title, or a keyword such as
@@ -2996,8 +2998,7 @@ automated step of the worktree flows can be turned off here.
 
 #### Wide pages: Instructions and Experiments
 
-These two pages are wider than the 720pt column (`SettingsSection.isWide`; Experiments is not built
-yet): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
+These two pages are wider than the 720pt column (`SettingsSection.isWide`): the page fills the detail area on `bgWindow`, 44pt from the top, 40pt at the sides, 32pt at
 the bottom, with its blocks 20pt apart (`AppLayout.settingsWide*`). It doesn't scroll as a whole:
 its editor and its side column scroll inside themselves, and the strip at its top still drags the
 window. Under the header (the same 22/600 title and `body` explanation, capped at 820pt) sits a main column
@@ -3141,57 +3142,68 @@ switch's row "Off: each host keeps its own files. Pick a host to edit it."
 
 #### Experiments (SettingsExperiments)
 
-**Not built yet.** The last page of the nav, with `flask`: features still being tried, each off
-until the user turns it on. Header: "Experiments", then "Features we're still trying out. Each is
-off until you turn it on." Its one experiment today is Suggested instructions.
+The last page of the nav, with `flask` (`SettingsExperiments.swift`, `SuggestionsModel`): features
+still being tried, each off until the user turns it on. Header: "Experiments", then "Features
+we're still trying out. Each is off until you turn it on." Its one experiment today is Suggested
+instructions. The experiment lives on the host (`SuggestionsStore`, `suggestions.json` beside the
+instructions): agents suggest through the instructions extension's `suggest_instruction`, which an
+agent gets only while the experiment is on for its kind and names the files it may suggest for
+(`SHEPHERD_SUGGEST_FILES`); remote clients read and act on it over `suggestions.v1`.
 
 - **An experiment card:** a card with a 1px `lineStrong` line, radius `m`, on `bgWindow`.
   - The top, 14pt × 16pt padding, aligned to the top: a 36pt tile (radius `m`; the board's 9,
     `lanternTint`) holding the experiment's glyph (18pt, `lanternText`; `flask` here); the name in
-    Geist 14/600 ("Suggested instructions") beside a small mono 10.5 tag in `lanternText` on
-    `lanternTint` (18pt tall, radius `xs`) saying since when it has been on ("on since Sep 12");
-    under them its description in 12.5/1.5 `textSecondary`, at most 620pt wide: "When an agent
-    learns something the hard way (a re-run, a failed check, a correction from you) it drafts one
-    line for your root instructions. Nothing is written until you add it."; the switch trailing.
+    Geist 14/600 ("Suggested instructions") beside, while it is on, a small mono 10.5 tag in
+    `lanternText` on `lanternTint` (18pt tall, radius `xs`) saying since when ("on since Sep 12";
+    `SuggestionsPresentation.sinceTag`); under them its description in 12.5/1.5 `textSecondary`, at
+    most 620pt wide: "When an agent learns something the hard way (a re-run, a failed check, a
+    correction from you) it drafts one line for your root instructions. Nothing is written until you
+    add it."; the switch trailing.
   - Its options, while on, under a hairline on `bgBase`: rows of at least 48pt with a 13/500 title
-    over a 12 `textSecondary` description and the control trailing:
-    - Learn from, "Where agents may notice a lesson.": `.nwCheckbox`es 14pt apart for Missions,
-      Threads, Automations (all on).
+    over a 12/1.45 `textSecondary` note and the controls trailing, hairlines between:
+    - Learn from, "Where agents may notice a lesson.": `.nwCheckbox`es 14pt apart for Threads and
+      Automations (both on).
     - Can suggest for, "APPEND_SYSTEM.md overrides everything else, so it stays off unless you want
-      it.": `AGENTS.md` (on) and `APPEND_SYSTEM.md` (off).
-    - Hosts, "Follows Settings › Instructions. Right now that's every host, unless a lesson only
-      applies to one.": a 190pt popup, "Follow Instructions".
+      it.": AGENTS.md (on) and APPEND_SYSTEM.md (off).
+    - Hosts, "Lines go where Settings › Instructions sends them: right now that's every host." (or
+      "This Mac alone." per host), with Open Instructions as a trailing `running` text action.
 - **Waiting for you · 3** (a label with the count, and "Add all" trailing as a `running` text
-  action): the drafted lines, newest first, cards 8pt apart. A suggestion card is radius `m`, a
+  action once two or more wait), shown while the experiment is on: the drafted lines, newest
+  first, cards 8pt apart; with none, "Nothing is waiting. When an agent learns something the hard
+  way, its line shows up here." in the footnote style. A suggestion card is radius `m`, a
   `lineSubtle` line on `bgRaised`, 12pt × 14pt padding, three lines 8pt apart:
-  - where it came from: a 13pt glyph for the source (a mission's map in `lanternText`; an
-    automation's `bolt` and a thread's bubble in `textSecondary`), its name in 12.5/600, and the
-    source's kind and age in 12 `textTertiary` ("mission · 2h ago", "automation · yesterday",
-    "thread · Sep 19"); trailing, a 24pt target chip (radius `s`, a `lineStrong` line, Geist 11.5)
-    that retargets it: a doc glyph and the file in mono (`AGENTS.md`), a `textTertiary` "·", a
-    `desktopcomputer` glyph and the hosts in `textSecondary` ("every host", "build-01"), and a
-    chevron
+  - where it came from: a 13pt glyph for the source (an automation's `bolt`, a thread's
+    `bubble.left`, `textSecondary`), its name in 12.5/600, and the source's kind and age in 12
+    `textTertiary` ("automation · 2h ago", "thread · yesterday", "thread · Sep 19";
+    `SuggestionsPresentation.origin`); trailing, a 24pt target chip (radius `s`, a `lineStrong`
+    line, Geist 11.5) that retargets its file: a `doc.text` glyph and the file in mono
+    (`AGENTS.md`), a `textTertiary` "·", a `desktopcomputer` glyph and where it goes in
+    `textSecondary` ("every host", or "This Mac" per host), and a chevron. It is a menu of the two
+    files.
   - the line itself as it would be added: mono 12.5/1.5 on `doneTint` (radius `s`, 6pt × 10pt
     padding), a `done` "+ " before the Markdown (its bullet in `lanternText`, code spans in
-    `synString`)
-  - the reason in 12 `textSecondary` ("A missing checkout_id made two services re-run their
-    stations."), then 24pt buttons: Dismiss and Edit first (ghost), and "Add to AGENTS.md"
-    (secondary), which names the target file
-- **How it works** (side column): three numbered steps separated by hairlines, the number in an 18pt
-  `lineStrong` ring (mono 10.5 `textSecondary`), a 12.5/1.5 sentence whose lead is semibold and
-  whose rest is `textSecondary`: "An agent hits something it had to learn" a re-run, a red check, or
-  you telling it no. · "It drafts one line" for a root file, with the reason and which hosts it
-  applies to. · "You decide" Add it, edit it first, or dismiss it. Dismissed lines aren't suggested
-  again.
-- **Added from suggestions:** rows of at least 44pt, a hairline above each: the added line in 12.5
-  over "Sep 18 · from Ledger cleanup" in 11 `textTertiary`, and Undo as a trailing `running` text
-  action.
+    `synString`, the rest `textPrimary`). Edit first turns it into a mono field (⏎ adds it).
+  - the reason in 12/1.45 `textSecondary` ("A missing checkout_id made two services re-run their
+    steps."), then 24pt buttons: Dismiss and Edit first (ghost; Cancel while editing), and "Add to
+    AGENTS.md" (secondary), which names the target file.
+- **How it works** (side column, 320pt): three numbered steps separated by hairlines, the number in
+  an 18pt `lineStrong` ring (mono 10.5 `textSecondary`), a 12.5/1.5 sentence whose lead is
+  semibold and whose rest is `textSecondary`: "An agent hits something it had to learn" a re-run,
+  a red check, or you telling it no. · "It drafts one line" for a root file, with the reason. ·
+  "You decide" Add it, edit it first, or dismiss it. Dismissed lines aren't suggested again.
+- **Added from suggestions** (once a line was added): rows of at least 44pt, a hairline above each:
+  the added line in 12.5 without its bullet over "Sep 18 · from Ledger cleanup" in 11
+  `textTertiary`, and Undo as a trailing `running` text action.
 - **About experiments:** a 12/1.5 `textTertiary` note, "Experiments can change or go away. Turning
   this one off keeps the lines you added and drops what's waiting.", and a small secondary Send
-  feedback button with a bubble glyph.
+  feedback button with `bubble.left`, which opens a new issue for Shepherd on GitHub.
 - **Rules:** nothing is written to an instruction file until the user adds a line (Add, Add all, or
-  Edit first then save); a dismissed line is never suggested again; Undo removes an added line from
-  its file. Missions as a source waits for Missions.
+  Edit first then Add); a line goes in last, as a Markdown list item; a lesson already waiting, in
+  its file, or dismissed before is never suggested again (`InstructionsText.lineKey`: its words,
+  whatever the case, spacing or Markdown); Undo removes an added line from its file. Adding a line
+  changes This Mac's instructions, which reach every host with Same on every host on, and a draft
+  open on the Instructions page keeps the line. The host keeps the newest 30 lines waiting and
+  added, and 300 dismissed.
 
 ### Dialogs and sheets
 
@@ -3749,8 +3761,6 @@ below collects the rest, and the places those sentences point here.
     composer's field, the strip's and the ledger's gaps, a file header's leading inset,
     `AppLayout.steerTopInset`), which is not a step on the space scale ("Padding and gaps use only
     these steps").
-- **Settings (the boards against `SettingsView.swift` and `SettingsComponents.swift`):**
-  Experiments is not built.
 - **Thread and terminal** (NWThread, TerminalSplit, TerminalPane, TerminalToggle against the
   app):
   - Consecutive activity lines, and a work group's lines on its rail, sit 6pt apart
@@ -4451,8 +4461,9 @@ session it starts. The Mac's page is built (SettingsInstructions); a host serves
 
 ### iPhone: Experiments (MobileExperiments)
 
-**Not built yet.** Settings ▸ Experiments: features still being tried, each off until turned on. It
-waits for the Mac's Experiments page (SettingsExperiments).
+**Not built yet.** Settings ▸ Experiments: features still being tried, each off until turned on.
+The Mac's page is built (SettingsExperiments); a host serves its suggestions over
+`suggestions.v1`, which the phone doesn't use yet.
 
 - **The page:** "‹ Settings", the large title "Experiments", on `bgBase`, 14pt sides, 10pt apart.
   "Still being tried out. Each is off until you turn it on." (13.5/1.5 `textSecondary`).
@@ -5056,8 +5067,8 @@ trailing edge) headed "Settings"; rows at least 48pt, 12pt inset and gap, radius
 `textSecondary` glyph and the label at 15/500; the open page's row on `bgSelected`, its glyph
 `textPrimary` and label semibold. Pages: Appearance, Agents, Worktrees, Pi, Instructions,
 Notifications, Hosts, Keyboard, Experiments. Agents, Worktrees, Pi and Keyboard are the host's
-settings, as the Mac shows them; Notifications waits for push; Experiments waits for the Mac, and
-Instructions for a client of the host's `instructions.v1`.
+settings, as the Mac shows them; Notifications waits for push; Instructions and Experiments wait
+for a client of the host's `instructions.v1` and `suggestions.v1`.
 
 **Not built yet: Instructions** (editing the instructions pi reads on every host; the Mac's page
 is Settings › Instructions, SettingsInstructions):
@@ -7126,7 +7137,7 @@ questions, and menus).
 | SettingsAdvanced | Settings › Advanced | Built |
 | SettingsInstructions | Settings › Wide pages, Instructions | Built |
 | SettingsInstructionsHosts | Settings › Instructions per host | Built |
-| SettingsExperiments | Settings › Experiments | Not built yet |
+| SettingsExperiments | Settings › Experiments | Built |
 | NavNewThread | Sidebar destinations, Needs you, and Recents; New thread page | Partial |
 | NavMissions | Missions page; Missions | Not built yet |
 | NavDesigns | Designs page; Design tool › Designs | Not built yet |

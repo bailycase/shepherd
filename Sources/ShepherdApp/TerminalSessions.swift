@@ -584,7 +584,8 @@ final class TerminalSessionStore {
             // Give pi a session to find, so --session-id does not warn.
             let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd)
             // RPC mode ignores a positional prompt; the opening prompt goes to the server below.
-            let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh, isAutomation: isAutomation)
+            let command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh, isAutomation: isAutomation,
+                                                    suggestFiles: suggestionFiles(isAutomation: isAutomation))
             guard ownsPane(session, pane: pane, tabID: tab.id, expectedAgentID: agent.id),
                   session.sessionID == nil,
                   liveBinding(forPane: pane.id) == nil else {
@@ -825,7 +826,8 @@ final class TerminalSessionStore {
                 // Respawn after relaunch: an agent that was never prompted has
                 // no session file yet, so seed one before pi looks for it.
                 let fresh = await Self.prepareSessionFile(for: agent, cwd: cwd)
-                command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh)
+                command = try Self.rpcAgentCommand(for: agent, cwd: cwd, sessionIsFresh: fresh,
+                                                   suggestFiles: suggestionFiles(isAutomation: false))
             } else {
                 let settings = AppSettings.shared
                 command = try ShellIntegration.command(
@@ -975,9 +977,16 @@ final class TerminalSessionStore {
         }.value
     }
 
+    /// The files an agent may suggest a line for as it launches (Settings ▸ Experiments ▸
+    /// Suggested instructions); none while the experiment is off for its kind of agent.
+    private func suggestionFiles(isAutomation: Bool) -> [InstructionFile] {
+        server.suggestions.snapshot().settings.files(for: isAutomation ? .automation : .thread)
+    }
+
     /// `pi --mode rpc` for an agent, with Shepherd's socket, status, panes, review, subagents,
     /// and namer extensions. Model and thinking flags go only to a fresh session.
-    private static func rpcAgentCommand(for agent: Agent, cwd: String, sessionIsFresh: Bool, isAutomation: Bool = false) throws -> SessionCommand {
+    private static func rpcAgentCommand(for agent: Agent, cwd: String, sessionIsFresh: Bool, isAutomation: Bool = false,
+                                        suggestFiles: [InstructionFile] = []) throws -> SessionCommand {
         let settings = AppSettings.shared
         return StatusExtension.command(
             agentID: agent.id,
@@ -993,6 +1002,7 @@ final class TerminalSessionStore {
             needsName: Self.wantsNamer(for: agent, autoName: settings.autoNameAgents),
             isAutomation: isAutomation,
             instructions: (try InstructionsExtension.installedPath(), ShepherdPaths.instructionsDirectory().path),
+            suggestFiles: suggestFiles.map(\.fileName),
             model: sessionIsFresh ? agent.model : nil,
             thinking: sessionIsFresh ? agent.thinkingLevel : nil
         )

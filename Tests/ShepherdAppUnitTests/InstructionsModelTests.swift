@@ -127,6 +127,33 @@ struct InstructionsModelTests {
         #expect(model.comparing == nil)
     }
 
+    /// Lets the model's own tasks run until `condition` holds; here they finish at once, since
+    /// nothing waits on a host.
+    func settle(_ condition: () -> Bool) async {
+        for _ in 0..<100 where !condition() { await Task.yield() }
+    }
+
+    /// A suggestion added while AGENTS.md is being edited stays when the draft is saved.
+    @Test func aLineAddedUnderADraftStaysInIt() async throws {
+        try store.save(.agents, content: "- a\n")
+        let model = await makeModel()
+        model.setText("- a\n- edited\n", file: .agents, on: .local)
+        model.localChanged(try store.save(.agents, content: "- a\n- added\n"))
+        #expect(model.saved(.agents, on: .local) == "- a\n- added\n")
+        #expect(model.text(.agents, on: .local) == "- a\n- edited\n- added\n")
+    }
+
+    /// With Same on every host on, a change to This Mac's files from elsewhere goes to every
+    /// host too; one that is offline is owed it.
+    @Test func aChangeOnThisMacIsOwedToAnOfflineHost() async throws {
+        let (hosts, hostID) = offlineHost()
+        defer { hosts.removeHost(id: hostID) }
+        let model = await makeModel(hosts)
+        model.localChanged(try store.save(.agents, content: "- from the iPhone\n"))
+        await settle { model.chip(for: .remote(hostID)).word == "offline · will sync" }
+        #expect(model.chip(for: .remote(hostID)) == InstructionsChip(.quiet, "offline · will sync"))
+    }
+
     @Test func thisMacReadsAsThisMacInAHostsHistory() async {
         let model = await makeModel()
         let synced = InstructionHistoryEntry(id: UUID(), file: .agents, savedAt: 0,
