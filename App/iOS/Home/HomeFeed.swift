@@ -122,7 +122,8 @@ final class HomeFeed {
             again = false
             var changed = false
             for host in hosts.hosts {
-                guard let client = host.connectedClient, let session = host.session else { continue }
+                guard let client = host.connectedClient, let session = host.session,
+                      host.supports(RemoteProtocol.nativeThreadCapability) else { continue }
                 var quietReads = 0
                 for agent in host.state.agents {
                     let ref = FleetRef(host: host.id, agent: agent.id)
@@ -138,8 +139,14 @@ final class HomeFeed {
                     let result: NativeThreadResult
                     do {
                         result = try await client.nativeThread(agentID: agent.id, request: request)
+                    } catch RemoteHostClientError.rejected(let code, _) where code != "native_limit" {
+                        // This thread has none to read yet (pi starting) or any more (pi gone): the
+                        // host's other threads still answer. A quiet one waits for the next connection.
+                        readIn[ref] = session
+                        continue
                     } catch {
-                        // The connection is going; its host reports that itself.
+                        // The connection is going, or the host asks for fewer requests; its host
+                        // reports a lost connection itself.
                         break
                     }
                     guard hosts.host(host.id)?.session == session else { break }
@@ -180,6 +187,8 @@ final class HomeFeed {
                 expectedSessionID: session.piSessionID, generation: session.generation, operationID: UUID(),
                 dialogID: dialogID, answer: answer))
             if case .failure(_, let message) = result { failures[item.id] = message }
+        } catch RemoteHostClientError.rejected(_, let message), RemoteHostClientError.outcomeUnknown(let message) {
+            failures[item.id] = message
         } catch {
             failures[item.id] = String(describing: error)
         }
