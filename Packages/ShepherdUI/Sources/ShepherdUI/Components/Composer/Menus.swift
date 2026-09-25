@@ -32,13 +32,12 @@ public struct NWMenuHeader: View {
     }
 }
 
-#if DEBUG
 /// Debug builds count the menu rows they draw, so tests can pin how much of a long menu a change
-/// redraws (opening, filtering, scrolling, a hover).
+/// redraws (opening, filtering, scrolling, a hover). Release builds declare it too, so the test
+/// targets build for the release benchmarks; it stays zero there.
 @MainActor public enum NWMenuDiagnostics {
     public static var rowBodies = 0
 }
-#endif
 
 /// A 28pt menu row: `runningTint` while highlighted, hovering highlights it, and a click (or
 /// VoiceOver's press) chooses it. It is not a `Button`: each button brings an AppKit focus-ring
