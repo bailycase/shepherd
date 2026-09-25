@@ -185,6 +185,7 @@ public struct NWTouchQueueRow: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
+        .modifier(NWTouchNamedAction(name: "Back to the queue", action: steering ? back : nil))
     }
 
     private var accessibilityLabel: String {
@@ -222,15 +223,17 @@ public struct NWTouchQueueRow: View {
         .background(nw.bgRaised)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(kind == .deleted ? "Deleted: \(text)" : "Queue cleared")
-        .modifier(NWTouchUndoAction(undo: undo))
+        .modifier(NWTouchNamedAction(name: "Undo", action: undo))
     }
 }
 
-private struct NWTouchUndoAction: ViewModifier {
-    let undo: (() -> Void)?
+/// A VoiceOver action for a button the row's combined element would otherwise hide.
+private struct NWTouchNamedAction: ViewModifier {
+    let name: String
+    let action: (() -> Void)?
 
     func body(content: Content) -> some View {
-        if let undo { content.accessibilityAction(named: "Undo", undo) } else { content }
+        if let action { content.accessibilityAction(named: name, action) } else { content }
     }
 }
 
