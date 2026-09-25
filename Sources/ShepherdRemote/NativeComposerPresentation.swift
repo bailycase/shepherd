@@ -1,4 +1,5 @@
 import Foundation
+import ShepherdCore
 import ShepherdProtocol
 
 // What a touch client's composer and thread header draw, derived from a thread store's values:
@@ -221,26 +222,61 @@ public struct NativeThinkingLevel: Equatable, Identifiable, Sendable {
     public var title: String
     public var note: String?
 
-    /// Off, Low ("quick"), Medium ("default"), High ("slower, deeper"): the Mac's menu.
+    /// Every level pi has, in pi's order, with the menu's notes (NWComposer: Low "quick",
+    /// Medium "default", High "slower, deeper").
     public static let all = [
         NativeThinkingLevel(id: "off", title: "Off"),
+        NativeThinkingLevel(id: "minimal", title: "Minimal", note: "fastest"),
         NativeThinkingLevel(id: "low", title: "Low", note: "quick"),
         NativeThinkingLevel(id: "medium", title: "Medium", note: "default"),
         NativeThinkingLevel(id: "high", title: "High", note: "slower, deeper"),
+        NativeThinkingLevel(id: "xhigh", title: "Extra high", note: "deeper still"),
+        NativeThinkingLevel(id: "max", title: "Max", note: "slowest, deepest"),
     ]
 
-    /// "Medium" for "medium"; an unknown level as pi spelled it, capitalized.
+    /// Off, Low, Medium, High: what a host that does not say which levels its model takes is
+    /// offered (all an older host accepts).
+    public static let fallback = all.filter { ["off", "low", "medium", "high"].contains($0.id) }
+
+    /// The menu for the levels pi reports, in its order (a level this client does not know as
+    /// pi spells it); `fallback` when it reports none.
+    public static func levels(_ ids: [String]?) -> [NativeThinkingLevel] {
+        guard let ids, !ids.isEmpty else { return fallback }
+        return ids.map { id in all.first { $0.id == id } ?? NativeThinkingLevel(id: id, title: title(id)) }
+    }
+
+    /// "Medium" for "medium", "Extra high" for "xhigh"; an unknown level as pi spelled it,
+    /// capitalized.
     public static func title(_ level: String) -> String {
         all.first { $0.id == level }?.title ?? level.prefix(1).uppercased() + level.dropFirst()
     }
 
-    /// The thinking chip shows while pi reports a level it can set and the host's catalog does
-    /// not say the thread's model takes none (DESIGN › Composer). A catalog still loading, an
-    /// older host's, or one that does not know the model keeps it.
-    public static func offered(thinking: String?, supportedActions: Set<String>, model: String?, listing: ModelListing?) -> Bool {
-        guard thinking != nil, supportedActions.contains("setThinking") else { return false }
+    /// Whether a menu of `levels` offers any thinking: pi reports only Off for a model without
+    /// reasoning.
+    public static func reasons(_ levels: [NativeThinkingLevel]) -> Bool {
+        levels.contains { $0.id != "off" }
+    }
+
+    /// The thinking chip shows while pi reports a level it can set, the levels pi offers the
+    /// model are more than Off, and the host's catalog does not say the thread's model takes none
+    /// (DESIGN › Composer). A catalog still loading, an older host's, or one that does not know
+    /// the model keeps it.
+    public static func offered(thinking: String?, supportedActions: Set<String>, model: String?, listing: ModelListing?,
+                               levels: [NativeThinkingLevel] = fallback) -> Bool {
+        guard thinking != nil, supportedActions.contains("setThinking"), reasons(levels) else { return false }
         guard let model, let listing else { return true }
         return listing.takesThinking(model)
+    }
+}
+
+extension ThinkingLevel {
+    /// The levels a new agent's sheet offers before its pi starts (no session to ask yet): the
+    /// target's listing says which the model takes (`ModelListing.offeredThinkingLevels`; none
+    /// without reasoning). While it loads, the standard set. A host without
+    /// `RemoteProtocol.thinkingLevelsCapability` accepts only `legacy`.
+    public static func offered(model: String?, listing: ModelListing?, hostTakesAllLevels: Bool) -> [ThinkingLevel] {
+        let levels = listing?.offeredThinkingLevels(model) ?? supported(reasoning: true)
+        return hostTakesAllLevels ? levels : levels.filter(legacy.contains)
     }
 }
 

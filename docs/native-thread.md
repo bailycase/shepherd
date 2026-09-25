@@ -115,8 +115,10 @@ events come out on stdout, one record per LF.
 
 `RPCThreadState` is the server-side projection of one agent's thread, confined to the same queue.
 
-- **Bootstrap** runs on spawn or resume. It sends `get_state` (session ID, model, thinking
-  level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost; a context of 0, pi's
+- **Bootstrap** runs on spawn or resume. It sends `get_available_thinking_levels` (the levels
+  pi offers the current model, in pi's order; asked just before every `get_state`, whose answer
+  follows it and commits both, so the levels never move the revision on their own; a pi without
+  the command leaves them unsaid), `get_state` (session ID, model, thinking level, streaming), `get_messages` (history), `get_session_stats` (context, tokens, cost; a context of 0, pi's
   estimate before its first reply, is sent as unknown), and
   `get_commands` (the slash-command registry, capped at 128 commands). Until `get_state` and
   `get_messages` have answered, requests fail with `native_starting` ("pi is starting."): pi
@@ -300,6 +302,17 @@ transport differs.
 - **Models:** `listModels` answers the host's catalog as "provider/id", its default in the same
   form, and `withoutThinking`, the models that take no thinking level (`ModelListing`). A host
   from before that field sends none, and clients then keep the thinking control for every model.
+  `thinkingLevels` names the levels of the models whose models.json `thinkingLevelMap` says
+  (pi's `getSupportedThinkingLevels`: xhigh and max only where mapped); another reasoning model
+  is offered off, minimal, low, medium and high before its session starts.
+- **Thinking levels:** the snapshot's `thinkingLevels` is what pi offers the current model;
+  clients offer exactly those, or off/low/medium/high from a host that sends none. `setThinking`
+  takes any of pi's seven (off, minimal, low, medium, high, xhigh, max), and pi clamps a level
+  the model lacks. `createAgent` takes minimal, xhigh and max only from a host that lists
+  `thinking.levels.v1`; clients offer an older host Off to High. Clients list it in `hello`
+  too: a client that does not is sent state and creation options with each level clamped to
+  Off to High, as pi clamps (minimal reads as low, xhigh and max as high), since it cannot
+  decode the others. pi reporting only Off (a model without reasoning) hides the thinking chip.
 - **Starting and unavailable agents** (`NativeThreadCode`):
   - `native_starting`: the agent exists but its pi is not serving yet. The app adds a new
     agent before it spawns pi and binds the process to the pane, a restored agent's pane keeps
@@ -329,7 +342,7 @@ The store is `@MainActor @Observable`, and it derives what the thread draws once
 reply's subagent `placements`, and `lastPromptAt` (the current turn's start). Views read those
 stored values, so a keystroke in the composer re-renders only the composer. What the chrome
 draws is cached the same way, one property each (`session`, `dialogs`, `widgets`, `commands`,
-`model`, `thinking`, `stats`, `supportedActions`, `clipped`, `running`, `workingLabel`,
+`model`, `thinking`, `thinkingLevels`, `stats`, `supportedActions`, `clipped`, `running`, `workingLabel`,
 `userTurnCount`, …), assigned only when it changes. The snapshot is one value that every
 streamed chunk replaces, so the composer and the toolbar never read it: a chunk
 redraws the thread and its live row, and a poll that moves only the context count redraws only
