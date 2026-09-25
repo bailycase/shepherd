@@ -343,8 +343,10 @@ Sources/
                        JSONL, lenient), Framing (NDJSON, LineBuffer, 1 MiB cap), ShepherdPaths,
                        ShepherdEdition (Shepherd or Shepherd Nightly, from the bundle id).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
-                       NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
-                       the changes card), NativeQueueRules (the queue's rules, host and client),
+                       NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
+                       parser: tables, lists, images, details, footnotes), NativeActivity
+                       (activity lines, the changes card), NativeQueueRules (the queue's rules,
+                       host and client),
                        TerminalPanel (a layout's terminal tabs, the key row's bytes, the panel's
                        height, RemoteTerminalLink), AutomationPresentation (automation rows, runs
                        and what a client may do), ShepherdLog. Shared with the iOS client.
