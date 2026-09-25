@@ -205,6 +205,9 @@ public final class NativeThreadStore {
     /// stands until a snapshot requested after the host accepted it arrives.
     @ObservationIgnored private var pulls = 0
     @ObservationIgnored private var overlays: [QueueOverlay] = []
+    /// Queued messages this client holds (an editor open on them). A thread off screen cannot
+    /// renew them, so they are renewed as it comes back.
+    @ObservationIgnored private var holding: Set<UUID> = []
     /// Echo id → the pull count when its send was accepted (hosts with a queue).
     @ObservationIgnored private var echoAccepted: [String: Int] = [:]
     /// Images this client queued, by queued message id: the host keeps only their names.
@@ -244,6 +247,7 @@ public final class NativeThreadStore {
             aliases = [:]
             echoAccepted = [:]
             overlays = []
+            holding = []
             return
         }
         // Everything this client changed before the host answered the pull that brought this
@@ -469,6 +473,7 @@ public final class NativeThreadStore {
             // shown again keeps the older pages read in it. Another session or generation, or no
             // overlap, starts over from that page.
             await pull(fresh: true)
+            await renewHolds(run)
             while !Task.isCancelled && epoch == run {
                 do { try await pauseUntilNextPull() } catch { break }
                 guard epoch == run else { break }
@@ -480,6 +485,14 @@ public final class NativeThreadStore {
                 guard let self, self.epoch == run else { return }
                 self.suspend()
             }
+        }
+    }
+
+    private func renewHolds(_ run: UUID) async {
+        holding.formIntersection(queue.filter { $0.state == .queued }.map(\.id))
+        for id in holding {
+            guard epoch == run else { return }
+            await holdQueued(id, true)
         }
     }
 
@@ -816,6 +829,7 @@ public final class NativeThreadStore {
 
     /// Saves an edit to a queued message; it keeps its place. Also releases the item's hold.
     public func editQueued(_ id: UUID, text: String) async {
+        holding.remove(id)
         await queueAction(.edit(id: id, text: text)) { NativeQueueRules.edit(id, text: text, in: &$0) }
     }
 
@@ -865,6 +879,7 @@ public final class NativeThreadStore {
     /// An editor opened (true) or closed on a queued message: the host waits to send the queue
     /// while it is held. A hold lapses on the host after two minutes unless renewed.
     public func holdQueued(_ id: UUID, _ held: Bool) async {
+        if held { holding.insert(id) } else { holding.remove(id) }
         await queueAction(.hold(id: id, held: held)) { NativeQueueRules.hold(id, held, in: &$0) }
     }
 
