@@ -125,8 +125,9 @@ keep the version for real breaks.
   `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote` and `ShepherdUI`, never `ShepherdApp`.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
-  `Review/`, `Search/`, `Settings/`, and `Support/` (`AgentRef`, `MobileLayout`,
-  `MobileAppearance`, the `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
+  `Review/`, `Search/`, `Settings/`, `Windows/` (the scene and its windows), and `Support/`
+  (`AgentRef`, `MobileLayout`, `MobileAppearance`, the `AgentState` mapping). Ownership and
+  hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
   derivations (`NativeTurnPresentation`, `NativeActivity`), host records
   (`RemoteHostRecord`, `RemoteHostEntry`, `RemoteReconnectBackoff`), and ShepherdUI's
@@ -189,6 +190,12 @@ keep the version for real breaks.
   file); and Finalize for worktree agents (checks, the form, each step, the PR link). On iPad
   review docks beside the thread or goes full screen with a unified or split view. There is no
   per-file revert: the remote protocol has none.
+- **Windows (`Windows/`, iPad):** several Shepherd windows side by side in Split View or Stage
+  Manager, each with its own place (restored on relaunch) over the same hosts, connections and
+  threads. Open in new window from a thread's options, a sidebar row or the ⌘K palette (it
+  brings forward a window already showing the thread). A turn's long-press menu has Send to…,
+  which puts its text in another window's composer, and a turn drags into a composer as text.
+  iPhone keeps one window.
 - **Search and actions (`Search/`):** search across every connected host: title matches at once,
   conversations fanned out to each host (`agentQuery(.search)`), snippets with host tags. A
   thread's options menu renames, moves and deletes its agent; a worktree agent's delete follows
@@ -198,5 +205,5 @@ keep the version for real breaks.
 ## Not in the first release
 
 Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), automations over remote, QR pairing and TLS, terminal panes, multiple iPad
-windows, and everything waiting on the Mac (Missions, Designs, daemon hosts).
+background), automations over remote, QR pairing and TLS, terminal panes, and everything
+waiting on the Mac (Missions, Designs, daemon hosts).

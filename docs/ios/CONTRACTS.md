@@ -28,6 +28,7 @@ Never commit a `project.pbxproj` change for a new file.
 | D. Subagents | `Subagents/`, `Fixtures/SubagentsFixtures.swift` | the cards in a thread, the list, one run's transcript and steer |
 | E. Review | `Review/`, `Fixtures/ReviewFixtures.swift`, the `DiffFile` move into a shared module | changes, the diff reader, comments, Request changes, Commit as a turn, Finalize, review docked on iPad |
 | F. Search & actions | `Search/`, `Fixtures/SearchFixtures.swift` | search across agents, rename and delete, the iPad ⌘K palette |
+| G. Windows | `Windows/`, `Fixtures/WindowsFixtures.swift` | several iPad windows: the scene, each window's navigator and restoration, Open in new window, Send to…, text dropped on a composer |
 
 Shared modules (`ShepherdUI`, `ShepherdRemote`, `ShepherdProtocol`, `ShepherdCore`) belong to no
 track and are also the Mac's. A track may add to them (a component under
@@ -92,19 +93,27 @@ is out in portrait too.
 
 ## App state
 
-`MobileApp` (App/) makes the stores once and puts them in the environment:
+`MobileApp` (App/) makes the stores once and puts them in the environment. Every window shares
+them except the navigator, which is each window's own ([Windows](#windows-ipad)):
 
 | Store | Read with | Holds |
 | --- | --- | --- |
 | `MobileHosts` | `@Environment(MobileHosts.self)` | every host (`MobileHost`: `record`, `phase`, `state`, `session`, `capabilities`, `connectedClient`, `agent(_:)`), `add`, `edit`, `forget`, `retry`, `retryAll`, `disconnect`, `token(for:)` |
-| `MobileNavigator` | `@Environment(MobileNavigator.self)` | routes and selection (above) |
-| `ThreadStores` | `@Environment(ThreadStores.self)` | one `NativeThreadStore` per `AgentRef`: `store(for:)` |
+| `MobileNavigator` | `@Environment(MobileNavigator.self)` | this window's routes and selection (above) |
+| `ThreadStores` | `@Environment(ThreadStores.self)` | one `NativeThreadStore` per `AgentRef`: `store(for:)`, and `viewers(for:)`, which runs its poll loop |
 | `MobileAppearance` | `@Environment(MobileAppearance.self)` | System, Light or Dark |
-| `MobileApp` | `@Environment(\.mobileApp)` | `forget(host:)`, which clears a host from every store |
+| `MobileWindows` | `@Environment(MobileWindows.self)` | the open windows: `open` (each seed and navigator), `window(showing:except:)`, `targets(from:excluding:)` |
+| `MobileApp` | `@Environment(\.mobileApp)` | `forget(host:)`, which clears a host from every store and every window |
+
+`@Environment(\.mobileWindow)` is the window a view is in (its `MobileWindowSeed`).
 
 - Talk to a host with `hosts.host(ref.host)?.connectedClient` (a `RemoteHostClient`). Key work
   tied to one connection on `host.session`: it changes with every new connection.
 - Check capabilities with `host.supports(RemoteProtocol.…Capability)` before offering a feature.
+- Run a thread's store through `threads.viewers(for: ref).run { … }`, never `store.run` from a
+  screen: the same thread can be on screen in two windows, and a second `run` ends the first.
+  `viewers.rest(detached:)` is what a screen that can't run it calls (it suspends only once no
+  window runs it).
 - `MobileHosts`' API only grows: add members in an extension in your own folder rather than
   editing `MobileHosts.swift`, and ask the foundation to change what exists.
 - A track that needs its own app-lifetime state defines an `@MainActor @Observable` store in its
@@ -121,15 +130,53 @@ is out in portrait too.
 | Open review | `Review/ReviewRoute.swift` (E) | the changes card's Review and files, an edit line | `ReviewHooks.open(thread: AgentRef, file: String?, navigator: MobileNavigator)` |
 | Agent actions | `Search/AgentActionsMenu.swift` (F) | the thread's options menu (menu items only) | `AgentActionsMenu(thread: AgentRef)` |
 | Open search | `Search/SearchRoute.swift` (F) | Home, the iPad sidebar (the palette on iPad, search on iPhone) | `SearchHooks.open(query: String = "", navigator:)` |
-| ⌘K | `Search/SearchRoute.swift` (F) | `ShepherdIOSApp`'s scene | `.commands { SearchCommands(navigator:) }` |
+| ⌘K | `Search/SearchRoute.swift` (F) | `MobileWindowCommands` (G), for the focused window | `SearchCommands(navigator: MobileNavigator?)` |
 | Start a thread | `NewThread/NewThreadRoute.swift` (C) | Home, the iPad sidebar and overview | `NewThreadHooks.open(host: UUID? = nil, navigator:)` |
 | Home roots | `Home/` (A) | `PhoneShell`, `PadShell` | `HomeScreen()`, `PadSidebar()`, `PadOverview()` |
 | Settings root | `Settings/SettingsScreen.swift` (A) | `PhoneShell` | `SettingsScreen()` |
+| Open in new window | `Windows/WindowHooks.swift` (G) | the thread's options menu, the iPad sidebar's rows, the palette's rows and preview | `OpenInNewWindowButton(thread: AgentRef, prominent: Bool = false, before: (() -> Void)? = nil)` |
+| Send to… and drag | `Windows/WindowHooks.swift` (G) | each turn in `ThreadScreen` | `.turnTransfer(_ row: NativeThreadRow, thread: AgentRef)`, `SendToMenu(text:source:)` |
+| Text dropped on a composer | `Windows/WindowHooks.swift` (G) | `ThreadScreen`, on `ThreadComposer` | `.composerTextDrop(_ thread: AgentRef)` |
 
 Each hook ships with the foundation's minimal version so the app builds and navigates end to end;
 the owning track replaces the body. Keep the signature. A hook drawn inside a turn
 (`SubagentCards`) compares equal on its plain inputs (`Equatable`), so a streamed chunk never
 redraws it unless its values changed; keep it that way.
+
+## Windows (iPad)
+
+iPad runs several Shepherd windows at once, side by side in Split View or in Stage Manager;
+iPhone keeps one. `ShepherdIOSApp` has one scene:
+
+```swift
+WindowGroup(for: MobileWindowSeed.self) { $seed in MobileWindowRoot(app: app, seed: seed) }
+    defaultValue: { MobileWindowSeed() }
+```
+
+- **A seed** (`Windows/MobileWindowSeed.swift`) is a window's identity (`id`) and the route it
+  opens on (`opening`, nil for a fresh window). The system keeps it with the window's scene.
+  Opening the seed of a window already open brings that window forward instead of opening one.
+- **Each window has its own `MobileNavigator`** (`MobileWindowRoot`), put in the environment by
+  `MobileRoot(app:navigator:window:)` with `mobileEnvironment(_:navigator:window:)`. Everything
+  else is the app's and shared: `MobileHosts` keeps one connection per host whatever the number
+  of windows, and `ThreadStores` one store per thread, so a draft or a loaded history is the same
+  in every window. `MobileApp.navigator` is only for a root made without its own (the fixture
+  harness).
+- **Restoration:** each window saves `MobileNavigator.Restoration` (the layout, the tab, the
+  stacks and the selected thread; not what is presented) in `@SceneStorage`, and puts it back
+  when the system restores the window, leaving out the screens of hosts no longer saved. A new
+  window opens its seed's route instead.
+- **Connections:** `MobileWindows` tracks each window's scene phase; the hosts connect while any
+  window is active and disconnect once every window is in the background (`WindowPresence`).
+- **One thread in two windows** shares one poll loop (`NativeThreadViewers`): the newest window
+  drives it, and another takes it over when that one leaves.
+- **Reaching another window:** `OpenInNewWindowButton` brings forward the window already showing
+  the thread, or opens one on it. "Send to…" (a turn's context menu) lists the threads other
+  windows show and adds the text to that thread's composer, then brings its window forward. A
+  turn also drags out as text, and a composer takes dropped text into its draft.
+- **Commands** read the focused window's navigator (`@FocusedValue(\.mobileNavigator)`), set by
+  each `MobileRoot`.
+- The window items are drawn only where `supportsMultipleWindows` is true: never on iPhone.
 
 ## Rules every track follows
 
@@ -176,3 +223,7 @@ extension FixtureCatalog {
   sees it, and the harness fails a screen that sends one. Screenshots must never depend on a
   mutation.
 - Screen names are unique across tracks: prefix yours when in doubt (`review-empty`).
+- A screen with more windows opens them in `prepare`: `FixtureWindows.shared.openBeside(route)`
+  draws a second window beside the first, as Split View does (the simulator can't be put in
+  Split View headless), and `FixtureWindows.shared.open(route)` opens a real one, which the
+  simulator's full-screen mode shows over the first. Render them with `run-simulator.sh -w`.
