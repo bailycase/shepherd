@@ -4,7 +4,7 @@ import ShepherdUI
 /// Settings (MobileSettings, iPadSettingsInstructions boards; home track): the Settings tab's root
 /// on iPhone, a list of rows each pushing its page; on iPad, pushed over the detail, the list
 /// beside the page it opens. Defaults, Worktrees and Extensions are a host's own settings,
-/// Instructions and Experiments span every host, and Appearance is this device's.
+/// Instructions, Skills and Experiments span every host, and Appearance is this device's.
 struct SettingsScreen: View {
     @Environment(MobileHosts.self) private var hosts
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -40,6 +40,7 @@ private struct SettingsList: View {
                     NWListCard {
                         row(.defaults, trailing: value(store.defaultsValue))
                         row(.instructions, trailing: value(store.instructionsValue))
+                        row(.skills, trailing: value(store.skillsValue))
                         row(.pi, trailing: value(store.extensionsValue))
                     }
                 }
@@ -153,6 +154,7 @@ struct SettingsPageView: View {
         case .worktrees: WorktreesScreen()
         case .pi: PiExtensionsScreen()
         case .instructions: InstructionsScreen()
+        case .skills: SkillsScreen()
         case .hosts: HostsScreen()
         case .experiments: ExperimentsScreen()
         }

@@ -1,6 +1,7 @@
 import SwiftUI
 import ShepherdUI
 import ShepherdProtocol
+import ShepherdRemote
 
 /// Settings' screens (home track). `open` shows them in the Settings tab on iPhone and over
 /// the detail on iPad, where Settings' own pages show beside its list instead (`SettingsPage`).
@@ -20,6 +21,14 @@ enum SettingsRoute: Hashable, Codable {
     case instructions
     /// One root instruction file in the editor.
     case instructionsFile(InstructionFile)
+    /// Every host's agent skills: each on or off, their updates, and a search of skills.sh.
+    case skills
+    /// One installed skill: how the agent uses it, its version, which hosts have it, its files.
+    case skill(String)
+    /// A skill on skills.sh before it's installed: what it does, its files, and Install.
+    case skillResult(DirectorySkill)
+    /// Add skills from a repository, looking up the one given at once.
+    case skillsRepo(String?)
     case experiments
     /// A suggested line waiting on a host: edit it, choose its file, add it or dismiss it.
     case suggestion(UUID)
@@ -39,6 +48,10 @@ struct SettingsDestination: View {
         case .piExtensions: PiExtensionsScreen()
         case .instructions: InstructionsScreen()
         case .instructionsFile(let file): InstructionsEditorScreen(file: file)
+        case .skills: SkillsScreen()
+        case .skill(let name): SkillDetailScreen(name: name)
+        case .skillResult(let skill): SkillResultScreen(skill: skill)
+        case .skillsRepo(let repo): AddSkillsScreen(initialRepo: repo)
         case .experiments: ExperimentsScreen()
         case .suggestion(let id): SuggestionScreen(id: id)
         }
@@ -49,7 +62,7 @@ struct SettingsDestination: View {
 /// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
 /// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
-    case appearance, defaults, worktrees, pi, instructions, hosts, experiments
+    case appearance, defaults, worktrees, pi, instructions, skills, hosts, experiments
 
     var title: String {
         switch self {
@@ -58,6 +71,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .worktrees: "Worktrees"
         case .pi: "Extensions"
         case .instructions: "Instructions"
+        case .skills: "Skills"
         case .hosts: "Hosts"
         case .experiments: "Experiments"
         }
@@ -79,6 +93,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .worktrees: "arrow.branch"
         case .pi: "puzzlepiece.extension"
         case .instructions: "doc.text"
+        case .skills: "graduationcap"
         case .hosts: "desktopcomputer"
         case .experiments: "flask"
         }
@@ -92,6 +107,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .worktrees: .worktrees
         case .pi: .piExtensions
         case .instructions: .instructions
+        case .skills: .skills
         case .hosts: .hosts
         case .experiments: .experiments
         }

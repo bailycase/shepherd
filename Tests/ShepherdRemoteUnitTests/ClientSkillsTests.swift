@@ -316,6 +316,8 @@ struct SkillsPresentationTests {
         let newer = SkillsPresentation.newer(SkillUpdate(commit: "8c04e1d0a", committedAt: nil, filesChanged: 3))
         #expect(newer.commit == "8c04e1d" && newer.detail == "3 files changed")
         #expect(SkillsPresentation.use(.slashOnly) == "/skill only")
+        #expect(SkillsPresentation.invocationTitle(.automatic) == "Automatically")
+        #expect(SkillsPresentation.invocationTitle(.slashOnly) == "Only with /skill")
         #expect(SkillsPresentation.slashOption("pdf") == "Only when I type /skill:pdf")
         #expect(SkillsPresentation.mobileSummary(InstalledSkill(name: "go", summary: "House style.", invocation: .slashOnly, updatedAt: 0))
             == "/skill only · House style.")
