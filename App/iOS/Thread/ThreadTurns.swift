@@ -158,7 +158,8 @@ struct AgentTurnView: View, Equatable {
     }
 }
 
-/// Agent prose: parsed Markdown drawn by `NWAgentProse`, inline runs styled once per text.
+/// Agent prose: parsed Markdown drawn by `NWAgentProse`, inline runs styled once per text
+/// (`NWProseInline`). A host's files are not on this device, so its images show as chips.
 struct ProseView: View, Equatable {
     let blocks: [NativeMarkdownBlock]
 
@@ -169,41 +170,34 @@ struct ProseView: View, Equatable {
     static func proseBlocks(_ blocks: [NativeMarkdownBlock]) -> [NWProseBlock] {
         blocks.map { block in
             switch block {
-            case .heading(let level, let text): .heading(level: level, text: inline(text))
-            case .paragraph(let text): .paragraph(inline(text))
-            case .quote(let text): .quote(inline(text))
+            case .heading(let level, let text): .heading(level: level, text: NWProseInline.attributed(text))
+            case .paragraph(let text): .paragraph(NWProseInline.attributed(text))
+            case .quote(let inner): .quote(proseBlocks(inner))
             case .code(let text, let language): .code(text, language: language)
             case .rule: .rule
             case .list(let ordered, let start, let items):
-                .list(ordered: ordered, start: start,
-                      items: items.map { NWProseListItem(text: inline($0.text), children: proseBlocks($0.children)) })
+                .list(ordered: ordered, start: start, items: items.map {
+                    NWProseListItem(text: NWProseInline.attributed($0.text), task: $0.task.map { $0 == .done ? .done : .open },
+                                    children: proseBlocks($0.children))
+                })
+            case .table(let table):
+                .table(NWProseTable(
+                    alignments: table.alignments.map {
+                        switch $0 {
+                        case .none, .leading: .leading
+                        case .center: .center
+                        case .trailing: .trailing
+                        }
+                    },
+                    header: table.header.map(NWProseInline.attributed),
+                    rows: table.rows.map { $0.map(NWProseInline.attributed) },
+                    markdown: table.source))
+            case .image(let alt, let source): .image(NWProseImage(alt: alt, source: source))
+            case .details(let summary, let inner): .details(summary: NWProseInline.attributed(summary), blocks: proseBlocks(inner))
+            case .footnotes(let notes):
+                .footnotes(notes.map { NWProseFootnote(number: $0.number, text: NWProseInline.attributed($0.text)) })
             }
         }
-    }
-
-    private struct InlineKey: Hashable {
-        var text: String
-        var scale: CGFloat
-    }
-
-    @MainActor private static var inlineCache: [InlineKey: AttributedString] = [:]
-
-    /// Inline Markdown: code runs in mono, links in running blue. Cached per text and scale.
-    @MainActor static func inline(_ text: String) -> AttributedString {
-        let key = InlineKey(text: text, scale: ThemeStore.shared.textScale)
-        if let cached = inlineCache[key] { return cached }
-        var attributed = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-            ?? AttributedString(text)
-        for run in attributed.runs where run.inlinePresentationIntent?.contains(.code) == true {
-            attributed[run.range].font = Font.nw(.code)
-            attributed[run.range].backgroundColor = Color.nw.lineSubtle
-        }
-        for run in attributed.runs where run.link != nil {
-            attributed[run.range].foregroundColor = Color.nw.running
-        }
-        if inlineCache.count > 2048 { inlineCache.removeAll(keepingCapacity: true) }
-        inlineCache[key] = attributed
-        return attributed
     }
 }
 

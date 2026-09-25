@@ -105,6 +105,10 @@ struct ThreadView: View {
                     // The subagent cards' controls: it changes only when the thread is switched
                     // to or away from (and when the host's support does), and redraws the cards.
                     .environment(\.threadActionsEnabled, active && store.supports("subagents"))
+                    // A local agent's images draw from its folder; a remote agent's files are not here.
+                    .environment(\.nwProseFileRoot, workingDirectory.map {
+                        URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
+                    })
                 }
                 // The composer floats over the scroll view; inset by its real height so "the
                 // bottom" is the last turn, not the space under the card.
