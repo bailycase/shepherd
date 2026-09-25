@@ -295,6 +295,8 @@ final class ShepherdViewModel {
     let sidebarDropZone = SidebarDropZone()
     /// Which native subagent an agent's workspace is inspecting (the side panel).
     let subagentInspector = RightPaneState()
+    /// Each layout's terminal panel under its thread (`TerminalPanels`).
+    let terminalPanels = TerminalPanels()
     /// System notifications when an unwatched agent finishes or blocks.
     let notifications = AgentNotifications()
     let settings: AppSettings
