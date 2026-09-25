@@ -20,7 +20,12 @@ extension FixtureCatalog {
                           prepare: { app in await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .repo : .workspace } }),
             FixtureScreen(name: "newthread-worktree", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
-                          prepare: { app in await NewThreadFixtures.form { $0.panel = app.navigator.layout == .pad ? .worktree : .workspace } }),
+                          prepare: { app in
+                              await NewThreadFixtures.form { form in
+                                  form.workspaceAnchor = .worktree
+                                  form.panel = app.navigator.layout == .pad ? .worktree : .workspace
+                              }
+                          }),
             FixtureScreen(name: "newthread-models", hosts: NewThreadFixtures.hosts(),
                           routes: NewThreadFixtures.behind, presented: NewThreadFixtures.compose,
                           prepare: { _ in await NewThreadFixtures.form { $0.panel = .model } }),
