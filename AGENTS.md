@@ -786,9 +786,10 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
 **Only these paths mutate repositories** ([docs/worktrees.md](docs/worktrees.md)):
 
 - **Creating a worktree:** `git worktree add --no-track -b` (`GitWorktree.swift`), from the New
-  Agent sheet's worktree option or a space's New Worktree… sheet. The base is resolved per
-  Settings ▸ Worktrees: `origin/<default>` after a fetch by default. It is visible and editable in
-  the sheet, and recorded as `Agent.worktreeBase`.
+  Agent sheet's worktree option, a project's New Worktree… sheet, or the New thread page's New
+  worktree switch. The base is resolved per Settings ▸ Worktrees: `origin/<default>` after a
+  fetch by default. It is visible and editable in the sheets (the page takes the resolved base),
+  and recorded as `Agent.worktreeBase`.
 - **Delete Worktree Agent:** confirmed, and it warns about unreconciled work.
 - **Finalize Worktree** (`WorktreeFinalize.swift`): commit → push → `gh pr create` → optional
   opt-in merge → clean gate → remove worktree → delete local branch. Each step gates the next,
