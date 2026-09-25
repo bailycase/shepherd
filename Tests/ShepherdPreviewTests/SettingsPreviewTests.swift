@@ -108,16 +108,17 @@ struct SettingsPreviewTests {
         let store = workspace.server.suggestions
         try store.configure(SuggestedInstructionsSettings(enabled: true, files: [.agents, .appendSystem]))
         let now = Date().timeIntervalSince1970
-        for (line, reason, file, source, ago) in [
-            ("Prefer table-driven tests in Go.", "Three tests repeated one setup.", InstructionFile.agents,
-             SuggestionSource(kind: .thread, name: "Ledger cleanup"), 200_000.0),
+        let lines: [(String, String, InstructionFile, SuggestionSource, Double)] = [
+            ("Prefer table-driven tests in Go.", "Three tests repeated one setup.", .agents,
+             SuggestionSource(kind: .thread, name: "Ledger cleanup"), 200_000),
             ("Don't skip or retry a flaky test; find the race.", "You corrected the agent after it added t.Skip().", .agents,
              SuggestionSource(kind: .thread, name: "Fix flaky ledger test"), 90_000),
             ("Run `go mod tidy` and commit go.sum with any dependency bump.", "CI failed twice on a stale go.sum.", .appendSystem,
              SuggestionSource(kind: .automation, name: "Nightly dependency bump"), 7_200),
             ("Ask for join keys before adding an event.", "A missing checkout_id made two services re-run their steps.", .agents,
              SuggestionSource(kind: .thread, name: "Checkout funnel events"), 600),
-        ] {
+        ]
+        for (line, reason, file, source, ago) in lines {
             _ = try store.suggest(line: line, reason: reason, file: file, source: source, now: Date(timeIntervalSince1970: now - ago))
         }
         let oldest = try #require(store.snapshot().waiting.last)
