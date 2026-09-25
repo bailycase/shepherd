@@ -353,12 +353,13 @@ final class MobileTerminalSession {
             case .attach(let cols, let rows):
                 // The host replays its screen: start from a clean one.
                 surface?.reset()
+                let attempt = link.attempt
                 Task { [weak self] in
                     do {
                         _ = try await client.attach(sessionID: id, cols: cols, rows: rows)
-                        self?.link.attached()
+                        self?.link.attached(attempt: attempt)
                     } catch {
-                        self?.link.attachFailed(Self.reason(error))
+                        self?.link.attachFailed(Self.reason(error), attempt: attempt)
                     }
                     self?.sync()
                 }
