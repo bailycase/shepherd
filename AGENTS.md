@@ -308,6 +308,14 @@ timing-sensitive tests. Docs-only changes (`docs/**`, `*.md`) don't trigger it.
   tests. Run the workflow by hand with `clean` to ignore the build cache. A
   corrupt build cache: bump `CACHE_EPOCH` in the action to orphan every entry, or clear one
   ref's with `gh cache delete --all --ref refs/pull/N/merge` (or `refs/heads/<branch>`).
+- **Checking a CI change:** a pull request's run is cold ("Cache not found") until `nightly`
+  holds an entry for the same toolchain and epoch, and it saves nothing, so it cannot show an
+  incremental build. Before merging, run the workflow by hand on the branch, let it finish (a
+  second run on the same ref cancels the first), push a small source change, and run it again:
+  its shards restore the first run's entry by prefix, "Restore source mtimes" reports about as
+  many new or changed files as the push touched, and the build compiles only their modules. A
+  rerun of an unchanged commit is an exact hit and tests nothing. After the merge, the `warm`
+  job's entry should be what the next push to any PR into `nightly` restores.
 
 ## Source map
 
