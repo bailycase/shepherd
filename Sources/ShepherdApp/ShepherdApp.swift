@@ -76,7 +76,6 @@ public struct ShepherdMacApp: App {
             PaneCommands(vm: vm, keys: keys, bindings: keys.overrides)
             SpaceCommands(vm: vm, menu: vm.menuState)
             AgentCommands(vm: vm, menu: vm.menuState, keys: keys, bindings: keys.overrides)
-            MachineCommands(vm: vm, menu: vm.menuState)
             AppearanceCommands(vm: vm, themes: themes)
         }
     }

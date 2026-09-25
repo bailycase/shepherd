@@ -52,7 +52,7 @@ struct ListPerformanceReport {
         let app = try AppHarness()
         defer { app.stop() }
         let vm = try await app.start(with: ListFixtures.fleet(in: app.dir))
-        let name = "sidebar (300 agents, 40 spaces)"
+        let name = "sidebar (300 agents: Needs you and Recents)"
         let window = open(name, size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 800)) { SidebarView(vm: vm) }
         defer { window.close() }
 

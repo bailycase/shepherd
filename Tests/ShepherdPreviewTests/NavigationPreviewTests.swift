@@ -15,14 +15,16 @@ import Testing
 extension PreviewTests {
     // MARK: Sidebar
 
-    /// A space with agents in every status, a working one whose subagent waits on you (its row
-    /// asks), one with finished subagents (no mark), one whose turn failed, a worktree agent, a
-    /// second space, an automation, and an unreachable second machine. The palette lists the
-    /// subagents.
+    /// Agents in every status, most recently active first: a working one whose subagent waits on
+    /// you and one blocked on a question (both in Needs you, with their reasons), one with
+    /// finished subagents (no mark), one whose turn failed, a worktree agent, an agent in a second
+    /// project, an automation's settled run, and an unreachable host (More ▸ Hosts says so). The
+    /// palette lists the subagents.
     private func populatedWorkspace() async throws -> (PreviewWorkspace, [Agent]) {
         let workspace = try PreviewWorkspace()
         let space = Space(name: "Shepherd", path: workspace.dir.path)
         let other = Space(name: "billing-service", path: workspace.dir.appendingPathComponent("billing").path)
+        let runs = Space(name: "Automations", path: "~", hidden: true)
         let rows: [(String, AgentStatus, String?)] = [
             ("Plan shepherd extensions", .working, nil), ("Dock review pane", .blocked, "worktree/dock-review"),
             ("Fix remote subagent deletion", .idle, nil), ("Investigate SwiftUI live preview", .working, nil),
@@ -30,27 +32,34 @@ extension PreviewTests {
             ("Bump the Sparkle feed", .done, nil),
         ]
         var agents: [Agent] = [], tabs: [ShepherdCore.Tab] = []
+        let now = Date().timeIntervalSince1970 * 1000
         for (index, row) in rows.enumerated() {
-            let (agent, tab) = try await workspace.agent(row.0, in: space, order: index, status: row.1, branch: row.2)
+            var (agent, tab) = try await workspace.agent(row.0, in: space, order: index, status: row.1, branch: row.2)
+            agent.lastActiveAt = now - Double(index) * 60_000
             agents.append(agent); tabs.append(tab)
         }
-        let (billing, billingTab) = try await workspace.agent("Migrate invoices to v2", in: other, order: 0, status: .idle)
+        agents[1].waitingOn = "Approve the plan?"
+        var (billing, billingTab) = try await workspace.agent("Migrate invoices to v2", in: other, order: 0, status: .idle)
+        billing.lastActiveAt = now - 30 * 60_000
         agents.append(billing); tabs.append(billingTab)
-        let automation = Automation(name: "Merge PR #24 after CI", prompt: "watch", cwd: workspace.dir.path, enabled: false)
-        try await workspace.seed(ShepherdState(spaces: [space, other], tabs: tabs, agents: agents, automations: [automation]))
+        var (run, runTab) = try await workspace.agent("Merge PR #24 after CI", in: runs, order: 0, status: .done)
+        run.lastActiveAt = now - 3.5 * 60_000
+        agents.append(run); tabs.append(runTab)
+        let automation = Automation(name: "Merge PR #24 after CI", prompt: "watch", cwd: workspace.dir.path, enabled: false,
+                                    agentID: run.id)
+        try await workspace.seed(ShepherdState(spaces: [space, other, runs], tabs: tabs, agents: agents, automations: [automation]))
         let vm = workspace.vm
-        vm.selectedSpaceID = space.id
-        vm.selectedAgentID = agents[3].id
+        vm.selectAgent(agents[3].id)
         vm.statusSince[agents[0].id] = Date().addingTimeInterval(-8 * 60)
         vm.statusSince[agents[3].id] = Date().addingTimeInterval(-31)
         vm.failedTurns.insert(agents[6].id)
         vm.applyAgentChildren(agents[3].id, Array(Threads.liveRuns.prefix(3)))
         vm.applyAgentChildren(agents[4].id, Threads.doneRuns)
-        vm.automationsExpanded = true
         vm.remoteHosts.addHost(name: "Horizon", host: "127.0.0.1", port: 1, token: "x")
         return (workspace, agents)
     }
 
+    /// The sidebar at each row density (NWNavigation's Standard and Compact samples).
     @Test(arguments: NWDensity.allCases)
     func sidebar(density: NWDensity) async throws {
         let (workspace, _) = try await populatedWorkspace()
@@ -60,8 +69,21 @@ extension PreviewTests {
         }
     }
 
-    /// This Mac's automations: a run whose pi is still starting (it reads running and stops,
-    /// never done), a settled run, one asking, and one stopped.
+    /// More open with Hosts selected (NavHosts): Hosts says how many hosts are offline, and
+    /// Extensions follows.
+    @Test func sidebarMoreHosts() async throws {
+        let (workspace, _) = try await populatedWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.openDestination(.hosts)
+        try await Preview.render("sidebar-more-hosts", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 520),
+                                 ready: { vm.offlineHostCount == 1 }) {
+            SidebarView(vm: vm)
+        }
+    }
+
+    /// This Mac's automation runs in Recents: a run whose pi is still starting (it reads running,
+    /// never done), a settled run, and one asking (in Needs you, its bolt in lantern).
     @Test func sidebarAutomations() async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
@@ -82,7 +104,6 @@ extension PreviewTests {
         }
         try await workspace.seed(ShepherdState(spaces: [space, runs], tabs: tabs, agents: agents, automations: automations))
         let vm = workspace.vm
-        vm.automationsExpanded = true
         let starting = try #require(vm.automationRun(automations[0], agent: vm.automationAgent(automations[0])))
         #expect(AutomationRow.isLive(vm.automationAgent(automations[0]), run: starting))
 
@@ -217,25 +238,6 @@ extension PreviewTests {
         }
     }
 
-    /// The row that stands in for a host's spaces while it is not connected, for each way it
-    /// fails: Unreachable, Token refused, Update needed, and Connecting….
-    @Test func sidebarHostNotices() async throws {
-        let workspace = try PreviewWorkspace()
-        defer { workspace.stop() }
-        let phases: [RemoteHostStore.Phase.Kind] = [.failed(.unreachable), .failed(.tokenRefused),
-                                                   .failed(.versionMismatch(hostNewer: true)), .connecting]
-        try await Preview.render("sidebar-host-notices", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 160)) {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(phases.enumerated()), id: \.offset) { _, phase in
-                    HostNoticeRow(vm: workspace.vm, hostID: UUID(), phase: phase)
-                }
-            }
-            .padding(AppLayout.sidebarPadding)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Color.nw.bgBase)
-        }
-    }
-
     /// The window with the sidebar hidden: the toolbar runs under the window controls.
     @Test func sidebarHiddenHeader() async throws {
         let workspace = try PreviewWorkspace()
@@ -251,26 +253,45 @@ extension PreviewTests {
         }
     }
 
-    // MARK: Empty workspace states
+    // MARK: New thread
 
-    @Test(arguments: ["no-spaces", "space-without-agents", "no-agent-selected"])
-    func emptyWorkspace(state: String) async throws {
+    /// The New thread page (NavNewThread): with a project and a running thread (its Continue
+    /// card), with no project at all, and at the minimum window.
+    @Test(arguments: [("new-thread", 1280.0), ("new-thread-empty", 1280.0), ("new-thread-minimum", 720.0)])
+    func newThread(surface: String, width: CGFloat) async throws {
         let workspace = try PreviewWorkspace()
         defer { workspace.stop() }
-        let space = Space(name: "Shepherd", path: workspace.dir.path)
-        switch state {
-        case "space-without-agents":
-            try await workspace.seed(ShepherdState(spaces: [space]))
-            workspace.vm.selectSpace(space.id)
-        case "no-agent-selected":
-            let (agent, tab) = try await workspace.agent("Background agent", in: space, order: 0, live: true)
+        let vm = workspace.vm
+        if surface != "new-thread-empty" {
+            let space = Space(name: "shepherd", path: workspace.dir.path)
+            var (agent, tab) = try await workspace.agent("Investigate SwiftUI live preview", in: space, order: 0, status: .working)
+            agent.lastActiveAt = Date().timeIntervalSince1970 * 1000
             try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
-            workspace.vm.selectedAgentID = nil
-            workspace.vm.selectedSpaceID = nil
-        default: break
+            vm.statusSince[agent.id] = Date().addingTimeInterval(-42 * 60)
         }
-        try await Preview.render("empty-\(state)", size: CGSize(width: 1280, height: 760)) {
-            RootView(vm: workspace.vm)
+        vm.openNewThread()
+        try await Preview.render(surface, size: CGSize(width: width, height: 760)) {
+            RootView(vm: vm)
+        }
+    }
+
+    /// The workplace chip's menu: This Mac's projects (nested ones flat), a host's, Add folder…
+    /// on each, and the worktree option.
+    @Test func newThreadPlaceMenu() async throws {
+        let mac = NWPlaceSection(id: "local", title: "This Mac", options: [
+            NWPlaceOption(id: "local/a", section: "local", title: "shepherd", detail: "~/Developer/Shepherd", isCurrent: true),
+            NWPlaceOption(id: "local/b", section: "local", title: "sub-project", detail: "~/Developer/Shepherd/sub"),
+            NWPlaceOption(id: "local/c", section: "local", title: "dashboard-web", detail: "~/code/dashboard-web"),
+        ])
+        let host = NWPlaceSection(id: "host", title: "build-01", options: [
+            NWPlaceOption(id: "host/d", section: "host", title: "orders-svc", detail: "~/src/orders-svc"),
+        ])
+        try await Preview.render("new-thread-place-menu", size: CGSize(width: 360, height: 300)) {
+            NWPlaceMenu(sections: [mac, host], worktree: NWPlaceWorktree(isOn: false, caption: NewThreadRules.worktreeCaption(base: "")),
+                        onChoose: { _ in }, onAdd: { _ in }, onWorktree: { _ in }, onClose: {}) { _ in EmptyView() }
+                .padding(NW.Space.l)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .background(Color.nw.bgWindow)
         }
     }
 

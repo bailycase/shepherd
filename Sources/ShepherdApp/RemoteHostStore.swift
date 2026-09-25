@@ -639,3 +639,18 @@ final class RemotePaneSession {
         client?.detach(sessionID: sessionID)
     }
 }
+
+extension RemoteHostStore.Phase {
+    enum Kind: Hashable { case disconnected, connecting, connected, failed(RemoteHostFailure.Kind) }
+
+    /// The phase with its failure's kind, not its detail: what the workspace's placeholders
+    /// cross-fade between (a retry that fails the same way again changes nothing on screen).
+    var kind: Kind {
+        switch self {
+        case .disconnected: .disconnected
+        case .connecting: .connecting
+        case .connected: .connected
+        case .failed(let failure): .failed(failure.kind)
+        }
+    }
+}

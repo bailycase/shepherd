@@ -10,8 +10,9 @@ import SwiftUI
 import Testing
 @testable import ShepherdApp
 
-/// A remote host's automations in the sidebar and their details sheet (NavAutomations,
-/// NavHosts), against a real in-process host so the rows show what the protocol carries.
+/// A remote host's threads in the sidebar, New thread on it, and an automation's details sheet
+/// (NavAutomations, NavHosts), against a real in-process host so the rows show what the
+/// protocol carries.
 extension PreviewTests {
     /// The automations the host serves: one running, one with two weeks of nightly runs, one
     /// whose run finished (its thread still open to read), and one off.
@@ -81,7 +82,7 @@ extension PreviewTests {
             token = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
-        /// Connects the workspace's view model to this host and opens its Automations.
+        /// Connects the workspace's view model to this host.
         @MainActor
         func connect(_ workspace: PreviewWorkspace) async throws -> RemoteHostStore.Connection {
             let vm = workspace.vm
@@ -91,12 +92,13 @@ extension PreviewTests {
             try await eventuallyOnMain("the host to connect", timeout: .seconds(30)) {
                 connection.phase == .connected && connection.state == host.state
             }
-            vm.toggleRemoteAutomations(connection.id)
             return connection
         }
     }
 
-    @Test func sidebarRemoteAutomations() async throws {
+    /// A host's threads in Recents beside This Mac's, each wearing the host's name, its
+    /// automation runs with their bolt.
+    @Test func sidebarRemoteThreads() async throws {
         let workspace = try PreviewWorkspace()
         let host = try await AutomationHostFixture()
         defer { workspace.stop(); host.server.stop() }
@@ -105,25 +107,24 @@ extension PreviewTests {
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab], agents: [agent]))
         _ = try await host.connect(workspace)
 
-        try await Preview.render("sidebar-remote-automations", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 420)) {
+        try await Preview.render("sidebar-remote-threads", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 420)) {
             SidebarView(vm: workspace.vm)
         }
     }
 
-    /// No spaces on this Mac while a connected host has some: This Mac says so under its header
-    /// (with New space…), and the workspace asks to pick an agent rather than claiming there are
-    /// no spaces at all.
-    @Test func emptyWorkspaceWithOnlyRemoteSpaces() async throws {
+    /// No projects on this Mac while a connected host has some: New thread opens on the host's
+    /// first, and its chip says so.
+    @Test func newThreadWithOnlyRemoteProjects() async throws {
         let workspace = try PreviewWorkspace()
         let host = try await AutomationHostFixture()
         defer { workspace.stop(); host.server.stop() }
-        _ = try await host.connect(workspace)
+        let connection = try await host.connect(workspace)
         let vm = workspace.vm
-        #expect(vm.sidebarTree().items.contains(.noLocalSpaces))
-        #expect(EmptyWorkspace.variant(selected: vm.selectedSpace, agents: vm.state.agents, localSpaces: vm.state.spaces,
-                                       remoteSpaces: vm.remoteSpaceCount) == .noSelection)
+        vm.openNewThread()
+        #expect(vm.shownDestination == .newThread)
+        #expect(vm.newThread.place?.host == connection.id)
 
-        try await Preview.render("empty-remote-spaces-only", size: CGSize(width: 1280, height: 760)) {
+        try await Preview.render("new-thread-remote-only", size: CGSize(width: 1280, height: 760)) {
             RootView(vm: vm)
         }
     }
