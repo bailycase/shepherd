@@ -870,14 +870,14 @@ public final class SessionServer: @unchecked Sendable {
             guard protocolVersion == RemoteProtocol.version else {
                 sendFinal(.error(
                     id: id,
-                    code: "protocol_version",
+                    code: RemoteProtocol.versionMismatchCode,
                     message: "host speaks protocol \(RemoteProtocol.version)"
                 ), to: client)
                 return
             }
             guard let expected = remoteToken, RemoteToken.matches(token, expected: expected) else {
                 ShepherdLog.warning("remote client '\(clientName)' rejected: bad token (fd \(client.fd))")
-                sendFinal(.error(id: id, code: "unauthorized", message: "bad token"), to: client)
+                sendFinal(.error(id: id, code: RemoteProtocol.unauthorizedCode, message: "bad token"), to: client)
                 return
             }
             client.authenticated = true
