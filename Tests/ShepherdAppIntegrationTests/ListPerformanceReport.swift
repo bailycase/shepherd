@@ -180,6 +180,100 @@ struct ListPerformanceReport {
         report.add(name, "scroll: rows", counts: scrolling)
     }
 
+    /// A big review as the pane shows it in use: 40 files of Swift, TypeScript, and Go with every
+    /// file highlighted, a 3,000-line new file opened whole, a file of very long lines, and six
+    /// inline comments, docked beside a running 50-turn thread.
+    @Test func reviewRealistic() async throws {
+        let name = "review (40 files, 3k-line file, long lines, highlighted)"
+        let files = ListFixtures.realisticReview()
+        let model = ListFixtures.reviewModel(files)
+        model.session.comments = ListFixtures.realisticComments(files)
+        let snapshot = ListFixtures.threadSnapshot(turns: 50, running: true)
+        let store = NativeThreadStore()
+        defer { store.stop() }
+        let host = ReviewBesideThread(store: store, snapshot: snapshot, model: model)
+        let small = ListFixtures.reviewModel([ListFixtures.diffFile("Warm.swift", lines: 40)])
+        warmUp(size: CGSize(width: 1300, height: 800)) { ReviewPaneContent(model: small) }
+
+        var window: OffscreenWindow!
+        var openMS = 0.0
+        let opening = try await countingAsync {
+            let start = ContinuousClock.now
+            window = OffscreenWindow(size: CGSize(width: 1300, height: 800), dark: true, host)
+            try await eventuallyOnMain("the thread to load") { store.ready }
+            ListPerf.settle(window)
+            openMS = ListPerf.milliseconds(ContinuousClock.now - start)
+        }
+        defer { window.close() }
+        report.add(name, "open beside the thread", ms: openMS)
+        report.add(name, "open: rows", counts: opening)
+
+        let highlightStart = ContinuousClock.now
+        let highlighting = try await countingAsync {
+            var landed = model.highlights.count
+            try await eventuallyOnMain("every file to be highlighted", timeout: .seconds(120)) {
+                if model.highlights.count != landed {
+                    landed = model.highlights.count
+                    ListPerf.settle(window)
+                }
+                return landed == files.count
+            }
+        }
+        report.add(name, "highlight every file: wall", ms: ListPerf.milliseconds(ContinuousClock.now - highlightStart))
+        report.add(name, "highlight every file: rows", counts: highlighting)
+
+        var expand = 0.0
+        let expanding = ListPerf.counting { expand = ListPerf.time(window) { model.expandFile(files[5].id) } }
+        report.add(name, "open the 3k-line file whole", ms: expand)
+        report.add(name, "open the 3k-line file whole: rows", counts: expanding)
+
+        let scroll = try #require(ListPerf.scrollView(in: window, trailing: true))
+        // Small steps (a trackpad's) through the first files and into the 3k-line file and back,
+        // then big ones (a flung wheel) through the whole diff and back.
+        for (step, steps) in [(CGFloat(40), 1500), (200, 5000)] {
+            ListPerf.jump(window, scroll, toEnd: false)
+            var down = ListPerf.Scroll(), up = ListPerf.Scroll()
+            let scrollingDown = ListPerf.counting { down = ListPerf.scroll(window, scroll, step: step, steps: steps) }
+            let scrollingUp = ListPerf.counting { up = ListPerf.scroll(window, scroll, step: -step, steps: steps) }
+            report.add(name + " ↓ \(Int(step)) pt", scroll: down)
+            report.add(name, "scroll ↓ \(Int(step)) pt: rows per 100 steps", counts: scrollingDown.mapValues { $0 * 100 / max(1, down.steps.count) })
+            report.add(name + " ↑ \(Int(step)) pt", scroll: up)
+            report.add(name, "scroll ↑ \(Int(step)) pt: rows per 100 steps", counts: scrollingUp.mapValues { $0 * 100 / max(1, up.steps.count) })
+        }
+
+        // Comments on lines in view: the editor opens, then the comment lands.
+        ListPerf.jump(window, scroll, toEnd: false)
+        var comments: [Double] = []
+        let commenting = ListPerf.counting {
+            for index in 0..<5 {
+                let line = files[0].hunks[0].lines[10 + index]
+                comments.append(ListPerf.time(window) { model.startComment(fileID: files[0].id, lineID: line.id) })
+                comments.append(ListPerf.time(window) { model.saveComment("Rename this.", fileID: files[0].id, lineID: line.id) })
+            }
+        }
+        report.add(name, "comment ×5 (open + save): mean", ms: comments.reduce(0, +) / Double(comments.count))
+        report.add(name, "comment ×5 (open + save): rows", counts: commenting)
+    }
+
+    /// The review docked beside its agent's running thread, as `AgentLayoutView` lays them out.
+    private struct ReviewBesideThread: View {
+        let store: NativeThreadStore
+        let snapshot: NativeThreadSnapshot
+        let model: ReviewPaneModel
+
+        var body: some View {
+            HStack(spacing: 0) {
+                ThreadView(store: store, active: true, isFocused: false, request: { [snapshot] value in
+                    if case .send(_, _, let operation, _, _, _) = value { return .accepted(operationID: operation) }
+                    return .snapshot(value: snapshot)
+                }, commandKey: "perf")
+                .frame(width: 700)
+                ReviewPaneContent(model: model)
+                    .frame(width: 600)
+            }
+        }
+    }
+
     // MARK: Thread
 
     @Test(arguments: [50, 500])

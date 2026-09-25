@@ -163,6 +163,7 @@ private struct ReviewHeader: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.header")
         NWPaneHeader("Review", closeLabel: "Close review", close: model.actions.close) {
             // Cross-faded, not rolled: rolling digits through its colored runs leaves the old
             // count's ghost for most of a second.
@@ -292,6 +293,7 @@ private struct ReviewDiffList: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.diffList")
         let canRevert = model.actions.revert != nil && !session.isPRMode
         let canOpen = model.actions.open != nil
         ScrollViewReader { proxy in
@@ -369,6 +371,7 @@ private struct DiffFileSection: View, Equatable {
     }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.section")
         Section {
             // Where the file's rows start: a fold eases only while the file sits in its place.
             Color.clear.frame(height: 0)
@@ -451,6 +454,7 @@ private struct ReviewComposerBar: View, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.model === rhs.model && lhs.session === rhs.session }
 
     var body: some View {
+        let _ = NWRenderProbe.tick("review.composer")
         let hasReview = !session.comments.isEmpty || !session.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         NWReviewComposer(text: $session.summary, isFocused: focused, inlineCount: session.comments.count,
                          canCommit: !session.isSubmitting && !session.files.isEmpty && !session.isPRMode,
