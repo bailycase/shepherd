@@ -41,8 +41,8 @@ final class MobileTerminals {
     var panelHeight: CGFloat {
         didSet { if panelHeight != oldValue { defaults.set(Double(panelHeight), forKey: Self.heightKey) } }
     }
-    /// A pane request that failed, for the panel to say so.
-    var problem: String?
+    /// Each thread's last pane request that failed, for its panel to say so.
+    var problems: [AgentRef: String] = [:]
     /// What each thread's terminals run, from its host (`RemoteAgentQuery.terminals`).
     private(set) var activity: [AgentRef: [PaneID: RemoteTerminalActivity]] = [:]
     /// The output sequence each session had when it was last on screen.
@@ -167,6 +167,7 @@ final class MobileTerminals {
         wired[host] = nil
         for ref in panels.keys where ref.host == host { panels[ref] = nil }
         for ref in activity.keys where ref.host == host { activity[ref] = nil }
+        for ref in problems.keys where ref.host == host { problems[ref] = nil }
         for key in seen.keys where key.host == host { seen[key] = nil }
     }
 
@@ -194,7 +195,7 @@ final class MobileTerminals {
                 else { $0.chosenPanes.append(opened) }
             }
         } catch {
-            problem = Self.message(error, doing: "open a terminal")
+            problems[ref] = Self.message(error, doing: "open a terminal")
         }
     }
 
@@ -205,7 +206,7 @@ final class MobileTerminals {
             do {
                 try await client.closePane(agentID: ref.agent, paneID: pane)
             } catch {
-                problem = Self.message(error, doing: "close the terminal")
+                problems[ref] = Self.message(error, doing: "close the terminal")
                 return
             }
         }

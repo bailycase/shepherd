@@ -78,7 +78,7 @@ private struct TerminalPanelHost: View {
     var body: some View {
         let terminals = MobileTerminals.shared
         let model = TerminalModel.resolve(ref, hosts: hosts, terminals: terminals, onScreen: true)
-        TerminalPanelView(model: model, columnHeight: columnHeight, problem: terminals.problem)
+        TerminalPanelView(model: model, columnHeight: columnHeight, problem: terminals.problems[ref])
             .onChange(of: liveSessions, initial: true) { _, live in
                 if hosts.host(ref.host)?.phase.isConnected == true { terminals.prune(host: ref.host, live: live) }
             }
@@ -130,7 +130,7 @@ struct TerminalPanelView: View {
             .overlay(alignment: .top) { grabber }
             if let problem {
                 NWBanner(.failed, title: problem) {
-                    Button("Dismiss") { terminals.problem = nil }.buttonStyle(.nw(.ghost, size: .s))
+                    Button("Dismiss") { terminals.problems[model.ref] = nil }.buttonStyle(.nw(.ghost, size: .s))
                 }
                 .padding(NW.Space.m)
             }
