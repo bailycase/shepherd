@@ -30,7 +30,8 @@ struct Composer: View {
     let agentName: String?
     let hasTurns: Bool
     let gutter: CGFloat
-    var listModels: (() async -> [PiModelCatalog.Entry])?
+    /// Another host's catalog; nil for this Mac's (`ModelCatalog.loadLocal`).
+    var listModels: (() async -> ModelCatalog)?
     /// Set by the command center: open that menu.
     var menuRequest: ComposerMenuRequest?
     /// Set while the thread is detached from its tail: what "Jump to latest" does.
@@ -649,7 +650,8 @@ struct Composer: View {
     private func openModels() {
         guard store.supports("setModel") else { NSSound.beep(); return }
         guard menu != .models else { menu = nil; return }
-        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load(), current: store.model)
+        picker = ModelPickerState(catalog: catalog, recent: RecentModels.load().map(\.id), current: store.model,
+                                  currentLevels: store.snapshot?.thinkingLevels)
         dismissCommands()
         menu = .models
         if catalog?.isEmpty != false { Task { await loadModels() } }
@@ -669,7 +671,7 @@ struct Composer: View {
     }
 
     private func loadModels() async {
-        let loaded = if let listModels { await ModelCatalog.derive(listModels()) } else { await ModelCatalog.loadLocal() }
+        let loaded = if let listModels { await listModels() } else { await ModelCatalog.loadLocal() }
         catalog = loaded
         picker?.update(loaded)
     }

@@ -277,7 +277,8 @@ public struct NWModelOption: Identifiable, Equatable, Sendable {
     public var id: String
     /// The name the row shows ("claude-opus"), truncated in the middle when long.
     public var title: String
-    /// The row's second line ("Current · this thread", "Used 2h ago in “Plan”").
+    /// The row's second line, truncated at its end: the model's thinking levels ("Off · Low ·
+    /// Medium · High", "No thinking").
     public var subtitle: String?
     /// A trailing note in mono 11 (the context size, "200K").
     public var note: String?

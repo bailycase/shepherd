@@ -90,7 +90,9 @@ struct ThreadComposer: View {
             if store.thinking != nil && store.supportedActions.contains("setThinking") { await state.loadModels(host: host) }
         }
         .sheet(isPresented: Binding(get: { state.choosingModel }, set: { state.choosingModel = $0 })) {
-            ModelPickerSheet(host: host, current: store.model) { model in Task { await store.setModel(model) } }
+            ModelPickerSheet(host: host, current: store.model, currentLevels: { store.snapshot?.thinkingLevels }) { model in
+                Task { await store.setModel(model) }
+            }
         }
     }
 
