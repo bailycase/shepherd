@@ -34,6 +34,21 @@ extension ShepherdViewModel {
                                   filter: automationsPageFilter, pending: remoteAutomationsPending, now: now)
     }
 
+    /// The page as its view draws it: derived again only when what it reads changed (a run's
+    /// "6h ago" moves on at most once a minute).
+    var automationsPage: AutomationsPageModel {
+        let now = Date()
+        let inputs = AutomationsPageInputs(
+            hosts: automationHosts, runs: automationRunsByKey, selection: automationsPageSelection,
+            filter: automationsPageFilter, pending: remoteAutomationsPending,
+            minute: Int(now.timeIntervalSince1970 / 60))
+        if let cached = automationsPageCache, cached.inputs == inputs { return cached.model }
+        let model = AutomationsPageModel.make(hosts: inputs.hosts, runs: inputs.runs, selection: inputs.selection,
+                                              filter: inputs.filter, pending: inputs.pending, now: now)
+        automationsPageCache = (inputs, model)
+        return model
+    }
+
     /// Changes whenever a run may have started, settled or ended, or an automation came or went:
     /// the page reads the runs again then.
     var automationRunsSignature: [String] {
@@ -139,11 +154,25 @@ extension ShepherdViewModel {
 
     /// This Mac and every configured host, as the Hosts page shows them.
     func hostsPageModel(agentVersion: String?) -> HostsPageModel {
-        HostsPageModel.make(local: state, agentVersion: agentVersion, remotes: remoteHosts.connections.map { connection in
+        HostsPageModel.make(local: state, agentVersion: agentVersion, remotes: hostsPageRemotes, columns: AppLayout.hostColumns)
+    }
+
+    /// The page as its view draws it, derived again only when what it reads changed.
+    func hostsPage(agentVersion: String?) -> HostsPageModel {
+        let inputs = HostsPageInputs(local: state, agentVersion: agentVersion, remotes: hostsPageRemotes)
+        if let cached = hostsPageCache, cached.inputs == inputs { return cached.model }
+        let model = HostsPageModel.make(local: inputs.local, agentVersion: agentVersion, remotes: inputs.remotes,
+                                        columns: AppLayout.hostColumns)
+        hostsPageCache = (inputs, model)
+        return model
+    }
+
+    private var hostsPageRemotes: [HostsPageRemote] {
+        remoteHosts.connections.map { connection in
             HostsPageRemote(id: connection.id, name: connection.config.name, address: connection.config.host,
                             port: connection.config.port, phase: connection.phase, state: connection.state,
                             lastSeen: connection.lastSeen)
-        }, columns: AppLayout.hostColumns)
+        }
     }
 
     /// Add host: the host form lives in Settings ▸ Remote.
@@ -151,4 +180,22 @@ extension ShepherdViewModel {
         settingsSection = .remote
         showSettings = true
     }
+}
+
+/// What the Automations page is derived from.
+struct AutomationsPageInputs: Equatable {
+    var hosts: [AutomationHost]
+    var runs: [AutomationKey: [AutomationRun]]
+    var selection: AutomationKey?
+    var filter: String
+    var pending: Set<AutomationKey>
+    /// The minute its relative times were worded in.
+    var minute: Int
+}
+
+/// What the Hosts page is derived from.
+struct HostsPageInputs: Equatable {
+    var local: ShepherdState
+    var agentVersion: String?
+    var remotes: [HostsPageRemote]
 }

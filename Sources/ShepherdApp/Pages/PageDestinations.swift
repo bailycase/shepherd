@@ -12,7 +12,7 @@ struct AutomationsDestination: View {
 
     var body: some View {
         let _ = NWRenderProbe.tick("page.automations")
-        AutomationsPage(model: vm.automationsPageModel(), actions: actions, chrome: chrome)
+        AutomationsPage(model: vm.automationsPage, actions: actions, chrome: chrome)
             .task(id: vm.automationRunsSignature) { await vm.loadAutomationPageRuns() }
             .sheet(item: $editor) { target in
                 AutomationEditorSheet(vm: vm, target: target) { editor = nil }
@@ -42,7 +42,7 @@ struct HostsDestination: View {
 
     var body: some View {
         let _ = NWRenderProbe.tick("page.hosts")
-        HostsPage(model: vm.hostsPageModel(agentVersion: PiUpdateManager.shared.currentVersion), actions: HostsPageActions(
+        HostsPage(model: vm.hostsPage(agentVersion: PiUpdateManager.shared.currentVersion), actions: HostsPageActions(
             retry: { vm.remoteHosts.reconnect(id: $0) },
             remove: { removing = $0 },
             addHost: { vm.showAddHost() }), chrome: chrome)
