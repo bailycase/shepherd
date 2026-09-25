@@ -63,7 +63,6 @@ final class AppSettings {
         static let autoNameAgents = "shepherd.agent.autoName"
         static let returnWhileWorking = "shepherd.agent.returnWhileWorking"
         static let queueDelivery = "shepherd.agent.queueDelivery"
-        static let piThemeExtension = "shepherd.pi.extension.theme"
         static let piPanesExtension = "shepherd.pi.extension.panes"
         static let piReviewExtension = "shepherd.pi.extension.review"
         static let piSubagentsExtension = "shepherd.pi.extension.subagents"
@@ -93,7 +92,7 @@ final class AppSettings {
         static let all = [
             terminalFontFamily, terminalFontSize, defaultModel,
             defaultThinking, autoNameAgents, returnWhileWorking, queueDelivery, shellPath,
-            piThemeExtension, piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
+            piPanesExtension, piReviewExtension, piSubagentsExtension, piNativeSubagents,
             childConcurrency, childModel, childThinking, childContext, childScope,
             uiDensity, uiTextScale, sidebarWidth, sidebarRowDensity,
             remoteListenerEnabled, remoteListenerPort,
@@ -163,10 +162,6 @@ final class AppSettings {
 
     /// Hands a new queue delivery default to the server (set by the view model).
     @ObservationIgnored var onQueueDeliveryChange: ((NativeQueueMode) -> Void)?
-
-    var piThemeExtension: Bool {
-        didSet { store.set(piThemeExtension, forKey: Key.piThemeExtension) }
-    }
 
     var piPanesExtension: Bool {
         didSet { store.set(piPanesExtension, forKey: Key.piPanesExtension) }
@@ -330,7 +325,6 @@ final class AppSettings {
             .flatMap(ReturnWhileWorking.init(rawValue:)) ?? Defaults.returnWhileWorking
         queueDelivery = store.string(forKey: Key.queueDelivery)
             .flatMap(NativeQueueMode.init(rawValue:)) ?? Defaults.queueDelivery
-        piThemeExtension = store.object(forKey: Key.piThemeExtension) as? Bool ?? true
         piPanesExtension = store.object(forKey: Key.piPanesExtension) as? Bool ?? true
         piReviewExtension = store.object(forKey: Key.piReviewExtension) as? Bool ?? true
         piSubagentsExtension = store.object(forKey: Key.piSubagentsExtension) as? Bool ?? true
@@ -418,7 +412,6 @@ final class AppSettings {
         uiTextScale = 1
         sidebarWidth = Self.defaultSidebarWidth
         sidebarRowDensity = .standard
-        piThemeExtension = true
         piPanesExtension = true
         piReviewExtension = true
         piSubagentsExtension = true
