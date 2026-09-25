@@ -198,6 +198,20 @@ struct ComposerPresentationTests {
                                             listing: catalogLoaded ? listing : nil) == offered)
     }
 
+    /// pi's own list rules too: a model it offers only Off has no chip, whatever the catalog
+    /// says (a model the host's catalog does not know).
+    @Test(arguments: [
+        (["off"] as [String]?, false),
+        (["off", "minimal", "low", "medium", "high"], true),
+        (nil, true),
+    ])
+    func theThinkingChipGoesWhenPiOffersOnlyOff(reported: [String]?, offered: Bool) {
+        let levels = NativeThinkingLevel.levels(reported)
+        #expect(NativeThinkingLevel.reasons(levels) == offered)
+        #expect(NativeThinkingLevel.offered(thinking: "off", supportedActions: ["setThinking"], model: "qa/unknown",
+                                            listing: ModelListing(models: [], defaultModel: nil), levels: levels) == offered)
+    }
+
     // MARK: Questions
 
     @Test func optionsAreNumberedAndKeepTheValueAsOffered() {

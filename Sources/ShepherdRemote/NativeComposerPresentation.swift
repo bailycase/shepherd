@@ -272,11 +272,19 @@ public struct NativeThinkingLevel: Equatable, Identifiable, Sendable {
         all.first { $0.id == level }?.title ?? level.prefix(1).uppercased() + level.dropFirst()
     }
 
-    /// The thinking chip shows while pi reports a level it can set and the host's catalog does
-    /// not say the thread's model takes none (DESIGN › Composer). A catalog still loading, an
-    /// older host's, or one that does not know the model keeps it.
-    public static func offered(thinking: String?, supportedActions: Set<String>, model: String?, listing: ModelListing?) -> Bool {
-        guard thinking != nil, supportedActions.contains("setThinking") else { return false }
+    /// Whether a menu of `levels` offers any thinking: pi reports only Off for a model without
+    /// reasoning.
+    public static func reasons(_ levels: [NativeThinkingLevel]) -> Bool {
+        levels.contains { $0.id != "off" }
+    }
+
+    /// The thinking chip shows while pi reports a level it can set, the levels pi offers the
+    /// model are more than Off, and the host's catalog does not say the thread's model takes none
+    /// (DESIGN › Composer). A catalog still loading, an older host's, or one that does not know
+    /// the model keeps it.
+    public static func offered(thinking: String?, supportedActions: Set<String>, model: String?, listing: ModelListing?,
+                               levels: [NativeThinkingLevel] = fallback) -> Bool {
+        guard thinking != nil, supportedActions.contains("setThinking"), reasons(levels) else { return false }
         guard let model, let listing else { return true }
         return listing.takesThinking(model)
     }
