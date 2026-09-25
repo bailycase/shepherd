@@ -75,7 +75,7 @@ python3 -m unittest discover -s Tests/Release   # the release workflow's rules (
 **Environment variables:**
 
 - **`SHEPHERD_SUPPORT_DIR`** moves the support directory: the socket, `state.json`, installed
-  extensions, `remote-token`, and subagent artifacts. It wins over the edition's own folder
+  extensions, `remote-token`, `automation-runs.json`, and subagent artifacts. It wins over the edition's own folder
   (`Shepherd`, or `Shepherd Nightly` in Shepherd Nightly).
 - **`SHEPHERD_THEME=night-watch-dark|night-watch-light`** forces an appearance at launch (the
   older `shepherd-dark` still means dark), which is handy for screenshots. Resetting settings
@@ -340,12 +340,14 @@ Sources/
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeActivity (activity lines,
                        the changes card), NativeQueueRules (the queue's rules, host and client),
+                       AutomationPresentation (automation rows, runs and what a client may do),
                        ShepherdLog. Shared with the iOS client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi
                        works), ThreadOriginStore (where delivered messages came from, kept per pi
-                       session), PTYSession, SessionScreen (SwiftTerm), StateStore,
+                       session), AutomationRunLog (each automation's runs), PTYSession,
+                       SessionScreen (SwiftTerm), StateStore,
                        PaneRequest (pane/review/automation requests + outcomes), RemoteFileUpload,
                        PiModelCatalog, PiConfig, PiSessionPreview (a thread from pi's session file).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
@@ -357,7 +359,7 @@ Sources/
       +Navigation), AgentStateMapping (app lifecycles → AgentState)
     ShepherdViewModel(+Navigation, +Creation, +Workspace, +Spaces, +Reorder, +Palette, +Shell,
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
-      +RemoteInspection, +RemoteWorktrees)
+      +RemoteInspection, +RemoteWorktrees, +RemoteAutomations), RemoteAutomationSheet
     Thread/            ThreadView, ThreadTurns, ThreadTools (activity lines), ThreadMarkdown,
                        Composer, QueueStack ("Up next", the queue above the composer), Subagents,
                        SubagentPresentation, SubagentInspector
@@ -365,6 +367,7 @@ Sources/
       TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
     DiffReview (ReviewSession), DiffReviewView (ReviewPane), GitDiff, CodeHighlight (tree-sitter)
+    ReviewCommit (ReviewCommitGit, ReviewCommitter), ReviewCommitSheet, +ReviewCommit
     GitWorktree, WorktreeFinalize, ChecklistStatus, NewWorktreeSheet, FinalizeWorktreeSheet,
       NewAgentSheet, RemoteWorktreeSheet, RemoteDirectoryPicker, DialogSheet,
       QuitConfirmation (QuitDialog)
@@ -387,7 +390,7 @@ Packages/
                                      AgentState, HexColor
                        Resources/Fonts  Geist and Geist Mono (SIL OFL)
                        Components/   Controls, Status, Containers, Navigation, Thread, Composer,
-                                     Agents, Review, Dialogs
+                                     Agents, Review, Dialogs, Automations
                        Previews/     a #Preview per component, light and dark
                        Diagnostics/  NWRenderProbe (row-body counts for tests; debug only)
                        Its unit tests live in the root package (Tests/ShepherdUIUnitTests).
@@ -480,7 +483,16 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   notify tools but withholds the `automation_*` tools.
 - **Management:** agent requests arrive as `AutomationRequest` through
   `SessionServer.onAutomationRequest` and are served by `ShepherdViewModel+Automations.swift`.
-  The Automations sidebar section is their only surface.
+  The Automations sidebar section is their only surface on the host. Remote clients change them
+  through the same handler (`RemoteRequest.automation`, below), after the server checks what it
+  can (the automation exists; a new or edited one has a name, a prompt and a directory on the
+  host).
+- **Runs are kept** (`AutomationRunLog`, `automation-runs.json`, the newest 30 per automation):
+  a run opens when an automation gains an agent, follows that agent's status (running, needs
+  you, finished), and closes when the agent goes (finished if its turn had finished, else
+  stopped). At startup every run still open closes as interrupted. The server records them from
+  every committed state, so no caller records a run by hand; removing an automation forgets its
+  runs. Remote clients read them with `RemoteAutomationRequest.runs`.
 - **At startup:** the previous run's agents and their layouts are dropped
   (`SessionServer.automationRunAgentIDs`: every agent in the hidden space, plus any agent an
   automation still points at), every automation's `agentID` is cleared, and enabled automations
@@ -507,7 +519,12 @@ The user's rc files and pi settings are never edited, and agent-only variables a
   - `listDir`, `listModels`, `addSpace`, and `createAgent` with `creationOptions`
   - chunked uploads (32 MiB per file)
   - `agentQuery`/`agentAction`: rename, delete, reorder, review, subagents, search, worktree
-    info/setup/finalize/delete
+    info/setup/finalize/delete, and commit from review (`commitInfo`, `commitMessage`, `commit`
+    behind `review.commit.v1`; the commit is an operation polled with `worktreeStatus`)
+  - `automation` (`automations.v1`): switch on or off, run now, stop, the runs the host kept,
+    create, edit, delete. There is no schedule or trigger: an automation that is on starts a run
+    when Shepherd launches on the host. The Mac shows a host's automations under its sidebar
+    section; the iOS client in Automations. A host without the capability shows them read-only
 
   Capabilities gate newer features. The client falls back (raw bracketed paste) or refuses (pane
   control) against older hosts. Output frames chunk at 256 KiB to stay under the 1 MiB frame cap.
@@ -744,15 +761,32 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
   close the PR).
 - **The review pane's per-file Revert** (`GitDiff.revert`): confirmed, local working-tree reviews
   only. Tracked files return to HEAD, and new files move to the Trash.
+- **Commit from review** (`ReviewCommit.swift`, served by `ShepherdViewModel+ReviewCommit.swift`
+  to the Mac's own review pane and to remote clients alike): confirmed in the Commit… sheet.
+  check → (new branch) → commit → (push) → (pull request); each step gates the next and git's
+  or gh's stderr is reported.
+  - It commits only the ticked files (`git commit --only -- <paths>`; new files join as
+    intent-to-add first) and leaves anything staged for other paths staged. A failed commit takes
+    back its intent-to-add entries and a branch it created.
+  - It refuses a detached HEAD, a merge, rebase, cherry-pick or revert in progress, unmerged
+    paths, a HEAD that moved, or a ticked file whose fingerprint changed since the sheet showed
+    it. It refuses while the agent is working unless the reviewer confirmed.
+  - Push goes to the branch's upstream when it has the branch's own name, else to that name on
+    the push remote (origin, else the only remote), setting the upstream; never forced, and never
+    to another branch (a feature branch tracking origin/main never pushes to main). A pull request pushes the branch (a new `shepherd/<slug>` branch,
+    made with `git switch -c`, when on the default branch) and runs `gh pr create`.
+  - It holds the checkout in `hostBusyWorktrees` while it runs, like Finalize.
 
 Nothing else mutates repository state, and Shepherd never prunes worktrees.
 
 **Reviews dock; they don't split.** A review (`ReviewSession`, `ShepherdViewModel+Review.swift`)
 lives in the agent's right pane beside its whole layout (thread and terminal panes), in the slot
-shared with the subagent inspector (the inspector wins). It never touches the persisted layout. Request changes and Commit send the
-agent a follow-up turn, and the review closes only once the send succeeds, so comments survive a
-failed send. A review an agent opens on a host is that host's view state: remote viewers are
-deliberately not notified and open their own with ⇧⌘B.
+shared with the subagent inspector (the inspector wins). It never touches the persisted layout.
+Request changes and Ask agent to commit (plain Commit on a host without commit from review) send
+the agent a follow-up turn, and the review closes only once the send succeeds, so comments survive
+a failed send. Commit… commits directly (above) and reloads the review once it finishes. A
+review an agent opens on a host is that host's view state: remote viewers are deliberately not
+notified and open their own with ⇧⌘B.
 
 **Agent names settle once.** A new agent wears its opening prompt (truncated by
 `ShepherdViewModel.provisionalName`) with `nameIsFinal == false`. Only such agents get the namer

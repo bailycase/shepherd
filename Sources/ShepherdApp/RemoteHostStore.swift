@@ -69,6 +69,9 @@ final class RemoteHostStore {
         }
 
         var supportsInspection: Bool { client?.capabilities.contains(RemoteProtocol.agentInspectionCapability) == true }
+        var supportsReviewCommit: Bool { client?.capabilities.contains(RemoteProtocol.reviewCommitCapability) == true }
+        /// The host serves automations over the protocol; older hosts show them read-only.
+        var supportsAutomations: Bool { client?.capabilities.contains(RemoteProtocol.automationsCapability) == true }
         var supportsWorktreeCreation: Bool {
             client?.capabilities.isSuperset(of: [RemoteProtocol.creationOptionsCapability, RemoteProtocol.worktreeActionsCapability]) == true
         }
@@ -338,6 +341,16 @@ final class RemoteHostStore {
             throw RemoteHostClientError.disconnected
         }
         try await client.agentAction(agentID: target.agentID, action: action)
+    }
+
+    /// Manage one of a host's automations, or read its runs.
+    @discardableResult
+    func automation(_ key: AutomationKey, request: RemoteAutomationRequest) async throws -> RemoteAutomationResult {
+        guard let connection = connections.first(where: { $0.id == key.host }),
+              connection.phase == .connected, let client = connection.client else {
+            throw RemoteHostClientError.disconnected
+        }
+        return try await client.automation(key.automation, request: request)
     }
 
     func creationOptions(hostID: UUID, spaceID: SpaceID, cwd: String?, fetchFirst: Bool?) async throws -> RemoteCreationOptions {

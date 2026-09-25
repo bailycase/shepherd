@@ -28,7 +28,13 @@ extension AppLayout {
     static let newAgentSheetWidth: CGFloat = 560
     static let newWorktreeSheetWidth: CGFloat = 520
     static let finalizeSheetWidth: CGFloat = 560
+    /// The review's Commit… sheet, and the most its file list grows before it scrolls.
+    static let commitSheetWidth: CGFloat = 520
+    static let commitFileListMaxHeight: CGFloat = 232
     static let remoteWorktreeSheetWidth: CGFloat = 620
+    /// A remote automation's details and runs, and how tall its run list grows before it scrolls.
+    static let automationSheetWidth: CGFloat = 560
+    static let automationRunsMaxHeight: CGFloat = 200
     static let directoryPickerWidth: CGFloat = 480
     static let directoryListHeight: CGFloat = 260
     static let promptEditorHeight: CGFloat = 96
