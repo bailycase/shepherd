@@ -10,7 +10,7 @@ import ShepherdProtocol
 
 /// What a client's Settings reads and changes a host through: its `RemoteHostClient`, or a
 /// stand-in in tests.
-public protocol SettingsClient: AnyObject, Sendable {
+public protocol SettingsClient: SkillsClient {
     func hostSettings(_ request: RemoteHostSettingsRequest) async throws -> HostSettings
     func instructions(_ request: RemoteInstructionsRequest) async throws -> InstructionsSnapshot
     func suggestions(_ request: RemoteSuggestionsRequest) async throws -> SuggestionsSnapshot
