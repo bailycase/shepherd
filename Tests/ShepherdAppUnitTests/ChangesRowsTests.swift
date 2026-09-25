@@ -203,11 +203,6 @@ struct ChangesTextTests {
         #expect(ChangesText.turnDetail(running).hasPrefix("since "))
     }
 
-    @Test(arguments: [(30.0, "1m"), (12 * 60, "12m"), (3 * 3600, "3h"), (2 * 86_400, "2d")] as [(Double, String)])
-    func aCommitsAgeIsShort(ago: Double, text: String) {
-        #expect(changesAge(1_000_000 - ago, now: 1_000_000) == text)
-    }
-
     @Test func theScopeButtonNamesTheScope() {
         let session = ReviewSession(agentID: AgentID(), paneID: PaneID(), cwd: "/tmp", reference: nil)
         #expect(ChangesText.scopeButton(session) == "Uncommitted", "a legacy review's working tree")

@@ -444,14 +444,6 @@ func changesTimeRange(start: Double, end: Double) -> String {
     return "\(first)–\(last)"
 }
 
-/// "12m", "3h", "2d": how long ago a commit was made.
-func changesAge(_ date: Double, now: Double = Date().timeIntervalSince1970) -> String {
-    let seconds = max(0, now - date)
-    if seconds < 3600 { return "\(max(1, Int(seconds / 60)))m" }
-    if seconds < 86_400 { return "\(Int(seconds / 3600))h" }
-    return "\(Int(seconds / 86_400))d"
-}
-
 // MARK: File strip and list
 
 private struct ReviewFileStrip: View {

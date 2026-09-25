@@ -55,8 +55,8 @@ enum ChangesMenuLayout {
 }
 
 /// What to compare (ScopeMenu): Last turn, the working tree's three, Commits, Branch and Pull
-/// request, each with its diff stat; the current one checked. A legacy review offers only its
-/// two sides.
+/// request, each with its diff stat; the current one checked (`changesScopeOptions`, shared with
+/// iOS). A legacy review offers only its two sides.
 private struct ChangesScopeMenu: View {
     let model: ReviewPaneModel
     let session: ReviewSession
@@ -68,42 +68,37 @@ private struct ChangesScopeMenu: View {
                                  checked: !session.isPRMode) { choose { model.actions.setPullRequest(false) } }
                 NWChangesMenuRow("Pull request", systemImage: NWChangesScopeGlyph.pullRequest.systemImage,
                                  checked: session.isPRMode) { choose { model.actions.setPullRequest(true) } }
-            } else {
-                let overview = session.overview
-                row(.lastTurn, subtitle: "What the agent changed since your last message", glyph: .lastTurn)
-                NWChangesMenuDivider()
-                row(.uncommitted, glyph: .uncommitted)
-                row(.unstaged, glyph: nil)
-                row(.staged, glyph: nil)
-                NWChangesMenuDivider()
-                let commits = entry(.commits)
-                NWChangesMenuRow("Commits", subtitle: commits?.unavailable, systemImage: NWChangesScopeGlyph.commits.systemImage,
-                                 trailing: commits?.count.map { .text("\($0)") } ?? .none, checked: session.scope.kind == .commits,
-                                 hasSubmenu: true, highlighted: model.menu == .commits, enabled: commits?.unavailable == nil && overview != nil) {
-                    model.menu = model.menu == .commits ? .scope : .commits
-                }
-                let branch = entry(.branch)
-                let branchLine = overview.flatMap { overview in
-                    overview.defaultBase.map { "\(overview.branch ?? overview.head ?? "HEAD") vs \(currentBase ?? $0)" }
-                }
-                NWChangesMenuRow("Branch", subtitle: branch?.unavailable ?? branchLine, systemImage: NWChangesScopeGlyph.branch.systemImage,
-                                 trailing: stat(branch), checked: session.scope.kind == .branch, enabled: branch?.unavailable == nil) {
-                    choose { model.actions.setScope(.branch(base: currentBase)) }
-                }
-                let pull = entry(.pullRequest)
-                NWChangesMenuRow("Pull request", subtitle: pull?.unavailable, systemImage: NWChangesScopeGlyph.pullRequest.systemImage,
-                                 trailing: overview?.pullRequest.map { .text($0.label) } ?? .none, checked: session.scope.kind == .pullRequest,
-                                 enabled: pull?.unavailable == nil) {
-                    choose { model.actions.setScope(.pullRequest) }
-                }
-                if overview == nil {
-                    HStack(spacing: NW.Space.m) {
-                        ProgressView().progressViewStyle(.nwSpinner(size: 10))
-                        Text("Counting each scope…").font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary)
+            } else if let overview = session.overview {
+                ForEach(changesScopeOptions(overview, selected: session.scope, base: currentBase)) { option in
+                    VStack(spacing: 0) {
+                        if option.startsGroup { NWChangesMenuDivider() }
+                        row(option)
                     }
-                    .padding(.horizontal, NW.Space.m)
-                    .padding(.vertical, NW.Space.s)
                 }
+            } else {
+                HStack(spacing: NW.Space.m) {
+                    ProgressView().progressViewStyle(.nwSpinner(size: 10))
+                    Text("Counting each scope…").font(.nwSans(11)).foregroundStyle(Color.nw.textTertiary)
+                }
+                .padding(.horizontal, NW.Space.m)
+                .padding(.vertical, NW.Space.s)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ option: ChangesScopeOption) -> some View {
+        let subtitle = option.unavailable ?? option.detail
+        if option.kind == .commits {
+            NWChangesMenuRow(option.title, subtitle: subtitle, systemImage: glyph(option.kind)?.systemImage,
+                             trailing: option.trailing.map { .text($0) } ?? .none, checked: option.selected,
+                             hasSubmenu: true, highlighted: model.menu == .commits, enabled: option.available) {
+                model.menu = model.menu == .commits ? .scope : .commits
+            }
+        } else {
+            NWChangesMenuRow(option.title, subtitle: subtitle, systemImage: glyph(option.kind)?.systemImage, trailing: trailing(option),
+                             checked: option.selected, enabled: option.available) {
+                choose { model.actions.setScope(option.scope) }
             }
         }
     }
@@ -113,22 +108,21 @@ private struct ChangesScopeMenu: View {
         return nil
     }
 
-    private func entry(_ kind: ChangesScope.Kind) -> ChangesOverview.Entry? {
-        session.overview?.entries.first { $0.scope.kind == kind }
-    }
-
-    private func stat(_ entry: ChangesOverview.Entry?) -> NWChangesMenuTrailing {
-        guard let entry, let added = entry.added, let removed = entry.removed else { return .none }
-        return .stat(added: added, removed: removed)
-    }
-
-    @ViewBuilder
-    private func row(_ scope: ChangesScope, subtitle: String? = nil, glyph: NWChangesScopeGlyph?) -> some View {
-        let entry = entry(scope.kind)
-        NWChangesMenuRow(scope.label, subtitle: entry?.unavailable ?? subtitle, systemImage: glyph?.systemImage, trailing: stat(entry),
-                         checked: session.scope.kind == scope.kind, enabled: entry?.unavailable == nil) {
-            choose { model.actions.setScope(scope) }
+    /// Unstaged and Staged sit under Uncommitted without a glyph of their own.
+    private func glyph(_ kind: ChangesScope.Kind) -> NWChangesScopeGlyph? {
+        switch kind {
+        case .lastTurn: .lastTurn
+        case .uncommitted: .uncommitted
+        case .unstaged, .staged: nil
+        case .commits: .commits
+        case .branch: .branch
+        case .pullRequest: .pullRequest
         }
+    }
+
+    private func trailing(_ option: ChangesScopeOption) -> NWChangesMenuTrailing {
+        if let added = option.added, let removed = option.removed { return .stat(added: added, removed: removed) }
+        return option.trailing.map { .text($0) } ?? .none
     }
 
     private func choose(_ action: () -> Void) {
@@ -137,7 +131,8 @@ private struct ChangesScopeMenu: View {
     }
 }
 
-/// One commit, or a range with ⇧ (CommitsMenu): the branch's commits newest first.
+/// One commit, or a range with ⇧ (CommitsMenu): the branch's commits newest first
+/// (`changesCommitOptions`, shared with iOS).
 private struct ChangesCommitsMenu: View {
     let model: ReviewPaneModel
     let session: ReviewSession
@@ -145,22 +140,19 @@ private struct ChangesCommitsMenu: View {
 
     var body: some View {
         let overview = session.overview
-        let commits = overview?.commits ?? []
+        let options = overview.map { changesCommitOptions($0, selected: session.scope) } ?? []
         NWChangesMenu(width: NWChangesMenuMetrics.commitsWidth) {
             NWChangesMenuTitle("On \(overview?.branch ?? overview?.head ?? "HEAD")")
-            if let oldest = commits.last, let newest = commits.first {
-                NWChangesMenuRow(overview?.commitsBase == nil ? "Recent commits" : "All commits on the branch", systemImage: "square.on.square",
-                                 checked: session.scope == .commits(first: oldest.id, last: newest.id) && commits.count > 1) {
-                    choose(.commits(first: oldest.id, last: newest.id))
-                }
+            if let all = options.first {
+                NWChangesMenuRow(all.title, systemImage: "square.on.square", checked: all.selected) { choose(all.scope) }
             }
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(commits) { commit in
-                        NWChangesMenuRow(commit.subject, systemImage: NWChangesScopeGlyph.commits.systemImage,
-                                         trailing: .text("\(commit.shortID) · \(changesAge(commit.date))"),
-                                         checked: isChosen(commit), highlighted: anchor == commit.id) {
-                            pick(commit, in: commits)
+                    ForEach(options.dropFirst()) { option in
+                        NWChangesMenuRow(option.title, systemImage: NWChangesScopeGlyph.commits.systemImage,
+                                         trailing: option.detail.map { .text($0) } ?? .none,
+                                         checked: option.selected, highlighted: anchor == option.id) {
+                            pick(option.id, in: overview?.commits ?? [])
                         }
                     }
                 }
@@ -172,24 +164,19 @@ private struct ChangesCommitsMenu: View {
         }
     }
 
-    private func isChosen(_ commit: ChangesCommit) -> Bool {
-        if case .commits(let first, let last) = session.scope, first == last { return first == commit.id }
-        return false
-    }
-
     /// A click picks one commit; ⇧-click after it picks the range between the two.
-    private func pick(_ commit: ChangesCommit, in commits: [ChangesCommit]) {
-        if NSEvent.modifierFlags.contains(.shift), let anchor, anchor != commit.id,
-           let a = commits.firstIndex(where: { $0.id == anchor }), let b = commits.firstIndex(where: { $0.id == commit.id }) {
+    private func pick(_ id: String, in commits: [ChangesCommit]) {
+        if NSEvent.modifierFlags.contains(.shift), let anchor, anchor != id,
+           let a = commits.firstIndex(where: { $0.id == anchor }), let b = commits.firstIndex(where: { $0.id == id }) {
             // Newest first: the older of the two starts the range.
             choose(.commits(first: commits[max(a, b)].id, last: commits[min(a, b)].id))
             return
         }
         if NSEvent.modifierFlags.contains(.shift) {
-            anchor = commit.id
+            anchor = id
             return
         }
-        choose(.commits(first: commit.id, last: commit.id))
+        choose(.commits(first: id, last: id))
     }
 
     private func choose(_ scope: ChangesScope) {
@@ -203,8 +190,9 @@ extension ChangesMenuLayout {
     static let listMaxHeight: CGFloat = 300
 }
 
-/// Compare against another branch (BasePicker): search, recents first, every branch by its last
-/// commit, worktrees tagged; then a commit, or the PR's base.
+/// Compare against another branch (BasePicker): search, then the default base, recents and every
+/// branch by its last commit, worktrees tagged (`changesBaseOptions`, shared with iOS); then a
+/// commit, or the PR's base.
 private struct ChangesBasePicker: View {
     let model: ReviewPaneModel
     let session: ReviewSession
@@ -213,9 +201,13 @@ private struct ChangesBasePicker: View {
     @FocusState private var searching: Bool
 
     var body: some View {
+        let options = pickingCommit ? [] : session.branches.map { changesBaseOptions($0, selected: currentBase, query: query) } ?? []
         NWChangesMenu(width: NWChangesMenuMetrics.baseWidth) {
             NWChangesMenuSearch(text: $query, prompt: pickingCommit ? "Search commits" : "Search branches", isFocused: $searching,
-                                onSubmit: { if let first = names.first { choose(first) } }, onEscape: { model.closeMenu() })
+                                onSubmit: {
+                                    if pickingCommit { if let first = commits.first { choose(first.id) } }
+                                    else if let first = options.first { choose(first.name) }
+                                }, onEscape: { model.closeMenu() })
             if pickingCommit {
                 NWChangesMenuTitle("Compare against a commit")
                 list {
@@ -228,10 +220,9 @@ private struct ChangesBasePicker: View {
                 NWChangesMenuTitle("Compare against")
                 if let branches = session.branches {
                     list {
-                        ForEach(names, id: \.self) { name in
-                            let branch = branches.branches.first { $0.name == name }
-                            NWChangesMenuRow(name, systemImage: "arrow.triangle.branch", titleIsMono: true,
-                                             trailing: tag(name, branch: branch, in: branches), checked: name == currentBase) { choose(name) }
+                        ForEach(options) { option in
+                            NWChangesMenuRow(option.name, systemImage: "arrow.triangle.branch", titleIsMono: true,
+                                             trailing: option.tag.map { .text($0) } ?? .none, checked: option.selected) { choose(option.name) }
                         }
                     }
                     NWChangesMenuDivider()
@@ -264,24 +255,8 @@ private struct ChangesBasePicker: View {
         return session.list?.comparison.base ?? session.branches?.defaultBase
     }
 
-    /// Recents first, then every branch by its last commit, without the checked-out one, filtered.
-    private var names: [String] {
-        guard !pickingCommit, let branches = session.branches else { return [] }
-        var seen = Set<String>()
-        let current = Set(branches.branches.filter(\.isCurrent).map(\.name))
-        let ordered = (branches.defaultBase.map { [$0] } ?? []) + branches.recents + branches.branches.map(\.name)
-        return ordered.filter { !current.contains($0) && seen.insert($0).inserted }
-            .filter { query.isEmpty || $0.localizedCaseInsensitiveContains(query) }
-    }
-
     private var commits: [ChangesCommit] {
         (session.overview?.commits ?? []).filter { query.isEmpty || $0.subject.localizedCaseInsensitiveContains(query) || $0.shortID.hasPrefix(query) }
-    }
-
-    private func tag(_ name: String, branch: ChangesBranch?, in branches: ChangesBranches) -> NWChangesMenuTrailing {
-        if name == branches.defaultBase { return .text("default") }
-        if branch?.worktree != nil { return .text("worktree") }
-        return .none
     }
 
     private func choose(_ base: String) {
