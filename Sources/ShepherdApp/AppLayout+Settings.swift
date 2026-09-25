@@ -109,6 +109,79 @@ extension AppLayout {
     static let instructionsHistoryPopoverWidth: CGFloat = 380
     static let instructionsHistoryPopoverMaxHeight: CGFloat = 340
 
+    // Settings ▸ Skills (SettingsSkills): the installed skills beside a 280pt rail, 28pt apart,
+    // 18pt under the header.
+    static let skillsBlockSpacing: CGFloat = 18
+    static let skillsColumnSpacing: CGFloat = 28
+    static let skillsRailWidth: CGFloat = 280
+    static let skillsRailSpacing: CGFloat = 22
+    static let skillsExplanationWidth: CGFloat = 700
+    static let skillsFilterWidth: CGFloat = 240
+    /// The list and the rail's cards: 10pt corners.
+    static let skillsCardRadius: CGFloat = 10
+    /// The list's columns: a switch, the skill, its source, how it's used, when it changed, and
+    /// the disclosure chevron, 16pt apart; its header 30pt tall, a row at least 54.
+    static let skillsHeaderHeight: CGFloat = 30
+    static let skillsRowMinHeight: CGFloat = 54
+    static let skillsColumnGap: CGFloat = 16
+    static let skillsSwitchColumn: CGFloat = 30
+    static let skillsSourceColumn: CGFloat = 176
+    static let skillsUseColumn: CGFloat = 84
+    static let skillsUpdatedColumn: CGFloat = 60
+    static let skillsChevronColumn: CGFloat = 14
+    static let skillsLabelSize: CGFloat = 10.5
+    static let skillsNameSize: CGFloat = 13
+    static let skillsSummarySize: CGFloat = 12.5
+    static let skillsMetaSize: CGFloat = 11.5
+    static let skillsTagHeight: CGFloat = 20
+    /// A row's detail: its blocks start under the skill's name (16 + 30 + 16), 14pt apart, its
+    /// three columns 28pt apart.
+    static let skillsDetailLeading: CGFloat = 62
+    static let skillsDetailSpacing: CGFloat = 14
+    static let skillsDetailColumnSpacing: CGFloat = 28
+    static let skillsDetailTextSize: CGFloat = 12
+    /// The rail: 12.5/1.55 prose, notes 12/1.45, and the In every prompt card's 13pt title.
+    static let skillsRailTextSize: CGFloat = 12.5
+    static let skillsRailLineHeight: CGFloat = 1.55
+    static let skillsNoteSize: CGFloat = 12
+    static let skillsNoteLineHeight: CGFloat = 1.45
+    static let skillsOptionTitleSize: CGFloat = 13
+
+    // Browse skills.sh and Add from repo (SettingsSkillsBrowse, SettingsSkillsSearch,
+    // SettingsSkillsRepo): a 1060 × 812 sheet, its list 560pt wide beside the preview.
+    static let skillsSheetWidth: CGFloat = 1060
+    static let skillsSheetHeight: CGFloat = 812
+    static let skillsSheetMinWidth: CGFloat = 860
+    static let skillsSheetMinHeight: CGFloat = 600
+    static let skillsSheetListWidth: CGFloat = 560
+    static let skillsSheetSides: CGFloat = 22
+    static let skillsSheetTitleSize: CGFloat = 17
+    static let skillsSheetCloseSize: CGFloat = 28
+    static let skillsSearchHeight: CGFloat = 38
+    static let skillsSearchTextSize: CGFloat = 14
+    static let skillsTopicHeight: CGFloat = 26
+    static let skillsResultMinHeight: CGFloat = 58
+    static let skillsResultRankWidth: CGFloat = 22
+    static let skillsResultInstallsWidth: CGFloat = 96
+    static let skillsProgressWidth: CGFloat = 64
+    static let skillsProgressHeight: CGFloat = 3
+    static let skillsPreviewNameSize: CGFloat = 18
+    static let skillsPreviewTextSize: CGFloat = 13
+    static let skillsPreviewHeaderHeight: CGFloat = 34
+    static let skillsPreviewLineHeight: CGFloat = 20
+    static let skillsPreviewGutter: CGFloat = 34
+    static let skillsPreviewNumberSize: CGFloat = 10.5
+    static let skillsPreviewFade: CGFloat = 56
+    /// The SKILL.md preview's height: Browse's, Search's, and Add from repo's.
+    static let skillsPreviewBrowseHeight: CGFloat = 240
+    static let skillsPreviewSearchHeight: CGFloat = 280
+    static let skillsPreviewRepoHeight: CGFloat = 340
+    static let skillsPickerRowHeight: CGFloat = 34
+    static let skillsPickerNameWidth: CGFloat = 168
+    static let skillsFooterHeight: CGFloat = 60
+    static let skillsRepoFieldHeight: CGFloat = 38
+    static let skillsRepoFieldTextSize: CGFloat = 13.5
+
     // Settings ▸ Experiments: the experiments beside a 320pt side column, 32pt apart.
     static let experimentsSideWidth: CGFloat = 320
     static let experimentsColumnSpacing: CGFloat = 32
