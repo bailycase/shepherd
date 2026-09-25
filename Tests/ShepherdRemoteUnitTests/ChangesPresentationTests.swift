@@ -46,6 +46,12 @@ struct ChangesPresentationTests {
         #expect(card.files.map(\.status) == [.modified, .added, .modified])
         #expect(card.files.first?.directory == "ledger/" && card.files.first?.name == "outbox.go")
         #expect(card.added == 12 && card.removed == 3)
+        #expect(card.title == "Edited 5 files" && card.fileCount == 5 && card.turnID == turn.id, "every file counts, three listed")
+        var undone = turn
+        undone.state = .undone
+        undone.canRedo = true
+        let after = try #require(NativeTurnChanges(turn: undone))
+        #expect(after.undone && after.canRedo && after.title == "Undid the agent’s edits to 5 files")
         #expect(NativeTurnChanges(turn: ChangesTurn(startedAt: 1, state: .ready)) == nil)
         #expect(changesTurn(forMessageAt: 42, in: [turn])?.id == turn.id)
         #expect(changesTurn(forMessageAt: 41, in: [turn]) == nil)
