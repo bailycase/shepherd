@@ -2,9 +2,16 @@
 
 Shepherd runs agents in a space's checkout. When you want an agent isolated from that checkout,
 Shepherd can create a git worktree for it, then later finalize it (commit, push, open a PR, clean
-up) or delete it. These flows, plus the review pane's per-file Revert and commit from review
-(`ReviewCommit.swift`, AGENTS.md › Only these paths mutate repositories), are the only places
+up) or delete it. These flows, plus the review pane's per-file Revert, commit from review
+(`ReviewCommit.swift`), and the Changes engine's snapshots and its Undo of an agent's last turn
+(AGENTS.md › Only these paths mutate repositories, [changes.md](changes.md)), are the only places
 Shepherd changes a repository. It never prunes worktrees and never deletes a remote branch.
+
+The Changes engine's snapshots write only loose objects into `.git/objects` (through an index
+file of Shepherd's own in the support directory; the user's index is only ever copied), and its
+Undo and Redo touch only the files of the turn they act on. In a worktree the engine keeps one
+index per working tree, and the Changes pane opens on Branch against the agent's
+`worktreeBase`.
 
 Code: `Sources/ShepherdApp/GitWorktree.swift` (create, resolve base, inspect, remove),
 `NewWorktreeSheet.swift`, `NewAgentSheet.swift` (worktree option), `WorktreeFinalize.swift`
