@@ -177,15 +177,39 @@ struct ListPerformanceTests {
 
     /// A thread of sixty turns under its toolbar, loaded and at rest.
     private func chromeThread(running: Bool) async throws -> FakeThread {
-        let snapshot = ThreadFixture.snapshot(ThreadFixture.history(120) + (running ? [ThreadFixture.user("u", "Go on")] : []),
+        var snapshot = ThreadFixture.snapshot(ThreadFixture.history(120) + (running ? [ThreadFixture.user("u", "Go on")] : []),
                                               provisional: running ? [ThreadFixture.streaming("Streaming")] : [], running: running,
                                               stats: NativeThreadStats(contextTokens: 42_000))
+        snapshot.context = Self.context(42_000)
         let thread = FakeThread(snapshot, header: true)
         try await thread.waitUntilReady()
         // What loading sets off (the catch-up, the composer's models) lands before counting.
         try await Task.sleep(for: .milliseconds(200))
         ListPerf.settle(thread.window)
         return thread
+    }
+
+    static func context(_ tokens: Int) -> NativeThreadContext {
+        NativeThreadContext(tokens: tokens, window: 200_000, autoCompactAt: 183_616, autoCompact: true, keepRecent: 20_000,
+                            split: NativeContextSplit(system: 6_800, instructions: 1_400, messages: 9_100, toolResults: tokens - 17_300))
+    }
+
+    /// A reply that moves the context redraws the ring beside Send alone: not the composer, its
+    /// chips, or the thread.
+    @Test func aUsageChangeRedrawsOnlyTheRing() async throws {
+        let thread = try await chromeThread(running: false)
+        defer { thread.close() }
+        var next = thread.snapshot
+        next.revision += 1
+        next.context = Self.context(130_000)
+
+        let rows = try await counting(thread.window) { await thread.serve(next) }
+
+        #expect(rows["composer.contextMeter", default: 0] == 1, "\(rows)")
+        #expect(thread.store.contextMeter?.ring == .fill(0.65, .warning))
+        for key in ["composer.body", "composer.chips", "thread.view", "thread.rowBuilder"] {
+            #expect(rows[key, default: 0] == 0, "\(key): \(rows)")
+        }
     }
 
     /// A poll that moves only the context count redraws the toolbar's counters: not the
@@ -231,6 +255,9 @@ struct ListPerformanceTests {
         } when: {
             !TimingTests.enabled
         }
+        // The ring reads only the usage, which a chunk leaves as it was, and sits out of the
+        // control row's fitting candidates.
+        #expect(rows["composer.contextMeter", default: 0] == 0, "\(rows)")
     }
 
     /// A streamed chunk beside "Up next" redraws none of the stack: the composer reads the

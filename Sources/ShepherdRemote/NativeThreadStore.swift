@@ -121,6 +121,13 @@ public final class NativeThreadStore {
     /// `NativeThinkingLevel.fallback` from a host that does not say.
     public private(set) var thinkingLevels: [NativeThinkingLevel] = NativeThinkingLevel.fallback { didSet { chromeVersion &+= 1 } }
     public private(set) var stats: NativeThreadStats?
+    /// The ring beside Send; nil from a host that reports no context (no ring). It changes
+    /// only when the usage does, so the ring redraws alone and never with a streamed chunk.
+    public private(set) var contextMeter: NativeContextMeter? { didSet { chromeVersion &+= 1 } }
+    /// What the ring's details show, derived with it.
+    public private(set) var contextDetails: NativeContextDetails?
+    /// Which compactions in the thread show what the agent kept (Show summary).
+    public let compactions = NativeCompactionExpansion()
     public private(set) var supportedActions: Set<String> = [] { didSet { bothVersions() } }
     public private(set) var clipped = false { didSet { threadVersion &+= 1 } }
     /// The thread's own running state: `settledRunning` unless the connection is lost (a
@@ -405,6 +412,10 @@ public final class NativeThreadStore {
         let levels = NativeThinkingLevel.levels(value?.thinkingLevels)
         if levels != thinkingLevels { thinkingLevels = levels }
         if value?.stats != stats { stats = value?.stats }
+        let meter = NativeContextMeter(value?.context)
+        if meter != contextMeter { contextMeter = meter }
+        let details = value?.context.map { NativeContextDetails(context: $0, model: value?.model) }
+        if details != contextDetails { contextDetails = details }
         let actions = Set(value?.supportedActions ?? [])
         if actions != supportedActions { supportedActions = actions }
         let clipped = value?.clipped ?? false
@@ -977,6 +988,16 @@ public final class NativeThreadStore {
         return page
     }
 
+    /// pi's `compact`, keeping what `instructions` asks for. pi stops a run to compact, so the
+    /// host takes it only while the agent is idle. Gated by `compact` in `supportedActions`.
+    public func compact(instructions: String?) async {
+        guard supports("compact"), let current = snapshot else { return }
+        let text = instructions?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let operation = UUID()
+        await perform(.compact(expectedSessionID: current.piSessionID, generation: current.generation, operationID: operation,
+                               instructions: text?.isEmpty == false ? text : nil), operation: operation, current: current)
+    }
+
     public func abort() async {
         guard supports("abort"), let current = snapshot else { return }
         let operation = UUID()
@@ -1086,5 +1107,25 @@ private final class PollWake {
         } onCancel: {
             Task { @MainActor in self.waiters.removeValue(forKey: id)?.resume() }
         }
+    }
+}
+
+/// Which compactions in a thread show what the agent kept: toggled by their Show summary, and
+/// opened by the ring's details. Its own object, so a toggle redraws only the compaction lines.
+@MainActor
+@Observable
+public final class NativeCompactionExpansion {
+    public private(set) var expanded: Set<String> = []
+
+    public init() {}
+
+    public func isExpanded(_ id: String) -> Bool { expanded.contains(id) }
+
+    public func toggle(_ id: String) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    public func expand(_ id: String) {
+        if !expanded.contains(id) { expanded.insert(id) }
     }
 }
