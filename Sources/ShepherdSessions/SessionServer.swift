@@ -693,6 +693,7 @@ public final class SessionServer: @unchecked Sendable {
             completion(.failure(code: "native_limit", message: "Native request limit exceeded."))
             return
         }
+        if case .send = request { noteAgentSend(agentID) }
         thread.handle(request, olderClient: olderClient) { completion(.result($0)) }
     }
 
@@ -1952,9 +1953,15 @@ public final class SessionServer: @unchecked Sendable {
             if !current.canTransition(to: status) {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }
-            // Two reports a turn: kept in memory, never validated or written on their own.
+            // Two reports a turn: kept in memory, never validated or written on their own. A turn
+            // starting or ending moves the agent up Recents; nothing else a turn reports does.
             let before = store.state
-            store.updateLive { $0.agents[index].status = status }
+            let moved = AgentStatus.movesRecents(from: current, to: status)
+            let now = Self.nowMilliseconds()
+            store.updateLive {
+                $0.agents[index].status = status
+                if moved { $0.agents[index].lastActiveAt = now }
+            }
             runLog.record(from: before, to: store.state)
         } else {
             ShepherdLog.warning("setAgentStatus for unknown agent \(agentID); dropped")
@@ -1967,6 +1974,30 @@ public final class SessionServer: @unchecked Sendable {
             self?.onStateChanged?(committedState)
         }
     }
+
+    /// Server queue: the question an agent's thread asks first changed. Live state, like a
+    /// status: broadcast at once and never written on its own (nor ever to state.json).
+    func applyAgentQuestion(agentID: AgentID, question: String?) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }),
+              store.state.agents[index].waitingOn != question else { return }
+        store.updateLive { $0.agents[index].waitingOn = question }
+        let committedState = store.state
+        broadcastRemoteState(committedState)
+        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+    }
+
+    /// Server queue: a message was sent to the agent, which moves it up Recents.
+    private func noteAgentSend(_ agentID: AgentID) {
+        guard let index = store.state.agents.firstIndex(where: { $0.id == agentID }) else { return }
+        let now = Self.nowMilliseconds()
+        store.updateLive { $0.agents[index].lastActiveAt = now }
+        let committedState = store.state
+        broadcastRemoteState(committedState)
+        hopToMain { [weak self] in self?.onStateChanged?(committedState) }
+    }
+
+    /// Now, as `Agent.lastActiveAt` keeps it.
+    public static func nowMilliseconds() -> Double { (Date().timeIntervalSince1970 * 1000).rounded() }
 
     /// Record which pi session an agent is in, so relaunching reopens the
     /// conversation the user was last working in rather than the original one.
@@ -2416,6 +2447,10 @@ public final class SessionServer: @unchecked Sendable {
                 server.sendChildCommand(agentID: agentID, runID: runID, action: action, text: text, mode: mode, completion: done)
             }
             thread.onRevision = { [weak serverWeak] in serverWeak?.threadRevised(sessionID: sid) }
+            thread.onQuestionChanged = { [weak serverWeak] question in
+                guard let server = serverWeak, let agentID = server.agentID(forSession: sid) else { return }
+                server.applyAgentQuestion(agentID: agentID, question: question)
+            }
             session.onEvent = { [weak thread] event in thread?.handle(event) }
             thread.onServable = { [weak serverWeak] in
                 guard let server = serverWeak, server.sessions[sid] != nil else { return }

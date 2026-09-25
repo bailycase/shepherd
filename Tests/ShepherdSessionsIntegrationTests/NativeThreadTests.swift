@@ -281,6 +281,31 @@ struct NativeThreadTests {
         #expect(pi.stdin("extension_ui_response").count == 1)
     }
 
+    /// The question pi asks is the agent's live `waitingOn`: broadcast (a client's Needs you
+    /// says why), cleared once answered, and never written to state.json. The send moved the
+    /// agent up Recents.
+    @Test func theQuestionAnAgentWaitsOnIsLiveStateNeverPersisted() async throws {
+        let h = try ScratchServer.fresh()
+        defer { h.stop() }
+        let pi = try await PiAgent.launch(on: h)
+        #expect(h.server.state.agents.first?.lastActiveAt == nil)
+        _ = try await pi.send("ask", from: try await pi.ready())
+        #expect(h.server.state.agents.first?.lastActiveAt != nil, "a send moves the agent up Recents")
+        let asked = try await pi.snapshot("the question") { !$0.dialogs.isEmpty }
+        try await eventually("the question on the agent") { h.server.state.agents.first?.waitingOn == "Clear session?" }
+        try await eventually("the question in a broadcast") { h.broadcasts.current.contains { $0.agents.first?.waitingOn == "Clear session?" } }
+
+        // A structural change writes the state, without the question.
+        try await h.server.addSpace(Fixture.space("added"))
+        #expect(try h.persisted().agents.first?.waitingOn == nil)
+        #expect(try h.persisted().agents.first?.lastActiveAt == h.server.state.agents.first?.lastActiveAt)
+        #expect(h.server.state.agents.first?.waitingOn == "Clear session?", "and it stays live")
+
+        _ = try await pi.request(.answer(expectedSessionID: asked.piSessionID, generation: asked.generation, operationID: UUID(),
+                                         dialogID: "uuid-2", answer: .confirm(value: true)))
+        try await eventually("the answered question to clear") { h.server.state.agents.first?.waitingOn == nil }
+    }
+
     @Test func aSelectQuestionTakesAValueOrACancel() async throws {
         let h = try ScratchServer.fresh()
         defer { h.stop() }

@@ -65,6 +65,7 @@ struct StateCodingTests {
         #expect(agent.effectivePiSessionID == "a1", "an untracked session is the one named after the agent")
         #expect(agent.paneID == nil && agent.model == nil && agent.thinkingLevel == nil)
         #expect(agent.worktreeBranch == nil && agent.worktreeBase == nil && agent.worktreePath == nil)
+        #expect(agent.lastActiveAt == nil && agent.waitingOn == nil, "older hosts and state files carry neither")
     }
 
     /// An agent keeps any level pi has; one this build does not know reads as pi's default.
@@ -96,9 +97,24 @@ struct StateCodingTests {
             name: "calm-stone-3831", spaceID: SpaceID(), tabID: TabID(), paneID: PaneID(),
             status: .blocked, model: "anthropic/claude", thinkingLevel: .high, nameIsFinal: true,
             piSessionID: "s-2", worktreeBranch: "worktree/calm-stone-3831", worktreeBase: "origin/main",
-            worktreePath: "/tmp/calm-stone-3831"
+            worktreePath: "/tmp/calm-stone-3831", lastActiveAt: 1_790_000_000_000, waitingOn: "Which base?"
         )
         #expect(try Fixture.roundTrip(agent) == agent)
+    }
+
+    /// What an agent waits on is a running host's to say: state.json never keeps it, and
+    /// everything else stays as it was.
+    @Test func theStateFileKeepsNoQuestion() throws {
+        let space = SpaceID(), tab = TabID()
+        let asking = Agent(name: "a", spaceID: space, tabID: tab, status: .blocked, lastActiveAt: 5, waitingOn: "Ship it?")
+        let quiet = Agent(name: "b", spaceID: space, tabID: tab, lastActiveAt: 7)
+        let state = ShepherdState(agents: [asking, quiet])
+        let persisted = state.persisted
+        #expect(persisted.agents.map(\.waitingOn) == [nil, nil])
+        #expect(persisted.agents.map(\.lastActiveAt) == [5, 7])
+        #expect(try Fixture.encodeObject(persisted.agents[0])["waitingOn"] == nil)
+        let unchanged = ShepherdState(agents: [quiet])
+        #expect(unchanged.persisted == unchanged)
     }
 
     @Test func spaceHiddenDefaultsFalseAndRoundTrips() throws {
