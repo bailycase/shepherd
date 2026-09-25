@@ -4,8 +4,8 @@ import ShepherdCore
 import ShepherdProtocol
 import ShepherdRemote
 
-// A host's own settings on iPhone and iPad (home track): Settings ▸ Defaults, Worktrees and Pi
-// extensions, the Mac's Settings ▸ Agents, Worktrees and Pi as the host keeps them
+// A host's own settings on iPhone and iPad (home track): Settings ▸ Defaults, Worktrees and
+// Extensions, the Mac's Settings ▸ Agents, Worktrees and Pi as the host keeps them
 // (`hostSettings.v1`). A change shows at once and goes to the host; one it refuses springs back
 // with its reason. With several hosts, the page says which one it changes.
 
@@ -20,15 +20,15 @@ struct DefaultsScreen: View {
                          explanation: "What new threads on a host start with. Threads already running keep their own.") { settings, host in
             SettingsSection("New threads") {
                 NWListCard {
-                    SettingsControlRow("Model", note: "`pi's default` passes no model, so pi picks.") {
+                    SettingsControlRow("Model", note: "“Use the agent’s default” passes no model, so the agent picks.") {
                         Menu {
-                            Button("pi's default") { store.hostSettings.post(.defaultModel(nil), on: host) }
+                            Button("Use the agent’s default") { store.hostSettings.post(.defaultModel(nil), on: host) }
                             Divider()
                             ForEach(Self.options(models, current: settings.defaultModel), id: \.self) { model in
                                 Button(model) { store.hostSettings.post(.defaultModel(model), on: host) }
                             }
                         } label: {
-                            SettingsMenuLabel(settings.defaultModel ?? "pi's default", mono: settings.defaultModel != nil)
+                            SettingsMenuLabel(settings.defaultModel ?? "Agent’s default", mono: settings.defaultModel != nil)
                         }
                         .accessibilityLabel("Default model")
                     }
@@ -38,7 +38,7 @@ struct DefaultsScreen: View {
                     }
                 }
             }
-            SettingsSection("While pi is working") {
+            SettingsSection("While the agent is working") {
                 NWListCard {
                     SettingsControlRow("When a turn ends, send the queue", note: "All at once arrives as one turn, in order.") {
                         SettingsPicker("Send the queue", selection: settings.queueDelivery, options: [.oneAtATime, .all],
@@ -109,15 +109,15 @@ struct WorktreesScreen: View {
     }
 }
 
-/// Settings ▸ Pi extensions: the extensions Shepherd bundles into pi on a host, the ones its pi
-/// loads itself, and the daily updates.
+/// Settings ▸ Extensions (the Mac's Settings ▸ Pi): the extensions Shepherd bundles into pi on a
+/// host, the ones its pi loads itself, and the daily updates.
 struct PiExtensionsScreen: View {
     @Environment(MobileHosts.self) private var hosts
 
     var body: some View {
         let store = SettingsStore.of(hosts)
         HostSettingsPage(store: store, page: .pi,
-                         explanation: "What pi loads on a host: the extensions Shepherd bundles, the ones installed with pi, and their updates.") { settings, host in
+                         explanation: "What the agent loads on a host: the extensions Shepherd bundles, the ones installed there, and their updates.") { settings, host in
             let post: (HostSettingChange) -> Void = { store.hostSettings.post($0, on: host) }
             SettingsSection("Bundled with Shepherd") {
                 NWListCard {
@@ -129,9 +129,9 @@ struct PiExtensionsScreen: View {
                 }
                 SettingsFootnote("New threads follow a change; running ones keep theirs until they restart. Status and session tracking are always on.")
             }
-            SettingsSection("Installed with pi") {
+            SettingsSection("Installed on \(host.name)") {
                 if settings.installedExtensions.isEmpty {
-                    SettingsFootnote("None yet. What \(host.name)'s pi installs itself shows here.")
+                    SettingsFootnote("None yet. Extensions installed on \(host.name) show here.")
                 } else {
                     NWListCard {
                         ForEach(settings.installedExtensions, id: \.self) { source in
@@ -148,13 +148,13 @@ struct PiExtensionsScreen: View {
             }
             SettingsSection("Updates") {
                 NWListCard {
-                    SettingsSwitchRow("Update pi daily", note: "Runs `pi update` once a day.", isOn: settings.updatePiDaily) {
+                    SettingsSwitchRow("Update the agent daily", note: "Runs `pi update` once a day.", isOn: settings.updatePiDaily) {
                         post(.updatePiDaily($0))
                     }
                     SettingsSwitchRow("Update extensions daily", note: "Runs `pi update --extensions` once a day.",
                                       isOn: settings.updateExtensionsDaily) { post(.updateExtensionsDaily($0)) }
                 }
-                SettingsFootnote(["Updating never restarts running threads.", HostSettingsPresentation.piVersion(settings).map { "\(host.name) runs \($0)." }]
+                SettingsFootnote(["Updating never restarts running threads.", HostSettingsPresentation.agentVersion(settings).map { "\(host.name) runs \($0)." }]
                     .compactMap { $0 }.joined(separator: " "))
             }
         }

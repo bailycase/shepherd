@@ -168,14 +168,14 @@ And the rules that follow from them:
 | SettingsPi: Subagent display "Show subagent runs in the sidebar and open their inspector" | "Show subagent runs in their agent's thread, the inspector and the palette" | Subagents have no sidebar rows (Subagents); one waiting on you marks its parent's row |
 | SettingsPi: Sync pi theme "Use Shepherd's palette in pi and follow theme changes." | No row | Shepherd no longer themes pi: agents run pi over RPC and draw no pi TUI, and pi run by hand keeps its own theme |
 | SettingsRemote: Token "Delete the file to revoke every client." | "To revoke every client, delete the file and turn the listener off and on." | The listener reads the token when it starts; deleting the file alone revokes no one |
-| SettingsAdvanced: Reset settings "Restores appearance, font, agent and keyboard preferences. Spaces, agents and layouts are untouched." | "Restores appearance, terminal, agent, worktree, pi and keyboard preferences. Spaces, agents, layouts and Remote are untouched." | The reset covers every page but Remote, and the copy names what it touches |
-| SettingsInstructions: pi's own root files, `~/.pi/agent/AGENTS.md` and `~/.pi/agent/APPEND_SYSTEM.md`, in the paths, the steps and the copy ("Pi's root files, read at the start of every session", "writes both files to each host's `~/.pi/agent/`") | Shepherd's own copies in its support directory, added to every session Shepherd starts (`shepherd-instructions.ts`): "Root files for every pi session Shepherd starts", "writes both files to every host", steps named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md", and a note that pi's own files still load just before them | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
+| SettingsAdvanced: Reset settings "Restores appearance, font, agent and keyboard preferences. Spaces, agents and layouts are untouched." | "Restores appearance, terminal, agent, worktree, extension and keyboard preferences. Spaces, agents, layouts and Remote are untouched." | The reset covers every page but Remote, and the copy names what it touches |
+| SettingsInstructions: pi's own root files, `~/.pi/agent/AGENTS.md` and `~/.pi/agent/APPEND_SYSTEM.md`, in the paths, the steps and the copy ("The agent’s root files, read at the start of every session", "writes both files to each host's `~/.pi/agent/`") | Shepherd's own copies in its support directory, added to every session Shepherd starts (`shepherd-instructions.ts`): "The agent’s root files, read at the start of every session Shepherd starts", "writes both files to every host", steps named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md", and a note that the agent’s own files in `~/.pi/agent` still load just before them | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
 | SettingsInstructions: "new threads, mission stations and automations get this one" | "new agents and automations get this one" | Missions aren't built |
 | SettingsInstructionsHosts: the diff shows the lines around the differences | The whole file as a diff, scrolled to its first difference | Instruction files are short, and nothing hides behind a fold |
 | SettingsInstructionsHosts: every History row offers Restore | The newest row reads "current" | Restoring the file as it is would change nothing (honest affordances) |
 | SettingsExperiments: Learn from Missions, Threads, Automations | Threads and Automations | Missions aren't built |
 | SettingsExperiments: Hosts as a 190pt popup, "Follow Instructions"; a suggestion names "which hosts it applies to" and its chip retargets hosts | A note naming where lines go now, with Open Instructions; the chip retargets the file and reports the hosts; How it works says "for a root file, with the reason." | A line goes where Settings › Instructions sends This Mac's files, so a popup with one option would pick nothing (honest affordances) |
-| MobileInstructions, iPadSettingsInstructions: pi's root files, "Save once, written to each host's ~/.pi/agent/", the editor's path `~/.pi/agent/APPEND_SYSTEM.md`, "Pi reads these at the start of every session", a read order from "root AGENTS.md" | Shepherd's own copies: "Save once, written to every host", the host's instructions folder in the path, "Every pi session Shepherd starts reads these", the order's links named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md" | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
+| MobileInstructions, iPadSettingsInstructions: pi's root files, "Save once, written to each host's ~/.pi/agent/", the editor's path `~/.pi/agent/APPEND_SYSTEM.md`, "The agent reads these at the start of every session", a read order from "root AGENTS.md" | Shepherd's own copies: "Save once, written to every host", the host's instructions folder in the path, "The agent reads these at the start of every session Shepherd starts", the order's links named "Shepherd's AGENTS.md" and "Shepherd's APPEND_SYSTEM.md" | Shepherd never writes the user's `~/.pi/agent` (AGENTS.md › Gotchas) |
 | MobileExperiments: Learn from Missions, and a mission's folded-map glyph | Threads and Automations | Missions aren't built |
 | MobileInstructionsEdit: a key row of 32pt keys at least 38pt wide on `bgRaised`, over `bgSunken` | The terminal's key row (`NWTerminalKeyRow`: 34pt keycaps at least 44pt wide, over `bgWindow`) | One key row across the app, at touch size |
 | iPadSettingsInstructions: a 76pt header over each column, "Settings" over the list and the page's title with History and Save beside it | The bar, with the page's title; History and Save end the page's first row | The bar keeps back and the title where every iPad screen has them, and NW buttons keep their styles outside a toolbar |
@@ -3117,7 +3117,7 @@ automated step of the worktree flows can be turned off here.
   as Shepherd." Last, "Version 0.1.0 (1)" (the short version and the build) with Check for updates.
   Debug builds have no updater: the group holds only the version row, with no button, and Sparkle's
   rows disclose once it reports it can update.
-- **Reset:** Reset settings, "Restores appearance, terminal, agent, worktree, pi and keyboard
+- **Reset:** Reset settings, "Restores appearance, terminal, agent, worktree, extension and keyboard
   preferences. Spaces, agents, layouts and Remote are untouched." (the board: "Restores appearance,
   font, agent and keyboard preferences. Spaces, agents and layouts are untouched."; see the
   departures): Reset… (danger) opens `ResetSettingsDialog` ("Reset settings to defaults?", "Your
@@ -4595,7 +4595,7 @@ beside up-down chevrons.
 
 ### iPhone: Instructions (MobileInstructions, MobileInstructionsEdit)
 
-Settings ▸ Instructions edits the root instructions every pi session Shepherd starts reads, on
+Settings ▸ Instructions edits the root instructions every session Shepherd starts reads, on
 every host (`Settings/InstructionsScreens.swift`; the Mac's page is SettingsInstructions). Each
 host keeps Shepherd's own copies in its support folder and serves them over `instructions.v1`;
 `ClientInstructions` (ShepherdRemote) holds every rule.
@@ -4617,8 +4617,8 @@ host keeps Shepherd's own copies in its support folder and serves them over `ins
   being edited on `lanternTint`; a `lantern` caret. Over the keyboard, a key row on `bgSunken` with
   a `lineSubtle` rule: 32pt keys at least 38pt wide on `bgRaised`, 6pt corners, mono 14: `#`, `-`,
   `` ` ``, `**`, Tab.
-- **In the app** the page is `bgWindow` with 16pt sides and reads "Every pi session Shepherd starts
-  reads these, on every host. A repo's own AGENTS.md still applies.", and the switch's note is
+- **In the app** the page is `bgWindow` with 16pt sides and reads "The agent reads these at the
+  start of every session Shepherd starts, on every host.", and the switch's note is
   "Save once, written to every host." ("Each host keeps its own." when off): Shepherd writes its
   own copies, never `~/.pi/agent` (departures). With Same on every host on (the default, kept per
   device) the page edits the first host whose files read and a save writes both files to every
@@ -5255,8 +5255,9 @@ Experiments. Agents, Worktrees, Pi and Keyboard are the host's settings, as the 
 
 - **In the app** (`SettingsScreen` at regular width; a compact window gets the phone's list): the
   list is Appearance, Agents, Worktrees, Pi, Instructions, Hosts and Experiments, 10pt in from its
-  edges with rows 2pt apart, and "Shepherd 0.1.0 · pi 0.87.1" under them. Beside it is the phone's
-  own page (Agents is Defaults, Pi is Pi extensions) with its title in the bar, which says no
+  edges with rows 2pt apart, and "Shepherd 0.1.0 · agent 0.87.1" under them ("pi 0.87.1" while
+  the Pi page is open, as on the Mac). Beside it is the phone's own page (Agents is Defaults, Pi is
+  Extensions) with its title in the bar, which says no
   "Settings" of its own. A page that opens another (Experiments' Open Instructions) switches the
   list in place.
 - **Not built yet:** Keyboard (the host's chords) and Notifications (it waits for push).

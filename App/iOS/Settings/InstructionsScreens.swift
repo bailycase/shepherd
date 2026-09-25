@@ -529,12 +529,12 @@ private struct InstructionsFileTabs: View {
     }
 }
 
-/// "READ IN THIS ORDER · LATER WINS", then the chain pi reads, the open file's link marked.
+/// "READ IN THIS ORDER · LATER WINS", then the chain the agent reads, the open file's link marked.
 private struct InstructionsReadOrder: View {
     let file: InstructionFile
 
     private static let steps: [(title: String, file: InstructionFile?)] = [
-        ("pi prompt", nil), ("Shepherd's AGENTS.md", .agents), ("parent folders", nil), ("repo AGENTS.md", nil),
+        ("System prompt", nil), ("Shepherd's AGENTS.md", .agents), ("parent folders", nil), ("repo AGENTS.md", nil),
         ("Shepherd's APPEND_SYSTEM.md", .appendSystem),
     ]
 
@@ -619,7 +619,7 @@ private struct InstructionsHistoryList: View {
 
 /// The page's words.
 private enum InstructionsCopy {
-    static let explanation = "Every pi session Shepherd starts reads these, on every host. A repo's own AGENTS.md still applies."
+    static let explanation = "The agent reads these at the start of every session Shepherd starts, on every host."
 
     static func scopeNote(sameEverywhere: Bool) -> String {
         sameEverywhere ? "Save once, written to every host." : "Each host keeps its own."
@@ -631,7 +631,7 @@ private enum InstructionsCopy {
         case .agents:
             "Shepherd's AGENTS.md comes before any folder's or repo's AGENTS.md, so a repo's own file can refine it."
         case .appendSystem:
-            "APPEND_SYSTEM.md is added to the end of pi's system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
+            "APPEND_SYSTEM.md is added to the end of the agent’s system prompt, so these rules beat anything in an AGENTS.md. Keep it short."
         }
     }
 }

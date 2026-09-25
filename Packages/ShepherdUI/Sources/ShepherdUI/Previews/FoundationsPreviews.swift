@@ -64,8 +64,8 @@ import SwiftUI
         VStack(alignment: .leading, spacing: NW.Space.m) {
             NWSectionHeader("New agents")
             NWGroupCard(fill: Color.nw.bgWindow) {
-                NWCardRow("Default model", description: "“Use pi's default” passes no `--model` at all.", style: .settings) {
-                    NWTag("Use pi's default")
+                NWCardRow("Default model", description: "“Use the agent’s default” passes no `--model` at all.", style: .settings) {
+                    NWTag("Use the agent’s default")
                 }
                 NWCardRow("Listener", description: "Let other Macs with your token connect to agents here.",
                           problem: "Couldn't start: port 7433 is already in use.",

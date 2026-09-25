@@ -17,7 +17,7 @@ struct MarkupTextTests {
 
     @Test(arguments: [
         "Compact 22 · Standard 28 · Comfortable 36 pt, for the sidebar and menus.",
-        "Preselected in the New Agent sheet. “Use pi's default” passes no model.",
+        "Preselected in the New Agent sheet. “Use the agent's default” passes no model.",
         "Sidebar order; hold ⌘ to see the numbers.",
     ])
     func textWithoutMarkupStaysOnePlainPiece(source: String) {

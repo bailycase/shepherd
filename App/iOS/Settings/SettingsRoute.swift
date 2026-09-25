@@ -16,7 +16,7 @@ enum SettingsRoute: Hashable, Codable {
     case worktrees
     /// The pi extensions a host loads, and its daily updates.
     case piExtensions
-    /// The root instructions every pi session Shepherd starts reads.
+    /// The root instructions every session Shepherd starts reads.
     case instructions
     /// One root instruction file in the editor.
     case instructionsFile(InstructionFile)
@@ -47,7 +47,7 @@ struct SettingsDestination: View {
 
 /// A page of Settings: pushed from the list on iPhone, shown beside it on iPad
 /// (iPadSettingsInstructions). The iPad's list names two of them as the Mac does ("Agents",
-/// "Pi"); the phone's rows say what they hold ("Defaults", "Pi extensions").
+/// "Pi"); the phone's rows say what they hold ("Defaults", "Extensions").
 enum SettingsPage: String, CaseIterable, Hashable, Codable {
     case appearance, defaults, worktrees, pi, instructions, hosts, experiments
 
@@ -56,7 +56,7 @@ enum SettingsPage: String, CaseIterable, Hashable, Codable {
         case .appearance: "Appearance"
         case .defaults: "Defaults"
         case .worktrees: "Worktrees"
-        case .pi: "Pi extensions"
+        case .pi: "Extensions"
         case .instructions: "Instructions"
         case .hosts: "Hosts"
         case .experiments: "Experiments"

@@ -3,7 +3,7 @@ import ShepherdUI
 
 /// Settings (MobileSettings, iPadSettingsInstructions boards; home track): the Settings tab's root
 /// on iPhone, a list of rows each pushing its page; on iPad, pushed over the detail, the list
-/// beside the page it opens. Defaults, Worktrees and Pi extensions are a host's own settings,
+/// beside the page it opens. Defaults, Worktrees and Extensions are a host's own settings,
 /// Instructions and Experiments span every host, and Appearance is this device's.
 struct SettingsScreen: View {
     @Environment(MobileHosts.self) private var hosts
@@ -54,7 +54,7 @@ private struct SettingsList: View {
                     row(.experiments, trailing: value(store.experimentsValue))
                 }
                 SettingsSection("About") {
-                    NWListCard { AboutRow(pi: store.piVersion) }
+                    NWListCard { AboutRow(agent: store.agentVersion) }
                 }
             }
             .padding(.horizontal, MobileLayout.gutter)
@@ -93,7 +93,7 @@ private struct SettingsSplit: View {
                     }
                 }
                 .padding(MobileLayout.settingsListInset)
-                AboutLine(pi: store.piVersion)
+                AboutLine(agent: store.listFootVersion)
                     .padding(.horizontal, MobileLayout.settingsListInset + NW.Space.l)
                     .padding(.vertical, NW.Space.l)
             }
@@ -184,10 +184,10 @@ struct SettingsSection<Content: View>: View {
     }
 }
 
-/// Shepherd's version beside the pi the host runs ("pi 0.87.1"), or this build while no host
-/// has said: the crook on its dark tile.
+/// Shepherd's version beside the agent the host runs ("agent 0.87.1"), or this build while no
+/// host has said: the crook on its dark tile.
 private struct AboutRow: View {
-    let pi: String?
+    let agent: String?
 
     var body: some View {
         HStack(spacing: NW.Space.l) {
@@ -195,7 +195,7 @@ private struct AboutRow: View {
                 .frame(width: NWListMetrics.leadingWidth)
             Text("Shepherd \(AboutLine.version)").font(.nw(.ui, weight: .medium)).foregroundStyle(Color.nw.textPrimary)
             Spacer(minLength: NW.Space.m)
-            Text(pi ?? "build \(AboutLine.build)").font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
+            Text(agent ?? "build \(AboutLine.build)").font(.nw(.mono)).foregroundStyle(Color.nw.textTertiary)
         }
         .padding(.horizontal, NW.Space.l)
         .frame(minHeight: NWListMetrics.rowHeight)
@@ -203,15 +203,15 @@ private struct AboutRow: View {
     }
 }
 
-/// The iPad list's foot: "Shepherd 0.1.0 · pi 0.87.1".
+/// The iPad list's foot: "Shepherd 0.1.0 · agent 0.87.1" ("pi 0.87.1" beside the Pi page).
 private struct AboutLine: View {
     static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
     static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
 
-    let pi: String?
+    let agent: String?
 
     var body: some View {
-        Text(["Shepherd \(Self.version)", pi ?? "build \(Self.build)"].joined(separator: " · "))
+        Text(["Shepherd \(Self.version)", agent ?? "build \(Self.build)"].joined(separator: " · "))
             .nwText(.caption)
             .foregroundStyle(Color.nw.textTertiary)
     }

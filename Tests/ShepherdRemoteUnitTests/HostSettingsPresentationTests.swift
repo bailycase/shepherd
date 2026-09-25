@@ -15,10 +15,11 @@ struct HostSettingsPresentationTests {
         #expect(HostSettingsPresentation.defaultsValue(settings) == "claude-opus")
         #expect(HostSettingsPresentation.extensionsValue(settings) == "3")
         settings.defaultModel = nil
-        #expect(HostSettingsPresentation.defaultsValue(settings) == "pi's default")
+        #expect(HostSettingsPresentation.defaultsValue(settings) == "Agent’s default")
         settings.piVersion = "0.87.1"
-        #expect(HostSettingsPresentation.piVersion(settings) == "pi 0.87.1")
-        #expect(HostSettingsPresentation.piVersion(nil) == nil)
+        #expect(HostSettingsPresentation.agentVersion(settings) == "agent 0.87.1")
+        #expect(HostSettingsPresentation.agentVersion(settings, namingPi: true) == "pi 0.87.1")
+        #expect(HostSettingsPresentation.agentVersion(nil) == nil)
         #expect(HostSettingsPresentation.experimentsValue(on: true) == "1 on")
         #expect(HostSettingsPresentation.experimentsValue(on: false) == "Off")
     }

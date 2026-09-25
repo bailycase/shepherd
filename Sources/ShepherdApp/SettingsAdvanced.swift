@@ -49,7 +49,7 @@ struct AdvancedSettings: View {
             }
             SettingsGroup(title: "Reset") {
                 SettingsRow(title: "Reset settings",
-                            subtitle: "Restores appearance, terminal, agent, worktree, pi and keyboard preferences. Spaces, agents, layouts and Remote are untouched.") {
+                            subtitle: "Restores appearance, terminal, agent, worktree, extension and keyboard preferences. Spaces, agents, layouts and Remote are untouched.") {
                     Button("Reset…") { confirmingReset = true }
                         .buttonStyle(.nw(.danger, size: .s))
                 }
