@@ -1028,8 +1028,8 @@ private struct SkillFilesBlock: View {
             Text("Files").nwSectionLabel()
             NWFlowLayout(spacing: NW.Space.s) {
                 ForEach(entries) { entry in
-                    NWFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
-                               kind: entry.isDirectory ? (entry.name == "scripts" ? .code : .folder) : .file)
+                    NWSkillFileChip(SkillsPresentation.chip(entry), count: entry.isDirectory ? entry.fileCount : nil,
+                                    kind: entry.isDirectory ? (entry.name == "scripts" ? .code : .folder) : .file)
                 }
             }
             Text(note)
