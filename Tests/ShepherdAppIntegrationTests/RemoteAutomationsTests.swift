@@ -119,6 +119,8 @@ struct RemoteAutomationsTests {
         let second = try #require(host.state.automations.first?.agentID)
         #expect(host.state.agents.map(\.id) == [second], "the finished run's agent is gone")
         #expect(vm.remoteActionError == nil)
+        try await eventuallyOnMain("the client to see the new run") { Self.row(key, in: vm)?.run == second }
+        #expect(Self.row(key, in: vm)?.live == true, "Open Run opens the new run, which reads running")
 
         vm.showRemoteAutomation(key)
         try await eventuallyOnMain("the host's runs to arrive") { vm.remoteAutomationRuns[key]?.count == 2 }
