@@ -245,9 +245,10 @@ pointing at the installed pi package. They isolate `HOME` and use a local fake p
 
 **Release rules** (`Tests/Release/test_release.py`, Python's `unittest`, stdlib only) test
 `scripts/release.py`: what each trigger builds (the iOS TestFlight upload included), which feeds
-each release lands in, the legacy aliases, `verify-app`, and `verify-ios`. They also read the
-Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`, and
-`AppUpdater.swift`, so a bundle id, feed name or signing setting that drifts from the script
+each release lands in, the legacy aliases, `verify-app`, `verify-ios`, and which TestFlight builds
+`retire-testflight` expires (against a local fake App Store Connect). They also read the
+Xcode project, `App/Info.plist`, `App/iOS/ExportOptions.plist`, `ShepherdEdition.swift`,
+`AppUpdater.swift`, and both workflows, so a bundle id, feed name or signing setting that drifts from the script
 fails before a release builds.
 
 **Tests never take the user's focus or drive their mouse or keyboard.**
@@ -859,6 +860,13 @@ Releasing Shepherd means tagging `nightly`'s tested tip and pushing the tag.
   on it, and without the key it is skipped with a notice. Its version is the project's
   `MARKETING_VERSION`, and its build number is the run number. Beta tags (external testing) and
   stable tags (the App Store) upload nothing yet ([docs/ios](docs/ios/README.md#distribution)).
+- **Only the newest TestFlight build stays installable.** After a Release run on `nightly`
+  uploads one, `.github/workflows/testflight-retire.yml` (`release.py retire-testflight`) waits
+  up to 45 minutes for Apple to process that build, then expires every older one. If it fails
+  processing or never finishes, nothing expires. By hand: Actions ▸ Retire TestFlight builds ▸
+  Run workflow, a dry run unless `dry_run` is unchecked; leave the build empty to keep the
+  newest processed build. Like any `workflow_run` workflow, it fires only once the file is on the
+  default branch (`master`).
 - **One build number, one release.** A re-run keeps `github.run_number`, the build number.
   `generate_appcast` refuses a feed directory holding two archives of one build, and that fails
   every feed's update until one ages out. So a nightly re-run whose commit already carries a
