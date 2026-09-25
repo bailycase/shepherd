@@ -1111,8 +1111,16 @@ class ReleaseConcurrencyTests(unittest.TestCase):
             release_yml = f.read()
         m = re.search(r"^concurrency:\n((?:  .*\n)+)", release_yml, re.M)
         self.assertIsNotNone(m)
-        self.assertIn("group: release-${{ github.ref }}", m.group(1))
         self.assertIn("cancel-in-progress: false", m.group(1))
+
+    def test_a_testflight_run_queues_apart_from_the_pushes(self):
+        # One group would let a TestFlight run replace a waiting push, or a push replace it.
+        with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as f:
+            release_yml = f.read()
+        m = re.search(r"^concurrency:\n((?:  .*\n)+)", release_yml, re.M)
+        self.assertIsNotNone(m)
+        self.assertIn("group: release-${{ github.ref }}${{ inputs.testflight && '-testflight' || '' }}\n",
+                      m.group(1))
 
 
 class TestFlightInputTests(unittest.TestCase):
