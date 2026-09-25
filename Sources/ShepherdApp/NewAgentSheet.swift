@@ -210,7 +210,17 @@ struct NewAgentSheet: View {
 
     /// Thinking is offered only for a model that takes a level (DESIGN › Composer); an unknown
     /// model, or a catalog still loading, keeps it.
-    private var offersThinking: Bool { models?.takesThinking(defaults.model) != false }
+    private var offersThinking: Bool { !thinkingLevels.isEmpty }
+
+    /// The levels the target offers the chosen model before its pi starts (`ThinkingLevel.offered`).
+    private var thinkingLevels: [ThinkingLevel] {
+        ThinkingLevel.offered(model: defaults.model, listing: models,
+                              hostTakesAllLevels: remoteConnection.map(\.supportsAllThinkingLevels) ?? true)
+    }
+
+    /// The level the agent starts with: the chosen one, or the one pi would use for it when the
+    /// model lacks it.
+    private var thinking: ThinkingLevel { defaults.thinking.clamped(to: thinkingLevels) }
 
     /// Captions that settle after the sheet is up. Typing into a field changes none of them.
     private var captionState: [String?] {
@@ -323,8 +333,8 @@ struct NewAgentSheet: View {
 
             if offersThinking {
                 SheetRow("Thinking") {
-                    NWSegmentedPicker("Thinking", selection: Binding(get: { defaults.thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
-                                      options: ThinkingLevel.allCases.map { ($0, $0.rawValue.capitalized) })
+                    NWSegmentedPicker("Thinking", selection: Binding(get: { thinking }, set: { defaults.thinking = $0; defaults.thinkingEdited = true }),
+                                      options: thinkingLevels.map { ($0, $0.title) })
                 }
                 .nwTransition(.disclosure)
             }
@@ -585,7 +595,7 @@ struct NewAgentSheet: View {
                         spaceID: spaceID,
                         cwd: cwd,
                         model: trimmedModel.isEmpty ? nil : trimmedModel,
-                        thinking: defaults.thinking,
+                        thinking: thinking,
                         initialPrompt: prompt.isEmpty ? nil : prompt,
                         worktreeBranch: worktree ? worktreeBranch.trimmingCharacters(in: .whitespaces) : nil,
                         worktreeBase: worktree ? worktreeBase : nil,
@@ -611,7 +621,7 @@ struct NewAgentSheet: View {
             spaceID: spaceID,
             workingDirectory: cwd,
             model: trimmedModel.isEmpty ? nil : trimmedModel,
-            thinking: defaults.thinking,
+            thinking: thinking,
             initialPrompt: prompt.isEmpty ? nil : prompt,
             worktreeBranch: worktreeBranch,
             worktreeBase: worktreeBase
