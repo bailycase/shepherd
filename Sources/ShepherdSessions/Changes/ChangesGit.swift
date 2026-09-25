@@ -72,6 +72,9 @@ struct ChangesGit {
             drained.signal()
         }
         if let stdin, let input {
+            // git may exit before reading all of it: a write then fails instead of raising
+            // SIGPIPE, which would end the app.
+            _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
             DispatchQueue.global(qos: .utility).async {
                 try? stdin.fileHandleForWriting.write(contentsOf: input)
                 try? stdin.fileHandleForWriting.close()
