@@ -677,7 +677,11 @@ against a large fixture (300 agents in 40 spaces, 1,000 palette results, a 2,000
   character, or the field losing focus to a menu, rebuilds the field and never the chips.
   `ViewThatFits` builds and measures every alternative it is given, each with its tooltips and
   accessibility, whenever it is rebuilt, and that was half of a keystroke's main-thread time and
-  a third of a menu's opening. The slash menu's matches are derived once per draft change
+  a third of a menu's opening. It measures them again in the window's minimum-size pass, which
+  the scene's hosting view runs from a zero-width proposal after every change to a platform
+  view's intrinsic size (each keystroke in the field), so the row answers any proposal narrower
+  than a real layout's without measuring (`ComposerControlsMinimum`): its minimum is never the
+  window's, the thread column's is. The slash menu's matches are derived once per draft change
   (`SlashMatchCache`), ⇧⌘M and the thinking menu's command reach the composer without a pass
   over the thread, and the picker and the thinking menu compare their own inputs, so a composer
   redraw for something else leaves their rows alone. `ComposerMenuPerformanceTests` pins each
