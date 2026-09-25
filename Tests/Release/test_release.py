@@ -18,7 +18,6 @@ import sys
 import tempfile
 import threading
 import unittest
-import unittest.mock
 import urllib.parse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -622,22 +621,6 @@ class RetirePlanTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             release.retire_plan([], "latest")
 
-    def test_testflight_uploaded_reads_the_release_runs_testflight_job(self):
-        def jobs(conclusion):
-            return {"jobs": [{"name": "plan", "conclusion": "success"},
-                             {"name": "build and publish", "conclusion": "success"},
-                             {"name": release.TESTFLIGHT_JOB, "conclusion": conclusion}]}
-        self.assertTrue(release.testflight_uploaded(jobs("success")))
-        for conclusion in ("skipped", "failure", "cancelled", None):
-            with self.subTest(conclusion=conclusion):
-                self.assertFalse(release.testflight_uploaded(jobs(conclusion)))
-        self.assertFalse(release.testflight_uploaded({"jobs": []}))
-        for payload, expected in ((jobs("success"), "uploaded=true"), (jobs("skipped"), "uploaded=false")):
-            out = io.StringIO()
-            with contextlib.redirect_stdout(out), unittest.mock.patch("sys.stdin", io.StringIO(json.dumps(payload))):
-                self.assertEqual(release.main(["testflight-job"]), 0)
-            self.assertEqual(out.getvalue().strip(), expected)
-
 
 def der_int(value):
     value = value.lstrip(b"\0") or b"\0"
@@ -1097,11 +1080,7 @@ class RetireCommandTests(unittest.TestCase):
 
 
 class RetireWorkflowTests(unittest.TestCase):
-    """.github/workflows/testflight-retire.yml runs only after nightly's Release, or by hand."""
-
-    def read(self, *parts):
-        with open(os.path.join(ROOT, *parts), encoding="utf-8") as f:
-            return f.read()
+    """release.yml's retire-testflight job runs only after the testflight job uploads."""
 
     def block(self, text, key, indent=""):
         m = re.search(r"^%s%s:\n((?:%s[ ].*\n|\n)*)" % (indent, re.escape(key), indent), text, re.M)
@@ -1109,48 +1088,55 @@ class RetireWorkflowTests(unittest.TestCase):
         return m.group(1)
 
     def setUp(self):
-        self.workflow = self.read(".github", "workflows", "testflight-retire.yml")
-        self.release = self.read(".github", "workflows", "release.yml")
+        with open(os.path.join(ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as f:
+            self.release = f.read()
+        self.jobs = self.block(self.release, "jobs")
+        self.testflight = self.block(self.jobs, "testflight", "  ")
+        self.job = self.block(self.jobs, "retire-testflight", "  ")
 
-    def test_it_runs_only_on_nightlys_release_completing_or_a_manual_dispatch(self):
-        triggers = self.block(self.workflow, "on")
-        self.assertEqual(re.findall(r"^  (\S+):", triggers, re.M), ["workflow_run", "workflow_dispatch"])
-        run = self.block(triggers, "workflow_run", "  ")
-        self.assertEqual(sorted(l.strip() for l in run.splitlines() if l.strip()),
-                         ["branches: [nightly]", "types: [completed]", "workflows: [Release]"])
-        self.assertRegex(self.release, r"\Aname: Release\n")
-        condition = re.search(r"^    if: >-\n((?:      .*\n)+)", self.workflow, re.M).group(1)
-        self.assertIn("github.event_name == 'workflow_dispatch'", condition)
-        self.assertIn("github.event.workflow_run.conclusion == 'success'", condition)
-        self.assertIn("github.event.workflow_run.head_branch == 'nightly'", condition)
-        self.assertIn("github.event.workflow_run.event != 'pull_request'", condition)
-        self.assertNotRegex(self.workflow, r"pull_request_target|^\s+(push|schedule|pull_request):")
+    def test_no_workflow_waits_on_workflow_run_which_fires_only_from_the_default_branch(self):
+        directory = os.path.join(ROOT, ".github", "workflows")
+        for name in sorted(os.listdir(directory)):
+            with open(os.path.join(directory, name), encoding="utf-8") as f:
+                self.assertNotRegex(f.read(), r"(?m)^\s+workflow_run:", name)
+
+    def test_it_runs_only_after_the_testflight_job_uploaded_on_nightlys_release_path(self):
+        self.assertIn("needs: [plan, testflight]", self.job)
+        condition = " ".join(re.search(r"^    if: >-\n((?:      .*\n)+)", self.job, re.M).group(1).split())
+        testflight_if = re.search(r"^    if: (.*)$", self.testflight, re.M).group(1)
+        self.assertIn(testflight_if, condition)
+        self.assertIn("fromJSON(needs.plan.outputs.plan).ios", condition)
+        self.assertIn("needs.testflight.result == 'success'", condition)
+        # Only a push to nightly (with the key) plans an upload.
+        self.assertTrue(release.plan("refs/heads/nightly", "202609250000", asc_key=True)["ios"])
+        for ref in ("refs/tags/v1.2.3", "refs/tags/v1.2.3-beta.1", "refs/heads/master"):
+            self.assertFalse(release.plan(ref, "202609250000", asc_key=True)["ios"], ref)
+
+    def test_it_runs_on_linux_and_reads_the_repo_without_writing_it(self):
+        self.assertRegex(self.job, r"(?m)^    runs-on: ubuntu-latest$")
+        self.assertRegex(self.job, r"(?m)^    timeout-minutes: 60$")
+        permissions = self.block(self.job, "permissions", "    ")
+        self.assertEqual(re.findall(r"^      (\S+): (\S+)", permissions, re.M), [("contents", "read")])
+        self.assertNotIn(": write", self.job)
+        concurrency = self.block(self.job, "concurrency", "    ")
+        self.assertIn("group: testflight-retire", concurrency)
+        self.assertIn("cancel-in-progress: false", concurrency)
 
     def test_it_uses_only_the_testflight_upload_secrets(self):
-        used = set(re.findall(r"secrets\.(\w+)", self.workflow))
-        self.assertEqual(used, set(release.IOS_SECRETS))
-        self.assertLessEqual(used, set(re.findall(r"secrets\.(\w+)", self.release)))
+        self.assertEqual(set(re.findall(r"secrets\.(\w+)", self.job)), set(release.IOS_SECRETS))
 
-    def test_it_reads_the_repo_and_never_writes_it(self):
-        permissions = self.block(self.workflow, "permissions")
-        self.assertEqual(sorted(re.findall(r"^  (\S+): (\S+)", permissions, re.M)),
-                         [("actions", "read"), ("contents", "read")])
-        self.assertNotIn(": write", self.workflow)
-        self.assertIn("cancel-in-progress: false", self.block(self.workflow, "concurrency"))
-
-    def test_it_waits_for_the_build_the_release_run_uploaded(self):
-        # The Release run's number is the TestFlight build number.
-        testflight = self.block(self.release, "testflight", "  ")
-        self.assertIn("BUILD: ${{ github.run_number }}", testflight)
-        self.assertRegex(testflight, r"(?m)^    name: %s$" % re.escape(release.TESTFLIGHT_JOB))
-        self.assertIn("github.event.workflow_run.run_number", self.workflow)
-        self.assertIn("--wait-for-build", self.workflow)
-        self.assertIn("release.py testflight-job", self.workflow)
+    def test_it_waits_for_the_build_the_testflight_job_uploaded(self):
+        self.assertIn("BUILD: ${{ github.run_number }}", self.testflight)
+        self.assertIn("BUILD: ${{ github.run_number }}", self.job)
+        self.assertIn('release.py retire-testflight --key-file "$RUNNER_TEMP/asc/AuthKey.p8"', self.job)
+        self.assertIn('--timeout 2700 --interval 45 --wait-for-build "$BUILD"', self.job)
+        self.assertNotIn("--dry-run", self.job)
 
     def test_the_key_is_written_privately_and_always_removed(self):
-        self.assertIn("umask 077", self.workflow)
-        self.assertIn('"$RUNNER_TEMP/asc/AuthKey.p8"', self.workflow)
-        self.assertRegex(self.workflow, r"- name: Remove the App Store Connect key\n\s+if: always\(\)\n\s+run: rm -rf \"\$RUNNER_TEMP/asc\"")
+        self.assertIn("umask 077", self.job)
+        self.assertIn('"$RUNNER_TEMP/asc/AuthKey.p8"', self.job)
+        self.assertIn("BEGIN PRIVATE KEY", self.job)
+        self.assertRegex(self.job, r"- name: Remove the App Store Connect key\n\s+if: always\(\)\n\s+run: rm -rf \"\$RUNNER_TEMP/asc\"")
 
 
 if __name__ == "__main__":
