@@ -216,6 +216,39 @@ struct RemoteTerminalLinkTests {
         #expect(link.want(true) == [.attach(cols: 90, rows: 24)])
     }
 
+    @Test func aRefusedAttachIsRetriedWithBackoffWhileItIsWanted() {
+        var link = RemoteTerminalLink()
+        _ = link.want(true)
+        _ = link.noteGrid(cols: 80, rows: 24)
+        #expect(link.attachFailed("not running on the host", attempt: link.attempt) == .seconds(1))
+        #expect(link.retry(attempt: link.attempt) == [.attach(cols: 80, rows: 24)])
+        #expect(link.phase == .attaching)
+        #expect(link.attachFailed("not running on the host", attempt: link.attempt) == .seconds(2))
+        #expect(link.retry(attempt: link.attempt) == [.attach(cols: 80, rows: 24)])
+        link.attached(attempt: link.attempt)
+        #expect(link.phase == .live)
+        // Attached again, the next refusal starts from the shortest wait.
+        #expect(link.want(false) == [.detach])
+        _ = link.want(true)
+        #expect(link.attachFailed("not running on the host", attempt: link.attempt) == .seconds(1))
+    }
+
+    @Test func aRetryIsDroppedOnceTheViewLeftOrANewerAttachWent() {
+        var link = RemoteTerminalLink()
+        _ = link.want(true)
+        _ = link.noteGrid(cols: 80, rows: 24)
+        let refused = link.attempt
+        _ = link.attachFailed("not running on the host", attempt: refused)
+        #expect(link.want(false).isEmpty)
+        #expect(link.retry(attempt: refused).isEmpty)
+        #expect(link.want(true) == [.attach(cols: 80, rows: 24)])
+        #expect(link.retry(attempt: refused).isEmpty)
+        #expect(link.phase == .attaching)
+        link.disconnected()
+        _ = link.want(false)
+        #expect(link.attachFailed("gone", attempt: link.attempt) == nil)
+    }
+
     @Test func aLateAnswerToAnEarlierAttachNeverSettlesTheCurrentOne() {
         var link = RemoteTerminalLink()
         _ = link.want(true)

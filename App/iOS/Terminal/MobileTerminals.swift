@@ -248,6 +248,7 @@ final class MobileTerminalSession {
     @ObservationIgnored private var settle: Task<Void, Never>?
     @ObservationIgnored private var holds = 0
     @ObservationIgnored private var letGo: Task<Void, Never>?
+    @ObservationIgnored private var retry: Task<Void, Never>?
     /// Fixtures: the screen this session shows instead of attaching.
     var canned: Data? { MobileTerminals.shared.cannedScreens?[key.session] }
     /// Ctrl and ⌥ latched from the key row for the next key.
@@ -283,6 +284,7 @@ final class MobileTerminalSession {
         while !Task.isCancelled { try? await Task.sleep(for: .seconds(3600)) }
         holds -= 1
         guard holds == 0 else { return }
+        retry?.cancel()
         // A view remade in place (a split around it, a rotation) holds again at once: detach only
         // once nothing has for a moment, so it keeps its attachment instead of a fresh replay.
         letGo = Task { [weak self] in
@@ -352,6 +354,7 @@ final class MobileTerminalSession {
     func release() {
         settle?.cancel()
         letGo?.cancel()
+        retry?.cancel()
         if link.acceptsOutput { client?.detach(sessionID: key.session) }
         surface = nil
     }
@@ -371,7 +374,9 @@ final class MobileTerminalSession {
                         _ = try await client.attach(sessionID: id, cols: cols, rows: rows)
                         self?.link.attached(attempt: attempt)
                     } catch {
-                        self?.link.attachFailed(Self.reason(error), attempt: attempt)
+                        if let self, let delay = self.link.attachFailed(Self.reason(error), attempt: attempt) {
+                            self.retry(after: delay, attempt: attempt)
+                        }
                     }
                     self?.sync()
                 }
@@ -383,12 +388,23 @@ final class MobileTerminalSession {
         }
     }
 
+    /// A refused attach is asked again while the pane stays on screen: a host that just
+    /// relaunched may not serve its session yet.
+    private func retry(after delay: Duration, attempt: Int) {
+        retry?.cancel()
+        retry = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self, self.holds > 0 else { return }
+            self.perform(self.link.retry(attempt: attempt))
+        }
+    }
+
     private func sync() {
         if phase != link.phase { phase = link.phase }
     }
 
     private static func reason(_ error: Error) -> String {
-        if case RemoteHostClientError.rejected(let code, _) = error, code == "no_such_session" { return "session unavailable" }
+        if case RemoteHostClientError.rejected(let code, _) = error, code == "no_such_session" { return "not running on the host" }
         return String(describing: error)
     }
 }
