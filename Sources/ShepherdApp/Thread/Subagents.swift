@@ -3,146 +3,196 @@ import ShepherdUI
 import ShepherdProtocol
 import ShepherdRemote
 
-// Subagents (Agents board): a subagent is a turn inside a turn. Its card sits where its spawn
-// call was; more than three live siblings fold into a runs strip (each of its segments opens its
-// run); once every run in the group has finished, the cards become one run ledger. Pause waits
-// at the child's next model-request boundary; Continue releases it.
+// Subagents (SubagentTray, Subagents, SubagentsDone, SubagentsQueue boards): while a turn's
+// subagents run they dock above the composer in the tray, one row each, sharing one card with
+// Up next; the thread keeps a line where they started and one where they finished, and both
+// open the inspector. The tray stays until your next message once every run has finished.
 
-/// What a card can ask the thread to do. `inspect` opens the inspector for the run.
+/// What the tray and the thread's record ask the thread to do. `inspect` opens (or closes) the
+/// inspector for a run; `steer` opens it with its Steer field focused.
 struct SubagentActions {
     var inspect: (ChildRun) -> Void
     var command: (ChildRun, NativeSubagentAction, String?, NativeThreadDelivery?) -> Void
-    /// The run open in the inspector: its card wears the running ring, its ledger row the tint.
+    var steer: ((ChildRun) -> Void)? = nil
+    /// The run open in the inspector: its tray row wears the selection.
     var inspectedRunID: String? = nil
 }
 
 extension EnvironmentValues {
-    /// Whether the thread takes commands from its subagent cards (Pause, Stop, Re-run, an
-    /// answer): its agent is on screen and its host supports them. An environment value the
-    /// cards read, so switching agents redraws the cards and not the turns around them.
+    /// Whether the thread takes commands from its tray (Stop, an answer): its agent is on screen
+    /// and its host supports them. An environment value the rows read, so switching agents
+    /// redraws the rows and not the turns around them.
     @Entry var threadActionsEnabled = true
 }
 
-/// The subagents for one turn: cards where few, the strip (plus the cards that need you) when
-/// many, the ledger once every run in the group has finished.
-struct SubagentStack: View {
+/// The tray's own view state: collapsed, and whether a long tray shows every run.
+@MainActor
+@Observable
+final class SubagentTrayState {
+    var collapsed = false
+    var expanded = false
+}
+
+/// The tray's rows as the dock draws them: the first `shownRows` and "Show N more" for a long
+/// tray, every row once expanded (scrolling past `AppLayout.trayExpandedMaxRows`).
+enum SubagentTrayLayout {
+    enum Item: Equatable, Identifiable {
+        case run(NWSubagentTrayRun)
+        case more(hidden: Int, expanded: Bool)
+
+        var id: String {
+            switch self {
+            case .run(let run): run.id
+            case .more: "tray.more"
+            }
+        }
+    }
+
+    static func items(_ runs: [NWSubagentTrayRun], expanded: Bool) -> [Item] {
+        let shown = NativeSubagentTray.shownRows
+        guard runs.count > shown else { return runs.map(Item.run) }
+        if expanded { return runs.map(Item.run) + [.more(hidden: 0, expanded: true)] }
+        return runs.prefix(shown).map(Item.run) + [.more(hidden: runs.count - shown, expanded: false)]
+    }
+}
+
+/// The tray section of the composer's dock.
+struct SubagentTrayView: View {
+    let tray: NativeSubagentTray
+    let state: SubagentTrayState
     let runs: [ChildRun]
-    /// Whether any sibling in the turn is still live; the ledger waits for all of them.
-    var turnLive = false
     let actions: SubagentActions
+    let answer: (ChildRun) -> Void
 
     var body: some View {
-        SubagentGroup(runs: runs, turnLive: turnLive, inspectedRunID: actions.inspectedRunID,
-                      inspect: actions.inspect, command: actions.command)
-            .equatable()
-    }
-}
-
-/// The stack's content, compared by value: a thread refresh that leaves these runs alone
-/// skips the ledger and strip projections entirely.
-private struct SubagentGroup: View, Equatable {
-    let runs: [ChildRun]
-    let turnLive: Bool
-    let inspectedRunID: String?
-    let inspect: (ChildRun) -> Void
-    let command: (ChildRun, NativeSubagentAction, String?, NativeThreadDelivery?) -> Void
-    @State private var stripExpanded = false
-    @State private var shown = NWShownFlag()
-
-    nonisolated static func == (a: SubagentGroup, b: SubagentGroup) -> Bool {
-        a.runs == b.runs && a.turnLive == b.turnLive && a.inspectedRunID == b.inspectedRunID
-    }
-
-    var body: some View {
-        let ordered = SubagentPresentation.ordered(runs)
-        let layout = SubagentPresentation.layout(ordered, turnLive: turnLive)
-        let cards = switch layout {
-        case .ledger: [ChildRun]()
-        case .strip: ordered.filter { stripExpanded || $0.needsAttention }
-        case .cards: ordered
-        }
-        // One list of cards in every layout, so a card keeps its identity when the group folds
-        // into the strip. The group reshapes at once, since the rest of its turn (the next
-        // card, "Working…") moves at once too: the cards that fold away leave, and what arrives
-        // while the group is on screen (a strip, a ledger in place of the cards, a card that
-        // needs you, the cards the strip shows) fades in where it lands.
-        VStack(alignment: .leading, spacing: AppLayout.subagentStackSpacing) {
-            if layout == .ledger {
-                NWRunLedger(SubagentPresentation.ledger(ordered), selection: selection(ordered)).equatable()
-                    .nwRunArrival(shown.appeared)
-            }
-            if layout == .strip {
-                NWRunsStrip(SubagentPresentation.strip(ordered), isExpanded: $stripExpanded) { id in
-                    // A segment opens its run as the run's card does.
-                    if let run = ordered.first(where: { $0.id == id }) { inspect(run) }
+        let values = SubagentPresentation.tray(tray)
+        let items = SubagentTrayLayout.items(values.rows, expanded: state.expanded)
+        let byID = Dictionary(runs.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        NWSubagentTray(values.summary, collapsed: state.collapsed,
+                       onToggle: { withNWAnimation(.disclosure) { state.collapsed.toggle() } }) {
+            if state.expanded, values.rows.count > AppLayout.trayExpandedMaxRows {
+                // A workflow of hundreds of runs scrolls inside, building only the rows on screen.
+                ScrollView {
+                    LazyVStack(spacing: 0) { list(items.dropLast(), byID) }
                 }
-                .equatable()
-                .nwRunArrival(shown.appeared)
+                .frame(height: CGFloat(AppLayout.trayExpandedMaxRows) * NWSubagentTrayMetrics.pointer.rowHeight)
+                if let last = items.last { item(last, byID) }
+            } else {
+                VStack(spacing: 0) { list(items[...], byID) }
             }
-            ForEach(cards, id: \.id, content: card)
         }
-        .onAppear { shown.appeared = true }
     }
 
-    private func card(_ run: ChildRun) -> some View {
-        SubagentCard(run: run, selected: run.runID == inspectedRunID, inspect: inspect, command: command)
-            .equatable()
-            .nwRunArrival(shown.appeared, .list)
+    private func list(_ items: ArraySlice<SubagentTrayLayout.Item>, _ byID: [String: ChildRun]) -> some View {
+        ForEach(items) { item($0, byID) }
     }
 
-    /// The ledger row of the inspected run; choosing a row inspects it (again closes it).
-    private func selection(_ ordered: [ChildRun]) -> Binding<String?> {
-        Binding(
-            get: { ordered.first { $0.runID == inspectedRunID }?.id },
-            set: { id in if let run = ordered.first(where: { $0.id == id }) { inspect(run) } }
-        )
+    @ViewBuilder private func item(_ item: SubagentTrayLayout.Item, _ byID: [String: ChildRun]) -> some View {
+        // One view per element: a container whatever the item is.
+        VStack(spacing: 0) {
+            switch item {
+            case .run(let value):
+                if let run = byID[value.id] {
+                    SubagentTrayRow(value: value, run: run, selected: run.runID == actions.inspectedRunID, actions: actions,
+                                    answer: answer)
+                        .equatable()
+                }
+            case .more(let hidden, let expanded):
+                NWSubagentTrayMoreRow(hidden: hidden, expanded: expanded) {
+                    withNWAnimation(.disclosure) { state.expanded.toggle() }
+                }
+            }
+        }
     }
 }
 
-/// One run's card: `NWSubagentCard` over a child run. Its live controls (pause, stop) sit in
-/// the context menu and the accessibility actions; the inspector carries them visibly.
-struct SubagentCard: View, Equatable {
+/// One run's row: it compares by what it draws, so a poll that leaves a run alone skips it.
+/// Its live controls sit on hover and in its context menu and accessibility actions.
+struct SubagentTrayRow: View, Equatable {
+    let value: NWSubagentTrayRun
     let run: ChildRun
     let selected: Bool
-    let inspect: (ChildRun) -> Void
-    let command: (ChildRun, NativeSubagentAction, String?, NativeThreadDelivery?) -> Void
+    let actions: SubagentActions
+    let answer: (ChildRun) -> Void
     @Environment(\.threadActionsEnabled) private var enabled
 
-    nonisolated static func == (a: SubagentCard, b: SubagentCard) -> Bool {
-        a.run == b.run && a.selected == b.selected
+    nonisolated static func == (a: SubagentTrayRow, b: SubagentTrayRow) -> Bool {
+        a.value == b.value && a.selected == b.selected && a.run.paused == b.run.paused && a.run.state == b.run.state
     }
 
     var body: some View {
-        let state = SubagentPresentation.state(run)
-        NWSubagentCard(
-            SubagentPresentation.card(run), isSelected: selected, isEnabled: enabled,
-            inspect: { inspect(run) },
-            answer: { command(run, .message, $0, .steer) },
-            rerun: { command(run, .resume, nil, nil) }
-        )
-        .contextMenu {
-            Button("Inspect") { inspect(run) }
-            if !run.isTerminal {
-                if state == .running || state == .queued { pauseButton }
-                Button("Stop", role: .destructive) { command(run, .cancel, nil, nil) }.disabled(!enabled)
-            } else if state == .failed {
-                Button("Re-run") { command(run, .resume, nil, nil) }.disabled(!enabled)
+        let live = !run.isTerminal
+        let phase = nativeRunPhase(run)
+        NWSubagentTrayRow(value, selected: selected, enabled: enabled, actions: NWSubagentTrayActions(
+            open: { actions.inspect(run) },
+            answer: phase == .needsYou ? { answer(run) } : nil,
+            steer: live && phase != .needsYou ? { (actions.steer ?? actions.inspect)(run) } : nil,
+            stop: live ? { actions.command(run, .cancel, nil, nil) } : nil))
+            .contextMenu {
+                Button(selected ? "Close the Inspector" : "Open") { actions.inspect(run) }
+                if phase == .needsYou { Button("Answer…") { answer(run) }.disabled(!enabled) }
+                ForEach(nativeRunControls(run), id: \.self) { control in
+                    Button(control.title, role: control == .stop ? .destructive : nil) {
+                        actions.command(run, control.action, nil, nil)
+                    }
+                    .disabled(!enabled)
+                }
             }
-        }
-        .accessibilityAction(named: "Inspect") { inspect(run) }
-        .accessibilityActions {
-            if enabled, !run.isTerminal {
-                if state == .running || state == .queued { pauseButton }
-                Button("Stop") { command(run, .cancel, nil, nil) }
+            .accessibilityActions {
+                if phase == .needsYou { Button("Answer") { answer(run) } }
+                if enabled {
+                    ForEach(nativeRunControls(run), id: \.self) { control in
+                        Button(control.title) { actions.command(run, control.action, nil, nil) }
+                    }
+                }
             }
+    }
+}
+
+/// The card above the composer: the tray, then Up next, in one card (SubagentsQueue).
+struct ComposerDock<Queue: View>: View {
+    let tray: NativeSubagentTray?
+    let trayState: SubagentTrayState
+    let runs: [ChildRun]
+    let actions: SubagentActions?
+    let answer: (ChildRun) -> Void
+    let showsQueue: Bool
+    @ViewBuilder let queue: () -> Queue
+
+    var body: some View {
+        if let tray, let actions {
+            NWDockStack(showsTray: true, showsQueue: showsQueue) {
+                SubagentTrayView(tray: tray, state: trayState, runs: runs, actions: actions, answer: answer)
+            } queue: {
+                queue()
+            }
+        } else {
+            // Up next alone draws its own card.
+            queue()
         }
     }
+}
 
-    private var pauseButton: some View {
-        Button(run.paused == true ? "Continue" : "Pause") {
-            command(run, run.paused == true ? .continue : .pause, nil, nil)
-        }
-        .disabled(!enabled)
-        .help("Pause before the next model request; current tools finish normally")
+/// A subagent's question in the composer's place, from its row's Answer (SubagentTray ›
+/// Answer → question dock). The answer steers only that run.
+struct SubagentQuestion: View {
+    let run: ChildRun
+    let enabled: Bool
+    let actions: SubagentActions
+    let hide: () -> Void
+
+    var body: some View {
+        let question = run.question?.text ?? run.attentionText ?? ""
+        NWSubagentQuestionDock(
+            name: nativeRunNames(run).name, question: question,
+            options: NativeQuestionOption.options(run.question?.options ?? []).map {
+                NWQuestionDockOption(number: $0.number, title: $0.title, detail: $0.detail, recommended: $0.recommended, value: $0.value)
+            },
+            enabled: enabled,
+            answer: { reply in
+                actions.command(run, .message, reply, .steer)
+                hide()
+            },
+            hide: hide)
     }
 }

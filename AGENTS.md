@@ -730,8 +730,8 @@ from saved state; the server relays each under its own token and accepts the ans
 the target's registered connection ([docs/agent-coordination.md](docs/agent-coordination.md)).
 
 Shepherd does not nest agents. pi extensions own subagent execution (the bundled native runtime
-is on by default), and the app only *projects* the results in the parent's thread (cards, the
-runs strip, the ledger, and the inspector) and the palette. Subagents have no sidebar rows; one
+is on by default), and the app only *projects* the results: the tray above the parent's
+composer, two record lines in its thread, the inspector, and the palette. Subagents have no sidebar rows; one
 waiting on you marks its parent's row. Child runs are display state and never persisted.
 
 **Switching is a visibility flip, never a remount.** `WorkspaceSelection.mountedTabs` keeps every
