@@ -14,6 +14,8 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
     private var suggestionsSnapshot: SuggestionsSnapshot
     private var log: [String] = []
     var refusesChanges = false
+    /// Saved versions a restore can put back (their entries are in the files' history).
+    var revisions: [InstructionRevision] = []
 
     init(settings: HostSettings = HostSettings(), files: InstructionsSnapshot = InstructionsSnapshot(directory: "~/i"),
          suggestions: SuggestionsSnapshot = SuggestionsSnapshot()) {
@@ -44,8 +46,9 @@ final class FakeSettingsClient: SettingsClient, @unchecked Sendable {
             case .save(let file, let content, let origin, let sync):
                 log.append("instructions.save(\(file.fileName), sync: \(sync), origin: \(origin))")
                 files[file] = content
-            case .restore:
+            case .restore(let revisionID, _):
                 log.append("instructions.restore")
+                if let revision = revisions.first(where: { $0.id == revisionID }) { files[revision.file] = revision.content }
             }
             return files
         }
@@ -121,6 +124,26 @@ struct ClientSettingsTests {
         #expect(model.problem == "The host said no.")
     }
 
+    @Test func aSwitchShowsAtOnceAndTheHostFollows() async {
+        let client = FakeSettingsClient(settings: HostSettings(updatePiDaily: false))
+        let host = Self.host("build-01", client)
+        let model = ClientHostSettings()
+        await model.refresh(host)
+        model.post(.updatePiDaily(true), on: host)
+        // Before the host answers.
+        #expect(model.settings(of: host)?.updatePiDaily == true)
+        await Self.settle { client.requests.count == 2 }
+        #expect(client.requests.count == 2)
+        #expect(model.settings(of: host)?.updatePiDaily == true)
+    }
+
+    /// Lets work a control posted run: yields until `done`, or for a generous number of turns.
+    static func settle(_ done: () -> Bool) async {
+        for _ in 0..<1_000 where !done() {
+            await Task.yield()
+        }
+    }
+
     // MARK: Instructions
 
     @Test func sameOnEveryHostEditsTheFirstHostsFilesAndSavesThemEverywhere() async throws {
@@ -173,6 +196,43 @@ struct ClientSettingsTests {
         #expect(!model.isEdited(.agents, in: hosts))
     }
 
+    @Test func restoringAVersionPutsItBackOnEveryHost() async {
+        let old = InstructionRevision(file: .agents, savedAt: 100, summary: "Added “- old”", content: "- old\n")
+        let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- new\n", directory: "~/i", history: [old.entry]))
+        first.revisions = [old]
+        let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- new\n", directory: "~/i"))
+        let hosts = [Self.host("build-01", first), Self.host("studio", second)]
+        let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPad")
+        await model.refresh(hosts)
+        #expect(model.history(.agents, in: hosts).map(\.id) == [old.id])
+        #expect(model.history(.appendSystem, in: hosts).isEmpty)
+        model.setText("- draft\n", file: .agents, in: hosts)
+        await model.restore(old.entry, in: hosts)
+        #expect(first.saved.agents == "- old\n")
+        #expect(second.saved.agents == "- old\n")
+        #expect(!model.isEdited(.agents, in: hosts))
+        #expect(model.text(.agents, in: hosts) == "- old\n")
+    }
+
+    @Test func syncNowGivesADifferingHostTheFirstHostsFiles() async {
+        let first = FakeSettingsClient(files: InstructionsSnapshot(agents: "- a\n", directory: "~/i"))
+        let second = FakeSettingsClient(files: InstructionsSnapshot(agents: "- mine\n", directory: "~/i"))
+        let hosts = [Self.host("build-01", first), Self.host("studio", second), Self.host("horizon", nil)]
+        let model = ClientInstructions(defaults: ScratchDefaults(), origin: "iPhone")
+        await model.refresh(hosts)
+        #expect(model.differing(in: hosts).map(\.name) == ["studio"])
+        #expect(model.syncLine(in: hosts) == "build-01 synced · studio differs")
+        await model.syncNow(in: hosts)
+        #expect(second.saved.agents == "- a\n")
+        #expect(second.requests.last == "instructions.save(AGENTS.md, sync: true, origin: iPhone)")
+        #expect(model.differing(in: hosts).isEmpty)
+        #expect(model.syncLine(in: hosts) == "build-01, studio synced")
+        // Per host there is nothing to sync, and nothing to say.
+        model.sameEverywhere = false
+        #expect(model.syncLine(in: hosts) == nil)
+        #expect(model.scope(in: hosts) == "build-01")
+    }
+
     @Test func sameOnEveryHostIsRememberedPerDevice() {
         let defaults = ScratchDefaults()
         let model = ClientInstructions(defaults: defaults, origin: "iPhone")
@@ -222,6 +282,21 @@ struct ClientSettingsTests {
         #expect(model.settings(hosts)?.sources == [.thread])
         #expect(first.requests.filter { $0 == "suggestions.configure" }.count == 2)
         #expect(second.requests.filter { $0 == "suggestions.configure" }.count == 2)
+    }
+
+    @Test func theExperimentsSwitchShowsAtOnce() async {
+        let on = SuggestedInstructionsSettings(enabled: true)
+        let client = FakeSettingsClient(suggestions: SuggestionsSnapshot(settings: on, waiting: [Self.suggestion("- a", at: 10)]))
+        let hosts = [Self.host("build-01", client)]
+        let model = ClientSuggestions()
+        await model.refresh(hosts)
+        model.post(hosts) { $0.enabled = false }
+        // Off drops what waits, before the host answers.
+        #expect(!model.isOn(hosts))
+        #expect(model.waiting(hosts).isEmpty)
+        await Self.settle { client.requests.contains("suggestions.configure") }
+        #expect(client.requests.contains("suggestions.configure"))
+        #expect(!model.isOn(hosts))
     }
 
     @Test func anEditedLineMustBeOneLine() async {

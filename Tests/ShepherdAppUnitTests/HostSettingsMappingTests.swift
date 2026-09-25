@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import ShepherdCore
 import ShepherdProtocol
+import ShepherdRemote
 @testable import ShepherdApp
 
 /// What a remote client sees of this Mac's settings, and a client's change applied as the Mac's
@@ -29,6 +30,13 @@ struct HostSettingsMappingTests {
         // pi's own default reads as none.
         app.defaultModel = ""
         #expect(HostSettingsMapping.settings(from: app, shepherdVersion: nil, piVersion: nil).defaultModel == nil)
+    }
+
+    @Test func aClientExplainsEveryBundledExtensionTheMacServes() {
+        for bundled in HostSettingsMapping.bundled {
+            #expect(HostSettingsPresentation.note(forBundled: bundled.id) != nil, "no note for \(bundled.id)")
+        }
+        #expect(HostSettingsPresentation.note(forBundled: "someday") == nil)
     }
 
     @Test func aClientsChangeLandsInTheMacsSettings() {

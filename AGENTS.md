@@ -358,7 +358,10 @@ Sources/
                        and what a client may do), InstructionsText (an instruction file's size,
                        diff, changed lines, highlighting and suggested lines),
                        InstructionsPresentation (its host chips and rows), SuggestionsPresentation
-                       (Experiments' words), ShepherdLog. Shared with the iOS client.
+                       (Experiments' words), ClientSettings (the iOS client's Settings models: a
+                       host's settings, its instructions and suggestions over the remote
+                       protocol), HostSettingsPresentation, ShepherdLog. Shared with the iOS
+                       client.
   ShepherdPTYSpawn/    The PTY child side (fork → exec) in C: no Swift runs between the two.
   ShepherdSessions/    SessionServer (state, sessions, extension socket, remote listener),
                        RPCSession, RPCThreadState (+Queue: the queue of messages sent while pi

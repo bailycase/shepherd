@@ -192,8 +192,7 @@ private struct InstructionsFileTabs: View {
     private func tab(_ file: InstructionFile) -> some View {
         let nw = Color.nw
         let chosen = model.file == file
-        let note = "\(file == .agents ? "how you work" : "rules that win") · "
-            + InstructionsText.sizeNote(model.text(file, on: model.machine))
+        let note = InstructionsPresentation.fileNote(file, text: model.text(file, on: model.machine))
         return Button { model.file = file } label: {
             VStack(alignment: .leading, spacing: NW.Space.xxs) {
                 Text(file.fileName)

@@ -148,6 +148,19 @@ struct InstructionsPresentationTests {
         #expect(InstructionsPresentation.filesHeld(InstructionsSnapshot(agents: " \n", directory: "~")) == "no files")
     }
 
+    @Test func aFilesNoteSaysWhatItIsForAndItsSize() {
+        #expect(InstructionsPresentation.fileNote(.agents, text: String(repeating: "word ", count: 20)) == "how you work · ~25 tokens")
+        #expect(InstructionsPresentation.fileNote(.appendSystem, text: "", sentence: true) == "Rules that win · empty")
+    }
+
+    @Test func theSyncLineNamesEachHostsState() {
+        #expect(InstructionsPresentation.syncLine(synced: ["Studio", "build-01"], differing: [], waiting: ["horizon"])
+                == "Studio, build-01 synced · horizon when it's back")
+        #expect(InstructionsPresentation.syncLine(synced: ["Studio"], differing: ["a", "b"], waiting: ["c", "d"])
+                == "Studio synced · a, b differ · c, d when they're back")
+        #expect(InstructionsPresentation.syncLine(synced: [], differing: [], waiting: []) == nil)
+    }
+
     @Test func aKeptDifferenceIsRememberedByBothSides() {
         let kept = InstructionsPresentation.fingerprint(host: "- docker\n", local: "- a\n")
         #expect(kept == InstructionsPresentation.fingerprint(host: "- docker\n", local: "- a\n"))
