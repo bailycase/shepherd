@@ -150,7 +150,8 @@ struct SubagentRunsTests {
     @Test func theTallyCountsLivePhasesWhileAnyRunIsLive() {
         let runs = [Self.run("a"), Self.run("b", needsAttention: true), Self.run("c", state: "complete")]
         #expect(nativeRunTally(runs)?.text == "1 running · 1 needs you")
-        #expect(nativeRunTally(runs)?.phase == .needsYou)
+        #expect(nativeRunTally(runs)?.phase == .running)
+        #expect(nativeRunTally([Self.run("b", needsAttention: true)])?.phase == .needsYou)
     }
 
     @Test func aFinishedTallySaysHowTheRunsEnded() {

@@ -275,8 +275,8 @@ public func nativeRunSections(_ runs: [ChildRun], placements: [String: NativeSub
 }
 
 /// The header's line over a set of runs: the live phases while any run is live ("1 running · 1
-/// needs you"), else how they ended ("all done", "2 done · 1 failed"). `phase` colors it: needs
-/// you first, then running, then queued or paused, then failed, else done.
+/// needs you"), else how they ended ("all done", "2 done · 1 failed"). `phase` colors it:
+/// running first, then needs you, then queued or paused, then failed, else done.
 public func nativeRunTally(_ runs: [ChildRun]) -> (text: String, phase: NativeRunPhase)? {
     guard !runs.isEmpty else { return nil }
     let phases = runs.map(nativeRunPhase)
@@ -287,7 +287,7 @@ public func nativeRunTally(_ runs: [ChildRun]) -> (text: String, phase: NativeRu
         return count > 0 ? "\(count) \(phase.word)" : nil
     }
     let text = !live && !phases.contains(.failed) ? "all done" : parts.joined(separator: " · ")
-    let lead = [NativeRunPhase.needsYou, .running, .queued, .paused, .failed].first(where: phases.contains) ?? .done
+    let lead = [NativeRunPhase.running, .needsYou, .queued, .paused, .failed].first(where: phases.contains) ?? .done
     return (text, lead)
 }
 
