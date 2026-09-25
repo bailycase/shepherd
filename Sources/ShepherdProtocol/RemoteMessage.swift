@@ -31,13 +31,16 @@ public enum RemoteProtocol {
     public static let worktreeActionsCapability = "agent.worktree.v1"
     public static let worktreeSetupCapability = "agent.worktree.setup.v1"
     public static let agentInspectionCapability = "agent.inspection.v1"
+    /// The host answers `RemoteAgentQuery.terminals`: what each of an agent's terminal panes runs
+    /// and how far its output has got. Older hosts leave a client with plain tabs.
+    public static let terminalActivityCapability = "terminal.activity.v1"
     /// The host commits from review (`RemoteAgentQuery.commitInfo`, `.commitMessage`, `.commit`).
     /// Older hosts only take Commit as a turn the agent is asked to do.
     public static let reviewCommitCapability = "review.commit.v1"
     /// The host serves `RemoteRequest.automation`: on and off, Run now and Stop, the runs it
     /// kept, and create, edit and delete. Older hosts show automations read-only.
     public static let automationsCapability = "automations.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability]
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -165,6 +168,31 @@ public struct RemoteWorktreeOperation: Codable, Hashable, Sendable {
     }
 }
 
+/// One terminal pane of an agent's layout, as its host sees it now (terminal tab states: a
+/// command running, output since you last looked).
+public struct RemoteTerminalActivity: Codable, Hashable, Sendable {
+    public var paneID: PaneID
+    public var sessionID: SessionID
+    /// The program the terminal talks to: the shell at its prompt ("zsh"), else what runs.
+    public var process: String?
+    /// The running command line ("make dev"), while a command runs; nil at the prompt.
+    public var command: String?
+    /// Advances with every read of the session's output; a client compares it with the value it
+    /// last showed.
+    public var outputSequence: UInt64
+
+    public init(paneID: PaneID, sessionID: SessionID, process: String?, command: String?, outputSequence: UInt64) {
+        self.paneID = paneID
+        self.sessionID = sessionID
+        self.process = process
+        self.command = command
+        self.outputSequence = outputSequence
+    }
+
+    /// A command runs in it.
+    public var isRunning: Bool { command != nil }
+}
+
 public enum RemoteInspectorPaneAction: Codable, Hashable, Sendable {
     case split(paneID: PaneID, axis: SplitAxis)
     case close(paneID: PaneID)
@@ -186,6 +214,8 @@ public enum RemoteAgentQuery: Codable, Hashable, Sendable {
     case children
     case inspectorPane(tabID: TabID, action: RemoteInspectorPaneAction)
     case search(query: String)
+    /// The agent's terminal panes and what runs in each (`terminalActivityCapability`).
+    case terminals
     /// What a commit from review would take (`reviewCommitCapability`).
     case commitInfo
     /// A commit message drafted from the diff of `paths`; slow, so asked for after the info.
@@ -206,6 +236,7 @@ public enum RemoteAgentResult: Codable, Hashable, Sendable {
     case inspector(TabID)
     case inspectorFocus(PaneID)
     case search(snippet: String?)
+    case terminals([RemoteTerminalActivity])
     case commitInfo(RemoteCommitInfo)
     /// `drafted` is false when the host fell back to a message written from the file list.
     case commitMessage(title: String, body: String, drafted: Bool)

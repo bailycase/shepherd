@@ -63,6 +63,9 @@ extension ShepherdViewModel {
                         result = .review(files: files, reference: reference)
                     case .inspectorPane(let tabID, let action):
                         result = try await self.handleRemoteInspectorPane(agentID: agentID, tabID: tabID, action: action)
+                    case .terminals:
+                        // The server answers it itself; a handler call is only ever a fallback.
+                        result = .terminals(await self.server.terminalActivity(agentID: agentID))
                     }
                     completion(.success(result))
                 } catch { completion(.failure(RemoteCreateAgentError(String(describing: error)))) }

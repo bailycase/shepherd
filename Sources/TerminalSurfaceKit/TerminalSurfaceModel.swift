@@ -528,6 +528,8 @@ extension TerminalConfiguration {
         "cmd+q",
         // ⌘K command palette (ghostty binds cmd+k=clear_screen by default).
         "cmd+k",
+        // ⌘J shows or hides the terminal panel; ⇧⌘↩ maximizes it (ghostty's toggle_split_zoom).
+        "cmd+j", "shift+cmd+enter",
     ]
 
     /// `extraUnbinds` carries the host's user-customized chords (ghostty

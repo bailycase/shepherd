@@ -15,6 +15,8 @@ struct ThreadHeader: View, Equatable {
             && a.reviewShortcut == b.reviewShortcut && a.inspectShortcut == b.inspectShortcut
             && (a.toggleReview == nil) == (b.toggleReview == nil) && (a.toggleSubagents == nil) == (b.toggleSubagents == nil)
             && (a.rename == nil) == (b.rename == nil)
+            && a.terminalOpen == b.terminalOpen && a.terminalNews == b.terminalNews && a.terminalShortcut == b.terminalShortcut
+            && (a.toggleTerminal == nil) == (b.toggleTerminal == nil)
     }
 
     var store: NativeThreadStore
@@ -29,6 +31,11 @@ struct ThreadHeader: View, Equatable {
     var toggleReview: (() -> Void)?
     var toggleSubagents: (() -> Void)?
     var rename: (() -> Void)?
+    /// The terminal panel under the thread: open, and whether a hidden tab printed.
+    var terminalOpen = false
+    var terminalNews = false
+    var terminalShortcut: String?
+    var toggleTerminal: (() -> Void)?
 
     var body: some View {
         let _ = NWRenderProbe.tick("thread.header")
@@ -54,6 +61,10 @@ struct ThreadHeader: View, Equatable {
 
     private var toggles: [(NWPaneToggle, () -> Void)] {
         var toggles: [(NWPaneToggle, () -> Void)] = []
+        if let toggleTerminal {
+            toggles.append((NWPaneToggle(systemImage: "terminal", label: terminalOpen ? "Hide terminal" : "Show terminal",
+                                         shortcut: terminalShortcut, isOn: terminalOpen, badge: terminalNews && !terminalOpen), toggleTerminal))
+        }
         if let toggleSubagents, store.hasSubagents {
             toggles.append((NWPaneToggle(systemImage: "arrow.triangle.branch", label: inspectorOpen ? "Close subagent" : "Inspect subagents",
                                          shortcut: inspectShortcut, isOn: inspectorOpen), toggleSubagents))

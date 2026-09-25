@@ -210,10 +210,14 @@ struct AgentLayoutModel: Equatable {
     let inspectingRunID: String?
     /// The review docked beside the layout, by identity.
     let review: ReviewSession?
+    /// The terminal panel under the thread, and its height.
+    var terminal = TerminalPanels.Panel()
+    var terminalHeight: CGFloat = AppLayout.terminalPanelHeight
 
     static func == (a: AgentLayoutModel, b: AgentLayoutModel) -> Bool {
         a.tab == b.tab && a.isVisible == b.isVisible && a.thread == b.thread && a.focusedPaneID == b.focusedPaneID
             && a.inspectingRunID == b.inspectingRunID && a.review === b.review
+            && a.terminal == b.terminal && a.terminalHeight == b.terminalHeight
     }
 
     /// Resolves every mounted layout's model from one pass over the workspace.
@@ -224,8 +228,10 @@ struct AgentLayoutModel: Equatable {
         private let agentsByTab: [TabID: Agent]
         private let runs: [AgentID: String]
         private let reviews: [AgentID: ReviewSession]
+        private let terminals: TerminalPanels
 
         init(vm: ShepherdViewModel, visibleTabID: TabID?) {
+            terminals = vm.terminalPanels
             self.visibleTabID = visibleTabID
             focusedPaneID = vm.focusedPaneID
             agentsByTab = Dictionary(vm.state.agents.map { ($0.tabID, $0) }, uniquingKeysWith: { first, _ in first })
@@ -241,7 +247,9 @@ struct AgentLayoutModel: Equatable {
             }
             return AgentLayoutModel(tab: tab, isVisible: visible, thread: thread, focusedPaneID: visible ? focusedPaneID : nil,
                                     inspectingRunID: thread.flatMap { runs[$0.agentID] },
-                                    review: thread.flatMap { reviews[$0.agentID] })
+                                    review: thread.flatMap { reviews[$0.agentID] },
+                                    terminal: terminals.panel(TerminalPanelKey(host: nil, tab: tab.id)),
+                                    terminalHeight: terminals.height)
         }
     }
 }
@@ -392,11 +400,84 @@ struct PaneTreeView: View {
     /// Everything the tree draws; `vm` is for actions.
     let model: AgentLayoutModel
     @State private var liveRatios: [PaneSplitPath: Double] = [:]
+    @State private var liveHeight: CGFloat?
 
     private var tab: Tab { model.tab }
     private var containerSpace: String { "split-\(tab.id)" }
 
     var body: some View {
+        if let thread = model.thread, tab.layout.contains(thread.paneID) {
+            panel(thread: thread)
+        } else {
+            tree
+        }
+    }
+
+    private var key: TerminalPanelKey { TerminalPanelKey(host: nil, tab: tab.id) }
+
+    /// The thread on top and its terminal panel under it (TerminalSplit board). Every leaf stays
+    /// a direct child of one ZStack keyed by pane ID, shown or not, so a tab switch, a hide or a
+    /// split never remounts a terminal's surface.
+    private func panel(thread: AgentLayoutModel.Thread) -> some View {
+        let panel = model.terminal
+        let target = ShepherdViewModel.TerminalTarget(key: key, layout: tab.layout, thread: thread.paneID, remote: nil,
+                                                      focused: model.focusedPaneID)
+        return GeometryReader { geo in
+            let _ = NWRenderProbe.tick("layout.paneTreeGeo")
+            let selected = TerminalPanel.selected(TerminalPanel.tabs(in: tab.layout, thread: thread.paneID), chosen: panel.chosenTab,
+                                                  remembering: panel.chosenPanes, focused: model.focusedPaneID)
+            let geometry = terminalPanelGeometry(for: tab.layout, thread: thread.paneID, selected: selected, shown: panel.shown,
+                                                 maximized: panel.maximized, height: liveHeight ?? model.terminalHeight,
+                                                 in: geo.size, liveRatios: liveRatios)
+            ZStack(alignment: .topLeading) {
+                ForEach(geometry.leaves, id: \.pane.id) { leaf in
+                    PaneLeafView(vm: vm, tab: tab, model: leafModel(leaf.pane, shown: leaf.shown))
+                        .frame(width: leaf.rect.width, height: leaf.rect.height)
+                        .offset(x: leaf.rect.minX, y: leaf.rect.minY)
+                        .opacity(leaf.shown ? 1 : 0)
+                        .allowsHitTesting(leaf.shown)
+                        .accessibilityHidden(!leaf.shown)
+                }
+                ForEach(geometry.separators) { separator in
+                    PaneSeparatorView(
+                        axis: separator.axis, rect: separator.rect, containerRect: separator.containerRect,
+                        color: separatorColor(for: separator.node), coordinateSpace: containerSpace,
+                        liveRatio: Binding(get: { liveRatios[separator.id] }, set: { liveRatios[separator.id] = $0 }),
+                        onCommit: { vm.commitSplitRatio(tabID: tab.id, split: separator.node, ratio: $0) }
+                    )
+                }
+                if let bar = geometry.tabBar {
+                    TerminalPanelBar(vm: vm, target: target, tabs: geometry.tabs, selected: selected, maximized: panel.maximized,
+                                     onScreen: model.isVisible, host: nil)
+                        .frame(width: bar.width, height: bar.height)
+                        .overlay(alignment: .top) {
+                            if !panel.maximized {
+                                TerminalPanelDivider(vm: vm, container: geo.size.height, liveHeight: $liveHeight,
+                                                     coordinateSpace: containerSpace)
+                                    .offset(y: -AppLayout.resizeHandleWidth / 2)
+                            }
+                        }
+                        .offset(x: bar.minX, y: bar.minY)
+                        .zIndex(2)
+                }
+                if geometry.tabs.isEmpty, let content = geometry.content {
+                    TerminalPanelEmpty(vm: vm, target: target)
+                        .frame(width: content.width, height: content.height)
+                        .offset(x: content.minX, y: content.minY)
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .nwAnimation(.content, value: panel.shown)
+        }
+        .coordinateSpace(.named(containerSpace))
+        .modifier(TerminalActivityPoll(vm: vm, key: key, agent: thread.agentID, remote: nil,
+                                       active: model.isVisible && tab.layout.leaves.count > 1))
+        .onChange(of: tab.layout.leaves.map(\.id), initial: true) {
+            vm.terminalPanels.reconcile(key, layout: tab.layout, thread: thread.paneID)
+        }
+    }
+
+    private var tree: some View {
         GeometryReader { geo in
             let _ = NWRenderProbe.tick("layout.paneTreeGeo")
             let geometry = paneTreeGeometry(for: tab.layout, in: geo.size, liveRatios: liveRatios)
@@ -434,16 +515,18 @@ struct PaneTreeView: View {
     }
 
     /// Everything a leaf draws, resolved here so the leaf itself reads nothing observable and
-    /// re-renders only when one of these values changes.
-    private func leafModel(_ pane: LeafPane) -> PaneLeafModel {
+    /// re-renders only when one of these values changes. `shown` is false for a terminal in a
+    /// hidden panel or tab (and the thread under a maximized panel): it keeps its surface but
+    /// neither renders nor holds the keyboard.
+    private func leafModel(_ pane: LeafPane, shown: Bool = true) -> PaneLeafModel {
         let thread = model.thread?.paneID == pane.id ? model.thread : nil
         return PaneLeafModel(
             pane: pane,
-            isVisible: model.isVisible,
+            isVisible: model.isVisible && shown,
             // Hidden layouts stay mounted, so a pane only holds keyboard focus while its own
             // layout is the visible one (`focusedPaneID` is nil otherwise); a background
             // terminal would swallow typing.
-            isFocused: model.focusedPaneID == pane.id,
+            isFocused: shown && model.focusedPaneID == pane.id,
             agentID: thread?.agentID,
             agentName: thread?.agentName ?? "",
             piSessionID: thread?.piSessionID,
@@ -726,7 +809,7 @@ private struct RemoteAgentLayoutView: View {
         // A review a host layout still carries as a leaf (older hosts) renders there instead.
         let review = threadPaneID == nil ? nil : vm.remoteReviews[ref].flatMap { $0.hostReviewPane ? nil : $0 }
         RightPaneSplit(state: vm.subagentInspector, showPane: inspecting != nil || review != nil) {
-            RemotePaneTreeView(vm: vm, connection: connection, ref: ref, tab: tab, node: tab.layout)
+            RemotePaneTreeView(vm: vm, connection: connection, ref: ref, tab: tab, node: tab.layout, thread: threadPaneID)
         } pane: {
             if let threadPaneID {
                 let store = vm.remoteThreadStores.store(for: ref)
@@ -758,11 +841,78 @@ private struct RemotePaneTreeView: View {
     let ref: RemoteAgentRef
     let tab: Tab
     let node: PaneNode
+    /// The agent's thread pane; nil for the host's utility terminal, drawn as its own splits.
+    var thread: PaneID? = nil
     @State private var liveRatios: [PaneSplitPath: Double] = [:]
+    @State private var liveHeight: CGFloat?
 
     private var containerSpace: String { "remote-split-\(tab.id)" }
 
     var body: some View {
+        if let thread, node.contains(thread) {
+            panel(thread: thread)
+        } else {
+            tree
+        }
+    }
+
+    /// The thread with its terminal panel under it, as a local layout has. Only the panes on
+    /// screen are mounted: a remote terminal attaches while it shows (its grid counts toward the
+    /// host's smallest-viewer size), and the host replays it when it comes back.
+    private func panel(thread: PaneID) -> some View {
+        let key = TerminalPanelKey(host: connection.id, tab: tab.id)
+        let panel = vm.terminalPanels.panel(key)
+        let target = ShepherdViewModel.TerminalTarget(key: key, layout: node, thread: thread, remote: ref, focused: vm.remoteFocusedPaneID)
+        return GeometryReader { geo in
+            let selected = TerminalPanel.selected(TerminalPanel.tabs(in: node, thread: thread), chosen: panel.chosenTab,
+                                                  remembering: panel.chosenPanes, focused: vm.remoteFocusedPaneID)
+            let geometry = terminalPanelGeometry(for: node, thread: thread, selected: selected, shown: panel.shown,
+                                                 maximized: panel.maximized, height: liveHeight ?? vm.terminalPanels.height,
+                                                 in: geo.size, liveRatios: liveRatios)
+            ZStack(alignment: .topLeading) {
+                ForEach(geometry.leaves.filter(\.shown), id: \.pane.id) { leaf in
+                    RemotePaneLeafView(vm: vm, connection: connection, ref: ref, tab: tab, leaf: leaf.pane)
+                        .frame(width: leaf.rect.width, height: leaf.rect.height)
+                        .offset(x: leaf.rect.minX, y: leaf.rect.minY)
+                }
+                ForEach(geometry.separators) { separator in
+                    PaneSeparatorView(
+                        axis: separator.axis, rect: separator.rect, containerRect: separator.containerRect,
+                        color: paneSeparatorColor(separator.node, focused: vm.remoteFocusedPaneID), coordinateSpace: containerSpace,
+                        liveRatio: Binding(get: { liveRatios[separator.id] }, set: { liveRatios[separator.id] = $0 }),
+                        onCommit: { vm.commitRemoteSplitRatio(ref: ref, split: separator.node, ratio: $0) }
+                    )
+                }
+                if let bar = geometry.tabBar {
+                    TerminalPanelBar(vm: vm, target: target, tabs: geometry.tabs, selected: selected, maximized: panel.maximized,
+                                     onScreen: true, host: connection.config.name)
+                        .frame(width: bar.width, height: bar.height)
+                        .overlay(alignment: .top) {
+                            if !panel.maximized {
+                                TerminalPanelDivider(vm: vm, container: geo.size.height, liveHeight: $liveHeight,
+                                                     coordinateSpace: containerSpace)
+                                    .offset(y: -AppLayout.resizeHandleWidth / 2)
+                            }
+                        }
+                        .offset(x: bar.minX, y: bar.minY)
+                        .zIndex(2)
+                }
+                if geometry.tabs.isEmpty, let content = geometry.content {
+                    TerminalPanelEmpty(vm: vm, target: target)
+                        .frame(width: content.width, height: content.height)
+                        .offset(x: content.minX, y: content.minY)
+                }
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+        .coordinateSpace(.named(containerSpace))
+        .modifier(TerminalActivityPoll(vm: vm, key: key, agent: ref.agentID, remote: ref, active: node.leaves.count > 1))
+        .onChange(of: node.leaves.map(\.id), initial: true) {
+            vm.terminalPanels.reconcile(key, layout: node, thread: thread)
+        }
+    }
+
+    private var tree: some View {
         GeometryReader { geo in
             let geometry = paneTreeGeometry(for: node, in: geo.size, liveRatios: liveRatios)
             ZStack(alignment: .topLeading) {
