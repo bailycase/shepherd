@@ -82,14 +82,16 @@ jobs:
 
       # Diagnostic: git calls cost 0.16-0.2 s each in tests here, against
       # 0.035 s on the same image before. Tests run /usr/bin/git, the xcrun shim.
+      # About 8 s, so it runs on A, off W's longer critical path; remove it once
+      # a run has answered the question.
       - name: Time git (diagnostic)
-        if: matrix.shard == 'W'
+        if: matrix.shard == 'A'
         continue-on-error: true
         run: |
           xcrun --verbose -f git 2>&1 || true
           direct=$(xcrun -f git)
-          echo "20x /usr/bin/git --version:"; time (for i in $(seq 20); do /usr/bin/git --version >/dev/null; done)
-          echo "20x $direct --version:"; time (for i in $(seq 20); do "$direct" --version >/dev/null; done)
+          echo "20x /usr/bin/git --version:"; time (for _ in $(seq 20); do /usr/bin/git --version >/dev/null; done)
+          echo "20x $direct --version:"; time (for _ in $(seq 20); do "$direct" --version >/dev/null; done)
 
       - name: Run tests
         env:
