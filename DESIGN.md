@@ -1332,13 +1332,15 @@ the turn has finished, the changes card and the footer end it. A running turn ha
   `textPrimary` at the 640pt measure, blocks 12pt apart, selectable, with no speaker label.
   Markdown is parsed once per turn:
   - headings at `headline`, with 4pt more above them
-  - lists indented 20pt (the marker right-aligned 6pt before the text), items 4pt apart, with
-    one nested level
+  - lists indented 20pt per level to any depth (the marker right-aligned 6pt before the text),
+    items 4pt apart
   - bold and italic as Markdown gives them
   - quotes in italic `textSecondary`, 12pt past a 2pt `lineStrong` rule
   - inline code in mono 12 on `lineSubtle` (the board's `bgSunken` with a 1px line cannot ride a
     text run; see Where Shepherd departs from the boards), links in `running`, not underlined
   - rules as hairlines, 4pt above and below
+  - tables, task lists, images, disclosures, footnotes and inline HTML as in **Rich content in
+    prose** below
 - **Code blocks** (`HighlightedCodeBlock` on `NWCodeBlock`): `bgSunken`, a 1px `lineSubtle` line,
   radius 8, as wide as the prose measure. A 28pt header (12pt leading, 6pt trailing, a hairline
   beneath) holds the language (or "code") in mono 10.5 tertiary and a 22pt copy button (`doc.on.doc`
@@ -1510,6 +1512,81 @@ tools merge only with the same tool. Consecutive lines form one part of the turn
   first), the directory in tertiary and the filename in `textPrimary` (mono 12, truncated at the
   head), and its diff stat in mono 11. A row has the row hover fill and opens the review pane at
   that file.
+
+#### Rich content in prose
+
+Agents write more than paragraphs and lists; everything they commonly write draws as a native part,
+the same on the Mac, iPhone and iPad. One parser in ShepherdRemote (`nativeMarkdownParse` in
+`NativeMarkdown.swift`) splits a reply into blocks once per change, in the store
+(`NativeTurnPresentation`), never in a view's `body`. The app maps them onto ShepherdUI's
+`NWProseBlock` (`Prose` on the Mac, `ProseView` on iOS), and ShepherdUI draws them (`Prose.swift`,
+`ProseTable.swift`, `ProseParts.swift`). Inline runs are styled once per text and text scale by
+`NWProseInline`. Nothing the parser does not understand is dropped or shown as markup: it reads as
+text.
+
+- **Tables** (`NWProseTableView`): GitHub pipe tables with their delimiter row. A card with
+  radius 8 (`NW.Radius.m`) and a 1px `lineSubtle` border, no fill of its own. The header row
+  sits on `bgSunken` in `ui` semibold `textSecondary`. Cells are in the prose size (`body`, at
+  `headline`'s 1.35 line height) in `textPrimary`, with 8×12 padding (`NW.Space.m` ×
+  `NW.Space.l`). Rows are split by 1px `lineSubtle` hairlines; there are no column lines.
+  - Columns follow the delimiter row's alignment (`:--`, `:-:`, `--:`).
+  - Cells keep their inline Markdown: code spans as the thread styles them, bold, italic,
+    links, strikethrough. An escaped pipe (`\|`) stays in its cell, and a pipe inside a code
+    span never splits one. Rows of uneven length are padded, and no cell is ever dropped.
+  - **Sizing** (`NWTableLayout`): a column takes its widest cell's width up to
+    `NWThreadMetrics.tableColumnMax` (360pt, 260pt on iOS), then wraps. A table narrower than
+    the prose measure hugs its content; given room, wrapped columns grow toward their content.
+    When the columns do not fit, each gives up its share down to its floor: the larger of
+    `tableColumnMin` (88pt) and its widest word, so a wrapped cell breaks between words and
+    never inside an identifier. A table whose floors do not fit scrolls sideways inside its
+    card (it never widens the thread and never squeezes a column into an unreadable one), so on
+    iPhone the first column stays legible.
+  - Text is selectable. **Copy** (the code block's 22pt icon button on a `bgSunken` backing,
+    at the header's trailing end) copies the table as Markdown. On the Mac it shows while the
+    table is hovered or the button has focus; on iOS it always shows, and the last column
+    leaves room for it.
+- **Task lists:** `- [ ]` and `- [x]` draw a read-only box in the marker's place:
+  `checkmark.square.fill` in `textSecondary` when done, `square` in `textTertiary` when not.
+- **Nesting:** lists nest to any depth, ordered and unordered mixed, with paragraphs, code
+  blocks, tables and quotes inside items; two spaces of indent nest, as agents write them.
+  Bullets change by depth (•, ◦, ▪). Quotes hold blocks too, in italic `textSecondary`.
+- **Images:** an image on its own line (`![alt](src)` or `<img>`). A local file that this
+  device can read (the agent's working directory, `nwProseFileRoot`, is here) draws as a
+  thumbnail within 360×240 (`proseImageMaxWidth`, `proseImageMaxHeight`), radius 8 with a 1px
+  `lineSubtle` border, decoded off the main actor at the size drawn. Clicking it opens the file.
+  Absolute paths and paths relative to the agent's folder both work. A web image is **never
+  fetched** (privacy): it is a chip with the attachment chip's anatomy (26pt, 1px
+  `lineStrong`, radius 6), the `photo` glyph in `textSecondary`, its alt text in 12pt
+  `textPrimary` and its host in mono 10.5 tertiary. The chip opens the image in the browser.
+  A remote host's agent (and every agent on iOS) shows local images as chips too, because
+  its files are not on this device. An image inside a sentence reads as its alt text.
+- **Footnotes:** `[^label]` references become superscript numbers in `running` (mono 10.5),
+  numbered in the order they are first cited. The notes gather after the message's last block,
+  below a hairline: each number in caption tertiary where a list marker sits, its text in
+  caption `textSecondary`. A reference with no note reads as written.
+- **HTML is never rendered raw.** `<details><summary>` becomes a disclosure
+  (`NWProseDetails`), collapsed: a 10pt chevron and the summary in body medium, the whole line
+  a button. Open, its blocks sit 12pt past a 2pt `lineStrong` rule, as expanded thinking does.
+  `<br>` breaks the line, `<kbd>` is a keycap (`ui` on `bgSelected`), and `<b>`, `<i>`, `<s>`,
+  `<code>`, `<sup>`, `<sub>` and `<a href>` style their text. `<img>`, `<hr>` and `<h1>`–`<h6>`
+  become their blocks, other known tags are stripped to their text, and comments are dropped.
+  Anything that only looks like a tag (`Array<Int>`) stays text.
+- **Strikethrough and links:** `~~text~~` is struck through; links, `<autolinks>` and bare
+  URLs are `running` and open in the browser.
+- **Diagrams and math** stay code: Shepherd renders neither. A fence labelled `mermaid` (or
+  `plantuml`, `dot`, `graphviz`, `d2`) says "mermaid · diagram source" after a
+  `point.3.connected.trianglepath.dotted` glyph, and a `math`, `latex`, `tex` or `katex` fence
+  (and a `$$` block) says "math · math source" after `function`, both 10pt tertiary in the header.
+- **Streaming** (`nativeMarkdownParse(_:streaming:)`): only the text a reply is still writing
+  holds anything back. Its unterminated last line waits while it is only the start of a block
+  (a `|` row, a delimiter row, a bare `-`, `1.` or `#`, a fence's first line, a tag still
+  open, a task box still arriving such as `- [x`, a note's `[^label]` before its colon), so it
+  never draws as something else for a moment. Footnote references are numbered while the reply
+  streams, before their notes (which come last) arrive, so none shows its raw label. A table header waits for its
+  delimiter row instead of drawing as a paragraph. The table appears as a table as soon as
+  that row lands, and grows a whole row at a time. A finished reply draws every line.
+- **Performance:** the table and its cells compare equal between chunks, so a reply streaming
+  under a table redraws none of it (`ListPerformanceTests`: a 200-row table).
 
 ### Composer, questions, and menus
 

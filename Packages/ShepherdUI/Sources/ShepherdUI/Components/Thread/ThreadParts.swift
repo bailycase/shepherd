@@ -46,6 +46,20 @@ public enum NWThreadMetrics {
     public static let attachmentThumbnail: CGFloat = 20
     /// "From the queue"'s glyph.
     public static let queueGlyph: CGFloat = 11
+    /// A table column takes its content's width up to this, then wraps; given room, a wrapped
+    /// column grows past it.
+    #if os(iOS)
+    public static let tableColumnMax: CGFloat = 260
+    #else
+    public static let tableColumnMax: CGFloat = 360
+    #endif
+    /// The narrowest a table column shrinks to: past it, the table scrolls sideways instead.
+    public static let tableColumnMin: CGFloat = 88
+    /// A local image in prose fits within this box.
+    public static let proseImageMaxWidth: CGFloat = 360
+    public static let proseImageMaxHeight: CGFloat = 240
+    /// The glyph before a diagram or math fence's label.
+    public static let codeLabelGlyph: CGFloat = 10
 
     /// A row someone taps: the Mac's height, or the touch minimum on iOS.
     static func touchable(_ height: CGFloat) -> CGFloat {
