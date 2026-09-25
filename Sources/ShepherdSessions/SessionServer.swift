@@ -403,10 +403,10 @@ public final class SessionServer: @unchecked Sendable {
     /// (asking pi shells out), so the server calls it off its queue.
     public typealias ModelCatalog = @Sendable () -> (models: [String], defaultModel: String?)
 
-    /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default.
+    /// pi's own catalog (`pi --list-models`, else models.json) and settings.json's default, all
+    /// as "provider/id".
     public static let piModelCatalog: ModelCatalog = {
-        let models = PiModelCatalog.modelIDs()
-        return (models.isEmpty ? PiConfig.modelIDs() : models, PiConfig.defaultModel())
+        (PiModelCatalog.entriesOrConfigured().map(\.id), PiConfig.defaultModel())
     }
 
     /// `modelCatalog` answers remote model listings; tests pass a stand-in so nothing runs pi.
