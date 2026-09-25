@@ -125,7 +125,7 @@ keep the version for real breaks.
   `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote` and `ShepherdUI`, never `ShepherdApp`.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
-  `Review/`, `Search/`, `Settings/`, and `Support/` (`AgentRef`, `MobileLayout`,
+  `Review/`, `Commit/`, `Search/`, `Settings/`, and `Support/` (`AgentRef`, `MobileLayout`,
   `MobileAppearance`, the `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
   derivations (`NativeTurnPresentation`, `NativeActivity`), host records
@@ -184,11 +184,19 @@ keep the version for real breaks.
   Continue, Stop and Re-run appear where the host takes them. On iPad the run opens in an
   inspector column beside the thread.
 - **Review (`Review/`):** the changes (working tree vs HEAD, or the PR), with viewed progress,
-  the file list, comments, Request changes, and Commit (it sends the agent a turn, as on the
-  Mac); the diff reader (wrapped, syntax-colored lines, folded removed runs, line comments, Next
+  the file list, comments, Request changes, and Commit… (below; on an older host, Commit sends the
+  agent a turn, as on the Mac); the diff reader (wrapped, syntax-colored lines, folded removed runs, line comments, Next
   file); and Finalize for worktree agents (checks, the form, each step, the PR link). On iPad
   review docks beside the thread or goes full screen with a unified or split view. There is no
   per-file revert: the remote protocol has none.
+- **Commit from review (`Commit/`):** on a host with `review.commit.v1`, Commit… opens the
+  commit: a sheet on iPhone, a popover beside Commit… on iPad. The host drafts the message from
+  the diff (a plain one from the file list shows first), every changed file starts ticked, and
+  Push after commit (to the upstream, setting one when there is none) or Open a pull request
+  instead picks where it goes. The host runs it (`ReviewCommitStore` in ShepherdRemote drives
+  the sheet) and refuses a detached HEAD, a merge or rebase in progress, a file that changed since
+  the sheet opened, and an agent still working unless confirmed; the sheet shows each step, and a
+  finished commit reloads the changes. Ask agent to commit keeps the old turn.
 - **Search and actions (`Search/`):** search across every connected host: title matches at once,
   conversations fanned out to each host (`agentQuery(.search)`), snippets with host tags. A
   thread's options menu renames, moves and deletes its agent; a worktree agent's delete follows

@@ -19,6 +19,12 @@ struct ReviewActions {
     var open: ((DiffFile) -> Void)? = nil
     /// Return keyboard focus to the thread's composer (esc).
     var focusThread: () -> Void = {}
+    /// Whether the host commits from review (a local review, or a remote host that advertises it).
+    var canCommitDirectly: () -> Bool = { false }
+    /// The Commit… sheet's store, kept by the view model while its commit runs.
+    var commitStore: () -> ReviewCommitStore? = { nil }
+    /// The Commit… sheet closed: a finished commit reloads the review.
+    var commitClosed: () -> Void = {}
 }
 
 /// The review pane (Review board): a companion docked right of the thread. A header with the
@@ -108,6 +114,7 @@ struct ReviewPaneContent: View {
         .onKeyPress(.escape) { model.actions.focusThread(); return .handled }
         .background(Color.nw.bgWindow)
         .modifier(RevertConfirmation(model: model))
+        .modifier(CommitSheetPresenter(model: model))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Review")
     }
@@ -123,6 +130,25 @@ private struct RevertConfirmation: ViewModifier {
                              revert: { model.actions.revert?(file, model.cwd); model.reverting = nil },
                              cancel: { model.reverting = nil })
         }
+    }
+}
+
+/// Commit…: the commit sheet over the pane, until it is closed.
+private struct CommitSheetPresenter: ViewModifier {
+    @Bindable var model: ReviewPaneModel
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: Binding(get: { model.commitStore != nil }, set: { if !$0 { close() } })) {
+            if let store = model.commitStore {
+                ReviewCommitSheet(store: store, askAgent: model.actions.commit, close: close)
+            }
+        }
+    }
+
+    private func close() {
+        guard model.commitStore != nil else { return }
+        model.commitStore = nil
+        model.actions.commitClosed()
     }
 }
 
@@ -429,7 +455,8 @@ private struct ReviewComposerBar: View, Equatable {
         NWReviewComposer(text: $session.summary, isFocused: focused, inlineCount: session.comments.count,
                          canCommit: !session.isSubmitting && !session.files.isEmpty && !session.isPRMode,
                          canRequestChanges: !session.isSubmitting && hasReview,
-                         onCommit: { model.actions.commit() }, onRequestChanges: { model.actions.requestChanges() })
+                         onCommit: { model.actions.commit() }, onRequestChanges: { model.actions.requestChanges() },
+                         onCommitDirectly: model.actions.canCommitDirectly() ? { model.commitStore = model.actions.commitStore() } : nil)
             .padding(NW.Space.l)
             .overlay(alignment: .top) { NWHairline() }
     }
