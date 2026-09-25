@@ -21,7 +21,7 @@ public struct HostSettings: Codable, Hashable, Sendable {
     /// One of the pi extensions Shepherd bundles, as Settings ▸ Pi turns it on or off. Agents
     /// started afterwards follow a change.
     public struct BundledExtension: Codable, Hashable, Sendable, Identifiable {
-        /// "namer", "theme", "panes", "review", "nativeSubagents", "subagents".
+        /// "namer", "panes", "review", "nativeSubagents", "subagents".
         public var id: String
         /// The Mac's row title: "Name agents automatically".
         public var name: String

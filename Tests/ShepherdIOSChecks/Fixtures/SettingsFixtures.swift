@@ -62,7 +62,6 @@ extension FixtureData {
             queueDelivery: .all, mergePRAutomatically: true, mergeMethod: .squash,
             bundledExtensions: [
                 HostSettings.BundledExtension(id: "namer", name: "Name agents automatically", on: true),
-                HostSettings.BundledExtension(id: "theme", name: "Sync pi theme", on: true),
                 HostSettings.BundledExtension(id: "panes", name: "Panes and agent tools", on: true),
                 HostSettings.BundledExtension(id: "review", name: "Diff review tool", on: true),
                 HostSettings.BundledExtension(id: "nativeSubagents", name: "Native subagents", on: false),

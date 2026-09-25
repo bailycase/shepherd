@@ -24,7 +24,7 @@ struct HostSettingsMappingTests {
         #expect(settings.defaultThinking == .high)
         #expect(settings.worktreeBase == .head)
         #expect(settings.mergePRAutomatically && settings.mergeMethod == .rebase)
-        #expect(settings.bundledExtensions.map(\.id) == ["namer", "theme", "panes", "review", "nativeSubagents", "subagents"])
+        #expect(settings.bundledExtensions.map(\.id) == ["namer", "panes", "review", "nativeSubagents", "subagents"])
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.on == false)
         #expect(settings.bundledExtensions.first { $0.id == "review" }?.name == "Diff review tool")
         // pi's own default reads as none.
@@ -65,7 +65,7 @@ struct HostSettingsMappingTests {
     @Test(arguments: [
         HostSettingChange.defaultThinking(.low), .fetchBeforeCreating(false), .commitRemainingWork(false),
         .generatePRDescriptions(false), .deleteLocalBranch(false), .mergePRAutomatically(true),
-        .bundledExtension(id: "theme", on: false), .bundledExtension(id: "nativeSubagents", on: false),
+        .bundledExtension(id: "review", on: false), .bundledExtension(id: "nativeSubagents", on: false),
     ])
     func aChangeReadsBackAsTheProtocolAppliesIt(_ change: HostSettingChange) {
         let app = AppSettings(store: Fixture.defaults())

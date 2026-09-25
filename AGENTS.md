@@ -286,7 +286,7 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
 - **Core:** the status transition table, `PaneNode` operations, and state validation.
 - **Migration:** terminal-era `runtime` keys, global shells and space shells dropped at startup,
   and review leaves.
-- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all thirteen).
+- **Extensions:** embedded extensions byte-identical to `Extensions/*` (all twelve).
 - **Themes:** every theme variant complete, and the WCAG contrast rules met.
 - **App logic:** keybindings (defaults, validation, stored overrides for removed actions
   ignored), palette and settings search, workspace selection and parking, sidebar ordering and
@@ -404,11 +404,11 @@ Sources/
       Worktrees, Pi, Instructions, Remote, Keyboard, Advanced, Experiments}, AppSettings,
       InstructionsModel (the Instructions page's files, drafts and sync), InstructionsEditor (its
       NSTextView), SuggestionsModel (the Experiments page's suggestions)
-    Themes (ThemeManager, ShepherdTheme), ShepherdPiTheme, ShellIntegration, ComponentGallery
+    Themes (ThemeManager, ShepherdTheme), ShepherdThemeMarker, ShellIntegration, ComponentGallery
     RemoteHostStore, AgentPeers, AgentNotifications, ChildRuns, PiSessionFile, PiUpdateManager,
       AppUpdater (Sparkle: UpdateChannel, UpdateChannelStore, ChannelDelegate),
       NightlyMovedNotice
-    Status/Namer/Panes/Review/Theme/Subagents/Children/Inspect/InstructionsExtension.swift
+    Status/Namer/Panes/Review/Subagents/Children/Inspect/InstructionsExtension.swift
       embedded extensions
   shepherd-cli/        `shepherd --import herdr` (writes state.json while Shepherd is not running).
 Packages/
@@ -433,7 +433,6 @@ Extensions/            Canonical pi extensions (TypeScript/ESM, dependency-free)
   shepherd-subagents.ts   setAgentChildren (native + pi-subagents runs)
   shepherd-children.ts (+ -config, -ui, shepherd-workflow, shepherd-missions, shepherd-inspect.mjs)
                           native subagent runtime; see docs/native-subagents.md
-  shepherd-theme.ts       theme sync for pi run by hand in a terminal pane
   shepherd-instructions.ts  Settings ▸ Instructions' AGENTS.md and APPEND_SYSTEM.md, added to
                           every session Shepherd starts (never ~/.pi/agent); suggest_instruction
                           (Settings ▸ Experiments ▸ Suggested instructions)
@@ -509,9 +508,9 @@ validated nor written to `state.json` on its own, since every turn reports twice
 resets statuses anyway. The next structural mutation writes it along with its own change. Keep
 anything that must survive a relaunch out of that path.
 
-**Terminal panes** run the shell from Settings ▸ Terminal as a login shell. Startup files in the
-support directory's `shell-integration/` wrap `pi` so pi run by hand picks up Shepherd's theme.
-The user's rc files and pi settings are never edited, and agent-only variables are blanked.
+**Terminal panes** run the shell from Settings ▸ Terminal as a login shell, without wrapping
+`pi` or injecting a theme. The user's rc files and pi settings are never edited, and agent-only
+variables are blanked.
 
 **Automations** are saved prompts (`ShepherdState.automations`).
 
@@ -617,15 +616,15 @@ the same change.
 - A new `SessionServer` mutation needs an integration test.
 - New persisted fields decode with defaults, so older `state.json` files keep loading.
 
-**Embedded extensions have one canonical copy.** The thirteen files in `Extensions/` are canonical.
-pi loads the copies that the nine `Sources/ShepherdApp/*Extension.swift` files write to the
+**Embedded extensions have one canonical copy.** The twelve files in `Extensions/` are canonical.
+pi loads the copies that the eight `Sources/ShepherdApp/*Extension.swift` files write to the
 support directory from embedded string literals. `installedPath()` rewrites an installed copy
 whenever its content differs, so drift ships bugs. `ChildrenExtension.swift` carries children,
 children-config, children-ui, workflow, and missions, and installs `InspectExtension`'s
 `shepherd-inspect.mjs`.
 
 - Edit a `.ts`/`.mjs` file and its literal in the same change, with
-  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all thirteen pairs.
+  `scripts/sync-embedded-extension.py`. A unit test enforces byte identity for all twelve pairs.
 - Extensions stay dependency-free and inert without their environment variables.
 - They must never throw into pi or keep the process alive (unref'd sockets and timers).
 - The panes extension speaks the request/reply half of `ExtensionMessage`/`ExtensionReply`.
