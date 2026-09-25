@@ -15,6 +15,9 @@ struct AutomationEditorScreen: View {
     @Environment(MobileNavigator.self) private var navigator
     @State private var draft = RemoteAutomationDraft(name: "", prompt: "", cwd: "", enabled: true)
     @State private var chosenHost: UUID?
+    /// A new automation's id, minted once: saving again after an answer that never came back
+    /// names the same automation, so it can never be saved twice.
+    @State private var newID = AutomationID()
     @State private var loaded = false
     @State private var saving = false
     @State private var error: String?
@@ -75,10 +78,9 @@ struct AutomationEditorScreen: View {
             Section {
                 HStack {
                     Text("Starts with Shepherd").font(.nw(.ui))
+                        .accessibilityHidden(true)
                     Spacer(minLength: NW.Space.m)
-                    Toggle("Starts with Shepherd", isOn: $draft.enabled)
-                        .toggleStyle(.nwSwitch)
-                        .labelsHidden()
+                    NWAutomationSwitch("Starts with Shepherd", isOn: draft.enabled) { draft.enabled = $0 }
                 }
             } footer: {
                 Text("On: \(target?.name ?? "the host") starts a run each time Shepherd launches there. Run now starts one any time.")
@@ -122,11 +124,13 @@ struct AutomationEditorScreen: View {
         guard let host, !saving else { return }
         saving = true
         error = nil
-        let key = AutomationKey(host: host, automation: automation ?? AutomationID())
+        let key = AutomationKey(host: host, automation: automation ?? newID)
+        let route = MobileRoute.automations(.edit(host: self.host, automation: automation))
         Task {
             do {
                 try await store.save(key, draft: draft, creating: automation == nil)
-                navigator.dismissPresented()
+                // Cancel may have closed the form while the host answered; close only this one.
+                if navigator.presented?.route == route { navigator.dismissPresented() }
             } catch {
                 self.error = AutomationsModel.failureText(automation == nil ? .create(draft: draft) : .update(draft: draft), error)
             }
