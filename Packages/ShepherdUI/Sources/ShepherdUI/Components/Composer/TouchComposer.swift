@@ -129,8 +129,10 @@ public struct NWTouchCommandList: View {
 
     @ViewBuilder private func row(_ command: NWTouchCommand) -> some View {
         let nw = Color.nw
-        let typed = Text(String(command.name.prefix(query.count))).fontWeight(.semibold).foregroundStyle(nw.textPrimary)
-        let rest = Text(String(command.name.dropFirst(query.count))).foregroundStyle(nw.textSecondary)
+        // Only a name that starts with the query shows it typed; one that merely contains it is plain.
+        let prefix = command.name.lowercased().hasPrefix(query.lowercased()) ? query.count : 0
+        let typed = Text(String(command.name.prefix(prefix))).fontWeight(.semibold).foregroundStyle(nw.textPrimary)
+        let rest = Text(String(command.name.dropFirst(prefix))).foregroundStyle(nw.textSecondary)
         let name = Text("\(Text("/").foregroundStyle(nw.textSecondary))\(typed)\(rest)")
         let layout = wide
             ? AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: NW.Space.l))
