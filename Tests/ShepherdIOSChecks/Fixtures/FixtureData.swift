@@ -147,7 +147,7 @@ enum FixtureData {
 /// Every screen, by track. A track edits only its own file's list.
 enum FixtureCatalog {
     static var all: [FixtureScreen] {
-        home + thread + newThread + subagents + review + commit + search + settings + terminal
+        home + thread + newThread + subagents + review + commit + search + settings + automations + terminal
     }
 
     static func screen(named name: String) -> FixtureScreen? {

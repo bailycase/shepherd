@@ -243,6 +243,8 @@ public final class SessionServer: @unchecked Sendable {
     private let modelCatalog: ModelCatalog
     /// Where each delivered message came from, per pi session (support directory).
     private let originStore: ThreadOriginStore
+    /// How each automation's runs went (support directory), for remote clients.
+    private let runLog: AutomationRunLog
     /// How queues go for agents with no choice of their own (Settings ▸ Agents).
     private var defaultQueueMode: NativeQueueMode = .all
     private var listenFD: Int32 = -1
@@ -412,6 +414,7 @@ public final class SessionServer: @unchecked Sendable {
         self.store = StateStore(url: stateURL)
         self.modelCatalog = modelCatalog
         self.originStore = ThreadOriginStore(directory: stateURL.deletingLastPathComponent().appendingPathComponent("thread-origins", isDirectory: true))
+        self.runLog = AutomationRunLog(url: stateURL.deletingLastPathComponent().appendingPathComponent("automation-runs.json"))
     }
 
     /// The queue mode of every agent that has not chosen its own (`NativeQueueAction.setMode`).
@@ -512,6 +515,8 @@ public final class SessionServer: @unchecked Sendable {
                 throw SessionServerError.persistFailed(String(describing: error))
             }
         }
+        // Runs still open died with the previous launch, their agents with them.
+        runLog.closeOpenRuns()
 
         let fm = FileManager.default
         let supportDirectory = (socketPath as NSString).deletingLastPathComponent
@@ -596,6 +601,7 @@ public final class SessionServer: @unchecked Sendable {
         stopRemoteListenerOnQueue()
         // Where delivered messages came from is written off the queue; a relaunch reads it.
         originStore.flush()
+        runLog.flush()
     }
 
     // MARK: - Native thread
@@ -997,6 +1003,8 @@ public final class SessionServer: @unchecked Sendable {
                     }
                 }
             }
+        case .automation(let id, let automationID, let request):
+            remoteAutomation(id: id, automationID: automationID, request: request, client: client)
         case .stateFetch(let id):
             send(.state(id: id, state: store.state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
@@ -1117,6 +1125,84 @@ public final class SessionServer: @unchecked Sendable {
             }
         let parent = resolved == "/" ? nil : (resolved as NSString).deletingLastPathComponent
         send(.dirListing(id: id, path: resolved, parent: parent, dirs: names), to: client)
+    }
+
+    /// A remote client managing an automation. Everything but reading its runs goes through
+    /// `onAutomationRequest`, the handler an agent's `automation_*` tools reach, so a remote
+    /// change follows the same rules as a local one.
+    private func remoteAutomation(id: Int, automationID: AutomationID, request: RemoteAutomationRequest, client: ExtensionConnection) {
+        let exists = store.state.automations.contains { $0.id == automationID }
+        func fail(_ code: String, _ message: String) {
+            send(.error(id: id, code: code, message: message), to: client)
+        }
+        if case .create = request {
+            guard !exists else { return fail("conflict", "automation \(automationID) already exists") }
+        } else if !exists {
+            return fail("no_such_automation", "The automation no longer exists on the host.")
+        }
+        let routed: AutomationRequest
+        switch request {
+        case .runs:
+            send(.automationResult(id: id, result: .runs(runLog.runs(for: automationID, in: store.state))), to: client)
+            return
+        case .setEnabled(let enabled):
+            routed = .update(automationID: automationID, name: nil, prompt: nil, cwd: nil, enabled: enabled)
+        case .run:
+            routed = .start(automationID: automationID)
+        case .stop:
+            routed = .stop(automationID: automationID)
+        case .delete:
+            routed = .delete(automationID: automationID)
+        case .create(let draft), .update(let draft):
+            let fields: (name: String, prompt: String, cwd: String)
+            switch Self.validatedAutomation(draft) {
+            case .success(let valid): fields = valid
+            case .failure(let error): return fail(error.code, error.message)
+            }
+            if case .create = request {
+                let automation = Automation(id: automationID, name: fields.name, prompt: fields.prompt, cwd: fields.cwd,
+                                            enabled: draft.enabled)
+                routed = .create(automation: automation, start: false)
+            } else {
+                routed = .update(automationID: automationID, name: fields.name, prompt: fields.prompt, cwd: fields.cwd,
+                                 enabled: draft.enabled)
+            }
+        }
+        guard let handler = onAutomationRequest else {
+            return fail("unsupported", "Host cannot manage automations without a GUI.")
+        }
+        hopToMain { [weak self] in
+            handler(routed) { outcome in
+                guard let self else { return }
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch outcome {
+                    case .failed(let code, let message): self.send(.error(id: id, code: code, message: message), to: client)
+                    case .ok, .automations: self.send(.automationResult(id: id, result: .ok), to: client)
+                    }
+                }
+            }
+        }
+    }
+
+    struct AutomationDraftError: Error, Equatable {
+        let code: String
+        let message: String
+    }
+
+    /// A remote draft as the host would save it: a name and a prompt that are not blank, and a
+    /// directory that exists on the host.
+    static func validatedAutomation(_ draft: RemoteAutomationDraft) -> Result<(name: String, prompt: String, cwd: String), AutomationDraftError> {
+        let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prompt = draft.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return .failure(.init(code: "invalid_automation", message: "An automation needs a name.")) }
+        guard !prompt.isEmpty else { return .failure(.init(code: "invalid_automation", message: "An automation needs a prompt.")) }
+        let cwd = (draft.cwd as NSString).expandingTildeInPath
+        var isDirectory: ObjCBool = false
+        guard cwd.hasPrefix("/"), FileManager.default.fileExists(atPath: cwd, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return .failure(.init(code: "no_such_directory", message: "\(cwd) is not a directory on the host"))
+        }
+        return .success((name, prompt, cwd))
     }
 
     /// Create a space from a host-side directory. Pure state — no GUI
@@ -1827,7 +1913,9 @@ public final class SessionServer: @unchecked Sendable {
                 ShepherdLog.warning("agent \(agentID): invalid status transition \(current.rawValue) -> \(status.rawValue); applying anyway")
             }
             // Two reports a turn: kept in memory, never validated or written on their own.
+            let before = store.state
             store.updateLive { $0.agents[index].status = status }
+            runLog.record(from: before, to: store.state)
         } else {
             ShepherdLog.warning("setAgentStatus for unknown agent \(agentID); dropped")
             return
@@ -1893,12 +1981,14 @@ public final class SessionServer: @unchecked Sendable {
 
     /// Apply a state mutation, persist it, and notify the GUI.
     private func mutateState(_ mutate: (inout ShepherdState) -> Void) throws {
+        let before = store.state
         do {
             try store.update(mutate)
         } catch {
             throw SessionServerError.persistFailed(String(describing: error))
         }
         let state = store.state
+        runLog.record(from: before, to: state)
         broadcastRemoteState(state)
         hopToMain { [weak self] in self?.onStateChanged?(state) }
         announceServableThreads()
@@ -2145,6 +2235,11 @@ public final class SessionServer: @unchecked Sendable {
     }
 
     // MARK: - Automations (server queue)
+
+    /// The runs the host kept for an automation, oldest first; a run's agent only while it exists.
+    public func automationRuns(_ automationID: AutomationID) async -> [AutomationRun] {
+        await enqueueValue { self.runLog.runs(for: automationID, in: self.store.state) }
+    }
 
     public func addAutomation(_ automation: Automation) async throws {
         try await enqueue {
