@@ -222,7 +222,9 @@ public struct NWJumpToLatest: View {
                 Button(action: action) {
                     Label("Jump to latest", systemImage: "arrow.down")
                         .font(Font.nw(.caption, weight: .medium)).foregroundStyle(nw.textSecondary)
-                        .padding(.horizontal, NW.Space.l).frame(height: NW.Height.controlM)
+                        // Grows with the text on iOS, whose type scales.
+                        .padding(.horizontal, NW.Space.l).padding(.vertical, NW.Space.xs)
+                        .frame(minHeight: NW.Height.controlM)
                         .background(nw.bgRaised, in: Capsule())
                         .nwBorder(nw.lineStrong, in: Capsule())
                         .nwTouchTarget(height: NW.Height.controlM)

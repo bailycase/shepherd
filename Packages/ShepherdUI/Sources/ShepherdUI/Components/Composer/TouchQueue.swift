@@ -63,44 +63,59 @@ private struct NWTouchQueueHeader<Options: View>: View {
     let paused: String?
     let resume: (() -> Void)?
     @ViewBuilder let options: () -> Options
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let nw = Color.nw
-        HStack(spacing: NW.Space.m) {
+        // At accessibility sizes Send now takes a row of its own under the title, which would
+        // otherwise truncate beside it.
+        let stacked = typeSize.isAccessibilitySize
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: NW.Space.m) {
-                NWQueueGlyph(size: NWTouchQueueMetrics.glyph).foregroundStyle(nw.textTertiary)
-                Text("Up next").font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textSecondary)
-                Text("\(count)").font(.nw(.mono)).foregroundStyle(nw.textTertiary).monospacedDigit()
-                    .nwContentTransition(.numeric())
-                    .nwComponentAnimation(.content, value: count)
-                if paused != nil {
-                    Text("Paused").font(.nw(.caption)).foregroundStyle(nw.textTertiary).nwTransition(.content)
+                HStack(spacing: NW.Space.m) {
+                    NWQueueGlyph(size: NWTouchQueueMetrics.glyph).foregroundStyle(nw.textTertiary)
+                    Text("Up next").font(.nw(.ui, weight: .semibold)).foregroundStyle(nw.textSecondary)
+                    Text("\(count)").font(.nw(.mono)).foregroundStyle(nw.textTertiary).monospacedDigit()
+                        .nwContentTransition(.numeric())
+                        .nwComponentAnimation(.content, value: count)
+                    if paused != nil {
+                        Text("Paused").font(.nw(.caption)).foregroundStyle(nw.textTertiary).nwTransition(.content)
+                    }
                 }
+                .lineLimit(1)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Up next, \(count) \(count == 1 ? "message" : "messages")\(paused != nil ? ", paused" : "")")
+                .accessibilityHint(paused ?? "")
+                .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: NW.Space.m)
+                if !stacked { sendNow }
+                Menu(content: options) {
+                    Image(systemName: "ellipsis")
+                        .font(.nw(.ui, weight: .semibold))
+                        .foregroundStyle(nw.textSecondary)
+                        .frame(width: NW.Height.touch, height: NW.Height.touch)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Queue options")
             }
-            .lineLimit(1)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Up next, \(count) \(count == 1 ? "message" : "messages")\(paused != nil ? ", paused" : "")")
-            .accessibilityHint(paused ?? "")
-            .accessibilityAddTraits(.isHeader)
-            Spacer(minLength: NW.Space.m)
-            if let resume {
-                Button("Send now", systemImage: "arrow.up", action: resume)
-                    .buttonStyle(.nw(.secondary, size: .s))
-                    .accessibilityHint(paused ?? "")
-                    .nwTransition(.content)
+            .frame(minHeight: NWTouchQueueMetrics.headerHeight)
+            if stacked, resume != nil {
+                sendNow.padding(.bottom, NW.Space.m)
             }
-            Menu(content: options) {
-                Image(systemName: "ellipsis")
-                    .font(.nw(.ui, weight: .semibold))
-                    .foregroundStyle(nw.textSecondary)
-                    .frame(width: NW.Height.touch, height: NW.Height.touch)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Queue options")
         }
-        .nwComponentAnimation(.content, value: paused != nil && resume != nil)
+        // "Paused" and Send now come and go on their own: a queue can pause while its
+        // messages can't be sent yet.
+        .nwComponentAnimation(.content, value: [paused != nil, resume != nil])
         .padding(.leading, NW.Space.l)
-        .frame(minHeight: NWTouchQueueMetrics.headerHeight)
+    }
+
+    @ViewBuilder private var sendNow: some View {
+        if let resume {
+            Button("Send now", systemImage: "arrow.up", action: resume)
+                .buttonStyle(.nw(.secondary, size: .s))
+                .accessibilityHint(paused ?? "")
+                .nwTransition(.content)
+        }
     }
 }
 
