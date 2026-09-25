@@ -205,7 +205,8 @@ keep the version for real breaks.
   per-file revert: the remote protocol has none.
 - **Commit from review (`Commit/`):** on a host with `review.commit.v1`, Commit… opens the
   commit: a sheet on iPhone, a popover beside Commit… on iPad. The host drafts the message from
-  the diff (a plain one from the file list shows first), every changed file starts ticked, and
+  the diff (a plain one from the file list shows first), every changed file starts ticked, a
+  message nobody edited follows the ticks (drafted again for the ticked files), and
   Push after commit (to the upstream, setting one when there is none) or Open a pull request
   instead picks where it goes. The host runs it (`ReviewCommitStore` in ShepherdRemote drives
   the sheet) and refuses a detached HEAD, a merge or rebase in progress, a file that changed since

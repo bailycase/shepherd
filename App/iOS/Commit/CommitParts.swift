@@ -21,7 +21,7 @@ struct CommitMessageCard: View {
     var body: some View {
         NWCommitMessageEditor(title: $store.title, message: $store.body,
                               source: store.drafting ? .drafting : store.drafted ? .drafted : .written,
-                              radius: MobileLayout.cardRadius, fill: fill)
+                              mentionsUntickedFiles: store.mentionsUntickedFiles, radius: MobileLayout.cardRadius, fill: fill)
     }
 }
 

@@ -5,6 +5,8 @@ import ShepherdProtocol
 /// One commit from review, as the sheet runs it on every client (the Mac's review pane, the
 /// iPhone's and the iPad's review): the host's info and plain message, then its drafted message,
 /// the files (all selected), where the commit goes, and the host's operation until it finishes.
+/// A message nobody edited follows the ticked files: the plain one at once, a drafted one by
+/// asking the host for a new draft once the ticks settle.
 /// `query` reaches the host: a remote host over the protocol, or the Mac's own host code for a
 /// local review. The host checks everything again before it commits, so the sheet's gates are a
 /// courtesy, never the safety.
@@ -24,12 +26,18 @@ public final class ReviewCommitStore {
 
     public private(set) var stage: Stage = .loading
     public private(set) var info: RemoteCommitInfo?
-    public var title = ""
-    public var body = ""
+    public var title = "" {
+        didSet { deriveNote() }
+    }
+    public var body = "" {
+        didSet { deriveNote() }
+    }
     public private(set) var selected: Set<String> = [] {
         didSet {
             derive()
             followSelection()
+            followDraft()
+            deriveNote()
         }
     }
     /// Push after commit (to the upstream, setting one when there is none).
@@ -37,9 +45,13 @@ public final class ReviewCommitStore {
     /// Open a pull request instead: push the branch and open the PR.
     public var pullRequest = false
     public var confirmedWhileWorking = false
+    /// The host is drafting the message, or will once the ticks settle.
     public private(set) var drafting = false
     /// The message on screen came from the host's draft of the diff.
     public private(set) var drafted = false
+    /// The message was edited after files it was written for were unticked, so it may still
+    /// mention them. It is never rewritten once edited; the sheet says so instead.
+    public private(set) var mentionsUntickedFiles = false
     public private(set) var submitting = false
     public private(set) var operationID: UUID?
     public private(set) var operation: RemoteWorktreeOperation?
@@ -54,6 +66,17 @@ public final class ReviewCommitStore {
     @ObservationIgnored private var written: (title: String, body: String) = ("", "")
     /// The written message is the one written from the file list, so it follows the selection.
     @ObservationIgnored private var writtenFromFiles = false
+    /// The files the written message was written (or drafted) for.
+    @ObservationIgnored private var writtenFor: Set<String> = []
+    /// The draft request whose answer the sheet takes; any other answer is stale.
+    @ObservationIgnored private var draftRequest: UUID?
+    /// The draft asked for once the ticks settle.
+    @ObservationIgnored var redraft: Task<Void, Never>?
+    /// How long the ticks must stay put before a drafted message is drafted again, so ticking
+    /// several files costs one draft.
+    @ObservationIgnored public var redraftDelay: Duration = .milliseconds(600)
+    /// Waits out `redraftDelay`; tests replace it.
+    @ObservationIgnored public var pause: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
 
     public init(query: ((RemoteAgentQuery) async throws -> RemoteAgentResult)? = nil) {
         self.query = query
@@ -67,9 +90,11 @@ public final class ReviewCommitStore {
     public var selectedFiles: [RemoteCommitFile] { info?.files.filter { selected.contains($0.id) } ?? [] }
     public var outcome: ReviewCommitOutcome? { operation.map(ReviewCommitOutcome.init) }
 
-    /// Why Commit can't run: the host's refusal, the form, or a request in flight.
+    /// Why Commit can't run: the host's refusal, the form, or a draft on screen that describes
+    /// files since unticked while its replacement is drafted.
     public var problem: String? {
         guard let info else { return nil }
+        if drafted && drafting && showsWritten && !selected.isEmpty { return "Redrafting the message…" }
         return reviewCommitProblem(info, selected: selectedFiles.count, title: title, push: destination,
                                    confirmedWhileWorking: confirmedWhileWorking)
     }
@@ -112,9 +137,11 @@ public final class ReviewCommitStore {
 
     /// Shows what the host would commit, every file selected, with the host's plain message.
     public func adopt(_ info: RemoteCommitInfo) {
+        cancelDraft()
         self.info = info
         written = (info.title, info.body)
         writtenFromFiles = reviewCommitFallbackMessage(info.files) == written
+        writtenFor = Set(info.files.map(\.id))
         title = info.title
         body = info.body
         drafted = false
@@ -133,30 +160,67 @@ public final class ReviewCommitStore {
         if let body { self.body = body }
         written = (self.title, self.body)
         writtenFromFiles = !drafted && reviewCommitFallbackMessage(selectedFiles) == written
+        writtenFor = selected
         self.drafted = drafted
         self.drafting = drafting
+        deriveNote()
     }
 
-    /// Asks the host to draft the message from the diff, keeping anything typed meanwhile.
+    /// Asks the host to draft the message from the diff of the ticked files, keeping anything
+    /// typed meanwhile. Only the latest request's answer counts, and only while the ticks are the
+    /// ones it asked about. A failed draft leaves a plain message on screen: the one already
+    /// there, or, in place of a draft of other files, the plain one for the ticked files.
     public func draft() async {
-        guard let info, info.draftsMessage, !info.files.isEmpty, !drafting, let query else { return }
-        drafting = true
-        defer { drafting = false }
-        do {
-            guard case .commitMessage(let title, let body, let drafted) = try await query(.commitMessage(paths: info.files.flatMap(\.paths))) else { return }
-            guard self.info == info, operationID == nil, !title.isEmpty else { return }
-            // A plain message (the draft failed) adds nothing to the one following the files.
-            guard drafted || !writtenFromFiles else { return }
-            // Anything typed while the host drafted wins over the draft.
-            guard showsWritten else { return }
-            self.title = title
-            self.body = body
-            written = (title, body)
-            writtenFromFiles = !drafted && reviewCommitFallbackMessage(selectedFiles) == written
-            self.drafted = drafted
-        } catch {
-            // The plain message stays; a failed draft is not worth a banner.
+        guard let info, info.draftsMessage, operationID == nil, let query else { return }
+        let files = selectedFiles
+        guard !files.isEmpty, showsWritten else {
+            if draftRequest == nil { drafting = false }
+            return
         }
+        let id = UUID()
+        let asked = selected
+        draftRequest = id
+        drafting = true
+        var answer: (title: String, body: String, drafted: Bool)?
+        do {
+            if case .commitMessage(let title, let body, let drafted) = try await query(.commitMessage(paths: files.flatMap(\.paths))) {
+                answer = (title, body, drafted)
+            }
+        } catch {
+            // A failed draft is not worth a banner.
+        }
+        // A later request (the ticks moved on, the sheet reloaded) owns the message now.
+        guard draftRequest == id else { return }
+        draftRequest = nil
+        drafting = false
+        // Anything typed while the host drafted wins over the draft.
+        guard self.info == info, operationID == nil, selected == asked, showsWritten else { return }
+        if let answer, answer.drafted, !answer.title.isEmpty {
+            write((answer.title, answer.body), for: asked, drafted: true)
+        } else if drafted {
+            // The draft on screen describes other files: the plain message for these instead.
+            let plain = answer.flatMap { $0.title.isEmpty ? nil : ($0.title, $0.body) } ?? reviewCommitFallbackMessage(files)
+            write(plain, for: asked, drafted: false)
+        }
+        // Otherwise the plain message on screen already follows the ticked files.
+    }
+
+    private func write(_ message: (title: String, body: String), for files: Set<String>, drafted: Bool) {
+        written = message
+        writtenFor = files
+        writtenFromFiles = !drafted && reviewCommitFallbackMessage(selectedFiles) == written
+        title = message.title
+        body = message.body
+        self.drafted = drafted
+        deriveNote()
+    }
+
+    /// Forgets a draft asked for or in flight: its answer, when it comes, is stale.
+    private func cancelDraft() {
+        redraft?.cancel()
+        redraft = nil
+        draftRequest = nil
+        drafting = false
     }
 
     // MARK: Selection
@@ -175,11 +239,40 @@ public final class ReviewCommitStore {
     /// With nothing ticked it stays as it was, for the next tick to rewrite.
     private func followSelection() {
         guard writtenFromFiles, showsWritten, !selectedFiles.isEmpty else { return }
+        writtenFor = selected
         let next = reviewCommitFallbackMessage(selectedFiles)
         guard next != written else { return }
         written = next
         title = next.title
         body = next.body
+    }
+
+    /// A drafted message nobody edited (or one being drafted) is drafted again for the ticked
+    /// files once they stay put for `redraftDelay`. The draft on screen stays until the new one
+    /// arrives. An edited message is never replaced, and with nothing ticked the draft waits for
+    /// the next tick.
+    private func followDraft() {
+        guard stage == .form, operationID == nil, let info, info.draftsMessage, query != nil, drafted || drafting else { return }
+        guard showsWritten, !selected.isEmpty, !(drafted && selected == writtenFor) else {
+            cancelDraft()
+            return
+        }
+        redraft?.cancel()
+        // Whatever is in flight was asked for other ticks.
+        draftRequest = nil
+        drafting = true
+        redraft = Task { [weak self] in
+            guard let pause = self?.pause, let delay = self?.redraftDelay else { return }
+            do { try await pause(delay) } catch { return }
+            guard !Task.isCancelled else { return }
+            await self?.draft()
+        }
+    }
+
+    /// An edited message may mention files unticked since it was written.
+    private func deriveNote() {
+        let next = !showsWritten && !selected.isEmpty && !writtenFor.isSubset(of: selected)
+        if next != mentionsUntickedFiles { mentionsUntickedFiles = next }
     }
 
     // MARK: The operation
@@ -188,6 +281,7 @@ public final class ReviewCommitStore {
     /// outcome keeps polling rather than inviting a second commit.
     public func commit() async {
         guard canCommit, let info, let query else { return }
+        cancelDraft()
         let id = UUID()
         let options = RemoteCommitOptions(head: info.head, files: selectedFiles, title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                                           body: body.trimmingCharacters(in: .whitespacesAndNewlines), push: destination,
@@ -279,11 +373,13 @@ public final class ReviewCommitStore {
     /// Done with a finished commit (or never started): the next one starts over.
     public func reset() {
         guard operation?.finished != false else { return }
+        cancelDraft()
         stage = .loading
         info = nil
         title = ""
         body = ""
         selected = []
+        writtenFor = []
         drafted = false
         operationID = nil
         operation = nil
