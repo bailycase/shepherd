@@ -13,10 +13,10 @@ for module in ShepherdCore ShepherdProtocol ShepherdRemote; do
         -module-name "$module" -emit-module-path "$build/$module.swiftmodule" \
         Sources/"$module"/*.swift -o "$build/lib$module.dylib"
 done
-xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
-    App/iOS/Hosts/HostConnection.swift Tests/ShepherdIOSChecks/HostConnectionCheck.swift \
-    -o "$build/check"
-DYLD_LIBRARY_PATH="$build" "$build/check"
+xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote -parse-as-library \
+    App/iOS/Hosts/MobileHosts.swift App/iOS/Hosts/HostTokens.swift App/iOS/Support/AgentRef.swift \
+    Tests/ShepherdIOSChecks/MobileHostsCheck.swift -o "$build/hosts-check"
+DYLD_LIBRARY_PATH="$build" "$build/hosts-check"
 
 xcrun swiftc "${flags[@]}" -lShepherdCore -lShepherdProtocol -lShepherdRemote \
     -parse-as-library Tests/ShepherdIOSChecks/ThreadStoreCheck.swift \
