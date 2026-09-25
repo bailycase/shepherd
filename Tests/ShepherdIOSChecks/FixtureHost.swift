@@ -98,6 +98,8 @@ final class FixtureHost: @unchecked Sendable {
     }
 
     private func answer(_ request: RemoteRequest) -> [RemoteReply] {
+        // Mutations are refused before a screen's own answers, so no fixture can let one through.
+        if let refusal = refuse(request) { return refusal }
         if let reply = data.reply?(request) {
             note(Self.kind(request))
             return [reply]
@@ -112,8 +114,8 @@ final class FixtureHost: @unchecked Sendable {
             return [.state(id: id, state: data.state)]
         case .nativeThread(let id, let agentID, let command):
             guard case .snapshot(_, _, let after) = command else {
-                mutation("nativeThread." + Self.kind(command))
-                return [.nativeThread(id: id, result: .failure(code: "fixture", message: "The fixture host changes nothing."))]
+                note("nativeThread." + Self.kind(command))
+                return [.nativeThread(id: id, result: .failure(code: "fixture", message: "No fixture answer for this request."))]
             }
             note("nativeThread.snapshot")
             guard let snapshot = data.threads[agentID] else {
@@ -127,17 +129,35 @@ final class FixtureHost: @unchecked Sendable {
         case .listModels(let id):
             note("listModels")
             return [.models(id: id, models: data.models, defaultModel: data.models.first)]
+        case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _):
+            note(Self.kind(request))
+            return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
+        default:
+            return []
+        }
+    }
+
+    /// The refusal for a request that would change the host, reported as a mutation; nil for a read.
+    private func refuse(_ request: RemoteRequest) -> [RemoteReply]? {
+        let refused = "The fixture host changes nothing."
+        switch request {
+        case .nativeThread(let id, _, let command):
+            switch command {
+            case .snapshot, .subagentTranscript: return nil
+            default:
+                mutation("nativeThread." + Self.kind(command))
+                return [.nativeThread(id: id, result: .failure(code: "fixture", message: refused))]
+            }
         case .attach(let id, _, _, _, _), .paste(let id, _, _, _), .openPane(let id, _, _, _), .closePane(let id, _, _),
              .resizePaneSplit(let id, _, _, _), .addSpace(let id, _), .createAgent(let id, _, _, _, _, _, _, _, _),
              .agentAction(let id, _, _), .upload(let id, _):
             mutation(Self.kind(request))
-            return [.error(id: id, code: "fixture", message: "The fixture host changes nothing.")]
+            return [.error(id: id, code: "fixture", message: refused)]
         case .detach, .input, .resize:
             mutation(Self.kind(request))
             return []
-        case .listDir(let id, _), .creationOptions(let id, _, _, _), .agentQuery(let id, _, _):
-            note(Self.kind(request))
-            return [.error(id: id, code: "fixture", message: "No fixture answer for this request.")]
+        case .hello, .stateFetch, .listModels, .listDir, .creationOptions, .agentQuery:
+            return nil
         }
     }
 
