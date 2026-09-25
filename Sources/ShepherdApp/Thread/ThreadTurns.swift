@@ -216,10 +216,15 @@ struct AgentTurn: View, Equatable {
             Prose(blocks: blocks, writingFence: live && openFence).equatable()
         case .work(let group):
             WorkGroupView(group: group, review: review).equatable()
-        case .subagents(_, let line, _):
+        case .subagents(_, let lines):
             // Where they started, and where they finished: both open the first run in the
-            // inspector, whose ‹ › browse the rest.
-            NWSubagentRecordLine(title: line.title, meta: line.meta, action: openFirstRun)
+            // inspector, whose ‹ › browse the rest. Adjacent, they sit together as activity
+            // lines do.
+            VStack(alignment: .leading, spacing: NW.Space.xxs) {
+                ForEach(lines, id: \.title) { line in
+                    NWSubagentRecordLine(title: line.title, meta: line.meta, action: openFirstRun)
+                }
+            }
         case .note(_, let text):
             Text(text).font(Font.nw(.caption)).foregroundStyle(Color.nw.textTertiary)
                 .lineLimit(3).truncationMode(.tail).help(text).textSelection(.enabled)

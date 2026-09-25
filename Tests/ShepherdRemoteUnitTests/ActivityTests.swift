@@ -347,7 +347,7 @@ struct TurnPresentationTests {
             case .thinking(_, _, _, let live, _): live ? "live-thinking" : "thinking"
             case .prose: "prose"
             case .work(let group): "work:" + (group.finished + group.running).map { "\($0.calls.count)" }.joined(separator: "+")
-            case .subagents(_, let line, let finished): (finished ? "finished:" : "started:") + line.title
+            case .subagents(_, let lines): "record:" + lines.map(\.title).joined(separator: "|")
             case .note: "note"
             case .error(_, _, _, let final): final ? "error:final" : "error"
             case .steer(_, let text, _, _): "steer:" + text
@@ -432,17 +432,17 @@ struct TurnPresentationTests {
         let live = NativeSubagentRecord(started: Self.record.started)
         let messages = [tool("read", "r"), tool("shepherd_child_start", "s1"), tool("shepherd_child_wait", "w"), tool("shepherd_child_start", "s2")]
         let presentation = nativeTurnPresentation(messages, live: true, cards: NativeCardLayout(callIDs: ["s1", "s2"], record: live))
-        #expect(kinds(presentation) == ["work:1", "started:Started 2 subagents"])
+        #expect(kinds(presentation) == ["work:1", "record:Started 2 subagents"])
         #expect(presentation.toolCalls == 2, "spawn calls the record stands for are not counted")
         let around = [tool("read", "r1"), tool("shepherd_child_start", "s1"), tool("read", "r2"), tool("shepherd_child_start", "s2"), tool("read", "r3")]
         #expect(kinds(nativeTurnPresentation(around, live: true, cards: NativeCardLayout(callIDs: ["s1", "s2"], record: live)))
-                == ["work:1", "started:Started 2 subagents", "work:2"])
+                == ["work:1", "record:Started 2 subagents", "work:2"])
     }
 
     /// "finished" sits where they finished: before the first thing that landed after the last
     /// run ended, else at the end of the turn.
-    @Test(arguments: [(5.0, ["started:Started 2 subagents", "prose", "finished:2 subagents finished", "prose"]),
-                      (50.0, ["started:Started 2 subagents", "prose", "prose", "finished:2 subagents finished"])])
+    @Test(arguments: [(5.0, ["record:Started 2 subagents", "prose", "record:2 subagents finished", "prose"]),
+                      (50.0, ["record:Started 2 subagents", "prose", "prose", "record:2 subagents finished"])])
     func theFinishedLineSitsWhereTheyFinished(finishedAt: Double, expected: [String]) {
         var record = Self.record
         record.finishedAt = finishedAt
@@ -459,7 +459,19 @@ struct TurnPresentationTests {
     /// Runs whose spawn call is not in the turn (paged out, an older host) are recorded at its end.
     @Test func runsWithNoSpawnCallAreRecordedAtTheEnd() {
         let presentation = nativeTurnPresentation([F.assistant("Done.")], live: false, cards: NativeCardLayout(record: Self.record))
-        #expect(kinds(presentation) == ["prose", "started:Started 2 subagents", "finished:2 subagents finished"])
+        #expect(kinds(presentation) == ["prose", "record:Started 2 subagents|2 subagents finished"])
+    }
+
+    /// With nothing between them, both lines are one item, so they sit together as activity
+    /// lines do (SubagentsDone), and the started line keeps its identity as the other joins it.
+    @Test func adjacentRecordLinesShareOneItem() {
+        var spawn = tool("shepherd_child_start", "s1")
+        spawn.timestamp = 2
+        var wrapUp = F.assistant("All three handed off.")
+        wrapUp.timestamp = 10
+        let presentation = nativeTurnPresentation([spawn, wrapUp], live: false, cards: NativeCardLayout(callIDs: ["s1"], record: Self.record))
+        #expect(kinds(presentation) == ["record:Started 2 subagents|2 subagents finished", "prose"])
+        #expect(presentation.items.first?.id == "subagents:started")
     }
 
     @Test func aCardLayoutRecordsItsRunsOnceTheyAllFinish() {

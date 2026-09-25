@@ -2067,7 +2067,8 @@ the components' values, and `Thread/Subagents.swift` lays out the tray. State al
   work around them stays one group. Once every run has finished, "3 subagents finished · 45m ·
   7 files · +318 −64" (the span from the first start to the last end, "1 failed" when any did,
   the files touched, the combined diff) sits where they finished: before the first part of the
-  turn that landed after the last run ended, else at the turn's end. Runs whose spawn call is in
+  turn that landed after the last run ended, else at the turn's end; with nothing between them the
+  two lines sit 2pt apart, as activity lines do (SubagentsDone). Runs whose spawn call is in
   no loaded turn are recorded at the end of the last reply. Both lines open the first run in the
   inspector, whose ‹ › browse the rest; the footer's "3 subagents" does the same.
 - **Not built yet: a queued message addressed to a subagent** (SubagentsQueue, SubagentTray ›
