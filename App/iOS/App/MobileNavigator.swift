@@ -35,6 +35,12 @@ final class MobileNavigator {
     /// Portrait: the sidebar slides over the thread, so choosing a row hides it again; with no
     /// thread chosen it stays out.
     var padSidebarOverlays = false
+    /// The thread whose composer has the focus in this window (`ThreadComposer`).
+    @ObservationIgnored var focusedComposer: AgentRef?
+    /// The composer to focus again as it mounts: the split view's change of style (a turn
+    /// between portrait and landscape) builds its columns anew, and the keyboard would go down
+    /// mid-draft (`PadShell`).
+    @ObservationIgnored var refocusComposer: AgentRef?
 
     /// A route shown modally over everything.
     var presented: PresentedRoute?

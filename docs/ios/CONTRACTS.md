@@ -111,6 +111,12 @@ dropped the focus again, so no keyboard ever stayed up in portrait. Never key a 
 style, which columns show) off a size the keyboard shrinks; sizing within a mode (the composer's
 share of the thread, the terminal panel's clamp) should follow what is left.
 
+A change of style (turning the iPad, or resizing a window across square) builds the split view's
+columns anew: the selection and pushed screens stay, but the views under them are new. So a
+composer that had the focus takes it back as it mounts (`navigator.focusedComposer` and
+`refocusComposer`, set by `ThreadComposer` and `PadShell`), and the keyboard stays up through a
+turn mid-draft.
+
 ## App state
 
 `MobileApp` (App/) makes the stores once and puts them in the environment. Every window shares
