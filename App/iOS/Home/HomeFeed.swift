@@ -9,8 +9,8 @@ import ShepherdRemote
 /// thread snapshot per agent that matters. Views read `model` and never derive rows.
 ///
 /// Snapshots are asked for only while a Home surface is on screen (`watch()`): every few
-/// seconds for agents that run or wait on the user (an unchanged thread costs one small
-/// answer), and once per connection for the rest, so Recents knows when each last moved.
+/// seconds for agents that run, wait on the user, or have subagents still running
+/// (`FleetDigest.watches`; an unchanged thread costs one small answer), and once per connection for the rest, so Recents knows when each last moved.
 @MainActor
 @Observable
 final class HomeFeed {
@@ -129,8 +129,7 @@ final class HomeFeed {
                     let ref = FleetRef(host: host.id, agent: agent.id)
                     let digest = digests[ref]
                     let current = readIn[ref] == session
-                    let hot = agent.status == .working || agent.status == .blocked || digest?.running == true
-                        || digest?.question != nil || digest?.subagentQuestion != nil
+                    let hot = FleetDigest.watches(status: agent.status, digest: digest)
                     if !hot {
                         if current || quietReads >= Self.quietReadsPerPoll { continue }
                         quietReads += 1

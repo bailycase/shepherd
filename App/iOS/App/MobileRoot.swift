@@ -29,9 +29,7 @@ struct MobileRoot: View {
             }
         }
         .sheet(item: $navigator.presented) { presented in
-            NavigationStack {
-                presented.route.destination.mobileDestinations()
-            }
+            PresentedSheet(route: presented.route, fitted: layout == .pad && !presented.route.sizesItself)
             .mobileEnvironment(app, navigator: navigator, window: window)
             .preferredColorScheme(app.appearance.mode.colorScheme)
         }
@@ -47,5 +45,40 @@ struct MobileRoot: View {
             app.windows.register(window, navigator: navigator)
             app.windows.setPhase(window.id, phase, hosts: app.hosts)
         }
+    }
+}
+
+private extension MobileRoute {
+    /// The palette sizes its own sheet.
+    var sizesItself: Bool {
+        if case .search(.palette) = self { return true }
+        return false
+    }
+}
+
+/// A presented route in its own stack. On iPad it is a form over the window as tall as what it
+/// holds (iPadNewThread board), not the form's full height: a scroll view offers no height of
+/// its own, so the sheet takes its content's.
+private struct PresentedSheet: View {
+    let route: MobileRoute
+    let fitted: Bool
+    @State private var height: CGFloat = 0
+
+    var body: some View {
+        NavigationStack {
+            route.destination.mobileDestinations()
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentSize.height + $0.contentInsets.top } action: { _, new in
+                    if fitted { height = new }
+                }
+        }
+        .frame(idealHeight: fitted && height > 0 ? height : nil)
+        .fittedSheet(fitted)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func fittedSheet(_ fitted: Bool) -> some View {
+        if fitted { presentationSizing(.form.fitted(horizontal: false, vertical: true)) } else { self }
     }
 }

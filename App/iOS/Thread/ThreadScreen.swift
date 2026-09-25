@@ -23,8 +23,10 @@ struct ThreadScreen: View {
     /// The thread's height: the composer may take a share of it (`composerMaxHeight`).
     @State private var height: CGFloat = 0
 
-    /// The poll loop's identity: a new connection, or the thread leaving the screen, restarts it.
+    /// The poll loop's identity: another thread in the same view, a new connection, or the
+    /// thread leaving the screen restarts it.
     private struct RunKey: Equatable {
+        var ref: AgentRef
         var session: UUID?
         var active: Bool
     }
@@ -34,7 +36,7 @@ struct ThreadScreen: View {
         let agent = host?.agent(ref.agent)
         let store = threads.store(for: ref)
         let supported = host?.supports(RemoteProtocol.nativeThreadCapability) == true
-        let key = RunKey(session: supported && agent != nil ? host?.session : nil, active: visible && scenePhase == .active)
+        let key = RunKey(ref: ref, session: supported && agent != nil ? host?.session : nil, active: visible && scenePhase == .active)
         let status = ThreadTitle.Status(store: store, agent: agent)
         ThreadTranscript(ref: ref, store: store, banner: banner(host: host, agent: agent, store: store, supported: supported))
             .safeAreaInset(edge: .bottom, spacing: 0) {

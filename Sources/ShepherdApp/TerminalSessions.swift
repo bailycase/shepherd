@@ -235,8 +235,9 @@ final class TerminalSessionStore {
     var onStateChanged: ((ShepherdState) -> Void)?
     /// Fired whenever this store persists a layout change (session bindings).
     var onTabLayoutChanged: ((TabID, PaneNode) -> Void)?
-    /// Fired on server agentStatus events (from the pi status extension).
-    var onAgentStatus: ((AgentID, AgentStatus) -> Void)?
+    /// Fired on server agentStatus events (from the pi status extension), with the failure of a
+    /// turn that ended in an error.
+    var onAgentStatus: ((AgentID, AgentStatus, TurnFailure?) -> Void)?
     /// Fired on subagents-extension child-run publishes (full replace).
     var onAgentChildren: ((AgentID, [ChildRun]) -> Void)?
     /// Fired when an agent's notify tool asks for a system notification.
@@ -294,8 +295,8 @@ final class TerminalSessionStore {
             self?.serverState = state
             self?.onStateChanged?(state)
         }
-        server.onAgentStatus = { [weak self] agentID, status in
-            self?.onAgentStatus?(agentID, status)
+        server.onAgentStatus = { [weak self] agentID, status, failure in
+            self?.onAgentStatus?(agentID, status, failure)
         }
         server.onAgentChildren = { [weak self] agentID, children in
             self?.onAgentChildren?(agentID, children)
