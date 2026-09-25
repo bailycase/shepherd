@@ -26,8 +26,6 @@ usage:
   release.py publish <casts> <pages>    write every gh-pages feed, legacy aliases included
   release.py verify-app <app> <app-key> [version]  check a built app is the app it claims to be
   release.py verify-ios <app> <build>   check an archived iOS app before it is uploaded
-  release.py testflight-job             a Release run's jobs (GitHub's API JSON) on stdin ->
-                                        uploaded=true|false for $GITHUB_OUTPUT
   release.py retire-testflight --key-file <p8> [--wait-for-build <n>] [--timeout <s>]
                              [--interval <s>] [--dry-run]
                                         keep the newest processed TestFlight build and expire
@@ -366,12 +364,11 @@ def verify_ios(path: str, build: str) -> list[str]:
     return problems
 
 # TestFlight retirement. Every nightly uploads a build and nothing else expires the old ones, so
-# testers could install any build from the last 90 days. .github/workflows/testflight-retire.yml
-# runs retire-testflight after each upload: it keeps the newest processed build and expires the
+# testers could install any build from the last 90 days. release.yml's retire-testflight job
+# runs this after each upload: it keeps the newest processed build and expires the
 # older ones through the App Store Connect API.
 
 ASC_API = "https://api.appstoreconnect.apple.com"
-TESTFLIGHT_JOB = "iOS to TestFlight (internal)"   # the testflight job's name in release.yml
 JWT_LIFETIME = 1200   # App Store Connect refuses a token that lives longer than 20 minutes
 # What a token asks for: short of the limit, so a runner clock ahead of Apple's is not refused.
 TOKEN_LIFETIME = 900
@@ -438,13 +435,6 @@ def retire_plan(builds: list[AppStoreBuild], waiting_for: str | None = None) -> 
     expire = tuple(b for b in live if b.number < keep.number and b.processing_state in EXPIRABLE)
     left = tuple(b for b in builds if not b.expired and b is not keep and b not in expire)
     return RetirePlan("retire", f"{keep.describe()} is the newest processed build", keep, expire, left)
-
-
-def testflight_uploaded(jobs: dict) -> bool:
-    """Whether a Release run's testflight job uploaded a build, from GitHub's list of the
-    run's jobs. A skipped or failed job uploaded nothing to wait for."""
-    return any(j.get("name") == TESTFLIGHT_JOB and j.get("conclusion") == "success"
-               for j in jobs.get("jobs", []))
 
 
 def der_signature_to_raw(der: bytes, size: int = 32) -> bytes:
@@ -766,8 +756,6 @@ def main(argv: list[str]) -> int:
         if problems:
             return 1
         print(f"{args[0]} is {IOS.name} ({IOS.bundle_id}) build {args[1]}")
-    elif command == "testflight-job" and not args:
-        print(f"uploaded={'true' if testflight_uploaded(json.load(sys.stdin)) else 'false'}")
     elif command == "retire-testflight":
         return _retire_command(args)
     else:
