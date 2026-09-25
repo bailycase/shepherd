@@ -56,6 +56,8 @@ final class ReviewStore {
     /// The file list's rows and the review's totals, derived with each change.
     private(set) var summaries: [ReviewFileSummary] = []
     private(set) var totals = ReviewTotals(files: 0, added: 0, removed: 0, viewed: 0)
+    /// The iPad's file chips, one per row.
+    private(set) var chips: [NWFileStrip.Item] = []
     /// Comments by file, then line, so a line finds its comment without a scan.
     private(set) var commentsByFile: [String: [Int: ReviewComment]] = [:]
     private(set) var expandedRuns: [String: Set<String>] = [:]
@@ -351,7 +353,12 @@ final class ReviewStore {
 
     private func derive() {
         let (rows, totals) = reviewSummaries(files: files, comments: comments, viewed: viewed)
-        if summaries != rows { summaries = rows }
+        if summaries != rows {
+            summaries = rows
+            chips = rows.map {
+                NWFileStrip.Item(id: $0.id, path: $0.path, status: NWFileStatus($0.status), added: $0.added, removed: $0.removed, isViewed: $0.viewed)
+            }
+        }
         if self.totals != totals { self.totals = totals }
         let byFile = comments.reduce(into: [String: [Int: ReviewComment]]()) { $0[$1.fileID, default: [:]][$1.lineID] = $1 }
         if commentsByFile != byFile { commentsByFile = byFile }
