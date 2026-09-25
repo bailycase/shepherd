@@ -68,6 +68,7 @@ Routes today:
 | `.newThread(.compose(host: UUID?))` | New thread (presented modally) |
 | `.subagents(.list(AgentRef) / .run(AgentRef, runID:))` | a thread's runs, one run |
 | `.review(.changes(AgentRef, file: String?) / .diff(AgentRef, path:))` | changes, one file's diff |
+| `.review(.finalize(AgentRef))` | Finalize a worktree agent (presented) |
 | `.search(.search(query:))` | search (iPhone, pushed) |
 | `.search(.palette(query:))` | the ⌘K palette (iPad, presented) |
 | `.search(.rename(AgentRef) / .delete(AgentRef))` | rename, delete or Delete Worktree Agent (presented) |

@@ -170,8 +170,30 @@ keep the version for real breaks.
   place: numbered answers to choose, Yes and No for a confirm, a field for input and editor.
 - **Settings:** Appearance (System, Light, Dark), the hosts as cards with Retry, and a host form
   (add, edit, forget; a blank token keeps the saved one).
-- **Stubs:** New thread, Subagents, Review, Search, and agent actions are placeholders their
-  tracks fill ([CONTRACTS.md](CONTRACTS.md)).
+- **New thread (`NewThread/`):** the prompt, then chips for repo, host, model and thinking. Repo
+  lists the host's spaces first and other hosts' after (choosing one moves the thread there), and
+  Add repo browses the host's folders (`listDir`, `addSpace`). Host shows each one's status and
+  running threads. The New worktree switch (on by default) takes a generated branch and a base
+  resolved through `creationOptions`. Start sends `createAgent` as the Mac's New Agent sheet
+  does, then opens the thread; images ride on the first send. An older host says what it lacks
+  instead of failing. On iPad it is a small form over the thread, with a popover per chip.
+- **Subagents (`Subagents/`):** cards in the thread where the spawn was (one run as a card, a
+  group as one card that becomes a ledger once every run finishes), the runs list (this turn and
+  earlier), and one run: its goal, its live transcript, and a steer field that reaches only that
+  child. A child's question is answered in place, from the card, the list or the run. Pause,
+  Continue, Stop and Re-run appear where the host takes them. On iPad the run opens in an
+  inspector column beside the thread.
+- **Review (`Review/`):** the changes (working tree vs HEAD, or the PR), with viewed progress,
+  the file list, comments, Request changes, and Commit (it sends the agent a turn, as on the
+  Mac); the diff reader (wrapped, syntax-colored lines, folded removed runs, line comments, Next
+  file); and Finalize for worktree agents (checks, the form, each step, the PR link). On iPad
+  review docks beside the thread or goes full screen with a unified or split view. There is no
+  per-file revert: the remote protocol has none.
+- **Search and actions (`Search/`):** search across every connected host: title matches at once,
+  conversations fanned out to each host (`agentQuery(.search)`), snippets with host tags. A
+  thread's options menu renames, moves and deletes its agent; a worktree agent's delete follows
+  the Mac's Delete Worktree Agent (the host's warning, acknowledged, then progress). On iPad
+  ⌘K opens a palette over search and actions, with a live preview of the selected thread.
 
 ## Not in the first release
 
