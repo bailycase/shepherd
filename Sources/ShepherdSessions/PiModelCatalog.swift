@@ -29,6 +29,12 @@ public enum PiModelCatalog {
     /// errors. Blocking — call off the main thread and off the server queue.
     public static func modelIDs() -> [String] { entries().map(\.id) }
 
+    /// pi's catalog, or models.json's models when pi cannot be asked. Blocking, like `entries()`.
+    public static func entriesOrConfigured() -> [Entry] {
+        let asked = entries()
+        return asked.isEmpty ? PiConfig.modelEntries() : asked
+    }
+
     /// Blocking, like `modelIDs()`.
     public static func entries() -> [Entry] {
         lock.lock()
