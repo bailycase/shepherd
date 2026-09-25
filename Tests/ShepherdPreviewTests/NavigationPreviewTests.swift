@@ -60,6 +60,37 @@ extension PreviewTests {
         }
     }
 
+    /// This Mac's automations: a run whose pi is still starting (it reads running and stops,
+    /// never done), a settled run, one asking, and one stopped.
+    @Test func sidebarAutomations() async throws {
+        let workspace = try PreviewWorkspace()
+        defer { workspace.stop() }
+        let space = Space(name: "Shepherd", path: workspace.dir.path)
+        let runs = Space(name: "Automations", path: "~", hidden: true)
+        let (work, workTab) = try await workspace.agent("Plan shepherd extensions", in: space, order: 0, status: .done)
+        var agents = [work], tabs = [workTab], automations: [Automation] = []
+        for (index, (name, status)) in [("Merge PR #24 after CI", AgentStatus?.some(.idle)), ("Nightly migrations dry run", .done),
+                                        ("Triage new issues", .blocked), ("Stale branch cleanup", nil)].enumerated() {
+            // Off, so the first adoption starts no run for the stopped one.
+            var automation = Automation(name: name, prompt: "watch", cwd: workspace.dir.path, enabled: false)
+            if let status {
+                let (agent, tab) = try await workspace.agent(name, in: runs, order: index, status: status)
+                agents.append(agent); tabs.append(tab)
+                automation.agentID = agent.id
+            }
+            automations.append(automation)
+        }
+        try await workspace.seed(ShepherdState(spaces: [space, runs], tabs: tabs, agents: agents, automations: automations))
+        let vm = workspace.vm
+        vm.automationsExpanded = true
+        let starting = try #require(vm.automationRun(automations[0], agent: vm.automationAgent(automations[0])))
+        #expect(AutomationRow.isLive(vm.automationAgent(automations[0]), run: starting))
+
+        try await Preview.render("sidebar-automations", size: CGSize(width: AppLayout.sidebarDefaultWidth, height: 360)) {
+            SidebarView(vm: vm)
+        }
+    }
+
     // MARK: Window
 
     /// A live (stub) agent after one turn, beside a working one.

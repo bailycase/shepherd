@@ -56,6 +56,8 @@ struct AutomationRunLogTests {
         #expect(run.startedAt == Self.start.timeIntervalSince1970)
         #expect((run.endedAt == nil) == (statuses.last! != nil))
         #expect((run.agentID != nil) == (statuses.last! != nil))
+        // The GUI reads a run still open without the server queue.
+        #expect(log.openRuns[Self.automation.id] == (statuses.last! != nil ? run : nil))
     }
 
     /// The result the log keeps and the rule Run now follows (`AutomationRun.isLive`) agree, so
@@ -109,9 +111,11 @@ struct AutomationRunLogTests {
         let second = AutomationRunLog(url: url)
         defer { second.flush() }
         #expect(second.runs == first.runs)
+        #expect(second.openRuns == first.openRuns)
         second.closeOpenRuns(now: Self.start.addingTimeInterval(60))
         let run = try #require(second.runs[Self.automation.id]?.first)
         #expect(run.result == .interrupted && run.endedAt == Self.start.timeIntervalSince1970 + 60 && run.agentID == nil)
+        #expect(second.openRuns.isEmpty)
     }
 
     @Test func aRemovedAutomationTakesItsRunsAlong() throws {
