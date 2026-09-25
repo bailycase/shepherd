@@ -1572,13 +1572,15 @@ text.
 - **Strikethrough and links:** `~~text~~` is struck through; links, `<autolinks>` and bare
   URLs are `running` and open in the browser.
 - **Diagrams and math** stay code: Shepherd renders neither. A fence labelled `mermaid` (or
-  `plantuml`, `dot`, `d2`) says "mermaid · diagram source" after a
-  `point.3.connected.trianglepath.dotted` glyph, and a `math`, `latex` or `tex` fence (and a
-  `$$` block) says "math · math source" after `function`, both 10pt tertiary in the header.
+  `plantuml`, `dot`, `graphviz`, `d2`) says "mermaid · diagram source" after a
+  `point.3.connected.trianglepath.dotted` glyph, and a `math`, `latex`, `tex` or `katex` fence
+  (and a `$$` block) says "math · math source" after `function`, both 10pt tertiary in the header.
 - **Streaming** (`nativeMarkdownParse(_:streaming:)`): only the text a reply is still writing
   holds anything back. Its unterminated last line waits while it is only the start of a block
   (a `|` row, a delimiter row, a bare `-`, `1.` or `#`, a fence's first line, a tag still
-  open), so it never draws as something else for a moment. A table header waits for its
+  open, a task box still arriving such as `- [x`, a note's `[^label]` before its colon), so it
+  never draws as something else for a moment. Footnote references are numbered while the reply
+  streams, before their notes (which come last) arrive, so none shows its raw label. A table header waits for its
   delimiter row instead of drawing as a paragraph. The table appears as a table as soon as
   that row lands, and grows a whole row at a time. A finished reply draws every line.
 - **Performance:** the table and its cells compare equal between chunks, so a reply streaming
