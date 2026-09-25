@@ -207,6 +207,36 @@ struct RemoteHostTests {
         #expect(try second.branches() == ["main"])
     }
 
+    /// A refused token fails the same way every time: the host says why and waits for the
+    /// token to be edited (or Reconnect) instead of retrying it with backoff.
+    @Test func aHostThatRefusesTheTokenSaysSoAndWaitsForAnEdit() async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        try await remote.host.start()
+        try await local.start()
+        local.remoteHosts.addHost(name: "studio", host: "127.0.0.1", port: remote.port, token: "wrong")
+        let connection = try #require(local.remoteHosts.connections.last)
+
+        try await eventuallyOnMain("the host's refusal") { connection.phase.failure?.kind == .tokenRefused }
+        #expect(!connection.retryPending, "a refused token is not retried on its own")
+
+        local.remoteHosts.updateHost(id: connection.id, name: "studio", host: "127.0.0.1", port: remote.port, token: remote.token)
+        try await eventuallyOnMain("the corrected token to connect") { connection.phase == .connected }
+    }
+
+    @Test func aHostWithNothingListeningKeepsRetrying() async throws {
+        let local = try AppHarness(), remote = try RemoteHostHarness()
+        defer { local.stop(); remote.stop() }
+        try await local.start()
+        remote.host.server.stopRemoteListener()
+        local.remoteHosts.addHost(name: "studio", host: "127.0.0.1", port: remote.port, token: remote.token)
+        let connection = try #require(local.remoteHosts.connections.last)
+
+        try await eventuallyOnMain("an unreachable host to wait for its next attempt") {
+            connection.phase.failure?.kind == .unreachable && connection.retryPending
+        }
+    }
+
     @Test func aDisconnectedOrReplacedHostRejectsActionsApprovedAgainstTheOldConnection() async throws {
         let local = try AppHarness(), remote = try RemoteHostHarness()
         defer { local.stop(); remote.stop() }

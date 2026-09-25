@@ -32,7 +32,7 @@ struct NewThreadRulesTests {
     }
 
     static var laptop: NewThreadHostInput {
-        NewThreadHostInput(id: laptopID, name: "MacBook Air", phase: .failed("refused"), capabilities: [], state: ShepherdState(spaces: [web]))
+        NewThreadHostInput(id: laptopID, name: "MacBook Air", phase: .failed(RemoteHostFailure(kind: .unreachable, detail: "refused")), capabilities: [], state: ShepherdState(spaces: [web]))
     }
 
     static func readyDefaults(_ host: UUID = studioID) -> NewThreadDefaults {
