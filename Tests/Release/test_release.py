@@ -2,16 +2,24 @@
 
 Run: python3 -m unittest discover -s Tests/Release -v
 """
+import base64
 import contextlib
+import hashlib
+import http.server
 import importlib.util
 import io
 import json
 import os
 import plistlib
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
+import threading
 import unittest
+import unittest.mock
+import urllib.parse
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _spec = importlib.util.spec_from_file_location("release", os.path.join(ROOT, "scripts", "release.py"))
@@ -529,6 +537,575 @@ class ContractTests(unittest.TestCase):
         updater = self.read("Sources", "ShepherdApp", "AppUpdater.swift")
         for f in release.FEEDS:
             self.assertTrue(f'"{f.file}"' in updater, f"UpdateChannel lacks {f.file}")
+
+
+def build(version, state="VALID", expired=False, id=None):
+    return release.AppStoreBuild(id or f"id-{version}", version, state, expired, f"2026-09-{int(version.split('.')[0]) % 28 + 1:02d}T10:00:00Z")
+
+
+def versions(builds):
+    return [b.version for b in builds]
+
+
+class RetirePlanTests(unittest.TestCase):
+    """Which TestFlight builds expire once a new one is uploaded."""
+
+    def test_the_rule_table(self):
+        #  builds (version, state[, expired]), awaited build -> status, kept, expired
+        table = [
+            ("only one build",
+             [("100", "VALID")], None, "retire", "100", []),
+            ("mixed versions keep the highest build number, not the newest upload",
+             [("99", "VALID"), ("101", "VALID"), ("100", "VALID"), ("9", "VALID")], None, "retire", "101", ["100", "99", "9"]),
+            ("already-expired builds are neither kept nor expired again",
+             [("103", "VALID", True), ("101", "VALID"), ("100", "VALID", True), ("99", "VALID")], None, "retire", "101", ["99"]),
+            ("a newer build still processing is left alone",
+             [("102", "PROCESSING"), ("101", "VALID"), ("100", "VALID")], None, "retire", "101", ["100"]),
+            ("a newer build that failed is left alone",
+             [("102", "FAILED"), ("101", "VALID"), ("100", "VALID")], None, "retire", "101", ["100"]),
+            ("an older build still processing may become installable, so it expires",
+             [("101", "VALID"), ("100", "PROCESSING")], None, "retire", "101", ["100"]),
+            ("older builds that never processed are never installable, so they stay",
+             [("101", "VALID"), ("100", "FAILED"), ("99", "INVALID"), ("98", "VALID")], None, "retire", "101", ["98"]),
+            ("no processed build expires nothing",
+             [("101", "PROCESSING"), ("100", "FAILED")], None, "none", None, []),
+            ("no builds at all expires nothing",
+             [], None, "none", None, []),
+            ("the awaited build still processing waits",
+             [("101", "PROCESSING"), ("100", "VALID"), ("99", "VALID")], "101", "wait", None, []),
+            ("the awaited build not uploaded yet waits",
+             [("100", "VALID"), ("99", "VALID")], "101", "wait", None, []),
+            ("the awaited build that failed expires nothing",
+             [("101", "FAILED"), ("100", "VALID"), ("99", "VALID")], "101", "failed", None, []),
+            ("the awaited build that was invalid expires nothing",
+             [("101", "INVALID"), ("100", "VALID")], "101", "failed", None, []),
+            ("the awaited build once processed is kept",
+             [("101", "VALID"), ("100", "VALID"), ("99", "VALID")], "101", "retire", "101", ["100", "99"]),
+            ("a newer processed build than the awaited one wins",
+             [("102", "VALID"), ("101", "VALID"), ("100", "VALID")], "101", "retire", "102", ["101", "100"]),
+            ("a newer processing build than the awaited one is left alone",
+             [("102", "PROCESSING"), ("101", "VALID"), ("100", "VALID")], "101", "retire", "101", ["100"]),
+            ("an expired awaited build is as good as missing",
+             [("101", "VALID", True), ("100", "VALID")], "101", "wait", None, []),
+            ("dotted build numbers compare numerically",
+             [("1.10", "VALID"), ("1.9", "VALID"), ("1.2", "VALID")], None, "retire", "1.10", ["1.9", "1.2"]),
+        ]
+        for name, rows, awaited, status, kept, expired in table:
+            with self.subTest(name):
+                builds = [build(r[0], r[1], len(r) > 2 and r[2]) for r in rows]
+                plan = release.retire_plan(builds, awaited)
+                self.assertEqual(plan.status, status)
+                self.assertEqual(plan.keep.version if plan.keep else None, kept)
+                self.assertEqual(versions(plan.expire), expired)
+                self.assertTrue(plan.reason)
+                if plan.status == "retire":
+                    live = [b for b in builds if not b.expired]
+                    self.assertEqual(sorted(versions([plan.keep, *plan.expire, *plan.left])), sorted(versions(live)))
+
+    def test_nothing_numbered_at_or_above_the_kept_build_ever_expires(self):
+        builds = [build(str(n), state) for n in range(90, 110)
+                  for state in (("VALID", "PROCESSING", "FAILED", "INVALID")[n % 4],)]
+        plan = release.retire_plan(builds)
+        self.assertTrue(all(b.number < plan.keep.number for b in plan.expire))
+
+    def test_a_build_number_that_is_not_one_is_left_alone(self):
+        plan = release.retire_plan([build("101"), release.AppStoreBuild("odd", "1.0b", "VALID"), build("100")])
+        self.assertEqual((plan.keep.version, versions(plan.expire), versions(plan.left)), ("101", ["100"], ["1.0b"]))
+        with self.assertRaises(ValueError):
+            release.retire_plan([], "latest")
+
+    def test_testflight_uploaded_reads_the_release_runs_testflight_job(self):
+        def jobs(conclusion):
+            return {"jobs": [{"name": "plan", "conclusion": "success"},
+                             {"name": "build and publish", "conclusion": "success"},
+                             {"name": release.TESTFLIGHT_JOB, "conclusion": conclusion}]}
+        self.assertTrue(release.testflight_uploaded(jobs("success")))
+        for conclusion in ("skipped", "failure", "cancelled", None):
+            with self.subTest(conclusion=conclusion):
+                self.assertFalse(release.testflight_uploaded(jobs(conclusion)))
+        self.assertFalse(release.testflight_uploaded({"jobs": []}))
+        for payload, expected in ((jobs("success"), "uploaded=true"), (jobs("skipped"), "uploaded=false")):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), unittest.mock.patch("sys.stdin", io.StringIO(json.dumps(payload))):
+                self.assertEqual(release.main(["testflight-job"]), 0)
+            self.assertEqual(out.getvalue().strip(), expected)
+
+
+def der_int(value):
+    value = value.lstrip(b"\0") or b"\0"
+    if value[0] & 0x80:
+        value = b"\0" + value
+    return b"\x02" + bytes([len(value)]) + value
+
+
+def der_signature(r, s):
+    body = der_int(r) + der_int(s)
+    return b"\x30" + bytes([len(body)]) + body
+
+
+class SignatureTests(unittest.TestCase):
+    """OpenSSL writes ECDSA signatures as DER; a JWT carries raw r||s."""
+
+    def test_known_vectors(self):
+        r, s = bytes(range(1, 33)), bytes(range(33, 65))
+        der = bytes.fromhex("3044" "0220" + r.hex() + "0220" + s.hex())
+        self.assertEqual(release.der_signature_to_raw(der), r + s)
+
+    def test_a_high_bit_integer_arrives_as_33_bytes_and_leaves_as_32(self):
+        r, s = b"\xff" * 32, b"\x80" + b"\x01" * 31
+        der = bytes.fromhex("3046" "022100" + r.hex() + "022100" + s.hex())
+        self.assertEqual(release.der_signature_to_raw(der), r + s)
+
+    def test_short_integers_are_padded_with_leading_zeros(self):
+        for r, s in ((b"\x01", b"\x7f" * 31), (b"\x00" * 3 + b"\x42" * 29, b"\x05"), (b"\x00" * 32, b"\x00" * 32)):
+            with self.subTest(r=r.hex(), s=s.hex()):
+                raw = release.der_signature_to_raw(der_signature(r, s))
+                self.assertEqual(raw, r.rjust(32, b"\0") + s.rjust(32, b"\0"))
+                self.assertEqual(len(raw), 64)
+
+    def test_long_form_lengths_are_read(self):
+        r, s = b"\x80" * 32, b"\x81" * 32
+        body = der_int(r) + der_int(s)
+        self.assertEqual(release.der_signature_to_raw(b"\x30\x81" + bytes([len(body)]) + body), r + s)
+
+    def test_malformed_signatures_are_refused(self):
+        good = der_signature(b"\x11" * 32, b"\x22" * 32)
+        bad = {
+            "empty": b"",
+            "not a sequence": b"\x31" + good[1:],
+            "sequence too long": good[:1] + bytes([good[1] + 1]) + good[2:],
+            "truncated": good[:-1],
+            "trailing bytes": good[:1] + bytes([good[1] + 1]) + good[2:] + b"\x00",
+            "not an integer": good[:2] + b"\x03" + good[3:],
+            "negative": der_signature(b"\x11" * 32, b"\x22" * 32).replace(b"\x02\x20\x11", b"\x02\x20\x91", 1),
+            "too large": der_signature(b"\x11" * 33, b"\x22" * 32),
+            "zero length integer": b"\x30\x04\x02\x00\x02\x00",
+            "one integer": b"\x30\x22" + der_int(b"\x11" * 32),
+        }
+        for name, der in bad.items():
+            with self.subTest(name), self.assertRaises(ValueError):
+                release.der_signature_to_raw(der)
+
+
+def b64url_decode(part):
+    return base64.urlsafe_b64decode(part + "=" * (-len(part) % 4))
+
+
+class TokenTests(unittest.TestCase):
+    """The ES256 JWT the App Store Connect API takes."""
+
+    def test_the_header_and_payload_and_the_signature_over_them(self):
+        r, s = b"\x80" + b"\x01" * 31, b"\x02" * 32
+        signed = []
+
+        def sign(data):
+            signed.append(data)
+            return der_signature(r, s)
+
+        token = release.app_store_connect_token("KEY123", "issuer-uuid", 1_800_000_000, sign)
+        header, payload, signature = token.split(".")
+        self.assertEqual(json.loads(b64url_decode(header)), {"alg": "ES256", "kid": "KEY123", "typ": "JWT"})
+        self.assertEqual(json.loads(b64url_decode(payload)), {
+            "iss": "issuer-uuid", "iat": 1_800_000_000, "exp": 1_800_001_200, "aud": "appstoreconnect-v1"})
+        self.assertEqual(signed, [f"{header}.{payload}".encode()])
+        self.assertEqual(b64url_decode(signature), r + s)
+        self.assertNotIn("=", token)
+
+    def test_a_token_never_outlives_twenty_minutes(self):
+        for lifetime in (0, 1201, -5):
+            with self.subTest(lifetime=lifetime), self.assertRaises(ValueError):
+                release.app_store_connect_token("k", "i", 0, lambda _: b"", lifetime)
+
+    def test_the_token_source_renews_a_token_before_it_expires(self):
+        now = [1000.0]
+        calls = []
+
+        def sign(data):
+            calls.append(data)
+            return der_signature(b"\x01" * 32, b"\x02" * 32)
+
+        token = release.token_source("k", "i", sign, clock=lambda: now[0])
+        first = token()
+        now[0] += 600
+        self.assertEqual(token(), first)
+        now[0] += 500   # 1100 s old: inside the two-minute margin
+        self.assertNotEqual(token(), first)
+        self.assertEqual(len(calls), 2)
+
+    @unittest.skipUnless(shutil.which("openssl"), "needs the openssl CLI")
+    def test_the_openssl_signer_makes_a_signature_the_key_verifies(self):
+        with tempfile.TemporaryDirectory() as d:
+            key, public = make_p8(d)
+            token = release.app_store_connect_token("k", "i", 1_800_000_000, release.openssl_signer(key))
+            self.assertTrue(verify_token(token, public, d))
+            tampered = token.rsplit(".", 1)[0] + "x." + token.rsplit(".", 1)[1]
+            self.assertFalse(verify_token(tampered, public, d))
+
+    def test_a_signer_that_fails_says_so_without_the_key(self):
+        with tempfile.TemporaryDirectory() as d:
+            missing = os.path.join(d, "AuthKey.p8")
+            with self.assertRaises(release.AppStoreConnectError):
+                release.openssl_signer(missing)(b"data")
+
+
+def make_p8(directory):
+    pem, key, public = (os.path.join(directory, n) for n in ("ec.pem", "AuthKey.p8", "public.pem"))
+    for args in (["ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", pem],
+                 ["pkcs8", "-topk8", "-nocrypt", "-in", pem, "-out", key],
+                 ["ec", "-in", pem, "-pubout", "-out", public]):
+        subprocess.run(["openssl", *args], check=True, capture_output=True)
+    return key, public
+
+
+def verify_token(token, public, directory):
+    signing_input, signature = token.rsplit(".", 1)
+    raw = b64url_decode(signature)
+    path = os.path.join(directory, "signature.der")
+    with open(path, "wb") as f:
+        f.write(der_signature(raw[:32], raw[32:]))
+    result = subprocess.run(["openssl", "dgst", "-sha256", "-verify", public, "-signature", path],
+                            input=signing_input.encode(), capture_output=True)
+    return result.returncode == 0
+
+
+API = "https://api.example.test"
+
+
+class FakeOpener:
+    """Answers the client's requests from a table of (method, path) -> (status, body)."""
+
+    def __init__(self, routes):
+        self.routes = routes
+        self.requests = []
+
+    def __call__(self, request):
+        url = urllib.parse.urlsplit(request.full_url)
+        body = json.loads(request.data) if request.data else None
+        self.requests.append((request.get_method(), request.full_url, dict(request.header_items()), body))
+        key = (request.get_method(), url.path + ("?" + url.query if url.query else ""))
+        for (method, prefix), answer in self.routes.items():
+            if key[0] == method and key[1].startswith(prefix):
+                status, payload = answer(body) if callable(answer) else answer
+                return status, json.dumps(payload).encode() if payload is not None else b""
+        return 404, json.dumps({"errors": [{"detail": f"no route for {key}"}]}).encode()
+
+
+def build_json(version, state="VALID", expired=False):
+    return {"type": "builds", "id": f"id-{version}",
+            "attributes": {"version": version, "processingState": state, "expired": expired,
+                           "uploadedDate": "2026-09-25T10:00:00-07:00"}}
+
+
+class AppStoreConnectClientTests(unittest.TestCase):
+    def client(self, routes):
+        opener = FakeOpener(routes)
+        return release.AppStoreConnect(lambda: "TOKEN", API, opener), opener
+
+    def test_the_app_is_found_by_its_exact_bundle_id(self):
+        client, opener = self.client({("GET", "/v1/apps?"): (200, {"data": [
+            {"id": "wrong", "attributes": {"bundleId": "com.bailycase.shepherd.ios.widget"}},
+            {"id": "123", "attributes": {"bundleId": "com.bailycase.shepherd.ios"}}]})})
+        self.assertEqual(client.app_id("com.bailycase.shepherd.ios"), "123")
+        method, url, headers, _ = opener.requests[0]
+        self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(url).query),
+                         {"filter[bundleId]": ["com.bailycase.shepherd.ios"], "fields[apps]": ["bundleId"]})
+        self.assertEqual(headers["Authorization"], "Bearer TOKEN")
+
+    def test_no_app_is_an_error(self):
+        client, _ = self.client({("GET", "/v1/apps?"): (200, {"data": []})})
+        with self.assertRaises(release.AppStoreConnectError):
+            client.app_id("com.bailycase.shepherd.ios")
+
+    def test_builds_follow_every_next_page(self):
+        client, opener = self.client({
+            ("GET", "/v1/builds?cursor=2"): (200, {"data": [build_json("98"), build_json("97", expired=True)],
+                                                   "links": {"next": None}}),
+            ("GET", "/v1/builds?"): (200, {"data": [build_json("100", "PROCESSING"), build_json("99")],
+                                           "links": {"next": f"{API}/v1/builds?cursor=2"}}),
+        })
+        builds = client.builds("123")
+        self.assertEqual([(b.id, b.version, b.processing_state, b.expired) for b in builds],
+                         [("id-100", "100", "PROCESSING", False), ("id-99", "99", "VALID", False),
+                          ("id-98", "98", "VALID", False), ("id-97", "97", "VALID", True)])
+        first = urllib.parse.parse_qs(urllib.parse.urlsplit(opener.requests[0][1]).query)
+        self.assertEqual(first, {"filter[app]": ["123"], "filter[expired]": ["false"], "sort": ["-uploadedDate"],
+                                 "limit": ["200"], "fields[builds]": ["version,processingState,expired,uploadedDate"]})
+        self.assertEqual(len(opener.requests), 2)
+
+    def test_a_next_page_elsewhere_never_gets_the_token(self):
+        client, opener = self.client({("GET", "/v1/builds?"): (200, {
+            "data": [], "links": {"next": "https://elsewhere.example/v1/builds?cursor=2"}})})
+        with self.assertRaises(release.AppStoreConnectError):
+            client.builds("123")
+        self.assertEqual(len(opener.requests), 1)
+
+    def test_a_next_page_that_loops_is_an_error(self):
+        client, _ = self.client({("GET", "/v1/builds?"): (200, {
+            "data": [], "links": {"next": f"{API}/v1/builds?cursor=2"}})})
+        with self.assertRaises(release.AppStoreConnectError):
+            client.builds("123")
+
+    def test_expiring_patches_the_build(self):
+        client, opener = self.client({("PATCH", "/v1/builds/id-99"): (200, {"data": build_json("99", expired=True)})})
+        client.expire(build("99"))
+        method, url, headers, body = opener.requests[0]
+        self.assertEqual((method, url), ("PATCH", f"{API}/v1/builds/id-99"))
+        self.assertEqual(body, {"data": {"type": "builds", "id": "id-99", "attributes": {"expired": True}}})
+        self.assertEqual(headers["Content-type"], "application/json")
+
+    def test_errors_carry_the_apis_detail_and_whether_to_retry(self):
+        for status, transient in ((403, False), (409, False), (429, True), (500, True), (503, True)):
+            with self.subTest(status=status):
+                client, _ = self.client({("GET", "/v1/apps?"): (status, {"errors": [{"detail": "nope"}]})})
+                with self.assertRaises(release.AppStoreConnectError) as caught:
+                    client.app_id("com.bailycase.shepherd.ios")
+                self.assertIn("nope", str(caught.exception))
+                self.assertIn(str(status), str(caught.exception))
+                self.assertNotIn("TOKEN", str(caught.exception))
+                self.assertEqual(caught.exception.transient, transient)
+
+
+class FakeClient:
+    """Serves one build list per poll, then repeats the last."""
+
+    def __init__(self, polls, fail_expiring=()):
+        self.polls = list(polls)
+        self.fail_expiring = set(fail_expiring)
+        self.expired = []
+
+    def app_id(self, bundle_id):
+        assert bundle_id == release.IOS.bundle_id
+        return "123"
+
+    def builds(self, app_id):
+        poll = self.polls.pop(0) if len(self.polls) > 1 else self.polls[0]
+        if isinstance(poll, Exception):
+            raise poll
+        return poll
+
+    def expire(self, b):
+        if b.version in self.fail_expiring:
+            raise release.AppStoreConnectError("HTTP 409: nope")
+        self.expired.append(b.version)
+
+
+class RetireTests(unittest.TestCase):
+    def run_retire(self, client, **options):
+        clock = [0.0]
+        lines = []
+        status = release.retire_testflight(client, release.IOS.bundle_id, clock=lambda: clock[0],
+                                           sleep=lambda s: clock.__setitem__(0, clock[0] + s),
+                                           log=lines.append, **options)
+        return status, lines, clock[0]
+
+    def test_waits_for_the_upload_to_process_then_expires_the_older_builds(self):
+        client = FakeClient([[build("99")], [build("100", "PROCESSING"), build("99")],
+                             [build("100"), build("99"), build("98")]])
+        status, lines, elapsed = self.run_retire(client, waiting_for="100", interval=45, timeout=2700)
+        self.assertEqual((status, client.expired, elapsed), (0, ["99", "98"], 90))
+        self.assertIn("Kept build 100", "\n".join(lines))
+        self.assertTrue(any(l.startswith("Expired build 99") for l in lines))
+
+    def test_a_dry_run_expires_nothing_and_says_what_it_would(self):
+        client = FakeClient([[build("100"), build("99")]])
+        status, lines, _ = self.run_retire(client, dry_run=True)
+        self.assertEqual((status, client.expired), (0, []))
+        self.assertIn("Would expire build 99 (VALID, uploaded 2026-09-16T10:00:00Z)", lines)
+
+    def test_gives_up_after_the_timeout_and_expires_nothing(self):
+        client = FakeClient([[build("100", "PROCESSING"), build("99")]])
+        status, lines, elapsed = self.run_retire(client, waiting_for="100", interval=45, timeout=2700)
+        self.assertEqual((status, client.expired), (0, []))
+        self.assertLessEqual(elapsed, 2700)
+        self.assertTrue(lines[-1].startswith("::warning") and "Nothing was expired" in lines[-1])
+
+    def test_an_upload_that_failed_processing_expires_nothing(self):
+        client = FakeClient([[build("100", "FAILED"), build("99")]])
+        status, lines, _ = self.run_retire(client, waiting_for="100")
+        self.assertEqual((status, client.expired), (0, []))
+        self.assertTrue(lines[-1].startswith("::warning"))
+
+    def test_without_a_build_to_wait_for_it_keeps_the_newest_processed_one_at_once(self):
+        client = FakeClient([[build("101", "PROCESSING"), build("100"), build("99")]])
+        status, lines, elapsed = self.run_retire(client)
+        self.assertEqual((status, client.expired, elapsed), (0, ["99"], 0))
+        self.assertIn("Left build 101", "\n".join(lines))
+
+    def test_a_transient_error_while_waiting_is_retried(self):
+        client = FakeClient([release.AppStoreConnectError("HTTP 503", transient=True), [build("100"), build("99")]])
+        status, _, _ = self.run_retire(client, waiting_for="100", interval=30)
+        self.assertEqual((status, client.expired), (0, ["99"]))
+
+    def test_a_permanent_error_stops_the_run(self):
+        client = FakeClient([release.AppStoreConnectError("HTTP 401"), [build("100")]])
+        with self.assertRaises(release.AppStoreConnectError):
+            self.run_retire(client, waiting_for="100")
+
+    def test_a_build_that_could_not_expire_fails_the_run_after_the_rest(self):
+        client = FakeClient([[build("100"), build("99"), build("98")]], fail_expiring={"99"})
+        status, lines, _ = self.run_retire(client)
+        self.assertEqual((status, client.expired), (1, ["98"]))
+        self.assertTrue(any(l.startswith("::error") and "build 99" in l for l in lines))
+
+
+class FakeAppStoreConnect(http.server.BaseHTTPRequestHandler):
+    """A local App Store Connect for the CLI: one app, two pages of builds, and PATCH."""
+
+    def log_message(self, *args):
+        pass
+
+    def answer(self, status, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        state = self.server.state
+        state["tokens"].append(self.headers.get("Authorization", ""))
+        url = urllib.parse.urlsplit(self.path)
+        query = urllib.parse.parse_qs(url.query)
+        base = f"http://127.0.0.1:{self.server.server_port}"
+        if url.path == "/v1/apps" and query.get("filter[bundleId]") == [release.IOS.bundle_id]:
+            return self.answer(200, {"data": [{"type": "apps", "id": "app-1",
+                                               "attributes": {"bundleId": release.IOS.bundle_id}}]})
+        if url.path == "/v1/builds" and query.get("cursor") == ["2"]:
+            return self.answer(200, {"data": [build_json("98")], "links": {}})
+        if url.path == "/v1/builds" and query.get("filter[app]") == ["app-1"]:
+            state["polls"] += 1
+            newest = build_json("101", "PROCESSING" if state["polls"] == 1 else "VALID")
+            return self.answer(200, {"data": [newest, build_json("100"), build_json("99")],
+                                     "links": {"next": f"{base}/v1/builds?cursor=2"}})
+        self.answer(404, {"errors": [{"detail": f"no route for {self.path}"}]})
+
+    def do_PATCH(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        self.server.state["patches"].append((self.path, body))
+        self.answer(200, {"data": body["data"]})
+
+
+@unittest.skipUnless(shutil.which("openssl"), "needs the openssl CLI")
+class RetireCommandTests(unittest.TestCase):
+    """retire-testflight end to end: a real key, the openssl signer, and a local API."""
+
+    def setUp(self):
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeAppStoreConnect)
+        self.server.state = {"tokens": [], "polls": 0, "patches": []}
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.key, self.public = make_p8(self.dir)
+
+    def retire(self, *args, env=None):
+        environment = {**os.environ, "APP_STORE_CONNECT_KEY_ID": "KEY123", "APP_STORE_CONNECT_ISSUER_ID": "issuer-uuid"}
+        environment.update(env or {})
+        return subprocess.run(
+            [sys.executable, os.path.join(ROOT, "scripts", "release.py"), "retire-testflight",
+             "--key-file", self.key, "--api", f"http://127.0.0.1:{self.server.server_port}",
+             "--interval", "0.01", "--timeout", "30", *args],
+            capture_output=True, text=True, env=environment, timeout=60)
+
+    def test_a_dry_run_waits_for_the_upload_then_names_what_it_would_expire(self):
+        result = self.retire("--wait-for-build", "101", "--dry-run")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        out = result.stdout
+        self.assertIn("Waiting: build 101 (PROCESSING", out)
+        self.assertIn("Kept build 101 (VALID", out)
+        for version in ("100", "99", "98"):
+            self.assertIn(f"Would expire build {version} (VALID", out)
+        self.assertIn("::notice title=TestFlight::Kept build 101; would expire 3 older builds.", out)
+        self.assertEqual(self.server.state["patches"], [])
+        self.assertGreaterEqual(self.server.state["polls"], 2)
+        with open(self.key) as f:
+            key_text = f.read()
+        tokens = self.server.state["tokens"]
+        for secret in [key_text.strip(), *{t.removeprefix("Bearer ") for t in tokens}]:
+            self.assertNotIn(secret, out + result.stderr)
+        header, payload, _ = tokens[0].removeprefix("Bearer ").split(".")
+        self.assertEqual(json.loads(b64url_decode(header)), {"alg": "ES256", "kid": "KEY123", "typ": "JWT"})
+        claims = json.loads(b64url_decode(payload))
+        self.assertEqual((claims["iss"], claims["aud"], claims["exp"] - claims["iat"]),
+                         ("issuer-uuid", "appstoreconnect-v1", 1200))
+        self.assertTrue(verify_token(tokens[0].removeprefix("Bearer "), self.public, self.dir))
+
+    def test_a_real_run_patches_every_older_build(self):
+        result = self.retire("--wait-for-build", "101")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.server.state["patches"], [
+            (f"/v1/builds/id-{v}", {"data": {"type": "builds", "id": f"id-{v}", "attributes": {"expired": True}}})
+            for v in ("100", "99", "98")])
+        self.assertIn("Expired build 98", result.stdout)
+
+    def test_without_the_key_id_and_issuer_it_refuses(self):
+        result = self.retire("--dry-run", env={"APP_STORE_CONNECT_KEY_ID": ""})
+        self.assertEqual(result.returncode, 64)
+        self.assertEqual(self.server.state["tokens"], [])
+
+    def test_a_build_number_that_is_not_one_is_refused(self):
+        result = self.retire("--wait-for-build", "101; rm -rf /")
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(self.server.state["tokens"], [])
+
+
+class RetireWorkflowTests(unittest.TestCase):
+    """.github/workflows/testflight-retire.yml runs only after nightly's Release, or by hand."""
+
+    def read(self, *parts):
+        with open(os.path.join(ROOT, *parts), encoding="utf-8") as f:
+            return f.read()
+
+    def block(self, text, key, indent=""):
+        m = re.search(r"^%s%s:\n((?:%s[ ].*\n|\n)*)" % (indent, re.escape(key), indent), text, re.M)
+        self.assertIsNotNone(m, key)
+        return m.group(1)
+
+    def setUp(self):
+        self.workflow = self.read(".github", "workflows", "testflight-retire.yml")
+        self.release = self.read(".github", "workflows", "release.yml")
+
+    def test_it_runs_only_on_nightlys_release_completing_or_a_manual_dispatch(self):
+        triggers = self.block(self.workflow, "on")
+        self.assertEqual(re.findall(r"^  (\S+):", triggers, re.M), ["workflow_run", "workflow_dispatch"])
+        run = self.block(triggers, "workflow_run", "  ")
+        self.assertEqual(sorted(l.strip() for l in run.splitlines() if l.strip()),
+                         ["branches: [nightly]", "types: [completed]", "workflows: [Release]"])
+        self.assertRegex(self.release, r"\Aname: Release\n")
+        condition = re.search(r"^    if: >-\n((?:      .*\n)+)", self.workflow, re.M).group(1)
+        self.assertIn("github.event_name == 'workflow_dispatch'", condition)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'", condition)
+        self.assertIn("github.event.workflow_run.head_branch == 'nightly'", condition)
+        self.assertIn("github.event.workflow_run.event != 'pull_request'", condition)
+        self.assertNotRegex(self.workflow, r"pull_request_target|^\s+(push|schedule|pull_request):")
+
+    def test_it_uses_only_the_testflight_upload_secrets(self):
+        used = set(re.findall(r"secrets\.(\w+)", self.workflow))
+        self.assertEqual(used, set(release.IOS_SECRETS))
+        self.assertLessEqual(used, set(re.findall(r"secrets\.(\w+)", self.release)))
+
+    def test_it_reads_the_repo_and_never_writes_it(self):
+        permissions = self.block(self.workflow, "permissions")
+        self.assertEqual(sorted(re.findall(r"^  (\S+): (\S+)", permissions, re.M)),
+                         [("actions", "read"), ("contents", "read")])
+        self.assertNotIn(": write", self.workflow)
+        self.assertIn("cancel-in-progress: false", self.block(self.workflow, "concurrency"))
+
+    def test_it_waits_for_the_build_the_release_run_uploaded(self):
+        # The Release run's number is the TestFlight build number.
+        testflight = self.block(self.release, "testflight", "  ")
+        self.assertIn("BUILD: ${{ github.run_number }}", testflight)
+        self.assertRegex(testflight, r"(?m)^    name: %s$" % re.escape(release.TESTFLIGHT_JOB))
+        self.assertIn("github.event.workflow_run.run_number", self.workflow)
+        self.assertIn("--wait-for-build", self.workflow)
+        self.assertIn("release.py testflight-job", self.workflow)
+
+    def test_the_key_is_written_privately_and_always_removed(self):
+        self.assertIn("umask 077", self.workflow)
+        self.assertIn('"$RUNNER_TEMP/asc/AuthKey.p8"', self.workflow)
+        self.assertRegex(self.workflow, r"- name: Remove the App Store Connect key\n\s+if: always\(\)\n\s+run: rm -rf \"\$RUNNER_TEMP/asc\"")
 
 
 if __name__ == "__main__":
