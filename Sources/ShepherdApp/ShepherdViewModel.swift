@@ -60,6 +60,9 @@ final class ShepherdViewModel {
     var moreOpen = false
     /// Needs you and Recents, derived once per change of what they read (`SidebarSource`).
     @ObservationIgnored var sidebarListsCache: (source: SidebarSource, lists: SidebarLists)?
+    /// The Automations and Hosts pages, derived again only when what they read changed.
+    @ObservationIgnored var automationsPageCache: (inputs: AutomationsPageInputs, model: AutomationsPageModel)?
+    @ObservationIgnored var hostsPageCache: (inputs: HostsPageInputs, model: HostsPageModel)?
     /// The New thread page's draft: what to do, where, and how. Kept while the page is away.
     let newThread = NewThreadState()
     /// Child runs per agent, as published: the palette's Subagents section and the needs-you
