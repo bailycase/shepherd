@@ -30,6 +30,9 @@ public struct NativeThreadRow: Equatable, Identifiable, Sendable {
     /// The turn the host recorded for this reply (`NativeThreadSnapshot.turnChanges`): its
     /// changes card, with Undo and Redo.
     public var recordedTurn: ChangesTurn? = nil
+    /// A finished reply's "Edited N files" card for the touch thread: the host's record of its
+    /// turn (`recordedTurn`), else its edit calls.
+    public var changes: NativeChangesCard? = nil
 
     public var id: String { turn.id }
     public var isUser: Bool { turn.isUser }
@@ -382,9 +385,11 @@ public final class NativeThreadStore {
             }
             kept.insert(turn.id)
             let prompt = opener.map { $0.messages.flatMap(\.blocks).filter { $0.kind == .text }.map(\.text).joined(separator: "\n") }
+            let startedAt = opener?.messages.first?.timestamp
+            let recordedTurn = changesTurn(forMessageAt: startedAt, in: snapshot?.turnChanges)
+            let card = isLive ? nil : nativeChangesCard(turn: recordedTurn, changes: presentation.changes)
             rows.append(NativeThreadRow(turn: turn, presentation: presentation, live: isLive, promptText: prompt,
-                                        startedAt: opener?.messages.first?.timestamp,
-                                        recordedTurn: changesTurn(forMessageAt: opener?.messages.first?.timestamp, in: snapshot?.turnChanges)))
+                                        startedAt: startedAt, recordedTurn: recordedTurn, changes: card))
         }
         if presentationCache.count > kept.count { presentationCache = presentationCache.filter { kept.contains($0.key) } }
         if rows != self.rows { self.rows = rows }
