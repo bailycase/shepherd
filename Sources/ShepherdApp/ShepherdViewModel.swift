@@ -195,6 +195,12 @@ final class ShepherdViewModel {
     var remoteAutomationRuns: [AutomationKey: [AutomationRun]] = [:]
     /// Remote automation changes on their way, so their controls wait.
     var remoteAutomationsPending: Set<AutomationKey> = []
+    /// This Mac's automations' runs as the run log kept them, oldest first (read for the
+    /// Automations page).
+    var localAutomationRuns: [AutomationID: [AutomationRun]] = [:]
+    /// The Automations page's selected row and its filter. Ephemeral.
+    var automationsPageSelection: AutomationKey?
+    var automationsPageFilter = ""
     /// Remote space disclosure state, keyed by host + space so equal space IDs
     /// on different machines cannot collide. Persisted across relaunches.
     private(set) var collapsedRemoteSpaces: Set<String> = [] {

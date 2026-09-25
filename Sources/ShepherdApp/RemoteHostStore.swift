@@ -47,7 +47,16 @@ final class RemoteHostStore {
     final class Connection: Identifiable {
         /// Editable in Settings; the store reconnects after a change.
         fileprivate(set) var config: HostConfig
-        var phase: Phase = .disconnected { didSet { onProjectionChanged?() } }
+        var phase: Phase = .disconnected {
+            didSet {
+                if oldValue == .connected, phase != .connected { lastSeen = Date() }
+                if phase == .connected, lastSeen != nil { lastSeen = nil }
+                onProjectionChanged?()
+            }
+        }
+        /// When the connection last dropped, this launch (the Hosts page's Last seen); nil while
+        /// connected, or when it never connected. Never persisted.
+        fileprivate(set) var lastSeen: Date?
         var state = ShepherdState() { didSet { onProjectionChanged?() } }
         fileprivate(set) var children: [AgentID: [ChildRun]] = [:] { didSet { onProjectionChanged?() } }
         @ObservationIgnored fileprivate var onProjectionChanged: (() -> Void)?
