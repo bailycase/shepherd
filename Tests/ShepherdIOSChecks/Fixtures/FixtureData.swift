@@ -33,6 +33,8 @@ struct FixtureHostData {
     var models: [String] = ["anthropic/claude-opus", "anthropic/claude-sonnet", "openai/gpt-5"]
     /// The models `listModels` says take no thinking level; nil answers as an older host does.
     var withoutThinking: [String]? = nil
+    /// The levels models.json configures per model (`ModelListing.thinkingLevels`).
+    var thinkingLevels: [String: [String]]? = nil
     /// Answers a request before the default handler (agent queries, transcripts, …); nil
     /// falls through.
     var reply: (@Sendable (RemoteRequest) -> RemoteReply?)? = nil

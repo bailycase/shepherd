@@ -61,7 +61,10 @@ struct PreviewTests {
         let fixture = ThreadFixture(Threads.idle)
         defer { fixture.store.stop() }
         let entries = [("anthropic/claude-opus-4-5", "200K"), ("anthropic/claude-sonnet-4-5", "1M"), ("anthropic/claude-haiku-4-5", "200K"),
-                       ("openai/gpt-5", "400K"), ("google/gemini-2.5-pro", "1M")].map { PiModelCatalog.Entry(id: $0.0, context: $0.1) }
+                       ("openai/gpt-5", "400K"), ("google/gemini-2.5-pro", "1M")]
+            .map { PiModelCatalog.Entry(id: $0.0, context: $0.1, reasoning: !$0.0.hasSuffix("haiku-4-5")) }
+        // One model models.json gives Extra high and Max; one without reasoning.
+        let levels = ["anthropic/claude-opus-4-5": ["off", "minimal", "low", "medium", "high", "xhigh", "max"]]
         final class Opened { var at: Date? }
         let opened = Opened()
         try await Preview.render("composer-model-picker", size: CGSize(width: 1000, height: 820), ready: {
@@ -75,7 +78,7 @@ struct PreviewTests {
         }) {
             // Each appearance renders in a new window: open the picker in each.
             let _ = opened.at = nil
-            fixture.thread(listModels: { entries })
+            fixture.thread(listModels: { ModelCatalog(entries, levels: levels) })
         }
     }
 
