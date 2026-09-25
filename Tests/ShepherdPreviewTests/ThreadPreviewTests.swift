@@ -83,6 +83,12 @@ struct ThreadPreviewTests {
         try await render("thread-activity-thinking", ActivityThreads.running(thinking: true))
     }
 
+    /// Thinking the model kept back: a plain "Thought for 10s" line with no chevron, above the
+    /// disclosure of thinking it shared.
+    @Test func threadThinkingUnshared() async throws {
+        try await render("thread-thinking-unshared", ActivityThreads.unsharedThinking, size: CGSize(width: 1180, height: 640))
+    }
+
     /// A new agent from its first frame, while its pi boots: the framed empty state and a complete
     /// composer, with nothing said about pi yet (a normal start is over before it would be).
     @Test func threadStartingQuiet() async throws {
@@ -268,6 +274,8 @@ struct ThreadPreviewTests {
                 }
                 NWThinking("Thought for 6s", text: "The tool summary row is 28pt elsewhere. I’ll keep it a minimum, not a fixed height, so large text sizes still fit.",
                            isExpanded: .constant(true))
+                NWThinking("Thought for 4s", text: "Check the labels first.", isExpanded: .constant(false))
+                NWThinking("Thought for 10s", text: "", isExpanded: .constant(false), spokenTitle: "Thought for 10 seconds")
                 NWThinking(liveSince: Date().addingTimeInterval(-4))
                 changes
                 NWTurnFooter(meta: "2:44 PM · 3m 12s · 23 tool calls", link: "3 subagents", onLink: {}, onCopy: {}, onRetry: {},
@@ -491,6 +499,23 @@ enum ActivityThreads {
     }
 
     static var idle: NativeThreadSnapshot { snapshot(idleMessages) }
+
+    /// A turn whose model shared some of its thinking: none for the first stretch (timed, a
+    /// plain line), some for the second (the disclosure, folding in a blank block).
+    static var unsharedThinking: NativeThreadSnapshot {
+        let t0 = now - 5 * 60_000
+        return snapshot([
+            user("u1", "Why does the sidebar jump when an agent finishes?", at: t0),
+            assistant("a1", "Looking at how the sidebar orders its rows.", thinking: "", seconds: 10, at: t0 + 11_000),
+            tool("r1", "read", ["path": "Sources/ShepherdApp/SidebarView.swift"], output: "line", start: t0 + 12_000, end: t0 + 12_100),
+            tool("r2", "read", ["path": "Sources/ShepherdCore/Reorder.swift"], output: "line", start: t0 + 12_200, end: t0 + 12_300),
+            assistant("a2", "", thinking: "Finished agents sort by their last activity, so a status change moves the row.", seconds: 4,
+                      at: t0 + 17_000),
+            tool("g1", "grep", ["pattern": "lastActivity", "path": "Sources/"], output: "Sources/A.swift:12", start: t0 + 17_100, end: t0 + 17_200),
+            assistant("a3", "The row moves because finished agents sort by their last activity. Sorting by creation keeps it still.",
+                      thinking: " ", at: t0 + 20_000),
+        ])
+    }
 
     /// The Running board: the previous turn, the new prompt, a commit, and a live push (or live
     /// thinking) at the tail.
