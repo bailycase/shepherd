@@ -389,7 +389,9 @@ Sources/
     TerminalSessions (TerminalSessionStore), AgentStartQueue (launch order of restored pi),
       TerminalHost (the only TerminalSurfaceKit import),
       NativeThreadStores (+ LegacyTerminalAgents), PaneControl, PaneFocusMemory
-    DiffReview (ReviewSession), DiffReviewView (ReviewPane), GitDiff, CodeHighlight (tree-sitter)
+    DiffReview (ReviewSession, ChangesEngine, ReviewPaneModel), DiffReviewView (ReviewPane: the
+      Changes pane), ChangesRows (split and unified rows, folds), ChangesMenus (scope, commits,
+      base and options menus), GitDiff, CodeHighlight (tree-sitter)
     ReviewCommit (ReviewCommitGit, ReviewCommitter), ReviewCommitSheet, +ReviewCommit
     GitWorktree, WorktreeFinalize, ChecklistStatus, NewWorktreeSheet, FinalizeWorktreeSheet,
       NewAgentSheet, RemoteWorktreeSheet, RemoteDirectoryPicker, DialogSheet,
@@ -802,8 +804,9 @@ agent and its auxiliary processes while the app runs, and quitting the app termi
   opt-in merge → clean gate → remove worktree → delete local branch. Each step gates the next,
   nothing is destroyed before the clean gate, and the remote branch is never deleted (that would
   close the PR).
-- **The review pane's per-file Revert** (`GitDiff.revert`): confirmed, local working-tree reviews
-  only. Tracked files return to HEAD, and new files move to the Trash.
+- **The Changes pane's per-file Revert** (`GitDiff.revert`, a file header's context menu):
+  confirmed, local reviews of Uncommitted only. Tracked files return to HEAD, and new files move
+  to the Trash.
 - **Commit from review** (`ReviewCommit.swift`, served by `ShepherdViewModel+ReviewCommit.swift`
   to the Mac's own review pane and to remote clients alike): confirmed in the Commit… sheet.
   check → (new branch) → commit → (push) → (pull request); each step gates the next and git's
@@ -843,9 +846,12 @@ an inspected subagent takes the pane over and closing it goes back to Changes. I
 the persisted layout. **Nothing opens the pane by itself:** an agent's `review_diff` readies the
 review and marks the Changes tab, and with the pane closed the header's side-pane button, with a
 dot; only the user shows it (⇧⌘B, ⌃1, the button, a link).
-Request changes and Ask agent to commit (plain Commit on a host without commit from review) send
-the agent a follow-up turn, and the review closes only once the send succeeds, so comments survive
-a failed send. Commit… commits directly (above) and reloads the review once it finishes. A
+It reads the Changes engine (`server.changes` here, `changes*` from a `changes.v1` host; a
+`review_diff` naming another git reference, or an older host, loads the old way under the same
+chrome). Send to agent and Ask agent to commit (Commit… on a host without commit from review)
+send the agent a follow-up turn; the comments clear only once the send succeeds, so they survive a
+failed send, and the pane stays (the agent's reply turns it to Last turn). Commit… commits
+directly (above) and reloads the review once it finishes. A
 review an agent opens on a host is that host's view state: remote viewers are deliberately not
 notified and open their own with ⇧⌘B.
 
