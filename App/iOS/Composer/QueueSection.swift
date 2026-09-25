@@ -62,10 +62,11 @@ struct QueueSection: View {
                 Task { await store.holdQueued(id, true) }
             },
             moveToTop: { id in Task { await store.moveQueued(id, to: 0) } },
+            // The Undo row takes the message's place at once, as on the Mac, not after the host answers.
             delete: { id in
-                Task {
-                    if let removed = await store.deleteQueued(id) { state.deleted(removed.message, index: removed.index) }
-                }
+                guard let message = state.message(id), let index = state.queuedIndex(id) else { return }
+                state.deleted(message, index: index)
+                Task { await store.deleteQueued(id) }
             },
             undo: { rowID in
                 guard let undo = state.takeUndo(rowID) else { return }
@@ -94,7 +95,8 @@ struct QueueSection: View {
         if !queued.isEmpty {
             Divider()
             Button("Clear the queue", systemImage: "trash", role: .destructive) {
-                Task { state.cleared(await store.clearQueue()) }
+                state.cleared(state.queuedIDs.compactMap { state.message($0) })
+                Task { await store.clearQueue() }
             }
         }
     }
