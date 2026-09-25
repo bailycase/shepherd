@@ -162,8 +162,10 @@ keep the version for real breaks.
   the width and the sidebar slides over it. Portrait is the window's shape, never what the
   keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
   overview: Needs you, Running now and Finished.
-- **Thread (`ThreadScreen`):** the title with its status line ("Idle · 17 turns · 42k", or the
-  running turn's clock; on iPad a status pill with the counters trailing), Stop while the agent
+- **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ pi/swiftui-previews", or
+  "Needs you · ⌂ your checkout" when pi works in the space's own checkout; on iPad the branch chip
+  with its changed files, and the host when there are several, then a status pill with the running
+  turn's clock), Stop while the agent
   runs, user bubbles with their times, thinking, prose, work groups folded into one line with
   their calls, the running call's live output, notes, errors with Retry, the changes card
   (Review opens all of the turn's changes), and the turn footer (time, duration, tool calls,
@@ -241,7 +243,7 @@ keep the version for real breaks.
   ⌘K opens a palette over search and actions, with a live preview of the selected thread.
 
 - **Terminal (`Terminal/`):** the terminal panes of an agent's layout on its host. On iPad a
-  panel under the thread (the header's terminal toggle, or the options menu) with the layout's
+  panel under the thread (Show Terminal in the thread's options menu; no header button) with the layout's
   tabs, + (a new pane beside the thread), Split right, Maximize, Hide, and a divider that snaps
   at a third, half and two-thirds; on iPhone the thread's options open them full screen. Each
   pane is SwiftTerm's view on Night Watch's terminal palette, attached (`attach`) while it is on

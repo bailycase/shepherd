@@ -40,24 +40,12 @@ extension ShepherdViewModel {
                               remote: nil, focused: focusedPaneID)
     }
 
-    /// A thread with a layout is on screen, so the panel can show (the toolbar's toggle).
-    var canShowTerminalPanel: Bool { unreconciledTerminalTarget != nil }
-
     var isTerminalPanelShowing: Bool {
         unreconciledTerminalTarget.map { terminalPanels.panel($0.key).shown } ?? false
     }
 
-    /// The panel is hidden and one of its terminals printed since it was last on screen: the
-    /// toolbar toggle's dot.
-    var terminalHasNews: Bool {
-        guard let target = unreconciledTerminalTarget, !terminalPanels.panel(target.key).shown else { return false }
-        return TerminalPanel.tabs(in: target.layout, thread: target.thread).flatMap(\.panes).contains { pane in
-            pane.sessionID.map { terminalPanels.hasUnseen(target.key, session: $0) } ?? false
-        }
-    }
-
-    /// ⌘J and the toolbar's terminal toggle. Showing it puts the keyboard in its terminal;
-    /// hiding it gives the keyboard back to the thread.
+    /// ⌘J, the Pane menu and the palette (the terminal has no header button). Showing it puts
+    /// the keyboard in its terminal; hiding it gives the keyboard back to the thread.
     func toggleTerminalPanel() {
         guard let target = terminalTarget else { NSSound.beep(); return }
         let shown = !terminalPanels.panel(target.key).shown

@@ -97,7 +97,10 @@ extension PreviewTests {
     private func liveWindow() async throws -> (PreviewWorkspace, NativeThreadStore) {
         let workspace = try PreviewWorkspace()
         let space = Space(name: "Shepherd", path: workspace.dir.path)
-        let (agent, tab) = try await workspace.agent("Investigate SwiftUI live preview", in: space, order: 0, status: .done, live: true)
+        var (agent, tab) = try await workspace.agent("Investigate SwiftUI live preview", in: space, order: 0, status: .done, live: true,
+                                                     branch: "pi/swiftui-previews")
+        // The header's branch chip, as the host would read it.
+        agent.checkout = AgentCheckout(branch: "pi/swiftui-previews", changedFiles: 3)
         let (other, otherTab) = try await workspace.agent("Dock review pane", in: space, order: 1, status: .working, live: true)
         try await workspace.seed(ShepherdState(spaces: [space], tabs: [tab, otherTab], agents: [agent, other]))
         let server = workspace.server
@@ -123,6 +126,20 @@ extension PreviewTests {
         defer { workspace.stop() }
         try await Preview.render(surface, size: size, ready: { store.ready && store.messages.contains { $0.toolName == "bash" } }) {
             RootView(vm: workspace.vm)
+        }
+    }
+
+    /// pi opened a review with the side pane closed (PaneStates · SidePaneButton · pane closed):
+    /// nothing opens, the header's button takes the dot, and its tip says what pi opened.
+    @Test func appWindowSidePaneNews() async throws {
+        let (workspace, store) = try await liveWindow()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        let agentID = try #require(vm.selectedAgentID)
+        vm.subagentInspector.addNews(.local(agentID), .changes)
+        try await Preview.render("app-window-side-pane-news", size: CGSize(width: 1440, height: 900),
+                                 ready: { store.ready && store.messages.contains { $0.toolName == "bash" } }) {
+            RootView(vm: vm)
         }
     }
 
@@ -164,7 +181,8 @@ extension PreviewTests {
         defer { workspace.stop() }
         let vm = workspace.vm
         let space = Space(name: "Shepherd", path: workspace.dir.path)
-        let (agent, tab) = try await workspace.agent("Dock review pane", in: space, order: 0, live: true)
+        var (agent, tab) = try await workspace.agent("Dock review pane", in: space, order: 0, live: true)
+        agent.checkout = AgentCheckout(branch: "chore/dock-review", changedFiles: 2)
         let terminal = LeafPane(cwd: space.path)
         var split = tab
         split.layout = .split(axis: .vertical, ratio: 0.5, first: tab.layout, second: .leaf(terminal))
@@ -172,7 +190,7 @@ extension PreviewTests {
         let files = Reviews.session().files
         vm.reviewDiffLoader = { _, reference in (files, reference) }
         vm.selectAgent(agent.id)
-        vm.toggleReviewPane()
+        vm.toggleRightPane()
         let store = vm.threadStores.store(for: agent.id)
         let shell = vm.sessions.session(for: terminal, in: split)
         try await Preview.render("app-window-review-split", size: CGSize(width: 1440, height: 900), ready: {
@@ -305,23 +323,33 @@ extension PreviewTests {
 
     // MARK: Toolbar and right pane
 
-    /// The thread toolbar in its states: running with subagents, needs you with the review
-    /// open, idle, and with the sidebar hidden.
+    /// The thread toolbar in its states (Main, Review, QuestionAsk, PaneStates boards): a worktree
+    /// with changed files and the pane closed; your checkout on another host with the pane open;
+    /// a worktree with nothing changed and pi's news on the closed pane's button (its tip under
+    /// it); no repository, with the sidebar hidden; and a narrow toolbar.
     @Test func threadToolbar() async throws {
         let running = ThreadFixture(Threads.subagents(Array(Threads.liveRuns.prefix(3)), running: true))
         let idle = ThreadFixture(Threads.idle)
         defer { running.store.stop(); idle.store.stop() }
-        try await Preview.render("thread-toolbar", size: CGSize(width: 960, height: 4 * AppLayout.headerHeight + 48),
+        let worktree = AgentBranchLabel(kind: .worktree, branch: "pi/swiftui-previews", changedFiles: 3)
+        try await Preview.render("thread-toolbar", size: CGSize(width: 960, height: 6 * AppLayout.headerHeight + 96),
                                  ready: { running.store.ready && idle.store.ready }) {
-            VStack(spacing: 16) {
-                ThreadHeader(store: running.store, project: "Shepherd", title: "Investigate SwiftUI live preview",
-                             reviewShortcut: "⇧⌘B", inspectShortcut: "⌘I", toggleReview: {}, toggleSubagents: {}, rename: {})
-                ThreadHeader(store: running.store, project: "Shepherd", title: "Dock review pane", inspectorOpen: true,
-                             toggleReview: {}, toggleSubagents: {})
-                ThreadHeader(store: idle.store, project: "Shepherd", title: "Fix remote subagent deletion", reviewOpen: true,
-                             toggleReview: {}, rename: {})
+            VStack(alignment: .leading, spacing: 16) {
+                ThreadHeader(store: running.store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities",
+                             branch: worktree, directory: "~/code/shepherd-previews",
+                             paneShortcut: "⇧⌘B", togglePane: {}, showChanges: {}, rename: {})
+                ThreadHeader(store: running.store, project: "homelab", title: "Deploy media stack",
+                             branch: AgentBranchLabel(kind: .checkout, branch: "chore/remove-homarr", changedFiles: 11, host: "horizon"),
+                             paneOpen: true, paneShortcut: "⇧⌘B", togglePane: {}, showChanges: {})
+                ThreadHeader(store: idle.store, project: "payments", title: "Add refund events",
+                             branch: AgentBranchLabel(kind: .worktree, branch: "pi/refund-events"),
+                             paneNews: SidePaneTab.changes.newsText, paneShortcut: "⇧⌘B", togglePane: {}, rename: {})
+                Color.clear.frame(height: 36)
                 ThreadHeader(store: idle.store, project: "Shepherd", title: "Fix remote nightly", leadingInset: AppLayout.trafficLightInset,
-                             showSidebar: {}, toggleReview: {})
+                             showSidebar: {}, paneShortcut: "⇧⌘B", togglePane: {})
+                ThreadHeader(store: running.store, project: "Shepherd", title: "Investigate SwiftUI live preview capabilities",
+                             branch: worktree, paneShortcut: "⇧⌘B", togglePane: {})
+                    .frame(width: 440)
             }
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -332,10 +360,11 @@ extension PreviewTests {
         }
     }
 
-    /// The right pane in a column too narrow to dock it (it overlays the thread), and docked
-    /// at its minimum beside a 400pt thread.
-    @Test(arguments: [("right-pane-narrow", CGFloat(820)), ("right-pane-docked", CGFloat(ShellLayout.paneDockThreshold))])
-    func rightPane(surface: String, width: CGFloat) async throws {
+    /// The side pane on its Changes tab in a column too narrow to dock it (it overlays the
+    /// thread), and docked at its 380pt minimum beside a 400pt thread, where the tab strip drops
+    /// its labels (PaneStates · narrow). The docked one carries pi's dot on Changes.
+    @Test(arguments: [("side-pane-overlay", CGFloat(760), false), ("side-pane-docked-narrow", CGFloat(ShellLayout.paneDockThreshold), true)])
+    func sidePane(surface: String, width: CGFloat, news: Bool) async throws {
         let fixture = ThreadFixture(Threads.idle)
         defer { fixture.store.stop() }
         let session = Reviews.session()
@@ -344,7 +373,14 @@ extension PreviewTests {
             RightPaneSplit(state: panes, showPane: true) {
                 fixture.thread()
             } pane: {
-                ReviewPane(session: session, actions: Reviews.actions).background(Color.nw.bgWindow)
+                VStack(spacing: 0) {
+                    NWSidePaneTabs(SidePaneTabs.items(news: news ? [.changes] : [], changedFiles: session.files.count),
+                                   selection: SidePaneTab.changes.rawValue, select: { _ in }, closeShortcut: "⇧⌘B", close: {}) {
+                        Button("Reset Width") {}
+                    }
+                    ReviewPane(session: session, actions: Reviews.actions)
+                }
+                .background(Color.nw.bgWindow)
             }
         }
     }

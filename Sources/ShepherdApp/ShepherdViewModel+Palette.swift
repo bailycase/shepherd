@@ -58,7 +58,8 @@ extension ShepherdViewModel {
                                          shortcut: keys.display(.modelPicker), icon: "cpu"))
             }
             items.append(PaletteItem(id: "action.reviewDiff", kind: .action("reviewDiff"), section: .thisThread,
-                                     title: "Review diff", subtitle: "working tree", icon: "plus.forwardslash.minus"))
+                                     title: "Show changes", subtitle: "working tree", shortcut: SidePaneTab.changes.shortcutDisplay,
+                                     icon: "plus.forwardslash.minus"))
             items.append(PaletteItem(id: "action.reviewPR", kind: .action("reviewPR"), section: .thisThread,
                                      title: "Review PR changes", icon: "arrow.triangle.pull"))
         }

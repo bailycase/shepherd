@@ -27,7 +27,10 @@ struct ReviewFlowTests {
                              lineNumber: line.newLine ?? 0, marker: line.kind.reviewMarker, content: line.text, text: text)
     }
 
-    @Test func anAgentsReviewRequestDocksBesideItsThreadWithoutMovingTheUser() async throws {
+    /// An agent's `review_diff` readies its Changes tab without opening the side pane or moving
+    /// the user: the tab and the agent's header button take pi's dot instead (PaneStates:
+    /// nothing opens by itself).
+    @Test func anAgentsReviewRequestWaitsInItsChangesTabWithoutMovingTheUser() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let repo = try dirtyRepo()
@@ -41,10 +44,14 @@ struct ReviewFlowTests {
         let reply = try await app.extensionRequest(.requestReview(id: 1, agentID: background.agent.id, cwd: repo.path, reference: nil))
 
         guard case .reviewResult(1, let text) = reply else { Issue.record("unexpected reply \(reply)"); return }
-        #expect(text.hasPrefix("Review pane opened."))
+        #expect(text.hasPrefix("Review ready in the side pane's Changes tab"))
         let session = try #require(vm.reviewSessions.values.first)
         #expect(session.agentID == background.agent.id)
         #expect(vm.selectedAgentID == visible.agent.id && vm.focusedPaneID == visible.piPane.id)
+        let owner = SidePaneOwner.local(background.agent.id)
+        #expect(!vm.subagentInspector.open.contains(owner), "the pane stays closed")
+        #expect(vm.subagentInspector.news[owner] == [.changes])
+        #expect(vm.sidePaneButton(for: owner).news == "pi opened a review in Changes")
         #expect(app.server.state.tabs.map(\.layout) == [background.tab.layout, visible.tab.layout], "a review never touches the layout")
         try await eventuallyOnMain("the diff to load") { !session.isLoading }
         #expect(session.files.map(\.displayPath) == ["file.txt", "new.txt"])
@@ -65,8 +72,16 @@ struct ReviewFlowTests {
         let reply = try await app.extensionRequest(.requestReview(id: 2, agentID: agent.agent.id, cwd: nil, reference: nil))
 
         guard case .reviewResult(2, let text) = reply else { Issue.record("unexpected reply \(reply)"); return }
-        #expect(text.hasPrefix("Review pane already open; reloaded."))
+        #expect(text.hasPrefix("Review reloaded in the side pane's Changes tab"))
         #expect(vm.reviewSessions.count == 1 && vm.reviewSessions.values.first === first)
+
+        vm.selectAgent(agent.agent.id)
+        vm.toggleRightPane()
+        #expect(vm.rightPaneContent == .review && vm.reviewSessions.values.first === first, "the pane opens on the agent's review")
+        let again = try await app.extensionRequest(.requestReview(id: 3, agentID: agent.agent.id, cwd: nil, reference: nil))
+        guard case .reviewResult(3, let shown) = again else { Issue.record("unexpected reply \(again)"); return }
+        #expect(shown.hasPrefix("Review pane already open; reloaded."))
+        #expect(vm.subagentInspector.news.isEmpty, "a tab on screen takes no dot")
     }
 
     /// `review_diff` with `cwd` reviews another repository or worktree in the agent's one
@@ -94,7 +109,7 @@ struct ReviewFlowTests {
             let reply = try await app.extensionRequest(.requestReview(id: id, agentID: agent.agent.id, cwd: cwd, reference: nil))
 
             guard case .reviewResult(id, let text) = reply else { Issue.record("unexpected reply \(reply)"); return }
-            #expect(text.hasPrefix("Review pane already open; reloaded."))
+            #expect(text.hasPrefix("Review reloaded"))
             #expect(vm.reviewSessions.count == 1 && vm.reviewSessions.values.first === session)
             #expect(session.cwd == (cwd ?? agent.piPane.cwd))
             #expect(session.comments.isEmpty && session.summary.isEmpty && session.viewed.isEmpty)
@@ -135,8 +150,9 @@ struct ReviewFlowTests {
         #expect(session.reference == target && session.loadError == nil && !session.isLoading)
     }
 
-    /// Asking again while a subagent is inspected brings the review back in front of it.
-    @Test func aRepeatedRequestBringsTheReviewBackInFrontOfAnInspectedSubagent() async throws {
+    /// While a subagent is inspected over the pane, an agent's request leaves it there: the
+    /// Changes tab takes the dot, closing the inspector goes back to it, and showing it clears it.
+    @Test func anAgentsRequestNeverTakesThePaneFromAnInspectedSubagent() async throws {
         let app = try AppHarness()
         defer { app.stop() }
         let repo = try dirtyRepo()
@@ -145,14 +161,50 @@ struct ReviewFlowTests {
         let agent = Fixture.agent(in: space)
         let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
         vm.selectAgent(agent.agent.id)
-        _ = try await app.extensionRequest(.requestReview(id: 1, agentID: agent.agent.id, cwd: nil, reference: nil))
+        vm.toggleRightPane()
         vm.subagentInspector.runByAgent[agent.agent.id] = "run-1"
         #expect(vm.rightPaneContent == .inspector(runID: "run-1"))
 
         _ = try await app.extensionRequest(.requestReview(id: 2, agentID: agent.agent.id, cwd: nil, reference: nil))
 
-        #expect(vm.rightPaneContent == .review)
+        let owner = SidePaneOwner.local(agent.agent.id)
+        #expect(vm.rightPaneContent == .inspector(runID: "run-1"))
+        #expect(vm.sidePaneButton(for: owner) == (true, "pi opened a review in Changes"))
+        vm.closeInspector(owner)
+        #expect(vm.rightPaneContent == .review, "closing the inspector goes back to Changes")
+        #expect(vm.subagentInspector.news[owner] == [.changes], "the tab keeps its dot until it is shown")
+        vm.selectSidePaneTab(.changes)
+        #expect(vm.subagentInspector.news[owner] == nil)
         #expect(vm.selectedAgentID == agent.agent.id && vm.focusedPaneID == agent.piPane.id)
+    }
+
+    /// ⇧⌘B shows the pane on Changes (a review starts) and hides it again (the review is
+    /// discarded); ⌃1 brings Changes in front of an inspected subagent.
+    @Test func theHeaderButtonShowsAndHidesTheSidePane() async throws {
+        let app = try AppHarness()
+        defer { app.stop() }
+        let space = Fixture.space(path: app.dir.path)
+        let agent = Fixture.agent(in: space)
+        let vm = try await app.start(with: Fixture.state(spaces: [space], agents: [agent]))
+        vm.reviewDiffLoader = { _, reference in ([], reference) }
+        vm.selectAgent(agent.agent.id)
+        let owner = SidePaneOwner.local(agent.agent.id)
+        #expect(vm.sidePaneButton(for: owner) == (false, nil))
+
+        vm.toggleRightPane()
+        #expect(vm.rightPaneContent == .review && vm.reviewSessions.count == 1)
+        #expect(vm.sidePaneButton(for: owner) == (true, nil))
+        vm.toggleRightPane()
+        #expect(vm.rightPaneContent == nil && vm.reviewSessions.isEmpty)
+
+        vm.subagentInspector.runByAgent[agent.agent.id] = "run-1"
+        #expect(vm.sidePaneButton(for: owner) == (true, nil), "the inspector is the pane")
+        vm.selectSidePaneTab(.changes)
+        #expect(vm.rightPaneContent == .review && vm.subagentInspector.runByAgent.isEmpty)
+        vm.subagentInspector.runByAgent[agent.agent.id] = "run-1"
+        vm.toggleRightPane()
+        #expect(vm.rightPaneContent == nil && vm.subagentInspector.runByAgent.isEmpty && vm.reviewSessions.isEmpty,
+                "hiding the pane closes the inspector over it too")
     }
 
     @Test func aReviewFromASubdirectoryShowsRepositoryRelativePaths() async throws {
@@ -193,6 +245,7 @@ struct ReviewFlowTests {
         vm.submitReview(session)
 
         try await eventuallyOnMain("the review to close once sent") { vm.reviewSessions.isEmpty }
+        #expect(vm.subagentInspector.open.isEmpty, "the side pane closes with it")
         #expect(AppHarness.prompts(in: log) == ["""
         Diff review (working tree vs HEAD):
 
@@ -333,7 +386,7 @@ struct ReviewFlowTests {
 
         vm.cancelReview(try #require(vm.reviewSessions.values.first))
 
-        #expect(vm.reviewSessions.isEmpty)
+        #expect(vm.reviewSessions.isEmpty && vm.subagentInspector.open.isEmpty)
     }
 
     /// Switching modes quickly starts overlapping loads; only the newest may land, whether an
