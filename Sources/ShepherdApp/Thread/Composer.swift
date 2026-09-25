@@ -77,6 +77,8 @@ struct Composer: View {
     @State private var trayState = SubagentTrayState()
     /// The run whose question is open in the composer's place (from its row's Answer).
     @State private var answering: String?
+    /// pi's question the user shrank to its hidden line.
+    @State private var questionHiding = QuestionHiding()
     /// The queued message with keyboard focus, if one has it.
     @FocusState private var focusedRow: String?
     /// ⌘↩ reaches the composer before any key equivalent in its window.
@@ -256,6 +258,7 @@ struct Composer: View {
         .nwAnimation(.list, value: accessories)
         .nwAnimation(.list, value: attachments.map(\.id))
         .nwAnimation(.disclosure, value: questionKey)
+        .nwAnimation(.disclosure, value: questionHiding)
         // What a catch-up brings lands at once, however it changes the composer; keyed on what
         // the render drew, so a menu or a chip's own later motion still runs.
         .transaction(value: CatchUpGate.Key(version: store.chromeVersion, active: active)) {
@@ -433,14 +436,23 @@ struct Composer: View {
             // lingering over the controls.
             if let dialog = dialogs.first, let session = store.session, let questionKey {
                 // The card swaps its field for the question so it can never scroll out of view.
-                QuestionPanel(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
-                    Task {
-                        await store.answer(dialogID: dialog.id, sessionID: session.piSessionID,
-                                           generation: session.generation, answer: answer)
+                // Hidden, it keeps one line there: pi is still waiting on it.
+                if questionHiding.isHidden(questionKey) {
+                    NWQuestionHiddenLine(.agent, question: dialog.title) { questionHiding.show() }
+                        .id(questionKey + ":hidden")
+                        .nwEntrance(.content)
+                } else {
+                    QuestionPanel(dialog: dialog, count: dialogs.count, enabled: active && store.supports("answer")) { answer in
+                        Task {
+                            await store.answer(dialogID: dialog.id, sessionID: session.piSessionID,
+                                               generation: session.generation, answer: answer)
+                        }
+                    } hide: {
+                        questionHiding.hide(questionKey)
                     }
+                    .id(questionKey)
+                    .nwEntrance(.content)
                 }
-                .id(questionKey)
-                .nwEntrance(.content)
             } else {
                 field.nwEntrance(.content)
             }
@@ -886,41 +898,45 @@ func nativeContextTooltip(_ stats: NativeThreadStats?) -> String {
 
 // MARK: Questions
 
+/// Which of pi's questions the user hid. Only that one stays hidden: the next question pi asks
+/// arrives open.
+struct QuestionHiding: Equatable {
+    private(set) var hiddenKey: String?
+
+    func isHidden(_ key: String?) -> Bool { key != nil && key == hiddenKey }
+    mutating func hide(_ key: String) { hiddenKey = key }
+    mutating func show() { hiddenKey = nil }
+}
+
 /// A question from pi or an extension (select / confirm / input / editor), in place of the
 /// field so it can never scroll away. Shepherd has no permission model: these are questions,
 /// answered with the values the asker offered.
 struct QuestionPanel: View {
     let dialog: NativeThreadDialog
-    /// Pending questions in total; the panel shows the first as "1 / N".
+    /// Pending questions in total; the head shows the first as "1 / N".
     var count = 1
     let enabled: Bool
     let answer: (NativeDialogAnswer) -> Void
+    /// Shrinks the question to its hidden line; pi keeps waiting.
+    let hide: () -> Void
     @State private var text: String
 
-    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, answer: @escaping (NativeDialogAnswer) -> Void) {
+    init(dialog: NativeThreadDialog, count: Int = 1, enabled: Bool, answer: @escaping (NativeDialogAnswer) -> Void,
+         hide: @escaping () -> Void) {
         self.dialog = dialog
         self.count = count
         self.enabled = enabled
         self.answer = answer
+        self.hide = hide
         _text = State(initialValue: dialog.prefill ?? "")
     }
 
     var body: some View {
         let blocked = !enabled || dialog.unavailable != nil
         VStack(alignment: .leading, spacing: AppLayout.questionSpacing) {
-            HStack(alignment: .firstTextBaseline, spacing: NW.Space.m) {
-                NWStateGlyph(.attention, size: AppLayout.questionGlyph)
-                Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if count > 1 {
-                    Text("1 / \(count)").font(Font.nw(.micro)).foregroundStyle(Color.nw.textTertiary).monospacedDigit()
-                        .nwContentTransition(.numeric())
-                        .nwTransition(.content)
-                }
-            }
-            // Another question queuing behind this one counts up.
-            .nwAnimation(.content, value: count)
+            NWQuestionHead(.agent, count: count, hide: hide)
+            Text(dialog.title).font(Font.nw(.ui)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
             if let message = dialog.message {
                 ScrollView {
                     Text(message).font(Font.nw(.mono)).foregroundStyle(Color.nw.textPrimary).textSelection(.enabled)
@@ -985,7 +1001,7 @@ struct QuestionPanel: View {
         .padding(.top, NW.Space.xxs)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Question: \(dialog.title)")
+        .accessibilityLabel("\(NWQuestionAsker.agent.title): \(dialog.title)")
     }
 }
 
