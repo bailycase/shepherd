@@ -49,6 +49,8 @@ struct AgentTurnActions {
     var retry: (() -> Void)?
     /// Open review at a file (the changes card, an edit line); nil hides Review.
     var review: ((String) -> Void)?
+    /// Open review on all of the turn's changes (the changes card's Review).
+    var reviewChanges: (() -> Void)?
     /// Open the turn's first subagent (the footer's "3 subagents").
     var subagents: (() -> Void)?
 }
@@ -73,6 +75,7 @@ struct AgentTurnView: View, Equatable {
             && lhs.subagents == rhs.subagents && lhs.startedAt == rhs.startedAt && lhs.working == rhs.working
             && (lhs.actions.retry == nil) == (rhs.actions.retry == nil)
             && (lhs.actions.review == nil) == (rhs.actions.review == nil)
+            && (lhs.actions.reviewChanges == nil) == (rhs.actions.reviewChanges == nil)
             && (lhs.actions.subagents == nil) == (rhs.actions.subagents == nil)
     }
 
@@ -128,13 +131,13 @@ struct AgentTurnView: View, Equatable {
     }
 
     private func changesCard(_ changes: NativeTurnChanges) -> some View {
-        NWChangesCard(
+        NWAdaptiveChangesCard(
             title: changes.title, added: changes.added, removed: changes.removed,
             files: changes.files.map {
                 NWChangedFile(path: $0.path, directory: $0.directory, name: $0.name,
                               status: NWChangedFile.Status(rawValue: $0.status.rawValue) ?? .modified, added: $0.added, removed: $0.removed)
             },
-            onReview: actions.review.flatMap { review in changes.files.first.map { file in { review(file.path) } } },
+            onReview: actions.reviewChanges,
             onOpen: actions.review)
     }
 
