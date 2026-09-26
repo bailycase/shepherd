@@ -157,6 +157,22 @@ struct DesignSystemTests {
         guard case .error(5, "not_your_design", _) = try await agent.reply() else { Issue.record("a stranger read"); return }
     }
 
+    /// What a system's page draws its specimens from: every file of the system but Shepherd's
+    /// record, a built-in's included.
+    @Test func aSystemsFilesAreReadWithoutItsRecord() async throws {
+        let w = try await workspace()
+        defer { w.h.stop() }
+        _ = try await w.h.server.writeDesignSystem(Self.write(install: false), for: w.design)
+        let files = try await w.h.server.designSystemContents("acme-web")
+        #expect(Set(files.keys) == ["tokens.json", "tokens.css", "README.md", "components/Button.html"])
+        #expect(files["components/Button.html"] == Data("<button class=\"btn\">Export CSV</button>\n".utf8))
+        w.h.server.designSystems.register(.init(info: DesignSystemInfo(namespace: "night-watch", title: "Night Watch", createdAt: 0),
+                                                files: ["tokens.css": Data(":root{}".utf8)]))
+        #expect(try await w.h.server.designSystemContents("night-watch") == ["tokens.css": Data(":root{}".utf8)])
+        await #expect(throws: DesignSystemError.invalidNamespace("Acme Web")) { try await w.h.server.designSystemContents("Acme Web") }
+        await #expect(throws: DesignSystemError.self) { try await w.h.server.designSystemContents("nope") }
+    }
+
     @Test func onlyTheAgentOfTheDesignThatBuiltASystemWritesIt() async throws {
         let w = try await workspace()
         defer { w.h.stop() }
