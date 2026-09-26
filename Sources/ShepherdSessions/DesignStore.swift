@@ -432,6 +432,46 @@ public final class DesignStore: @unchecked Sendable {
         }
     }
 
+    /// Copies a board as a new one beside it (`DesignIndex.duplicating`): its file byte for byte
+    /// at a free path, and its entry in canvas.json, as one change, when the design is still at
+    /// `baseRevision` (nil: any). Its comments and versions stay with the original.
+    func duplicateBoard(_ id: DesignID, path: DesignPath, baseRevision: UInt64?) async throws -> DesignDuplicate {
+        try await run {
+            var design = try self.load(id)
+            try Self.compare(baseRevision, design.revision)
+            var files = try self.files(of: id, &design)
+            guard design.index.boards[path] != nil else { throw DesignStoreError.noSuchBoard(path) }
+            guard files[path] != nil else { throw DesignStoreError.missingBoardFile(path) }
+            guard files.count < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
+            let taken = Set(files.keys).union(design.index.boards.keys)
+            guard let copy = DesignIndex.duplicatePath(for: path, taken: taken),
+                  let next = design.index.duplicating(path, as: copy) else {
+                throw DesignStoreError.invalidIndex(["no free name for a copy of \(path)"])
+            }
+            let known = Set(design.index.problems())
+            let problems = next.problems().filter { !known.contains($0) }
+            guard problems.isEmpty else { throw DesignStoreError.invalidIndex(problems) }
+            let data: Data
+            do { data = try Data(contentsOf: self.fileURL(id, path)) } catch {
+                throw DesignStoreError.io("could not read \(path): \(error.localizedDescription)")
+            }
+            try self.writeFile(id, copy, data)
+            do {
+                try next.encoded().write(to: self.indexURL(id), options: .atomic)
+            } catch {
+                if let url = try? self.fileURL(id, copy) { try? FileManager.default.removeItem(at: url) }
+                throw DesignStoreError.io("could not write canvas.json: \(error.localizedDescription)")
+            }
+            files[copy] = Self.sha256(data)
+            design.index = next
+            design.files = files
+            try self.commit(&design, id)
+            let result = DesignWriteResult(revision: design.revision, changed: true, sha256: files[copy], created: true,
+                                           title: next.title, boardCount: next.boards.count)
+            return DesignDuplicate(path: copy, result: result)
+        }
+    }
+
     // MARK: Comments
 
     /// The design's comments, open and resolved, in the order they were made.
