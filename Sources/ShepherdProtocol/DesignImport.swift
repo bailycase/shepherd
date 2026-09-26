@@ -132,7 +132,7 @@ public enum DesignImport {
     }
 
     /// A file or folder name a design keeps: `[A-Za-z0-9_][A-Za-z0-9_.-]*`, never `..`.
-    static func isSegment(_ segment: String) -> Bool {
+    public static func isSegment(_ segment: String) -> Bool {
         guard let first = segment.utf8.first, isWordByte(first), !segment.contains("..") else { return false }
         return segment.utf8.allSatisfy { isWordByte($0) || $0 == UInt8(ascii: ".") || $0 == UInt8(ascii: "-") }
     }
