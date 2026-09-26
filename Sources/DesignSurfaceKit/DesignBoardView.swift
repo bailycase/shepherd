@@ -239,6 +239,13 @@ public final class DesignBoardView: DesignPlatformView {
     /// width unless given) at the view's backing scale, whatever the zoom.
     public func snapshot(width: CGFloat? = nil) async throws -> CGImage {
         guard contentSize != nil else { throw DesignBoardError.notBooted }
+        #if !(canImport(AppKit) && !targetEnvironment(macCatalyst))
+        // iOS paints a page's tiles over a few frames after it lays out: wait for two, so the
+        // snapshot never keeps a tile still drawn at low resolution.
+        _ = try? await webView.callAsyncJavaScript(
+            "await new Promise(function (done) { requestAnimationFrame(function () { requestAnimationFrame(done); }); }); return true;",
+            arguments: [:], in: nil, contentWorld: Self.bridgeWorld)
+        #endif
         let configuration = WKSnapshotConfiguration()
         configuration.rect = CGRect(origin: .zero, size: scaledSize)
         configuration.snapshotWidth = NSNumber(value: Double(width ?? boardSize.width))
