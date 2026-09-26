@@ -1,10 +1,22 @@
 import SwiftUI
 
-/// The Design tool's header (DZStart, DZCanvas): a sidebar button while the sidebar is not
-/// docked, the breadcrumb (the nib in 14pt `textTertiary`, "Designs" in 13 `textTertiary`, "/",
-/// then the page in 13 semibold), a spacer and the trailing controls, 8pt apart. As a page
-/// (New design) it takes the page header's height and inset; over a design, the toolbar's.
-/// "Designs" goes back to the Designs page. Its empty area drags the window.
+/// A pill after a design header's title: a system's sync state ("Synced", done).
+public struct NWDesignHeaderStatus: Equatable, Sendable {
+    public let state: AgentState
+    public let label: String
+
+    public init(_ state: AgentState, label: String) {
+        self.state = state
+        self.label = label
+    }
+}
+
+/// The Design tool's header (DZStart, DZCanvas, DZSystem): a sidebar button while the sidebar is
+/// not docked, the breadcrumb (the nib in 14pt `textTertiary`, the section, "Designs" or "Design
+/// systems", in 13 `textTertiary`, "/", then the page in 13 semibold, and a status pill after it
+/// on a system's page), a spacer and the trailing controls, 8pt apart. As a page (New design) it
+/// takes the page header's height and inset; over a design, the toolbar's. The section goes back
+/// to the Designs page. Its empty area drags the window.
 public struct NWDesignHeader<Trailing: View>: View {
     public enum Style: Sendable {
         /// A destination page's header (52pt).
@@ -13,18 +25,25 @@ public struct NWDesignHeader<Trailing: View>: View {
         case toolbar
     }
 
+    public typealias Status = NWDesignHeaderStatus
+
     let title: String
     let style: Style
+    let section: String
+    let status: Status?
     let leadingInset: CGFloat
     let sidebar: (() -> Void)?
     let sidebarShortcut: String?
     let designs: () -> Void
     let trailing: Trailing
 
-    public init(_ title: String, style: Style, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil,
-                sidebarShortcut: String? = nil, designs: @escaping () -> Void, @ViewBuilder trailing: () -> Trailing) {
+    public init(_ title: String, style: Style, section: String = "Designs", status: Status? = nil, leadingInset: CGFloat = 0,
+                sidebar: (() -> Void)? = nil, sidebarShortcut: String? = nil, designs: @escaping () -> Void,
+                @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.style = style
+        self.section = section
+        self.status = status
         self.leadingInset = leadingInset
         self.sidebar = sidebar
         self.sidebarShortcut = sidebarShortcut
@@ -46,10 +65,10 @@ public struct NWDesignHeader<Trailing: View>: View {
                     .foregroundStyle(Color.nw.textTertiary)
                     .accessibilityHidden(true)
                 Button(action: designs) {
-                    Text("Designs").foregroundStyle(Color.nw.textTertiary)
+                    Text(section).foregroundStyle(Color.nw.textTertiary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Designs")
+                .accessibilityLabel(section)
                 Text("/")
                     .foregroundStyle(Color.nw.textTertiary)
                     .accessibilityHidden(true)
@@ -62,8 +81,13 @@ public struct NWDesignHeader<Trailing: View>: View {
                     .accessibilityAddTraits(.isHeader)
                     .nwContentTransition(.crossFade)
                     .nwAnimation(.content, value: title)
+                if let status {
+                    NWStatusPill(status.state, label: status.label)
+                        .nwTransition(.content)
+                }
             }
             .font(.nwSans(NWDesignMetrics.headerTextSize))
+            .nwAnimation(.content, value: status)
             Spacer(minLength: NW.Space.l)
             HStack(spacing: NW.Space.m) { trailing }
                 .fixedSize()
@@ -81,10 +105,10 @@ public struct NWDesignHeader<Trailing: View>: View {
 }
 
 extension NWDesignHeader where Trailing == EmptyView {
-    public init(_ title: String, style: Style, leadingInset: CGFloat = 0, sidebar: (() -> Void)? = nil,
-                sidebarShortcut: String? = nil, designs: @escaping () -> Void) {
-        self.init(title, style: style, leadingInset: leadingInset, sidebar: sidebar, sidebarShortcut: sidebarShortcut,
-                  designs: designs) { EmptyView() }
+    public init(_ title: String, style: Style, section: String = "Designs", status: Status? = nil, leadingInset: CGFloat = 0,
+                sidebar: (() -> Void)? = nil, sidebarShortcut: String? = nil, designs: @escaping () -> Void) {
+        self.init(title, style: style, section: section, status: status, leadingInset: leadingInset, sidebar: sidebar,
+                  sidebarShortcut: sidebarShortcut, designs: designs) { EmptyView() }
     }
 }
 

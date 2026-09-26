@@ -88,15 +88,13 @@ struct DesignToolTests {
         #expect(model.cards.map(\.detail) == ["4 boards", "1 board"])
         #expect(model.cards.map(\.edited) == ["edited 2h ago", "edited 3h ago"])
         #expect(model.cards.map(\.selected) == [true, false])
-        #expect(model.systems == [DesignsPageModel.System(name: "acme-web", count: "1 design"),
-                                  DesignsPageModel.System(name: "shepherd", count: "1 design")])
+        #expect(model.systems.isEmpty, "the systems are the host's, never the designs' projects")
     }
 
     @Test func aDesignsOwnSystemWinsOverItsProject() {
         let model = DesignsPageModel.make(designs: [design("A", edited: 60, system: "night-watch"), design("B", edited: 120)],
                                           spaces: [Self.web], firstBoards: [:], filter: "", selection: nil, now: Self.now)
         #expect(model.cards.map(\.system) == ["night-watch", "acme-web"])
-        #expect(model.systems.map(\.name) == ["night-watch", "acme-web"])
     }
 
     @Test(arguments: [("checkout", ["Checkout funnel dashboard"]), ("SHEPHERD", ["Onboarding"]), ("  ", ["Checkout funnel dashboard", "Onboarding"]),

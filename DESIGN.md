@@ -7536,10 +7536,12 @@ comments (pins, threads, cards in the chat and the Comments tab, answered by the
 Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions), the
 board actions and "Ask for another direction", boards moved by dragging, Present (decision 11:
 the board focused over a scrim, its links playing) and Play, and pages with title and sticky
-notes. Design systems are built as far as the agent (the format, the store, installing one in a
-design, `system_read` and `system_write`, `design_check` against it, `<x-import>` and Night Watch
-as a built-in; docs/designs.md › Design systems), not in the app. Not built: the design system
-page and grid, export, the live link, Present mode's own board, and every iPhone and iPad part;
+notes, and design systems (the format, the store, installing one in a design, `system_read` and
+`system_write`, `design_check` against it, `<x-import>`, Night Watch as a built-in, the system
+page and its Re-sync, the Designs page's systems grid with "Build one from a repo", More ▸ Design
+systems, the system chip opening its page, and New design's system card read from the project;
+docs/designs.md › Design systems). Not built: export, the live link, Present mode's own board,
+Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
 each subsection below says what of it is built. The iOS
 client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
 search draws no Designs section (`MobileSearchScreen`). The canvas marks the whole page an
@@ -7596,7 +7598,9 @@ tool work reads as activity lines.
   Recents with their board count ("4 boards").
 - **More ▸ Design systems** (NavHosts, iPadHosts, MobileMore): on the Mac and iPad a row "Design
   systems" nested under More, beside Extensions; on iPhone a More row "Design systems" over
-  "2 · acme-web, Night Watch".
+  "2 · acme-web, Night Watch". Built on the Mac behind the experiment: the palette glyph
+  (`paintpalette`), between Hosts and Extensions; it opens the system page shown last (not drawn)
+  and is selected while a system's page shows.
 - **New thread** (NavNewThread): the last of the suggestion cards under the prompt, "Need a
   mockup first?" (a 12pt nib in `textSecondary`, the words in 11.5 `textTertiary`), "Start a
   design" (13 medium), "HTML boards on a canvas" (11 `textTertiary`).
@@ -7614,11 +7618,11 @@ tool work reads as activity lines.
 
 ### Designs (NavDesigns, MobileDesigns)
 
-**Mac: built** (`DesignsPage`), except where noted: a card's "2 comments" (comments aren't
-built), the Night Watch skeleton, and on a system card the swatches, the source line and the
-"Build one from a repo" tile (design systems aren't built: a system card is its name and how many
-designs use it; a design's system is its project's name until they are). With no designs the page
-shows its header alone (not drawn). **iPhone: not built yet.**
+**Mac: built** (`DesignsPage`), except a card's "2 comments" and the Night Watch skeleton. The
+systems are the host's (docs/designs.md › Design systems › In the app); a design without one
+names its project. A system build still reading its project is a card with no swatches over
+"dashboard-web · building" (not drawn). With no designs the page shows its header and the
+systems. **iPhone: not built yet.**
 
 **Mac** (NavDesigns): the Designs destination fills the main column.
 
@@ -7666,9 +7670,11 @@ shows its header alone (not drawn). **iPhone: not built yet.**
 ### New design (DZStart)
 
 **Built** (`NewDesignPage`), without the Capture a page and From a screenshot cards (the design
-tool plan's decision 9; they come later). The one card is the design's project, drawn chosen:
-"<project>", "design system · <project>", and the project's folder in place of the tokens file the
-board names; its menu picks another project (not drawn). The composer card keeps `NWComposer`'s
+tool plan's decision 9; they come later). The one card is the design system, drawn chosen and
+found in the project: the system built from it ("acme-web", "design system · dashboard-web",
+"found in web/static/tokens.css"), else the project with the tokens file a read-only walk finds,
+else the project at its folder. Its menu (not drawn) picks another project or another system;
+Send installs the system in the new design. The composer card keeps `NWComposer`'s
 radius 8. New design (the destination's button, "Start a design", or Search's action)
 opens this page in the main column, with the sidebar showing and Designs selected.
 
@@ -7692,7 +7698,7 @@ opens this page in the main column, with the sidebar showing and Designs selecte
     a row, 10pt apart. Each card: 12×14 padding, radius 8, 1px `lineSubtle`, 6pt between its
     lines, the hover fill: a 13pt glyph and a title in mono 12 semibold; a line in 12.5
     `textPrimary`; a note in 11 `textTertiary`. The chosen card is `lanternTint` with a
-    `lanternText` line and glyph.
+    `lanternText` border and glyph.
     1. The design system found in the repo, drawn chosen: nib, "acme-web", "design system
        · dashboard-web", "found in web/static/tokens.css".
     2. `link`, "Capture a page", "paste a URL to start from", "staging or production".
@@ -7701,7 +7707,7 @@ opens this page in the main column, with the sidebar showing and Designs selecte
 ### A design: canvas and chat (DZCanvas)
 
 **Partly built** (`DesignScreen`: a design agent's layout). Built: the header (44pt, the app's
-toolbar; the system chip is a label, Export draws disabled), the canvas with its board frames and
+toolbar; the system chip opens its system's page, Export draws disabled), the canvas with its board frames and
 toolbar, the chat pane with its Chat, Comments and Tweak tabs and the agent's thread; its
 composer is `NWComposer`'s card at radius 8, Select (Selection, below), comments (Comments,
 below), the board actions and "Ask for another direction", boards moved by dragging, Present and
@@ -7894,10 +7900,13 @@ and a design without tokens for a role (its note says values snap to Shepherd's 
 
 ### Design systems (DZSystem)
 
-**Not built yet in the app.** The format, the store and the agent's side are built
-(docs/designs.md › Design systems): what the page shows is `DesignSystemRead` (tokens with their
-file and line, components, README) and `DesignSystemPresentation` ("synced 4m ago", "#4f46e5 ·
-tokens.css:8"), and Re-sync is `SessionServer.resyncDesignSystem`. A design system is read from a
+**Built on the Mac** (`DesignSystemPage`; docs/designs.md › Design systems › In the app). A system
+built from a repository shows as its build's layout, beside the build agent's chat with the Chat
+tab alone (decision 12); any other system (Night Watch) as the Design systems page, without a
+chat (not drawn). Components are live specimens drawn by the board renderer. Not drawn and built
+plainly: Spacing & radii and Boards using it (rows in the type rows' anatomy), a build still
+reading its project, and the report's "Read dashboard-web" activity line (the reads join
+"Explored N files"). A design system is read from a
 repository, its tokens file and its templates, and kept in sync. Night Watch is listed as one too ("shepherd"). A system page opens from the
 design system chip, the Designs page, or More ▸ Design systems, and keeps the chat pane.
 
@@ -7982,7 +7991,9 @@ the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote
 `NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, `NWBoardActions`
 (with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`), and the page parts
 `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
-`NWDesignPaneTabs`. The rest of the table is not built yet.
+`NWDesignPaneTabs`, and the system page's `NWSectionRail`, `NWTokenSwatch` (DZSystem's 56pt),
+`NWTypeSpecimen`, `NWComponentSpecimen` and `NWDesignSystemBuildTile`. The rest of the table is
+not built yet.
 
 Night Watch's Design tool page names these components, dark and light ("Light ·
 Day Watch"), with the same structure in both; NWSwift's inventory adds `NWDesignCanvas`. They belong
