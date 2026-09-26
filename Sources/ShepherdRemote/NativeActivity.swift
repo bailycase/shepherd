@@ -273,6 +273,11 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
         case run
         /// Spawning subagents that have no card in the thread.
         case subagents
+        /// The design agent's board_write and canvas_update: "Drew 4 boards", "Updated A and
+        /// A · phone".
+        case drew
+        /// The design agent's design_check: "Checked against acme-web".
+        case checked
         /// Any other tool; consecutive calls of the same tool merge.
         case other
     }
@@ -308,6 +313,14 @@ public struct NativeActivityCall: Equatable, Sendable, Identifiable {
     public var exitCode: Int?
     /// For a spawn: the subagent's name ("reviewer").
     public var subagent: String?
+    /// For a board_write: the board's path, and whether the write made it (nil when the result
+    /// doesn't say, as while it runs).
+    public var board: String?
+    public var boardCreated: Bool?
+    /// For a design_check: the system it checked against and how many values were off it; both
+    /// nil when no system was found.
+    public var system: String?
+    public var offSystem: Int?
     /// First line of a failed call's output ("no such file"), for its line's meta.
     public var failure: String?
     /// The user's Stop interrupted it (the host's `aborted`): done, not failed, and it reads
@@ -384,6 +397,10 @@ extension NativeActivityCall {
         self.filesChanged = nil
         self.exitCode = nil
         self.subagent = nil
+        self.board = nil
+        self.boardCreated = nil
+        self.system = nil
+        self.offSystem = nil
         self.failure = failed ? (firstLine.isEmpty ? nil : String(firstLine.prefix(60))) : nil
         self.stopped = stopped
         self.startedAt = message.startedAt
@@ -484,6 +501,36 @@ extension NativeActivityCall {
             subagent = string("agent") ?? string("role") ?? string("name")
                 ?? task.flatMap { $0.split(separator: " ").first.map(String.init) } ?? "subagent"
             detail = [subagent, task].compactMap { $0 }.joined(separator: " · ")
+        case "design_read":
+            kind = .explore
+            explore = .read
+            detail = string("path") ?? "canvas.json"
+            isPath = true
+        case "board_write":
+            kind = .drew
+            label = "board"
+            board = string("path")
+            detail = board ?? firstLine
+            isPath = board != nil
+            if !failed, !running {
+                boardCreated = firstLine.hasPrefix("Drew ") ? true : firstLine.hasPrefix("Updated ") ? false : nil
+                stat = boardCreated == true ? "new" : boardCreated == false ? "updated" : "unchanged"
+            }
+        case "canvas_update":
+            kind = .drew
+            label = "canvas"
+            detail = "canvas.json"
+            isPath = true
+        case "design_check":
+            kind = .checked
+            label = "check"
+            detail = string("path") ?? "every board"
+            isPath = string("path") != nil
+            if !failed, !running, let found = nativeDesignCheck(firstLine) {
+                system = found.system
+                offSystem = found.offSystem
+                stat = nativeCount(found.offSystem, "off-system value")
+            }
         case "shepherd_parent_message":
             kind = .other
             label = "to parent"
@@ -502,7 +549,7 @@ extension NativeActivityCall {
             testsFailed = nil
             filesChanged = nil
         }
-        if stat == nil, !running, let seconds, seconds >= 0.5, kind != .edit, kind != .subagents, !failed {
+        if stat == nil, !running, let seconds, seconds >= 0.5, kind != .edit, kind != .subagents, kind != .drew, !failed {
             stat = nativeDurationText(seconds)
         }
         if failed, stat == nil { stat = "failed" }
@@ -533,6 +580,11 @@ public struct NativeActivityBurst: Equatable, Sendable, Identifiable {
     /// A running call's last output lines.
     public var tail: [String] { state == .running ? calls.first?.tail ?? [] : [] }
     public var expandable: Bool { state != .running }
+    /// A drawing burst that only rewrote boards: it reads "Updated A and A · phone" and wears the
+    /// edit glyph rather than the nib.
+    public var isBoardUpdate: Bool {
+        kind == .drew && calls.contains { $0.board != nil } && !calls.contains { $0.boardCreated == true }
+    }
 }
 
 /// Merge consecutive calls of one kind into bursts. A failed, stopped, or running call each
@@ -605,6 +657,8 @@ private func progressiveLabel(_ call: NativeActivityCall) -> String {
         case .other: return "Running"
         }
     case .subagents: return "Starting a subagent"
+    case .drew: return call.name == "canvas_update" ? "Arranging the canvas" : "Drawing"
+    case .checked: return "Checking the boards"
     case .other: return "Running \(call.label)"
     }
 }
@@ -627,6 +681,8 @@ private func failedLabel(_ call: NativeActivityCall) -> String {
         case .other: return "Ran a command"
         }
     case .subagents: return "Subagent failed to start"
+    case .drew: return call.name == "canvas_update" ? "Canvas update failed" : "Board write failed"
+    case .checked: return "Check failed"
     case .other: return "\(call.label) failed"
     }
 }
@@ -650,6 +706,8 @@ private func stoppedLabel(_ call: NativeActivityCall) -> String {
         case .other: return "Ran a command"
         }
     case .subagents: return "Subagent stopped"
+    case .drew: return call.name == "canvas_update" ? "Canvas update stopped" : "Drawing stopped"
+    case .checked: return "Check stopped"
     case .other: return "\(call.label) stopped"
     }
 }
@@ -686,6 +744,14 @@ private func doneWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
     case .subagents:
         let names = calls.compactMap(\.subagent)
         return ("Started " + nativeCount(calls.count, "subagent"), [names.joined(separator: " · ")])
+    case .drew:
+        return drewWords(calls)
+    case .checked:
+        let total = calls.compactMap(\.offSystem).reduce(0, +)
+        guard let system = calls.last(where: { $0.system != nil })?.system else {
+            return ("Checked the boards", ["no design system found"])
+        }
+        return ("Checked against \(system)", [nativeCount(total, "off-system value")])
     case .other:
         let label = calls.count == 1 ? "Used \(first.label)" : "Used \(first.label) \(calls.count) times"
         return (label, (calls.count == 1 ? [first.detail] : []) + [duration].compactMap { $0 })
@@ -744,6 +810,76 @@ private func runWords(_ calls: [NativeActivityCall], duration: String?) -> (Stri
         }
     }
     return (label, meta + [duration].compactMap { $0 })
+}
+
+// MARK: Design verbs
+
+/// A board's name as the design agent's lines say it: the skill names a direction's board by its
+/// letter and a size of it by letter and size (`A.dc.html` reads "A", `A-phone.dc.html`
+/// "A · phone"); any other board reads as its file name.
+public func nativeBoardName(_ path: String) -> String {
+    let stem = nativeBoardParts(path)
+    guard let letter = stem.letter else { return stem.stem }
+    return stem.size.map { "\(letter) · \($0)" } ?? letter
+}
+
+private func nativeBoardParts(_ path: String) -> (stem: String, letter: String?, size: String?) {
+    var stem = (path as NSString).lastPathComponent
+    if stem.hasSuffix(".dc.html") { stem.removeLast(".dc.html".count) }
+    let scalars = Array(stem)
+    guard let first = scalars.first, first.isASCII, first.isUppercase,
+          scalars.count == 1 || scalars[1] == "-" || scalars[1] == "_" else { return (stem, nil, nil) }
+    let size = scalars.count > 2 ? String(scalars[2...]).replacingOccurrences(of: "-", with: " ")
+        .replacingOccurrences(of: "_", with: " ") : nil
+    return (stem, String(first), size)
+}
+
+/// "3 directions + phone": how many directions the boards draw, and the other sizes drawn of
+/// them; the boards' names when they don't follow the skill's naming.
+public func nativeBoardSummary(_ paths: [String]) -> String {
+    let parts = paths.map(nativeBoardParts)
+    guard parts.allSatisfy({ $0.letter != nil }) else {
+        let names = paths.map(nativeBoardName)
+        return names.count > 3 ? names.prefix(3).joined(separator: " · ") + " …" : names.joined(separator: " · ")
+    }
+    var directions: [String] = [], sizes: [String] = []
+    for part in parts {
+        if let size = part.size {
+            if !sizes.contains(size) { sizes.append(size) }
+        } else if let letter = part.letter, !directions.contains(letter) {
+            directions.append(letter)
+        }
+    }
+    guard !directions.isEmpty else { return paths.map(nativeBoardName).joined(separator: " · ") }
+    return ([nativeCount(directions.count, "direction")] + sizes).joined(separator: " + ")
+}
+
+/// A design_check result's first line: "Checked against acme-web · 0 off-system values".
+func nativeDesignCheck(_ line: String) -> (system: String, offSystem: Int)? {
+    let prefix = "Checked against "
+    guard line.hasPrefix(prefix), let dot = line.range(of: " · ", options: .backwards) else { return nil }
+    let system = String(line[line.index(line.startIndex, offsetBy: prefix.count)..<dot.lowerBound])
+    let count = line[dot.upperBound...].split(separator: " ").first.flatMap { Int($0) }
+    guard !system.isEmpty, let count else { return nil }
+    return (system, count)
+}
+
+/// "Drew 4 boards" · "3 directions + phone"; "Updated A and A · phone"; "Arranged the canvas".
+private func drewWords(_ calls: [NativeActivityCall]) -> (String, [String]) {
+    var order: [String] = []
+    var created: Set<String> = []
+    for call in calls {
+        guard let board = call.board else { continue }
+        if !order.contains(board) { order.append(board) }
+        if call.boardCreated == true { created.insert(board) }
+    }
+    guard !order.isEmpty else { return ("Arranged the canvas", []) }
+    let drawn = order.filter { created.contains($0) }
+    let updated = order.filter { !created.contains($0) }
+    let updatedWords = updated.count > 3 ? nativeCount(updated.count, "board") : nativeJoinedList(updated.map(nativeBoardName))
+    if drawn.isEmpty { return ("Updated " + updatedWords, []) }
+    let label = "Drew " + nativeCount(drawn.count, "board") + (updated.isEmpty ? "" : " and updated " + updatedWords)
+    return (label, [nativeBoardSummary(drawn)])
 }
 
 // MARK: Changes card

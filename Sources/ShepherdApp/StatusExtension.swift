@@ -44,6 +44,7 @@ enum StatusExtension {
         isAutomation: Bool = false,
         instructions: (extensionPath: String, directory: String)? = nil,
         suggestFiles: [String] = [],
+        design: (extensionPath: String, designID: DesignID, skillDirectory: String)? = nil,
         model: String?,
         thinking: ThinkingLevel?
     ) -> SessionCommand {
@@ -51,7 +52,8 @@ enum StatusExtension {
         if let model { cmd += " --model \(shellQuoted(model))" }
         if let thinking { cmd += " --thinking \(shellQuoted(thinking.rawValue))" }
         cmd += " -e \(shellQuoted(extensionPath))"
-        for path in [instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath, namerExtensionPath].compactMap({ $0 }) {
+        for path in [instructions?.extensionPath, panesExtensionPath, reviewExtensionPath, subagentsExtensionPath, childrenExtensionPath,
+                     namerExtensionPath, design?.extensionPath].compactMap({ $0 }) {
             cmd += " -e \(shellQuoted(path))"
         }
         var env = [
@@ -71,6 +73,11 @@ enum StatusExtension {
         }
         if namerExtensionPath != nil && needsName { env["SHEPHERD_NEEDS_NAME"] = "1" }
         if isAutomation { env["SHEPHERD_AUTOMATION"] = "1" }
+        // A design's agent: its design tools, and the skill they hand pi.
+        if let design {
+            env["SHEPHERD_DESIGN_ID"] = design.designID.rawValue
+            env["SHEPHERD_DESIGN_SKILL_DIR"] = design.skillDirectory
+        }
         if let model { env["SHEPHERD_MODEL"] = model }
         return SessionCommand(argv: ["/bin/zsh", "-l", "-c", cmd], env: env)
     }

@@ -127,6 +127,8 @@ extension NWTurnError.Content {
             NWActivityLine(kind: .run, label: "Ran tests", meta: "swift test · exit 1 · 8.4s", status: .failed) {}
             NWActivityLine(kind: .run, label: "Building", meta: "xcodebuild -scheme 'Shepherd (Dev)' build",
                            status: .live(since: Date().addingTimeInterval(-12), tail: ["CompileSwift ThreadView.swift", "Linking Shepherd …"]))
+            NWActivityLine(kind: .drew, label: "Drew 4 boards", meta: "3 directions + phone") {}
+            NWActivityLine(kind: .checked, label: "Checked against acme-web", meta: "0 off-system values") {}
         }
         .frame(width: 560)
     }
