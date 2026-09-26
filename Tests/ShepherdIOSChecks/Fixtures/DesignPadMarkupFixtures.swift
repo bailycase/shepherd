@@ -97,7 +97,7 @@ enum DesignPadMarkupFixtures {
 
     /// Puts iPadDesign's ink on the canvas, then (`read`) reads it as Done does and prints the
     /// record, or (not `read`) sends it as far as the canvas can without a host that takes it:
-    /// the ink stays as sent ink while the chat shows the answer and the
+    /// the ink stays as sent ink, with the palette, while the chat shows the answer and the
     /// proposals' pins, kept with no place drawn, find their elements on the boards.
     @MainActor static func draw(_ app: MobileApp, read: Bool) async {
         let canvas = await DesignPadFixtures.settle(app)
@@ -112,9 +112,9 @@ enum DesignPadMarkupFixtures {
             await FixtureWindows.wait(seconds: 30) { placed(2) && placed(3) && canvas.isDrawn }
             let card = canvas.markupCard(NativeMarkupProposals(proposals: proposed))
             let ok = card.cards.map(\.number) == [2, 3] && card.state == .open && canvas.openComments.count == 3
-                && placed(2) && placed(3)
+                && placed(2) && placed(3) && canvas.markup.showsPalette
             print("FIXTURE CHECK \(ok ? "ok" : "FAILED:") design-pad-markup-reply: cards \(card.cards.map(\.number)) \(card.state), "
-                  + "\(canvas.openComments.count) comments, pins placed \(placed(2)) \(placed(3)))
+                  + "\(canvas.openComments.count) comments, pins placed \(placed(2)) \(placed(3)), palette \(canvas.markup.showsPalette)")
             return
         }
         let boards = canvas.boards.compactMap { board in DesignPath(board.id).map { (path: $0, frame: board.frame) } }

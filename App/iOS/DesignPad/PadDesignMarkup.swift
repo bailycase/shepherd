@@ -34,12 +34,24 @@ final class PadDesignMarkup {
     /// Moves when the ink changes other than by the viewer's hand (Done, a fixture), so the ink
     /// view takes it again.
     private(set) var revision = 0
+    /// Done with no new ink put the palette away; the next stroke brings it back.
+    private(set) var paletteDismissed = false
 
     var hasInk: Bool { !draft.strokes.isEmpty }
+
+    /// The palette shows while there is ink on the canvas, new or sent (iPadDesign draws it beside
+    /// the agent's answer), until Done with nothing new puts it away.
+    var showsPalette: Bool { reading || hasInk || (!sent.strokes.isEmpty && !paletteDismissed) }
 
     /// The viewer drew, erased or undid: the ink view's drawing, back in canvas points.
     func viewerDrew(_ drawing: PKDrawing) {
         draft = drawing
+        if hasInk, paletteDismissed { paletteDismissed = false }
+    }
+
+    /// Done with nothing new to send: the palette goes until the next stroke.
+    func dismissPalette() {
+        paletteDismissed = true
     }
 
     /// Replaces the ink since the last Done (fixtures draw with it).
@@ -63,6 +75,7 @@ final class PadDesignMarkup {
     func clearSent() {
         guard !sent.strokes.isEmpty else { return }
         sent = PKDrawing()
+        paletteDismissed = false
         revision &+= 1
     }
 }
@@ -88,7 +101,7 @@ struct PadDesignMarkupLayer: View {
                          zoom: { factor, anchor in canvas.viewport.zoom(by: factor, about: anchor) },
                          zooming: { canvas.setZooming($0) },
                          comment: { point in commentWithPencil(at: point) })
-            if enabled, markup.hasInk || markup.reading {
+            if enabled, markup.showsPalette {
                 NWMarkupPalette(tool: Bindable(markup).tool, ink: Bindable(markup).ink, reading: markup.reading) {
                     canvas.finishMarkup()
                 }
@@ -96,7 +109,7 @@ struct PadDesignMarkupLayer: View {
                 .nwTransition(.overlay)
             }
         }
-        .nwAnimation(.content, value: markup.hasInk || markup.reading)
+        .nwAnimation(.content, value: markup.showsPalette)
         .onChange(of: markup.tool) { _, tool in
             // The palette's Comment is the canvas's: a tap on an element opens the editor.
             if tool == .comment {
@@ -418,10 +431,14 @@ enum PadDesignMarkupReader {
 
 extension PadDesignCanvas {
     /// Done: reads the markup and sends it to the design agent. What couldn't go stays on the
-    /// canvas, and the dialog says why.
+    /// canvas, and the dialog says why. With nothing new drawn, Done puts the palette away.
     @discardableResult
     func finishMarkup() -> Task<Void, Never>? {
-        guard !markup.reading, markup.hasInk else { return nil }
+        guard !markup.reading else { return nil }
+        guard markup.hasInk else {
+            markup.dismissPalette()
+            return nil
+        }
         markup.beginReading()
         let drawing = markup.draft
         let boards = boards.compactMap { board in DesignPath(board.id).map { (path: $0, frame: board.frame) } }
