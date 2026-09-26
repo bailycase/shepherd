@@ -549,6 +549,19 @@ struct ThreadProjectionTests {
         #expect(RPCThreadState.projectStats(try decode(json)) == stats)
     }
 
+    /// An extension gives a dialog any timeout: past `Int.max` milliseconds the dialog waits as
+    /// long as Dispatch can, and none, zero, or a negative one never times out.
+    @Test(arguments: [
+        (10_000.0 as Double?, DispatchTimeInterval.milliseconds(10_000) as DispatchTimeInterval?), (10_000.9, .milliseconds(10_000)),
+        (0.5, .milliseconds(0)), (1e20, .milliseconds(.max)), (.greatestFiniteMagnitude, .milliseconds(.max)),
+        (nil, nil), (0, nil), (-1, nil), (-1e20, nil),
+    ] as [(Double?, DispatchTimeInterval?)])
+    func aDialogTimesOutAfterAnyTimeoutAnExtensionGives(_ timeout: Double?, _ delay: DispatchTimeInterval?) {
+        #expect(RPCThreadState.dialogTimeout(timeout) == delay)
+        let now = DispatchTime.now()
+        if let delay { #expect(now + delay >= now) }
+    }
+
     // MARK: - Widgets
 
     @Test(arguments: [

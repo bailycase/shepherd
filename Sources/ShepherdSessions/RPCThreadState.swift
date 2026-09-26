@@ -1198,10 +1198,10 @@ final class RPCThreadState {
             dialogReasons[request.id] = askingCalls.last?.reason ?? nil
             askedAt[request.id] = Date().timeIntervalSince1970 * 1000
             dialogs = next
-            if let timeout = request.timeout, timeout > 0 {
+            if let delay = Self.dialogTimeout(request.timeout) {
                 // pi auto-resolves on its side; we only stop showing it, and the thread says it
                 // went unanswered.
-                queue.asyncAfter(deadline: .now() + .milliseconds(Int(timeout))) { [weak self] in
+                queue.asyncAfter(deadline: .now() + delay) { [weak self] in
                     guard let self, let index = self.dialogs.firstIndex(where: { $0.id == request.id }) else { return }
                     self.recordQuestion(self.dialogs.remove(at: index), answer: nil)
                     self.commit()
@@ -1565,6 +1565,13 @@ final class RPCThreadState {
             if let origin = value.origin { value.origin = clipped(origin) }
             return value
         }
+    }
+
+    /// When a dialog pi opened with `timeout` (ms) stops showing; nil for none. An extension
+    /// passes any number, and one past `Int.max` milliseconds waits as long as Dispatch can.
+    static func dialogTimeout(_ timeout: Double?) -> DispatchTimeInterval? {
+        guard let timeout, timeout > 0, let milliseconds = Int(reportedCount: timeout) else { return nil }
+        return .milliseconds(milliseconds)
     }
 
     /// pi's millisecond timestamp as an entry id writes it; nil for one no `Int64` holds.
