@@ -54,4 +54,15 @@ struct ShepherdPathsTests {
     func aBlankOverrideIsIgnored(_ value: String) {
         #expect(ShepherdPaths.supportDirectory(environment: Self.environment(value)) == ShepherdPaths.supportDirectory(environment: [:]))
     }
+
+    /// Settings ▸ MCP servers shares ~/.config/mcp/mcp.json with other MCP clients unless the
+    /// override moves it; the tools cache lives with the rest of Shepherd's state.
+    @Test func mcpServersLiveInTheSharedConfigUnlessOverridden() {
+        #expect(ShepherdPaths.mcpConfigURL(environment: [:]).path == NSHomeDirectory() + "/.config/mcp/mcp.json")
+        #expect(ShepherdPaths.mcpConfigURL(environment: [ShepherdPaths.mcpConfigEnvKey: "/tmp/scratch/mcp.json"]).path
+            == "/tmp/scratch/mcp.json")
+        #expect(ShepherdPaths.mcpConfigURL(environment: [ShepherdPaths.mcpConfigEnvKey: " "]) == ShepherdPaths.mcpConfigURL(environment: [:]))
+        #expect(ShepherdPaths.mcpToolsCacheURL(environment: Self.environment("/tmp/shepherd-dev")).path
+            == "/tmp/shepherd-dev/mcp/tools.json")
+    }
 }
