@@ -214,6 +214,7 @@ struct ComposerMenuPerformanceTests {
             let counts = try await counting(thread) { thread.store.draft += letter }
             #expect(counts["composer.body", default: 0] >= 1, "'\(letter)': the field redrew: \(counts)")
             #expect(counts["composer.chips", default: 0] == 0, "'\(letter)': \(counts)")
+            #expect(counts["composer.contextMeter", default: 0] == 0, "'\(letter)': the ring beside Send: \(counts)")
             #expect(counts["thread.view", default: 0] == 0, "'\(letter)': \(counts)")
             #expect(counts["layout.composerControlsMinimum", default: 0] >= 1, "'\(letter)': the minimum-size pass was answered: \(counts)")
         }
