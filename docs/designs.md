@@ -882,7 +882,9 @@ a VPN or trusted network is the transport boundary, as for everything else it se
 
 - **Pushed:** `designChanged(id, revision, commentsRevision)` after each change to a watched
   design, one per write: a hint to pull, carrying no files. `capabilitiesChanged` goes to a
-  client that lists `designs.v1` when the host's experiment turns on or off.
+  client that lists `designs.v1` when the host's experiment turns on or off. Only a client that
+  lists `designs.v1` may `watch` (`update_required` otherwise), so no other client is ever
+  pushed a design frame.
 - **The experiment:** the host offers `designs.v1` only while its Settings ▸ Experiments ▸
   Design tool is on (`SessionServer.setDesignsServed`), and refuses every design request while
   it is off (`designs_off`). A device shows design surfaces only for a host that offers it.
@@ -890,7 +892,10 @@ a VPN or trusted network is the transport boundary, as for everything else it se
   on the design store's (`RemoteDesignService`).
 - **What is served:** only files under a design's `project/` (each segment by the file grammar,
   a link that leads out of it never followed, 16 MB a file) and its `assets/` uploads. A path
-  outside the grammar is refused (`invalid_path`) before a file is touched.
+  outside the grammar is refused (`invalid_path`) before a file is touched, and an offset
+  outside the file with `invalid_offset`. A piece reads only its own bytes once the file's hash
+  is known for its size and modification time. A client keeps a download within the size its
+  first piece named and the 16 MB cap.
 - **Writes** go through the same server mutations as the host's own canvas, with the same
   checks: a board path outside the grammar, a board the lint refuses, a stale revision.
 - **Sends:** the design agent's chat is its thread over the native-thread requests; a send's
