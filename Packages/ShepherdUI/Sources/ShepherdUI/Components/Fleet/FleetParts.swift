@@ -19,6 +19,8 @@ public enum NWListMetrics {
     public static let dot: CGFloat = 7
     /// A Needs you card's glowing dot for a thread (MobileInbox).
     public static let attentionDot: CGFloat = 8
+    /// A list head's title: the phone boards' 13pt, between the ramp's caption and ui.
+    public static let headSize: CGFloat = 13
     /// A symbol in a row's leading column.
     public static let symbol: CGFloat = 15
     /// How far a host's address may shrink to stay on one line before it truncates.
@@ -51,7 +53,7 @@ public struct NWListHeader<Trailing: View>: View {
     public var body: some View {
         HStack(spacing: NW.Space.m) {
             Text(title)
-                .font(.nw(.caption, weight: .semibold))
+                .font(.nwSans(NWListMetrics.headSize, .semibold))
                 .foregroundStyle(attention ? Color.nw.lanternText : Color.nw.textSecondary)
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: NW.Space.xs)
