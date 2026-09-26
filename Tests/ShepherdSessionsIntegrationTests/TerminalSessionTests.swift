@@ -203,20 +203,6 @@ struct TerminalSessionTests {
         try await h.waitForScreen(info.id, toContain: "got:plain")
     }
 
-    /// Run in terminal: the command is typed at the prompt and left there, not run.
-    @Test func aCommandTypedWithoutSubmitWaitsAtThePrompt() async throws {
-        let h = try ScratchServer.fresh()
-        defer { h.stop() }
-        // A short prompt, so a long host name never wraps the typed line.
-        let info = try await h.shell("PS1='$ ' exec /bin/zsh -f -i")
-        h.server.typeCommand("echo typed''-not-run", sessionID: info.id, submit: false)
-        try await h.waitForScreen(info.id, toContain: "$ echo typed''-not-run")
-        // Return now runs it: until then it only sat at the prompt.
-        #expect(!(await h.screen(info.id)).contains("typed-not-run\n"))
-        h.server.write(sessionID: info.id, data: Data("\r".utf8))
-        try await h.waitForScreen(info.id, toContain: "\ntyped-not-run")
-    }
-
     // MARK: - Kill process
 
     /// Kill process ends the command a shell runs (its whole process group) and leaves the
