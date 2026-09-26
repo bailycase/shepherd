@@ -4759,9 +4759,9 @@ MobileSteer, MobileQueue, MobileQueueMenu, MobileQuestion; `Composer/QueueSectio
 `Composer/QuestionPanel.swift`. The queue's rules are the Mac's (Up next); only its touch form
 differs.
 
-- **Header while it runs:** the status line carries the elapsed time and what the thread is working
-  in or on: "Running · 5m · payments" (its space), "Running · 37m · 3 subagents" (its live runs).
-  The app shows the elapsed time alone.
+- **Header while it runs:** as at rest (iPhone: Thread › Header), "Running · ⧉
+  agent/native-restyle" (MobileSteer, MobileQueue), with Stop trailing; the phone's header shows
+  no clock (the iPad's pill does).
 - **Up next** (`NWTouchQueueCard`) sits above the capsule, 8pt apart: `bgRaised`, a 1px `lineStrong`
   line, 14pt corners. Its 38pt head (14pt leading, 4pt trailing): the queue glyph (13pt
   `textTertiary`), "Up next" (13/600 `textSecondary`), the count (mono 11.5 `textTertiary`), and •••
