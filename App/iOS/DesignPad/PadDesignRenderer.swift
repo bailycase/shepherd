@@ -12,8 +12,9 @@ import ShepherdRemote
 // on the host. A design on screen keeps at most `DesignTouchLivePlan.liveCap` live web view (the
 // selected board, else the board nearest the middle of the canvas), and one off-screen view
 // (`PadDesignRasterizer`) draws every other board's snapshot, one at a time: two web views at
-// most, the plan's iOS cap, however large the canvas. A hidden design gives its live view up and
-// keeps its snapshots.
+// most, the plan's iOS cap, however large the canvas and however many designs are on screen (a
+// design taking its live view takes it from the others). A hidden design gives its live view up
+// and keeps its snapshots.
 
 /// An element a board reported under a point: its id as a view record names it, where the board
 /// draws it (the board's own points), and what it is.
@@ -66,6 +67,12 @@ final class PadDesignRendering {
         if let host = hosts[ref] { return host }
         let surface = DesignSurface(designID: ref.design, source: source(), network: .googleFonts)
         let host = PadDesignHost(designID: ref.design, surface: surface, rasterizer: rasterizer)
+        // The cap is the app's, not each design's: a design taking a live view (Split View shows
+        // two designs at once) takes it from every other.
+        host.claiming = { [weak self, weak host] in
+            guard let self, let host else { return }
+            for other in self.hosts.values where other !== host { other.yieldLive() }
+        }
         hosts[ref] = host
         return host
     }
@@ -110,6 +117,8 @@ final class PadDesignHost {
     @ObservationIgnored var linked: ((_ from: DesignPath, _ to: DesignPath) -> Void)?
     /// A live board drew new source: a selection on it is found again where it is now.
     @ObservationIgnored var redrawn: ((DesignPath) -> Void)?
+    /// About to make a live view: every other design gives its own up (`PadDesignRendering`).
+    @ObservationIgnored var claiming: (() -> Void)?
     @ObservationIgnored private var boards: [DesignPath: Board] = [:]
     @ObservationIgnored private var slots: [DesignPath: Slot] = [:]
     @ObservationIgnored private var images = PadDesignImageCache()
@@ -220,6 +229,12 @@ final class PadDesignHost {
         plan()
     }
 
+    /// Another design took the live view: its boards draw from their snapshots until this one
+    /// plans again (its canvas moves, or a tap asks about a board).
+    func yieldLive() {
+        for path in Array(slots.keys) { releaseSlot(path) }
+    }
+
     func release() {
         isActive = false
         for path in Array(slots.keys) { releaseSlot(path) }
@@ -316,6 +331,7 @@ final class PadDesignHost {
 
     private func makeSlot(_ path: DesignPath) {
         guard let board = boards[path] else { return }
+        claiming?()
         let view = DesignBoardView(surface: surface, board: path, size: board.size)
         view.zoom = path == presented ? presentedZoom : zoom
         view.isUserInteractionEnabled = path == presented
