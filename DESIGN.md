@@ -2449,7 +2449,7 @@ Steer field focused.
   Pane. Showing opens the pane on its tab (Changes starts the review); hiding also closes an
   inspected subagent, and discards the review like a cancel. ⌃1 (View › Changes) shows Changes in
   front of an inspected subagent; it is fixed, like ⌘1–9, and ⌃2–⌃4 wait for the other tabs.
-  Review Changes (a sidebar row's menu), the palette's Show changes, the chip's Show Changes, a
+  Review Changes (a sidebar row's menu), the palette's Review diff, the chip's Show Changes, a
   thread's "review ›" link and the inspector's file links show Changes too.
 - **Nothing opens by itself** (PaneStates): when pi opens something for the pane (today, an
   agent's `review_diff`), the review is readied and the Changes tab takes a 6pt `running` dot
@@ -5398,9 +5398,9 @@ selected thread, or the Overview when none is. Other screens push over the detai
   trailing. The highlighted row is `runningTint`. The draft shows in mono while it is a command.
   Five rows show before the list scrolls.
 - **Not built yet: argument hints.** After a command's name, its arguments in mono
-  `textTertiary` ("/resume [session]", "/release-notes [tag]"). pi's commands reach the client
-  without arguments (`NativeCommand` carries a name, a description and a source), so the host
-  must send them first.
+  `textTertiary` ("/resume [session]", "/release-notes [tag]"). The host sends a prompt
+  template's hint (`NativeCommand.arguments`; Composer › Slash menu), and the Mac draws it, but
+  the iOS list (`NWTouchCommand`) does not draw it yet.
 
 #### Up next and steering (iPadQueue, iPadSteer)
 
