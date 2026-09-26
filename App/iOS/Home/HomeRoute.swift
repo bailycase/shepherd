@@ -15,12 +15,14 @@ enum HomeRoute: Hashable, Codable {
 
 struct HomeDestination: View {
     let route: HomeRoute
+    @Environment(MobileNavigator.self) private var navigator
 
     var body: some View {
         switch route {
         case .needsYou: NeedsYouScreen()
         case .automations: AutomationsScreen()
-        case .more: MoreScreen()
+        // On iPad More expands in the sidebar, and its Hosts row opens the Hosts destination.
+        case .more: if navigator.layout == .pad { PadHostsScreen() } else { MoreScreen() }
         case .recents: RecentsScreen()
         }
     }

@@ -59,12 +59,15 @@ public struct NWTouchCommand: Identifiable, Equatable, Sendable {
     public var id: String { name }
     public var name: String
     public var description: String?
+    /// A prompt template's argument hint ("[session]"), drawn after the name.
+    public var arguments: String?
     /// "prompt" or "skill"; none for an extension command.
     public var tag: String?
 
-    public init(name: String, description: String? = nil, tag: String? = nil) {
+    public init(name: String, description: String? = nil, arguments: String? = nil, tag: String? = nil) {
         self.name = name
         self.description = description
+        self.arguments = arguments
         self.tag = tag
     }
 }
@@ -111,7 +114,8 @@ public struct NWTouchCommandList: View {
                         ForEach(commands) { command in
                             Button { onChoose(command) } label: { row(command) }
                                 .buttonStyle(.nwRow(radius: NW.Radius.s))
-                                .accessibilityLabel("/\(command.name)" + (command.description.map { ", \($0)" } ?? ""))
+                                .accessibilityLabel("/\(command.name)" + (command.arguments.map { " \($0)" } ?? "")
+                                                    + (command.description.map { ", \($0)" } ?? ""))
                         }
                     }
                     .padding(.horizontal, NW.Space.xs)
@@ -133,7 +137,8 @@ public struct NWTouchCommandList: View {
         let prefix = command.name.lowercased().hasPrefix(query.lowercased()) ? query.count : 0
         let typed = Text(String(command.name.prefix(prefix))).fontWeight(.semibold).foregroundStyle(nw.textPrimary)
         let rest = Text(String(command.name.dropFirst(prefix))).foregroundStyle(nw.textSecondary)
-        let name = Text("\(Text("/").foregroundStyle(nw.textSecondary))\(typed)\(rest)")
+        let arguments = Text(command.arguments.map { " " + $0 } ?? "").foregroundStyle(nw.textTertiary)
+        let name = Text("\(Text("/").foregroundStyle(nw.textSecondary))\(typed)\(rest)\(arguments)")
         let layout = wide
             ? AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: NW.Space.l))
             : AnyLayout(VStackLayout(alignment: .leading, spacing: NW.Space.xxs))

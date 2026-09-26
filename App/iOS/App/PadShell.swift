@@ -27,7 +27,7 @@ struct PadShell: View {
             let portrait = PadSplitLayout.sidebarOverlays(window: proxy.size)
             NavigationSplitView(columnVisibility: $navigator.padColumns) {
                 PadSidebar()
-                    .navigationSplitViewColumnWidth(MobileLayout.sidebarWidth)
+                    .navigationSplitViewColumnWidth(portrait ? MobileLayout.sidebarOverlayWidth : MobileLayout.sidebarWidth)
             } detail: {
                 NavigationStack(path: $navigator.padPath) {
                     PadDetailRoot().mobileDestinations()

@@ -60,3 +60,65 @@ import SwiftUI
         .frame(width: 360)
     }
 }
+
+#Preview("iPad sidebar rows") {
+    NWPreviewBoth {
+        VStack(alignment: .leading, spacing: 0) {
+            NWListRow("New thread", leading: .badge("plus"), chevron: false, compact: true)
+            NWListRow("Automations", leading: .symbol("bolt"), trailing: .value("4"), chevron: false, compact: true)
+            NWListRow("More", leading: .symbol("chevron.down"), chevron: false, compact: true)
+            NWListRow("Hosts", leading: .symbol("desktopcomputer"), trailing: .alert("1 offline"), chevron: false,
+                      selected: true, compact: true)
+                .padding(.leading, NW.Space.l)
+            NWListHeader("Needs you", attention: true, count: 2, style: .sidebar)
+            NWListRow("Dock review pane", leading: .state(.attention), trailing: .reason("asked you"), chevron: false, compact: true)
+            NWListHeader("Recents", style: .sidebar)
+            NWListRow("Plan shepherd extensions", leading: .state(.running), trailing: .host("build-01"), chevron: false, compact: true)
+        }
+        .frame(width: 300)
+    }
+}
+
+#Preview("Overview cards") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.l) {
+            NWListCard {
+                NWCaptionBand("Threads · 2")
+                NWOverviewRow("Investigate SwiftUI live preview", detail: "swift test --filter toolPreview", leading: .state(.running),
+                              time: .elapsed(since: Date().addingTimeInterval(-252)))
+                NWOverviewRow("Restyle native UI", detail: "3 subagents · 1 needs you", leading: .state(.running),
+                              time: .elapsed(since: Date().addingTimeInterval(-2_220)))
+            }
+            NWListCard {
+                NWCaptionBand("Today")
+                NWOverviewRow("Ship native UI v2", detail: "done · Shepherd", detailMono: false, leading: .symbol("checkmark", .done),
+                              time: .text("11:02"))
+            }
+        }
+        .frame(width: 280)
+    }
+}
+
+#Preview("Needs you items") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.xxs) {
+            NWAttentionCard(symbol: "arrow.triangle.branch", origin: "Subagent · Restyle native UI", title: "reviewer asks",
+                            question: "Rename the new ones, or replace the old ones?", since: Date().addingTimeInterval(-120),
+                            selected: true, style: .item) { EmptyView() }
+            NWAttentionCard(symbol: nil, origin: "Thread", title: "Dock review pane", question: "Plan ready to approve",
+                            since: Date().addingTimeInterval(-840), style: .item) { EmptyView() }
+        }
+        .frame(width: 360)
+    }
+}
+
+#Preview("Host rows") {
+    NWPreviewBoth {
+        VStack(spacing: NW.Space.xxs) {
+            NWHostRow(name: "Studio", detail: "3 threads · 2 running", state: .done, selected: true)
+            NWHostRow(name: "build-01", detail: "1 thread", state: .done)
+            NWHostRow(name: "horizon", detail: "Offline · last seen 7:12 AM", state: .failed)
+        }
+        .frame(width: 320)
+    }
+}
