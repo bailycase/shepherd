@@ -129,6 +129,8 @@ public struct NWListRow: View, Equatable {
         case alert(String)
         /// The host it lives on.
         case host(String)
+        /// A quiet word in mono (the iPad sidebar's "failed", "done").
+        case meta(String)
     }
 
     let title: String
@@ -251,6 +253,8 @@ public struct NWListRow: View, Equatable {
             Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.failed).lineLimit(1).fixedSize()
         case .host(let name):
             NWHostBadge(name)
+        case .meta(let text):
+            Text(text).font(.nw(.micro, weight: .regular)).foregroundStyle(Color.nw.textTertiary).lineLimit(1).fixedSize()
         }
     }
 }

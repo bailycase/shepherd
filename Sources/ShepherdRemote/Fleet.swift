@@ -100,6 +100,9 @@ public struct FleetDigest: Equatable, Sendable {
     /// subagents · 1 needs you").
     public var subagentsLive: Int
     public var subagentsAsking: Int
+    /// Its last turn ended in an error and nothing has run since (a remote client hears no turn
+    /// failure from the host, so the thread says it, as `NativeThreadStore.lastTurnFailed` does).
+    public var lastTurnFailed: Bool
     /// The call running now ("swift build", "edit ThreadView.swift"); nil when none is.
     public var activity: String?
     /// When that call started (ms since epoch).
@@ -130,6 +133,8 @@ public struct FleetDigest: Equatable, Sendable {
         subagentsLive = (snapshot.subagents ?? []).filter { !$0.isTerminal || $0.needsAttention }.count
         subagentsAsking = (snapshot.subagents ?? []).filter(\.needsAttention).count
         let entries = snapshot.messages + snapshot.provisional
+        let last = snapshot.messages.last
+        lastTurnFailed = !snapshot.running && last?.role == "assistant" && last?.status == "error"
         if snapshot.running, let call = entries.last(where: { $0.toolName != nil && $0.status == "running" }) {
             activity = Self.activity(NativeActivityCall(call))
             activitySince = call.startedAt ?? call.timestamp
@@ -190,6 +195,8 @@ public struct FleetThreadRow: Identifiable, Equatable, Sendable {
     public var worktree: Bool
     /// Its host is not connected: the row is its last known state.
     public var offline: Bool
+    /// Its last turn failed (iPadThreadError: a `failed` dot and "failed" in the sidebar).
+    public var failed = false
     /// Its subagents still running, and those waiting on the user.
     public var subagents = 0
     public var subagentsAsking = 0
@@ -534,7 +541,8 @@ public struct FleetModel: Equatable, Sendable {
         let detail = [word, activity ?? space?.name].compactMap { $0 }.joined(separator: " · ")
         return FleetThreadRow(ref: ref, title: agent.name, status: agent.status, detail: detail, activity: activity,
                               clock: clock, hostName: hostName, hostTag: hostTag, worktree: agent.worktreeBranch != nil,
-                              offline: offline, subagents: live ? digest?.subagentsLive ?? 0 : 0,
+                              offline: offline, failed: agent.status != .working && digest?.lastTurnFailed == true,
+                              subagents: live ? digest?.subagentsLive ?? 0 : 0,
                               subagentsAsking: live ? digest?.subagentsAsking ?? 0 : 0)
     }
 

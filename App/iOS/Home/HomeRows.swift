@@ -78,11 +78,14 @@ struct ThreadRow: View, Equatable {
     var chevron = true
 
     var body: some View {
+        // The sidebar says a failed last turn (iPadThreadError): a failed dot and "failed".
+        let failed = compact && row.failed
         NWListRow(row.title, subtitle: compact ? nil : row.detail, clock: compact ? nil : row.clock?.rowClock,
-                  leading: .state(AgentState(row.status)), trailing: row.hostTag.map { .host($0) } ?? .none,
+                  leading: .state(failed ? .failed : AgentState(row.status)),
+                  trailing: failed ? .meta("failed") : row.hostTag.map { .host($0) } ?? .none,
                   chevron: chevron && !compact, selected: selected, dimmed: row.offline, compact: compact)
             // The sidebar's one-line rows say their state only by the dot.
-            .accessibilityValue(compact ? FleetModel.statusWord(row.status) + (row.offline ? ", host offline" : "") : "")
+            .accessibilityValue(compact ? (failed ? "failed" : FleetModel.statusWord(row.status)) + (row.offline ? ", host offline" : "") : "")
     }
 }
 
