@@ -56,29 +56,39 @@ extension DesignBoardView {
     /// with the paper's color.
     public func pdf(_ mode: DesignPrint) async throws -> Data {
         guard contentSize != nil else { throw DesignBoardError.notBooted }
+        // Swift 6.3.3's optimizer (SimplifyCFG) crashes on the flow case, which broke every Release
+        // and Nightly build, so that case is its own function and left unoptimized; it runs once
+        // per export.
         switch mode {
-        case .fixed:
-            let page = try await webView.pdf(configuration: Self.pdfConfiguration(CGRect(origin: .zero, size: boardSize)))
-            return try DesignPDF.compose([DesignPDF.Page(source: page, size: boardSize, top: 0, background: nil)])
-        case .flow(let paper):
-            // The whole document, laid out at its width, then cut into pages.
-            guard let first = try await printLayout() else { throw DesignBoardError.notBooted }
-            let height = min(max(first.height, 1), Double(paper.size.height) * Double(DesignPrint.maxPages))
-            if abs(boardSize.height - height) >= 1 {
-                boardSize = CGSize(width: boardSize.width, height: height)
-                try await settle(height: height)
-            }
-            let layout = try await printLayout() ?? first
-            let slices = DesignPrint.pages(contentHeight: layout.height, pageHeight: paper.size.height,
-                                           lines: layout.lines, blocks: layout.blocks)
-            var pages: [DesignPDF.Page] = []
-            for slice in slices {
-                let rect = CGRect(x: 0, y: slice.start, width: boardSize.width, height: max(slice.height, 1))
-                let data = try await webView.pdf(configuration: Self.pdfConfiguration(rect))
-                pages.append(DesignPDF.Page(source: data, size: paper.size, top: slice.top, background: layout.background))
-            }
-            return try DesignPDF.compose(pages)
+        case .fixed: return try await fixedPDF()
+        case .flow(let paper): return try await flowPDF(on: paper)
         }
+    }
+
+    private func fixedPDF() async throws -> Data {
+        let page = try await webView.pdf(configuration: Self.pdfConfiguration(CGRect(origin: .zero, size: boardSize)))
+        return try DesignPDF.compose([DesignPDF.Page(source: page, size: boardSize, top: 0, background: nil)])
+    }
+
+    /// The whole document, laid out at its width, then cut into pages.
+    @_optimize(none)
+    private func flowPDF(on paper: DesignPrint.Paper) async throws -> Data {
+        guard let first = try await printLayout() else { throw DesignBoardError.notBooted }
+        let height = min(max(first.height, 1), Double(paper.size.height) * Double(DesignPrint.maxPages))
+        if abs(boardSize.height - height) >= 1 {
+            boardSize = CGSize(width: boardSize.width, height: height)
+            try await settle(height: height)
+        }
+        let layout = try await printLayout() ?? first
+        let slices = DesignPrint.pages(contentHeight: layout.height, pageHeight: paper.size.height,
+                                       lines: layout.lines, blocks: layout.blocks)
+        var pages: [DesignPDF.Page] = []
+        for slice in slices {
+            let rect = CGRect(x: 0, y: slice.start, width: boardSize.width, height: max(slice.height, 1))
+            let data = try await webView.pdf(configuration: Self.pdfConfiguration(rect))
+            pages.append(DesignPDF.Page(source: data, size: paper.size, top: slice.top, background: layout.background))
+        }
+        return try DesignPDF.compose(pages)
     }
 
     /// Waits (a second at most) for the page to take the view's new height.
