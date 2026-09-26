@@ -76,6 +76,9 @@ extension DesignElementPick {
 
 // MARK: Rendering
 
+/// Tweak's live previews go to the board's live view.
+extension DesignHost: DesignTweakPreviews {}
+
 /// What boards may load beyond the design's own files (`DesignSandbox.Network`).
 enum DesignRenderingNetwork {
     /// Google Fonts, as boards link them.
@@ -92,12 +95,13 @@ enum DesignRenderingNetwork {
 }
 
 /// Every design's renderers: one host per design, the shared rasterizer, and the Designs page's
-/// thumbnails. Owned by the view model.
+/// thumbnails. Owned by the view model: one for this Mac's designs, and one per remote host for
+/// the designs it serves (their files fetched by hash, rendered here).
 @MainActor
 final class DesignRendering {
-    let rasterizer = DesignRasterizer()
+    let rasterizer: DesignRasterizer
     private var hosts: [DesignID: DesignHost] = [:]
-    private let folder: (DesignID) -> URL?
+    private let makeSurface: (DesignID, DesignSandbox.Network) -> DesignSurface?
     private let network: DesignSandbox.Network
     /// The Designs page's cards' first boards.
     let thumbnails: DesignThumbnails
@@ -108,22 +112,37 @@ final class DesignRendering {
     /// web view, so every board draws its snapshot).
     let liveCap: Int
 
-    init(folder: @escaping (DesignID) -> URL?, network: DesignRenderingNetwork = .googleFonts, liveCap: Int = DesignLivePlan.liveCap) {
-        self.folder = folder
+    /// This Mac's designs, from their folders.
+    convenience init(folder: @escaping (DesignID) -> URL?, network: DesignRenderingNetwork = .googleFonts, liveCap: Int = DesignLivePlan.liveCap) {
+        self.init(surface: { id, network in folder(id).map { DesignSurface(designID: id, folder: $0, network: network) } },
+                  network: network, liveCap: liveCap, rasterizer: nil)
+    }
+
+    /// A remote host's designs, from their files as this Mac cached them. Shares `rasterizer`
+    /// (this Mac's), so the off-screen views stay one at a time across every host.
+    convenience init(remote source: @escaping (DesignID) -> (any DesignFileSource)?, network: DesignRenderingNetwork,
+                     liveCap: Int, rasterizer: DesignRasterizer) {
+        self.init(surface: { id, network in source(id).map { DesignSurface(designID: id, source: $0, network: network) } },
+                  network: network, liveCap: liveCap, rasterizer: rasterizer)
+    }
+
+    private init(surface: @escaping (DesignID, DesignSandbox.Network) -> DesignSurface?, network: DesignRenderingNetwork, liveCap: Int,
+                 rasterizer shared: DesignRasterizer?) {
+        makeSurface = surface
         self.network = network.sandbox
         self.liveCap = liveCap
+        rasterizer = shared ?? DesignRasterizer()
         thumbnails = DesignThumbnails(rasterizer: rasterizer)
         specimens = DesignSpecimens(rasterizer: rasterizer, network: network.sandbox)
         thumbnails.surface = { [weak self] id in self?.surface(for: id) }
-        rasterizer.countWebViews = { [weak self] in self?.webViews ?? 0 }
+        if shared == nil { rasterizer.countWebViews = { [weak self] in self?.webViews ?? 0 } }
     }
 
     private var surfaces: [DesignID: DesignSurface] = [:]
 
     func surface(for id: DesignID) -> DesignSurface? {
         if let surface = surfaces[id] { return surface }
-        guard let folder = folder(id) else { return nil }
-        let surface = DesignSurface(designID: id, folder: folder, network: network)
+        guard let surface = makeSurface(id, network) else { return nil }
         surfaces[id] = surface
         return surface
     }

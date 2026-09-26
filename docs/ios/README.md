@@ -132,11 +132,12 @@ keep the version for real breaks.
   synchronized folder, so every Swift file under it is compiled without a project edit
   (`ExportOptions.plist` is excepted; `PrivacyInfo.xcprivacy` ships as a resource). It links
   `ShepherdCore`, `ShepherdProtocol`, `ShepherdRemote` and `ShepherdUI`, never `ShepherdApp`,
-  and SwiftTerm (the package the Mac's host screens already use) for terminal panes.
+  SwiftTerm (the package the Mac's host screens already use) for terminal panes, and
+  DesignSurfaceKit to render a host's design boards on the iPad.
 - **Folders:** `App/` (entry point, `MobileApp`, `MobileRoot`, the phone and iPad shells, routes
   and the navigator), `Hosts/`, `Home/`, `Thread/`, `Composer/`, `NewThread/`, `Subagents/`,
   `Review/`, `Commit/`, `Search/`, `Settings/`, `Automations/`, `Windows/` (the scene and its
-  windows), `Terminal/`, and `Support/` (`AgentRef`, `MobileLayout`, `MobileAppearance`, the
+  windows), `Terminal/`, `DesignPad/` (a host's designs on iPad), and `Support/` (`AgentRef`, `MobileLayout`, `MobileAppearance`, the
   `AgentState` mapping). Ownership and hooks: [CONTRACTS.md](CONTRACTS.md).
 - **Shared with the Mac:** `RemoteHostClient`, `NativeThreadStore`, the turn and activity
   derivations (`NativeTurnPresentation`, `NativeActivity`), host records
@@ -163,10 +164,10 @@ keep the version for real breaks.
   and blocked threads, answered in place when short), and Recents with host tags. `HomeFeed`
   derives it once per change from each host's state and, while Home is on screen, the threads'
   snapshots.
-- **iPad:** a split view. Landscape shows the sidebar (New thread, Automations, More expanding to
-  Hosts and Extensions, Needs you, Recents, and a footer with the hosts and Settings) beside the
-  selected thread; in portrait the thread takes
-  the width and the sidebar slides over it. Portrait is the window's shape, never what the
+- **iPad:** a split view. Landscape shows the sidebar (New thread, Designs while a host serves
+  them, Automations, More expanding to Hosts and Extensions, Needs you, Recents, and a footer with
+  the hosts and Settings) beside the selected thread; in portrait the thread takes the width and
+  the sidebar slides over it. Portrait is the window's shape, never what the
   keyboard leaves of it (CONTRACTS.md › Navigation). With no thread selected the detail is the
   overview: Needs you, Running now and Finished.
 - **Thread (`ThreadScreen`):** the title with its status line ("Idle · ⧉ agent/swiftui-previews", or
@@ -298,8 +299,24 @@ keep the version for real breaks.
   split or close. A terminal's screen is in one iPad window at a time: another window showing the
   same thread says "open in another window" until the first lets it go.
 
+- **Designs on iPad (`DesignPad/`):** a host's designs where it offers `designs.v1` (its
+  Settings ▸ Experiments ▸ Design tool on; the surfaces come and go with it). The sidebar's
+  Designs row opens the Designs list, and each design is a Recents row with its boards (its
+  agent's thread has none of its own). A design (iPadDesign) fills the window: the canvas under
+  "‹ Designs", the name, the system's chip and Export, beside the 360pt pane with Chat (the
+  design agent's thread, one field with Send; Scribble writes into it), Tweak and Comments. The
+  boards render on the iPad from the files the host serves, one live and the rest as snapshots;
+  pan, pinch, tap to select or, with Comment, to pin a comment; pins open their threads; the
+  board actions and Play work as on the Mac. Every change goes to the host through its own
+  checks. In Split View beside a thread (iPadSplitView) the boards stack in one column and the
+  design agent's reply offers "Send to the thread". With an Apple Pencil the viewer marks up the
+  boards and writes notes beside the marks; Done reads them on the iPad (the handwriting with
+  Vision, on the device) and sends the design agent one record, and its proposed comments come
+  back in the chat with Apply both and Keep as comments (hosts that offer `design.markup.v1`).
+  Details: docs/designs.md › On iPad, › Pencil markup.
+
 ## Not in the first release
 
 Push notifications and Live Activities (they need a relay: the phone's socket drops in the
-background), QR pairing and TLS, and everything waiting on the Mac (Missions, Designs,
+background), QR pairing and TLS, and everything waiting on the Mac (Missions, designs on iPhone,
 daemon hosts).

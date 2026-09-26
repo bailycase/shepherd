@@ -123,6 +123,11 @@ public final class SessionServer: @unchecked Sendable {
         var pendingReplyOffset = 0
         var queuedReplyBytes = 0
         var upload: RemoteFileUpload?
+        /// The designs this remote client shows (`RemoteDesignRequest.watch`): it is pushed
+        /// `designChanged` for these.
+        var watchedDesigns: Set<DesignID> = []
+        /// It reads pushed design changes and capability changes.
+        var knowsDesigns: Bool { clientCapabilities.contains(RemoteProtocol.designsCapability) }
 
         init(fd: Int32, isRemote: Bool = false) {
             self.fd = fd
@@ -472,6 +477,17 @@ public final class SessionServer: @unchecked Sendable {
     /// Tests only: what this host tells a remote client it can do, to stand in for an older host.
     /// Set before a client connects.
     var advertisedCapabilities = RemoteProtocol.capabilities
+    /// The host's Design tool experiment is on: it serves `designs.v1`. Server queue.
+    private var designsServed = false
+
+    /// What this host tells a remote client it can do now: `designs.v1` (and Pencil markup with
+    /// it) only while it serves designs. Server queue.
+    private var offeredCapabilities: [String] {
+        let designs = advertisedCapabilities.contains(RemoteProtocol.designsCapability)
+        return designsServed && designs ? advertisedCapabilities : advertisedCapabilities.filter {
+            $0 != RemoteProtocol.designsCapability && $0 != RemoteProtocol.designMarkupCapability
+        }
+    }
     /// Which agent's own pane runs each session, for the store version it was built from.
     private var sessionAgents: (version: UInt64, agents: [SessionID: AgentID])?
 
@@ -520,6 +536,25 @@ public final class SessionServer: @unchecked Sendable {
         self.designSystems = DesignSystemStore(directory: stateURL.deletingLastPathComponent()
             .appendingPathComponent("design-systems", isDirectory: true))
         installChanges()
+    }
+
+    /// Serves the Design tool to remote clients (`designs.v1`) while `served` (Settings ▸
+    /// Experiments ▸ Design tool). Connected clients that read it are told what the host offers
+    /// now; a design request while it is off is refused.
+    public func setDesignsServed(_ served: Bool) {
+        queue.async {
+            guard self.designsServed != served else { return }
+            self.designsServed = served
+            let capabilities = self.offeredCapabilities
+            guard let payload = try? NDJSON.encode(RemoteReply.capabilitiesChanged(capabilities: capabilities)) else { return }
+            let readers = self.clients.values.filter { $0.isRemote && $0.authenticated && $0.knowsDesigns }
+            for client in readers {
+                if !served { client.watchedDesigns.removeAll() }
+                self.enqueuePayload(payload, to: client)
+            }
+            // What they are sent of the workspace changed with it: its designs and their agents.
+            if !self.store.state.designs.isEmpty { self.broadcastRemoteState(self.store.state, to: readers) }
+        }
     }
 
     /// The queue mode of every agent that has not chosen its own (`NativeQueueAction.setMode`).
@@ -1092,7 +1127,7 @@ public final class SessionServer: @unchecked Sendable {
             send(.helloOk(
                 id: id,
                 protocolVersion: RemoteProtocol.version,
-                capabilities: advertisedCapabilities
+                capabilities: offeredCapabilities
             ), to: client)
             ShepherdLog.info("remote client '\(clientName)' authenticated (fd \(client.fd))")
             return
@@ -1244,6 +1279,8 @@ public final class SessionServer: @unchecked Sendable {
             remoteSuggestions(id: id, request: request, client: client)
         case .skills(let id, let request):
             remoteSkills(id: id, request: request, client: client)
+        case .design(let id, let request):
+            remoteDesign(id: id, request: request, client: client)
         case .hostSettings(let id, let request):
             guard let handler = onRemoteHostSettings else {
                 send(.error(id: id, code: "unavailable", message: "This host has no settings to share."), to: client)
@@ -1262,7 +1299,7 @@ public final class SessionServer: @unchecked Sendable {
                 }
             }
         case .stateFetch(let id):
-            let state = store.state.withoutDesigns
+            let state = remoteState(store.state, for: client)
             send(.state(id: id, state: client.knowsLegacyThinkingOnly ? state.legacyThinkingLevels() : state), to: client)
         case .attach(let id, let sessionID, let cols, let rows, let viewportGeneration):
             remoteAttach(
@@ -1552,6 +1589,77 @@ public final class SessionServer: @unchecked Sendable {
         hopToMain { handler(snapshot) }
     }
 
+    /// Server queue: one remote design request (`designs.v1`), answered by the server itself
+    /// with no GUI hop, through the same mutations the host's canvas uses. Refused while the
+    /// Design tool is off here. Files are read and written on the design store's queue.
+    private func remoteDesign(id: Int, request: RemoteDesignRequest, client: ExtensionConnection) {
+        guard designsServed, advertisedCapabilities.contains(RemoteProtocol.designsCapability) else {
+            send(.error(id: id, code: RemoteDesignCode.off, message: "The Design tool is off on this host."), to: client)
+            return
+        }
+        if let needed = request.capability, !advertisedCapabilities.contains(needed) {
+            send(.error(id: id, code: "unsupported", message: "This host doesn't take that design request."), to: client)
+            return
+        }
+        if case .watch(let designIDs) = request {
+            // Pushes go only to a client that said it reads them.
+            guard client.knowsDesigns else {
+                send(.error(id: id, code: "update_required", message: "This client doesn't read pushed design changes."), to: client)
+                return
+            }
+            client.watchedDesigns = Set(designIDs)
+            send(.design(id: id, result: .ok), to: client)
+            return
+        }
+        let service = RemoteDesignService(server: self)
+        // The connection is only touched back on the server queue.
+        let connection = ChangesUnchecked(value: client)
+        Task.detached { [weak self] in
+            let answer: RemoteReply
+            do {
+                answer = .design(id: id, result: try await service.answer(request))
+            } catch {
+                let refusal = RemoteDesignRefusal(error)
+                answer = .error(id: id, code: refusal.code, message: refusal.message)
+            }
+            // Encoded here, not on the server queue: a reply carries up to a chunk of file bytes.
+            let payload: Data
+            if let encoded = try? NDJSON.encode(answer), encoded.count - 1 <= NDJSON.maxPayloadBytes {
+                payload = encoded
+            } else if let refusal = try? NDJSON.encode(RemoteReply.error(id: id, code: "too_large",
+                                                                          message: "The answer exceeds the remote payload limit.")) {
+                payload = refusal
+            } else {
+                return
+            }
+            self?.queue.async {
+                let client = connection.value
+                guard let self, self.clients[client.fd] === client else { return }
+                self.enqueuePayload(payload, to: client)
+            }
+        }
+    }
+
+    /// Server queue: tells the remote clients watching a design that it changed: its files (at
+    /// `revision`), its comments (at `commentsRevision`), or both.
+    private func pushDesignChanged(_ designID: DesignID, revision: UInt64?, commentsRevision: UInt64?) {
+        guard designsServed else { return }
+        let watchers = clients.values.filter { $0.isRemote && $0.authenticated && $0.knowsDesigns && $0.watchedDesigns.contains(designID) }
+        guard !watchers.isEmpty,
+              let payload = try? NDJSON.encode(RemoteReply.designChanged(designID: designID, revision: revision,
+                                                                         commentsRevision: commentsRevision)) else { return }
+        for client in watchers { enqueuePayload(payload, to: client) }
+    }
+
+    /// A design's comments changed: the app's canvas and the remote clients watching it pull them.
+    private func designCommentsChanged(_ designID: DesignID) async {
+        let revision = try? await designs.comments(designID).revision
+        await enqueueValue {
+            self.designRevised(designID)
+            self.pushDesignChanged(designID, revision: nil, commentsRevision: revision)
+        }
+    }
+
     /// A remote client reading or changing this host's skills. Looking up, installing and
     /// checking for updates fetch from git, so every request runs on the skills queue and its
     /// answer comes back here; a change tells the GUI, whose Skills page follows.
@@ -1789,22 +1897,39 @@ public final class SessionServer: @unchecked Sendable {
     /// Push a fresh state snapshot to every authenticated remote client.
     /// Runs on the server queue alongside the mutation that produced it.
     private func broadcastRemoteState(_ full: ShepherdState) {
-        let remotes = clients.values.filter { $0.isRemote && $0.authenticated }
+        broadcastRemoteState(full, to: clients.values.filter { $0.isRemote && $0.authenticated })
+    }
+
+    /// Each client's view of `full` (`remoteState`), encoded once per view actually sent: with
+    /// or without designs, and with legacy thinking levels only while an older client is
+    /// connected and an agent has a level it cannot decode.
+    private func broadcastRemoteState(_ full: ShepherdState, to remotes: [ExtensionConnection]) {
         guard !remotes.isEmpty else { return }
-        let state = full.withoutDesigns
-        guard let payload = Self.stateChangedPayload(state) else { return }
-        // Encoded a second time only while an older client is connected and an agent has a level
-        // it cannot decode.
-        let legacyOnly = state.usesOnlyLegacyThinkingLevels
-        var legacyPayload: Data??
+        var payloads: [RemoteStateView: Data?] = [:]
         for client in remotes {
-            guard client.knowsLegacyThinkingOnly, !legacyOnly else {
-                enqueuePayload(payload, to: client)
-                continue
+            let designs = seesDesigns(client) && !full.designs.isEmpty
+            let legacy = client.knowsLegacyThinkingOnly
+            let view = RemoteStateView(designs: designs, legacy: legacy)
+            if payloads[view] == nil {
+                let state = designs ? full : full.withoutDesigns
+                payloads[view] = .some(Self.stateChangedPayload(legacy && !state.usesOnlyLegacyThinkingLevels
+                    ? state.legacyThinkingLevels() : state))
             }
-            if legacyPayload == nil { legacyPayload = .some(Self.stateChangedPayload(state.legacyThinkingLevels())) }
-            if let data = legacyPayload ?? nil { enqueuePayload(data, to: client) }
+            if let data = payloads[view] ?? nil { enqueuePayload(data, to: client) }
         }
+    }
+
+    /// Whether a remote client is sent the host's designs and the agents that draw them: only
+    /// while the host serves designs (`designs.v1`, its experiment on) and the client reads them.
+    /// Any other client has no design screen, so a design's agent would show there as a thread
+    /// (docs/designs.md › Design agents and ordinary threads).
+    private func seesDesigns(_ client: ExtensionConnection) -> Bool {
+        client.knowsDesigns && offeredCapabilities.contains(RemoteProtocol.designsCapability)
+    }
+
+    /// The workspace as `client` is sent it (`seesDesigns`).
+    private func remoteState(_ state: ShepherdState, for client: ExtensionConnection) -> ShepherdState {
+        seesDesigns(client) ? state : state.withoutDesigns
     }
 
     private static func stateChangedPayload(_ state: ShepherdState) -> Data? {
@@ -2067,6 +2192,10 @@ public final class SessionServer: @unchecked Sendable {
         case .designSystemWrite(let id, let agentID, let designID, let system):
             designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
                 .designSystemWritten(id: id, result: try await server.writeDesignSystem(system, for: designID))
+            }
+        case .designProposeComments(let id, let agentID, let designID, let call, let proposals):
+            designRequest(id: id, agentID: agentID, designID: designID, path: nil, client: client) { server, _ in
+                .designProposals(id: id, proposals: try await server.proposeDesignComments(designID, call: call, proposals: proposals))
             }
         }
     }
@@ -2381,6 +2510,7 @@ public final class SessionServer: @unchecked Sendable {
              .designSystems(let id, _),
              .designSystem(let id, _),
              .designSystemWritten(let id, _),
+             .designProposals(let id, _),
              .mcpCredentials(let id, _):
             return id
         }
@@ -3263,7 +3393,7 @@ public final class SessionServer: @unchecked Sendable {
                                  baseRevision: UInt64? = nil) async throws -> DesignCommentOutcome {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         let comment = try await designs.addComment(designID, draft: draft, baseRevision: baseRevision, at: Self.nowMilliseconds())
-        await enqueueValue { self.designRevised(designID) }
+        await designCommentsChanged(designID)
         let undelivered = await deliverDesignComment(designID, id: comment.id, text: comment.text,
                                                      fence: DesignCommentFence(comment).fenced())
         return DesignCommentOutcome(comment: comment, undelivered: undelivered)
@@ -3276,7 +3406,7 @@ public final class SessionServer: @unchecked Sendable {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         let comment = try await designs.replyToComment(designID, commentID: commentID, author: author, text: text,
                                                        baseRevision: baseRevision, at: Self.nowMilliseconds())
-        await enqueueValue { self.designRevised(designID) }
+        await designCommentsChanged(designID)
         guard author == .user, let reply = comment.replies.last else { return DesignCommentOutcome(comment: comment) }
         let undelivered = await deliverDesignComment(designID, id: reply.id, text: reply.text,
                                                      fence: DesignCommentFence(comment, reply: true).fenced())
@@ -3291,12 +3421,67 @@ public final class SessionServer: @unchecked Sendable {
         guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
         let comment = try await designs.setCommentResolved(designID, commentID: commentID, resolved: resolved,
                                                            baseRevision: baseRevision, at: Self.nowMilliseconds())
-        await enqueueValue { self.designRevised(designID) }
+        await designCommentsChanged(designID)
         return comment
     }
 
-    /// Hands a comment (or a reply under one) to the design's agent as its own queued turn: the
-    /// fence, then the viewer's words, going to pi alone. Why it couldn't, or nil.
+    /// What settling the design agent's proposals left behind: their comments, and why any that
+    /// were to go didn't reach the agent.
+    public struct DesignProposalsOutcome: Sendable {
+        public var comments: [DesignComment]
+        public var undelivered: String?
+    }
+
+    /// The viewer's answer to the design agent's proposals from their markup, which the host kept
+    /// as comments when the agent made them: each named proposal's comment settled, all at once at
+    /// the comments' `baseRevision`. With `deliver` ("Apply both") each one settled now and still
+    /// open goes to the agent as a comment does, a turn of its own; without it ("Keep as
+    /// comments") they stay on the canvas. A proposal settles once, so it is never sent twice.
+    public func settleDesignProposals(_ designID: DesignID, proposals: [String], deliver: Bool,
+                                      baseRevision: UInt64? = nil) async throws -> DesignProposalsOutcome {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let settled = try await designs.settleProposals(designID, proposals: proposals, baseRevision: baseRevision,
+                                                        at: Self.nowMilliseconds())
+        if !settled.settled.isEmpty { await designCommentsChanged(designID) }
+        guard deliver else { return DesignProposalsOutcome(comments: settled.comments) }
+        var undelivered: String?
+        for comment in settled.comments where settled.settled.contains(comment.id) && comment.isOpen {
+            if let why = await deliverDesignComment(designID, id: comment.id, text: comment.text, fence: DesignCommentFence(comment).fenced()) {
+                undelivered = why
+                break
+            }
+        }
+        return DesignProposalsOutcome(comments: settled.comments, undelivered: undelivered)
+    }
+
+    // MARK: - Pencil markup
+
+    /// Hands the viewer's Pencil markup to the design's agent as a turn of its own through the
+    /// host queue, never into the turn pi is working on: the record, checked against its grammar
+    /// and the design (`DesignStore.checkMarkup`: boards on the canvas, elements their sources
+    /// have now, labels read from them), fenced as data (`DesignMarkupFence`), then a line saying
+    /// what it is. Nothing is kept: why it couldn't reach the agent, or nil.
+    public func sendDesignMarkup(_ designID: DesignID, markup: DesignMarkup) async throws -> String? {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let checked = try await designs.checkMarkup(designID, markup)
+        return await deliverDesignComment(designID, id: UUID(), text: checked.message, fence: DesignMarkupFence.fenced(checked))
+    }
+
+    /// The design agent's proposals from the markup (`markup_propose`), checked against the
+    /// design's boards and kept as comments at once, all or none (iPadDesign: "I turned the
+    /// Pencil marks into two comments"), sent nowhere until the viewer applies them. The tool's
+    /// result carries them for the chat's card.
+    public func proposeDesignComments(_ designID: DesignID, call: String,
+                                      proposals: [DesignMarkupProposal]) async throws -> [DesignCommentDraft] {
+        guard state.designs.contains(where: { $0.id == designID }) else { throw SessionServerError.noSuchDesign(designID) }
+        let drafts = try await designs.resolveProposals(designID, call: call, proposals)
+        let kept = try await designs.addComments(designID, drafts: drafts, baseRevision: nil, at: Self.nowMilliseconds())
+        if !kept.added.isEmpty { await designCommentsChanged(designID) }
+        return drafts
+    }
+
+    /// Hands a comment (or a reply under one, or Pencil markup) to the design's agent as its own
+    /// queued turn: the fence, then the viewer's words, going to pi alone. Why it couldn't, or nil.
     private func deliverDesignComment(_ designID: DesignID, id: UUID, text: String, fence: String) async -> String? {
         await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             queue.async {
@@ -3333,6 +3518,7 @@ public final class SessionServer: @unchecked Sendable {
     private func commitDesignWrite(_ designID: DesignID, _ result: DesignWriteResult) throws {
         guard result.changed, let index = store.state.designs.firstIndex(where: { $0.id == designID }) else { return }
         designRevised(designID)
+        pushDesignChanged(designID, revision: result.revision, commentsRevision: nil)
         let now = Self.nowMilliseconds()
         let title = result.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !title.isEmpty, store.state.designs[index].name != title {
@@ -3977,6 +4163,12 @@ public final class SessionServer: @unchecked Sendable {
         }
         return addr
     }
+}
+
+/// One way a state broadcast is encoded for remote clients (`SessionServer.remoteState`).
+private struct RemoteStateView: Hashable {
+    var designs: Bool
+    var legacy: Bool
 }
 
 /// The id of a remote request the host could not decode, so it can refuse it.

@@ -28,6 +28,9 @@ final class MobileHost: Identifiable {
     @ObservationIgnored fileprivate var retryTask: Task<Void, Never>?
     @ObservationIgnored fileprivate var backoff = RemoteReconnectBackoff()
     @ObservationIgnored fileprivate var stateRevision = 0
+    /// The host pushed a change to a design this device watches (`designs.v1`): its files'
+    /// revision, its comments' revision, or both. Set by the designs' store.
+    @ObservationIgnored var onDesignChanged: ((DesignID, UInt64?, UInt64?) -> Void)?
 
     init(record: RemoteHostRecord) {
         id = record.id
@@ -260,6 +263,19 @@ final class MobileHosts {
                 guard let host, host.attempt == attempt else { return }
                 host.stateRevision &+= 1
                 host.adopt(state)
+            }
+        }
+        // A host turning an experiment on or off (the Design tool) says so without reconnecting.
+        client.onCapabilitiesChanged = { [weak host] capabilities in
+            MainActor.assumeIsolated {
+                guard let host, host.attempt == attempt, host.phase == .connected, host.capabilities != capabilities else { return }
+                host.capabilities = capabilities
+            }
+        }
+        client.onDesignChanged = { [weak host] design, revision, comments in
+            MainActor.assumeIsolated {
+                guard let host, host.attempt == attempt else { return }
+                host.onDesignChanged?(design, revision, comments)
             }
         }
         client.onDisconnected = { [weak self, weak host] reason in

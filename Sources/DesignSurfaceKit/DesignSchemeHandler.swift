@@ -1,10 +1,13 @@
 import Foundation
+import ShepherdProtocol
 import WebKit
 
 /// Serves one design over `shepherd-design://<design>/`: the runtime at any `project/…/support.js`,
 /// the design's `project/` files, and its uploads at `/_blob/<id>`. Everything else is a 404.
 /// There is no `file://` access; a file is served only if it resolves, links followed, inside
-/// the folder it was asked from. A surface over files in memory serves those alone.
+/// the folder it was asked from. A surface over files in memory serves those alone; one over a
+/// file source (a remote host's design, fetched by hash) serves what the source answers, by the
+/// same grammar.
 @MainActor
 final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
     /// Where a surface's files come from.
@@ -13,6 +16,8 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         case folder(URL)
         /// Files by project path, with no uploads.
         case memory([String: Data])
+        /// Project files and uploads from a source: a remote host's design, cached on this device.
+        case source(any DesignFileSource)
     }
 
     let host: String
@@ -39,7 +44,7 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         let files = files
         nonisolated(unsafe) let task = task
         Task {
-            let body = await Task.detached(priority: .userInitiated) { Self.read(route, files: files) }.value
+            let body = await Task.detached(priority: .userInitiated) { await Self.body(route, files: files) }.value
             guard self.live.remove(id) != nil, let url = request.url else { return }
             // A page that isn't there fails its navigation (WebKit hands a custom scheme's
             // navigation response over without its status); a missing subresource is a 404.
@@ -76,10 +81,31 @@ final class DesignSchemeHandler: NSObject, WKURLSchemeHandler {
         var type: String
     }
 
+    /// What a request is answered with, from wherever the surface's files come from.
+    nonisolated static func body(_ route: DesignRoute, files: Files) async -> Body? {
+        guard case .source(let source) = files else { return read(route, files: files) }
+        switch route {
+        case .runtime:
+            return runtime
+        case .project(let segments):
+            let path = segments.joined(separator: "/")
+            guard let data = await source.projectFile(path), data.count <= maxFileBytes else { return nil }
+            return Body(data: data, type: DesignSandbox.contentType(forExtension: (path as NSString).pathExtension))
+        case .blob(let id):
+            guard let blob = await source.blob(id), blob.data.count <= maxFileBytes,
+                  blob.name == id || blob.name.hasPrefix(id + ".") else { return nil }
+            return Body(data: blob.data, type: DesignSandbox.contentType(forExtension: (blob.name as NSString).pathExtension))
+        case .refused:
+            return nil
+        }
+    }
+
     nonisolated static func read(_ route: DesignRoute, files: Files) -> Body? {
         switch files {
         case .folder(let folder):
             return read(route, folder: folder)
+        case .source:
+            return nil
         case .memory(let files):
             switch route {
             case .runtime:

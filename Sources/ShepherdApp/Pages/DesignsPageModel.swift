@@ -37,6 +37,19 @@ struct DesignsPageModel: Equatable {
         let swatches: [DesignSystemPresentation.Swatch]
     }
 
+    /// A remote host's designs (`designs.v1`), under its name: its cards, most recently edited
+    /// first, as the host listed them.
+    struct HostSection: Identifiable, Equatable {
+        let id: UUID
+        let name: String
+        let cards: [Card]
+
+        var rows: [[Card]] {
+            stride(from: 0, to: cards.count, by: DesignsPageModel.columns)
+                .map { Array(cards[$0..<min($0 + DesignsPageModel.columns, cards.count)]) }
+        }
+    }
+
     /// A project "Build one from a repo" can read.
     struct Project: Identifiable, Equatable {
         let id: SpaceID
@@ -50,6 +63,8 @@ struct DesignsPageModel: Equatable {
     }
 
     var cards: [Card] = []
+    /// Each connected host that serves designs, after this Mac's.
+    var hosts: [HostSection] = []
     var systems: [System] = []
     /// The projects a system can be built from; none leaves the tile disabled.
     var projects: [Project] = []
@@ -147,6 +162,8 @@ struct DesignsPageInputs: Equatable {
     var selection: DesignID?
     var systems: [DesignSystemSummary]
     var swatches: [String: [DesignSystemPresentation.Swatch]]
+    /// The hosts' designs, as their sections list them.
+    var hosts: [DesignsPageModel.HostSection] = []
     /// The minute its relative times were worded in.
     var minute: Int
 }

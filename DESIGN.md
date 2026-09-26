@@ -3156,7 +3156,9 @@ splits.
   Every chord resolves through `KeybindingsStore`, shows in the Pane menu ("Show or Hide Terminal",
   "Maximize or Restore Terminal", and New Terminal without one) and in the strip's tooltips, and is
   unbound in Ghostty (`appOwnedChords`) so a focused terminal never eats it. ⌥⌘←/→ move among the
-  panes on screen.
+  panes on screen. Plain Space belongs to the terminal while its surface is first responder,
+  before AppKit or SwiftUI can use it to activate a control. It follows the terminal's normal
+  text-input path, including input-method composition; unfocused terminals leave it alone.
 
 ### Command palette
 
@@ -7677,6 +7679,10 @@ tool work reads as activity lines.
 - **iPad sidebar** (iPadSidebar and every iPad board with the sidebar): the same Designs
   destination between Missions and Automations, in its 44pt rows at 15, and design rows in
   Recents with their board count ("4 boards").
+  **Built** for hosts that serve designs (`designs.v1`, their Design tool on): the destination
+  (after New thread while Missions is hidden) opens the Designs list, and each design is a
+  Recents row with the nib and "4 boards", placed by when it last moved; its agent's thread has no
+  row of its own.
 - **More ▸ Design systems** (NavHosts, iPadHosts, MobileMore): on the Mac and iPad a row "Design
   systems" nested under More, beside Extensions; on iPhone a More row "Design systems" over
   "2 · acme-web, Night Watch". Built on the Mac behind the experiment: the palette glyph
@@ -7703,7 +7709,10 @@ tool work reads as activity lines.
 systems are the host's (docs/designs.md › Design systems › In the app); a design without one
 names no system (designs stand alone, below: a card never names a project). A system build still reading its project is a card with no swatches over
 "dashboard-web · building" (not drawn). With no designs the page shows its header and the
-systems. **iPhone: not built yet.**
+systems. Not drawn, and built plainly: each connected host that serves designs (`designs.v1`)
+lists its designs after This Mac's, under the host's name in the section label's style, in the
+same cards; one opens on the same canvas beside its agent's chat on the host (docs/designs.md ›
+Remote). **iPhone: not built yet.**
 
 **Mac** (NavDesigns): the Designs destination fills the main column.
 
@@ -8147,7 +8156,41 @@ Build them on what exists: the activity line, `NWValueSlider`, `NWSegmentedPicke
 
 ### On iPad (iPadDesign, iPadSplitView)
 
-**Not built yet.**
+**Built** (`App/iOS/DesignPad/`) for hosts that serve designs (`designs.v1`): the canvas and 360pt
+chat pane, the header, Pencil markup (where the host offers `design.markup.v1`), Scribble in the
+chat's field, and Split View with "Send to the thread". The boards render on the iPad
+(docs/designs.md › On iPad, › Pencil markup). Not drawn, and built as the least that is honest:
+
+- **The canvas's tools** are the Mac's toolbar (Select · Comment · Pan | zoom) in the bottom-left
+  corner; iPadDesign draws only the Pencil palette, which comes with markup. With Comment, a tap
+  on an element opens the comment editor beside it, as on the Mac.
+- **The Tweak tab** is DZTweak's anatomy in the 360pt pane; a control too wide for its row goes
+  under its label.
+- **Export** shares the page's boards as the iPad drew them (PNGs, the share sheet), not DZExport.
+- **A narrow window** without a thread in another window shows the design agent's reply card
+  without "Send to the thread"; with several such windows, the button asks which thread.
+- **The Designs list** the sidebar's row opens is the Mac's cards (NWDesignCard) in a grid.
+- **Portrait** keeps the canvas beside the 360pt pane.
+- **Markup's moments:** the palette shows while there is ink on the canvas, new or sent (the
+  first Pencil stroke brings it; the board draws it beside the agent's answer), and Done with
+  nothing new puts it away until the next stroke; Done reads at 40% while the markup is read and
+  sent; sent ink stays on the canvas, under new ink, until its proposals are applied or kept.
+  In a canvas too narrow for the centered palette to clear the toolbar (portrait), it rises 12pt
+  above the toolbar. The palette's Comment is the canvas's Comment tool (a Pencil or finger tap on an
+  element opens the editor). Ink is 3pt (the pen) or 12pt (the marker) on screen, and zooms with
+  the boards.
+- **The proposals** are comments from the moment the agent makes them, as the board counts them
+  ("Comments 3" beside cards 2 and 3): **Apply both** sends them to the agent, **Keep as
+  comments** leaves them. One reads **Apply**, three or more **Apply all**. Once applied or kept,
+  the buttons and the Scribble line give way to "On the canvas as comments 2 and 3." in 12.5
+  `textTertiary`. A markup that couldn't reach the agent, and proposals that couldn't be applied
+  or kept, say so in the design's dialog and stay as they were.
+- **On the Mac** the design's chat shows markup from an iPad as the words the host sends with it
+  ("Pencil markup · 2 strokes · 2 notes") and the agent's call as an activity line ("Used markup ·
+  2 proposed comments"); the proposals are among its comments, and the Mac draws no proposals
+  card.
+
+What the board draws:
 
 - **Design with Apple Pencil** (iPadDesign): a design fills the screen, the canvas beside a 360pt
   chat pane.
@@ -8367,7 +8410,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | iPadAutomations | iOS: Automations | Partial |
 | iPadHosts | iOS: iPad › Hosts and More | Partial |
 | iPadPalette | iOS: iPad › Command palette; iOS (Windows) | Partial |
-| iPadDesign | Design tool › On iPad | Not built yet |
+| iPadDesign | Design tool › On iPad | Partial |
 | iPadSplitView | iOS (Windows); iOS: iPad › Split View; Design tool › On iPad | Partial |
 | iPadSettingsInstructions | iOS: iPad › Settings | Partial |
 | iPadPaneBrowser | iOS: iPad › Side pane | Not built yet |
