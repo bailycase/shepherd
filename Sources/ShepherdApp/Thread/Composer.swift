@@ -136,7 +136,7 @@ struct Composer: View {
     private var dialogs: [NativeThreadDialog] { errored ? [] : store.dialogs }
     /// While pi starts, a send waits for it behind the spinner.
     private var canSend: Bool {
-        active && store.acceptsSend && !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        active && store.acceptsSend && store.hasDraft
     }
     private var canAttach: Bool { store.supportedActions.contains("sendImages") }
     /// pi answers `/name` prompts itself; the list comes from its command registry. Its skills'
@@ -288,6 +288,7 @@ struct Composer: View {
         }
         .nwAnimation(.list, value: accessories)
         .nwAnimation(.list, value: attachments.ids)
+        .nwAnimation(.list, value: store.attachedFiles.map(\.id))
         .nwAnimation(.disclosure, value: questionKey)
         .nwAnimation(.disclosure, value: questionHiding)
         // What a catch-up brings lands at once, however it changes the composer; keyed on what
@@ -313,7 +314,7 @@ struct Composer: View {
             // else is left to the window (the review pane's ⌘⏎).
             keyMonitor.accepts = { [store, focusedRow = $focusedRow] in
                 focusedRow.wrappedValue != nil
-                    || (!store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && store.acceptsSend && !store.busy
+                    || (store.hasDraft && store.acceptsSend && !store.busy
                         && store.dialogs.isEmpty)
             }
             keyMonitor.watch(focused)
@@ -478,6 +479,11 @@ struct Composer: View {
         // The context details float over the thread without the card taking focus's look.
         let focused = composing || dropTargeted || (menuOpen && menu != .context)
         return NWComposer(isFocused: focused) {
+            ForEach(store.attachedFiles) { file in
+                NWAttachmentChip(file.name, thumbnail: nil) { store.detachFile(file.id) }
+                    .help(file.path)
+                    .nwTransition(.list, edge: .leading)
+            }
             ForEach(attachments.items) { attachment in
                 NWAttachmentChip(attachment.name, thumbnail: attachment.thumbnail) {
                     attachments.remove(attachment.id)

@@ -96,7 +96,8 @@ struct AppSettingsCommands: Commands {
     }
 }
 
-/// File ▸ New Thread, New Agent with Options…, New Space…, and ⌘W as Close Pane.
+/// File ▸ New Thread, New Agent with Options…, New Space…, Import Claude Design Folder… (with the
+/// Design tool on), and ⌘W as Close Pane.
 struct FileCommands: Commands {
     let vm: ShepherdViewModel
     let keys: KeybindingsStore
@@ -111,6 +112,9 @@ struct FileCommands: Commands {
                 .keyboardShortcut(keys.shortcut(.newAgentOptions))
             Button("New Space…") { later { vm.addSpaceFromPanel() } }
                 .keyboardShortcut(keys.shortcut(.newSpace))
+            if vm.designToolEnabled {
+                Button("Import Claude Design Folder…") { later { vm.chooseDesignFolder() } }
+            }
         }
         CommandGroup(replacing: .saveItem) {
             Button("Close Pane") { later { vm.closeFocusedPane() } }

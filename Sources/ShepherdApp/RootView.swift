@@ -114,6 +114,8 @@ struct RootView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        // Export (DZExport) sits over the whole window on its own scrim.
+        .overlay { DesignExportOverlay(vm: vm) }
         // ⌘K floats over everything, 18% down and capped to the window; the scrim dismisses.
         .nwCommandPalette(isPresented: Binding(
             get: { vm.showCommandPalette && !vm.showSettings && !vm.showComponentGallery },
@@ -309,7 +311,8 @@ struct WorkspaceHeaderView: View {
                 DesignToolbar(name: design.name, system: vm.designSystemName(design),
                               swatches: vm.designSystemSwatches(system, count: 3),
                               openSystem: system.map { namespace in { vm.openDesignSystem(namespace) } }, leadingInset: leadingInset,
-                              showSidebar: showSidebar, designs: { vm.openDestination(.designs) }, screen: vm.designScreen(design.id))
+                              showSidebar: showSidebar, designs: { vm.openDestination(.designs) }, screen: vm.designScreen(design.id),
+                              export: { vm.openDesignExport(design.id) })
                     .equatable()
                     .id(agent.id)
             } else if let agent = vm.selectedAgent, vm.activeTabID == agent.tabID,

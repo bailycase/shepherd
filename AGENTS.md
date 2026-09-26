@@ -325,6 +325,10 @@ failing part in `withKnownIssue("…")`, tag the test `.bug(…)`, and report it
   with their lines. In the app: the systems grid and a system's page (sources, counts, specimens
   as boards), a build from a scratch repository leaving it byte-identical, More ▸ Design systems,
   and New design's tokens-file detection.
+  Export: the count following the ticks, a ZIP's contents (pages, tokens.css, uploads, the
+  canvas as a project folder that imports again), a PDF's pages (fixed and flow), @2x images,
+  boards attached to a thread; import's path rules, unknown keys kept, and a refused folder
+  leaving nothing behind.
 - **Server:** every `SessionServer` state mutation.
 - **Changes:** every scope on a scratch repository, the proof that reading changes leaves the
   index, HEAD, refs, the stash, `.git` and every file alone, and Undo, Redo and the refusal on a
@@ -419,8 +423,11 @@ Sources/
                        and canvas.json's tweaks), DesignCanvasLayout (pages, notes, where a
                        duplicate goes), DesignFiles (snapshots, reads, write results),
                        DesignSystemTokens (a design system's tokens.json in Shepherd's schema or a
-                       canvas's own shape, tokens.css, the stylesheet reader, re-sync) and
-                       DesignSystemFiles (a system's files, record, listing, writes).
+                       canvas's own shape, tokens.css, the stylesheet reader, re-sync),
+                       DesignSystemFiles (a system's files, record, listing, writes),
+                       DesignExport (Export's boards, names, what a ZIP carries, tokens.css),
+                       DesignPrint (a board's print mode, a flow document's pages) and DesignImport
+                       (a Claude Design folder's path rules).
   ShepherdRemote/      RemoteHostClient, NativeThreadStore (@Observable), NativeThreadPresentation,
                        NativeTurnPresentation (a turn's items), NativeMarkdown (the prose
                        parser: tables, lists, images, details, footnotes), NativeActivity
@@ -459,14 +466,16 @@ Sources/
                        diffs, the base picker, each agent's turns and their Undo; docs/changes.md),
                        DesignStore (each design's files in the support directory's designs/, on
                        its own queue, with a revision per design, each board's last 20
-                       versions, its comments.json, and installed systems under ds/;
-                       docs/designs.md), DesignSystemStore (design systems in the support
-                       directory's design-systems/, their owners and sources, built-ins).
+                       versions, its comments.json, and installed systems under ds/; what an
+                       export reads; a Claude Design folder imported; docs/designs.md),
+                       DesignSystemStore (design systems in the support directory's
+                       design-systems/, their owners and sources, built-ins).
   TerminalSurfaceKit/  Ghostty adapter for terminal panes; see its NOTES.md.
   DesignSurfaceKit/    The Design tool's board renderer (macOS and iOS; docs/designs.md): DesignSurface
                        (a design's sandbox: a non-persistent data store, the shepherd-design://
                        scheme), DesignBoardView (one board's WKWebView: load, replaceSource,
-                       snapshot, events), DesignSchemeHandler, DesignRoute and DesignSandbox (what
+                       snapshot, events; + DesignBoardExport: a standalone page, @2x image and PDF
+                       pages, DesignPDF), DesignSchemeHandler, DesignRoute and DesignSandbox (what
                        is served; the CSP and content rules), DesignRuntime. Resources: Shepherd's
                        board runtime (shepherd-dc-runtime.js), the isolated bridge
                        (shepherd-dc-bridge.js), and React 18.3.1 UMD (MIT, pinned).
@@ -483,7 +492,8 @@ Sources/
       +RightPane, +Review, +ChildInspector, +Automations, +Dialogs, +RemoteActions,
       +RemoteInspection, +RemoteWorktrees, +RemoteAutomations, +Terminal, +HostSettings,
       +Skills, +Pages, +AgentMenu, +Designs (opening, New design's NewDesignState, revisions),
-      +DesignSystems (a system's page, "Build one from a repo", Re-sync, specimens))
+      +DesignSystems (a system's page, "Build one from a repo", Re-sync, specimens),
+      +DesignExport (Export, Attach to a thread, Import Claude Design Folder…))
     Pages/             the sidebar destinations' pages: AutomationsPage, HostsPage and DesignsPage
                        (views over AutomationsPageModel, HostsPageModel and DesignsPageModel,
                        derived per change), their destinations (PageDestinations: runs read,
@@ -493,7 +503,8 @@ Sources/
       DesignScreen (a design agent's layout: the canvas beside its chat, and the toolbar),
       DesignScreenModel (a design's canvas state and its pulls; the board actions, moves,
       Present and Play, pages), DesignHost (the only DesignSurfaceKit import: live views, the
-      rasterizer, snapshots, thumbnails, tweak previews, the presented board), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
+      rasterizer, snapshots, thumbnails, tweak previews, the presented board, DesignExporter),
+      DesignExportSheet (DZExport's sheet over the window, its model), DesignTweak (the Tweak tab's controls, pure), DesignTweakModel (its writes,
       one per gesture, Reset and Undo), DesignTweakPane, DesignProjectTokens (with
       DesignSystemDetection, a project's tokens file), NightWatchSystem (Night Watch as a
       built-in design system, from ShepherdUI's tokens), DesignSystemCatalog (the host's systems

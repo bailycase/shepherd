@@ -4074,7 +4074,7 @@ composing chrome by hand. Debug builds have a **Component Gallery** (View menu,
 | Dialogs | `NWDialog` (`NWDialogMetrics`), `NWDialogStatus`, `NWSheetRow`, `NWChecklistRow`, `NWSettingsNavRow` | `DialogSheet.swift`, `AppDialogs.swift`, the sheets, `QuitConfirmation.swift`, `SettingsView.swift` |
 | Automations | `NWAutomationRow` (a row with its switch), `NWAutomationSwitch`, `NWFactRow` and `NWFactText`, `NWAutomationPrompt`, `NWRunBars`, `NWRunRow`, `NWAutomationMetrics`; the Mac's table: `NWAutomationTableRow`, `NWRunOutcome` and `NWRunOutcomeLabel`, `NWAutomationRunLine` | `Pages/AutomationsPage.swift`; the iOS client's `Automations/` |
 | Pages | `NWPageHeader`, `NWPageFilterField`, `NWTableColumns` and `NWTableHead`, `.nwPageCard()`, `NWPageFact`, `NWPageSectionLabel`, `NWPageQuote`, `NWPageMetrics`; `NWHostPageCard` and `NWHostFact` (`NWHostPageMetrics`, in `Fleet/`) | `Pages/` (the sidebar destinations' pages) |
-| Design tool (partly built; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField` (see Design tool). Built: the canvas, frames, selection ring, toolbar, system chip, the comment pin, thread and card, and `NWActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines), `DesignScreen.swift`, `Thread/ThreadView.swift` (a comment's card in the chat) |
+| Design tool (partly built; `Components/DesignTool/`) | `NWDesignCanvas`, `NWBoardFrame`, `NWSelectionRing`, `NWCommentPin`, `NWBoardActions`, `NWCanvasToolbar`, `NWCommentCard`, `NWCommentThread`, `NWTweakRow`, `NWTokenChip`, `NWTweakScope`, `NWDesignSystemChip`, `NWTokenSwatch`, `NWExportFormatCard`, `NWLiveLinkField` (see Design tool). Built: the canvas, frames, selection ring, toolbar, system chip, the comment pin, thread and card, the export format card (with `NWExportSheet`), and `NWActivityLine`'s `.drew` and `.checked` kinds | `Thread/ThreadTools.swift` (the activity lines), `DesignScreen.swift`, `DesignExportSheet.swift`, `Thread/ThreadView.swift` (a comment's card in the chat) |
 | Missions map (not built yet; `Components/MissionMap/`) | `NWMissionMap`, `NWStation`, `NWTerminus`, `NWFlowWire`, `NWDataWire`, `NWForkBar`, `NWJoinBar`, `NWOutcomeChip`, `NWPinRow`, `NWLane`, `NWFog`, `NWFrontierChip` (see Missions: the map) | nothing yet |
 | Mission screens (not built yet; `Components/Missions/`) | `NWMissionHeader`, `NWPhaseBar`, `NWBudgetMeter`, `NWHostChip`, `NWChoiceCard`, the mission question card, `NWPlannerNote`, `NWAttemptRow`, `NWCheckpointRow`, `NWSpendBar`, `NWTrainCard`, `NWTrainGateRow`, `NWTrainRuleRow`, `NWRepoTimeline`, `NWPathLockRow`, `NWContractRow`, `NWDiffAnnotation`, `NWTraceSpan`, `NWMergeActions`, `NWRollbackRow`, `NWTemplateInput`; iPhone: `NWMissionLiveActivity`, `NWMissionNotification`, `NWLaneStrip`; in `Components/Agents`: `NWMissionNode`, `NWInboxItem`, `NWClaimRow` (see Missions: motion, keyboard and parts to build; Mission components) | nothing yet |
 
@@ -7536,12 +7536,13 @@ comments (pins, threads, cards in the chat and the Comments tab, answered by the
 Tweak (its tab, written once per gesture, with Reset and Undo over each board's versions), the
 board actions and "Ask for another direction", boards moved by dragging, Present (decision 11:
 the board focused over a scrim, its links playing) and Play, and pages with title and sticky
-notes, and design systems (the format, the store, installing one in a design, `system_read` and
+notes, design systems (the format, the store, installing one in a design, `system_read` and
 `system_write`, `design_check` against it, `<x-import>`, Night Watch as a built-in, the system
 page and its Re-sync, the Designs page's systems grid with "Build one from a repo", More ▸ Design
 systems, the system chip opening its page, and New design's system card read from the project;
-docs/designs.md › Design systems). Not built: export, the live link, Present mode's own board,
-Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
+docs/designs.md › Design systems), and Export (its sheet, the four formats and Attach to a thread;
+docs/designs.md › Export and import). Not built: the live link, Attach to a mission, Present
+mode's own board, Tweak snapping to an installed system's tokens, and every iPhone and iPad part;
 each subsection below says what of it is built. The iOS
 client's first release leaves it out until the Mac has it ([docs/ios](docs/ios/README.md)), and its
 search draws no Designs section (`MobileSearchScreen`). The canvas marks the whole page an
@@ -7707,7 +7708,7 @@ opens this page in the main column, with the sidebar showing and Designs selecte
 ### A design: canvas and chat (DZCanvas)
 
 **Partly built** (`DesignScreen`: a design agent's layout). Built: the header (44pt, the app's
-toolbar; the system chip opens its system's page, Export draws disabled), the canvas with its board frames and
+toolbar; the system chip opens its system's page, Export opens its sheet), the canvas with its board frames and
 toolbar, the chat pane with its Chat, Comments and Tweak tabs and the agent's thread; its
 composer is `NWComposer`'s card at radius 8, Select (Selection, below), comments (Comments,
 below), the board actions and "Ask for another direction", boards moved by dragging, Present and
@@ -7947,7 +7948,19 @@ design system chip, the Designs page, or More ▸ Design systems, and keeps the 
 
 ### Export and share (DZExport)
 
-**Not built yet.** Export (the header's button) opens a sheet over the design, with the boards
+**Partly built** (`DesignExportSheet`, ShepherdUI's `NWExportSheet`, `NWExportSection`,
+`NWExportBoardRow` and `NWExportFormatCard`). Built as the board draws it: the 560pt card with its
+close button over the 55% scrim (`sheetScrim`), Boards, Format, Use it somewhere else with Attach
+to a thread and its note, and the footer. Not built: the Live link section (a network listener
+that is not built; the section is left out, not drawn disabled) and Attach to a mission (waits for
+Missions; left out). Not drawn and built plainly: with nothing selected on the canvas every board
+opens ticked; past eight boards the rows scroll; Attach to a thread is a menu of the local threads
+(most recently active first); while an export is written the sheet dims and its primary button
+reads "Exporting…"; the scrim takes clicks and does nothing (Cancel, close or Escape put the sheet
+away); a failure goes to the app's error dialog. What each format writes is docs/designs.md ›
+Export and import.
+
+Export (the header's button) opens a sheet over the design, with the boards
 selected on the canvas already ticked.
 
 - **The sheet** (the board: a 560pt card, radius 14, `bgRaised`, the popover's line and shadow,
@@ -7991,9 +8004,10 @@ the Tweak parts `NWTweakRow` (with `NWTweakHeader`, `NWTweakGroup`, `NWTweakNote
 `NWTweakFooter`), `NWTokenChip` (with `NWTokenChipFlow`) and `NWTweakScope`, `NWBoardActions`
 (with `NWDirectionTile`, `NWCanvasNote` and `NWBoardPresentation`), and the page parts
 `NWDesignCard`, `NWDesignSystemCard`, `NWDesignStartCard`, `NWDesignHeader` and
-`NWDesignPaneTabs`, and the system page's `NWSectionRail`, `NWTokenSwatch` (DZSystem's 56pt),
-`NWTypeSpecimen`, `NWComponentSpecimen` and `NWDesignSystemBuildTile`. The rest of the table is
-not built yet.
+`NWDesignPaneTabs`, the system page's `NWSectionRail`, `NWTokenSwatch` (DZSystem's 56pt),
+`NWTypeSpecimen`, `NWComponentSpecimen` and `NWDesignSystemBuildTile`, and Export's
+`NWExportSheet`, `NWExportSection`, `NWExportBoardRow` and `NWExportFormatCard`. The rest of the
+table is not built yet.
 
 Night Watch's Design tool page names these components, dark and light ("Light ·
 Day Watch"), with the same structure in both; NWSwift's inventory adds `NWDesignCanvas`. They belong
@@ -8326,7 +8340,7 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | DZCanvas | Design tool › A design: canvas and chat, Comments | Partly built: header, canvas, board frames, Chat, comments; not actions, Tweak |
 | DZTweak | Design tool › Tweak | Not built yet |
 | DZSystem | Design tool › Design systems | Not built yet |
-| DZExport | Design tool › Export and share | Not built yet |
+| DZExport | Design tool › Export and share | Partly built: the sheet, its formats and Attach to a thread; not the live link or Attach to a mission |
 
 **Design system · Night Watch**
 

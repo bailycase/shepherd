@@ -203,8 +203,98 @@
     return answer(outermost(node), tid, found);
   }
 
+  // MARK: Export
+
+  /** A stylesheet the design serves (not Google Fonts'), as a `<style>` holding its rules. */
+  function inlined(link) {
+    try {
+      if (!link.sheet || String(link.href).indexOf(location.protocol) !== 0) return null;
+      var text = Array.prototype.map.call(link.sheet.cssRules, function (rule) { return rule.cssText; }).join('\n');
+      var style = document.createElement('style');
+      style.textContent = text;
+      return style;
+    } catch (_) { return null; }
+  }
+
+  /**
+   * The board as a standalone page: the document as drawn now (the hoisted helmet in its head,
+   * what the runtime rendered in its body), with no script, no runtime, none of Shepherd's
+   * `data-dc-*` stamps and no handler attributes. The design's own stylesheets are inlined;
+   * Google Fonts' links stay.
+   */
+  function staticPage() {
+    if (!booted) return null;
+    var originals = document.querySelectorAll('link[rel~="stylesheet"]');
+    var page = document.documentElement.cloneNode(true);
+    var links = page.querySelectorAll('link[rel~="stylesheet"]');
+    for (var i = 0; i < links.length && i < originals.length; i++) {
+      var style = inlined(originals[i]);
+      if (style) links[i].parentNode.replaceChild(style, links[i]);
+    }
+    // Nothing that runs, embeds another document, or redirects the page leaves: an imported
+    // board never passed board_write's lint, and the page opens outside the canvas's sandbox.
+    var gone = page.querySelectorAll('script, x-dc, style[data-dc-runtime], link[rel~="modulepreload"], link[rel~="preload"], ' +
+      'link[rel~="import"], iframe, frame, frameset, object, embed, portal, base, meta[http-equiv]');
+    for (var j = 0; j < gone.length; j++) if (gone[j].parentNode) gone[j].parentNode.removeChild(gone[j]);
+    var all = page.querySelectorAll('*');
+    for (var k = 0; k < all.length; k++) {
+      var element = all[k];
+      for (var a = element.attributes.length - 1; a >= 0; a--) {
+        var name = element.attributes[a].name;
+        var value = element.attributes[a].value;
+        if (/^data-dc-/i.test(name) || /^on/i.test(name) || name.toLowerCase() === 'srcdoc' ||
+            /^[\s\u0000-\u001f]*(javascript|vbscript):/i.test(value.replace(/[\t\n\r]/g, ''))) {
+          element.removeAttribute(name);
+        }
+      }
+    }
+    // SVG animation can set a link's target to script.
+    var animations = page.querySelectorAll('animate, set');
+    for (var n = 0; n < animations.length; n++) {
+      var target = (animations[n].getAttribute('attributeName') || '').toLowerCase();
+      if (/(^|:)href$/.test(target) && animations[n].parentNode) animations[n].parentNode.removeChild(animations[n]);
+    }
+    return '<!doctype html>\n' + page.outerHTML + '\n';
+  }
+
+  function color(value) {
+    return value && value !== 'transparent' && !/^rgba\([^)]*,\s*0\)$/.test(value) ? value : null;
+  }
+
+  /**
+   * What a flow document's page breaks need (print.md): its height, each line of text and each
+   * image or drawing as [top, bottom] down the page, and the paper's color (the body's, else the
+   * page's).
+   */
+  function printLayout() {
+    var body = document.body;
+    if (!booted || !body) return null;
+    var y = window.scrollY;
+    var lines = [];
+    var blocks = [];
+    var walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    var range = document.createRange();
+    var node;
+    while ((node = walker.nextNode()) && lines.length < 50000) {
+      if (!node.nodeValue || !node.nodeValue.trim()) continue;
+      range.selectNodeContents(node);
+      var rects = range.getClientRects();
+      for (var i = 0; i < rects.length; i++) {
+        if (rects[i].height > 0) lines.push([rects[i].top + y, rects[i].bottom + y]);
+      }
+    }
+    var drawn = body.querySelectorAll('img, svg, video, canvas, picture');
+    for (var j = 0; j < drawn.length && blocks.length < 10000; j++) {
+      var rect = drawn[j].getBoundingClientRect();
+      if (rect.height > 0) blocks.push([rect.top + y, rect.bottom + y]);
+    }
+    var height = Math.max(measure().height, document.documentElement.scrollHeight, body.scrollHeight);
+    var paper = color(getComputedStyle(body).backgroundColor) || color(getComputedStyle(document.documentElement).backgroundColor) || 'rgb(255, 255, 255)';
+    return { height: height, lines: lines, blocks: blocks, background: paper };
+  }
+
   Object.defineProperty(window, '__shepherdBridge', {
-    value: Object.freeze({ hitTest: hitTest, element: element }),
+    value: Object.freeze({ hitTest: hitTest, element: element, staticPage: staticPage, printLayout: printLayout }),
     writable: false, configurable: false, enumerable: false
   });
 

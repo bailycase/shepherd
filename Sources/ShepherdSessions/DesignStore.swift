@@ -22,6 +22,8 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
     case invalidComment(String)
     case tooManyComments
     case noSuchVersion(DesignPath, Int)
+    /// A folder that can't become a design: why (`DesignImport.Problem`, or its canvas).
+    case importRefused(String)
     case io(String)
 
     public var code: String {
@@ -41,6 +43,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .invalidComment: return "invalid_comment"
         case .tooManyComments: return "too_many_comments"
         case .noSuchVersion: return "no_such_version"
+        case .importRefused: return "import_refused"
         case .io: return "io_failed"
         }
     }
@@ -63,6 +66,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .invalidComment(let why): return why
         case .tooManyComments: return "a design keeps at most \(DesignComment.maxComments) comments"
         case .noSuchVersion(let path, let number): return "\(path) keeps no version \(number)"
+        case .importRefused(let why): return why
         case .io(let message): return message
         }
     }
@@ -469,6 +473,171 @@ public final class DesignStore: @unchecked Sendable {
             let result = DesignWriteResult(revision: design.revision, changed: true, sha256: files[copy], created: true,
                                            title: next.title, boardCount: next.boards.count)
             return DesignDuplicate(path: copy, result: result)
+        }
+    }
+
+    // MARK: Import
+
+    /// Makes design `id`'s folder from a Claude Design folder on disk (`DesignImport`'s rules):
+    /// its canvas and every file under its `project/` (and a Shepherd export's `assets/`) copied
+    /// in, nothing else. The source is only read. The copy is made beside the designs and moved
+    /// into place whole, so a refused or failed import leaves nothing behind.
+    func importFolder(_ id: DesignID, from source: URL) async throws -> DesignSnapshot {
+        try await run {
+            guard let folder = self.folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+            guard !FileManager.default.fileExists(atPath: folder.path) else { throw DesignStoreError.designExists(id) }
+            let root = source.standardizedFileURL
+            let plan: DesignImport.Plan
+            do {
+                plan = try DesignImport.plan(try Self.walk(root))
+            } catch let problem as DesignImport.Problem {
+                throw DesignStoreError.importRefused(problem.description)
+            } catch {
+                throw DesignStoreError.io("could not read the folder: \(error.localizedDescription)")
+            }
+            let named = root.lastPathComponent == "project" ? root.deletingLastPathComponent().lastPathComponent : root.lastPathComponent
+            let index: (data: Data, index: DesignIndex)
+            do {
+                index = try DesignImport.index(try Self.readRegular(root.appendingPathComponent(plan.index)), fallbackTitle: named)
+            } catch let error as DesignStoreError {
+                throw error
+            } catch {
+                throw DesignStoreError.importRefused("canvas.json isn't a canvas Shepherd reads: \(error)")
+            }
+            let staging = self.directory.appendingPathComponent(".import-\(id.rawValue)", isDirectory: true)
+            try? FileManager.default.removeItem(at: staging)
+            do {
+                try FileManager.default.createDirectory(at: staging.appendingPathComponent("project", isDirectory: true),
+                                                        withIntermediateDirectories: true)
+                for (from, to) in plan.files.sorted(by: { $0.key < $1.key }) where from != plan.index {
+                    let target = staging.appendingPathComponent(to)
+                    try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try Self.readRegular(root.appendingPathComponent(from)).write(to: target)
+                }
+                try index.data.write(to: staging.appendingPathComponent("project/canvas.json"))
+                try Data("0\n".utf8).write(to: staging.appendingPathComponent("revision"))
+                try FileManager.default.moveItem(at: staging, to: folder)
+            } catch {
+                try? FileManager.default.removeItem(at: staging)
+                if let error = error as? DesignStoreError { throw error }
+                throw DesignStoreError.io("could not import the folder: \(error.localizedDescription)")
+            }
+            self.loaded[id] = nil
+            self.commentFiles[id] = nil
+            return try self.snapshotOnQueue(id)
+        }
+    }
+
+    /// Everything under `root`, as `lstat` sees it: links are reported, never followed. A folder
+    /// holding `project/` is walked only there and in `assets/`.
+    private static func walk(_ root: URL) throws -> [DesignImport.Entry] {
+        var entries: [DesignImport.Entry] = []
+        let manager = FileManager.default
+        func kind(_ path: String) -> (DesignImport.Kind, Int) {
+            guard let attributes = try? manager.attributesOfItem(atPath: path) else { return (.other, 0) }
+            let size = (attributes[.size] as? NSNumber)?.intValue ?? 0
+            switch attributes[.type] as? FileAttributeType {
+            case .typeRegular?: return (.file, size)
+            case .typeDirectory?: return (.directory, 0)
+            case .typeSymbolicLink?: return (.symlink, 0)
+            default: return (.other, 0)
+            }
+        }
+        let (rootKind, _) = kind(root.path)
+        guard rootKind == .directory else { throw DesignImport.Problem.noCanvas }
+        let isProject = kind(root.appendingPathComponent("canvas.json").path).0 == .file
+        func visit(_ folder: URL, _ relative: String, depth: Int) throws {
+            let names = try manager.contentsOfDirectory(atPath: folder.path).sorted()
+            for name in names {
+                let path = relative.isEmpty ? name : relative + "/" + name
+                let (kind, size) = kind(folder.appendingPathComponent(name).path)
+                entries.append(DesignImport.Entry(path, kind, size: size))
+                guard entries.count <= DesignImport.maxFiles * 8 else { throw DesignImport.Problem.tooManyFiles }
+                guard kind == .directory, !name.hasPrefix("."), depth < DesignImport.maxDepth else { continue }
+                if relative.isEmpty, !isProject, name != "project", name != "assets" { continue }
+                try visit(folder.appendingPathComponent(name, isDirectory: true), path, depth: depth + 1)
+            }
+        }
+        try visit(root, "", depth: 0)
+        return entries
+    }
+
+    /// A regular file's bytes, refused when it is a link or over the import's cap.
+    /// Opened with `O_NOFOLLOW` and checked on the open descriptor, so a file swapped for a link or
+    /// grown past the cap after the walk is still refused, before anything is read.
+    private static func readRegular(_ url: URL) throws -> Data {
+        let changed = DesignStoreError.importRefused("\(url.lastPathComponent) changed while it was read.")
+        let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK)
+        guard fd >= 0 else {
+            if errno == ELOOP { throw changed }
+            throw DesignStoreError.io("could not read \(url.lastPathComponent): \(String(cString: strerror(errno)))")
+        }
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        var info = stat()
+        guard fstat(fd, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { throw changed }
+        guard info.st_size <= DesignImport.maxFileBytes else {
+            throw DesignStoreError.importRefused(DesignImport.Problem.tooLarge(url.lastPathComponent).description)
+        }
+        let data = try handle.read(upToCount: DesignImport.maxFileBytes + 1) ?? Data()
+        guard data.count <= DesignImport.maxFileBytes else {
+            throw DesignStoreError.importRefused(DesignImport.Problem.tooLarge(url.lastPathComponent).description)
+        }
+        return data
+    }
+
+    // MARK: Export
+
+    /// What an export of `boards` reads: the canvas, the boards and every board they import
+    /// (`DesignBundle.members`), the project's other files (its design systems, named support
+    /// files), and the uploads those boards name. Only reads.
+    public func exportFiles(_ id: DesignID, boards: [DesignPath]) async throws -> DesignExportFiles {
+        try await run {
+            var design = try self.load(id)
+            let files = try self.files(of: id, &design)
+            guard let project = self.projectFolder(for: id), let folder = self.folder(for: id) else {
+                throw DesignStoreError.invalidDesignID(id.rawValue)
+            }
+            for path in boards where files[path] == nil { throw DesignStoreError.noSuchBoard(path) }
+            var sources: [DesignPath: String] = [:]
+            let members = DesignBundle.members(boards) { path in
+                if let known = sources[path] { return known }
+                guard files[path] != nil, let data = try? Data(contentsOf: project.appendingPathComponent(path.rawValue)) else { return nil }
+                let text = String(decoding: data, as: UTF8.self)
+                sources[path] = text
+                return text
+            }
+            var support: [String: Data] = [:]
+            var total = 0
+            let root = project.resolvingSymlinksInPath().path + "/"
+            let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+            let walker = FileManager.default.enumerator(at: project, includingPropertiesForKeys: keys, options: [.skipsHiddenFiles])
+            while let url = walker?.nextObject() as? URL {
+                let resolved = url.resolvingSymlinksInPath().path
+                guard resolved.hasPrefix(root) else { continue }
+                let relative = String(resolved.dropFirst(root.count))
+                let values = try? url.resourceValues(forKeys: Set(keys))
+                guard values?.isRegularFile == true, values?.isSymbolicLink != true, relative != "canvas.json",
+                      !relative.hasSuffix(DesignPath.fileExtension), url.lastPathComponent != "support.js",
+                      relative.split(separator: "/").allSatisfy({ DesignImport.isSegment(String($0)) }),
+                      let size = values?.fileSize, size <= DesignImport.maxFileBytes, total + size <= DesignImport.maxTotalBytes,
+                      let data = try? Data(contentsOf: url) else { continue }
+                support[relative] = data
+                total += data.count
+            }
+            var assets: [String: DesignExportFiles.Asset] = [:]
+            let assetFolder = folder.appendingPathComponent("assets", isDirectory: true)
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: assetFolder.path))?.sorted() ?? []
+            let texts = members.compactMap { sources[$0] } + support.filter { $0.key.hasSuffix(".css") }.map { String(decoding: $0.value, as: UTF8.self) }
+            for blob in Set(texts.flatMap(DesignBundle.blobIDs)).sorted() {
+                guard let name = names.first(where: { $0 == blob || $0.hasPrefix(blob + ".") }), DesignBundle.isAssetName(name) else { continue }
+                let url = assetFolder.appendingPathComponent(name)
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                guard attributes?[.type] as? FileAttributeType == .typeRegular, let data = try? Data(contentsOf: url),
+                      data.count <= DesignImport.maxFileBytes else { continue }
+                assets[blob] = DesignExportFiles.Asset(name: name, data: data)
+            }
+            return DesignExportFiles(index: design.index, boards: boards, members: members, sources: sources,
+                                     support: support, assets: assets)
         }
     }
 
