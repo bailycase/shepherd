@@ -26,7 +26,8 @@ usage:
   release.py deltas <dir> <tag>         name a feed's deltas for upload to <tag> and point the
                                         feed at them; prints the files to upload
   release.py publish <casts> <pages>    write every gh-pages feed, legacy aliases included
-  release.py verify-app <app> <app-key> [version]  check a built app is the app it claims to be
+  release.py verify-app <app> <app-key> [version]  check a built app is the app it claims to be,
+                                        and carries the pinned pi engine (scripts/pi_engine.py)
   release.py verify-ios <app> <build>   check an archived iOS app before it is uploaded
   release.py retire-testflight --key-file <p8> [--wait-for-build <n>] [--timeout <s>]
                              [--interval <s>] [--dry-run]
@@ -49,6 +50,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pi_engine  # noqa: E402  (beside this file; the tests load this one by path)
 
 REPOSITORY_PAGES = "https://bailycase.github.io/shepherd/"
 
@@ -310,8 +314,9 @@ def _write(path: str, text: str) -> None:
 
 
 def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
-    """Problems that would ship one app under the other's identity. Empty when the build is
-    the app `key` says it is."""
+    """Problems that would ship one app under the other's identity, or without the engine the
+    pin names (pruned to the files pi's bundle loads). Empty when the build is the app `key`
+    says it is."""
     app = APPS[key]
     problems = []
     if os.path.basename(os.path.normpath(path)) != app.product:
@@ -338,6 +343,7 @@ def verify_app(path: str, key: str, version: str | None = None) -> list[str]:
     executable = info.get("CFBundleExecutable")
     if not executable or not os.path.isfile(os.path.join(path, "Contents", "MacOS", executable)):
         problems.append(f"CFBundleExecutable {executable!r} is not in Contents/MacOS")
+    problems += [f"pi engine: {problem}" for problem in pi_engine.verify(path)]
     return problems
 
 

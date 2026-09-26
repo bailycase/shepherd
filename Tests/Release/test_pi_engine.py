@@ -557,5 +557,40 @@ class SignAppTests(unittest.TestCase):
             self.assertNotIn(b"allow-jit", main, "the app never gets the engine's entitlements")
 
 
+class ReleaseWorkflowTests(unittest.TestCase):
+    """release.yml stages the engine before building, keeps node unstripped and signs it with
+    the engine's entitlements."""
+
+    def steps(self):
+        workflow = read(".github", "workflows", "release.yml")
+        job = workflow.split("\n  release:\n", 1)[1].split("\n  testflight:\n", 1)[0]
+        return re.findall(r"\n      - (?:name: (.*?)\n|uses:.*?\n)(.*?)(?=\n      - |\Z)", job, re.S)
+
+    def step(self, name):
+        for title, body in self.steps():
+            if title == name:
+                return body
+        self.fail(f"release.yml has no step named {name!r}")
+
+    def test_staging_runs_before_the_build_with_downloads_cached_by_the_pin(self):
+        names = [title for title, _ in self.steps()]
+        self.assertLess(names.index("Stage the pi engine"), names.index("Build ${{ env.APP_NAME }}"))
+        self.assertIn("python3 scripts/pi_engine.py stage", self.step("Stage the pi engine"))
+        cache = self.step("Cache the pi engine's downloads")
+        self.assertIn("path: .build/pi-engine-cache", cache)
+        self.assertIn("hashFiles('scripts/pi-engine-pin.json')", cache)
+
+    def test_the_verified_app_is_the_one_signed_and_node_is_never_stripped(self):
+        names = [title for title, _ in self.steps()]
+        self.assertLess(names.index("Verify the app's identity"), names.index("Sign"))
+        strip = self.step("Strip debug symbols")
+        self.assertIn('"$PRODUCTS/$PRODUCT/Contents/MacOS/"*', strip)
+        self.assertNotIn("Helpers", strip.split("run:", 1)[1])
+
+    def test_signing_passes_the_engine_entitlements(self):
+        self.assertIn("App/Shepherd.entitlements \\\n            App/Engine.entitlements App/Engine-x86_64.entitlements",
+                      self.step("Sign"))
+
+
 if __name__ == "__main__":
     unittest.main()
