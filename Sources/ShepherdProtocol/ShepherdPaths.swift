@@ -84,6 +84,36 @@ public enum ShepherdPaths {
             .appendingPathComponent("skills", isDirectory: true)
     }
 
+    /// Overrides where Settings ▸ MCP servers keeps its servers. Tests point it at a scratch file,
+    /// so they never touch the user's `~/.config/mcp/mcp.json`.
+    public static let mcpConfigEnvKey = "SHEPHERD_MCP_CONFIG"
+
+    /// The MCP servers every agent on this host can use: `~/.config/mcp/mcp.json`, the file other
+    /// MCP clients share (`{"mcpServers": …}`). Only the app writes it; each agent's MCP extension
+    /// reads it.
+    public static func mcpConfigURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        if let override = environment[mcpConfigEnvKey],
+           !override.trimmingCharacters(in: .whitespaces).isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath).standardizedFileURL
+        }
+        return homeDirectory
+            .appendingPathComponent(".config", isDirectory: true)
+            .appendingPathComponent("mcp", isDirectory: true)
+            .appendingPathComponent("mcp.json")
+    }
+
+    /// Each MCP server's tools as last listed, written by the app, so an agent registers direct
+    /// tools without starting the server. It holds no secrets.
+    public static func mcpToolsCacheURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> URL {
+        supportDirectory(environment: environment)
+            .appendingPathComponent("mcp", isDirectory: true)
+            .appendingPathComponent("tools.json")
+    }
+
     /// The user's home folder. iOS has no `homeDirectoryForCurrentUser`; its app home stands in.
     private static var homeDirectory: URL {
         #if os(macOS)
