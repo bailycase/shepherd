@@ -277,6 +277,29 @@ struct DesignPreviewTests {
         }
     }
 
+    /// The board actions over A scrolled up to the canvas's top, where no board draws them: at 55%
+    /// they flip under A; at 24% the next row's label is in the way too, so they sit just inside
+    /// A's top edge.
+    @Test(arguments: [("flipped", CGFloat(0.55)), ("inside", 0.24)])
+    func designScreenActionsWithoutRoomAbove(_ name: String, zoom: CGFloat) async throws {
+        let (workspace, checkout, _) = try await designWorkspace()
+        defer { workspace.stop() }
+        let vm = workspace.vm
+        vm.selectSidebarRow(.design(checkout.id))
+        let screen = vm.designScreen(checkout.id)
+        let a = try #require(DesignPath("A.dc.html"))
+        let view = NWCanvasViewport(offset: CGPoint(x: NWDesignMetrics.fitLeading, y: 20), zoom: zoom)
+        try await Preview.render("app-window-design-actions-\(name)", size: Self.windowSize, ready: {
+            if screen.snapshot != nil {
+                if screen.picks.isEmpty { screen.select(a.rawValue) }
+                if screen.viewport != view { screen.viewport = view }
+            }
+            return screen.viewport == view && screen.isDrawn && screen.actionsBoard == a
+        }) {
+            RootView(vm: vm)
+        }
+    }
+
     /// Present (decision 11): the selected board focused over the canvas's scrim, its label above.
     @Test func designScreenPresent() async throws {
         let (workspace, checkout, _) = try await designWorkspace()
