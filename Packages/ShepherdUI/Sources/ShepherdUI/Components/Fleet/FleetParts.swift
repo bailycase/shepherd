@@ -117,6 +117,8 @@ public struct NWListRow: View, Equatable {
         case symbol(String, AgentState? = nil)
         /// A symbol in a 20pt `bgSelected` circle (the iPad sidebar's New thread).
         case badge(String)
+        /// A state's 14pt glyph (`NWStateGlyph`: the spinner while running; iPadOverview).
+        case glyph(AgentState)
     }
 
     public enum Trailing: Equatable, Sendable {
@@ -144,12 +146,15 @@ public struct NWListRow: View, Equatable {
     let selected: Bool
     let dimmed: Bool
     let compact: Bool
+    let indent: CGFloat
     @Environment(\.dynamicTypeSize) private var typeSize
 
-    /// `compact` rows are 44pt, the iPad sidebar's; others 48 (52 with a status line).
+    /// `compact` rows are 44pt, the iPad sidebar's; others 48 (52 with a status line). `indent`
+    /// moves the content in while the row (and its selection) keeps the full width (the iPad
+    /// sidebar's More sub-rows).
     public init(_ title: String, subtitle: String? = nil, subtitleMono: Bool = true, subtitleTone: AgentState? = nil,
                 clock: NWRowClock? = nil, leading: Leading = .none, trailing: Trailing = .none, chevron: Bool = true,
-                selected: Bool = false, dimmed: Bool = false, compact: Bool = false) {
+                selected: Bool = false, dimmed: Bool = false, compact: Bool = false, indent: CGFloat = 0) {
         self.title = title
         self.subtitle = subtitle
         self.subtitleMono = subtitleMono
@@ -161,12 +166,13 @@ public struct NWListRow: View, Equatable {
         self.selected = selected
         self.dimmed = dimmed
         self.compact = compact
+        self.indent = indent
     }
 
     public nonisolated static func == (a: NWListRow, b: NWListRow) -> Bool {
         a.title == b.title && a.subtitle == b.subtitle && a.subtitleMono == b.subtitleMono && a.subtitleTone == b.subtitleTone
             && a.clock == b.clock && a.leading == b.leading && a.trailing == b.trailing && a.chevron == b.chevron
-            && a.selected == b.selected && a.dimmed == b.dimmed && a.compact == b.compact
+            && a.selected == b.selected && a.dimmed == b.dimmed && a.compact == b.compact && a.indent == b.indent
     }
 
     public var body: some View {
@@ -198,7 +204,8 @@ public struct NWListRow: View, Equatable {
                     .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, NW.Space.l)
+        .padding(.leading, NW.Space.l + indent)
+        .padding(.trailing, NW.Space.l)
         .padding(.vertical, NW.Space.m)
         .frame(maxWidth: .infinity,
                minHeight: subtitle != nil || clock != nil ? NWListMetrics.twoLineRowHeight
@@ -281,6 +288,8 @@ struct NWListLeading: View {
                 .font(.nw(.ui, weight: .medium))
                 .foregroundStyle(tone == .attention ? Color.nw.lanternText : tone?.color ?? Color.nw.textSecondary)
                 .accessibilityHidden(true)
+        case .glyph(let state):
+            NWStateGlyph(state)
         case .badge(let name):
             Image(systemName: name)
                 .font(.nw(.micro, weight: .semibold))

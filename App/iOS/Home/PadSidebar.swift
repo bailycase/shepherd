@@ -31,19 +31,21 @@ struct PadSidebar: View {
                 }
                 .accessibilityValue(moreExpanded ? "Expanded" : "Collapsed")
                 if moreExpanded {
+                    // The sub-rows' content sits further in; their selection keeps the full width.
                     Group {
                         SidebarItem("Hosts", leading: .symbol("desktopcomputer"), selected: pushed == .home(.more),
-                                    trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline") : .none) {
+                                    trailing: model.offlineCount > 0 ? .alert("\(model.offlineCount) offline") : .none,
+                                    indent: MobileLayout.sidebarSubrowIndent) {
                             navigator.open(.home(.more))
                         }
                         if !model.hosts.isEmpty {
                             SidebarItem(SettingsPage.pi.title, leading: .symbol(SettingsPage.pi.symbol),
-                                        selected: pushed == .settings(SettingsPage.pi.route)) {
+                                        selected: pushed == .settings(SettingsPage.pi.route),
+                                        indent: MobileLayout.sidebarSubrowIndent) {
                                 navigator.open(.settings(SettingsPage.pi.route))
                             }
                         }
                     }
-                    .padding(.leading, MobileLayout.sidebarSubrowIndent)
                     .nwTransition(.content)
                 }
                 if !model.needsYou.isEmpty {
@@ -105,20 +107,22 @@ private struct SidebarItem: View {
     let leading: NWListRow.Leading
     let selected: Bool
     let trailing: NWListRow.Trailing
+    let indent: CGFloat
     let action: () -> Void
 
     init(_ title: String, leading: NWListRow.Leading, selected: Bool = false, trailing: NWListRow.Trailing = .none,
-         action: @escaping () -> Void) {
+         indent: CGFloat = 0, action: @escaping () -> Void) {
         self.title = title
         self.leading = leading
         self.selected = selected
         self.trailing = trailing
+        self.indent = indent
         self.action = action
     }
 
     var body: some View {
         Button(action: action) {
-            NWListRow(title, leading: leading, trailing: trailing, chevron: false, selected: selected, compact: true)
+            NWListRow(title, leading: leading, trailing: trailing, chevron: false, selected: selected, compact: true, indent: indent)
                 .clipShape(RoundedRectangle(cornerRadius: NW.Radius.m))
         }
         .buttonStyle(.nwRow(radius: NW.Radius.m))
