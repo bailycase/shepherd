@@ -131,9 +131,8 @@ struct AgentTurnView: View, Equatable {
                          origin: .steered)
                 .frame(maxWidth: .infinity, alignment: .trailing)
         case .compaction(let row):
-            // The line only; what the agent kept opens on the Mac (the touch sheet comes with iOS's meter).
-            NWCompactionDivider(title: row.title, tokens: row.tokens, tone: row.tone == .warning ? .warning : row.tone == .quiet ? .quiet : .normal,
-                                running: row.running, expanded: nil)
+            // Where it happened; Show summary opens what the agent kept in place.
+            CompactionItem(row: row)
         }
     }
 
