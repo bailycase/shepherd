@@ -132,6 +132,10 @@ struct SubagentPresentationTests {
         run.step = ChildStep(index: 1, total: 1)
         run.contextPercent = 61.6
         #expect(SubagentPresentation.goalNote(run) == "step 1 / 1 · 62%")
+        run.contextPercent = 1e300
+        #expect(SubagentPresentation.goalNote(run) == "step 1 / 1 · 100%", "a child's percent over a tiny window")
+        run.contextPercent = -3
+        #expect(SubagentPresentation.goalNote(run) == "step 1 / 1 · 0%")
         run.state = "complete"
         #expect(SubagentPresentation.goalNote(run) == nil)
     }

@@ -5,7 +5,8 @@ import ShepherdRemote
 /// More (MobileMore, iPadHosts boards; home track): every host as a card with its connection,
 /// what runs there, Retry while it is offline, and Add host. A card opens the host's form. Under
 /// the hosts, Extensions (the bundled and installed pi extensions the hosts load) opens
-/// Settings ▸ Extensions; the board's Design systems and Archive wait for the Mac. On iPad the
+/// Settings ▸ Extensions, and Design systems while a host serves designs; the board's Archive
+/// waits for the Mac. On iPad the
 /// sidebar's More expands in place instead, to Hosts (`PadHostsScreen`) and Extensions.
 struct MoreScreen: View {
     @Environment(MobileHosts.self) private var hosts
@@ -15,6 +16,7 @@ struct MoreScreen: View {
         let feed = HomeFeed.of(hosts)
         let cards = feed.model.hosts
         let settings = SettingsStore.of(hosts)
+        let designs = MobileDesigns.of(hosts).model
         ScrollView {
             VStack(alignment: .leading, spacing: MobileLayout.headerSpacing) {
                 NWListHeader("Hosts") {
@@ -35,6 +37,14 @@ struct MoreScreen: View {
                     .padding(.top, NW.Space.xs)
                 if !cards.isEmpty {
                     NWListCard {
+                        // While a host serves designs (MobileMore: "2 · acme-web, Night Watch").
+                        if designs.available {
+                            Button { navigator.open(.designs(.systems)) } label: {
+                                NWListRow("Design systems", subtitle: designs.systemsSummary, subtitleMono: false,
+                                          leading: .symbol("paintpalette"))
+                            }
+                            .buttonStyle(.nwRow(radius: 0))
+                        }
                         Button { navigator.open(.settings(SettingsPage.pi.route)) } label: {
                             NWListRow(SettingsPage.pi.title, subtitle: settings.extensionsValue.map { "\($0) installed" },
                                       subtitleMono: false, leading: .symbol(SettingsPage.pi.symbol))

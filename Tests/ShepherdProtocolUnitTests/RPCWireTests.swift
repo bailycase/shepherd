@@ -390,6 +390,24 @@ struct JSONValueTests {
         #expect(value.doubleValue == nil && value.boolValue == nil && value.arrayValue == nil && value["k"] == nil)
     }
 
+    /// A count pi reports is any JSON number: past `Int.max` (a models.json "unlimited" window of
+    /// 1e20) it is `Int.max` rather than a trap, a fraction truncates, and a negative, NaN, or
+    /// infinity is no count.
+    @Test(arguments: [
+        (0.0, 0 as Int?), (8123, 8123), (8123.9, 8123), (1e-18, 0), (200_000, 200_000),
+        (9_223_372_036_854_774_784, 9_223_372_036_854_774_784), (9_223_372_036_854_775_808, .max), (1e20, .max),
+        (.greatestFiniteMagnitude, .max), (-0.5, nil), (-1, nil), (-1e20, nil), (.nan, nil), (.infinity, nil), (-.infinity, nil),
+    ] as [(Double, Int?)])
+    func aReportedCountClampsToAnInt(value: Double, expected: Int?) {
+        #expect(Int(reportedCount: value) == expected)
+        #expect(JSONValue.number(value).countValue == expected)
+    }
+
+    @Test(arguments: [JSONValue.null, .bool(true), .string("200000"), .array([.number(1)]), .object(["n": .number(1)])])
+    func onlyANumberIsACount(value: JSONValue) {
+        #expect(value.countValue == nil)
+    }
+
     @Test func aValueRedecodesAsAConcreteType() throws {
         struct Usage: Decodable, Equatable { var input: Int; var output: Int }
         let value = JSONValue.object(["input": .number(3), "output": .number(4), "extra": .null])

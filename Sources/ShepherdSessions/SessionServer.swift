@@ -283,6 +283,10 @@ public final class SessionServer: @unchecked Sendable {
     /// actor; the completion may be called from any thread. `nil` handler
     /// (headless server, tests) rejects the request.
     public var onRemoteCreateAgent: ((RemoteCreateAgentRequest, @escaping (Result<AgentID, RemoteCreateAgentError>) -> Void) -> Void)?
+    /// A remote client's New design (`RemoteDesignRequest.create`): the app makes the design as
+    /// its own New design does (the system installed, the agent started with the brief, nothing
+    /// selected here) and answers the design and its agent (nil when the agent didn't start).
+    public var onRemoteCreateDesign: ((RemoteDesignCreate, @escaping (Result<RemoteDesignCreated, RemoteCreateAgentError>) -> Void) -> Void)?
 
     public var onRemoteCreationOptions: ((SpaceID, String?, Bool?, @escaping (Result<RemoteCreationOptions, RemoteCreateAgentError>) -> Void) -> Void)?
     public var onRemoteAgentQuery: ((AgentID, RemoteAgentQuery, @escaping (Result<RemoteAgentResult, RemoteCreateAgentError>) -> Void) -> Void)?
@@ -1672,6 +1676,10 @@ public final class SessionServer: @unchecked Sendable {
             send(.design(id: id, result: .ok), to: client)
             return
         }
+        if case .create(let draft) = request {
+            remoteCreateDesign(id: id, draft: draft, client: client)
+            return
+        }
         let service = RemoteDesignService(server: self)
         // The connection is only touched back on the server queue.
         let connection = ChangesUnchecked(value: client)
@@ -1787,6 +1795,40 @@ public final class SessionServer: @unchecked Sendable {
             return
         }
         send(.spaceAdded(id: id, spaceID: space.id), to: client)
+    }
+
+    /// Server queue: a remote New design, made by the app (like `remoteCreateAgent`) once the
+    /// brief and the system's name check out here.
+    private func remoteCreateDesign(id: Int, draft: RemoteDesignCreate, client: ExtensionConnection) {
+        guard let handler = onRemoteCreateDesign else {
+            send(.error(id: id, code: "unsupported", message: "host cannot create designs (no GUI)"), to: client)
+            return
+        }
+        guard let brief = RemoteDesignCreate.brief(draft.brief) else {
+            send(.error(id: id, code: "invalid_brief", message: "A design needs a brief of at most \(RemoteDesignCreate.maxBriefBytes) bytes."),
+                 to: client)
+            return
+        }
+        if let namespace = draft.systemNamespace, !DesignPath.isSystemNamespace(namespace) {
+            send(.error(id: id, code: "invalid_system", message: "\"\(namespace)\" names no design system."), to: client)
+            return
+        }
+        var request = draft
+        request.brief = brief
+        hopToMain { [weak self] in
+            handler(request) { result in
+                guard let self else { return }
+                self.queue.async {
+                    guard self.clients[client.fd] === client else { return }
+                    switch result {
+                    case .success(let made):
+                        self.send(.design(id: id, result: .created(designID: made.designID, agentID: made.agentID)), to: client)
+                    case .failure(let error):
+                        self.send(.error(id: id, code: "create_failed", message: error.message), to: client)
+                    }
+                }
+            }
+        }
     }
 
     private func remoteCreateAgent(id: Int, request: RemoteCreateAgentRequest, client: ExtensionConnection) {

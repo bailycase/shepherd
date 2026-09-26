@@ -151,6 +151,7 @@ public final class DesignBoardView: DesignPlatformView {
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bouncesZoom = false
         webView.scrollView.pinchGestureRecognizer?.isEnabled = false
+        // The board stays where its canvas puts it: no insets for the safe area or a keyboard.
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         #endif
         addSubview(webView)
@@ -224,9 +225,12 @@ public final class DesignBoardView: DesignPlatformView {
         setBoundsSize(page)
     }
     #else
+    /// A board never scrolls inside its view: WebKit on iOS moves its scroll view when the view
+    /// resizes (a new zoom, a keyboard), which would slide the board under its pins and rings.
     public override func layoutSubviews() {
         super.layoutSubviews()
         placeWebView()
+        if webView.scrollView.contentOffset != .zero { webView.scrollView.contentOffset = .zero }
     }
 
     /// The web view fills the view. Its page still lays out at the board's width: the viewport
