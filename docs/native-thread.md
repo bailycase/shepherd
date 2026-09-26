@@ -524,7 +524,8 @@ The pure derivations live in ShepherdRemote:
 
 - **`NativeTurnPresentation`:** a reply's items, built once per turn change, in the order they
   happened: thinking (folded into one block at the start of each stretch of work between
-  prose), prose (Markdown parsed once), activity lines, the subagent record lines (the spawn
+  prose; finished text parsed as Markdown once, memoised by the store, live thinking never),
+  prose (Markdown parsed once), activity lines, the subagent record lines (the spawn
   calls they stand for leave the activity), notes, errors, and steers (`.steer`: a message the user
   steered in, where pi read it). It also carries the changes card, the countable tool calls, and
   the copy text.

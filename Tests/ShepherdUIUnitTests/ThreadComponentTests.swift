@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import ShepherdUI
 
@@ -11,14 +12,27 @@ struct ThreadComponentTests {
     /// Only thinking with something to open is a disclosure with a chevron: live "Thinking…"
     /// and a thought the model kept back are plain lines, whatever they carry.
     @Test(arguments: [
-        (live: true, text: "", kind: .live),
-        (live: true, text: "hmm", kind: .live),
-        (live: false, text: "", kind: .plain),
-        (live: false, text: "Check the labels first.", kind: .disclosure),
-    ] as [(live: Bool, text: String, kind: NWThinking.Kind)])
-    func thinkingOpensOnlyOntoText(live: Bool, text: String, kind: NWThinking.Kind) {
-        #expect(NWThinking.Kind(live: live, text: text) == kind)
-        #expect(NWThinking.Kind(live: live, text: text).opens == (kind == .disclosure))
+        (live: true, blocks: [], kind: .live),
+        (live: true, blocks: [.paragraph("hmm")], kind: .live),
+        (live: false, blocks: [], kind: .plain),
+        (live: false, blocks: [.paragraph("**Inspecting SSH config**")], kind: .disclosure),
+    ] as [(live: Bool, blocks: [NWProseBlock], kind: NWThinking.Kind)])
+    func thinkingOpensOnlyOntoText(live: Bool, blocks: [NWProseBlock], kind: NWThinking.Kind) {
+        #expect(NWThinking.Kind(live: live, blocks: blocks) == kind)
+        #expect(NWThinking.Kind(live: live, blocks: blocks).opens == (kind == .disclosure))
+    }
+
+    /// Plain-text thinking (no Markdown read) is a paragraph per blank-line run, with no empty
+    /// paragraph where a run of blank lines was.
+    @Test(arguments: [
+        ("", []),
+        ("\n\n", []),
+        ("One.", ["One."]),
+        ("One.\n\n\n\nTwo.\n\n", ["One.", "Two."]),
+    ] as [(String, [String])])
+    @MainActor func plainTextThinkingIsItsParagraphs(text: String, paragraphs: [String]) {
+        let thinking = NWThinking("Thought", text: text, isExpanded: .constant(true))
+        #expect(thinking.blocks == paragraphs.map { .paragraph(AttributedString($0)) })
     }
 
     /// A message's time and a turn's footer are hidden at rest. The pointer over the message

@@ -109,13 +109,11 @@ struct AgentTurnView: View, Equatable {
 
     @ViewBuilder private func itemView(_ item: NativeTurnPresentation.Item) -> some View {
         switch item {
-        case .thinking(let id, let text, let seconds, let live, _):
-            live
-                ? NWThinking.live()
-                : NWThinking(nativeThoughtText(seconds), text: text, isExpanded: Binding(
-                    get: { openThinking.contains(id) },
-                    set: { if $0 { openThinking.insert(id) } else { openThinking.remove(id) } }),
-                    spokenTitle: nativeThoughtSpokenText(seconds))
+        case .thinking(let id, _, let blocks, let seconds, let live, _):
+            ThinkingRow(seconds: seconds, blocks: blocks, live: live, isExpanded: openThinking.contains(id)) {
+                if openThinking.remove(id) == nil { openThinking.insert(id) }
+            }
+            .equatable()
         case .prose(_, _, let blocks, _):
             ProseView(blocks: blocks).equatable()
         case .activity(_, let bursts):
@@ -222,6 +220,29 @@ struct ProseView: View, Equatable {
                 .footnotes(notes.map { NWProseFootnote(number: $0.number, text: NWProseInline.attributed($0.text)) })
             }
         }
+    }
+}
+
+/// A turn's thinking (`NWThinking`): live, or finished with its Markdown, parsed once per
+/// change (`NativeTurnPresentation`), styled here only when this row's own inputs change. One
+/// view for both, so "Thinking…" settles into "Thought for Ns" in place.
+struct ThinkingRow: View, Equatable {
+    let seconds: Double?
+    let blocks: [NativeMarkdownBlock]
+    let live: Bool
+    let isExpanded: Bool
+    let toggle: () -> Void
+
+    static func == (lhs: ThinkingRow, rhs: ThinkingRow) -> Bool {
+        lhs.seconds == rhs.seconds && lhs.live == rhs.live && lhs.isExpanded == rhs.isExpanded && lhs.blocks == rhs.blocks
+    }
+
+    var body: some View {
+        live
+            ? NWThinking.live()
+            : NWThinking(nativeThoughtText(seconds), blocks: ProseView.proseBlocks(blocks),
+                         isExpanded: Binding(get: { isExpanded }, set: { if $0 != isExpanded { toggle() } }),
+                         spokenTitle: nativeThoughtSpokenText(seconds))
     }
 }
 

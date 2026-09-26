@@ -242,7 +242,8 @@ struct NWCopyGlyph: View {
 // MARK: Thinking
 
 /// The model's thinking (NWThread board). Collapsed: a 10pt chevron and "Thought for 4s" in
-/// italic 12. Expanded: the text in italic 12.5 on a 2pt rule. Live (LiveText): "Thinking…"
+/// italic 12. Expanded: the text as Markdown (bold, italic, code and links inline; paragraphs,
+/// lists and quotes as blocks) in italic 12.5 on a 2pt rule. Live (LiveText): "Thinking…"
 /// shimmering on a 26pt line, the thread's live indicator between tools, settling into "Thought
 /// for Ns" when it ends. With no text (the model kept its reasoning back), finished thinking is
 /// the plain line, not a control. A row with nothing to open draws no chevron but keeps its
@@ -250,30 +251,46 @@ struct NWCopyGlyph: View {
 public struct NWThinking: View {
     let title: String
     let spokenTitle: String
-    let text: String
+    let blocks: [NWProseBlock]
     @Binding var isExpanded: Bool
     let live: Bool
 
     /// Finished thinking: `title` is "Thought for 4s", `spokenTitle` how VoiceOver says it
-    /// ("Thought for 4 seconds"). An empty `text` draws the plain line.
-    public init(_ title: String, text: String, isExpanded: Binding<Bool>, spokenTitle: String? = nil) {
+    /// ("Thought for 4 seconds"), and `blocks` the text, parsed once per change by the host
+    /// app. No blocks draw the plain line.
+    public init(_ title: String, blocks: [NWProseBlock], isExpanded: Binding<Bool>, spokenTitle: String? = nil) {
         self.title = title
         self.spokenTitle = spokenTitle ?? title
-        self.text = text
+        self.blocks = blocks
         _isExpanded = isExpanded
         live = false
+    }
+
+    /// Finished thinking as plain text: a paragraph per blank-line-separated run, with no
+    /// Markdown read. An empty `text` draws the plain line.
+    public init(_ title: String, text: String, isExpanded: Binding<Bool>, spokenTitle: String? = nil) {
+        let paragraphs = text.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        self.init(title, blocks: paragraphs.map { .paragraph(AttributedString($0)) }, isExpanded: isExpanded, spokenTitle: spokenTitle)
     }
 
     private init() {
         title = "Thinking…"
         spokenTitle = "Thinking"
-        text = ""
+        blocks = []
         _isExpanded = .constant(false)
         live = true
     }
 
     /// pi thinking between tools: its thinking streaming, or nothing yet to show for it.
     public static func live() -> NWThinking { NWThinking() }
+
+    /// Expanded thinking's text: Geist 12.5 (italic where it is drawn) at 1.55, headings
+    /// semibold.
+    @MainActor static var font: Font { .nwSans(12.5) }
+    @MainActor static var headingFont: Font { .nwSans(12.5, .semibold) }
+    @MainActor static var lineSpacing: CGFloat { NWTextStyle.caption.lineSpacing + 2 }
 
     /// What the row is: only a disclosure has something to open, so only it wears a chevron
     /// and takes a press.
@@ -284,14 +301,14 @@ public struct NWThinking: View {
         case plain
         case disclosure
 
-        init(live: Bool, text: String) {
-            self = live ? .live : text.isEmpty ? .plain : .disclosure
+        init(live: Bool, blocks: [NWProseBlock]) {
+            self = live ? .live : blocks.isEmpty ? .plain : .disclosure
         }
 
         var opens: Bool { self == .disclosure }
     }
 
-    var kind: Kind { Kind(live: live, text: text) }
+    var kind: Kind { Kind(live: live, blocks: blocks) }
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -310,17 +327,14 @@ public struct NWThinking: View {
             }
             .nwAnimation(.content, value: live)
             if isExpanded, kind.opens {
-                Text(text)
-                    .font(.nwSans(12.5)).italic()
-                    .lineSpacing(NWTextStyle.caption.lineSpacing + 2)
-                    .foregroundStyle(nw.textSecondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, NW.Space.xxs)
-                    .padding(.leading, NW.Space.l)
-                    .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
-                    .frame(maxWidth: NWThreadMetrics.proseMeasure, alignment: .leading)
-                    .nwTransition(.disclosure)
+                VStack(alignment: .leading, spacing: NW.Space.m) {
+                    NWProseBlocks(blocks: blocks, voice: .thinking) { NWCodeBlock($0, language: $1) }
+                }
+                .padding(.vertical, NW.Space.xxs)
+                .padding(.leading, NW.Space.l)
+                .overlay(alignment: .leading) { nw.lineStrong.frame(width: NWThreadMetrics.ruleWidth) }
+                .frame(maxWidth: NWThreadMetrics.proseMeasure, alignment: .leading)
+                .nwTransition(.disclosure)
             }
         }
     }
@@ -349,12 +363,12 @@ public struct NWThinking: View {
                 .nwAnimation(.content, value: title)
         }
         .foregroundStyle(Color.nw.textSecondary)
-            #if os(iOS)
-            .frame(minHeight: NW.Height.touch)
-            #endif
-            .nwHelp(note)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(note)
+        #if os(iOS)
+        .frame(minHeight: NW.Height.touch)
+        #endif
+        .nwHelp(note)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(note)
     }
 
     private var toggle: some View {
