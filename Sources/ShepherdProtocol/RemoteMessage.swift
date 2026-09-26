@@ -60,7 +60,11 @@ public enum RemoteProtocol {
     /// compactions in the thread) and serves `NativeThreadRequest.compact`. Older hosts send
     /// neither, and clients draw no context meter.
     public static let nativeContextCapability = "native.context.v1"
-    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability]
+    /// The host takes the opening prompt's images with `createAgent` (`initialImages`) and sends
+    /// them to pi with it. An older host would drop them without a word, so a client refuses to
+    /// create an agent with images there.
+    public static let createAgentImagesCapability = "agent.create.images.v1"
+    public static let capabilities = [nativeThreadCapability, nativeThreadV2Capability, nativeThreadStartingCapability, nativeQueueCapability, pasteCapability, paneControlCapability, agentActionsCapability, agentInspectionCapability, worktreeActionsCapability, worktreeSetupCapability, uploadCapability, creationOptionsCapability, reviewCommitCapability, automationsCapability, terminalActivityCapability, thinkingLevelsCapability, changesCapability, nativeContextCapability, createAgentImagesCapability]
 
     public static func composedInput(text: String, submit: Bool) -> Data {
         var payload = Data("\u{1B}[200~".utf8)
@@ -392,7 +396,9 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         initialPrompt: String?,
         worktreeBranch: String? = nil,
         worktreeBase: String? = nil,
-        worktreeFetchFirst: Bool? = nil
+        worktreeFetchFirst: Bool? = nil,
+        /// The opening prompt's images (`createAgentImagesCapability`); absent on the wire when nil.
+        initialImages: [NativeImage]? = nil
     )
 
     case upload(id: Int, action: RemoteUploadAction)
@@ -409,7 +415,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
         case sessionID, cols, rows, data, viewportGeneration
         case path, spaceID, cwd, model, thinking, initialPrompt, worktreeBranch
         case text, submit, agentID, paneID, axis, relativeTo, split, ratio, action, query, fetchFirst, worktreeBase, worktreeFetchFirst
-        case automationID
+        case automationID, initialImages
     }
 
     private enum Kind: String, Codable {
@@ -525,7 +531,8 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
                 initialPrompt: try c.decodeIfPresent(String.self, forKey: .initialPrompt),
                 worktreeBranch: try c.decodeIfPresent(String.self, forKey: .worktreeBranch),
                 worktreeBase: try c.decodeIfPresent(String.self, forKey: .worktreeBase),
-                worktreeFetchFirst: try c.decodeIfPresent(Bool.self, forKey: .worktreeFetchFirst)
+                worktreeFetchFirst: try c.decodeIfPresent(Bool.self, forKey: .worktreeFetchFirst),
+                initialImages: try c.decodeIfPresent([NativeImage].self, forKey: .initialImages)
             )
         }
     }
@@ -627,7 +634,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encode(Kind.addSpace, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(path, forKey: .path)
-        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst):
+        case .createAgent(let id, let spaceID, let cwd, let model, let thinking, let initialPrompt, let worktreeBranch, let worktreeBase, let worktreeFetchFirst, let initialImages):
             try c.encode(Kind.createAgent, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(spaceID, forKey: .spaceID)
@@ -638,6 +645,7 @@ public enum RemoteRequest: Codable, Hashable, Sendable {
             try c.encodeIfPresent(worktreeBranch, forKey: .worktreeBranch)
             try c.encodeIfPresent(worktreeBase, forKey: .worktreeBase)
             try c.encodeIfPresent(worktreeFetchFirst, forKey: .worktreeFetchFirst)
+            try c.encodeIfPresent(initialImages, forKey: .initialImages)
         }
     }
 }
