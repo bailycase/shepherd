@@ -100,6 +100,20 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
     /// Stop a running automation by deleting its watch agent.
     case stopAutomation(id: Int, automationID: AutomationID)
 
+    // MARK: Designs (request/reply)
+
+    /// The design extension's `design_read`: the design's index, revision and board hashes
+    /// (`ExtensionReply.design`), or with `path` one board's source (`designBoard`). Only the
+    /// agent drawing the design may read it. `path` stays a string so a bad one is answered
+    /// (`invalid_path`) rather than dropped as undecodable.
+    case designRead(id: Int, agentID: AgentID, designID: DesignID, path: String?)
+    /// `board_write`: one board's whole source, when the design is still at `baseRevision` (nil:
+    /// whatever it is at). Answered with `designWritten`.
+    case designWriteBoard(id: Int, agentID: AgentID, designID: DesignID, path: String, source: String, baseRevision: UInt64?)
+    /// `canvas_update`: a JSON merge patch for the design's canvas.json (`DesignIndex.merging`).
+    /// Answered with `designWritten`.
+    case designUpdateIndex(id: Int, agentID: AgentID, designID: DesignID, changes: JSONValue, baseRevision: UInt64?)
+
     private enum CodingKeys: String, CodingKey {
         case type, id, agentID, status, name, piSessionID, children
         case paneID, axis, cwd, relativeTo, command, text, submit, reference
@@ -107,6 +121,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case prompt, enabled, start, automationID, targetAgentID, request, requestID, result
         case error
         case line, reason, file
+        case designID, path, source, baseRevision, changes
     }
 
     private enum Kind: String, Codable {
@@ -117,6 +132,7 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
         case startAutomation, stopAutomation
         case listAgents, sendToAgent, spawnAgent, coordinateAgent, agentResponse, cancelAgentRequest
         case suggestInstruction
+        case designRead, designWriteBoard, designUpdateIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -281,6 +297,30 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 automationID: try c.decode(AutomationID.self, forKey: .automationID)
             )
+        case .designRead:
+            self = .designRead(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                path: try c.decodeIfPresent(String.self, forKey: .path)
+            )
+        case .designWriteBoard:
+            self = .designWriteBoard(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                path: try c.decode(String.self, forKey: .path),
+                source: try c.decode(String.self, forKey: .source),
+                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision)
+            )
+        case .designUpdateIndex:
+            self = .designUpdateIndex(
+                id: try c.decode(Int.self, forKey: .id),
+                agentID: try c.decode(AgentID.self, forKey: .agentID),
+                designID: try c.decode(DesignID.self, forKey: .designID),
+                changes: try c.decode(JSONValue.self, forKey: .changes),
+                baseRevision: try c.decodeIfPresent(UInt64.self, forKey: .baseRevision)
+            )
         }
     }
 
@@ -427,6 +467,27 @@ public enum ExtensionMessage: Codable, Hashable, Sendable {
             try c.encode(Kind.stopAutomation, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(automationID, forKey: .automationID)
+        case .designRead(let id, let agentID, let designID, let path):
+            try c.encode(Kind.designRead, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encodeIfPresent(path, forKey: .path)
+        case .designWriteBoard(let id, let agentID, let designID, let path, let source, let baseRevision):
+            try c.encode(Kind.designWriteBoard, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(path, forKey: .path)
+            try c.encode(source, forKey: .source)
+            try c.encodeIfPresent(baseRevision, forKey: .baseRevision)
+        case .designUpdateIndex(let id, let agentID, let designID, let changes, let baseRevision):
+            try c.encode(Kind.designUpdateIndex, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(agentID, forKey: .agentID)
+            try c.encode(designID, forKey: .designID)
+            try c.encode(changes, forKey: .changes)
+            try c.encodeIfPresent(baseRevision, forKey: .baseRevision)
         }
     }
 }
@@ -759,17 +820,26 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
     /// failed.
     case agentResult(id: Int, result: AgentCoordinationResult)
 
+    /// A `designRead` without a path: the design's index, revision and board hashes.
+    case design(id: Int, snapshot: DesignSnapshot)
+    /// A `designRead` with a path: that board's source.
+    case designBoard(id: Int, board: DesignBoardSource)
+    /// What a `designWriteBoard` or `designUpdateIndex` left behind.
+    case designWritten(id: Int, result: DesignWriteResult)
+
     private enum CodingKeys: String, CodingKey {
         case requestID, targetAgentID, request, result
         case type, id, code, message, panes, pane, paneID, lines, automations, agents, text
         case runID, action, mode
         case outcome
+        case snapshot, board
     }
 
     private enum Kind: String, Codable {
         case childCommand, agentRequest, agentResult
         case ok, error, panes, paneOpened, paneContent, reviewResult, automations, agents, message
         case suggestion
+        case design, designBoard, designWritten
     }
 
     public init(from decoder: Decoder) throws {
@@ -844,6 +914,21 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
                 id: try c.decode(Int.self, forKey: .id),
                 outcome: try c.decode(SuggestionOutcome.self, forKey: .outcome)
             )
+        case .design:
+            self = .design(
+                id: try c.decode(Int.self, forKey: .id),
+                snapshot: try c.decode(DesignSnapshot.self, forKey: .snapshot)
+            )
+        case .designBoard:
+            self = .designBoard(
+                id: try c.decode(Int.self, forKey: .id),
+                board: try c.decode(DesignBoardSource.self, forKey: .board)
+            )
+        case .designWritten:
+            self = .designWritten(
+                id: try c.decode(Int.self, forKey: .id),
+                result: try c.decode(DesignWriteResult.self, forKey: .result)
+            )
         }
     }
 
@@ -908,6 +993,18 @@ public enum ExtensionReply: Codable, Hashable, Sendable {
             try c.encode(Kind.suggestion, forKey: .type)
             try c.encode(id, forKey: .id)
             try c.encode(outcome, forKey: .outcome)
+        case .design(let id, let snapshot):
+            try c.encode(Kind.design, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(snapshot, forKey: .snapshot)
+        case .designBoard(let id, let board):
+            try c.encode(Kind.designBoard, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(board, forKey: .board)
+        case .designWritten(let id, let result):
+            try c.encode(Kind.designWritten, forKey: .type)
+            try c.encode(id, forKey: .id)
+            try c.encode(result, forKey: .result)
         }
     }
 }
