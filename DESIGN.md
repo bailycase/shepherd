@@ -7928,8 +7928,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | PaneArtifactEdit | Side pane (Artifacts › Editing in place) | Not built yet |
 | PaneFiles | Side pane (Files) | Not built yet |
 | PaneStates | Side pane (tabs, dot, narrow, ⋯, button); Side pane: Browser, Artifacts, Files | Partial |
-| ContextDetails | Composer, questions, and menus › Context meter | Partial |
-| ContextFull | Composer, questions, and menus › Context meter | Partial |
+| ContextDetails | Composer, questions, and menus › Context meter | Built |
+| ContextFull | Composer, questions, and menus › Context meter | Built |
 | ContextCompacted | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
 | QueueStack | Up next (the queue) | Built |
 | QueueSteer | Up next (the queue); Thread › User turn (Steered) | Built |
@@ -8074,8 +8074,8 @@ questions, and menus), except SlashMenu's and ModelPicker's, which specify their
 | NWStatus, NWStatusLight | Components › Status and feedback; Status language | Partial |
 | NWThread, NWThreadLight | Thread | Partial |
 | LiveText | Thread › Live text, Activity lines (Live), Thinking (Live); Motion (`shimmer`); Up next (a steering row waits still); Subagents (a running tray row's words) | Built |
-| NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Partial |
-| ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Partial |
+| NWComposer, NWComposerLight | Composer, questions, and menus; Command palette | Built |
+| ContextIdeas | Composer, questions, and menus › Context meter; Thread › Compactions | Built |
 | NWNavigation, NWNavigationLight | Window and adaptive layout; Sidebar; Toolbar | Partial |
 | NWAgents, NWAgentsLight | Subagents; Side pane › Subagent inspector; Mission components | Built |
 | ChangesStates | Side pane › Changes; Thread › Changes card; Keyboard | Partial |
