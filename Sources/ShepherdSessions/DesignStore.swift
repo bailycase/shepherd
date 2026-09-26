@@ -17,6 +17,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
     case tooManyFiles
     case invalidIndex([String])
     case missingBoardFile(DesignPath)
+    case noSuchVersion(DesignPath, Int)
     case io(String)
 
     public var code: String {
@@ -32,6 +33,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .tooManyFiles: return "too_many_files"
         case .invalidIndex: return "invalid_index"
         case .missingBoardFile: return "missing_board_file"
+        case .noSuchVersion: return "no_such_version"
         case .io: return "io_failed"
         }
     }
@@ -50,6 +52,7 @@ public enum DesignStoreError: Error, Hashable, Sendable, CustomStringConvertible
         case .tooManyFiles: return "a design holds at most \(DesignStore.maxFiles) files"
         case .invalidIndex(let problems): return "canvas.json: " + problems.joined(separator: "; ")
         case .missingBoardFile(let path): return "\(path) is listed but has no file; write the board first"
+        case .noSuchVersion(let path, let number): return "\(path) keeps no version \(number)"
         case .io(let message): return message
         }
     }
@@ -176,53 +179,193 @@ public final class DesignStore: @unchecked Sendable {
     }
 
     /// Writes one board's whole source, when the design is still at `baseRevision` (nil: any).
+    /// The content it replaces is kept as the board's next version.
     func writeBoard(_ id: DesignID, path: DesignPath, source: String, baseRevision: UInt64?) async throws -> DesignWriteResult {
+        try await run {
+            let written = try self.writeOnQueue(id, [path: source], baseRevision: baseRevision)
+            var result = written.result
+            result.sha256 = written.shas[path]
+            result.created = written.created.contains(path)
+            return result
+        }
+    }
+
+    /// Writes several boards' whole sources as one change (one revision), when the design is
+    /// still at `baseRevision` (nil: any). Every source is checked before any is written.
+    func writeBoards(_ id: DesignID, sources: [DesignPath: String], baseRevision: UInt64?) async throws -> DesignBoardsWrite {
+        try await run {
+            let written = try self.writeOnQueue(id, sources, baseRevision: baseRevision)
+            return DesignBoardsWrite(result: written.result, shas: written.shas, versions: written.versions)
+        }
+    }
+
+    /// A board's kept versions, oldest first.
+    func versions(_ id: DesignID, path: DesignPath) async throws -> [DesignBoardVersion] {
+        try await run {
+            _ = try self.load(id)
+            return try self.versionsOnQueue(id, path).map(\.version)
+        }
+    }
+
+    /// Puts boards back to kept versions as one change, when the design is still at
+    /// `baseRevision` and (when given) each board still has the hash `ifCurrent` names, so an undo
+    /// never takes back a later write. What each board held is kept as its next version.
+    func restore(_ id: DesignID, versions: [DesignPath: Int], ifCurrent: [DesignPath: String]?,
+                 baseRevision: UInt64?) async throws -> DesignBoardsWrite {
         try await run {
             var design = try self.load(id)
             try Self.compare(baseRevision, design.revision)
-            let warnings: [DesignBoardCheck.Warning]
+            let files = try self.files(of: id, &design)
+            var sources: [DesignPath: String] = [:]
+            for (path, number) in versions.sorted(by: { $0.key < $1.key }) {
+                if let expected = ifCurrent?[path], files[path] != expected {
+                    throw DesignStoreError.stale(base: baseRevision ?? design.revision, current: design.revision)
+                }
+                guard let kept = try self.versionsOnQueue(id, path).first(where: { $0.version.number == number }),
+                      let data = try? Data(contentsOf: kept.url) else {
+                    throw DesignStoreError.noSuchVersion(path, number)
+                }
+                sources[path] = String(decoding: data, as: UTF8.self)
+            }
+            let written = try self.writeOnQueue(id, sources, baseRevision: baseRevision)
+            return DesignBoardsWrite(result: written.result, shas: written.shas, versions: written.versions)
+        }
+    }
+
+    private struct Written {
+        var result: DesignWriteResult
+        var shas: [DesignPath: String]
+        var versions: [DesignPath: Int]
+        var created: Set<DesignPath>
+    }
+
+    /// Queue: checks every source, keeps what each changed board held as a version, writes them
+    /// atomically, and moves the revision once.
+    private func writeOnQueue(_ id: DesignID, _ sources: [DesignPath: String], baseRevision: UInt64?) throws -> Written {
+        var design = try load(id)
+        try Self.compare(baseRevision, design.revision)
+        var warnings: [DesignBoardCheck.Warning] = []
+        for (_, source) in sources.sorted(by: { $0.key < $1.key }) {
             switch Result(catching: { () throws(DesignBoardCheck.Refusal) in try DesignBoardCheck.check(source) }) {
-            case .success(let found): warnings = found
+            case .success(let found): warnings += found.filter { !warnings.contains($0) }
             case .failure(let refusal): throw DesignStoreError.refused(refusal)
             }
-            var files = try self.files(of: id, &design)
+        }
+        var files = try self.files(of: id, &design)
+        var shas: [DesignPath: String] = [:]
+        var changed: [(path: DesignPath, data: Data)] = []
+        var created: Set<DesignPath> = []
+        for (path, source) in sources.sorted(by: { $0.key < $1.key }) {
             let data = Data(source.utf8)
             let sha = Self.sha256(data)
-            if files[path] == sha {
-                return DesignWriteResult(revision: design.revision, changed: false, sha256: sha, created: false,
-                                         warnings: warnings, title: design.index.title, boardCount: design.index.boards.count)
-            }
-            let created = files[path] == nil
-            if created {
-                guard files.count < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
+            shas[path] = sha
+            guard files[path] != sha else { continue }
+            if files[path] == nil {
+                guard files.count + created.count < Self.maxFiles else { throw DesignStoreError.tooManyFiles }
                 let stem = path.stem.lowercased()
-                let others = Set(files.keys).union(design.index.boards.keys)
+                let others = Set(files.keys).union(design.index.boards.keys).union(created)
                 if let other = others.sorted().first(where: { $0 != path && $0.stem.lowercased() == stem }) {
                     throw DesignStoreError.nameTaken(path, by: other)
                 }
+                created.insert(path)
             }
-            let url = try self.fileURL(id, path)
-            do {
-                let folder = url.deletingLastPathComponent()
-                // A linked folder could lead outside the design: check the deepest folder that
-                // exists before making any, and write only inside the design.
-                guard let project = self.projectFolder(for: id), Self.isInside(Self.deepestExisting(folder), project) else {
-                    throw DesignStoreError.invalidPath(path.rawValue, .parentReference)
-                }
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                guard Self.isInside(folder, project) else { throw DesignStoreError.invalidPath(path.rawValue, .parentReference) }
-                try data.write(to: url, options: .atomic)
-            } catch let error as DesignStoreError {
-                throw error
-            } catch {
-                throw DesignStoreError.io("could not write \(path): \(error.localizedDescription)")
-            }
-            files[path] = sha
-            design.files = files
-            try self.commit(&design, id)
-            return DesignWriteResult(revision: design.revision, changed: true, sha256: sha, created: created,
-                                     warnings: warnings, title: design.index.title, boardCount: design.index.boards.count)
+            changed.append((path, data))
         }
+        guard !changed.isEmpty else {
+            return Written(result: DesignWriteResult(revision: design.revision, changed: false, warnings: warnings,
+                                                     title: design.index.title, boardCount: design.index.boards.count),
+                           shas: shas, versions: [:], created: [])
+        }
+        var versions: [DesignPath: Int] = [:]
+        var failure: DesignStoreError?
+        for (path, data) in changed {
+            do {
+                if !created.contains(path) { versions[path] = try keepVersion(id, path) }
+                try writeFile(id, path, data)
+                files[path] = shas[path]
+            } catch let error as DesignStoreError {
+                failure = error
+                break
+            } catch {
+                failure = .io("could not write \(path): \(error.localizedDescription)")
+                break
+            }
+        }
+        let wrote = changed.contains { files[$0.path] == shas[$0.path] }
+        design.files = files
+        if wrote { try commit(&design, id) }
+        if let failure { throw failure }
+        return Written(result: DesignWriteResult(revision: design.revision, changed: true, warnings: warnings,
+                                                 title: design.index.title, boardCount: design.index.boards.count),
+                       shas: shas, versions: versions, created: created)
+    }
+
+    /// Writes a board's file atomically, only inside the design: never through a linked folder
+    /// that leads outside it, and no folder is made there.
+    private func writeFile(_ id: DesignID, _ path: DesignPath, _ data: Data) throws {
+        let url = try fileURL(id, path)
+        let folder = url.deletingLastPathComponent()
+        guard let project = projectFolder(for: id), Self.isInside(Self.deepestExisting(folder), project) else {
+            throw DesignStoreError.invalidPath(path.rawValue, .parentReference)
+        }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        } catch {
+            throw DesignStoreError.io("could not write \(path): \(error.localizedDescription)")
+        }
+        guard Self.isInside(folder, project) else { throw DesignStoreError.invalidPath(path.rawValue, .parentReference) }
+        do { try data.write(to: url, options: .atomic) } catch {
+            throw DesignStoreError.io("could not write \(path): \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: Versions
+
+    /// Where a board's versions live: `versions/<path>/<n>.dc.html`, beside `project/`, so the
+    /// board scheme never serves them and they are no board.
+    private func versionsFolder(_ id: DesignID, _ path: DesignPath) throws -> URL {
+        guard let folder = folder(for: id) else { throw DesignStoreError.invalidDesignID(id.rawValue) }
+        return folder.appendingPathComponent("versions", isDirectory: true).appendingPathComponent(path.rawValue, isDirectory: true)
+    }
+
+    private struct Kept {
+        var version: DesignBoardVersion
+        var url: URL
+    }
+
+    private func versionsOnQueue(_ id: DesignID, _ path: DesignPath) throws -> [Kept] {
+        let folder = try versionsFolder(id, path)
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        return names.compactMap { name -> Kept? in
+            guard name.hasSuffix(".dc.html"), let number = Int(name.dropLast(".dc.html".count)), number > 0 else { return nil }
+            let url = folder.appendingPathComponent(name)
+            guard let data = try? Data(contentsOf: url) else { return nil }
+            let saved = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date(timeIntervalSince1970: 0)
+            return Kept(version: DesignBoardVersion(number: number, sha256: Self.sha256(data), bytes: data.count,
+                                                    savedAt: (saved.timeIntervalSince1970 * 1000).rounded()), url: url)
+        }
+        .sorted { $0.version.number < $1.version.number }
+    }
+
+    /// Keeps the board's file as its next version, then forgets all but the newest
+    /// `DesignBoardVersion.kept`. Returns the version's number.
+    private func keepVersion(_ id: DesignID, _ path: DesignPath) throws -> Int {
+        let current = try fileURL(id, path)
+        let data: Data
+        do { data = try Data(contentsOf: current) } catch {
+            throw DesignStoreError.io("could not keep a version of \(path): \(error.localizedDescription)")
+        }
+        let folder = try versionsFolder(id, path)
+        let existing = try versionsOnQueue(id, path)
+        let number = (existing.last?.version.number ?? 0) + 1
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: folder.appendingPathComponent("\(number).dc.html"), options: .atomic)
+        } catch {
+            throw DesignStoreError.io("could not keep a version of \(path): \(error.localizedDescription)")
+        }
+        for old in existing.dropLast(max(0, DesignBoardVersion.kept - 1)) { try? FileManager.default.removeItem(at: old.url) }
+        return number
     }
 
     /// Applies a canvas_update (`DesignIndex.merging`) when the design is still at
@@ -257,6 +400,7 @@ public final class DesignStore: @unchecked Sendable {
             // Only files the store found inside the design: never one through a linked folder.
             for path in removed where files[path] != nil {
                 if let url = try? self.fileURL(id, path) { try? FileManager.default.removeItem(at: url) }
+                if let versions = try? self.versionsFolder(id, path) { try? FileManager.default.removeItem(at: versions) }
                 files[path] = nil
             }
             design.index = merged
