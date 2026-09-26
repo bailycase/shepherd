@@ -424,13 +424,33 @@ final class PadDesignHost {
 
     // MARK: Leaving the canvas
 
-    /// The boards as PNGs for another thread (Split View's "Send to the thread"): each board's
-    /// snapshot as drawn now, named after it; boards not drawn yet are left out.
-    func pngs(_ paths: [DesignPath]) -> [(data: Data, name: String)] {
-        paths.compactMap { path in
-            guard let image = images.image(path), let data = UIImage(cgImage: image).pngData() else { return nil }
-            return (data, path.stem + ".png")
+    /// The boards as PNGs, in the order given: each board's snapshot of its current version,
+    /// drawn now by the rasterizer when it has none (a board off screen, or evicted). A board
+    /// that can't draw is left out. What Export shares and "Send to the thread" attaches.
+    func pngs(_ paths: [DesignPath]) async -> [(data: Data, path: DesignPath)] {
+        var result: [(data: Data, path: DesignPath)] = []
+        for path in paths {
+            guard let image = await currentImage(path), let data = UIImage(cgImage: image).pngData() else { continue }
+            result.append((data, path))
         }
+        return result
+    }
+
+    private func currentImage(_ path: DesignPath) async -> CGImage? {
+        guard let board = boards[path] else { return nil }
+        let drawing = board.drawing
+        if images.sha(path) == drawing, let image = images.image(path) { return image }
+        // A key of its own: the rasterizer replaces a queued job with the same key, and this one
+        // must answer.
+        let image: CGImage? = await withCheckedContinuation { continuation in
+            rasterizer.enqueue(PadDesignRasterizer.Job(key: "render/\(UUID().uuidString)", surface: surface, path: path,
+                                                       size: board.size, wanted: { true }) { continuation.resume(returning: $0) })
+        }
+        if let image, boards[path]?.drawing == drawing, images.sha(path) != drawing {
+            images.store(image, sha: drawing, for: path, keeping: onScreen)
+            bump(path)
+        }
+        return image
     }
 }
 

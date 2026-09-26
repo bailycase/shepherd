@@ -39,7 +39,7 @@ struct PadDesignScreen: View {
                                     swatches: canvas.systemSwatches,
                                     back: back,
                                     chat: wide ? nil : { showingChat = true },
-                                    export: canvas.canPresent ? { exporting = canvas.exportPNGs(name: name) } : nil)
+                                    export: canvas.canPresent ? { Task { exporting = await canvas.exportPNGs(name: name) } } : nil)
                     PadDesignCanvasView(canvas: canvas, reply: wide ? nil : agent)
                         .onChange(of: wide, initial: true) { _, wide in canvas.column = !wide }
                 }
@@ -283,9 +283,10 @@ private struct PadDesignCommentPopover: View {
 }
 
 /// The design agent's latest reply over a narrow window's canvas (iPadSplitView): "Design agent ·
-/// now", its words, and "Send to the thread", which puts the boards (as this iPad drew them) and a
-/// line naming the design in the composer of the thread another window shows, then brings that
-/// window forward. With several such threads it asks which.
+/// now", its words, and "Send to the thread", which puts the boards picked on the page (else
+/// the page's boards) as images, and a line with none of the design's own words, in the composer
+/// of the thread another window shows, then brings that window forward; nothing is sent until
+/// the viewer sends it there. With several such threads it asks which.
 private struct PadDesignReplyCard: View {
     let canvas: PadDesignCanvas
     let agent: AgentRef
@@ -336,14 +337,12 @@ private struct PadDesignReplyCard: View {
         }
     }
 
+    /// Fills the other thread's composer and brings its window forward; the viewer sends it.
     private func send(to target: WindowTarget<AgentRef>) {
-        let boards = PadDesignCanvas.canvasOrder(canvas.snapshot?.index ?? DesignIndex(title: nil))
-        let images = canvas.host.pngs(boards)
-        let name = canvas.snapshot?.index.title ?? "the design"
-        let line = "Use these boards from \u{201C}\(name)\u{201D} as the spec."
         Task {
-            await ComposerStates.shared.state(for: target.thread).attach(images)
-            WindowHooks.send(line, to: target, threads: threads, windows: windows, openWindow: openWindow)
+            guard let handoff = await canvas.handoff() else { return }
+            await ComposerStates.shared.state(for: target.thread).attach(handoff.images)
+            WindowHooks.send(handoff.text, to: target, threads: threads, windows: windows, openWindow: openWindow)
         }
     }
 }
