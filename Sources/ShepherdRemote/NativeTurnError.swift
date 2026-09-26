@@ -283,7 +283,7 @@ public struct NativeRetryLine: Equatable, Hashable, Sendable {
 
     /// The line's words at `now` (ms): "retrying in 8s" until the try goes, then "retrying".
     public func text(now: Double) -> String {
-        let seconds = Int(((retryAt - now) / 1000).rounded(.up))
+        let seconds = Int(reportedCount: ((retryAt - now) / 1000).rounded(.up)) ?? 0
         return title + (seconds > 0 ? " · retrying in \(seconds)s" : " · retrying")
     }
 
