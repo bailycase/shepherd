@@ -184,10 +184,17 @@ final class MCPStore {
 
     /// The `${keychain:…}` values that aren't in Keychain, by variable name.
     func missingSecrets(_ entry: MCPServerEntry) -> [String] {
-        let values = Array(entry.env.values) + Array(entry.headers.values) + [entry.url ?? ""] + entry.args
-        return values.flatMap(MCPSecretReference.references(in:))
+        Self.secretReferences(entry)
             .filter { dependencies.secrets.value(for: MCPSecretReference.account(server: $0.server, name: $0.name)) == nil }
             .map(\.name)
+    }
+
+    /// Every `${keychain:…}` an entry holds, wherever the extension expands it, once each.
+    static func secretReferences(_ entry: MCPServerEntry) -> [(server: String, name: String)] {
+        let values = [entry.command ?? ""] + entry.args + entry.env.keys.sorted().compactMap { entry.env[$0] } + [entry.url ?? ""]
+            + entry.headers.keys.sorted().compactMap { entry.headers[$0] }
+        var seen: Set<String> = []
+        return values.flatMap(MCPSecretReference.references(in:)).filter { seen.insert("\($0.server)/\($0.name)").inserted }
     }
 
     private func hasAuthHeader(_ entry: MCPServerEntry) -> Bool {
@@ -583,7 +590,10 @@ final class MCPStore {
     /// The entry the probe runs: `${keychain:…}` values filled in, and the bearer as a header.
     private func resolvedForProbe(_ entry: MCPServerEntry) async -> [String: JSONValue] {
         var resolved = entry
+        resolved.command = entry.command.map(resolveKeychain)
+        resolved.args = entry.args.map(resolveKeychain)
         resolved.env = entry.env.mapValues(resolveKeychain)
+        resolved.url = entry.url.map(resolveKeychain)
         resolved.headers = entry.headers.mapValues(resolveKeychain)
         if usesOAuth(entry), token(for: entry) != nil, let token = try? await currentToken(entry.name) {
             var headers = resolved.headers
@@ -614,12 +624,13 @@ final class MCPStore {
         guard entry.settings.enabled else {
             return .failure(code: MCPFailureCode.noSuchServer, message: "\(name) is off in Settings ▸ MCP servers.")
         }
+        // Secrets go by the reference's NAME (and by "<server>/<NAME>" for another server's
+        // item), and the extension puts each wherever its reference appears (CONTRACT §9).
         var credentials = MCPCredentials()
-        for (key, value) in entry.env where !MCPSecretReference.references(in: value).isEmpty {
-            credentials.env[key] = resolveKeychain(value)
-        }
-        for (key, value) in entry.headers where !MCPSecretReference.references(in: value).isEmpty {
-            credentials.headers[key] = resolveKeychain(value)
+        for reference in Self.secretReferences(entry) {
+            guard let secret = dependencies.secrets.value(for: MCPSecretReference.account(server: reference.server, name: reference.name))
+            else { continue }
+            credentials.env[reference.server == name ? reference.name : "\(reference.server)/\(reference.name)"] = secret
         }
         if let missing = missingSecrets(entry).first {
             rebuild()

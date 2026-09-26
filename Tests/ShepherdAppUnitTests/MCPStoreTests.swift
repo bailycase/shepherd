@@ -179,6 +179,19 @@ struct MCPStoreTests {
             == .failure(code: "no_such_server", message: "postgres is off in Settings ▸ MCP servers."))
     }
 
+    /// Secrets go by the reference's NAME, whatever key or text holds them, so the extension can put
+    /// each one wherever it appears: inside a longer value, in args, under another env key.
+    @Test func credentialsNameEachSecretByItsReference() async throws {
+        let config = #"""
+        { "mcpServers": { "db": { "command": "db-mcp", "args": ["--password=${keychain:db/PASSWORD}"],
+          "env": { "DSN": "postgres://app:${keychain:db/PASSWORD}@db/app", "SHARED": "${keychain:other/TOKEN}" } } } }
+        """#
+        let secrets = InMemorySecretStore(["secret/db/PASSWORD": "hunter2", "secret/other/TOKEN": "t"])
+        let store = try MCPFixtures.store(config, secrets: secrets)
+        #expect(await store.credentials(for: MCPRequest(agentID: AgentID(), server: "db", reason: .connect))
+            == .credentials(MCPCredentials(env: ["PASSWORD": "hunter2", "other/TOKEN": "t"])))
+    }
+
     @Test func aFirst401MeansSignInAndA403MeansMoreAccess() async throws {
         let secrets = InMemorySecretStore(["oauth/linear": MCPFixtures.tokenJSON(MCPFixtures.token(scopes: ["read"]))])
         let store = try MCPFixtures.store(secrets: secrets)
