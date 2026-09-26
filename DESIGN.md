@@ -337,6 +337,11 @@ board's, plus where the app also uses the role.
 - `scrim`: black at 30% in both appearances, behind the command palette
 - `textOnFailed`: white, for labels on a `failed` fill
 - `knobOn`, `knobOff`, `knobShadow`: the switch and slider knobs
+- `lanternHover`, `lanternPressed`, `failedPressed`: the filled buttons' hover and pressed fills,
+  the Controls board's hexes (`NWButtonFills`): primary lifts to `#f7b84f` · `#eca63a` and sinks
+  to `#d9922a` · `#cf8a1c`; dangerFill stays put on hover and sinks to `#d24f4b` · `#bf3a35`
+  (dark · light). The labels on them reach 4.5:1, except white on the dark pressed dangerFill
+  (4.23), as the board draws it
 
 **The terminal palette is derived from the roles.** Terminal panes sit on `bgWindow` with
 `textPrimary` text, a `textPrimary` block cursor, and a selection on `running` at 13%
@@ -380,7 +385,9 @@ surface they sit on):
 - **Documented exceptions** (the board's colors, kept; the test pins their measured ratios):
   `textTertiary` meta text (dark 3.06–3.35, light 2.40–2.69), the light state pills' words on
   their own tints (running 3.98, done 3.01, failed 3.71 over the window), the light lantern as a
-  mark (2.27), and white on `failed` (dark 3.18, light 4.33).
+  mark (2.27), white on `failed` (dark 3.18, light 4.33), and white on the dark pressed
+  dangerFill (`failedPressed`, 4.23). `textOnLantern` on the primary button's hover and pressed
+  fills reaches 4.5:1.
 - Every role parses, only hover, selection, and the state tints may be translucent, surfaces
   and lines stay distinct, the ANSI palette has 16 entries, the terminal background equals
   `bgWindow`, and the theme round-trips through JSON.
